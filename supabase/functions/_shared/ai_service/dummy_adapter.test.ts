@@ -1,16 +1,26 @@
 // supabase/functions/_shared/ai_service/dummy_adapter.test.ts
 import { assertEquals, assertExists, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
-import { DummyAdapter } from "./dummy_adapter.ts";
+import { 
+  DummyAdapter,
+} from "./dummy_adapter.ts";
 import { testAdapterContract, type MockApi } from "./adapter_test_contract.ts";
-import type { AdapterResponsePayload, AiModelExtendedConfig, ChatApiRequest, ProviderModelInfo, Messages } from "../types.ts";
+import type { 
+  AdapterResponsePayload, 
+  AiModelExtendedConfig, 
+  ChatApiRequest, 
+  ProviderModelInfo, 
+  Messages,
+  EmbeddingResponse,
+  AiProviderAdapterInstance,
+} from "../types.ts";
 import { MockLogger } from "../logger.mock.ts";
 import { countTokens } from "../utils/tokenizer_utils.ts";
 import type { CountTokensDeps, CountableChatPayload } from "../types/tokenizer.types.ts";
 import { isTokenUsage } from "../utils/type_guards.ts";
 import { Tables } from "../../types_db.ts";
-import { isJson } from "../utils/type_guards.ts";
-
+import { isJson } from "../utils/type_guards.ts"; 
+import { ILogger } from "../types.ts";
 /**
  * This test file uses the generic `testAdapterContract` to ensure the
  * DummyAdapter conforms to the standard adapter interface. It also includes
@@ -228,6 +238,101 @@ Deno.test("[FAILING TEST] DummyAdapter should generate a large response for SIMU
     assertEquals(result.finish_reason, "stop", "The finish reason should be 'stop' for a large but complete response.");
 });
 
+Deno.test("DummyAdapter respects client-provided max_tokens_to_generate and yields non-zero usage under non-zero cost rates", async () => {
+  const CONFIG_WITH_COSTS: AiModelExtendedConfig = {
+    api_identifier: "dummy-model-v1",
+    tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+    context_window_tokens: 10000,
+    input_token_cost_rate: 0,
+    output_token_cost_rate: 2,
+  };
+  if (!isJson(CONFIG_WITH_COSTS)) throw new Error('CONFIG_WITH_COSTS must be JSON');
+  const PROVIDER_WITH_COSTS: Tables<'ai_providers'> = {
+    ...MOCK_PROVIDER,
+    config: CONFIG_WITH_COSTS,
+  };
+
+  const adapter = new DummyAdapter(PROVIDER_WITH_COSTS, 'dummy-key', new MockLogger());
+  const K = 64;
+  const request: ChatApiRequest = {
+    message: "SIMULATE_LARGE_OUTPUT_KB=1 Hello world",
+    providerId: 'dummy-provider',
+    promptId: '__none__',
+    max_tokens_to_generate: K,
+  };
+  const modelIdentifier = CONFIG_WITH_COSTS.api_identifier;
+
+  const result = await adapter.sendMessage(request, modelIdentifier);
+  assertExists(result.token_usage);
+  assert(isTokenUsage(result.token_usage));
+  // completion should be capped by client K (K chosen high enough above envelope)
+  assert(result.token_usage.completion_tokens <= K, "completion_tokens should respect client-provided cap");
+  // Non-zero usage implies non-zero costs under non-zero rates at higher layers
+  assert(result.token_usage.total_tokens > 0, "total_tokens should be non-zero under non-zero rates setup");
+});
+
+Deno.test("DummyAdapter respects model hard_cap_output_tokens when client cap is absent", async () => {
+  const CONFIG_WITH_HARD_CAP: AiModelExtendedConfig = {
+    api_identifier: "dummy-model-v1",
+    tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+    context_window_tokens: 10000,
+    input_token_cost_rate: 0,
+    output_token_cost_rate: 2,
+    hard_cap_output_tokens: 64,
+  };
+  if (!isJson(CONFIG_WITH_HARD_CAP)) throw new Error('CONFIG_WITH_HARD_CAP must be JSON');
+  const PROVIDER_WITH_HARD_CAP: Tables<'ai_providers'> = {
+    ...MOCK_PROVIDER,
+    config: CONFIG_WITH_HARD_CAP,
+  };
+
+  const adapter = new DummyAdapter(PROVIDER_WITH_HARD_CAP, 'dummy-key', new MockLogger());
+  const request: ChatApiRequest = {
+    message: "SIMULATE_LARGE_OUTPUT_KB=1 This should exceed cap",
+    providerId: 'dummy-provider',
+    promptId: '__none__',
+  };
+  const modelIdentifier = CONFIG_WITH_HARD_CAP.api_identifier;
+
+  const result = await adapter.sendMessage(request, modelIdentifier);
+  assertExists(result.token_usage);
+  assert(isTokenUsage(result.token_usage));
+  // Desired behavior: without client cap, model hard cap should apply (64 chosen above envelope)
+  assert(result.token_usage.completion_tokens <= 64, "completion_tokens should respect model hard_cap_output_tokens");
+});
+
+Deno.test("DummyAdapter handles oversized input by throwing ContextWindowError (step 118)", async () => {
+  const CONFIG_SMALL_WINDOW: AiModelExtendedConfig = {
+    api_identifier: "dummy-model-v1",
+    tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+    context_window_tokens: 50,
+    input_token_cost_rate: 1,
+    output_token_cost_rate: 1,
+  };
+  if (!isJson(CONFIG_SMALL_WINDOW)) throw new Error('CONFIG_SMALL_WINDOW must be JSON');
+  const PROVIDER_SMALL_WINDOW: Tables<'ai_providers'> = {
+    ...MOCK_PROVIDER,
+    config: CONFIG_SMALL_WINDOW,
+  };
+
+  const adapter = new DummyAdapter(PROVIDER_SMALL_WINDOW, 'dummy-key', new MockLogger());
+  const longText = 'A'.repeat(200);
+  const request: ChatApiRequest = {
+    message: longText,
+    providerId: 'dummy-provider',
+    promptId: '__none__',
+  };
+  const modelIdentifier = CONFIG_SMALL_WINDOW.api_identifier;
+
+  let threw = false;
+  try {
+    await adapter.sendMessage(request, modelIdentifier);
+  } catch (e) {
+    threw = true;
+  }
+  assert(threw, 'Expected ContextWindowError for oversized input in step 118');
+});
+
 Deno.test("[DummyAdapter] Specific Behavior - should handle continuation prompts", async () => {
     // Arrange
     const adapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());
@@ -271,4 +376,166 @@ Deno.test("[DummyAdapter] Specific Behavior - should use the correct provider ID
 
     // Assert
     assertEquals(result.ai_provider_id, specificProviderId, "The ai_provider_id should match the id from the model configuration.");
+});
+
+Deno.test("DummyAdapter getEmbedding returns 3072-d vectors", async () => {
+  const now = new Date().toISOString();
+
+  const providerRow: Tables<'ai_providers'> = {
+    id: crypto.randomUUID(),
+    name: "OpenAI text-embedding-3-large",
+    api_identifier: "openai-text-embedding-3-large",
+    description: null,
+    is_active: true,
+    is_enabled: true,
+    is_default_embedding: true,
+    provider: "openai",
+    created_at: now,
+    updated_at: now,
+    // Minimal extended config satisfying guards
+    config: {
+      api_identifier: "openai-text-embedding-3-large",
+      context_window_tokens: 8191,
+      input_token_cost_rate: 0.13,
+      tokenization_strategy: {
+        type: "tiktoken",
+        is_chatml_model: false,
+        tiktoken_encoding_name: "cl100k_base",
+      },
+      hard_cap_output_tokens: 4096,
+      output_token_cost_rate: 1,
+      provider_max_input_tokens: 8191,
+      provider_max_output_tokens: 4096,
+    },
+  };
+
+  const logger: ILogger = {
+    info: () => undefined,
+    warn: () => undefined,
+    error: () => undefined,
+    debug: () => undefined,
+  };
+
+  const adapter = new DummyAdapter(providerRow, "sk-test", logger);
+
+  // Provide only the method used by EmbeddingClient to satisfy structural typing
+  // Provide minimal shape: EmbeddingClient only calls getEmbedding; provide no-op for others
+  const adapterInstance: AiProviderAdapterInstance = {
+    getEmbedding: (text: string): Promise<EmbeddingResponse> => adapter.getEmbedding(text),
+    async sendMessage() { throw new Error("not used in this test"); },
+    async listModels() { return []; },
+  };
+
+  const res = await adapter.getEmbedding("test text for embedding");
+
+  assert(Array.isArray(res.embedding), "embedding should be an array");
+  assertEquals(res.embedding.length, 3072);
+  assert(!!res.usage && typeof res.usage.total_tokens === "number");
+});
+
+// RED: Dummy honors injected provider config (no internal override)
+Deno.test("[DummyAdapter] honors injected provider config for context window/tokenizer", async () => {
+  const now = new Date().toISOString();
+  const providerRow: Tables<'ai_providers'> = {
+    id: crypto.randomUUID(),
+    name: "OpenAI gpt-4o",
+    api_identifier: "openai-gpt-4o",
+    description: null,
+    is_active: true,
+    is_enabled: true,
+    is_default_embedding: false,
+    provider: "openai",
+    created_at: now,
+    updated_at: now,
+    config: {
+      api_identifier: "openai-gpt-4o",
+      context_window_tokens: 128000,
+      provider_max_input_tokens: 128000,
+      provider_max_output_tokens: 4096,
+      input_token_cost_rate: 5,
+      output_token_cost_rate: 15,
+      tokenization_strategy: {
+        type: "tiktoken",
+        is_chatml_model: true,
+        tiktoken_encoding_name: "cl100k_base",
+        api_identifier_for_tokenization: "gpt-4o",
+      },
+      hard_cap_output_tokens: 4096,
+    },
+  };
+
+  const adapter = new DummyAdapter(providerRow, "sk-test", new MockLogger());
+
+  // Build a payload large enough to exceed tiny defaults but under 128k window
+  const longText = "A".repeat(50000);
+  const request: ChatApiRequest = {
+    message: longText,
+    providerId: providerRow.id,
+    promptId: "__none__",
+  };
+
+  let threw = false;
+  try {
+    await adapter.sendMessage(request, providerRow.api_identifier);
+  } catch (_e) {
+    threw = true;
+  }
+
+  // Expectation: should NOT throw ContextWindowError because injected window is 128k
+  assertEquals(threw, false, "Adapter should honor injected 128k window without overriding to a tiny cap");
+});
+
+// RED: Dummy has a rational self-default (when used as itself)
+Deno.test("[DummyAdapter] uses rational self-default window when constructed as dummy", async () => {
+  const now = new Date().toISOString();
+  const providerRow: Tables<'ai_providers'> = {
+    id: crypto.randomUUID(),
+    name: "Dummy Echo v1",
+    api_identifier: "dummy-echo-v1",
+    description: null,
+    is_active: true,
+    is_enabled: true,
+    is_default_embedding: false,
+    provider: "dummy",
+    created_at: now,
+    updated_at: now,
+    // minimal extended config: omit context/provider_max to force adapter defaults
+    config: {
+      api_identifier: "dummy-echo-v1",
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 1,
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+      hard_cap_output_tokens: 4096,
+    },
+  };
+
+  const adapter = new DummyAdapter(providerRow, "sk-test", new MockLogger());
+
+  // Build a payload large enough to exceed tiny defaults but under 200k
+  const longText = "B".repeat(150000);
+  const request: ChatApiRequest = {
+    message: longText,
+    providerId: providerRow.id,
+    promptId: "__none__",
+  };
+
+  let threw = false;
+  try {
+    await adapter.sendMessage(request, providerRow.api_identifier);
+  } catch (_e) {
+    threw = true;
+  }
+
+  // Expectation: should NOT throw because dummy self-default window should be >= 200k
+  assertEquals(threw, false, "Dummy self-default window should be sufficiently large (>= 200k)");
+
+  // RED: Also assert the adapter exposes a rational self-default on its config via listModels
+  const models = await adapter.listModels();
+  assert(Array.isArray(models) && models.length === 1);
+  const cfgCandidate = models[0] && typeof models[0] === 'object' ? (models[0] as ProviderModelInfo).config : undefined;
+  assert(!!cfgCandidate && typeof cfgCandidate === 'object', 'adapter.listModels should expose a config');
+  const cfg = cfgCandidate as AiModelExtendedConfig;
+  // These fields should be populated by the adapter's self-defaults when missing on input
+  assert(typeof cfg.provider_max_input_tokens === "number" && cfg.provider_max_input_tokens >= 200_000, "provider_max_input_tokens should default to >= 200k");
+  assert(typeof cfg.context_window_tokens === "number" && cfg.context_window_tokens >= 200_000, "context_window_tokens should default to >= 200k");
 });

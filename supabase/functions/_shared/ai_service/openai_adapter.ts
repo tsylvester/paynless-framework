@@ -61,9 +61,30 @@ export class OpenAiAdapter {
       messages: openaiMessages,
     };
 
-    const maxOutputTokens = request.max_tokens_to_generate || this.modelConfig.hard_cap_output_tokens;
-    if (maxOutputTokens && maxOutputTokens > 0) {
-      payload.max_tokens = maxOutputTokens;
+    // Guardrail: Respect client-provided cap; otherwise cap by the tighter of model caps
+    const isOSeries = modelApiName.startsWith('gpt-4o') || modelApiName.startsWith('o');
+    const applyCap = (cap: number) => {
+      if (!(cap > 0)) return;
+      if (isOSeries) {
+        // Prefer new param for o-series
+        payload.max_completion_tokens = cap;
+      } else {
+        payload.max_tokens = cap;
+      }
+    };
+
+    if (typeof request.max_tokens_to_generate === 'number') {
+      applyCap(request.max_tokens_to_generate);
+    } else {
+      const hardCap = this.modelConfig.hard_cap_output_tokens;
+      const providerCap = this.modelConfig.provider_max_output_tokens;
+      const candidates: number[] = [];
+      if (typeof hardCap === 'number' && hardCap > 0) candidates.push(hardCap);
+      if (typeof providerCap === 'number' && providerCap > 0) candidates.push(providerCap);
+      if (candidates.length > 0) {
+        const fallbackCap = Math.min(...candidates);
+        applyCap(fallbackCap);
+      }
     }
 
     this.logger.info(`Sending request to OpenAI model: ${modelApiName}`);

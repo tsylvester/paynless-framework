@@ -43,7 +43,8 @@ export function deconstructStoragePath(
   const projectReadmePatternString = "^([^/]+)/project_readme\\.md$";
   const projectSettingsFilePatternString = "^([^/]+)/project_settings\\.json$";
   const generalResourcePatternString = "^([^/]+)/general_resource/([^/]+)$";
-  const initialUserPromptPatternString = "^([^/]+)/((?!session_|general_resource/|project_readme\\.md$|project_settings\\.json$)[^/]+)$";
+  const initialUserPromptPatternString = "^([^/]+)/((?!session_|general_resource/|project_readme\\.md$|project_settings\\.json$)(?!.*\\.(zip|tar|tgz|gz|rar|7z)$)[^/]+)$";
+  const projectExportZipPatternString = "^([^/]+)/([^/]+\\.(zip|tar|tgz|gz|rar|7z))$";
   // New specific patterns for intermediate files
   const pairwiseSynthesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(?:raw_responses/)?([^_]+_synthesizing_[^_]+_with_[^_]+_on_[^_]+_\\d+_pairwise_synthesis_chunk(?:_raw\\.json|\\.md))$";
   const reducedSynthesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(?:raw_responses/)?([^_]+_reducing_[^_]+_by_[^_]+_\\d+_reduced_synthesis(?:_raw\\.json|\\.md))$";
@@ -325,6 +326,15 @@ export function deconstructStoragePath(
     info.originalProjectId = matches[1];
     info.parsedFileNameFromPath = matches[2]; 
     info.fileTypeGuess = FileType.GeneralResource;
+    return info;
+  }
+
+  // Path: {projectId}/{archiveFile}
+  matches = fullPath.match(new RegExp(projectExportZipPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.parsedFileNameFromPath = matches[2];
+    info.fileTypeGuess = FileType.ProjectExportZip;
     return info;
   }
   

@@ -16,9 +16,7 @@ import {
   TestResourceRequirement,
   ProcessedResourceInfo, // Import this type
 } from "../_shared/_integration.test.utils.ts"; // Corrected path
-import type { DialecticServiceRequest, DialecticServiceResponse } from "./dialectic.interface.ts"; 
-// Correctly import types from the central types package
-import type { DialecticProject, DialecticSession, DialecticSessionModel, DialecticContribution } from "./dialectic.interface.ts"; 
+import type { DialecticServiceRequest } from "./dialectic.interface.ts"; 
 import { initializeTestDeps } from "../_shared/_integration.test.utils.ts";
 
 describe("Edge Function: dialectic-service - Action: getProjectDetails", () => {
@@ -157,11 +155,7 @@ describe("Edge Function: dialectic-service - Action: getProjectDetails", () => {
 
     assertEquals(error, null, `Function invocation error: ${JSON.stringify(error)}`);
     assertExists(data, "Response data should exist");
-    const responsePayload: DialecticServiceResponse<DialecticProject> = data;
-    assertEquals(responsePayload.error, undefined, `Service action error: ${responsePayload.error?.message}`);
-    
-    assertExists(responsePayload.data, "Response data should exist");
-    const project: DialecticProject = responsePayload.data;
+    const project = data;
     assertEquals(project.id, projectId);
     assertEquals(project.project_name, projectName);
     assertEquals(project.user_id, setupResult.primaryUserId);
@@ -278,31 +272,27 @@ describe("Edge Function: dialectic-service - Action: getProjectDetails", () => {
 
     assertEquals(error, null, `Function invocation error: ${JSON.stringify(error)}`);
     assertExists(data, "Response data should exist for detailed project");
-    const responsePayload: DialecticServiceResponse<DialecticProject> = data;
-    assertEquals(responsePayload.error, undefined, `Service action error: ${responsePayload.error?.message}`);
-
-    assertExists(responsePayload.data, "Response payload data should exist");
-    const project: DialecticProject = responsePayload.data;
+    const project = data;
     assertEquals(project.id, projectId);
     assertEquals(project.project_name, projectName);
     assertExists(project.dialectic_sessions, "Project sessions should exist");
     assertEquals(project.dialectic_sessions?.length, 1);
 
-    const fetchedSession: DialecticSession = project.dialectic_sessions?.[0]; 
+    const fetchedSession = project.dialectic_sessions?.[0]; 
     assertExists(fetchedSession, "Fetched session should exist");
     assertEquals(fetchedSession.id, session.id);
     assertEquals(fetchedSession.session_description, "Session for detailed test");
 
-    assertExists(fetchedSession.dialectic_session_models, "Session models should exist");
-    assertEquals(fetchedSession.dialectic_session_models?.length, 2);
-    
-    const modelIds = fetchedSession.dialectic_session_models?.map((m: DialecticSessionModel) => m.model_id).sort();
+    // Validate models via selected_model_ids on session
+    assertExists(fetchedSession.selected_model_ids, "selected_model_ids should exist on session");
+    const selectedModelIds = [...fetchedSession.selected_model_ids].sort();
     const expectedModelIds = [model1CatalogId, model2CatalogId].sort();
-    assertEquals(modelIds, expectedModelIds);
+    assertEquals(selectedModelIds, expectedModelIds);
 
+    // Validate contributions nested on session
     assertExists(fetchedSession.dialectic_contributions, "Session contributions should exist");
     assertEquals(fetchedSession.dialectic_contributions?.length, 2);
-    const contribs = fetchedSession.dialectic_contributions?.sort((a: DialecticContribution, b: DialecticContribution) => 
+    const contribs = fetchedSession.dialectic_contributions?.sort((a: any, b: any) => 
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     );
     assertExists(contribs, "Sorted contributions should exist");

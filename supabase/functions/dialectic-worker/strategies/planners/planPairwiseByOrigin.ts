@@ -56,6 +56,7 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
                 document_relationships,
                 inputs,
                 isIntermediate: true,
+                walletId: parentJob.payload.walletId,
             };
 
             childPayloads.push(newPayload);

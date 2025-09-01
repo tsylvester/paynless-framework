@@ -392,7 +392,6 @@ export interface AiModelExtendedConfig {
   
   status?: 'active' | 'beta' | 'deprecated' | 'experimental';
   features?: string[]; // e.g., ["json_mode", "tool_use", "image_input"]
-  max_context_window_tokens?: number; // Duplicates context_window_tokens? Consolidate if same meaning.
   notes?: string;
 
   provider_max_input_tokens?: number; 

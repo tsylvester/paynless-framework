@@ -2,6 +2,7 @@
 import { assertEquals, assertExists, assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { spy, stub, returnsNext } from "jsr:@std/testing@0.225.1/mock";
 import { startSession, type StartSessionDeps } from "./startSession.ts";
+import { testProviderMap } from "../_shared/ai_service/factory.ts";
 import type { StartSessionPayload } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
@@ -129,6 +130,8 @@ Deno.test("startSession - Error: Initial stage has no associated system prompt",
                         api_identifier: 'openai-gpt-4o', 
                         provider_max_input_tokens: 8000, 
                         config: {
+                            input_token_cost_rate: 1,
+                            output_token_cost_rate: 1,
                             tokenization_strategy: {
                                 type: 'tiktoken',
                                 tiktoken_encoding_name: 'cl100k_base'
@@ -142,7 +145,12 @@ Deno.test("startSession - Error: Initial stage has no associated system prompt",
         mockUser: MOCK_USER,
     });
     const mockLogger = new MockLogger();
-    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, payload, { logger: mockLogger, fileManager: MOCK_FILE_MANAGER });
+    const result = await startSession(
+        MOCK_USER,
+        mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>,
+        payload,
+        { logger: mockLogger, fileManager: MOCK_FILE_MANAGER, providerMap: testProviderMap, embeddingApiKey: "test-key" }
+    );
     assertExists(result.error);
     assertEquals(result.error?.message, "Configuration error: Initial stage 'Hypothesis' is missing a default prompt.");
     assertEquals(result.error?.status, 500);
@@ -174,6 +182,9 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
                         api_identifier: 'openai-gpt-4o', 
                         provider_max_input_tokens: 8000, 
                         config: {
+                            api_identifier: 'openai-gpt-4o',
+                            input_token_cost_rate: 1,
+                            output_token_cost_rate: 1,
                             tokenization_strategy: {
                                 type: 'tiktoken',
                                 tiktoken_encoding_name: 'cl100k_base'
@@ -187,7 +198,12 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
         mockUser: MOCK_USER,
     });
     const mockLogger = new MockLogger();
-    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, payload, { logger: mockLogger, fileManager: MOCK_FILE_MANAGER });
+    const result = await startSession(
+        MOCK_USER,
+        mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>,
+        payload,
+        { logger: mockLogger, fileManager: MOCK_FILE_MANAGER, providerMap: testProviderMap, embeddingApiKey: 'test-key' }
+    );
     assertExists(result.error);
     assertEquals(result.error?.message, "Failed to create new session.");
     assertEquals(result.error?.status, 500);

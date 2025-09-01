@@ -238,23 +238,17 @@ export async function getSortedCompressionCandidates(
     const candidateIds = allCandidates.map(c => c.id);
 
     // Query the database to find out which of these candidates are already indexed
-    const { data: indexedChunks, error } = await dbClient
+    // Diagnostic-only query; do not exclude indexed items from compression candidates.
+    // We keep all candidates so RAG can replace bulky text even when items are already indexed.
+    const { error } = await dbClient
         .from('dialectic_memory')
         .select('source_contribution_id')
         .in('source_contribution_id', candidateIds);
-
     if (error) {
-        deps.logger?.error('Error fetching indexed chunks from dialectic_memory', { error });
-        // Depending on desired behavior, you might want to return all candidates or an empty array
-        return []; 
+        deps.logger?.warn('Non-fatal: error fetching indexed chunks from dialectic_memory (diagnostic only)', { error });
     }
 
-    const indexedIds = new Set(indexedChunks.map(chunk => chunk.source_contribution_id));
-
-    // Filter out the candidates that have already been indexed
-    const unindexedCandidates = allCandidates.filter(candidate => !indexedIds.has(candidate.id));
-    
-    const sortedCandidates = unindexedCandidates.sort((a, b) => a.valueScore - b.valueScore);
+    const sortedCandidates = allCandidates.sort((a, b) => a.valueScore - b.valueScore);
 
     console.log('[DEBUG] getSortedCompressionCandidates - Final Sorted Candidates:', JSON.stringify(sortedCandidates.map(c => ({ id: c.id, score: c.valueScore, type: c.sourceType })), null, 2));
 

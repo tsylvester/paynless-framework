@@ -199,3 +199,22 @@ Deno.test("OpenAI per-model encoding and ChatML flags are mapped correctly", () 
         }
     }
 });
+
+// RED: INTERNAL_MODEL_MAP exposes correct windows for 4.1 and 4o families
+Deno.test("[Provider-Specific] openai: INTERNAL_MODEL_MAP sets expected provider_max_input_tokens for 4.1 and 4o", () => {
+  const expectations: Array<[string, number]> = [
+    ["openai-gpt-4.1", 1_047_576],
+    ["openai-gpt-4.1-mini", 1_047_576],
+    ["openai-gpt-4.1-nano", 1_047_576],
+    ["openai-gpt-4o", 128_000],
+    ["openai-gpt-4o-mini", 128_000],
+  ];
+
+  for (const [key, expectedMaxIn] of expectations) {
+    const cfg = INTERNAL_MODEL_MAP.get(key);
+    assertExists(cfg, `Missing INTERNAL_MODEL_MAP entry for ${key}`);
+    const pmi = (cfg as Partial<AiModelExtendedConfig>).provider_max_input_tokens;
+    assertExists(pmi, `provider_max_input_tokens missing for ${key}`);
+    assertEquals(pmi, expectedMaxIn, `${key} should have provider_max_input_tokens = ${expectedMaxIn}`);
+  }
+});

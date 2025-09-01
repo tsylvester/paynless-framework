@@ -20,6 +20,10 @@ import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockSupaba
 import { IEmbeddingClient, IIndexingService } from './indexing_service.interface.ts';
 import { RagServiceError } from '../utils/errors.ts';
 import { PostgrestError } from 'npm:@supabase/postgrest-js@1.15.5';
+import { EmbeddingClient } from './indexing_service.ts';
+import { DummyAdapter } from '../ai_service/dummy_adapter.ts';
+import { MOCK_PROVIDER } from '../ai_service/dummy_adapter.test.ts';
+import { createMockTokenWalletService } from '../services/tokenWalletService.mock.ts';
 
 // Helper to create a compliant PostgrestError mock
 const createMockPostgrestError = (message: string): PostgrestError & { name: string } => ({
@@ -57,9 +61,9 @@ describe('RagService', () => {
     mockIndexingService = {
         indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }),
     };
-    mockEmbeddingClient = {
-        getEmbedding: () => Promise.resolve({ embedding: Array(1536).fill(0.1), usage: { prompt_tokens: 0, total_tokens: 0 } }),
-    };
+    // Use real EmbeddingClient with DummyAdapter
+    const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());
+    mockEmbeddingClient = new EmbeddingClient(dummyAdapter);
 
     deps = {
       dbClient: setup.client as unknown as SupabaseClient<Database>,
@@ -118,7 +122,7 @@ describe('RagService', () => {
   });
 
   describe('Advanced Retrieval', () => {
-    it('should generate multiple queries, call RPC, and assemble a final context', async () => {
+    it('should generate multiple queries, call embedding client for each, call RPC, and assemble a final context', async () => {
         const mockRpcResponse = [
             { id: 'chunk1', content: 'Unique chunk from query 1', metadata: { source_contribution_id: 'doc1' }, similarity: 0.9, rank: 10 },
             { id: 'chunk2', content: 'Common chunk', metadata: { source_contribution_id: 'doc2' }, similarity: 0.8, rank: 2 },
@@ -155,6 +159,27 @@ describe('RagService', () => {
         assert(result.context!.includes("Common chunk"));
         assert(result.context!.includes("Unique chunk from query 2"));
         assert(result.context!.includes("--- End of Retrieved Context ---"), "Context should have a footer");
+    });
+
+    // Expect billing for query embeddings (wallet debits per query)
+    it('bills 1:1 for query embeddings via token wallet', async () => {
+      initializeService({
+        genericMockResults: { dialectic_memory: { select: { data: [], error: null } } },
+        rpcResults: { match_dialectic_chunks: { data: [], error: null } },
+      });
+
+      const mockWallet = createMockTokenWalletService();
+      deps.tokenWalletService = mockWallet.instance;
+      service = new RagService(deps);
+      const embeddingSpy = spy(deps.embeddingClient, 'getEmbedding');
+
+      await service.getContextForModel([], mockModelConfig, 'session-wallet', 'synthesis');
+
+      // Desired behavior: a wallet debit per query embedding generated
+      const expectedDebits = embeddingSpy.calls.length;
+      const actualDebits = mockWallet.stubs.recordTransaction.calls.length;
+      assert(expectedDebits >= 2, 'Should generate multiple query embeddings');
+      assertEquals(actualDebits, expectedDebits);
     });
 
     it('should correctly select diverse documents using MMR', async () => {
@@ -341,4 +366,90 @@ describe('RagService', () => {
         assertEquals(result.tokensUsedForIndexing, 123);
     });
   });
+});
+
+Deno.test("RagService issues RPC with 3072-d query embedding and returns non-empty context", async () => {
+  // Arrange
+  const logger = new MockLogger();
+  const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, "dummy-key", logger);
+  const embeddingClient = new EmbeddingClient(dummyAdapter);
+  const returnedId = crypto.randomUUID();
+
+  const { client, spies } = createMockSupabaseClient(undefined, {
+    rpcResults: {
+      match_dialectic_chunks: { data: [{ id: returnedId, content: "ctx", metadata: {}, similarity: 0.9, rank: 0.9 }], error: null },
+    },
+    genericMockResults: {
+      dialectic_memory: {
+        select: { data: [{ id: returnedId, embedding: JSON.stringify(Array(3072).fill(0.01)) }], error: null },
+      },
+    },
+  });
+
+  const deps: IRagServiceDependencies = {
+    dbClient: client as unknown as SupabaseClient<Database>,
+    logger,
+    indexingService: {
+      indexDocument: async () => ({ success: true, tokensUsed: 10 }),
+    } as any,
+    embeddingClient,
+  };
+
+  const service = new RagService(deps);
+  const docs: IRagSourceDocument[] = [{ id: crypto.randomUUID(), content: "hello world" }];
+
+  // Act
+  const res = await service.getContextForModel(docs, {
+    api_identifier: "dummy-model-v1",
+    input_token_cost_rate: 1,
+    output_token_cost_rate: 1,
+    tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+  } as any, "sess-1", "thesis");
+
+  // Assert: rpc was called with a 3072-d query_embedding
+  const rpcCalls = spies.rpcSpy.calls;
+  assert(rpcCalls.length >= 1);
+  const firstRpcArgs = rpcCalls[0].args;
+  const params = firstRpcArgs[1] as Record<string, unknown>;
+  const embStr = String(params.query_embedding ?? "");
+  const parsed = JSON.parse(embStr);
+  assert(Array.isArray(parsed) && parsed.length === 3072);
+
+  assertEquals(res.error, undefined);
+  assert(typeof res.context === "string" && res.context.length > 0);
+  assertEquals(typeof res.tokensUsedForIndexing === "number" && (res.tokensUsedForIndexing ?? 0) > 0, true);
+});
+
+Deno.test("RagService guard: rejects when query embedding dim != 3072 and does not call RPC", async () => {
+  // Arrange: embedding client that returns 32-d vectors
+  const logger = new MockLogger();
+  class WrongDimEmbeddingClient implements IEmbeddingClient {
+    async getEmbedding(text: string) {
+      const embedding = Array.from({ length: 32 }, () => 0);
+      const tokens = text.length;
+      return { embedding, usage: { prompt_tokens: tokens, total_tokens: tokens } };
+    }
+  }
+  const embeddingClient: IEmbeddingClient = new WrongDimEmbeddingClient();
+  const { client, spies } = createMockSupabaseClient();
+
+  const deps: IRagServiceDependencies = {
+    dbClient: client as unknown as SupabaseClient<Database>,
+    logger,
+    indexingService: { indexDocument: async () => ({ success: true, tokensUsed: 0 }) },
+    embeddingClient,
+  };
+  const service = new RagService(deps);
+
+  // Act
+  const res = await service.getContextForModel(
+    [{ id: crypto.randomUUID(), content: "x" }],
+    { api_identifier: "dummy", input_token_cost_rate: 1, output_token_cost_rate: 1, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } },
+    "sess-guard",
+    "thesis",
+  );
+
+  // Assert: expect failure and no RPC call
+  assert(res.error instanceof Error);
+  assertEquals(spies.rpcSpy.calls.length, 0);
 });

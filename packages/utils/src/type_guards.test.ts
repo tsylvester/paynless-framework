@@ -4,7 +4,12 @@ import {
     isChatContextPreferences,
     isDialecticLifecycleEventType,
     isDialecticContribution,
-    isApiError 
+    isApiError,
+    isWalletDecisionLoading,
+    isWalletDecisionError,
+    isUserConsentRequired,
+    isUserConsentRefused,
+    isOrgWalletUnavailableByPolicy,
 } from './type_guards';
 
 describe('isUserRole', () => {
@@ -28,6 +33,38 @@ describe('isUserRole', () => {
     expect(isUserRole(123)).toBe(false);
     expect(isUserRole({})).toBe(false);
     expect(isUserRole([])).toBe(false);
+  });
+});
+
+describe('wallet decision type guards', () => {
+  it('isWalletDecisionLoading', () => {
+    expect(isWalletDecisionLoading({ outcome: 'loading' })).toBe(true);
+    expect(isWalletDecisionLoading({})).toBe(false);
+    expect(isWalletDecisionLoading({ outcome: 'error' })).toBe(false);
+  });
+
+  it('isWalletDecisionError', () => {
+    expect(isWalletDecisionError({ outcome: 'error', message: 'oops' })).toBe(true);
+    expect(isWalletDecisionError({ outcome: 'error' })).toBe(false);
+    expect(isWalletDecisionError({ outcome: 'loading' })).toBe(false);
+  });
+
+  it('isUserConsentRequired', () => {
+    expect(isUserConsentRequired({ outcome: 'user_consent_required', orgId: 'org-1' })).toBe(true);
+    expect(isUserConsentRequired({ outcome: 'user_consent_required' })).toBe(false);
+    expect(isUserConsentRequired({ outcome: 'user_consent_refused', orgId: 'org-1' })).toBe(false);
+  });
+
+  it('isUserConsentRefused', () => {
+    expect(isUserConsentRefused({ outcome: 'user_consent_refused', orgId: 'org-1' })).toBe(true);
+    expect(isUserConsentRefused({ outcome: 'user_consent_refused' })).toBe(false);
+    expect(isUserConsentRefused({ outcome: 'user_consent_required', orgId: 'org-1' })).toBe(false);
+  });
+
+  it('isOrgWalletUnavailableByPolicy', () => {
+    expect(isOrgWalletUnavailableByPolicy({ outcome: 'org_wallet_not_available_policy_org', orgId: 'org-1' })).toBe(true);
+    expect(isOrgWalletUnavailableByPolicy({ outcome: 'org_wallet_not_available_policy_org' })).toBe(false);
+    expect(isOrgWalletUnavailableByPolicy({ outcome: 'user_consent_required', orgId: 'org-1' })).toBe(false);
   });
 });
 

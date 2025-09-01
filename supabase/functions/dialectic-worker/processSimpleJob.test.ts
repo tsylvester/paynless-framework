@@ -28,10 +28,11 @@ import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { getAiProviderConfig } from './processComplexJob.ts';
 import { getGranularityPlanner } from './strategies/granularity.strategies.ts';
 import { planComplexStage } from './task_isolator.ts';
-import { IndexingService, LangchainTextSplitter, OpenAIEmbeddingClient } from '../_shared/services/indexing_service.ts';
+import { IndexingService, LangchainTextSplitter, EmbeddingClient } from '../_shared/services/indexing_service.ts';
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import type { AssemblerSourceDocument } from '../_shared/prompt-assembler.interface.ts';
+import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 
 const mockPayload: Json = {
   projectId: 'project-abc',
@@ -124,6 +125,7 @@ const mockNotificationService: NotificationServiceType = {
     sendDialecticContributionStartedEvent: async () => {},
     sendContributionReceivedEvent: async () => {},
     sendContributionFailedNotification: async () => {},
+    sendContributionGenerationFailedEvent: async () => {},
     sendContributionStartedEvent: async () => {},
     sendContributionRetryingEvent: async () => {},
     sendContributionGenerationContinuedEvent: async () => {},
@@ -220,9 +222,10 @@ const getMockDeps = (): IDialecticJobDeps => {
         updated_at: new Date().toISOString()
     };
     const openAiAdapter = new OpenAiAdapter(mockProvider, Deno.env.get('OPENAI_API_KEY')!, logger);
-    const embeddingClient = new OpenAIEmbeddingClient(openAiAdapter);
+    const embeddingClient = new EmbeddingClient(openAiAdapter);
     const textSplitter = new LangchainTextSplitter();
-    const indexingService = new IndexingService(mockSupabaseClient, logger, textSplitter, embeddingClient);
+    const mockWallet = createMockTokenWalletService();
+    const indexingService = new IndexingService(mockSupabaseClient, logger, textSplitter, embeddingClient, mockWallet.instance);
     
     return {
       logger: logger,
@@ -238,7 +241,8 @@ const getMockDeps = (): IDialecticJobDeps => {
         fileName: 'seed.txt',
       }),
       retryJob: async () => ({}),
-      notificationService: mockNotificationService,
+      // Provide a fresh instance per test run to avoid cross-test spy conflicts
+      notificationService: { ...mockNotificationService },
       callUnifiedAIModel: async () => ({ content: '', finish_reason: 'stop' }),
       fileManager: new MockFileManagerService(),
       getExtensionFromMimeType: () => '.txt',
@@ -334,6 +338,41 @@ Deno.test('processSimpleJob - Failure with No Retries Remaining', async (t) => {
             return isRecord(payload) && payload.status === 'retry_loop_failed';
         });
         assertExists(finalUpdateCallArgs, "Final job status should be 'retry_loop_failed'");
+    });
+
+    clearAllStubs?.();
+    executorStub.restore();
+});
+
+Deno.test('processSimpleJob - emits internal and user-facing failure notifications when retries are exhausted', async (t) => {
+    const { client: dbClient, clearAllStubs } = setupMockClient();
+    const deps = getMockDeps();
+
+    const executorStub = stub(deps, 'executeModelCallAndSave', () => {
+        return Promise.reject(new Error('Executor failed consistently'));
+    });
+
+    const internalFailSpy = spy(deps.notificationService, 'sendContributionGenerationFailedEvent');
+    const userFacingFailSpy = spy(deps.notificationService, 'sendContributionFailedNotification');
+
+    const jobWithNoRetries: DialecticJobRow = { ...mockJob, attempt_count: 3, max_retries: 3 };
+
+    await t.step('should send both internal and user-facing failure notifications', async () => {
+        await processSimpleJob(
+            dbClient as unknown as SupabaseClient<Database>,
+            { ...jobWithNoRetries, payload: mockPayload },
+            'user-789',
+            deps,
+            'auth-token',
+        );
+
+        // RED expectation: internal event should be emitted once
+        assertEquals(internalFailSpy.calls.length, 1, 'Expected internal failure event to be emitted');
+        const [internalPayloadArg] = internalFailSpy.calls[0].args;
+        assert(isRecord(internalPayloadArg) && internalPayloadArg.sessionId === mockPayload.sessionId);
+
+        // Existing user-facing notification should still be sent
+        assertEquals(userFacingFailSpy.calls.length, 1, 'Expected user-facing failure notification to be sent');
     });
 
     clearAllStubs?.();
@@ -600,6 +639,8 @@ Deno.test('processSimpleJob - fails when no initial prompt exists', async () => 
 
   // Spy on executor to ensure it is NOT called when prompt is missing
   const executeSpy = spy(deps, 'executeModelCallAndSave');
+  const internalFailSpy = spy(deps.notificationService, 'sendContributionGenerationFailedEvent');
+  const userFailSpy = spy(deps.notificationService, 'sendContributionFailedNotification');
 
   // Force final-attempt behavior to observe terminal failure status
   const jobNoRetries: DialecticJobRow = { ...mockJob, attempt_count: 3, max_retries: 3 };
@@ -619,11 +660,146 @@ Deno.test('processSimpleJob - fails when no initial prompt exists', async () => 
   const jobsUpdateSpies = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
   assertExists(jobsUpdateSpies, 'Job update spies should exist');
   const failedUpdate = jobsUpdateSpies.callsArgs.find((args: unknown[]) => {
-    const payload = (args as unknown[])[0] as unknown;
-    return isRecord(payload) && payload.status === 'retry_loop_failed';
+    const payload = args[0];
+    return (
+      isRecord(payload) &&
+      payload.status === 'failed' &&
+      isRecord(payload.error_details) &&
+      (payload.error_details).code === 'INVALID_INITIAL_PROMPT'
+    );
   });
-  assertExists(failedUpdate, "Expected job to enter failure path with status 'retry_loop_failed'");
+  assertExists(failedUpdate, "Expected job to enter failure path with status 'failed' and INVALID_INITIAL_PROMPT code");
+
+  // Assert notifications were emitted
+  assertEquals(internalFailSpy.calls.length, 1, 'Expected internal failure event to be emitted');
+  const [internalPayloadArg] = internalFailSpy.calls[0].args;
+  assert(
+    isRecord(internalPayloadArg) &&
+      isRecord((internalPayloadArg).error) &&
+      (internalPayloadArg).error.code === 'INVALID_INITIAL_PROMPT',
+  );
+  assertEquals(userFailSpy.calls.length, 1, 'Expected user-facing failure notification to be sent');
+
+  // Restore spies on shared notificationService instance
+  internalFailSpy.restore();
+  userFailSpy.restore();
 
   clearAllStubs?.();
   asm.restore();
+});
+
+Deno.test('processSimpleJob - Wallet missing is immediate failure (no retry)', async () => {
+  const { client: dbClient, spies, clearAllStubs } = setupMockClient();
+  const deps = getMockDeps();
+
+  // Arrange: executor surfaces wallet-required error
+  const executorStub = stub(deps, 'executeModelCallAndSave', () => {
+    return Promise.reject(new Error('Wallet is required to process model calls.'));
+  });
+
+  const retryJobSpy = spy(deps, 'retryJob');
+  const internalFailSpy = spy(deps.notificationService, 'sendContributionGenerationFailedEvent');
+  const userFailSpy = spy(deps.notificationService, 'sendContributionFailedNotification');
+
+  // Act
+  await processSimpleJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    { ...mockJob, payload: mockPayload },
+    'user-789',
+    deps,
+    'auth-token',
+  );
+
+  // Assert: no retry attempts
+  assertEquals(retryJobSpy.calls.length, 0, 'Expected retryJob NOT to be called when wallet is missing');
+
+  // Assert: job marked as failed with WALLET_MISSING code
+  const jobsUpdateSpies = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+  assertExists(jobsUpdateSpies, 'Job update spies should exist');
+  const failedUpdate = jobsUpdateSpies.callsArgs.find((args: unknown[]) => {
+    const payload = args[0];
+    return (
+      isRecord(payload) &&
+      payload.status === 'failed' &&
+      isRecord(payload.error_details) &&
+      (payload.error_details).code === 'WALLET_MISSING'
+    );
+  });
+  assertExists(failedUpdate, "Expected job to fail immediately with code 'WALLET_MISSING'");
+
+  // Assert notifications
+  assertEquals(internalFailSpy.calls.length, 1, 'Expected internal failure event to be emitted');
+  const [internalPayloadArg] = internalFailSpy.calls[0].args;
+  assert(
+    isRecord(internalPayloadArg) &&
+      internalPayloadArg.type === 'other_generation_failed' &&
+      isRecord((internalPayloadArg).error) &&
+      (internalPayloadArg).error.code === 'WALLET_MISSING'
+  );
+  assertEquals(userFailSpy.calls.length, 1, 'Expected user-facing failure notification to be sent');
+
+  // Cleanup
+  internalFailSpy.restore();
+  userFailSpy.restore();
+  retryJobSpy.restore();
+  executorStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test('processSimpleJob - Preflight dependency missing is immediate failure (no retry)', async () => {
+  const { client: dbClient, spies, clearAllStubs } = setupMockClient();
+  const deps = getMockDeps();
+
+  // Arrange: executor surfaces preflight dependency error
+  const executorStub = stub(deps, 'executeModelCallAndSave', () => {
+    return Promise.reject(new Error('Token wallet service is required for affordability preflight'));
+  });
+
+  const retryJobSpy = spy(deps, 'retryJob');
+  const internalFailSpy = spy(deps.notificationService, 'sendContributionGenerationFailedEvent');
+  const userFailSpy = spy(deps.notificationService, 'sendContributionFailedNotification');
+
+  // Act
+  await processSimpleJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    { ...mockJob, payload: mockPayload },
+    'user-789',
+    deps,
+    'auth-token',
+  );
+
+  // Assert: no retry attempts
+  assertEquals(retryJobSpy.calls.length, 0, 'Expected retryJob NOT to be called when preflight dependency is missing');
+
+  // Assert: job marked as failed with INTERNAL_DEPENDENCY_MISSING code
+  const jobsUpdateSpies = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+  assertExists(jobsUpdateSpies, 'Job update spies should exist');
+  const failedUpdate = jobsUpdateSpies.callsArgs.find((args: unknown[]) => {
+    const payload = args[0];
+    return (
+      isRecord(payload) &&
+      payload.status === 'failed' &&
+      isRecord(payload.error_details) &&
+      (payload.error_details).code === 'INTERNAL_DEPENDENCY_MISSING'
+    );
+  });
+  assertExists(failedUpdate, "Expected job to fail immediately with code 'INTERNAL_DEPENDENCY_MISSING'");
+
+  // Assert notifications
+  assertEquals(internalFailSpy.calls.length, 1, 'Expected internal failure event to be emitted');
+  const [internalPayloadArg] = internalFailSpy.calls[0].args;
+  assert(
+    isRecord(internalPayloadArg) &&
+      internalPayloadArg.type === 'other_generation_failed' &&
+      isRecord((internalPayloadArg).error) &&
+      (internalPayloadArg).error.code === 'INTERNAL_DEPENDENCY_MISSING'
+  );
+  assertEquals(userFailSpy.calls.length, 1, 'Expected user-facing failure notification to be sent');
+
+  // Cleanup
+  internalFailSpy.restore();
+  userFailSpy.restore();
+  retryJobSpy.restore();
+  executorStub.restore();
+  clearAllStubs?.();
 });

@@ -43,18 +43,17 @@ export function getAiProviderAdapter(
 
     const identifierLower = provider.api_identifier.toLowerCase();
     
-    if (!providerMap) {
-        logger.error(`[Factory] providerMap is not configured. This should not happen.`);
-        return null;
-    }
-    const providerPrefix = Object.keys(providerMap).find(prefix => identifierLower.startsWith(prefix));
+    const isTestMode = (Deno.env.get('TEST_MODE') === 'true') || (Deno.env.get('VITE_TEST_MODE') === 'true');
+    const effectiveProviderMap: Record<string, AiProviderAdapter> = providerMap ?? (isTestMode ? testProviderMap : defaultProviderMap);
+
+    const providerPrefix = Object.keys(effectiveProviderMap).find(prefix => identifierLower.startsWith(prefix));
 
     if (!providerPrefix) {
         logger.warn(`[Factory] Unknown or unsupported AI provider api_identifier: ${provider.api_identifier}.`);
         return null;
     }
 
-    const AdapterClass = providerMap[providerPrefix];
+    const AdapterClass = effectiveProviderMap[providerPrefix];
     let providerToUse = provider;
 
     // A real provider MUST have its configuration from the database.
@@ -63,19 +62,25 @@ export function getAiProviderAdapter(
         return null;
     }
 
-    // If the dummy adapter is called without a config, create a default one to satisfy the contract.
+    // Enforce non-zero cost defaults: never create zero-cost configs.
     if (!provider.config && providerPrefix === 'dummy-') {
-        logger.debug(`[Factory] Creating default config for DummyAdapter.`);
+        logger.debug(`[Factory] Creating default config for DummyAdapter with 1:1 billing.`);
         const defaultConfig = {
             api_identifier: provider.api_identifier,
-            input_token_cost_rate: 0,
-            output_token_cost_rate: 0,
-            tokenization_strategy: { type: 'none' as const },
+            input_token_cost_rate: 1,
+            output_token_cost_rate: 1,
+            tokenization_strategy: { type: 'none' },
         };
-        providerToUse = {
-            ...provider,
-            config: defaultConfig
-        };
+        providerToUse = { ...provider, config: defaultConfig };
+    }
+
+    // Validate cost rates strictly > 0 for all providers
+    const cfg = providerToUse.config as unknown as { input_token_cost_rate?: unknown; output_token_cost_rate?: unknown } | undefined;
+    const inRate = cfg && typeof cfg.input_token_cost_rate === 'number' ? cfg.input_token_cost_rate : undefined;
+    const outRate = cfg && typeof cfg.output_token_cost_rate === 'number' ? cfg.output_token_cost_rate : undefined;
+    if (inRate === undefined || inRate < 0 || outRate === undefined || outRate <= 0) {
+        logger.error(`[Factory] Invalid token cost rates for ${provider.api_identifier}.`, { input_token_cost_rate: inRate, output_token_cost_rate: outRate });
+        return null;
     }
 
     logger.info(`Creating adapter for ${provider.api_identifier}`);

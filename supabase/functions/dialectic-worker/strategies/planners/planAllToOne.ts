@@ -28,7 +28,8 @@ export const planAllToOne: GranularityPlannerFn = (
         prompt_template_name: recipeStep.prompt_template_name,
         inputs: {
             document_ids: documentIds,
-        }
+        },
+        walletId: parentJob.payload.walletId,
     };
 
     return [newPayload];

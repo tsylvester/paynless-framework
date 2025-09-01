@@ -55,6 +55,7 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
             document_relationships: {
                 source_group: groupId,
             },
+            walletId: parentJob.payload.walletId,
         };
         childPayloads.push(newPayload);
     }

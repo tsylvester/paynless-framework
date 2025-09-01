@@ -9,6 +9,7 @@ export interface NotificationServiceType {
     sendContributionGenerationCompleteEvent(payload: ContributionGenerationCompletePayload, targetUserId: string): Promise<void>;
     sendContributionGenerationContinuedEvent(payload: ContributionGenerationContinuedPayload, targetUserId: string): Promise<void>;
     sendDialecticProgressUpdateEvent(payload: DialecticProgressUpdatePayload, targetUserId: string): Promise<void>;
+    sendContributionGenerationFailedEvent(payload: ContributionGenerationFailedInternalPayload, targetUserId: string): Promise<void>;
 }
 
 export interface RpcNotification<T> {
@@ -76,6 +77,14 @@ export interface ContributionGenerationStartedPayload {
     stageSlug: string;
     error: ApiError;
     job_id: string;
+  }
+
+  // Internal (store-routing) failure event payload used for UI state updates
+  export interface ContributionGenerationFailedInternalPayload {
+    type: 'other_generation_failed'; // event name; test constructs plain string
+    sessionId: string;
+    job_id?: string;
+    error: ApiError;
   }
   
   export interface ContributionGenerationContinuedPayload {

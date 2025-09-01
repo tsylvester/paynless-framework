@@ -3,10 +3,11 @@ import {
     UserRole,
     AiProvidersApiResponse, // Correctly from @paynless/types
     SystemPromptsApiResponse, // Correctly from @paynless/types
-    DialecticLifecycleEvent,
     DialecticContribution,
     ApiError,
     ChatRole,
+    WalletDecisionOutcome,
+    DialecticNotificationTypes,
 } from '@paynless/types';
 
 export function isUserRole(role: unknown): role is UserRole {
@@ -31,21 +32,6 @@ export function isChatContextPreferences(obj: unknown): obj is ChatContextPrefer
   if (hasSelectedPromptId && typeof obj.selectedPromptId !== 'string' && obj.selectedPromptId !== null) return false;
   
   return true;
-}
-
-const dialecticNotificationTypes: ReadonlyArray<string> = [
-    'contribution_generation_started',
-    'dialectic_contribution_started',
-    'contribution_generation_retrying',
-    'dialectic_contribution_received',
-    'contribution_generation_failed',
-    'contribution_generation_complete',
-    'dialectic_progress_update',
-    'contribution_generation_continued',
-];
-
-export function isDialecticLifecycleEventType(type: string): type is DialecticLifecycleEvent['type'] {
-    return dialecticNotificationTypes.includes(type);
 }
 
 // A type guard for DialecticContribution
@@ -89,4 +75,59 @@ export function isSystemPromptsApiResponse(obj: unknown): obj is SystemPromptsAp
         'prompts' in obj &&
         Array.isArray(obj.prompts)
     );
+}
+
+export function isWalletDecisionLoading(x: unknown): x is Extract<WalletDecisionOutcome, { outcome: 'loading' }> {
+  return typeof x === 'object' && x !== null && 'outcome' in x && x.outcome === 'loading';
+}
+
+export function isWalletDecisionError(x: unknown): x is Extract<WalletDecisionOutcome, { outcome: 'error'; message: string }> {
+  return (
+    typeof x === 'object' &&
+    x !== null &&
+    'outcome' in x && x.outcome === 'error' &&
+    'message' in x && typeof x.message === 'string'
+  );
+}
+
+function hasOrgId(x: unknown): x is { orgId: string } {
+  return typeof x === 'object' && x !== null && 'orgId' in x && typeof x.orgId === 'string';
+}
+
+export function isUserConsentRequired(x: unknown): x is Extract<WalletDecisionOutcome, { outcome: 'user_consent_required'; orgId: string }> {
+  return typeof x === 'object' && x !== null && 'outcome' in x && x.outcome === 'user_consent_required' && hasOrgId(x);
+}
+
+export function isUserConsentRefused(x: unknown): x is Extract<WalletDecisionOutcome, { outcome: 'user_consent_refused'; orgId: string }> {
+  return typeof x === 'object' && x !== null && 'outcome' in x && x.outcome === 'user_consent_refused' && hasOrgId(x);
+}
+
+export function isOrgWalletUnavailableByPolicy(x: unknown): x is Extract<WalletDecisionOutcome, { outcome: 'org_wallet_not_available_policy_org'; orgId: string }> {
+  return typeof x === 'object' && x !== null && 'outcome' in x && x.outcome === 'org_wallet_not_available_policy_org' && hasOrgId(x);
+}
+
+// Dialectic lifecycle event type guard
+// Note: we intentionally avoid enumerating all values to keep this future-proof.
+
+export function isDialecticLifecycleEventType(x: unknown): x is DialecticNotificationTypes {
+  if (typeof x !== 'string' || x.length === 0) return false;
+  if (x === 'dialectic_progress_update') return true;
+
+  const cgPrefix = 'contribution_generation_';
+  if (x.startsWith(cgPrefix)) {
+    const suffix = x.slice(cgPrefix.length);
+    return suffix === 'started'
+      || suffix === 'retrying'
+      || suffix === 'failed'
+      || suffix === 'complete'
+      || suffix === 'continued';
+  }
+
+  const dcPrefix = 'dialectic_contribution_';
+  if (x.startsWith(dcPrefix)) {
+    const suffix = x.slice(dcPrefix.length);
+    return suffix === 'started' || suffix === 'received';
+  }
+
+  return false;
 }

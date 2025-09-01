@@ -49,6 +49,7 @@ export const planPerSourceGroup: GranularityPlannerFn = (
                 document_ids: documentIds,
             },
             isIntermediate: true,
+            walletId: parentJob.payload.walletId,
         };
 
         childPayloads.push(newPayload);

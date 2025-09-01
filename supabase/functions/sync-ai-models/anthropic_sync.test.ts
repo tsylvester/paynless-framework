@@ -176,3 +176,28 @@ Deno.test("'INTERNAL_MODEL_MAP should contain valid partial configs'", () => {
 
     assertEquals(failures.length, 0, `Found ${failures.length} invalid configs in INTERNAL_MODEL_MAP: ${JSON.stringify(failures, null, 2)}`);
 });
+
+Deno.test("[Provider-Specific] anthropic: INTERNAL_MODEL_MAP sets 200k input window and realistic hard caps for 3.x", () => {
+    const entries = [...INTERNAL_MODEL_MAP.entries()];
+
+    const claude3x = entries.filter(([id]) => /anthropic-claude-3(\.|-)/i.test(id));
+    for (const [id, cfg] of claude3x) {
+        const pmi = (cfg as { provider_max_input_tokens?: unknown }).provider_max_input_tokens;
+        assertExists(pmi, `provider_max_input_tokens missing for ${id}`);
+        assert(typeof pmi === 'number' && pmi === 200_000, `provider_max_input_tokens should be 200,000 for ${id}`);
+    }
+
+    const expect8192 = entries.filter(([id]) => /anthropic-claude-(3\.5|3-5|3\.7|3-7)-sonnet/i.test(id));
+    for (const [id, cfg] of expect8192) {
+        const hcap = (cfg as { hard_cap_output_tokens?: unknown }).hard_cap_output_tokens;
+        assertExists(hcap, `hard_cap_output_tokens missing for ${id}`);
+        assert(typeof hcap === 'number' && hcap === 8_192, `hard_cap_output_tokens should be 8,192 for ${id}`);
+    }
+
+    const expectLegacy4096 = entries.filter(([id]) => /anthropic-claude-3-(haiku|sonnet|opus)-/i.test(id));
+    for (const [id, cfg] of expectLegacy4096) {
+        const hcap = (cfg as { hard_cap_output_tokens?: unknown }).hard_cap_output_tokens;
+        assertExists(hcap, `hard_cap_output_tokens missing for ${id}`);
+        assert(typeof hcap === 'number' && (hcap === 4_096 || hcap === 8_192), `hard_cap_output_tokens should be 4,096 (or 8,192 if upgraded) for ${id}`);
+    }
+});

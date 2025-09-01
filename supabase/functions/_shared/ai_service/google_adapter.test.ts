@@ -80,3 +80,45 @@ Deno.test("GoogleAdapter: Contract Compliance", async (t) => {
 // and the paradoxical fetch behavior is gone. The contract test is sufficient.
 // We can add specific tests here later if the adapter develops more complex,
 // non-SDK logic (e.g., custom message processing).
+
+Deno.test("GoogleAdapter - Specific: forwards client cap to generationConfig.maxOutputTokens", async () => {
+    // Capture generationConfig passed into startChat
+    let capturedGenerationConfig: unknown = undefined;
+
+    // Stub the SDK chain: getGenerativeModel().startChat({ generationConfig }).sendMessage(...)
+    const getModelStub = stub(GoogleGenerativeAI.prototype, "getGenerativeModel", function () {
+        return {
+            startChat: (opts: { history: unknown; generationConfig?: { maxOutputTokens?: number } }) => {
+                capturedGenerationConfig = opts?.generationConfig;
+                return {
+                    sendMessage: async () => ({
+                        response: {
+                            candidates: [{ finishReason: 'STOP' }],
+                            usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+                            text: () => 'ok',
+                        },
+                    }),
+                } as unknown as ReturnType<ReturnType<GoogleGenerativeAI["getGenerativeModel"]>["startChat"]>;
+            },
+        } as unknown as ReturnType<GoogleGenerativeAI["getGenerativeModel"]>;
+    });
+
+    try {
+        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const request: ChatApiRequest = {
+            message: 'hi',
+            providerId: 'prov',
+            promptId: '__none__',
+            max_tokens_to_generate: 123,
+            messages: [ { role: 'user', content: 'hello' } ],
+        };
+
+        await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+
+        // Adapter should map request.max_tokens_to_generate -> generationConfig.maxOutputTokens
+        const cfg = capturedGenerationConfig as { maxOutputTokens?: number } | undefined;
+        assert(cfg && cfg.maxOutputTokens === 123, 'generationConfig.maxOutputTokens must equal client cap');
+    } finally {
+        getModelStub.restore();
+    }
+});

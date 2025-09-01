@@ -50,7 +50,23 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
         // --- NEW: Simplified Routing Logic ---
         if (notification.is_internal_event) {
             logger.info(`[NotificationStore] Routing internal event: ${notification.type}`, { data: notification.data });
-            
+            // Map other_generation_failed -> contribution_generation_failed for store routing
+            if (notification.type === 'other_generation_failed') {
+                const data = notification.data;
+                if (data && typeof (data)['sessionId'] === 'string' && isApiError((data)['error'])) {
+                    const eventPayload: DialecticLifecycleEvent = {
+                        type: 'contribution_generation_failed',
+                        sessionId: (data)['sessionId'],
+                        error: (data)['error'],
+                        job_id: typeof (data)['job_id'] === 'string' ? (data)['job_id'] : undefined,
+                    };
+                    useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventPayload);
+                } else {
+                    logger.warn(`[NotificationStore] Internal event 'other_generation_failed' received, but its data payload did not match the expected format.`, { data });
+                }
+                return;
+            }
+
             if (isDialecticLifecycleEventType(notification.type)) {
                 if (notification.data) {
                     let eventPayload: DialecticLifecycleEvent | null = null;

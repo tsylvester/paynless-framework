@@ -3,6 +3,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { ILogger } from '../types.ts';
 import type { Database } from '../../types_db.ts';
 import { IEmbeddingClient, IIndexingService } from './indexing_service.interface.ts';
+import type { ITokenWalletService } from '../types/tokenWallet.types.ts';
 import type { AiModelExtendedConfig } from '../types.ts';
 
 /**
@@ -16,6 +17,7 @@ export interface IRagServiceDependencies {
   logger: ILogger;
   indexingService: IIndexingService;
   embeddingClient: IEmbeddingClient;
+  tokenWalletService?: ITokenWalletService;
 }
 
 /**

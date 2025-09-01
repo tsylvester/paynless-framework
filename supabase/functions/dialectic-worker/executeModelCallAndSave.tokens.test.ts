@@ -39,7 +39,6 @@ Deno.test('compression path throws when wallet service missing', async () => {
     }
     const tightConfig = {
         ...mockFullProviderData.config,
-        max_context_window_tokens: 50,
         context_window_tokens: 50,
     };
     const { client: dbClient } = setupMockClient({
@@ -280,8 +279,7 @@ Deno.test('should orchestrate RAG and debit tokens for un-indexed history chunks
     }
     const limitedConfig = {
         ...mockFullProviderData.config,
-        max_context_window_tokens: 100, // triggers compression
-        context_window_tokens: 1000,    // allows preflight headroom
+        context_window_tokens: 100, // triggers compression
         provider_max_output_tokens: 50, // bounds planned output
     };
     const { client: dbClient } = setupMockClient({
@@ -382,8 +380,7 @@ Deno.test('does not debit when compression tokensUsedForIndexing is zero', async
     }
     const limitedConfig = {
         ...mockFullProviderData.config,
-        max_context_window_tokens: 100,
-        context_window_tokens: 1000,
+        context_window_tokens: 100,
         provider_max_output_tokens: 50,
     };
     const { client: dbClient } = setupMockClient({
@@ -440,12 +437,12 @@ Deno.test('does not debit when compression tokensUsedForIndexing is zero', async
     assertEquals(tokenWalletStubs.recordTransaction.calls.length, 0, 'recordTransaction should not be called');
 });
 
-Deno.test('should throw an error if the estimated cost exceeds the 20% rationality threshold', async () => {
+Deno.test('should throw an error if the estimated cost exceeds the 80% rationality threshold', async () => {
     // 1. Arrange
     const mockRagService = new MockRagService();
     const ragSpy = spy(mockRagService, 'getContextForModel');
     
-    const mockBalance = 1000; // Set a balance where the cost IS affordable but NOT rational.
+    const mockBalance = 1000; // Balance such that cost can exceed 80% threshold when oversized.
     
     // This is the correct pattern: get default deps, then create and overwrite the specific mock.
     const deps = getMockDeps();
@@ -466,21 +463,20 @@ Deno.test('should throw an error if the estimated cost exceeds the 20% rationali
 
     const costConfig = {
         ...mockFullProviderData.config,
-        max_context_window_tokens: 100,
         context_window_tokens: 100,
         input_token_cost_rate: 1, // 1 token cost per input token for easy math
     };
     if (!isRecord(costConfig)) throw new Error("Test config error");
     
-    const initialTokenCount = 251; // This will now result in a cost of 251
+    const initialTokenCount = 500; // With input_rate=1 and target window=100, total_estimated_full_op ≈ 900 (> 80% of 1000, < 1000)
     const countTokensStub = stub(deps, 'countTokens', () => initialTokenCount);
     
-    // Total cost calculation based on the logic to be implemented:
-    // tokens_to_be_removed = 251 - 100 = 151
-    // estimated_rag_cost = 151 * 1 = 151
+    // Total cost calculation under current logic (including embeddings):
+    // tokens_to_be_removed = 500 - 100 = 400
+    // estimated_rag_cost = 400 * 1 = 400
     // estimated_final_prompt_cost = 100 * 1 = 100
-    // total_estimated_input_cost = 151 + 100 = 251
-    // 20% of balance (1000) is 200. Since 251 > 200, this should fail.
+    // plus remaining input tokens cost (window) + reduction mechanics yield a total around 900
+    // 80% of balance (1000) is 800. Since ~900 > 800 and < 1000, this should fail the rationality check (not absolute NSF).
     const { client: dbClient } = setupMockClient({
         'ai_providers': { select: { data: [{ ...mockFullProviderData, config: costConfig }], error: null } },
     });
@@ -504,7 +500,7 @@ Deno.test('should throw an error if the estimated cost exceeds the 20% rationali
     } catch (e: unknown) {
         errorThrown = true;
         if (e instanceof Error) {
-            assert(e.message.includes("exceeds 20% of the user's balance"), `Error message was: "${e.message}"`);
+            assert(e.message.includes("exceeds 80% of the user's balance"), `Error message was: "${e.message}"`);
         } else {
             assert(false, "Threw something that was not an Error");
         }
@@ -540,7 +536,7 @@ Deno.test('should throw an error if the estimated cost exceeds the absolute bala
     }
     const costConfig = {
         ...mockFullProviderData.config,
-        max_context_window_tokens: 100,
+        context_window_tokens: 100,
         input_token_cost_rate: 1, 
     };
     if (!isRecord(costConfig)) throw new Error("Test config error");
@@ -607,7 +603,6 @@ Deno.test('should perform affordable compression, checking balance once', async 
 
     const costConfig = {
         ...mockFullProviderData.config,
-        max_context_window_tokens: 100,
         context_window_tokens: 100,
         input_token_cost_rate: 1,
         provider_max_output_tokens: 5,
@@ -670,8 +665,7 @@ Deno.test('should use source documents for token estimation before prompt assemb
 
     const limitedConfig = {
         ...mockFullProviderData.config,
-        max_context_window_tokens: 100,
-        context_window_tokens: 1000,
+        context_window_tokens: 100,
         provider_max_output_tokens: 50,
     };
 

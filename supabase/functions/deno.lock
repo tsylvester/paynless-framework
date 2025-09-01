@@ -24,6 +24,7 @@
 		"npm:@anthropic-ai/tokenizer@0.0.4": "0.0.4",
 		"npm:@google/genai@*": "1.9.0",
 		"npm:@google/generative-ai@*": "0.24.1",
+    "npm:@supabase/gotrue-js@*": "2.70.0",
 		"npm:@supabase/gotrue-js@^2.6.3": "2.70.0",
 		"npm:@supabase/postgrest-js@1.15.5": "1.15.5",
 		"npm:@supabase/storage-js@^2.5.5": "2.7.1",

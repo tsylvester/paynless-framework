@@ -15,6 +15,21 @@ Deno.test("ChatApiRequestSchema - accepts optional systemInstruction pass-throug
 
 // Additional schema tests below
 
+Deno.test("ChatApiRequestSchema - accepts and preserves isDialectic flag", () => {
+  const req = {
+    message: "Hello",
+    providerId: crypto.randomUUID(),
+    promptId: "__none__",
+    messages: [{ role: 'user', content: 'Hello' }],
+    isDialectic: true,
+  };
+  const result = ChatApiRequestSchema.safeParse(req);
+  assert(result.success, "Schema should accept isDialectic flag");
+  if (result.success) {
+    assert(result.data.isDialectic === true, "Schema should preserve isDialectic=true in parsed output");
+  }
+});
+
 Deno.test("ChatApiRequestSchema - accepts optional resourceDocuments array", () => {
   const req = {
     message: "Hello",

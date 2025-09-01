@@ -47,6 +47,9 @@ export function validatePayload(payload: Json): DialecticJobPayload {
   if (!('projectId' in payload) || typeof payload.projectId !== 'string') {
     throw new Error('projectId must be a string');
   }
+  if (!('walletId' in payload) || typeof payload.walletId !== 'string' || payload.walletId.trim() === '') {
+    throw new Error('walletId must be a string');
+  }
   
   const hasModelId = 'model_id' in payload && typeof payload.model_id === 'string';
 
@@ -61,7 +64,7 @@ export function validatePayload(payload: Json): DialecticJobPayload {
     model_id: ('model_id' in payload && typeof payload.model_id === 'string') ? payload.model_id : '',
     stageSlug: ('stageSlug' in payload && typeof payload.stageSlug === 'string') ? payload.stageSlug : undefined,
     iterationNumber: ('iterationNumber' in payload && typeof payload.iterationNumber === 'number') ? payload.iterationNumber : undefined,
-    walletId: ('walletId' in payload && typeof payload.walletId === 'string') ? payload.walletId : undefined,
+    walletId: payload.walletId,
     continueUntilComplete: ('continueUntilComplete' in payload && typeof payload.continueUntilComplete === 'boolean') ? payload.continueUntilComplete : undefined,
     maxRetries: ('maxRetries' in payload && typeof payload.maxRetries === 'number') ? payload.maxRetries : undefined,
     continuation_count: ('continuation_count' in payload && typeof payload.continuation_count === 'number') ? payload.continuation_count : undefined,
@@ -198,20 +201,33 @@ export function isCitationsArray(value: unknown): value is Citation[] {
 
 export function isDocumentRelationships(obj: unknown): obj is DocumentRelationships {
     if (!isRecord(obj)) {
-        // `null` is not a DocumentRelationships object. This guard correctly identifies it as such.
-        // The console.log was removed to prevent spam for valid null cases.
         return false;
     }
 
-    // Check if all values in the object are either strings or null
     for (const key in obj) {
-        if (Object.prototype.hasOwnProperty.call(obj, key)) {
-            const value = obj[key];
-            if (typeof value !== 'string' && value !== null) {
-                // This log is useful for debugging genuinely malformed objects.
-                console.log(`[isDocumentRelationships] FAILED: Key '${key}' has invalid value:`, value);
+        if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+        const value = obj[key];
+
+        if (key === 'isContinuation') {
+            if (typeof value !== 'boolean') {
+                console.log(`[isDocumentRelationships] FAILED: Key 'isContinuation' has invalid value:`, value);
                 return false;
             }
+            continue;
+        }
+
+        if (key === 'turnIndex') {
+            if (typeof value !== 'number') {
+                console.log(`[isDocumentRelationships] FAILED: Key 'turnIndex' has invalid value:`, value);
+                return false;
+            }
+            continue;
+        }
+
+        // Stage-slug keys must map to a contribution id string or null
+        if (typeof value !== 'string' && value !== null) {
+            console.log(`[isDocumentRelationships] FAILED: Stage key '${key}' has invalid value:`, value);
+            return false;
         }
     }
     return true;
@@ -850,10 +866,26 @@ export function isTokenUsage(obj: unknown): obj is TokenUsage {
     );
   }
 
+export function isFinishReason(value: unknown): value is FinishReason {
+    if (value === null) return true;
+    if (typeof value !== 'string') return false;
+    // Ensure membership in the full allowed set for FinishReason
+    const allowed = new Set<string>([
+        'stop',
+        'length',
+        'tool_calls',
+        'content_filter',
+        'function_call',
+        'error',
+        'unknown',
+        'max_tokens',
+        'content_truncated',
+    ]);
+    return allowed.has(value);
+}
+
 export function isContinueReason(reason: FinishReason): reason is ContinueReason {
-    if (typeof reason !== 'string') {
-        return false;
-    }
+    if (reason === null) return false;
     for (const value of Object.values(ContinueReason)) {
         if (value === reason) {
             return true;

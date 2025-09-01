@@ -1,63 +1,29 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@^2.43.4";
-import type { Database, Json } from "../types_db.ts";
+import type { Database } from "../types_db.ts";
 // import * as uuid from "https://deno.land/std@0.190.0/uuid/mod.ts"; // Replaced with crypto.randomUUID()
 import type { FileObject } from "npm:@supabase/storage-js@^2.5.5"; // For deleteStorageFolder
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts';
-import type { 
+import { 
     IFileManager, 
     UploadContext, 
     PathContext, 
     FileType,
 } from "../_shared/types/file_manager.types.ts";
+import { downloadFromStorage } from "../_shared/supabase_storage_utils.ts";
 import { generateShortId, constructStoragePath } from "../_shared/utils/path_constructor.ts";
 import { deconstructStoragePath, mapDirNameToStageSlug } from "../_shared/utils/path_deconstructor.ts";
 import type { DeconstructedPathInfo } from "../_shared/utils/path_deconstructor.types.ts";
+import type { ContributionType, DialecticProjectRow, DialecticProjectInsert, DialecticSessionInsert } from "../dialectic-service/dialectic.interface.ts";
+import { isContributionType } from "../_shared/utils/type_guards.ts";
 
-type DialecticProjectRow = Database['public']['Tables']['dialectic_projects']['Row'];
-type DialecticProjectInsert = Database['public']['Tables']['dialectic_projects']['Insert'];
-type DialecticProjectResourceRow = Database['public']['Tables']['dialectic_project_resources']['Row']; // For typing original resources
-type DialecticSessionInsert = Database['public']['Tables']['dialectic_sessions']['Insert'];
-type DialecticContributionRow = Database['public']['Tables']['dialectic_contributions']['Row'];
-
+export interface CloneProjectError {
+    message: string;
+    details?: unknown;
+    code?: string;
+}
 export interface CloneProjectResult {
     data: DialecticProjectRow | null;
-    error: { message: string; details?: unknown; code?: string } | null;
-}
-
-// List of all known FileType literals for validation.
-// Keep this in sync with the actual FileType definition in _shared/types/file_manager.types.ts
-const AllKnownFileTypes: FileType[] = [
-    'project_readme', 'initial_user_prompt', /*'user_prompt', 'system_settings',*/ 'seed_prompt',
-    'model_contribution_main', 'model_contribution_raw_json', 'user_feedback',
-    'contribution_document', 'general_resource', 'project_settings_file'
-];
-
-function getFileTypeFromResourceDescription(
-    descriptionJson: Json | null | undefined,
-    defaultType: FileType = 'general_resource'
-): FileType {
-    let descriptionString: string | null = null;
-    if (typeof descriptionJson === 'string') {
-        descriptionString = descriptionJson;
-    } else if (descriptionJson !== null && descriptionJson !== undefined) {
-        // This case should be less common now if FileManagerService ensures JSON string storage
-        descriptionString = JSON.stringify(descriptionJson);
-    }
-
-    if (typeof descriptionString === 'string' && descriptionString.trim() !== '') {
-        try {
-            const parsed = JSON.parse(descriptionString);
-            if (parsed && typeof parsed.type === 'string' && AllKnownFileTypes.includes(parsed.type as FileType)) {
-                return parsed.type as FileType;
-            } else {
-                console.warn('[cloneProject] Parsed resource_description, but type property is missing, invalid, or not a known FileType. Defaulting. Description:', descriptionString);
-            }
-        } catch (e) {
-            const errorMessage = e instanceof Error ? e.message : String(e);
-            console.warn('[cloneProject] Could not parse resource_description string to determine FileType, defaulting. Description:', descriptionString, 'Error:', errorMessage);
-        }
-    }
-    return defaultType;
+    error: CloneProjectError | null;
 }
 
 async function deleteStorageFolder(supabaseClient: SupabaseClient<Database>, bucket: string, folderPath: string) {
@@ -183,7 +149,7 @@ export async function cloneProject(
             .eq('project_id', originalProjectId);
 
         if (fetchResourcesError) console.warn('[cloneProject] Error fetching project resources:', fetchResourcesError);
-        const originalResources = originalResourcesTyped as DialecticProjectResourceRow[] | null;
+        const originalResources = originalResourcesTyped;
 
         if (originalResources && originalResources.length > 0) {
             console.log(`[cloneProject] Cloning ${originalResources.length} project resources using FileManager.`);
@@ -194,15 +160,13 @@ export async function cloneProject(
                 }
 
                 console.log(`[cloneProject] Downloading original resource file: ${res.storage_bucket}/${res.storage_path}`);
-                const { data: fileBlob, error: downloadError } = await supabaseClient.storage
-                    .from(res.storage_bucket)
-                    .download(res.storage_path);
+                const { data: fileArrayBuffer, error: downloadError } = await downloadFromStorage(supabaseClient, res.storage_bucket, res.storage_path);
 
-                if (downloadError || !fileBlob) {
+                if (downloadError || !fileArrayBuffer) {
                     console.error('[cloneProject] Failed to download project resource content:', res.storage_path, downloadError);
                     throw new Error(`Failed to download project resource ${res.file_name}.`);
                 }
-                const fileContentBuffer = Buffer.from(await fileBlob.arrayBuffer());
+                const fileContentBuffer = Buffer.from(fileArrayBuffer);
                 
                 // Deconstruct the original path to get its components
                 const fullOriginalPath = res.storage_path;
@@ -217,13 +181,12 @@ export async function cloneProject(
                 // Now, res.file_name from the DB should ideally match originalFileName extracted from the path.
                 // We'll use the one from the path for deconstruction consistency.
                 const deconstructedPathInfo: DeconstructedPathInfo = deconstructStoragePath({storageDir: originalDir, fileName: originalFileName});
-
                 if (deconstructedPathInfo.error || !deconstructedPathInfo.originalProjectId) {
-                    console.warn(`[cloneProject] Critical: Could not deconstruct storage path for resource ${res.id} ('${res.storage_path}'): ${deconstructedPathInfo.error}. Skipping this resource.`);
-                    continue; 
+                    console.error(`[cloneProject] Critical: Could not deconstruct storage path for resource ${res.id} ('${res.storage_path}'): ${deconstructedPathInfo.error}. Aborting clone to maintain integrity.`);
+                    throw new Error(`Failed to deconstruct resource storage path for resource ${res.id}`);
                 }
                 
-                const newFileTypeForResource = deconstructedPathInfo.fileTypeGuess || 'general_resource';
+                const newFileTypeForResource: FileType = deconstructedPathInfo.fileTypeGuess ?? FileType.GeneralResource;
                 const originalFileNameForPathContext = deconstructedPathInfo.parsedFileNameFromPath || res.file_name;
                 
                 let stringifiedDescription: string | undefined = undefined;
@@ -242,9 +205,11 @@ export async function cloneProject(
                     }
                 }
 
+                const newFileType: FileType = newFileTypeForResource;
+
                 const pathContext: PathContext = {
                     projectId: actualClonedProjectId!,
-                    fileType: newFileTypeForResource,
+                    fileType: newFileType,
                     originalFileName: originalFileNameForPathContext, // Pass consistently; constructStoragePath will use if needed by type
                     ...(newClonedSessionIdForPath && { sessionId: newClonedSessionIdForPath }),
                     ...(deconstructedPathInfo.iteration !== undefined && { iteration: deconstructedPathInfo.iteration }),
@@ -271,7 +236,7 @@ export async function cloneProject(
                 }
                 console.log(`[cloneProject] Resource ${res.file_name} cloned successfully by FileManager. New record ID: ${newResourceRecord.id}`);
                  // If the cloned resource was the initial prompt for the original project, update the new project
-                if (originalProject.initial_prompt_resource_id === res.id && newFileTypeForResource === 'initial_user_prompt') {
+                if (originalProject.initial_prompt_resource_id === res.id && newFileTypeForResource === FileType.InitialUserPrompt) {
                     const { error: updatePromptIdError } = await supabaseClient
                         .from('dialectic_projects')
                         .update({ initial_prompt_resource_id: newResourceRecord.id })
@@ -342,10 +307,11 @@ export async function cloneProject(
                     .eq('session_id', originalSession.id);
                 
                 if (fetchContError) console.warn(`[cloneProject] Error fetching contributions for ${originalSession.id}:`, fetchContError);
-                const originalContributions = originalContributionsRows as DialecticContributionRow[] | null;
+                const originalContributions = originalContributionsRows;
 
                 if (originalContributions && originalContributions.length > 0) {
                     console.log(`[cloneProject] Cloning ${originalContributions.length} contributions for session ${actualNewSessionId} using FileManager.`);
+                    const originalContribIdToNewId = new Map<string, string>();
                     for (const originalContrib of originalContributions) {
                         
                         let mainFileContentBuffer: Buffer | undefined = undefined;
@@ -354,16 +320,14 @@ export async function cloneProject(
                         
                         if (originalContrib.storage_bucket && originalContrib.storage_path) {
                             console.log(`[cloneProject] Downloading original main contribution content: ${originalContrib.storage_bucket}/${originalContrib.storage_path}`);
-                            const { data: mainBlob, error: downloadMainError } = await supabaseClient.storage
-                                .from(originalContrib.storage_bucket)
-                                .download(originalContrib.storage_path);
-                            if (downloadMainError || !mainBlob) {
+                            const { data: mainArrayBuffer, error: downloadMainError } = await downloadFromStorage(supabaseClient, originalContrib.storage_bucket, originalContrib.storage_path);
+                            if (downloadMainError || !mainArrayBuffer) {
                                 console.error('[cloneProject] Failed to download main contribution content:', originalContrib.storage_path, downloadMainError);
                                 // Decide if this is a fatal error or if we can proceed without it
                                 // For now, let's treat it as fatal for the contribution
                                 throw new Error(`Failed to download main content for contribution ${originalContrib.id}`);
                             }
-                            mainFileContentBuffer = Buffer.from(await mainBlob.arrayBuffer());
+                            mainFileContentBuffer = Buffer.from(mainArrayBuffer);
                             if (!originalContrib.file_name) { // If filename was missing, infer from path
                                 const pathParts = originalContrib.storage_path.split('/');
                                 mainFileOriginalName = pathParts[pathParts.length -1] || `${originalContrib.id}.bin`;
@@ -372,16 +336,14 @@ export async function cloneProject(
 
                         let rawJsonResponseString: string = ""; // Initialize as empty string
                         if (originalContrib.raw_response_storage_path) {
-                            const rawBucket = originalContrib.storage_bucket || 'dialectic-contributions'; // Assume same bucket or a default
-                             console.log(`[cloneProject] Downloading original raw JSON response: ${rawBucket}/${originalContrib.raw_response_storage_path}`);
-                            const { data: rawBlob, error: downloadRawError } = await supabaseClient.storage
-                                .from(rawBucket)
-                                .download(originalContrib.raw_response_storage_path);
-                            if (downloadRawError || !rawBlob) {
+                            const rawBucket = originalContrib.storage_bucket; // Use same bucket
+                            console.log(`[cloneProject] Downloading original raw JSON response: ${rawBucket}/${originalContrib.raw_response_storage_path}`);
+                            const { data: rawArrayBuffer, error: downloadRawError } = await downloadFromStorage(supabaseClient, rawBucket, originalContrib.raw_response_storage_path);
+                            if (downloadRawError || !rawArrayBuffer) {
                                 console.warn('[cloneProject] Failed to download raw JSON response, proceeding with caution (raw content will be empty string):', originalContrib.raw_response_storage_path, downloadRawError);
                                 // rawJsonResponseString remains "" as initialized
                             } else {
-                                rawJsonResponseString = await rawBlob.text();
+                                rawJsonResponseString = new TextDecoder().decode(rawArrayBuffer);
                             }
                         } 
                         // No else needed here, rawJsonResponseString is already initialized to ""
@@ -401,7 +363,7 @@ export async function cloneProject(
                         // Option: Use 'model_contribution_raw_json' as fileType, and put rawJSON as fileContent.
                         // However, UploadContext.contributionMetadata.rawJsonResponseContent is for the *associated* raw.
                         // For now, if main content is missing, we make the raw JSON the "main" content for the purpose of FM upload.
-                        let effectiveFileType: FileType = 'model_contribution_main';
+                        let effectiveFileType: FileType = FileType.ModelContributionMain;
                         let effectiveFileContent: Buffer;
                         let effectiveMimeType = mainFileMimeType;
                         let effectiveFileName = mainFileOriginalName;
@@ -421,7 +383,8 @@ export async function cloneProject(
                             // originalContrib.file_name from DB should ideally match mainContribFileName.
                             mainFileDeconstructedPathInfo = deconstructStoragePath({storageDir: mainContribDir, fileName: mainContribFileName});
                             if (mainFileDeconstructedPathInfo.error && !mainFileDeconstructedPathInfo.originalProjectId) {
-                                console.warn(`[cloneProject] Could not reliably deconstruct main contribution storage path '${originalContrib.storage_path}' for contrib ${originalContrib.id}: ${mainFileDeconstructedPathInfo.error}. Will rely on DB fallbacks for path components.`);
+                                console.error(`[cloneProject] Could not reliably deconstruct main contribution storage path '${originalContrib.storage_path}' for contrib ${originalContrib.id}: ${mainFileDeconstructedPathInfo.error}. Aborting clone to maintain integrity.`);
+                                throw new Error(`Failed to deconstruct main contribution storage path for ${originalContrib.id}`);
                             }
                             // If filename was missing from DB, try to use the one parsed from the path
                             if (!originalContrib.file_name && mainFileDeconstructedPathInfo?.parsedFileNameFromPath) {
@@ -448,13 +411,14 @@ export async function cloneProject(
 
                             rawJsonDeconstructedPathInfo = deconstructStoragePath({storageDir: rawJsonDir, fileName: rawJsonOriginalNameGuess});
                             if (rawJsonDeconstructedPathInfo.error && !rawJsonDeconstructedPathInfo.originalProjectId) {
-                                console.warn(`[cloneProject] Could not deconstruct raw JSON storage path '${originalContrib.raw_response_storage_path}' for contrib ${originalContrib.id}: ${rawJsonDeconstructedPathInfo.error}.`);
+                                console.error(`[cloneProject] Could not deconstruct raw JSON storage path '${originalContrib.raw_response_storage_path}' for contrib ${originalContrib.id}: ${rawJsonDeconstructedPathInfo.error}. Aborting clone to maintain integrity.`);
+                                throw new Error(`Failed to deconstruct raw JSON storage path for ${originalContrib.id}`);
                             }
                         }
 
                         if (!mainFileContentBuffer && rawJsonResponseString !== "") {
                             console.warn(`[cloneProject] Main content missing for ${originalContrib.id}, using raw JSON as main for FileManager upload.`);
-                            effectiveFileType = rawJsonDeconstructedPathInfo?.fileTypeGuess || 'model_contribution_raw_json';
+                            effectiveFileType = rawJsonDeconstructedPathInfo?.fileTypeGuess ?? FileType.ModelContributionRawJson;
                             effectiveFileContent = Buffer.from(rawJsonResponseString);
                             effectiveMimeType = 'application/json';
                             effectiveFileName = rawJsonDeconstructedPathInfo?.parsedFileNameFromPath || `${originalContrib.id}_raw.json`;
@@ -501,6 +465,13 @@ export async function cloneProject(
                             attemptCount: attemptForPathContext,
                         };
 
+                        let contributionTypeForMeta: ContributionType | null = null;
+                        if (originalContrib.contribution_type && isContributionType(originalContrib.contribution_type)) {
+                            contributionTypeForMeta = originalContrib.contribution_type;
+                        } else if (stageSlugForPathContext && isContributionType(stageSlugForPathContext)) {
+                            contributionTypeForMeta = stageSlugForPathContext;
+                        } // else keep null and continue
+ 
                         const contribUploadContext: UploadContext = {
                             pathContext: contribPathContext,
                             fileContent: effectiveFileContent,
@@ -519,14 +490,15 @@ export async function cloneProject(
                                 tokensUsedOutput: originalContrib.tokens_used_output ?? undefined,
                                 processingTimeMs: originalContrib.processing_time_ms ?? undefined,
                                 citations: originalContrib.citations ?? undefined,
-                                contributionType: originalContrib.contribution_type ?? undefined,
+                                contributionType: contributionTypeForMeta,
                                 errorDetails: originalContrib.error ?? undefined, 
                                 promptTemplateIdUsed: originalContrib.prompt_template_id_used ?? undefined,
-                                targetContributionId: originalContrib.target_contribution_id ?? undefined,
+                                target_contribution_id: originalContrib.target_contribution_id ?? undefined,
                                 editVersion: 1, 
                                 isLatestEdit: true,
                                 originalModelContributionId: null, 
                                 seedPromptStoragePath: originalContrib.seed_prompt_url || '',
+                                document_relationships: originalContrib.document_relationships ?? null,
                                 // seedPromptStoragePath: originalContrib.seed_prompt_url - this needs careful handling
                             }
                         };
@@ -548,7 +520,8 @@ export async function cloneProject(
                             const deconstructedSeedPathInfo = deconstructStoragePath({storageDir: originalSeedDir, fileName: originalSeedFileName});
 
                             if (deconstructedSeedPathInfo.error && !deconstructedSeedPathInfo.originalProjectId) {
-                                console.warn(`[cloneProject] Contrib ${originalContrib.id}: Could not deconstruct original seed_prompt_url '${originalContrib.seed_prompt_url}': ${deconstructedSeedPathInfo.error}. Seed path linking may be broken.`);
+                                console.error(`[cloneProject] Contrib ${originalContrib.id}: Could not deconstruct original seed_prompt_url '${originalContrib.seed_prompt_url}': ${deconstructedSeedPathInfo.error}. Aborting clone to maintain integrity.`);
+                                throw new Error(`Failed to deconstruct seed_prompt_url for ${originalContrib.id}`);
                             } else {
                                 let newFullSessionIdForSeedPathConstruction: string | undefined = undefined;
                                 if (deconstructedSeedPathInfo.shortSessionId) {
@@ -559,7 +532,8 @@ export async function cloneProject(
                                 }
 
                                 if (!newFullSessionIdForSeedPathConstruction) {
-                                    console.warn(`[cloneProject] Contrib ${originalContrib.id}: Could not map original seed path's shortSessionId '${deconstructedSeedPathInfo.shortSessionId || "<unknown>"}' to a new full session ID for seed path reconstruction. Original URL: ${originalContrib.seed_prompt_url}`);
+                                    console.error(`[cloneProject] Contrib ${originalContrib.id}: Could not map original seed path's shortSessionId '${deconstructedSeedPathInfo.shortSessionId || "<unknown>"}' to a new full session ID for seed path reconstruction. Aborting clone to maintain integrity. Original URL: ${originalContrib.seed_prompt_url}`);
+                                    throw new Error(`Failed to map seed path session for ${originalContrib.id}`);
                                 }
 
                                 let stageSlugForSeedPathContext: string | undefined = deconstructedSeedPathInfo.stageSlug;
@@ -570,7 +544,8 @@ export async function cloneProject(
                                         stageSlugForSeedPathContext = deconstructedSeedPathInfo.stageDirName; // Fallback, though likely not a valid slug
                                     }
                                 } else if (!stageSlugForSeedPathContext) {
-                                     console.warn(`[cloneProject] Contrib ${originalContrib.id}: Missing stageSlug and stageDirName from deconstructed seed path. Original URL: ${originalContrib.seed_prompt_url}`);
+                                     console.error(`[cloneProject] Contrib ${originalContrib.id}: Missing stageSlug and stageDirName from deconstructed seed path. Aborting clone to maintain integrity. Original URL: ${originalContrib.seed_prompt_url}`);
+                                     throw new Error(`Failed to derive stage slug for seed prompt path for ${originalContrib.id}`);
                                 }
 
                                 if (newFullSessionIdForSeedPathConstruction && deconstructedSeedPathInfo.iteration !== undefined && stageSlugForSeedPathContext) {
@@ -579,7 +554,7 @@ export async function cloneProject(
                                         const seedPathContext: PathContext = {
                                             projectId: actualClonedProjectId!,
                                             sessionId: newFullSessionIdForSeedPathConstruction, 
-                                            fileType: 'seed_prompt', 
+                                            fileType: FileType.SeedPrompt, 
                                             originalFileName: deconstructedSeedPathInfo.parsedFileNameFromPath || 'seed_prompt.md', 
                                             iteration: deconstructedSeedPathInfo.iteration,
                                             stageSlug: stageSlugForSeedPathContext,
@@ -591,7 +566,8 @@ export async function cloneProject(
                                         console.warn(`[cloneProject] Contrib ${originalContrib.id}: Error constructing new seed prompt path for '${originalContrib.seed_prompt_url}': ${pathError instanceof Error ? pathError.message : String(pathError)}. Context: ${JSON.stringify(seedPathConstructionContextForLog)}`);
                                     }
                                 } else {
-                                    console.warn(`[cloneProject] Contrib ${originalContrib.id}: Missing components required to construct new seed prompt path. New Session ID: ${newFullSessionIdForSeedPathConstruction}, Iteration: ${deconstructedSeedPathInfo.iteration}, Stage Slug: ${stageSlugForSeedPathContext}`);
+                                    console.error(`[cloneProject] Contrib ${originalContrib.id}: Missing components required to construct new seed prompt path. Aborting clone to maintain integrity. New Session ID: ${newFullSessionIdForSeedPathConstruction}, Iteration: ${deconstructedSeedPathInfo.iteration}, Stage Slug: ${stageSlugForSeedPathContext}`);
+                                    throw new Error(`Failed to construct new seed prompt path for ${originalContrib.id}`);
                                 }
                             }
                         }
@@ -601,7 +577,7 @@ export async function cloneProject(
                         }
 
                         // If the main file IS the raw_json, then metadata.rawJsonResponseContent should be an empty string
-                        if (effectiveFileType === 'model_contribution_raw_json' && contribUploadContext.contributionMetadata) {
+                        if (effectiveFileType === FileType.ModelContributionRawJson && contribUploadContext.contributionMetadata) {
                             contribUploadContext.contributionMetadata.rawJsonResponseContent = "";
                         }
 
@@ -612,7 +588,70 @@ export async function cloneProject(
                             console.error('[cloneProject] FileManager failed to upload/register contribution:', originalContrib.id, fmContribError);
                             throw new Error(`FileManager failed for contribution ${originalContrib.id}: ${fmContribError?.message}`);
                         }
-                        console.log(`[cloneProject] Contribution ${originalContrib.id} cloned successfully by FileManager. New record ID: ${(newContribRecord as DialecticContributionRow).id}`);
+                        console.log(`[cloneProject] Contribution ${originalContrib.id} cloned successfully by FileManager. New record ID: ${(newContribRecord).id}`);
+                        // Map original contribution ID to new contribution ID for downstream cloning (memory relationships)
+                        if ((newContribRecord as { id?: string }).id) {
+                            originalContribIdToNewId.set(originalContrib.id, (newContribRecord as { id: string }).id);
+                        }
+                    }
+                    // Clone dialectic_memory rows for this session
+                    const { data: originalMemoryRows, error: memFetchError } = await supabaseClient
+                        .from('dialectic_memory')
+                        .select('*')
+                        .eq('session_id', originalSession.id);
+                    if (memFetchError) {
+                        console.warn(`[cloneProject] Error fetching memory for session ${originalSession.id}:`, memFetchError);
+                    } else if (originalMemoryRows && originalMemoryRows.length > 0) {
+                        const memoryInserts = originalMemoryRows.map((m: {
+                            content: string;
+                            embedding: string | null;
+                            fts: unknown | null;
+                            metadata: Database['public']['Tables']['dialectic_memory']['Row']['metadata'] | null;
+                            session_id: string;
+                            source_contribution_id: string | null;
+                        }) => ({
+                            content: m.content,
+                            embedding: m.embedding ?? null,
+                            fts: m.fts ?? null,
+                            metadata: (m.metadata ?? null) as Database['public']['Tables']['dialectic_memory']['Insert']['metadata'],
+                            session_id: actualNewSessionId,
+                            source_contribution_id: m.source_contribution_id ? (originalContribIdToNewId.get(m.source_contribution_id) ?? null) : null,
+                        }));
+                        const { error: memInsertError } = await supabaseClient
+                            .from('dialectic_memory')
+                            .insert(memoryInserts);
+                        if (memInsertError) {
+                            console.warn(`[cloneProject] Failed to insert cloned memory for session ${actualNewSessionId}:`, memInsertError);
+                        }
+                    }
+                    // Clone dialectic_feedback rows for this session
+                    const { data: originalFeedbackRows, error: fbFetchError } = await supabaseClient
+                        .from('dialectic_feedback')
+                        .select('*')
+                        .eq('session_id', originalSession.id);
+                    if (fbFetchError) {
+                        console.warn(`[cloneProject] Error fetching feedback for session ${originalSession.id}:`, fbFetchError);
+                    } else if (originalFeedbackRows && originalFeedbackRows.length > 0) {
+                        const feedbackInserts = (originalFeedbackRows as Array<Database['public']['Tables']['dialectic_feedback']['Row']>).map((fb) => ({
+                            project_id: actualClonedProjectId!,
+                            session_id: actualNewSessionId,
+                            user_id: fb.user_id,
+                            stage_slug: fb.stage_slug,
+                            iteration_number: fb.iteration_number,
+                            storage_bucket: fb.storage_bucket,
+                            storage_path: fb.storage_path,
+                            file_name: fb.file_name,
+                            mime_type: fb.mime_type,
+                            size_bytes: fb.size_bytes,
+                            feedback_type: fb.feedback_type,
+                            resource_description: (fb.resource_description ?? null) as Database['public']['Tables']['dialectic_feedback']['Insert']['resource_description'],
+                        }));
+                        const { error: fbInsertError } = await supabaseClient
+                            .from('dialectic_feedback')
+                            .insert(feedbackInserts);
+                        if (fbInsertError) {
+                            console.warn(`[cloneProject] Failed to insert cloned feedback for session ${actualNewSessionId}:`, fbInsertError);
+                        }
                     }
                 }
             }

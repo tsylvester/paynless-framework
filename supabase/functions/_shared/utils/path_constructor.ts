@@ -86,6 +86,9 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       return { storagePath: projectRoot, fileName: 'project_readme.md' };
     case FileType.MasterPlan:
         return { storagePath: projectRoot, fileName: 'Master_Plan.md' };
+    case FileType.ProjectExportZip:
+        if (!originalFileName) throw new Error('originalFileName is required for project_export_zip.');
+        return { storagePath: projectRoot, fileName: sanitizeForPath(originalFileName) };
     case FileType.PendingFile:
         if (!originalFileName) throw new Error('originalFileName is required for pending_file.');
         return { storagePath: `${projectRoot}/Pending`, fileName: sanitizeForPath(originalFileName) };

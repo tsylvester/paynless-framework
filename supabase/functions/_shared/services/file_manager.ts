@@ -26,6 +26,8 @@ function getTableForFileType(
       return 'dialectic_contributions'
     case 'user_feedback':
       return 'dialectic_feedback'
+    case 'project_export_zip':
+      return 'dialectic_project_resources'
     default:
       return 'dialectic_project_resources'
   }
@@ -226,6 +228,21 @@ export class FileManagerService {
           return { record: null, error: { message: 'Missing required metadata for contribution.' }};
         }
         const meta = context.contributionMetadata;
+
+        // Enforce strict lineage: continuations must provide target_contribution_id
+        if (meta.isContinuation === true) {
+          const hasValidLink = typeof meta.target_contribution_id === 'string' && meta.target_contribution_id.length > 0;
+          if (!hasValidLink) {
+            const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
+            if (!mainUploadError) {
+              await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]);
+              if (rawJsonResponseFullStoragePath) {
+                await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath]);
+              }
+            }
+            return { record: null, error: { message: 'Missing target_contribution_id for continuation.' } };
+          }
+        }
         const recordData: TablesInsert<'dialectic_contributions'> = {
           session_id: pathContextForStorage.sessionId,
           model_id: meta.modelIdUsed,
@@ -261,6 +278,17 @@ export class FileManagerService {
         
         if (insertError) {
           throw insertError;
+        }
+        // If this contribution references a parent via target_contribution_id, mark the parent as not latest
+        if (typeof meta.target_contribution_id === 'string' && meta.target_contribution_id.length > 0) {
+          try {
+            await this.supabase
+              .from('dialectic_contributions')
+              .update({ is_latest_edit: false })
+              .eq('id', meta.target_contribution_id);
+          } catch (_) {
+            // Non-fatal; continue returning the newly created record
+          }
         }
         return { record: newRecord, error: null };
 
@@ -403,12 +431,6 @@ export class FileManagerService {
         currentId = nextChunk ? nextChunk.id : null;
       }
 
-      // Fallback to sorting by creation date if relationship traversal fails to produce a full list
-      if (orderedChunks.length <= 1 && allContributions.length > 1) {
-          allContributions.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-          orderedChunks.splice(0, orderedChunks.length, ...allContributions);
-      }
-
       // 3. Download and concatenate content.
       let finalContent = '';
       for (const chunk of orderedChunks) {
@@ -435,6 +457,25 @@ export class FileManagerService {
 
       if (uploadError) {
         throw new Error(`Failed to upload final document to ${finalPath}: ${uploadError.message}`);
+      }
+
+      // 5. Update is_latest_edit flags:
+      //    - All continuation chunks in the chain should no longer be latest edits
+      //    - The root contribution (final assembled document) should be the latest edit
+      try {
+        const allChunkIds = orderedChunks.map(c => c.id);
+        if (allChunkIds.length > 0) {
+          await this.supabase
+            .from('dialectic_contributions')
+            .update({ is_latest_edit: false })
+            .in('id', allChunkIds);
+        }
+        await this.supabase
+          .from('dialectic_contributions')
+          .update({ is_latest_edit: true })
+          .eq('id', rootContributionId);
+      } catch (_) {
+        // If this update fails, we still return success for the file assembly; logging occurs below
       }
 
       return { finalPath, error: null };

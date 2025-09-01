@@ -151,6 +151,7 @@ notificationService: {
   sendContributionGenerationContinuedEvent: () => Promise.resolve(),
   sendDialecticProgressUpdateEvent: () => Promise.resolve(),
   sendContributionFailedNotification: () => Promise.resolve(),
+  sendContributionGenerationFailedEvent: () => Promise.resolve(),
 },
 executeModelCallAndSave: () => Promise.resolve(),
 downloadFromStorage: () => Promise.resolve({
@@ -327,7 +328,44 @@ Deno.test("getSortedCompressionCandidates", async (t) => {
         }
     });
 
-    await t.step("should filter out candidates that are already indexed", async () => {
+    await t.step("returns indexed document candidates (no exclusion by prior indexing)", async () => {
+        // Arrange: single document, history too short to contribute candidates
+        const soloDocuments = [
+            mockSourceDocument({ id: 'doc-indexed', content: 'high relevance' }),
+        ];
+        const shortHistory: Messages[] = [
+            { id: 'msg-0', role: 'system', content: 'system prompt' },
+            { id: 'msg-1', role: 'user', content: 'seed user' },
+            { id: 'msg-2', role: 'assistant', content: 'first assistant' },
+        ];
+
+        const { client: dbClient } = createMockSupabaseClient('user-123', {
+            genericMockResults: {
+                'dialectic_memory': {
+                    select: {
+                        data: [{ source_contribution_id: 'doc-indexed' }], // already indexed
+                        error: null,
+                    }
+                }
+            }
+        });
+
+        // Act
+        const result = await getSortedCompressionCandidates(
+            dbClient as unknown as SupabaseClient<Database>,
+            deps,
+            soloDocuments,
+            shortHistory,
+            'prompt'
+        );
+
+        // Assert: the indexed document is still a candidate
+        assert(result.length >= 1, 'Expected at least one candidate');
+        const hasIndexed = result.some(c => c.id === 'doc-indexed');
+        assert(hasIndexed, 'Indexed document should remain a compression candidate');
+    });
+
+    await t.step("keeps candidates even if already indexed (no exclusion by prior indexing)", async () => {
         // Arrange
         const { client: dbClient } = createMockSupabaseClient('user-123', {
             genericMockResults: {
@@ -348,13 +386,10 @@ Deno.test("getSortedCompressionCandidates", async (t) => {
             'prompt'
         );
 
-        // Assert
-        // All candidates were passed in, but one was already indexed.
-        assertEquals(result.length, 2, "Should return only the un-indexed candidates");
-        
-        // The lowest-value candidate ('doc-low') should have been filtered out.
-        // The new lowest-value candidate should be the next one in line ('msg-3').
-        assertEquals(result[0].id, 'msg-3', "The lowest value, un-indexed candidate should be first.");
+        // Assert: indexing info is diagnostic only; result should include all candidates
+        assertEquals(result.length, 3, 'Should include both documents and the history candidate');
+        const hasDocLow = result.some(c => c.id === 'doc-low');
+        assert(hasDocLow, 'Indexed document should not be excluded from candidates');
     });
 });
 

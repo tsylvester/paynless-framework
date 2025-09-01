@@ -17,6 +17,7 @@ import {
   mockDialecticProgressUpdatePayload,
   mockContributionGenerationFailedPayload,
   mockContributionGenerationFailedApiError,
+  mockContributionGenerationFailedInternalPayload,
 } from './notification.service.mock.ts';
 import {
   createMockSupabaseClient,
@@ -281,3 +282,31 @@ Deno.test('NotificationService - should send a user-facing notification for cont
     mockContributionGenerationFailedApiError.message,
   );
 }); 
+
+Deno.test('NotificationService - should send a valid internal event for other_generation_failed', async () => {
+  // Arrange
+  const mockUserId = 'user-123';
+  const { client, spies } = createMockSupabaseClient(mockUserId, {
+    rpcResults: {
+      create_notification_for_user: { data: null, error: null },
+    },
+  });
+  const service = new NotificationService(
+    client as unknown as SupabaseClient<Database>,
+  );
+
+  // Act
+  await service.sendContributionGenerationFailedEvent(mockContributionGenerationFailedInternalPayload, mockUserId);
+
+  // Assert
+  assertEquals(spies.rpcSpy.calls.length, 1);
+  const rpcArgs = spies.rpcSpy.calls[0].args;
+  const rpcParams = rpcArgs[1];
+  assertEquals(rpcArgs[0], 'create_notification_for_user');
+  assertEquals(rpcParams.p_target_user_id, mockUserId);
+  assertEquals(rpcParams.p_notification_type, 'other_generation_failed');
+  assertEquals(rpcParams.p_is_internal_event, true);
+  assertEquals(rpcParams.p_notification_data.sessionId, mockContributionGenerationFailedInternalPayload.sessionId);
+  assertEquals(rpcParams.p_notification_data.job_id, mockContributionGenerationFailedInternalPayload.job_id);
+  assertEquals(rpcParams.p_notification_data.error.message, mockContributionGenerationFailedInternalPayload.error.message);
+});

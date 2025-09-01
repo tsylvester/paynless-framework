@@ -62,22 +62,24 @@ export function getMaxOutputTokens(
   // Calculate how many output tokens can be afforded with the remaining budget
   const max_spendable_output_tokens = Math.floor(budget_for_output_wallet_tokens / output_token_cost_rate);
 
-  // Determine the dynamic hard cap, now based on the remaining budget for output
-  const twenty_percent_balance_as_output_tokens = Math.floor((0.20 * budget_for_output_wallet_tokens) / output_token_cost_rate);
+  // SSOT: User-budget soft cap uses spend fraction (80%) of remaining balance after input
+  const spend_fraction = 0.80;
+  const spendable_budget_wallet_tokens = Math.min(user_balance_tokens * spend_fraction, budget_for_output_wallet_tokens);
+  const user_budget_cap_tokens = Math.floor(spendable_budget_wallet_tokens / output_token_cost_rate);
   
   // Combine hard_cap_output_tokens and provider_max_output_tokens to get the true ceiling.
   // Use Infinity as a fallback if neither is defined, which is not ideal but safe.
   const absolute_provider_cap = Math.min(
     typeof hard_cap_output_tokens === 'number' && hard_cap_output_tokens >= 0 ? hard_cap_output_tokens : Infinity,
     typeof provider_max_output_tokens === 'number' && provider_max_output_tokens >= 0 ? provider_max_output_tokens : Infinity,
-    4096 // Add a hardcoded fallback cap to prevent Infinity
+    Infinity // remove arbitrary fallback; rely on real caps or budget
   );
 
-  // The dynamic hard cap is the lesser of 20% of the budget and the absolute provider cap.
-  const dynamic_hard_cap = Math.min(twenty_percent_balance_as_output_tokens, absolute_provider_cap);
+  // The SSOT hard cap is the lesser of user-budget cap and absolute provider cap.
+  const ssot_hard_cap = Math.min(user_budget_cap_tokens, absolute_provider_cap);
   
   // Ensure dynamic_hard_cap is not negative
-  const non_negative_dynamic_hard_cap = Math.max(0, dynamic_hard_cap);
+  const non_negative_dynamic_hard_cap = Math.max(0, ssot_hard_cap);
 
   // The final max output tokens is the minimum of what can be spent and the dynamic hard cap.
   const max_affordable_tokens = Math.min(max_spendable_output_tokens, non_negative_dynamic_hard_cap);

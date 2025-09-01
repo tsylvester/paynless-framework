@@ -86,6 +86,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
         iterationNumber: 1,
         projectId: mockProjectId,
         continueUntilComplete: true,
+        walletId: 'test-wallet-id',
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -139,6 +140,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
                 randomUUID: () => '123',
                 fileManager: {
                     uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId }, error: null }),
+                    assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
                 },
                 deleteFromStorage: () => Promise.resolve({ error: null }),
             }
@@ -196,6 +198,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
         iterationNumber: 1,
         projectId: mockProjectId,
         continueUntilComplete: true,
+        walletId: 'test-wallet-id',
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -245,6 +248,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
                 randomUUID: () => '123',
                 fileManager: {
                     uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId }, error: null }),
+                    assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
                 },
                 deleteFromStorage: () => Promise.resolve({ error: null }),
             }
@@ -291,6 +295,7 @@ Deno.test("generateContributions - Failure Path: Fails if stage recipe lookup fa
         projectId: 'project-123',
         stageSlug: 'thesis',
         iterationNumber: 1, // Add the required iteration number
+        walletId: 'test-wallet-id',
     };
     const dbError = { name: 'DBError', message: "Stage not found", details: "Query returned no rows", code: "PGRST116" };
 
@@ -325,6 +330,7 @@ Deno.test("generateContributions - Failure Path: Fails if stage recipe lookup fa
             randomUUID: () => 'mock-uuid',
             fileManager: {
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123' }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
         }
@@ -349,6 +355,7 @@ Deno.test("generateContributions - Failure Path: Fails to enqueue a job", async 
         stageSlug: 'thesis',
         projectId: mockProjectId,
         iterationNumber: 1, // Add the missing iteration number
+        walletId: 'test-wallet-id',
     };
 
     const dbError = { name: 'DBError', message: "Database permission denied", details: "RLS policy violation", code: "42501" };
@@ -396,6 +403,7 @@ Deno.test("generateContributions - Failure Path: Fails to enqueue a job", async 
       deleteFromStorage: () => Promise.resolve({ data: [], error: null }),
       fileManager: {
         uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId }, error: null }),
+        assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
       },
     };
 
@@ -425,6 +433,7 @@ Deno.test("generateContributions - Validation: Fails if stageSlug is missing", a
         sessionId: 'session-123',
         projectId: 'project-123',
         // stageSlug is intentionally omitted
+        walletId: 'test-wallet-id',
     };
 
     const mockSupabase = createMockSupabaseClient(); // No DB calls should be made
@@ -441,6 +450,7 @@ Deno.test("generateContributions - Validation: Fails if stageSlug is missing", a
             randomUUID: () => '123',
             fileManager: {
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123' }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
         }
@@ -474,6 +484,7 @@ Deno.test("generateContributions - Validation: Fails if sessionId is missing", a
             randomUUID: () => '123',
             fileManager: {
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123' }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
         }
@@ -490,6 +501,7 @@ Deno.test("generateContributions - Validation: Fails if userId is missing", asyn
         sessionId: 'session-123',
         stageSlug: 'thesis',
         projectId: 'project-123',
+        walletId: 'test-wallet-id',
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -507,6 +519,7 @@ Deno.test("generateContributions - Validation: Fails if userId is missing", asyn
             randomUUID: () => '123',
             fileManager: {
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123' }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
         }
@@ -526,6 +539,7 @@ Deno.test("generateContributions - Validation: Fails if selectedModelIds is empt
         stageSlug: 'thesis',
         projectId: mockProjectId,
         iterationNumber: 1,
+        walletId: 'test-wallet-id',
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -556,6 +570,7 @@ Deno.test("generateContributions - Validation: Fails if selectedModelIds is empt
             randomUUID: () => '123',
             fileManager: {
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123' }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
         }
@@ -565,4 +580,76 @@ Deno.test("generateContributions - Validation: Fails if selectedModelIds is empt
     assertExists(result.error);
     assertEquals(result.error.message, "The session has no selected models. Please select at least one model.");
     assertEquals(result.error.status, 400);
+});
+
+Deno.test("generateContributions - Validation: Fails if walletId is missing (manual flow)", async () => {
+    const mockSessionId = "session-wallet-missing";
+    const mockProjectId = "project-wallet-missing";
+
+    const mockPayload: GenerateContributionsPayload = {
+        sessionId: mockSessionId,
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        projectId: mockProjectId,
+        // walletId intentionally omitted
+    } as GenerateContributionsPayload;
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        project_id: mockProjectId,
+                        selected_model_ids: ['model-1'],
+                        iteration_count: 1,
+                        current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
+            'dialectic_stages': {
+                select: {
+                    data: [{
+                        id: 'stage-1',
+                        slug: 'thesis',
+                        input_artifact_rules: { steps: [{}] },
+                        created_at: new Date().toISOString(),
+                        default_system_prompt_id: 'prompt-1',
+                        description: 'Test stage',
+                        display_name: 'Thesis',
+                        expected_output_artifacts: {},
+                    }],
+                    error: null
+                }
+            },
+        },
+    });
+
+    const result = await generateContributions(
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockPayload,
+        { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
+        {
+            callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
+            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(8), error: null }),
+            getExtensionFromMimeType: () => 'txt',
+            logger,
+            randomUUID: () => 'uuid',
+            fileManager: {
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'file', created_at: new Date().toISOString(), file_name: 'name', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: 'user-123' }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
+            },
+            deleteFromStorage: () => Promise.resolve({ error: null }),
+        }
+    );
+
+    // RED expectation: function should fail early with clear error and no job insert
+    assertEquals(result.success, false);
+    assertExists(result.error);
+    assertEquals(result.error?.status, 400);
+    assertEquals(result.error?.message, 'walletId is required to create generation jobs.');
+
+    // And no job insert should occur
+    const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertEquals(insertSpy?.callCount ?? 0, 0);
 });

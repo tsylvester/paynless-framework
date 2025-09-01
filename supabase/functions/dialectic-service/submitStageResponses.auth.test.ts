@@ -98,9 +98,15 @@ Deno.test('submitStageResponses', async (t) => {
     // 2.1.2 Act
     const { status, error, data } = await submitStageResponses(
       mockPayload,
-      mockSupabase.client as any,
+      mockSupabase.client as unknown as SupabaseClient<Database>,
       null, // No user
-      { logger, downloadFromStorage: spy((_client, _bucket, _path) => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService(), indexingService: { indexDocument: () => Promise.resolve({ success: true }) }, embeddingClient: { createEmbedding: () => Promise.resolve([]) } },
+      { 
+        logger, 
+        downloadFromStorage: spy((_client, _bucket, _path) => Promise.resolve({ data: null, error: null })), 
+        fileManager: createMockFileManagerService(), 
+        indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) }, 
+        embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) } 
+      },
     );
     
     // 2.1.3 Assert
@@ -151,7 +157,18 @@ Deno.test('submitStageResponses', async (t) => {
       }
     });
 
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService(), indexingService: { indexDocument: () => Promise.resolve({ success: true }) }, embeddingClient: { createEmbedding: () => Promise.resolve([]) } });
+    const { data, error, status } = await submitStageResponses(
+      mockPayload,
+      mockSupabase.client as unknown as SupabaseClient<Database>,
+      mockUser,
+      { 
+        logger, 
+        downloadFromStorage: spy((_client, _bucket, _path) => Promise.resolve({ data: null, error: null })), 
+        fileManager: createMockFileManagerService(), 
+        indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) }, 
+        embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) }
+      }
+    );
     
     assertEquals(status, 403);
     assertExists(error);

@@ -10,6 +10,8 @@ import { createMockPromptAssembler } from "../_shared/prompt-assembler.mock.ts";
 import { MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import { MockLogger } from "../_shared/logger.mock.ts";
 import { AiProviderAdapterInstance, FactoryDependencies } from "../_shared/types.ts";
+import { DummyAdapter } from "../_shared/ai_service/dummy_adapter.ts";
+import type { AiModelExtendedConfig } from "../_shared/types.ts";
 
 Deno.test("startSession - TDD RED: Prove Flaw in startSession", async () => {
     const mockUser: User = {
@@ -579,4 +581,89 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
     assertEquals(assembleArgs[3], mockFileContent, "The fourth argument to assemble should be the content of the initial prompt file.");
     assertEquals(assembleArgs[4], 1, "The fifth argument (iterationNumber) should be 1.");
     assertEquals(assembleArgs.length, 5, "assembler.assemble should be called with 5 arguments for file case.");
+});
+
+Deno.test("startSession - selects DummyAdapter for embedding when default provider is dummy", async () => {
+    const mockUser: User = {
+        id: "user-dummy-embed",
+        app_metadata: {},
+        user_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+    };
+    const mockProjectId = "project-dummy-embed";
+    const mockProcessTemplateId = "proc-template-dummy";
+    const mockInitialStageId = "stage-initial-dummy";
+    const mockInitialStageName = "Dummy Stage";
+    const mockInitialStageSlug = "dummy-stage";
+    const mockSystemPromptId = "system-prompt-dummy";
+    const mockSystemPromptText = "Dummy system prompt.";
+    const mockNewSessionId = "session-dummy-embed";
+
+    const payload: StartSessionPayload = {
+        projectId: mockProjectId,
+        selectedModelIds: ["dummy-model-v1"],
+        sessionDescription: "Dummy embedding session",
+    };
+
+    const mockAssembler = createMockPromptAssembler();
+    const mockFileManager = new MockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse({
+        id: 'file-id-dummy',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: 'seed_prompt.md',
+        storage_bucket: 'dialectic-internal',
+        storage_path: `projects/${mockProjectId}/sessions/${mockNewSessionId}/iterations/1/${mockInitialStageSlug}/seed_prompt.md`,
+        mime_type: 'text/markdown',
+        size_bytes: 123,
+        user_id: mockUser.id,
+        project_id: mockProjectId,
+        session_id: mockNewSessionId,
+        resource_description: 'Seed prompt',
+    }, null);
+
+    const dummyConfig: AiModelExtendedConfig = {
+        api_identifier: 'dummy-model-v1',
+        input_token_cost_rate: 1,
+        output_token_cost_rate: 1,
+        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+        context_window_tokens: 4096,
+        hard_cap_output_tokens: 4096,
+    };
+
+    const { client } = createMockSupabaseClient(mockUser.id, {
+        genericMockResults: {
+            dialectic_projects: { select: async () => ({ data: [{ id: mockProjectId, user_id: mockUser.id, project_name: "Dummy Project", initial_user_prompt: "Hi", process_template_id: mockProcessTemplateId, dialectic_domains: { name: 'General' }, selected_domain_id: 'd-1' }], error: null, status: 200, statusText: 'ok' }) },
+            dialectic_process_templates: { select: async () => ({ data: [{ id: mockProcessTemplateId, name: 'Dummy Template', starting_stage_id: mockInitialStageId }], error: null, status: 200, statusText: 'ok' }) },
+            dialectic_stages: { select: async () => ({ data: [{ id: mockInitialStageId, slug: mockInitialStageSlug, display_name: mockInitialStageName, default_system_prompt_id: mockSystemPromptId }], error: null, status: 200, statusText: 'ok' }) },
+            system_prompts: { select: async () => ({ data: [{ id: mockSystemPromptId, prompt_text: mockSystemPromptText }], error: null, status: 200, statusText: 'ok' }) },
+            domain_specific_prompt_overlays: { select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' }) },
+            dialectic_sessions: { insert: async () => ({ data: [{ id: mockNewSessionId, project_id: mockProjectId, session_description: payload.sessionDescription, status: `pending_${mockInitialStageName}`, iteration_count: 1, associated_chat_id: 'chat-id', current_stage_id: mockInitialStageId, selected_model_ids: payload.selectedModelIds }], error: null, status: 201, statusText: 'ok' }) },
+            ai_providers: { select: async () => ({ data: [{ id: 'prov-dummy', api_identifier: 'dummy-model-v1', name: 'Dummy', description: 'Dummy', is_active: true, provider: 'dummy', config: dummyConfig, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), is_default_embedding: true, is_enabled: true }], error: null, status: 200, statusText: 'ok' }) },
+        },
+        mockUser: mockUser,
+    });
+
+    const adminDbClient = client as unknown as SupabaseClient<Database>;
+    const mockLogger = new MockLogger();
+
+    const getAdapterSpy = spy((deps: FactoryDependencies): AiProviderAdapterInstance | null => {
+        // Construct a real DummyAdapter for the provided row
+        const providerRow = deps.provider;
+        return new DummyAdapter(providerRow, 'dummy-key', mockLogger);
+    });
+
+    const deps: Partial<StartSessionDeps> = {
+        logger: mockLogger,
+        fileManager: mockFileManager,
+        // Intentionally do NOT pass promptAssembler so the embedding path is exercised
+        randomUUID: () => mockNewSessionId,
+        getAiProviderAdapter: getAdapterSpy,
+    };
+
+    const result = await startSession(mockUser, adminDbClient, payload, deps);
+
+    // Desired behavior: should succeed, proving DummyAdapter is accepted for embeddings
+    assertExists(result.data, `Expected startSession to succeed with dummy embedding provider, but got error: ${result.error?.message}`);
 });

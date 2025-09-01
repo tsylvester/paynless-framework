@@ -332,6 +332,32 @@ Deno.test('[path_deconstructor] mapDirNameToStageSlug works as expected', () => 
 });
 
 
+// --- Defensive: ensure project root .zip is not misclassified ---
+Deno.test('[path_deconstructor] defensive - project root zip is classified as project_export_zip (not initial_user_prompt)', () => {
+  const projectId = 'proj-zip';
+  const dirPart = projectId;
+  const filePart = 'my_export.zip';
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
+
+  assertEquals(info.originalProjectId, projectId);
+  assertEquals(info.parsedFileNameFromPath, filePart);
+  assertEquals(info.fileTypeGuess, FileType.ProjectExportZip);
+  assertEquals(info.error, undefined);
+});
+
+Deno.test('[path_deconstructor] identifies project root archive as project_export_zip', () => {
+  const projectId = 'proj-zip-2';
+  const dirPart = projectId;
+  const filePart = 'my_export.zip';
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
+
+  assertEquals(info.originalProjectId, projectId);
+  assertEquals(info.parsedFileNameFromPath, 'my_export.zip');
+  assertEquals(info.fileTypeGuess, FileType.ProjectExportZip);
+  assertEquals(info.error, undefined);
+});
+
+
 // --- Yin/Yang (Inverse Function) Tests: Construct then Deconstruct ---
 
 const constructDeconstructTestCases: Array<{ 

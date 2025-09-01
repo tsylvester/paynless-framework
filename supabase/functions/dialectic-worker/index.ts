@@ -29,8 +29,7 @@ import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
 import { getGranularityPlanner } from './strategies/granularity.strategies.ts';
 import { RagService } from '../_shared/services/rag_service.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
-import { IndexingService, LangchainTextSplitter, OpenAIEmbeddingClient } from '../_shared/services/indexing_service.ts';
-import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
+import { IndexingService, LangchainTextSplitter, EmbeddingClient } from '../_shared/services/indexing_service.ts';
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
 import { defaultProviderMap } from '../_shared/ai_service/factory.ts';
@@ -74,15 +73,15 @@ export async function createDialecticWorkerDeps(
     logger,
     providerMap: defaultProviderMap,
   });
-
-  if (!embeddingAdapter || !(embeddingAdapter instanceof OpenAiAdapter)) {
-    throw new Error('Failed to create a valid OpenAI adapter for the embedding client.');
+  if (!embeddingAdapter) {
+    throw new Error('Failed to create an embedding adapter for the embedding client.');
   }
 
-  const embeddingClient = new OpenAIEmbeddingClient(embeddingAdapter);
+  const embeddingClient = new EmbeddingClient(embeddingAdapter);
   const textSplitter = new LangchainTextSplitter();
-  const indexingService = new IndexingService(adminClient, logger, textSplitter, embeddingClient);
-  const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient });
+  const tokenWalletService = new TokenWalletService(adminClient, adminClient);
+  const indexingService = new IndexingService(adminClient, logger, textSplitter, embeddingClient, tokenWalletService);
+  const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient, tokenWalletService });
   const promptAssembler = new PromptAssembler(adminClient);
 
   const deps: IDialecticJobDeps = {
@@ -112,7 +111,7 @@ export async function createDialecticWorkerDeps(
     promptAssembler,
     getAiProviderAdapter,
     // Use admin client for both contexts in worker environment
-    tokenWalletService: new TokenWalletService(adminClient, adminClient),
+    tokenWalletService,
   };
 
   return deps;
@@ -205,6 +204,14 @@ export async function handleJob(
             projectId = job.payload['projectId'];
         }
 
+        // Internal failure event for UI state routing
+        await deps.notificationService.sendContributionGenerationFailedEvent({
+          type: 'other_generation_failed',
+          sessionId: job.session_id,
+          job_id: jobId,
+          error: { code: 'VALIDATION_ERROR', message: errorMessage },
+        }, projectOwnerUserId);
+
         await deps.notificationService.sendContributionFailedNotification({
             type: 'contribution_generation_failed',
             sessionId: job.session_id,
@@ -277,6 +284,14 @@ export async function handleJob(
         stageSlug: job.stage_slug,
         error: { code: 'UNHANDLED_EXCEPTION', message: error.message },
         job_id: jobId,
+      }, projectOwnerUserId);
+
+      // Internal failure event for UI state routing
+      await deps.notificationService.sendContributionGenerationFailedEvent({
+        type: 'other_generation_failed',
+        sessionId: job.session_id,
+        job_id: jobId,
+        error: { code: 'UNHANDLED_EXCEPTION', message: error.message },
       }, projectOwnerUserId);
 
       await adminClient.from('dialectic_generation_jobs').update({

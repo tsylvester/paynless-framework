@@ -145,7 +145,7 @@ Deno.test('submitStageResponses', async (t) => {
     const userSubmittedStageFeedbackContent = "This is consolidated stage feedback from the new payload structure via userStageFeedback.";
 
     const mockFileManager = createMockFileManagerService();
-    mockFileManager.uploadAndRegisterFileSpy = spy(
+    mockFileManager.uploadAndRegisterFile = spy(
       async (
         context: UploadContext,
       ): Promise<FileManagerResponse> => {
@@ -352,8 +352,8 @@ Deno.test('submitStageResponses', async (t) => {
             const arrayBuffer = await blob.arrayBuffer();
             return { data: arrayBuffer, error: null, mimeType: blob.type };
         },
-        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
-        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
+        indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) },
+        embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) }
     };
 
     const assembleSpy = spy(PromptAssembler.prototype, "assemble");
@@ -379,12 +379,12 @@ Deno.test('submitStageResponses', async (t) => {
       assertEquals(data.feedbackRecords.length, 1, "Expected one feedback record to be created from userStageFeedback");
       
       // Check that the file manager was used correctly
-      assertEquals(mockFileManager.uploadAndRegisterFileSpy.calls.length, 2, "Expected FileManagerService to be called twice");
+      assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 2, "Expected FileManagerService to be called twice");
 
-      const feedbackCall = mockFileManager.uploadAndRegisterFileSpy.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === 'user_feedback');
+      const feedbackCall = mockFileManager.uploadAndRegisterFile.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === 'user_feedback');
       assertExists(feedbackCall, "Expected a call to save 'user_feedback'");
       
-      const seedPromptCall = mockFileManager.uploadAndRegisterFileSpy.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === 'seed_prompt');
+      const seedPromptCall = mockFileManager.uploadAndRegisterFile.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === 'seed_prompt');
       assertExists(seedPromptCall, "Expected a call to save 'seed_prompt'");
 
       // Assertions for the 'user_feedback' call
@@ -468,7 +468,7 @@ Deno.test('submitStageResponses', async (t) => {
 
   await t.step('1.2 Successfully processes responses for the final stage (no next transition)', async () => {
     const mockFileManager = createMockFileManagerService();
-    mockFileManager.uploadAndRegisterFileSpy = spy(
+    mockFileManager.uploadAndRegisterFile = spy(
       async (
         context: UploadContext,
       ): Promise<FileManagerResponse> => {
@@ -564,8 +564,8 @@ Deno.test('submitStageResponses', async (t) => {
       logger,
       downloadFromStorage: spy((_client: SupabaseClient, _bucket: string, _path: string): Promise<{ data: ArrayBuffer | null; error: Error | null; }> => Promise.resolve({ data: new ArrayBuffer(0), error: null })),
       fileManager: mockFileManager,
-      indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
-      embeddingClient: { createEmbedding: () => Promise.resolve([]) }
+      indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) },
+      embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) }
     };
 
     const { data, status, error } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, mockDependencies);
@@ -576,8 +576,8 @@ Deno.test('submitStageResponses', async (t) => {
 
     // In the final stage, we don't generate a seed prompt for the next stage.
     // So uploadAndRegisterResource should NOT have been called.
-    assertEquals(mockFileManager.uploadAndRegisterFileSpy.calls.length, 1, "FileManagerService should be called once for feedback");
-    const feedbackCall = mockFileManager.uploadAndRegisterFileSpy.calls[0];
+    assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "FileManagerService should be called once for feedback");
+    const feedbackCall = mockFileManager.uploadAndRegisterFile.calls[0];
     assertEquals(feedbackCall.args[0].pathContext.fileType, 'user_feedback');
 
     assert(data.nextStageSeedPromptPath === null || data.nextStageSeedPromptPath === undefined, "Next stage seed path should be null for the final stage");
@@ -587,7 +587,7 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step('6.1 Successfully processes responses when domain overlay is present', async () => {
     const userSubmittedStageFeedbackContent = "Feedback content for domain overlay test.";
     const mockFileManager = createMockFileManagerService();
-    mockFileManager.uploadAndRegisterFileSpy = spy(
+    mockFileManager.uploadAndRegisterFile = spy(
       async (
         context: UploadContext,
       ): Promise<FileManagerResponse> => {
@@ -789,8 +789,8 @@ Deno.test('submitStageResponses', async (t) => {
             const arrayBuffer = await blob.arrayBuffer();
             return { data: arrayBuffer, error: null, mimeType: blob.type };
           },
-        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
-        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
+        indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) },
+        embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) }
     };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, mockDependencies);
@@ -804,9 +804,9 @@ Deno.test('submitStageResponses', async (t) => {
     assert(typeof data.updatedSession.status === 'string', "[6.1] updatedSession.status should be a string type");
     assert(data.updatedSession.status.includes(`pending_${mockAntithesisStage.slug}`), "[6.1] Session status should be updated");
     assertEquals(data.feedbackRecords.length, 1, "[6.1] Expected one feedback record");
-    assertEquals(mockFileManager.uploadAndRegisterFileSpy.calls.length, 2, "[6.1] Expected FileManagerService to be called twice");
+    assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 2, "[6.1] Expected FileManagerService to be called twice");
 
-    const seedPromptCall = mockFileManager.uploadAndRegisterFileSpy.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === 'seed_prompt');
+    const seedPromptCall = mockFileManager.uploadAndRegisterFile.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === 'seed_prompt');
     assertExists(seedPromptCall, "[6.1] Expected a call to save 'seed_prompt'");
     const seedPromptFileContent = seedPromptCall.args[0].fileContent;
     const seedPromptContent = typeof seedPromptFileContent === 'string'
@@ -906,7 +906,7 @@ Deno.test('submitStageResponses', async (t) => {
       // This spy should not be called because there's no next stage to prepare a seed for.
       throw new Error("Should not be called when finalizing a session");
     });
-    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager, indexingService: { indexDocument: () => Promise.resolve({ success: true }) }, embeddingClient: { createEmbedding: () => Promise.resolve([]) } };
+    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager, indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) }, embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) } };
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, mockDependencies);
 
     assertEquals(status, 200);
@@ -935,7 +935,7 @@ Deno.test('submitStageResponses', async (t) => {
       updated_at: new Date().toISOString(),
       resource_description: null
     }
-    mockFileManager.uploadAndRegisterFileSpy = spy(async (context: UploadContext): Promise<FileManagerResponse> => {
+    mockFileManager.uploadAndRegisterFile = spy(async (context: UploadContext): Promise<FileManagerResponse> => {
       if (context.pathContext.fileType === 'user_feedback') return { record: { ...mockRecord, storage_path: 'path/to/feedback.md' }, error: null };
       return { record: { ...mockRecord, storage_path: 'path/to/other.md' }, error: null };
     });
@@ -986,8 +986,8 @@ Deno.test('submitStageResponses', async (t) => {
           return { data: ab, error: null, mimeType: data.type };
         },
         fileManager: mockFileManager,
-        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
-        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
+        indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) },
+        embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) }
       });
 
     assertEquals(status, 200);
@@ -1019,7 +1019,7 @@ Deno.test('submitStageResponses', async (t) => {
       }
     };
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorageGlobalSpy, fileManager: mockFileManager, indexingService: { indexDocument: () => Promise.resolve({ success: true }) }, embeddingClient: { createEmbedding: () => Promise.resolve([]) }  };
+    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorageGlobalSpy, fileManager: mockFileManager, indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) }, embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) }  };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, mockDependencies);
 
@@ -1060,7 +1060,7 @@ Deno.test('submitStageResponses', async (t) => {
       },
     };
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorageGlobalSpy, fileManager: mockFileManager, indexingService: { indexDocument: () => Promise.resolve({ success: true }) }, embeddingClient: { createEmbedding: () => Promise.resolve([]) } };
+    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorageGlobalSpy, fileManager: mockFileManager, indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) }, embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) } };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, mockDependencies);
     assertEquals(status, 500);
@@ -1075,7 +1075,7 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step("1.4 Handles failure when fetching next stage transition", async () => {
     const mockFileManager = createMockFileManagerService();
     // Ensure file manager succeeds for user feedback to test downstream transition error
-    mockFileManager.uploadAndRegisterFileSpy = spy(async (context: UploadContext): Promise<FileManagerResponse> => {
+    mockFileManager.uploadAndRegisterFile = spy(async (context: UploadContext): Promise<FileManagerResponse> => {
       if (context.pathContext.fileType === 'user_feedback') {
         return Promise.resolve({ 
           record: { 
@@ -1125,7 +1125,7 @@ Deno.test('submitStageResponses', async (t) => {
       },
     };
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorageGlobalSpy, fileManager: mockFileManager, indexingService: { indexDocument: () => Promise.resolve({ success: true }) }, embeddingClient: { createEmbedding: () => Promise.resolve([]) } };
+    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorageGlobalSpy, fileManager: mockFileManager, indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) }, embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) } };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, mockDependencies);
     assertEquals(status, 500);
@@ -1137,7 +1137,7 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step("1.5 Handles scenario where there is no next stage (e.g., end of process)", async () => {
     const mockFileManager = createMockFileManagerService(); 
     // Correctly define the spy to match the expected signature
-    mockFileManager.uploadAndRegisterFileSpy = spy(async (context: UploadContext): Promise<FileManagerResponse> => {
+    mockFileManager.uploadAndRegisterFile = spy(async (context: UploadContext): Promise<FileManagerResponse> => {
       // Simple mock for this test case, can be expanded if needed
       const record: FileRecord = { 
           id: 'mock-record-id-for-step-1.5',
@@ -1208,8 +1208,8 @@ Deno.test('submitStageResponses', async (t) => {
         logger,
         downloadFromStorage: mockDownloadFromStorageSpy,
         fileManager: mockFileManager,
-        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
-        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
+        indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) },
+        embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) }
     };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, mockDependencies);
@@ -1223,14 +1223,14 @@ Deno.test('submitStageResponses', async (t) => {
     assertEquals(data.nextStageSeedPromptPath, null, "No seed prompt should be generated if no next stage");
 
     // Verify feedback was saved
-    const feedbackCall = mockFileManager.uploadAndRegisterFileSpy.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === 'user_feedback');
+    const feedbackCall = mockFileManager.uploadAndRegisterFile.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === 'user_feedback');
     assertExists(feedbackCall, "Expected a call to save 'user_feedback' for the paralysis stage");
     const feedbackUploadContext = feedbackCall.args[0];
     assertEquals(feedbackUploadContext.fileContent, "This is the final feedback for the paralysis stage.");
     assertEquals(feedbackUploadContext.feedbackTypeForDb, "ParalysisReviewSummary_v1");
 
     // Verify seed prompt was NOT saved
-    const seedPromptCall = mockFileManager.uploadAndRegisterFileSpy.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === 'seed_prompt');
+    const seedPromptCall = mockFileManager.uploadAndRegisterFile.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === 'seed_prompt');
     assertEquals(seedPromptCall, undefined, "Expected no call to save 'seed_prompt' as it's the end of process");
   });
 

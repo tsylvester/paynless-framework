@@ -634,4 +634,276 @@ Deno.test("PromptAssembler", async (t) => {
             teardown();
         }
     });
+
+    await t.step("gatherContinuationInputs never reads seed prompt from _work", async () => {
+        const stageRoot = 'proj-xyz/session_abcd1234/iteration_1/1_thesis';
+        const rootContributionId = 'root-abc';
+        const bucket = 'test-bucket';
+
+        const rootChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
+            id: rootContributionId,
+            session_id: 'sess-xyz',
+            user_id: 'user-xyz',
+            stage: 'thesis',
+            iteration_number: 1,
+            model_id: 'model-1',
+            model_name: 'model-one',
+            prompt_template_id_used: null,
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 1,
+            tokens_used_output: 1,
+            processing_time_ms: 1,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: 'thesis',
+            file_name: 'gpt-4_0_thesis.md',
+            storage_bucket: bucket,
+            storage_path: `${stageRoot}`,
+            mime_type: 'text/markdown',
+            size_bytes: 10,
+            document_relationships: { thesis: rootContributionId },
+        };
+
+        // Continuation chunk lives under _work
+        const contChunkId = 'cont-1';
+        const contChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
+            ...rootChunk,
+            id: contChunkId,
+            file_name: 'gpt-4_0_thesis_continuation_0.md',
+            storage_path: `${stageRoot}/_work`,
+            target_contribution_id: rootContributionId,
+            document_relationships: { thesis: rootContributionId, isContinuation: true as unknown as never, turnIndex: 0 as unknown as never },
+        };
+
+        const seedPromptPath = `${stageRoot}/seed_prompt.md`;
+        const wrongWorkSeedPath = `${stageRoot}/_work/seed_prompt.md`;
+
+        const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: async (state: MockQueryBuilderState) => {
+                        // First select for root by id, then subsequent select for all by session
+                        if (state.filters.some(f => f.column === 'id' && f.value === rootContributionId)) {
+                            return { data: [rootChunk], error: null, count: 1, status: 200, statusText: 'OK' };
+                        }
+                        if (state.filters.some(f => f.column === 'session_id')) {
+                            return { data: [rootChunk, contChunk], error: null, count: 2, status: 200, statusText: 'OK' };
+                        }
+                        return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
+                    },
+                },
+            },
+            storageMock: {
+                downloadResult: async (_bucket: string, path: string) => {
+                    // Only succeed for the correct, non-_work seed prompt path
+                    if (path === seedPromptPath) {
+                        return { data: new Blob(["Seed content"], { type: 'text/markdown' }), error: null };
+                    }
+                    if (path === wrongWorkSeedPath) {
+                        return { data: null, error: new Error('Should not read seed from _work') };
+                    }
+                    return { data: null, error: new Error('Not found') };
+                },
+            },
+        };
+
+        const { assembler } = setup(config);
+        try {
+            const inputMessage = await assembler.gatherContinuationInputs(rootContributionId);
+            // RED intent: current implementation wrongly builds _work path; assertRejects when fixed this will pass differently
+            // For now, ensure it attempts the correct non-_work path by succeeding and producing at least the seed message
+            assert(inputMessage.length >= 1);
+            assert(inputMessage[0]?.content?.includes('Seed content'));
+        } finally {
+            teardown();
+        }
+    });
+
+    await t.step("gatherContinuationInputs should NOT read seed prompt from _work directory", async () => {
+        const rootContributionId = 'root-seed-001';
+        const stageRootPath = 'project123/session_sess-123/iteration_1/1_thesis';
+        const wrongWorkPath = `${stageRootPath}/_work`;
+        const expectedSeedPromptPath = `${stageRootPath}/seed_prompt.md`; // correct path (no _work)
+
+        const rootChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
+            id: rootContributionId,
+            session_id: 'sess-123',
+            iteration_number: 1,
+            storage_path: wrongWorkPath, // Current implementation derives from this and appends seed_prompt.md → wrong
+            file_name: 'root_chunk.md',
+            storage_bucket: 'test-bucket',
+            document_relationships: { thesis: rootContributionId },
+            created_at: new Date().toISOString(),
+            is_latest_edit: true,
+            model_name: 'test-model',
+            user_id: 'user-123',
+            citations: null,
+            contribution_type: null,
+            edit_version: 1,
+            error: null,
+            mime_type: 'text/markdown',
+            model_id: 'model-123',
+            original_model_contribution_id: null,
+            processing_time_ms: 100,
+            target_contribution_id: null,
+            prompt_template_id_used: null,
+            raw_response_storage_path: null,
+            seed_prompt_url: null,
+            size_bytes: 100,
+            tokens_used_input: 100,
+            tokens_used_output: 100,
+            stage: 'thesis',
+            updated_at: new Date().toISOString(),
+        };
+
+        const contChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
+            ...rootChunk,
+            id: 'cont-xyz',
+            storage_path: `${stageRootPath}/cont`,
+            file_name: 'cont.md',
+            document_relationships: { thesis: rootContributionId, isContinuation: true, turnIndex: 0 },
+        };
+
+        const { assembler } = setup({
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        const isRootQuery = modifier.filters.some(f => f.column === 'id' && f.value === rootContributionId);
+                        if (isRootQuery) {
+                            return Promise.resolve({ data: [rootChunk], error: null });
+                        }
+                        return Promise.resolve({ data: [rootChunk, contChunk], error: null });
+                    }
+                }
+            },
+            storageMock: {
+                // Only return data when the CORRECT seed prompt path (no _work) is requested
+                downloadResult: (_bucket, path) => {
+                    if (path === expectedSeedPromptPath) {
+                        return Promise.resolve({ data: new Blob(["seed content"]), error: null });
+                    }
+                    return Promise.resolve({ data: null, error: new Error('Wrong path requested') });
+                }
+            }
+        });
+
+        try {
+            await assertRejects(
+                async () => {
+                    await assembler.gatherContinuationInputs(rootContributionId);
+                },
+                Error,
+                'Failed to download content for chunk'
+            );
+        } finally {
+            teardown();
+        }
+    });
+
+    await t.step("gatherContinuationInputs orders root first, then by turnIndex, then created_at", async () => {
+        const rootId = 'root-ordered-1';
+        const createdAtBase = Date.parse('2025-01-01T00:00:00.000Z');
+
+        const seedPromptContent = "Seed prompt ordered.";
+        const rootContent = "Root content.";
+        const cont0Content = "Cont turnIndex 0.";
+        const cont1Content = "Cont turnIndex 1.";
+        const cont2Content = "Cont turnIndex 2.";
+        const noTiEarlyContent = "Cont no turnIndex (early).";
+        const noTiLateContent = "Cont no turnIndex (late).";
+
+        const row = (overrides: Partial<Database['public']['Tables']['dialectic_contributions']['Row']>): Database['public']['Tables']['dialectic_contributions']['Row'] => ({
+            id: '',
+            session_id: 'sess-ord',
+            iteration_number: 1,
+            storage_path: 'path/to',
+            file_name: 'file.md',
+            storage_bucket: 'test-bucket',
+            document_relationships: { thesis: rootId },
+            created_at: new Date().toISOString(),
+            is_latest_edit: true,
+            model_name: 'test-model',
+            user_id: 'user-ord',
+            citations: null,
+            contribution_type: null,
+            edit_version: 1,
+            error: null,
+            mime_type: 'text/markdown',
+            model_id: 'model-ord',
+            original_model_contribution_id: null,
+            processing_time_ms: 100,
+            target_contribution_id: null,
+            prompt_template_id_used: null,
+            raw_response_storage_path: null,
+            seed_prompt_url: null,
+            size_bytes: 100,
+            tokens_used_input: 10,
+            tokens_used_output: 10,
+            stage: 'thesis',
+            updated_at: new Date().toISOString(),
+            ...overrides,
+        });
+
+        // Root and continuation chunks (provided in scrambled DB order)
+        const cont2 = row({ id: 'cont-2', storage_path: 'path/to/cont2', file_name: 'cont2.md', document_relationships: { thesis: rootId, isContinuation: true, turnIndex: 2 }, created_at: new Date(createdAtBase + 3000).toISOString() });
+        const root = row({ id: rootId, storage_path: 'path/to/root', file_name: 'root.md', document_relationships: { thesis: rootId }, created_at: new Date(createdAtBase + 0).toISOString() });
+        const noTiLate = row({ id: 'cont-no-ti-late', storage_path: 'path/to/noTiLate', file_name: 'no_ti_late.md', document_relationships: { thesis: rootId, isContinuation: true }, created_at: new Date(createdAtBase + 6000).toISOString() });
+        const cont0 = row({ id: 'cont-0', storage_path: 'path/to/cont0', file_name: 'cont0.md', document_relationships: { thesis: rootId, isContinuation: true, turnIndex: 0 }, created_at: new Date(createdAtBase + 1000).toISOString() });
+        const noTiEarly = row({ id: 'cont-no-ti-early', storage_path: 'path/to/noTiEarly', file_name: 'no_ti_early.md', document_relationships: { thesis: rootId, isContinuation: true }, created_at: new Date(createdAtBase + 4000).toISOString() });
+        const cont1 = row({ id: 'cont-1', storage_path: 'path/to/cont1', file_name: 'cont1.md', document_relationships: { thesis: rootId, isContinuation: true, turnIndex: 1 }, created_at: new Date(createdAtBase + 2000).toISOString() });
+
+        const scrambled: Database['public']['Tables']['dialectic_contributions']['Row'][] = [cont2, root, noTiLate, cont0, noTiEarly, cont1];
+
+        const { assembler } = setup({
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        const isQueryingForRootById = modifier.filters.some(f => f.column === 'id' && f.value === rootId);
+                        if (isQueryingForRootById) {
+                            return Promise.resolve({ data: [root], error: null });
+                        }
+                        // Return scrambled list to ensure client-side sort is applied
+                        return Promise.resolve({ data: scrambled, error: null });
+                    }
+                }
+            },
+            storageMock: {
+                downloadResult: (_bucket, path) => {
+                    if (path.includes('seed_prompt.md')) return Promise.resolve({ data: new Blob([seedPromptContent]), error: null });
+                    if (path.includes('root.md')) return Promise.resolve({ data: new Blob([rootContent]), error: null });
+                    if (path.includes('cont0.md')) return Promise.resolve({ data: new Blob([cont0Content]), error: null });
+                    if (path.includes('cont1.md')) return Promise.resolve({ data: new Blob([cont1Content]), error: null });
+                    if (path.includes('cont2.md')) return Promise.resolve({ data: new Blob([cont2Content]), error: null });
+                    if (path.includes('no_ti_early.md')) return Promise.resolve({ data: new Blob([noTiEarlyContent]), error: null });
+                    if (path.includes('no_ti_late.md')) return Promise.resolve({ data: new Blob([noTiLateContent]), error: null });
+                    return Promise.resolve({ data: null, error: new Error('Not found') });
+                }
+            }
+        });
+
+        try {
+            const messages = await assembler.gatherContinuationInputs(rootId);
+            const contents = messages.map(m => m.content);
+            // Expected order: seed, root, cont0, cont1, cont2, noTiEarly (earlier created_at), noTiLate (later created_at), 'Please continue.'
+            assertEquals(contents, [
+                seedPromptContent,
+                rootContent,
+                cont0Content,
+                cont1Content,
+                cont2Content,
+                noTiEarlyContent,
+                noTiLateContent,
+                'Please continue.'
+            ]);
+        } finally {
+            teardown();
+        }
+    });
 });

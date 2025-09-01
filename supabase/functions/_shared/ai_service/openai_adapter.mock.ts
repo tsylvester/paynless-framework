@@ -26,7 +26,7 @@ class MockOpenAiAdapter extends OpenAiAdapter {
     // We override the original methods to provide predictable, mock implementations.
     override async getEmbedding(_text: string, _model?: string): Promise<EmbeddingResponse> {
         return Promise.resolve({
-            embedding: Array(1536).fill(0.1),
+            embedding: Array(3072).fill(0.1),
             usage: { prompt_tokens: 5, total_tokens: 5 }
         });
     }

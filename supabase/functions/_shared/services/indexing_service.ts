@@ -3,6 +3,7 @@ import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { RecursiveCharacterTextSplitter } from 'npm:langchain/text_splitter';
 import { type Database, type TablesInsert } from '../../../functions/types_db.ts';
 import { ILogger, AiProviderAdapterInstance, EmbeddingResponse } from '../types.ts';
+import type { ITokenWalletService } from '../types/tokenWallet.types.ts';
 import { IndexingError } from '../utils/errors.ts';
 import { ITextSplitter, IEmbeddingClient, IndexDocumentResult } from './indexing_service.interface.ts';
 
@@ -21,7 +22,7 @@ export class LangchainTextSplitter implements ITextSplitter {
   }
 }
 
-export class OpenAIEmbeddingClient implements IEmbeddingClient {
+export class EmbeddingClient implements IEmbeddingClient {
   constructor(private adapter: AiProviderAdapterInstance) {}
 
   async getEmbedding(text: string): Promise<EmbeddingResponse> {
@@ -46,6 +47,7 @@ export class IndexingService {
     private logger: ILogger,
     private textSplitter: ITextSplitter,
     private embeddingClient: IEmbeddingClient,
+    private tokenWalletService: ITokenWalletService,
   ) {}
 
   async indexDocument(
@@ -68,6 +70,40 @@ export class IndexingService {
       this.logger.info(`[IndexingService] Generated ${embeddingResponses.length} embeddings.`);
 
       const totalTokensUsed = embeddingResponses.reduce((sum, response) => sum + response.usage.total_tokens, 0);
+
+      // Record per-chunk debit at 1:1 tokens used with idempotent keys
+      for (let i = 0; i < embeddingResponses.length; i++) {
+        const usage = embeddingResponses[i].usage;
+        const idempotencyKey = `embed:${sessionId}:${sourceContributionId}:${i + 1}`;
+        const amountStr = String(usage.total_tokens);
+        try {
+          await this.tokenWalletService.recordTransaction({
+            walletId: `embedding-${sessionId}`,
+            type: 'DEBIT_USAGE',
+            amount: amountStr,
+            recordedByUserId: 'system',
+            idempotencyKey,
+            relatedEntityId: sourceContributionId,
+            relatedEntityType: 'dialectic_memory',
+            notes: 'RAG indexing embedding debit (1:1)',
+          });
+        } catch (err) {
+          this.logger.warn('[IndexingService] Failed to record embedding debit transaction', { error: err instanceof Error ? err.message : String(err), idempotencyKey });
+        }
+      }
+
+      // Guard: ensure embeddings are 3072-dim before inserting
+      const expectedEmbeddingDim = 3072;
+      for (let i = 0; i < embeddingResponses.length; i++) {
+        const embeddingVector = embeddingResponses[i].embedding;
+        if (!Array.isArray(embeddingVector) || embeddingVector.length !== expectedEmbeddingDim) {
+          this.logger.error('[IndexingService] Embedding dimension mismatch', {
+            index: i,
+            length: Array.isArray(embeddingVector) ? embeddingVector.length : null,
+          });
+          throw new IndexingError('Embedding dimension mismatch; expected 3072.');
+        }
+      }
 
       const recordsToInsert: TablesInsert<'dialectic_memory'>[] = chunks.map((chunk, index) => ({
         session_id: sessionId,

@@ -73,6 +73,12 @@ Deno.test('constructStoragePath', async (t) => {
         assertEquals(storagePath, `${projectId}/general_resource`);
         assertEquals(fileName, 'api_docs.pdf');
     });
+
+    await t.step('constructs path for project_export_zip', () => {
+      const { storagePath, fileName } = constructStoragePath({ projectId, fileType: FileType.ProjectExportZip, originalFileName: 'My Export.zip' });
+      assertEquals(storagePath, projectId);
+      assertEquals(fileName, 'my_export.zip');
+    });
   });
 
   await t.step('should handle model contributions with correct naming conventions', async (t) => {
@@ -211,6 +217,11 @@ Deno.test('constructStoragePath', async (t) => {
       const { storagePath, fileName } = constructStoragePath({ ...stageContext, fileType: FileType.SeedPrompt });
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis`);
       assertEquals(fileName, 'seed_prompt.md');
+    });
+
+    await t.step('Seed prompt path must never include _work', () => {
+      const { storagePath } = constructStoragePath({ ...stageContext, fileType: FileType.SeedPrompt });
+      assert(!storagePath.includes('/_work'), `Seed prompt path should not be under _work. Got: ${storagePath}`);
     });
 
     await t.step('constructs path for user_feedback', () => {
@@ -392,6 +403,54 @@ Deno.test('constructStoragePath', async (t) => {
         result.fileName,
         'claude-opus_0_thesis_continuation_1.md',
     );
+  });
+
+  await t.step('root model contribution (non-continuation) must not be saved under _work', () => {
+    const context: PathContext = {
+      fileType: FileType.ModelContributionMain,
+      projectId,
+      sessionId,
+      iteration,
+      stageSlug: 'thesis',
+      modelSlug: modelSlug,
+      contributionType: 'thesis',
+      attemptCount: 0,
+      isContinuation: false,
+    };
+    const result = constructStoragePath(context);
+    assert(!result.storagePath.includes('/_work'), `Non-continuation main contribution must not be in _work. Got: ${result.storagePath}`);
+  });
+
+  await t.step('only continuations and intermediate artifacts are saved under _work', () => {
+    const continuationContext: PathContext = {
+      fileType: FileType.ModelContributionMain,
+      projectId,
+      sessionId,
+      iteration,
+      stageSlug: 'synthesis',
+      modelSlug: modelSlug,
+      contributionType: 'synthesis',
+      attemptCount: 0,
+      isContinuation: true,
+      turnIndex: 0,
+    };
+    const intermediateContext: PathContext = {
+      fileType: FileType.PairwiseSynthesisChunk,
+      projectId,
+      sessionId,
+      iteration,
+      stageSlug: 'synthesis',
+      modelSlug: modelSlug,
+      contributionType: 'pairwise_synthesis_chunk',
+      attemptCount: 0,
+      sourceAnchorType: 'thesis',
+      sourceAnchorModelSlug: 'model-a',
+      pairedModelSlug: 'model-b',
+    };
+    const contPath = constructStoragePath(continuationContext);
+    const intermPath = constructStoragePath(intermediateContext);
+    assert(contPath.storagePath.includes('/_work'), `Continuation must be in _work. Got: ${contPath.storagePath}`);
+    assert(intermPath.storagePath.includes('/_work'), `Intermediate artifact must be in _work. Got: ${intermPath.storagePath}`);
   });
 
 });

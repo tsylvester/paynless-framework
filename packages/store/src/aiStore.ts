@@ -4,6 +4,23 @@ import {
 	SystemPrompt,
 	ChatMessage,
 	ChatApiRequest,
+    ApiResponse,
+    PendingAction, // Correctly from @paynless/types
+    AuthRequiredError, // Correctly from @paynless/types
+    Chat,
+    AiState, // Explicitly ensure AiState is imported
+    AiStore, 
+    initialAiStateValues,     // <-- Add this import
+    UserProfileUpdate, // Added for typing the updateProfile payload
+    ChatContextPreferences,
+    UserProfile, // Import UserProfile from @paynless/types
+    Messages,
+    ChatHandlerSuccessResponse, // For casting the api call result type
+    IAuthService,
+    IWalletService,
+    IAiStateService,
+    HandleSendMessageServiceParams,
+} from '@paynless/types' // IMPORT NECESSARY TYPES
 	ApiResponse,
 	PendingAction, // Correctly from @paynless/types
 	AuthRequiredError, // Correctly from @paynless/types
@@ -25,6 +42,11 @@ import {
 // Import api AFTER other local/utility imports but BEFORE code that might use types that cause issues with mocking
 import { api } from "@paynless/api"; // MOVED HERE
 
+import { logger } from '@paynless/utils';
+import { useAuthStore } from './authStore';
+import { useWalletStore } from './walletStore'; // Keep this for getState()
+import { selectActiveChatWalletInfo } from './walletStore.selectors'; // Corrected import path
+import { isChatContextPreferences, isAiProvidersApiResponse, isSystemPromptsApiResponse } from '@paynless/utils';
 import { logger } from "@paynless/utils";
 import { useAuthStore } from "./authStore";
 import { useWalletStore } from "./walletStore"; // Keep this for getState()
@@ -36,7 +58,9 @@ import {
 } from "@paynless/utils";
 
 // Import the new handler function and its required interfaces from ai.SendMessage.ts
-import { handleSendMessage } from "./ai.SendMessage";
+import {
+    handleSendMessage,
+} from './ai.SendMessage';
 
 type ProfileFetchSuccess = {
 	userId: string;
@@ -911,6 +935,9 @@ export const useAiStore = create<AiStore>()(
 					);
 					set({ isLoadingAiResponse: true, aiError: null });
 
+                            const messageContent = String(pendingAction.body['message'] || '');
+                            // Pass the original chatId from the pending action body if it exists
+                            const originalChatIdFromPendingAction = pendingAction.body['chatId'];
 					const messageContent = String(pendingAction.body["message"] || "");
 					// Pass the original chatId from the pending action body if it exists
 					const originalChatIdFromPendingAction = pendingAction.body["chatId"];
@@ -920,6 +947,16 @@ export const useAiStore = create<AiStore>()(
 						originalChatIdFromPendingAction,
 					);
 
+                            try {   
+                                // Ensure the body sent to API matches ChatApiRequest, especially chatId
+                                const apiRequestBody: ChatApiRequest = {
+                                    message: messageContent,
+                                    providerId: pendingAction.body['providerId'],
+                                    promptId: pendingAction.body['promptId'],
+                                    chatId: originalChatIdFromPendingAction, // Now correctly typed
+                                    organizationId: pendingAction.body['organizationId'],
+                                    // rewindFromMessageId is not typically part of a generic pending action replay for send.
+                                };
 					try {
 						// Ensure the body sent to API matches ChatApiRequest, especially chatId
 						const apiRequestBody: ChatApiRequest = {
@@ -1336,10 +1373,9 @@ export const useAiStore = create<AiStore>()(
 					},
 				};
 
-				const walletServiceAdapter: IWalletService = {
-					getActiveWalletInfo: () =>
-						selectActiveChatWalletInfo(useWalletStore.getState()),
-				};
+                        const walletServiceAdapter: IWalletService = {
+                            getActiveWalletInfo: () => selectActiveChatWalletInfo(useWalletStore.getState(), get().newChatContext)
+                        };
 
 				const aiStateServiceAdapter: IAiStateService = {
 					getAiState: get,

@@ -109,7 +109,7 @@ Deno.test('continueJob', async (t) => {
         tokens_used_output: null,
         updated_at: new Date().toISOString(),
         user_id: null,
-        document_relationships: null,
+        document_relationships: { 'test-stage': 'contrib-1' },
     };
 
     const setup = (mockOverrides?: any) => {
@@ -449,6 +449,7 @@ Deno.test('continueJob', async (t) => {
             canonicalPathParams: {
                 contributionType: 'thesis'
             },
+            walletId: 'wallet-default',
         };
         
         const testJob = createMockJob(testPayload);
@@ -463,7 +464,9 @@ Deno.test('continueJob', async (t) => {
         assert(isJobInsert(newJobData));
 
         if (isDialecticExecuteJobPayload(newJobData.payload)) {
-            assertEquals('walletId' in newJobData.payload, false);
+            // walletId is required for continuations and must be preserved
+            assertEquals(newJobData.payload.walletId, 'wallet-default');
+            // maxRetries remains optional and should be omitted if not provided on source payload
             assertEquals('maxRetries' in newJobData.payload, false);
         } else {
             assert(false, 'Payload is not a valid DialecticJobPayload');
@@ -540,6 +543,7 @@ Deno.test('continueJob', async (t) => {
             canonicalPathParams: {
                 contributionType: 'thesis'
             },
+            walletId: 'wallet-default',
         };
 
         const testJob = createMockJob(testPayload);
@@ -595,6 +599,7 @@ Deno.test('continueJob', async (t) => {
             canonicalPathParams: {
                 contributionType: 'thesis'
             },
+            walletId: 'wallet-default',
         };
 
         const testJob = createMockJob(testPayload);
@@ -788,6 +793,148 @@ Deno.test('continueJob', async (t) => {
             status: 'pending_continuation',
             attempt_count: 0
         });
+    });
+
+    await t.step('DOCUMENT_RELATIONSHIPS: should carry forward document_relationships unchanged on continuation payload', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': {
+                    insert: { data: [{ id: 'new-job-id' }] }
+                },
+            },
+        });
+
+        const relationships = { parenthesis: 'root-abc', thread: 'xyz-123' };
+        const payload: DialecticJobPayload = {
+            ...basePayload,
+            continueUntilComplete: true,
+            continuation_count: 0,
+            document_relationships: relationships,
+        };
+        const testJob = createMockJob(payload);
+        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+        const result = await continueJob(
+            deps,
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            testJob,
+            aiResponse,
+            baseSavedContribution,
+            'user-1',
+        );
+
+        assertEquals(result.enqueued, true);
+
+        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+        const newJobData = insertSpy!.callsArgs[0][0];
+        assert(isJobInsert(newJobData));
+        assert(isDialecticJobPayload(newJobData.payload));
+
+        if (isDialecticExecuteJobPayload(newJobData.payload)) {
+            const newPayload = newJobData.payload;
+            // Unchanged carry-forward
+            assertExists(newPayload.document_relationships, 'document_relationships should be present on continuation payload');
+            assertEquals(newPayload.document_relationships, relationships);
+
+            // Chain link and preserved core fields
+            assertEquals(newPayload.target_contribution_id, baseSavedContribution.id);
+            assertEquals(newPayload.sessionId, basePayload.sessionId);
+            assertEquals(newPayload.projectId, basePayload.projectId);
+            assertEquals(newPayload.model_id, basePayload.model_id);
+            assertEquals(newPayload.stageSlug, basePayload.stageSlug);
+            assertEquals(newPayload.iterationNumber, basePayload.iterationNumber);
+            assertEquals(newPayload.continueUntilComplete, true);
+            assertEquals(typeof newPayload.continuation_count, 'number');
+            assertExists(newPayload.canonicalPathParams, 'canonicalPathParams should be preserved');
+            assertExists(newPayload.inputs, 'inputs should be preserved');
+        } else {
+            assert(false, 'Payload is not a valid DialecticExecuteJobPayload');
+        }
+    });
+
+    await t.step('DOCUMENT_RELATIONSHIPS: uses saved contribution relationships when trigger payload lacks them', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': {
+                    insert: { data: [{ id: 'new-job-id' }] }
+                },
+            },
+        });
+
+        const relationships = { thesis: 'root-xyz' };
+        const savedWithRelationships: DialecticContributionRow = {
+            ...baseSavedContribution,
+            document_relationships: relationships,
+        };
+
+        const payload: DialecticJobPayload = {
+            ...basePayload,
+            continueUntilComplete: true,
+            continuation_count: 0,
+            // intentionally omit document_relationships on triggering payload
+        };
+
+        const testJob = createMockJob(payload);
+        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+        const result = await continueJob(
+            deps,
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            testJob,
+            aiResponse,
+            savedWithRelationships,
+            'user-1',
+        );
+
+        assertEquals(result.enqueued, true);
+
+        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+        const newJobData = insertSpy!.callsArgs[0][0];
+        assert(isJobInsert(newJobData));
+        assert(isDialecticJobPayload(newJobData.payload));
+
+        if (isDialecticExecuteJobPayload(newJobData.payload)) {
+            const newPayload = newJobData.payload;
+            assertExists(newPayload.document_relationships, 'document_relationships should be present on continuation payload');
+            assertEquals(newPayload.document_relationships, relationships);
+            assertEquals(newPayload.target_contribution_id, savedWithRelationships.id);
+        } else {
+            assert(false, 'Payload is not a valid DialecticExecuteJobPayload');
+        }
+    });
+
+    await t.step('DOCUMENT_RELATIONSHIPS: should hard-fail enqueue when relationships missing on both trigger and saved', async () => {
+        setup();
+
+        // saved contribution has no document_relationships (explicitly null for this test)
+        const savedWithoutRelationships: DialecticContributionRow = {
+            ...baseSavedContribution,
+            document_relationships: null,
+        };
+        const payload: DialecticJobPayload = {
+            ...basePayload,
+            continueUntilComplete: true,
+            continuation_count: 0,
+            // intentionally no document_relationships on triggering payload
+        };
+
+        const testJob = createMockJob(payload);
+        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+        const result = await continueJob(
+            deps,
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            testJob,
+            aiResponse,
+            savedWithoutRelationships,
+            'user-1',
+        );
+
+        assertEquals(result.enqueued, false);
+        assertExists(result.error);
+
+        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+        assertEquals(insertSpy?.callCount ?? 0, 0, 'Should not enqueue when relationships are missing');
     });
 
     await t.step('PAYLOAD_CONSTRUCTION: should increment continuation_count from existing value', async () => {

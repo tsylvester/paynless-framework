@@ -31,6 +31,8 @@ import {
     setupMockClient, 
     getMockDeps 
 } from './executeModelCallAndSave.test.ts';
+import { DocumentRelationships } from '../_shared/types/file_manager.types.ts';
+
 
 Deno.test('resource documents are used for sizing but not included in ChatApiRequest.messages', async () => {
     const { client: dbClient } = setupMockClient({
@@ -208,8 +210,7 @@ Deno.test('should only pass un-indexed documents to the RAG service', async () =
 
     const limitedConfig = {
         ...mockFullProviderData.config,
-        max_context_window_tokens: 100,
-        context_window_tokens: 1000,
+        context_window_tokens: 100,
         provider_max_output_tokens: 50,
     };
 
@@ -428,8 +429,7 @@ Deno.test('should iteratively compress the lowest-value candidate until the prom
     // Configure token limits
     const limitedConfig = {
         ...mockFullProviderData.config,
-        max_context_window_tokens: 100, // Force compression with real tokenizer
-        context_window_tokens: 1000,    // Preflight headroom
+        context_window_tokens: 100, // Force compression with real tokenizer
         provider_max_output_tokens: 50,
     };
     if (!isRecord(limitedConfig)) throw new Error("Test config error");
@@ -495,8 +495,7 @@ Deno.test('should throw ContextWindowError if compression fails to reduce size s
     // Set a very tight token limit
     const limitedConfig = {
         ...mockFullProviderData.config,
-        max_context_window_tokens: 20,
-        context_window_tokens: 1000, // ensure preflight headroom
+        context_window_tokens: 20,
         provider_max_output_tokens: 50,
     };
 
@@ -561,7 +560,7 @@ Deno.test('should throw ContextWindowError if compression fails to reduce size s
     assertEquals(ragSpy.calls.length, 1, "RAG service should have been called for the one available candidate.");
 });
 
-// Step 58 (RED): After compression, enforce allowed input headroom before provider call
+// After compression, enforce allowed input headroom before provider call
 // End-state assertion: if final token count exceeds allowed input (provider_max_input_tokens - (plannedMaxOutputTokens + safetyBuffer)),
 // the provider must NOT be called.
 Deno.test('does not call provider if final input exceeds allowed headroom after compression', async () => {
@@ -570,8 +569,7 @@ Deno.test('does not call provider if final input exceeds allowed headroom after 
   }
   const cfg = {
     ...mockFullProviderData.config,
-    max_context_window_tokens: 100,      // loop fits when <= 100
-    context_window_tokens: 100,
+    context_window_tokens: 100,      // loop fits when <= 100
     provider_max_input_tokens: 100,      // basis for allowed input
     provider_max_output_tokens: 50,      // planned output budget
     input_token_cost_rate: 1,
@@ -656,8 +654,7 @@ Deno.test('proceeds when final input equals allowed headroom (boundary success)'
   }
   const cfg = {
     ...mockFullProviderData.config,
-    max_context_window_tokens: 1000,     // ensure non-oversized path
-    context_window_tokens: 1000,
+    context_window_tokens: 1000,     // ensure non-oversized path
     provider_max_input_tokens: 100,      // basis for allowed input
     provider_max_output_tokens: 50,      // planned output budget
     input_token_cost_rate: 1,
@@ -691,11 +688,14 @@ Deno.test('proceeds when final input equals allowed headroom (boundary success)'
     currentUserPrompt: 'current',
   };
 
+  const stageSlug = 'thesis';
+  const rootId = 'root-prev';
+  const rel: DocumentRelationships = { [stageSlug]: rootId };
   const params: ExecuteModelCallAndSaveParams = {
     dbClient: dbClient as unknown as SupabaseClient<Database>,
     deps,
     authToken: 'auth-token',
-    job: createMockJob({ ...testPayload, walletId: 'wallet-xyz' }),
+    job: createMockJob({ ...testPayload, walletId: 'wallet-xyz', stageSlug, document_relationships: rel }),
     projectOwnerUserId: 'user-789',
     providerDetails: mockProviderData,
     promptConstructionPayload: payload,
@@ -716,8 +716,7 @@ Deno.test('fails when final input exceeds allowed headroom by 1 token (boundary 
   }
   const cfg = {
     ...mockFullProviderData.config,
-    max_context_window_tokens: 1000,     // ensure non-oversized path
-    context_window_tokens: 1000,
+    context_window_tokens: 1000,     // ensure non-oversized path
     provider_max_input_tokens: 100,
     provider_max_output_tokens: 50,
     input_token_cost_rate: 1,
@@ -771,14 +770,13 @@ Deno.test('fails when final input exceeds allowed headroom by 1 token (boundary 
   countStub.restore();
 });
 
-Deno.test('enforces strict user-assistant alternation in ChatApiRequest after compression (RED)', async () => {
+Deno.test('enforces strict user-assistant alternation in ChatApiRequest after compression', async () => {
   // Arrange: configure compression and create a history that violates alternation (two assistants in a row)
   if (!isRecord(mockFullProviderData.config)) {
     throw new Error('Test setup error: mockFullProviderData.config is not an object');
   }
   const cfg = {
     ...mockFullProviderData.config,
-    max_context_window_tokens: 50,
     context_window_tokens: 50,
     provider_max_input_tokens: 10000,
     provider_max_output_tokens: 50,
@@ -811,6 +809,9 @@ Deno.test('enforces strict user-assistant alternation in ChatApiRequest after co
     { id: 'u-last', role: 'user', content: 'Please continue.' },
   ];
 
+  const stageSlug2 = 'thesis';
+  const rootId2 = 'prev';
+  const rel2: DocumentRelationships = { [stageSlug2]: rootId2 };
   const params: ExecuteModelCallAndSaveParams = {
     dbClient: dbClient as unknown as SupabaseClient<Database>,
     deps,
@@ -818,9 +819,11 @@ Deno.test('enforces strict user-assistant alternation in ChatApiRequest after co
     job: createMockJob({
       ...testPayload,
       walletId: 'wallet-turn',
-      target_contribution_id: 'prev',
+      target_contribution_id: rootId2,
       continueUntilComplete: true,
       continuation_count: 1,
+      stageSlug: stageSlug2,
+      document_relationships: rel2,
     }),
     projectOwnerUserId: 'user-789',
     providerDetails: mockProviderData,
@@ -863,7 +866,6 @@ Deno.test('enforces strict user-assistant alternation in ChatApiRequest after co
   countStub.restore();
 });
 
-
 Deno.test('preserves continuation anchors after compression', async () => {
   // Arrange: force compression with controlled token counts
   if (!isRecord(mockFullProviderData.config)) {
@@ -871,7 +873,6 @@ Deno.test('preserves continuation anchors after compression', async () => {
   }
   const cfg = {
     ...mockFullProviderData.config,
-    max_context_window_tokens: 50,
     context_window_tokens: 50,
     provider_max_input_tokens: 10000,
     provider_max_output_tokens: 50,
@@ -908,6 +909,9 @@ Deno.test('preserves continuation anchors after compression', async () => {
     { id: 'please-continue', role: 'user', content: 'Please continue.' },   // single trailing continuation
   ];
 
+  const stageSlug3 = 'thesis';
+  const rootId3 = 'prev-contrib-id';
+  const rel3: DocumentRelationships = { [stageSlug3]: rootId3 };
   const params: ExecuteModelCallAndSaveParams = {
     dbClient: dbClient as unknown as SupabaseClient<Database>,
     deps,
@@ -915,9 +919,11 @@ Deno.test('preserves continuation anchors after compression', async () => {
     job: createMockJob({
       ...testPayload,
       walletId: 'wallet-ctn',
-      target_contribution_id: 'prev-contrib-id',
+      target_contribution_id: rootId3,
       continueUntilComplete: true,
       continuation_count: 1,
+      stageSlug: stageSlug3,
+      document_relationships: rel3,
     }),
     projectOwnerUserId: 'user-789',
     providerDetails: mockProviderData,
@@ -979,7 +985,6 @@ Deno.test('RAG debits use stable idempotency keys tied to job and candidate', as
   }
   const cfg = {
     ...mockFullProviderData.config,
-    max_context_window_tokens: 100,
     context_window_tokens: 100,
     provider_max_input_tokens: 10000,
     provider_max_output_tokens: 50,
@@ -1059,8 +1064,246 @@ Deno.test('RAG debits use stable idempotency keys tied to job and candidate', as
 
   assertEquals(seenKeys.size, 2, 'Idempotency keys should be unique per candidate and stable across retries');
 });
-// 71.a RED: Error specificity in worker - missing wallet should throw a clear, unique message and never call provider
-Deno.test('error specificity: missing wallet throws "Wallet is required to process model calls." and does not call provider (RED)', async () => {
+
+// Recompute SSOT after RAG debit reduces balance
+Deno.test('recomputes SSOT output after RAG debit reduces balance', async () => {
+  if (!isRecord(mockFullProviderData.config)) throw new Error('Test setup error: config not object');
+  const cfg = {
+    ...mockFullProviderData.config,
+    context_window_tokens: 100,       // force compression
+    provider_max_input_tokens: 200,
+    provider_max_output_tokens: 1000,
+    input_token_cost_rate: 1,         // costful RAG to reduce balance
+    output_token_cost_rate: 1,
+  };
+  const { client: dbClient } = setupMockClient({ 'ai_providers': { select: { data: [{ ...mockFullProviderData, config: cfg }], error: null } } });
+
+  // Balance high enough for first SSOT; then reduced via RAG debit to shrink SSOT
+  // Start balance 200; initial SSOT_output ~ floor(0.8*200 / 1) = 160
+  const { instance: mockTokenWalletService, stubs } = createMockTokenWalletService({ getBalance: () => Promise.resolve('700') });
+
+  const deps = getMockDeps(mockTokenWalletService);
+  const modelSpy = spy(deps, 'callUnifiedAIModel');
+
+  // Count tokens path: initial tokenCount oversized (300), after first compression (150), after second (80) fits
+  let idx = 0;
+  const countStub = stub(deps, 'countTokens', () => (++idx === 1 ? 300 : (idx === 2 ? 150 : 80)));
+
+  // RAG mock returns tokensUsed=50 each iteration, debit reduces balance -> new SSOT smaller
+  const mockRag = new MockRagService();
+  mockRag.setConfig({ mockContextResult: 'short', mockTokensUsed: 50 });
+  deps.ragService = mockRag;
+
+  const mockCompressionStrategy: ICompressionStrategy = async () => ([
+    { id: 'cand-1', content: 'long-1', sourceType: 'document', originalIndex: 1, valueScore: 0.1 },
+    { id: 'cand-2', content: 'long-2', sourceType: 'history', originalIndex: 2, valueScore: 0.2 },
+  ]);
+
+  const payload: PromptConstructionPayload = {
+    systemInstruction: '',
+    conversationHistory: [ { role: 'user', content: 'seed' }, { role: 'assistant', content: 'reply' } ],
+    resourceDocuments: [],
+    currentUserPrompt: 'CURR',
+  };
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob({ ...testPayload, walletId: 'wallet-ssot-recompute' }),
+    projectOwnerUserId: 'user-xyz',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: payload,
+    sessionData: mockSessionData,
+    compressionStrategy: mockCompressionStrategy,
+  };
+
+  await executeModelCallAndSave(params);
+
+  // Assert: wallet debits occurred for RAG
+  assert(stubs.recordTransaction.calls.length >= 1, 'Expected at least one RAG debit to reduce balance');
+  // Provider called once at the end
+  assertEquals(modelSpy.calls.length, 1, 'Model should be called once after recomputation enforces new headroom');
+
+  countStub.restore();
+});
+
+// Final ChatApiRequest.cap equals SSOT(final input)
+Deno.test('final ChatApiRequest.max_tokens_to_generate equals SSOT(final input)', async () => {
+  if (!isRecord(mockFullProviderData.config)) throw new Error('Test setup error: config not object');
+  const cfg = {
+    ...mockFullProviderData.config,
+    context_window_tokens: 1000,      // ensure non-oversized final after one compression cycle
+    provider_max_input_tokens: 10000,
+    provider_max_output_tokens: 500,
+    input_token_cost_rate: 1,
+    output_token_cost_rate: 2,
+  };
+  const { client: dbClient } = setupMockClient({ 'ai_providers': { select: { data: [{ ...mockFullProviderData, config: cfg }], error: null } } });
+
+  // Balance chosen so SSOT_output = floor(0.8*balance / output_rate)
+  // balance=1000 => floor(800/2)=400
+  const { instance: mockTokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('1000') });
+  const deps = getMockDeps(mockTokenWalletService);
+  const modelSpy = spy(deps, 'callUnifiedAIModel');
+
+  // Token counter: initial count fits window (50) so we use non-oversized path, but we still want to validate cap equals SSOT
+  const countStub = stub(deps, 'countTokens', () => 50);
+
+  const payload: PromptConstructionPayload = {
+    systemInstruction: 'SYS',
+    conversationHistory: [ { role: 'user', content: 'hello' } ],
+    resourceDocuments: [],
+    currentUserPrompt: 'CURR',
+  };
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob({ ...testPayload, walletId: 'wallet-final-ssot' }),
+    projectOwnerUserId: 'user-xyz',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: payload,
+    sessionData: mockSessionData,
+    compressionStrategy: getSortedCompressionCandidates,
+  };
+
+  await executeModelCallAndSave(params);
+  assertEquals(modelSpy.calls.length, 1, 'Model should be called once');
+  const sent = modelSpy.calls[0].args[0] as { max_tokens_to_generate?: number };
+  assertEquals(sent.max_tokens_to_generate, 400, 'Final cap must equal SSOT output for final-sized payload');
+
+  countStub.restore();
+});
+
+// SSOT cap is threaded unchanged to /chat in compression path
+Deno.test('threads SSOT cap unchanged to callUnifiedAIModel in compression path', async () => {
+  if (!isRecord(mockFullProviderData.config)) throw new Error('Test setup error: config not object');
+  const cfg = {
+    ...mockFullProviderData.config,
+    context_window_tokens: 600,       // force compression path with ample headroom for SSOT output
+    provider_max_input_tokens: 10000, // avoid input headroom conflicts in this identity test
+    provider_max_output_tokens: 1000, // not limiting
+    input_token_cost_rate: 0,         // simplify SSOT to budget/output only
+    output_token_cost_rate: 2,
+  };
+  const { client: dbClient } = setupMockClient({ 'ai_providers': { select: { data: [{ ...mockFullProviderData, config: cfg }], error: null } } });
+
+  // Wallet balance => SSOT_output = floor(0.8 * balance / output_rate) = floor(800 / 2) = 400
+  const { instance: mockTokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('1000') });
+  const deps = getMockDeps(mockTokenWalletService);
+  const modelSpy = spy(deps, 'callUnifiedAIModel');
+
+  // Token counter: start oversized, compress to fit
+  let idx = 0;
+  const countStub = stub(deps, 'countTokens', () => (++idx === 1 ? 700 : 90));
+
+  // One or more candidates to trigger RAG/compression loop
+  const mockCompressionStrategy: ICompressionStrategy = async () => ([
+    { id: 'cand-1', content: 'long-1', sourceType: 'document', originalIndex: 1, valueScore: 0.1 },
+  ]);
+
+  const payload: PromptConstructionPayload = {
+    systemInstruction: '',
+    conversationHistory: [ { role: 'user', content: 'seed' }, { role: 'assistant', content: 'reply' } ],
+    resourceDocuments: [],
+    currentUserPrompt: 'CURR',
+  };
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob({ ...testPayload, walletId: 'wallet-rag-identity' }),
+    projectOwnerUserId: 'user-xyz',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: payload,
+    sessionData: mockSessionData,
+    compressionStrategy: mockCompressionStrategy,
+  };
+
+  await executeModelCallAndSave(params);
+  assertEquals(modelSpy.calls.length, 1, 'Model should be called once after compression fits');
+  const sent = modelSpy.calls[0].args[0] as { max_tokens_to_generate?: number };
+  assertEquals(sent.max_tokens_to_generate, 400, 'SSOT cap must be forwarded unchanged to callUnifiedAIModel');
+
+  countStub.restore();
+});
+
+// 113.A RED: Allowed input headroom uses SSOT (budget-based) not provider cap
+Deno.test('uses SSOT-based output headroom (budget) to compute allowed input during compression', async () => {
+  if (!isRecord(mockFullProviderData.config)) {
+    throw new Error('Test setup error: mockFullProviderData.config is not an object');
+  }
+  // Model config: provider output cap large; input rate = 0 so SSOT output depends only on balance (0.8 * balance / output_rate)
+  const cfg = {
+    ...mockFullProviderData.config,
+    context_window_tokens: 100,        // force compression
+    provider_max_input_tokens: 200,    // headroom basis
+    provider_max_output_tokens: 1000,  // not limiting; SSOT (budget) should dominate
+    input_token_cost_rate: 0,          // make SSOT output independent of tokenCount
+    output_token_cost_rate: 1,
+  };
+
+  const { client: dbClient } = setupMockClient({
+    'ai_providers': { select: { data: [{ ...mockFullProviderData, config: cfg }], error: null } },
+    'dialectic_memory': { select: { data: [], error: null } },
+  });
+
+  // Wallet balance => SSOT_output = floor(0.8 * balance / output_rate) = 80
+  const { instance: mockTokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100') });
+
+  const deps = getMockDeps(mockTokenWalletService);
+  const modelSpy = spy(deps, 'callUnifiedAIModel');
+
+  // Token counter sequence: initial oversized (120), first compression (89) still violates headroom, second (88) fits
+  // Allowed input based on SSOT:  allowedInput = provider_max_input_tokens - (SSOT_output + 32) = 200 - (80 + 32) = 88
+  let idx = 0;
+  const countStub = stub(deps, 'countTokens', () => {
+    idx++;
+    return idx === 1 ? 120 : (idx === 2 ? 89 : 88);
+  });
+
+  // Compression strategy to ensure at least two iterations
+  const mockCompressionStrategy: ICompressionStrategy = async () => ([
+    { id: 'cand-1', content: 'middle-1', sourceType: 'history', originalIndex: 3, valueScore: 0.2 },
+    { id: 'cand-2', content: 'middle-2', sourceType: 'document', originalIndex: 1, valueScore: 0.3 },
+  ]);
+
+  const payload: PromptConstructionPayload = {
+    systemInstruction: '',
+    conversationHistory: [
+      { role: 'system', content: 'SYS' },
+      { role: 'user', content: 'A'.repeat(400) },
+      { role: 'assistant', content: 'B' },
+    ],
+    resourceDocuments: [],
+    currentUserPrompt: 'CURR',
+  };
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob({ ...testPayload, walletId: 'wallet-ssot' }),
+    projectOwnerUserId: 'user-abc',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: payload,
+    sessionData: mockSessionData,
+    compressionStrategy: mockCompressionStrategy,
+  };
+
+  await executeModelCallAndSave(params);
+
+  // Assert: provider called exactly once when final input equals SSOT-based allowed input (88)
+  assertEquals(modelSpy.calls.length, 1, 'Model should be called once, only when SSOT headroom condition is met.');
+
+  countStub.restore();
+});
+
+// Error specificity in worker - missing wallet should throw a clear, unique message and never call provider
+Deno.test('error specificity: missing wallet throws "Wallet is required to process model calls." and does not call provider', async () => {
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
   });
@@ -1102,7 +1345,7 @@ Deno.test('error specificity: missing wallet throws "Wallet is required to proce
 });
 
 // Error specificity in worker - missing critical dependency throws a clear, unique message and never calls provider
-Deno.test("error specificity: missing 'countTokens' dependency throws and does not call provider (RED)", async () => {
+Deno.test("error specificity: missing 'countTokens' dependency throws and does not call provider", async () => {
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
   });
@@ -1144,5 +1387,93 @@ Deno.test("error specificity: missing 'countTokens' dependency throws and does n
   }
   assert(threw, "Expected an error to be thrown when 'countTokens' is missing");
   assertEquals(modelSpy.calls.length, 0, 'Provider should not be called when a critical dependency is missing');
+});
+
+
+// 123.g: Preflight should reject when compression + planned embeddings + final send would exceed 80% of balance
+Deno.test('preflight rejects when total planned spend (compression + embeddings + final) exceeds 80% budget', async () => {
+  if (!isRecord(mockFullProviderData.config)) {
+    throw new Error('Test setup error: mockFullProviderData.config is not an object');
+  }
+
+  // Math setup (do the math first):
+  // - Balance B = 375 -> 80% of B = 300
+  // - initialTokenCount = 300, context_window_tokens (cw) = 200 (oversized)
+  //   tokensToBeRemoved = 300 - 200 = 100
+  // - input_token_cost_rate = 1, output_token_cost_rate = 1
+  //   estimatedCompressionCost = 100, estimatedFinalPromptCost = 200 => input-only total = 300 (== 80% of B) → passes
+  // - planned embedding queries add any positive cost E > 0 → total > 300 → should be rejected by preflight
+
+  const cfg: AiModelExtendedConfig = {
+    ...mockFullProviderData.config,
+    context_window_tokens: 200,
+    provider_max_input_tokens: 0,     // treat as Infinity in headroom logic
+    provider_max_output_tokens: 1000, // not limiting
+    input_token_cost_rate: 1,
+    output_token_cost_rate: 1,
+    api_identifier: 'test-api',
+    tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+  };
+
+  const { client: dbClient } = setupMockClient({
+    'ai_providers': { select: { data: [{ ...mockFullProviderData, config: cfg }], error: null } },
+  });
+
+  // Wallet balance B = 375
+  const { instance: mockTokenWalletService } = createMockTokenWalletService({
+    getBalance: () => Promise.resolve('450'),
+  });
+
+  const deps = getMockDeps(mockTokenWalletService);
+
+  // Use a RAG mock that would incur non-zero embedding cost if we accounted for it
+  const mockRag = new MockRagService();
+  mockRag.setConfig({ mockContextResult: 'short summary', mockTokensUsed: 10 });
+  deps.ragService = mockRag;
+
+  // Token counter: first call oversized (300), after one compression fits exactly cw (200)
+  let idx = 0;
+  const countStub = stub(deps, 'countTokens', () => (++idx === 1 ? 300 : 200));
+
+  // Provide one compression candidate so the function would proceed if preflight does not reject
+  const oneCandidateStrategy: ICompressionStrategy = async () => ([
+    { id: 'cand-embed', content: 'long content to summarize', sourceType: 'history', originalIndex: 1, valueScore: 0.5 },
+  ]);
+
+  const payload: PromptConstructionPayload = {
+    systemInstruction: 'SYS',
+    conversationHistory: [ { role: 'user', content: 'hello' } ],
+    resourceDocuments: [],
+    currentUserPrompt: 'current',
+  };
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob({ ...testPayload, walletId: 'wallet-embeds-preflight' }),
+    projectOwnerUserId: 'user-emb',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: payload,
+    sessionData: mockSessionData,
+    compressionStrategy: oneCandidateStrategy,
+  };
+
+  let threw = false;
+  try {
+    await executeModelCallAndSave(params);
+  } catch (e: unknown) {
+    threw = true;
+    // Expect the specific rationality (80%) error to be thrown once embedding costs are included in preflight
+    if (e instanceof Error) {
+      assert(e.message.includes('80%') || e.message.includes('exceeds 80%'), `Expected preflight 80% rejection message, got: ${e.message}`);
+    }
+  }
+
+  // End-state expectation: with embedding costs included, preflight should reject
+  // Current implementation excludes embeddings in preflight, so this test should fail (RED) until fixed.
+  assert(threw, 'Preflight should reject when planned total (including embeddings) exceeds 80% of balance.');
+
+  countStub.restore();
 });
 

@@ -64,7 +64,8 @@ Deno.test('planPerSourceDocumentByLineage', async (t) => {
             step_info: {
                 current_step: 1,
                 total_steps: 3,
-            }
+            },
+            walletId: 'wallet-default',
         },
     });
 

@@ -105,47 +105,43 @@ export const useTokenEstimator = (
 			// Prepare input for API token estimation
 			let inputForEstimator: string | Messages[];
 
-			if (
-				modelConfig.tokenization_strategy?.type === "tiktoken" &&
-				modelConfig.tokenization_strategy?.is_chatml_model
-			) {
-				const messages: Messages[] = [];
-				if (systemPromptContent) {
-					messages.push({ role: "system", content: systemPromptContent });
-				}
-				historyMessages.forEach((msg) => {
-					messages.push({
-						role: msg.role as "user" | "assistant" | "system",
-						content: msg.content,
-					});
-				});
-				if (textInput.trim()) {
-					messages.push({ role: "user", content: textInput });
-				}
-				inputForEstimator = messages;
-				if (inputForEstimator.length === 0) {
-					setEstimatedTokens(0);
-					setIsLoading(false);
-					return;
-				}
-			} else {
-				// For non-ChatML tiktoken or rough_char_count, combine into a single string.
-				let combinedText: string = systemPromptContent
-					? systemPromptContent + "\n"
-					: "";
-				combinedText += historyMessages.map((msg) => msg.content).join("\n");
-				if (debouncedTextInput.trim()) {
-					combinedText = combinedText.trim()
-						? combinedText.trim() + "\n" + debouncedTextInput
-						: debouncedTextInput;
-				}
-				inputForEstimator = combinedText.trim();
-				if (!inputForEstimator) {
-					setEstimatedTokens(0);
-					setIsLoading(false);
-					return;
-				}
-			}
+      if (
+        modelConfig.tokenization_strategy?.type === 'tiktoken' &&
+        modelConfig.tokenization_strategy?.is_chatml_model
+      ) {
+        const messages: Messages[] = [];
+        if (systemPromptContent) {
+          messages.push({ role: 'system', content: systemPromptContent });
+        }
+        historyMessages.forEach(msg => {
+          messages.push({
+            role: msg.role as 'user' | 'assistant' | 'system',
+            content: msg.content,
+          });
+        });
+        if (debouncedTextInput.trim()) {
+          messages.push({ role: 'user', content: debouncedTextInput });
+        }
+        inputForEstimator = messages;
+        if (inputForEstimator.length === 0) {
+          setEstimatedTokens(0);
+          setIsLoading(false);
+          return;
+        }
+      } else {
+        // For non-ChatML tiktoken or rough_char_count, combine into a single string.
+        let combinedText: string = systemPromptContent ? systemPromptContent + '\n' : '';
+        combinedText += historyMessages.map(msg => msg.content).join('\n');
+        if (debouncedTextInput.trim()) {
+          combinedText = combinedText.trim() ? combinedText.trim() + '\n' + debouncedTextInput : debouncedTextInput;
+        }
+        inputForEstimator = combinedText.trim();
+        if (!inputForEstimator) {
+          setEstimatedTokens(0);
+          setIsLoading(false);
+          return;
+        }
+      }
 
 			try {
 				const token = useAuthStore.getState().session?.access_token;

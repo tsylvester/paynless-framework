@@ -29,6 +29,7 @@ export enum FileType {
   ReducedSynthesis = 'reduced_synthesis',
   Synthesis = 'synthesis',
   RagContextSummary = 'rag_context_summary',
+  ProjectExportZip = 'project_export_zip',
 }
 
 /**

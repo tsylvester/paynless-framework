@@ -1,4 +1,5 @@
 import { vi, type Mock } from 'vitest';
+import type { ActiveChatWalletInfo } from '@paynless/types';
 import { 
     initialWalletStateValues, 
     WalletStateValues, 
@@ -16,7 +17,6 @@ let currentMockWalletStoreState: MockableWalletStore;
 export const mockGetOrLoadOrganizationWallet = vi.fn();
 export const mockLoadPersonalWallet = vi.fn();
 export const mockDetermineChatWallet = vi.fn();
-export const mockSetCurrentChatWalletDecision = vi.fn();
 export const mockResetForTesting = vi.fn(); // This is the store's internal reset, might need a different name if we export a reset for the mock itself
 export const mockLoadTransactionHistory = vi.fn();
 export const mockInitiatePurchase = vi.fn();
@@ -24,11 +24,18 @@ export const mockLoadOrganizationWallet = vi.fn();
 
 // New mock functions for consent
 export const mockSetUserOrgTokenConsent = vi.fn();
-export const mockLoadUserOrgTokenConsent = vi.fn();
 export const mockClearUserOrgTokenConsent = vi.fn();
 
-// Mock for the selector used by aiStore
-export const selectActiveChatWalletInfo = vi.fn();
+// UI/notification action mocks present in real store
+export const mockOpenConsentModal = vi.fn();
+export const mockCloseConsentModal = vi.fn();
+export const mockHandleWalletUpdateNotification = vi.fn();
+
+// Mock for the selector used by ai/chat flows; typed so tests can .mockReturnValue without casts
+export const selectActiveChatWalletInfo: Mock<[
+  MockableWalletStore,
+  string | null | undefined
+], ActiveChatWalletInfo> = vi.fn();
 
 // Helper to initialize/reset the mock state for each test
 export const initializeMockWalletStore = (initialState?: Partial<WalletStateValues>) => {
@@ -36,14 +43,15 @@ export const initializeMockWalletStore = (initialState?: Partial<WalletStateValu
   mockGetOrLoadOrganizationWallet.mockClear();
   mockLoadPersonalWallet.mockClear();
   mockDetermineChatWallet.mockClear();
-  mockSetCurrentChatWalletDecision.mockClear();
   mockResetForTesting.mockClear();
   mockLoadTransactionHistory.mockClear();
   mockInitiatePurchase.mockClear();
   mockLoadOrganizationWallet.mockClear();
   mockSetUserOrgTokenConsent.mockClear();
-  mockLoadUserOrgTokenConsent.mockClear();
   mockClearUserOrgTokenConsent.mockClear();
+  mockOpenConsentModal.mockClear();
+  mockCloseConsentModal.mockClear();
+  mockHandleWalletUpdateNotification.mockClear();
   selectActiveChatWalletInfo.mockClear();
 
   // Reset the top-level mock if tests spy on it AND expect per-test reset.
@@ -56,15 +64,16 @@ export const initializeMockWalletStore = (initialState?: Partial<WalletStateValu
     getOrLoadOrganizationWallet: mockGetOrLoadOrganizationWallet,
     loadPersonalWallet: mockLoadPersonalWallet,
     determineChatWallet: mockDetermineChatWallet,
-    setCurrentChatWalletDecision: mockSetCurrentChatWalletDecision,
     _resetForTesting: mockResetForTesting, 
     loadTransactionHistory: mockLoadTransactionHistory,
     initiatePurchase: mockInitiatePurchase,
     loadOrganizationWallet: mockLoadOrganizationWallet,
     // Add new consent actions
     setUserOrgTokenConsent: mockSetUserOrgTokenConsent,
-    loadUserOrgTokenConsent: mockLoadUserOrgTokenConsent,
     clearUserOrgTokenConsent: mockClearUserOrgTokenConsent,
+    openConsentModal: mockOpenConsentModal,
+    closeConsentModal: mockCloseConsentModal,
+    _handleWalletUpdateNotification: mockHandleWalletUpdateNotification,
     // Ensure all other state value fields are here from mockInitialWalletState or overridden
     personalWallet: initialState?.personalWallet !== undefined ? initialState.personalWallet : null,
     organizationWallets: initialState?.organizationWallets || {},
@@ -81,7 +90,8 @@ export const initializeMockWalletStore = (initialState?: Partial<WalletStateValu
     currentChatWalletDecision: initialState?.currentChatWalletDecision !== undefined 
         ? initialState.currentChatWalletDecision 
         : initialWalletStateValues.currentChatWalletDecision, 
-  } as MockableWalletStore;
+    isConsentModalOpen: initialState?.isConsentModalOpen || false,
+  };
 };
 
 // Initialize with default state once

@@ -7,7 +7,6 @@ import { DialecticContributionRow, InputArtifactRules, ArtifactSourceRule } from
 import { DynamicContextVariables, ProjectContext, SessionContext, StageContext, RenderPromptFunctionType, ContributionOverride, AssemblerSourceDocument } from "./prompt-assembler.interface.ts";
 import type { DownloadStorageResult } from "./supabase_storage_utils.ts";
 import { hasProcessingStrategy } from "./utils/type_guards.ts";
-import { join } from "jsr:@std/path/join";
 import { AiModelExtendedConfig, Messages } from "./types.ts";
 import { countTokens } from "./utils/tokenizer_utils.ts";
 import type { CountTokensDeps, CountableChatPayload } from "./types/tokenizer.types.ts";
@@ -238,7 +237,8 @@ export class PromptAssembler implements IPromptAssembler {
                         if (criticalError) break;
 
                         if (contrib.storage_path && contrib.storage_bucket) {
-                            const pathToDownload = join(contrib.storage_path, contrib.file_name || '');
+                            const fileName = contrib.file_name || '';
+                            const pathToDownload = fileName ? `${contrib.storage_path}/${fileName}` : contrib.storage_path;
                             const { data: content, error: downloadError } =
                                 await this.downloadFromStorageFn(contrib.storage_bucket, pathToDownload);
 
@@ -291,7 +291,7 @@ export class PromptAssembler implements IPromptAssembler {
                         continue;
                     }
                     
-                    const feedbackPath = join(feedbackRecord.storage_path, feedbackRecord.file_name);
+                    const feedbackPath = `${feedbackRecord.storage_path}/${feedbackRecord.file_name}`;
                     const { data: feedbackContent, error: feedbackDownloadError } = await this.downloadFromStorageFn(feedbackRecord.storage_bucket, feedbackPath);
 
                     if (feedbackContent && !feedbackDownloadError) {
@@ -358,25 +358,46 @@ export class PromptAssembler implements IPromptAssembler {
         const { data: allChunks, error: chunksError } = await this.dbClient
             .from('dialectic_contributions')
             .select('*')
-            .contains('document_relationships', queryMatcher)
-            .order('continuation_number', { ascending: true, nullsFirst: true });
+            .contains('document_relationships', queryMatcher);
 
         if (chunksError) {
             console.error(`[PromptAssembler.gatherContinuationInputs] Failed to retrieve contribution chunks.`, { error: chunksError, rootContributionId });
             throw new Error(`Failed to retrieve contribution chunks for root ${rootContributionId}.`);
         }
-        
-        if (!allChunks || allChunks.length === 0) {
-            // This should be impossible since we already found the root chunk.
-            throw new Error(`No contribution chunks found for root ${rootContributionId}.`);
-        }
+        // It's valid to have zero continuation chunks (non-continuation flows or single-shot completions).
+        const chunksForAssembly = Array.isArray(allChunks) ? allChunks : [];
+
+        // Sort chunks client-side: root first, then by document_relationships.turnIndex, then created_at
+        const getTurnIndex = (c: Database['public']['Tables']['dialectic_contributions']['Row']): number => {
+            const rel = c && typeof c === 'object' ? (c as Database['public']['Tables']['dialectic_contributions']['Row']).document_relationships : null;
+            if (rel && typeof rel === 'object' && !Array.isArray(rel) && 'turnIndex' in rel) {
+                const ti = (rel as Record<string, unknown>).turnIndex;
+                if (typeof ti === 'number') return ti;
+            }
+            return Number.POSITIVE_INFINITY;
+        };
+        const parseTs = (s?: string): number => (s ? Date.parse(s) : 0);
+        const allChunksSorted = chunksForAssembly.slice().sort((a: Database['public']['Tables']['dialectic_contributions']['Row'], b: Database['public']['Tables']['dialectic_contributions']['Row']) => {
+            if (a.id === rootContributionId) return -1;
+            if (b.id === rootContributionId) return 1;
+            const tiA = getTurnIndex(a);
+            const tiB = getTurnIndex(b);
+            if (tiA !== tiB) return tiA - tiB;
+            return parseTs(a.created_at) - parseTs(b.created_at);
+        });
 
         if (!rootChunk.storage_path) {
             throw new Error(`Root contribution ${rootChunk.id} is missing a storage_path.`);
         }
         
-        // 4. Download seed prompt.
-        const seedPromptPath = join(rootChunk.storage_path, 'seed_prompt.md');
+        // 4. Resolve stage root and download seed prompt.
+        // Continuation chunks (including the first partial result) are stored under '/_work'.
+        // The seed prompt is always stored at the stage root. Normalize by stripping '/_work' when present.
+        const storagePath = rootChunk.storage_path;
+        const stageRootPath = storagePath.includes('/_work')
+            ? storagePath.split('/_work')[0]
+            : storagePath;
+        const seedPromptPath = `${stageRootPath}/seed_prompt.md`;
         const { data: seedPromptContentData, error: seedDownloadError } = await this.downloadFromStorageFn(this.storageBucket, seedPromptPath);
 
         if (seedDownloadError || !seedPromptContentData) {
@@ -387,9 +408,9 @@ export class PromptAssembler implements IPromptAssembler {
 
         // 5. Download and create atomic messages for all chunks.
         const assistantMessages: Messages[] = [];
-        for (const chunk of allChunks) {
+        for (const chunk of allChunksSorted) {
             if (chunk.storage_path && chunk.file_name && chunk.storage_bucket) {
-                const chunkPath = join(chunk.storage_path, chunk.file_name);
+                const chunkPath = `${chunk.storage_path}/${chunk.file_name}`;
                 const { data: chunkContentData, error: chunkDownloadError } = await this.downloadFromStorageFn(chunk.storage_bucket, chunkPath);
 
                 if (chunkDownloadError || !chunkContentData) {

@@ -337,3 +337,138 @@ Deno.test({
         assertEquals(repairedModel.config.tokenization_strategy.type, 'rough_char_count', "The invalid model's strategy should have been replaced by a failsafe default.");
     },
 });
+
+// RED: Adaptive provider floors for unknown/newer models
+Deno.test({
+  name: "ConfigAssembler - applies adaptive provider floors for unknown/newer models (provider high-water monotonicity)",
+  fn: async () => {
+    const logger = new MockLogger();
+
+    // Arrange minimal cohorts per provider (represent recent known high-water marks)
+    const anthropicCohort: ProviderModelInfo[] = [
+      {
+        api_identifier: "anthropic-claude-3-5-sonnet-20241022",
+        name: "Claude 3.5 Sonnet",
+        config: {
+          context_window_tokens: 200_000,
+          provider_max_input_tokens: 200_000,
+          input_token_cost_rate: 3,
+          output_token_cost_rate: 15,
+          tokenization_strategy: { type: "anthropic_tokenizer", model: "claude-3.5-sonnet-20241022" },
+          hard_cap_output_tokens: 8192,
+          provider_max_output_tokens: 8192,
+        },
+      },
+    ];
+    const unknownAnthropic: ProviderModelInfo = {
+      api_identifier: "anthropic-claude-4-foo-20260101",
+      name: "Unknown Anthropic",
+    };
+
+    const googleCohort: ProviderModelInfo[] = [
+      {
+        api_identifier: "google-gemini-2.5-pro",
+        name: "Gemini 2.5 Pro",
+        config: {
+          context_window_tokens: 1_048_576,
+          provider_max_input_tokens: 1_048_576,
+          input_token_cost_rate: 2.5,
+          output_token_cost_rate: 15,
+          tokenization_strategy: { type: "google_gemini_tokenizer", chars_per_token_ratio: 4 },
+          hard_cap_output_tokens: 65_536,
+          provider_max_output_tokens: 65_536,
+        },
+      },
+    ];
+    const unknownGoogle: ProviderModelInfo = {
+      api_identifier: "google-gemini-3-foo",
+      name: "Unknown Gemini",
+    };
+
+    const openaiCohort: ProviderModelInfo[] = [
+      {
+        api_identifier: "openai-gpt-4.1",
+        name: "GPT-4.1",
+        config: {
+          context_window_tokens: 1_047_576,
+          provider_max_input_tokens: 1_047_576,
+          input_token_cost_rate: 2000,
+          output_token_cost_rate: 8000,
+          tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "o200k_base", is_chatml_model: true, api_identifier_for_tokenization: "gpt-4.1" },
+          hard_cap_output_tokens: 4096,
+          provider_max_output_tokens: 4096,
+        },
+      },
+      {
+        api_identifier: "openai-gpt-4o",
+        name: "GPT-4o",
+        config: {
+          context_window_tokens: 128_000,
+          provider_max_input_tokens: 128_000,
+          input_token_cost_rate: 5,
+          output_token_cost_rate: 15,
+          tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base", is_chatml_model: true, api_identifier_for_tokenization: "gpt-4o" },
+          hard_cap_output_tokens: 4096,
+          provider_max_output_tokens: 4096,
+        },
+      },
+    ];
+    const unknownOpenAI41: ProviderModelInfo = { api_identifier: "openai-gpt-4.1-foo", name: "Unknown 4.1" };
+    const unknownOpenAI4o: ProviderModelInfo = { api_identifier: "openai-gpt-4o-foo", name: "Unknown 4o" };
+
+    // Anthropic unknown
+    {
+      const sources: ConfigDataSource = {
+        apiModels: [...anthropicCohort, unknownAnthropic],
+        logger,
+      };
+      const assembler = new ConfigAssembler(sources);
+      const configs = await assembler.assemble();
+      const unknownCfg = configs.find(c => c.api_identifier === unknownAnthropic.api_identifier)?.config;
+      assertExists(unknownCfg, "Unknown Anthropic config should exist");
+      assert(unknownCfg.context_window_tokens !== undefined && unknownCfg.provider_max_input_tokens !== undefined);
+      assert(
+        (unknownCfg.context_window_tokens as number) >= 200_000 && (unknownCfg.provider_max_input_tokens as number) >= 200_000,
+        "Anthropic unknown/newer model should not be floored below recent high-water mark (200k)"
+      );
+    }
+
+    // Google unknown
+    {
+      const sources: ConfigDataSource = {
+        apiModels: [...googleCohort, unknownGoogle],
+        logger,
+      };
+      const assembler = new ConfigAssembler(sources);
+      const configs = await assembler.assemble();
+      const unknownCfg = configs.find(c => c.api_identifier === unknownGoogle.api_identifier)?.config;
+      assertExists(unknownCfg, "Unknown Google config should exist");
+      assert(
+        (unknownCfg.context_window_tokens as number) >= 1_048_576 && (unknownCfg.provider_max_input_tokens as number) >= 1_048_576,
+        "Google unknown/newer model should not be floored below recent high-water mark (1,048,576)"
+      );
+    }
+
+    // OpenAI unknowns
+    {
+      const sources: ConfigDataSource = {
+        apiModels: [...openaiCohort, unknownOpenAI41, unknownOpenAI4o],
+        logger,
+      };
+      const assembler = new ConfigAssembler(sources);
+      const configs = await assembler.assemble();
+      const cfg41 = configs.find(c => c.api_identifier === unknownOpenAI41.api_identifier)?.config;
+      const cfg4o = configs.find(c => c.api_identifier === unknownOpenAI4o.api_identifier)?.config;
+      assertExists(cfg41, "Unknown OpenAI 4.1 config should exist");
+      assertExists(cfg4o, "Unknown OpenAI 4o config should exist");
+      assert(
+        (cfg41.context_window_tokens as number) >= 1_047_576 && (cfg41.provider_max_input_tokens as number) >= 1_047_576,
+        "OpenAI 4.1 unknown/newer model should not be below 1,047,576"
+      );
+      assert(
+        (cfg4o.context_window_tokens as number) >= 128_000 && (cfg4o.provider_max_input_tokens as number) >= 128_000,
+        "OpenAI 4o unknown/newer model should not be below 128,000"
+      );
+    }
+  },
+});

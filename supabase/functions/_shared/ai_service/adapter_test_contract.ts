@@ -128,17 +128,78 @@ export async function testAdapterContract(
         }
     });
 
-    await t.step(`[Contract] ${AdapterClass.name} - sendMessage: Respects max_tokens_to_generate`, async () => {
+    await t.step(`[Contract] ${AdapterClass.name} - sendMessage: Respects max_tokens_to_generate (forwarded unchanged)`, async () => {
         const sendMessageSpy = spy(mockApi, 'sendMessage');
         try {
             const adapter = new AdapterClass(provider, MOCK_API_KEY, MOCK_LOGGER);
+            const K = 123;
             const requestWithMaxTokens: ChatApiRequest = {
                 ...MOCK_CHAT_REQUEST,
-                max_tokens_to_generate: 100,
+                max_tokens_to_generate: K,
             };
+
+            const snapshot = structuredClone(requestWithMaxTokens);
             await adapter.sendMessage(requestWithMaxTokens, modelId);
 
-            assertEquals(sendMessageSpy.calls.length, 1);
+            assertEquals(sendMessageSpy.calls.length, 1, 'sendMessage should be called once on the mock API.');
+            const forwarded: ChatApiRequest = sendMessageSpy.calls[0].args[0];
+            // Forward same object instance
+            assertStrictEquals(forwarded, requestWithMaxTokens);
+            // Do not mutate or strip cap
+            assertEquals(forwarded.max_tokens_to_generate, K, 'Adapter must preserve max_tokens_to_generate on the forwarded request');
+            assertEquals(requestWithMaxTokens, snapshot, 'Adapter must not mutate the original ChatApiRequest');
+        } finally {
+            sendMessageSpy.restore();
+        }
+    });
+
+    await t.step(`[Contract] ${AdapterClass.name} - sendMessage: Does not override client cap with provider defaults (RED)`, async () => {
+        const sendMessageSpy = spy(mockApi, 'sendMessage');
+        try {
+            const adapter = new AdapterClass(provider, MOCK_API_KEY, MOCK_LOGGER);
+            const K = 37; // small client cap
+            const requestWithSmallCap: ChatApiRequest = {
+                ...MOCK_CHAT_REQUEST,
+                max_tokens_to_generate: K,
+            };
+
+            await adapter.sendMessage(requestWithSmallCap, modelId);
+
+            // Forwarding should occur once with the same object
+            assertEquals(sendMessageSpy.calls.length, 1, 'sendMessage should be called once');
+            const forwarded: ChatApiRequest = sendMessageSpy.calls[0].args[0];
+            assertStrictEquals(forwarded, requestWithSmallCap);
+            assertEquals(forwarded.max_tokens_to_generate, K, 'Adapter must not replace client cap with any provider default');
+        } finally {
+            sendMessageSpy.restore();
+        }
+    });
+
+    await t.step(`[Contract] ${AdapterClass.name} - sendMessage: Does not inject cap when request has no max_tokens_to_generate (provider caps present)`, async () => {
+        const sendMessageSpy = spy(mockApi, 'sendMessage');
+        try {
+            // Clone provider with explicit provider caps to ensure no fallback injection occurs
+            const providerWithCaps: Tables<'ai_providers'> = {
+                ...provider,
+                config: {
+                    ...(typeof provider.config === 'object' && provider.config !== null ? provider.config : {}),
+                    hard_cap_output_tokens: 111,
+                    provider_max_output_tokens: 222,
+                }
+            };
+            const adapter = new AdapterClass(providerWithCaps, MOCK_API_KEY, MOCK_LOGGER);
+
+            const requestNoCap: ChatApiRequest = { ...MOCK_CHAT_REQUEST };
+            const snapshot = structuredClone(requestNoCap);
+
+            await adapter.sendMessage(requestNoCap, modelId);
+
+            assertEquals(sendMessageSpy.calls.length, 1, 'sendMessage should be called once');
+            const forwarded: ChatApiRequest = sendMessageSpy.calls[0].args[0];
+            // Must forward same instance and must not inject a cap
+            assertStrictEquals(forwarded, requestNoCap);
+            assertEquals(forwarded.max_tokens_to_generate, undefined, 'Adapter must not inject max_tokens_to_generate when request omits it');
+            assertEquals(requestNoCap, snapshot, 'Adapter must not mutate original request object');
         } finally {
             sendMessageSpy.restore();
         }

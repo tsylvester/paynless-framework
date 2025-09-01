@@ -352,9 +352,9 @@ To refactor the document generation and continuation process into a robust, scal
         *   `[✅]` 3.a.iv.1. `[TEST-UNIT]` **RED: Prove adapter returns incorrect type:** In `supabase/functions/_shared/ai_service/openai_adapter.test.ts`, the test for `getEmbedding` was modified to assert against the internal `EmbeddingResponse` type, causing a type error.
         *   `[✅]` 3.a.iv.2. `[BE]` **GREEN: Implement response transformation:** In `supabase/functions/_shared/ai_service/openai_adapter.ts`, the `getEmbedding` method was modified to transform the raw OpenAI response into the internal `EmbeddingResponse` type.
         *   `[✅]` 3.a.iv.3. `[TEST-UNIT]` **PROVE: Confirm fix:** After correcting the contract, the test was rerun and passed.
-    *   `[✅]` 3.a.v. **Correct `OpenAIEmbeddingClient` Wrapper**
-        *   `[✅]` 3.a.v.1. `[DISCOVERY]` The contract change caused a new type error in `supabase/functions/_shared/services/indexing_service.ts`, revealing redundant transformation logic in the `OpenAIEmbeddingClient`.
-        *   `[✅]` 3.a.v.2. `[BE]` **GREEN: Simplify client wrapper:** In `indexing_service.ts`, the redundant logic was removed from `OpenAIEmbeddingClient`, which now correctly passes through the already-transformed `EmbeddingResponse` from the adapter.
+    *   `[✅]` 3.a.v. **Correct `EmbeddingClient` Wrapper**
+        *   `[✅]` 3.a.v.1. `[DISCOVERY]` The contract change caused a new type error in `supabase/functions/_shared/services/indexing_service.ts`, revealing redundant transformation logic in the `EmbeddingClient`.
+        *   `[✅]` 3.a.v.2. `[BE]` **GREEN: Simplify client wrapper:** In `indexing_service.ts`, the redundant logic was removed from `EmbeddingClient`, which now correctly passes through the already-transformed `EmbeddingResponse` from the adapter.
         *   `[✅]` 3.a.v.3. `[TEST-UNIT]` **PROVE: Confirm fix:** A stale mock in `openai_adapter.mock.ts` was updated, and the `indexing_service.test.ts` suite was rerun and passed.
     *   `[✅]` 3.a.vi. **Refactor `RagService` to Return Indexing Tokens Used**
         *   `[✅]` 3.a.vi.1. `[TEST-UNIT]` **RED: Prove financial data is not propagated:** In `supabase/functions/_shared/services/rag_service.test.ts`, a test was written to prove that `getContextForModel` did not return the `tokensUsed` from the indexing service. The test failed as expected.

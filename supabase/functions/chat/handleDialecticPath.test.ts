@@ -31,6 +31,7 @@ import {
 import { type PathHandlerContext } from "./prepareChatContext.ts";
 import type { CountTokensDeps, CountableChatPayload } from "../_shared/types/tokenizer.types.ts";
 import { isRecord } from "../_shared/utils/type_guards.ts";
+import { isTokenUsage } from "../_shared/utils/type_guards.ts";
 
 const createSpiedMockAdapter = (modelConfig: AiModelExtendedConfig) => {
     const { instance, controls } = getMockAiProviderAdapter(logger, modelConfig);
@@ -135,6 +136,188 @@ Deno.test("handleDialecticPath: happy path - should NOT create chat or message r
       successResult.assistantMessage.content,
       "Dialectic assistant response",
     );
+  });
+
+  Deno.test("handleDialecticPath: records a non-zero debit amount for usage", async () => {
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {});
+
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: "test-model-api-id",
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 1,
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+    };
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockResponse({ content: "ok", token_usage: { prompt_tokens: 5, completion_tokens: 7, total_tokens: 12 } });
+
+    const mockWallet = createMockTokenWalletService();
+    const deps: ChatHandlerDeps = { ...defaultDeps, logger, tokenWalletService: mockWallet.instance, countTokens: spy((_d,_p,_c)=>5), getAiProviderAdapter: spy(()=>mockAiAdapter.instance) };
+
+    const context: PathHandlerContext = {
+      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+      deps,
+      userId: "test-user-id",
+      requestBody: { message: "Hello", providerId: "prov", promptId: "__none__", walletId: "w", isDialectic: true },
+      wallet: { walletId: "w", balance: "1000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
+      actualSystemPromptText: null,
+      finalSystemPromptIdForDb: null,
+      apiKey: "k",
+      providerApiIdentifier: "test-model-api-id",
+    };
+
+    await handleDialecticPath(context);
+    assertEquals(mockWallet.stubs.recordTransaction.calls.length, 1);
+    const amountStr = mockWallet.stubs.recordTransaction.calls[0].args[0].amount;
+    assert(Number.parseInt(amountStr, 10) > 0, "Debit amount should be > 0");
+  });
+
+  Deno.test("handleDialecticPath: caps max_tokens_to_generate via SSOT when client omits", async () => {
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {});
+
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: "test-model-api-id",
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 2,
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+    };
+
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockResponse({ content: "ok", token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } });
+
+    const deps: ChatHandlerDeps = {
+      ...defaultDeps,
+      logger,
+      tokenWalletService: createMockTokenWalletService().instance,
+      countTokens: spy((_d, _p, _c) => 100), // prompt_cost=100, remaining=900, spendable=min(800,900)=800 → SSOT cap=400
+      getAiProviderAdapter: spy(() => mockAiAdapter.instance),
+    };
+
+    const context: PathHandlerContext = {
+      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+      deps,
+      userId: "test-user-id",
+      requestBody: { message: "Hi", providerId: "prov", promptId: "__none__", walletId: "w", isDialectic: true },
+      wallet: { walletId: "w", balance: "1000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
+      actualSystemPromptText: null,
+      finalSystemPromptIdForDb: null,
+      apiKey: "k",
+      providerApiIdentifier: "test-model-api-id",
+    };
+
+    await handleDialecticPath(context);
+    const sent: ChatApiRequest = mockAiAdapter.sendMessageSpy.calls[0].args[0];
+    assertEquals(sent.max_tokens_to_generate, 400);
+  });
+
+  Deno.test("handleDialecticPath: preserves smaller client max_tokens_to_generate", async () => {
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {});
+    const modelConfig: AiModelExtendedConfig = { api_identifier: "test-model-api-id", input_token_cost_rate: 1, output_token_cost_rate: 2, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } };
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockResponse({ content: "ok" });
+    const deps: ChatHandlerDeps = { ...defaultDeps, logger, tokenWalletService: createMockTokenWalletService().instance, countTokens: spy((_d,_p,_c)=>100), getAiProviderAdapter: spy(() => mockAiAdapter.instance) };
+    const context: PathHandlerContext = {
+      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+      deps,
+      userId: "test-user-id",
+      requestBody: { message: "Hi", providerId: "prov", promptId: "__none__", walletId: "w", isDialectic: true, max_tokens_to_generate: 50 },
+      wallet: { walletId: "w", balance: "1000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
+      actualSystemPromptText: null,
+      finalSystemPromptIdForDb: null,
+      apiKey: "k",
+      providerApiIdentifier: "test-model-api-id",
+    };
+    await handleDialecticPath(context);
+    const sent: ChatApiRequest = mockAiAdapter.sendMessageSpy.calls[0].args[0];
+    assertEquals(sent.max_tokens_to_generate, 50);
+  });
+
+  Deno.test("handleDialecticPath: caps larger client max_tokens_to_generate to SSOT", async () => {
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {});
+    const modelConfig: AiModelExtendedConfig = { api_identifier: "test-model-api-id", input_token_cost_rate: 1, output_token_cost_rate: 2, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } };
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockResponse({ content: "ok" });
+    const deps: ChatHandlerDeps = { ...defaultDeps, logger, tokenWalletService: createMockTokenWalletService().instance, countTokens: spy((_d,_p,_c)=>100), getAiProviderAdapter: spy(() => mockAiAdapter.instance) };
+    const context: PathHandlerContext = {
+      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+      deps,
+      userId: "test-user-id",
+      requestBody: { message: "Hi", providerId: "prov", promptId: "__none__", walletId: "w", isDialectic: true, max_tokens_to_generate: 9999 },
+      wallet: { walletId: "w", balance: "1000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
+      actualSystemPromptText: null,
+      finalSystemPromptIdForDb: null,
+      apiKey: "k",
+      providerApiIdentifier: "test-model-api-id",
+    };
+    await handleDialecticPath(context);
+    const sent: ChatApiRequest = mockAiAdapter.sendMessageSpy.calls[0].args[0];
+    assertEquals(sent.max_tokens_to_generate, 400);
+  });
+
+  Deno.test("handleDialecticPath: does NOT post-hoc cap completion_tokens; cap must be pre-send via SSOT (RED)", async () => {
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {});
+
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: "test-model-api-id",
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 2,
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+      hard_cap_output_tokens: 5, // Intentionally small to trigger post-hoc cap if it existed
+    };
+
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    // Adapter returns a larger completion_tokens than hard cap to detect mutation
+    mockAiAdapter.controls.setMockResponse({
+      role: 'assistant',
+      content: 'ok',
+      ai_provider_id: 'prov',
+      system_prompt_id: null,
+      token_usage: { prompt_tokens: 10, completion_tokens: 50, total_tokens: 60 },
+    });
+
+    const deps: ChatHandlerDeps = {
+      ...defaultDeps,
+      logger,
+      tokenWalletService: createMockTokenWalletService().instance,
+      // Make SSOT cap deterministic: prompt=100 → budget remaining 900; spendable=min(800,900)=800 → SSOT output cap=400
+      countTokens: spy((_d, _p, _c) => 100),
+      getAiProviderAdapter: spy(() => mockAiAdapter.instance),
+    };
+
+    const context: PathHandlerContext = {
+      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+      deps,
+      userId: 'test-user-id',
+      requestBody: { message: 'Hi', providerId: 'prov', promptId: '__none__', walletId: 'w', isDialectic: true },
+      wallet: { walletId: 'w', balance: '1000', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
+      actualSystemPromptText: null,
+      finalSystemPromptIdForDb: null,
+      apiKey: 'k',
+      providerApiIdentifier: 'test-model-api-id',
+    };
+
+    const result = await handleDialecticPath(context);
+    assert(!('error' in result), 'Expected success');
+
+    // Assert cap was applied pre-send (SSOT/min with model hard cap) and not post-hoc to tokenUsage
+    const sent: ChatApiRequest = mockAiAdapter.sendMessageSpy.calls[0].args[0];
+    assertEquals(sent.max_tokens_to_generate, 5, 'Pre-send cap should be the SSOT result min() with model hard cap');
+
+    // RED expectation: handler must NOT mutate adapter's token_usage based on model hard cap
+    const success: ChatHandlerSuccessResponse = result;
+    const usageRaw = success.assistantMessage.token_usage;
+    assert(isTokenUsage(usageRaw), 'assistantMessage.token_usage must conform to TokenUsage');
+    assertEquals(usageRaw.completion_tokens, 50, 'completion_tokens must remain as returned by adapter (no post-hoc capping)');
+    assertEquals(usageRaw.total_tokens, 60, 'total_tokens must remain consistent with adapter return (no post-hoc recompute)');
   });
 
 Deno.test("handleDialecticPath: missing walletId returns 400 with specific message and no adapter call (RED)", async () => {

@@ -33,6 +33,12 @@ export async function generateContributions(
         return { success: false, error: { message: "User could not be identified for job creation.", status: 401 } };
     }
 
+    // Enforce wallet presence for manual/test job creation before any DB work
+    if (typeof payload.walletId !== 'string' || payload.walletId.trim() === '') {
+        logger.warn("[generateContributions] walletId is required in the payload.", { payload });
+        return { success: false, error: { message: "walletId is required to create generation jobs.", status: 400 } };
+    }
+
     try {
         // Fetch session details to get the selected models and validate context
         const { data: sessionData, error: sessionError } = await dbClient

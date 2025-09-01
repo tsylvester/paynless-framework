@@ -196,35 +196,7 @@ export async function handleNormalPath(
         }
         logger.info('AI adapter returned successfully (normal path).');
 
-        const parsedTokenUsage = TokenUsageSchema.safeParse(adapterResponsePayload.token_usage);
-
-        if (parsedTokenUsage.success && parsedTokenUsage.data) {
-            const tokenUsage = parsedTokenUsage.data;
-
-            if (
-                (!requestBody.max_tokens_to_generate || requestBody.max_tokens_to_generate <= 0) &&
-                modelConfig.hard_cap_output_tokens && modelConfig.hard_cap_output_tokens > 0 &&
-                typeof tokenUsage.completion_tokens === 'number' &&
-                tokenUsage.completion_tokens > modelConfig.hard_cap_output_tokens
-            ) {
-                logger.info('Applying hard_cap_output_tokens from model config.', {
-                    original_completion_tokens: tokenUsage.completion_tokens,
-                    hard_cap_output_tokens: modelConfig.hard_cap_output_tokens,
-                    model_api_identifier: providerApiIdentifier
-                });
-                tokenUsage.completion_tokens = modelConfig.hard_cap_output_tokens;
-                
-                if (typeof tokenUsage.prompt_tokens === 'number') {
-                    tokenUsage.total_tokens = tokenUsage.prompt_tokens + tokenUsage.completion_tokens;
-                } else {
-                    tokenUsage.total_tokens = tokenUsage.completion_tokens;
-                    logger.warn('Prompt_tokens missing or invalid when recalculating total_tokens after capping.', {
-                        model_api_identifier: providerApiIdentifier
-                    });
-                }
-                adapterResponsePayload.token_usage = tokenUsage;
-            }
-        }
+        // No post-hoc capping: rely solely on pre-send SSOT via request.max_tokens_to_generate.
      } catch (adapterError) {
         logger.error(`Normal path error: AI adapter (${providerApiIdentifier}) failed.`, { error: adapterError });
         const errorMessage = adapterError instanceof Error ? adapterError.message : 'AI service request failed.';

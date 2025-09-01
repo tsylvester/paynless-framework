@@ -47,6 +47,7 @@ export const planPerModel: GranularityPlannerFn = (
         canonicalPathParams,
         document_relationships: document_relationships,
         inputs,
+        walletId: parentJob.payload.walletId,
     };
 
     childPayloads.push(newPayload);

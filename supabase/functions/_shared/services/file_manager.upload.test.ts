@@ -1,7 +1,6 @@
 import {
   assertEquals,
   assertExists,
-  assertInstanceOf,
   assertRejects,
   assert,
 } from 'https://deno.land/std@0.190.0/testing/asserts.ts'
@@ -11,14 +10,12 @@ import {
   type MockSupabaseClientSetup,
   type MockSupabaseDataConfig,
   type IMockStorageFileOptions,
-  type MockQueryBuilderState,
 } from '../supabase.mock.ts'
 import { FileManagerService } from './file_manager.ts'
 import { UploadContext, PathContext, FileType } from '../types/file_manager.types.ts'
 import { constructStoragePath } from '../utils/path_constructor.ts'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json } from '../../types_db.ts'
-import { DialecticContributionRow, DocumentRelationships } from '../../dialectic-service/dialectic.interface.ts'
 
 Deno.test('FileManagerService', async (t) => {
   let setup: MockSupabaseClientSetup
@@ -67,8 +64,7 @@ Deno.test('FileManagerService', async (t) => {
     description: 'test description',
   }
 
-  await t.step(
-    'constructor should throw if bucket environment variable is not set',
+  await t.step('constructor should throw if bucket environment variable is not set',
     () => {
       const currentOriginalGet = Deno.env.get.bind(Deno.env);
       let tempDenoEnvGetStub: Stub<typeof Deno.env, [string], string | undefined> | null = null;
@@ -97,8 +93,7 @@ Deno.test('FileManagerService', async (t) => {
     },
   )
 
-  await t.step(
-    'uploadAndRegisterFile should use bucket from environment variable',
+  await t.step('uploadAndRegisterFile should use bucket from environment variable',
     async () => {
       try {
         beforeEach()
@@ -111,8 +106,7 @@ Deno.test('FileManagerService', async (t) => {
     },
   )
 
-  await t.step(
-    'uploadAndRegisterFile should register a project resource correctly',
+  await t.step('uploadAndRegisterFile should register a project resource correctly',
     async () => {
       try {
         const resourceFileName = 'test.pdf';
@@ -174,8 +168,63 @@ Deno.test('FileManagerService', async (t) => {
     },
   )
 
-  await t.step(
-    'uploadAndRegisterFile should register a contribution correctly (no collision)',
+  await t.step('uploadAndRegisterFile should register a project export zip at project root',
+    async () => {
+      try {
+        const projectId = 'project-uuid-zip';
+        const originalZipName = 'My Export.zip';
+        const context: UploadContext = {
+          ...baseUploadContext,
+          pathContext: {
+            fileType: FileType.ProjectExportZip,
+            projectId,
+            originalFileName: originalZipName,
+          },
+          fileContent: 'zip-bytes',
+          mimeType: 'application/zip',
+          sizeBytes: 45678,
+          description: 'Project export archive',
+        };
+
+        const expectedPathParts = constructStoragePath(context.pathContext);
+        const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            dialectic_project_resources: {
+              insert: { data: [{ id: 'zip-res-123' }], error: null },
+            },
+          },
+          storageMock: {
+            uploadResult: { data: { path: expectedFullPath }, error: null },
+          },
+        };
+        beforeEach(config);
+
+        const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+        assertEquals(error, null);
+        assertExists(record);
+        assertEquals(setup.spies.fromSpy.calls[0].args[0], 'dialectic_project_resources');
+
+        const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert;
+        assertExists(insertSpy);
+        const insertData = insertSpy.calls[0].args[0];
+        assertEquals(insertData.project_id, projectId);
+        assertEquals(insertData.storage_path, expectedPathParts.storagePath);
+        assertEquals(insertData.file_name, expectedPathParts.fileName);
+        assertEquals(insertData.mime_type, 'application/zip');
+
+        const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
+        assertExists(uploadSpy);
+        assertEquals(uploadSpy.calls[0].args[0], expectedFullPath);
+      } finally {
+        afterEach();
+      }
+    },
+  );
+
+  await t.step('uploadAndRegisterFile should register a contribution correctly (no collision)',
     async () => {
       try {
         const pathContextAttempt0: PathContext = {
@@ -280,8 +329,7 @@ Deno.test('FileManagerService', async (t) => {
     },
   )
 
-  await t.step(
-    'uploadAndRegisterFile should place intermediate files in a _work directory',
+  await t.step('uploadAndRegisterFile should place intermediate files in a _work directory',
     async () => {
       try {
         const pathContext: PathContext = {
@@ -339,8 +387,7 @@ Deno.test('FileManagerService', async (t) => {
     },
   );
 
-  await t.step(
-    'uploadAndRegisterFile for model_contribution_main should handle filename collision and retry',
+  await t.step('uploadAndRegisterFile for model_contribution_main should handle filename collision and retry',
     async () => {
       try {
         const baseRetryPathContext: PathContext = {
@@ -449,8 +496,7 @@ Deno.test('FileManagerService', async (t) => {
     },
   );
 
-  await t.step(
-    'uploadAndRegisterFile should register user_feedback correctly',
+  await t.step('uploadAndRegisterFile should register user_feedback correctly',
     async () => {
       try {
         const feedbackDataMock = { id: 'feedback-123', project_id: 'project-feedback-proj' };
@@ -520,8 +566,7 @@ Deno.test('FileManagerService', async (t) => {
       }
     });
 
-  await t.step(
-    'uploadAndRegisterFile should handle storage upload errors',
+  await t.step('uploadAndRegisterFile should handle storage upload errors',
     async () => {
       try {
         const config: MockSupabaseDataConfig = {
@@ -543,8 +588,7 @@ Deno.test('FileManagerService', async (t) => {
     },
   )
 
-  await t.step(
-    'uploadAndRegisterFile should handle DB insert errors and attempt cleanup',
+  await t.step('uploadAndRegisterFile should handle DB insert errors and attempt cleanup',
     async () => {
       try {
         const context: UploadContext = {
@@ -603,128 +647,99 @@ Deno.test('FileManagerService', async (t) => {
       }
     },
   )
+
+  await t.step('uploadAndRegisterFile should reject continuation without target_contribution_id and cleanup uploaded files',
+    async () => {
+      try {
+        const pathContext: PathContext = {
+          fileType: FileType.ModelContributionMain,
+          projectId: 'project-missing-link',
+          sessionId: 'session-missing-link',
+          iteration: 1,
+          stageSlug: 'thesis',
+          modelSlug: 'test-model',
+          attemptCount: 0,
+        };
+        const expectedPathParts = constructStoragePath(pathContext);
+        const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            // Intentionally do NOT configure dialectic_contributions.insert; we expect no insert
+          },
+          storageMock: {
+            uploadResult: { data: { path: expectedFullPath }, error: null },
+            listResult: { data: [{ 
+              name: expectedPathParts.fileName, 
+              id: 'file-id-for-cleanup',
+              updated_at: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              last_accessed_at: new Date().toISOString(),
+              metadata: { 'e-tag': 'abc'} 
+            }], error: null },
+            removeResult: { data: [{ name: 'test-bucket' }], error: null },
+          },
+        };
+        beforeEach(config);
+
+        const context: UploadContext = {
+          ...baseUploadContext,
+          pathContext,
+          mimeType: 'text/markdown',
+          fileContent: '# continuation without link',
+          contributionMetadata: {
+            // Missing target_contribution_id on purpose
+            isContinuation: true,
+            iterationNumber: 1,
+            modelIdUsed: 'model-id-test',
+            modelNameDisplay: 'Test Model',
+            sessionId: 'session-missing-link',
+            stageSlug: 'thesis',
+            rawJsonResponseContent: '{}',
+            seedPromptStoragePath: `${expectedPathParts.storagePath}/seed.md`,
+          },
+          userId: 'user-missing-link',
+        };
+
+        const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+        // Expected: rejection with error and no DB insert
+        assertExists(error, 'Expected an error for missing target_contribution_id');
+        assertEquals(record, null);
+
+        // Ensure no insert to dialectic_contributions occurred
+        const fromCalls = setup.spies.fromSpy.calls.map(c => c.args[0]);
+        assert(!fromCalls.includes('dialectic_contributions'), 'Should not attempt DB insert when target_contribution_id is missing');
+
+        // Ensure cleanup removal was attempted (we remove known paths directly)
+        const removeSpy = setup.spies.storage.from('test-bucket').removeSpy;
+        assertExists(removeSpy, 'Expected storage.remove to be called for cleanup');
+        const removedArgs = removeSpy.calls.map(c => c.args[0]).flat();
+        assert(Array.isArray(removedArgs), 'Expected remove to be called with path arrays');
+
+        // Build expected continuation (_work) path exactly as path_constructor would
+        const expectedWorkParts = constructStoragePath({
+          ...pathContext,
+          isContinuation: true,
+          turnIndex: 0,
+          // mirror file manager: modelSlug comes from modelNameDisplay and will be normalized by path constructor
+          modelSlug: 'Test Model',
+          stageSlug: 'thesis',
+          attemptCount: 0,
+        });
+        const expectedWorkFullPath = `${expectedWorkParts.storagePath}/${expectedWorkParts.fileName}`;
+
+        assert(
+          removedArgs.includes(expectedWorkFullPath),
+          `Expected continuation file to be removed during cleanup: ${expectedWorkFullPath}`,
+        );
+
+      } finally {
+        afterEach();
+      }
+    },
+  )
   
-  await t.step('getFileSignedUrl should retrieve a URL successfully', async () => {
-    try {
-      const config: MockSupabaseDataConfig = {
-        genericMockResults: {
-          dialectic_project_resources: {
-            select: { data: [{ storage_path: 'mock/path.md' }], error: null },
-          },
-        },
-        storageMock: {
-          createSignedUrlResult: {
-            data: { signedUrl: 'http://mock.url/signed' },
-            error: null,
-          },
-        },
-      }
-      beforeEach(config)
-      const { signedUrl, error } = await fileManager.getFileSignedUrl(
-        'file-id-123',
-        'dialectic_project_resources',
-      )
-      assertExists(signedUrl)
-      assertEquals(error, null)
-      assertEquals(signedUrl, 'http://mock.url/signed')
-    } finally {
-      afterEach()
-    }
-  })
-  
-  await t.step('getFileSignedUrl should handle errors when file not found', async () => {
-    try {
-       const config: MockSupabaseDataConfig = {
-        genericMockResults: {
-          dialectic_project_resources: { 
-            select: { data: null, error: new Error('Not found') }, 
-          },
-        },
-      }
-      beforeEach(config)
-      const { signedUrl, error } = await fileManager.getFileSignedUrl(
-        'non-existent-file-id',
-        'dialectic_project_resources',
-      )
-      assertEquals(signedUrl, null)
-      assertExists(error)
-      assertEquals(error.message, 'File record not found.')
-    } finally {
-      afterEach()
-    }
-  })
-  
-  await t.step('getFileSignedUrl should handle errors from createSignedUrl', async () => {
-    try {
-      const config: MockSupabaseDataConfig = {
-         genericMockResults: {
-          dialectic_project_resources: { 
-            select: { data: [{ storage_path: 'mock/path.to.file' }], error: null }, 
-          },
-        },
-        storageMock: {
-          createSignedUrlResult: { 
-            data: null,
-            error: new Error('Storage permission denied'),
-          },
-        },
-      }
-      beforeEach(config)
-      const { signedUrl, error } = await fileManager.getFileSignedUrl(
-        'file-id-xyz',
-        'dialectic_project_resources',
-      )
-      assertEquals(signedUrl, null)
-      assertExists(error)
-      assertEquals(error.message, 'Storage permission denied')
-    } finally {
-      afterEach()
-    }
-  })
-
-  await t.step('getFileSignedUrl should retrieve a URL for dialectic_feedback successfully', async () => {
-    try {
-      const config: MockSupabaseDataConfig = {
-        genericMockResults: {
-          dialectic_feedback: {
-            select: { data: [{ storage_path: 'mock/feedback/path.txt' }], error: null },
-          },
-        },
-        storageMock: {
-          createSignedUrlResult: {
-            data: { signedUrl: 'http://mock.url/signed-feedback' },
-            error: null,
-          },
-        },
-      }
-      beforeEach(config)
-      const { signedUrl, error } = await fileManager.getFileSignedUrl(
-        'feedback-file-id-456',
-        'dialectic_feedback',
-      )
-      assertExists(signedUrl)
-      assertEquals(error, null)
-      assertEquals(signedUrl, 'http://mock.url/signed-feedback')
-
-      const selectSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_feedback')?.select
-      assertExists(selectSpy, "Select spy for dialectic_feedback should exist");
-      assertEquals(selectSpy.calls.length, 1, "Select should have been called once on dialectic_feedback");
-      assertEquals(selectSpy.calls[0].args[0], 'storage_path', "Should select storage_path");
-
-      const eqSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_feedback')?.eq;
-      assertExists(eqSpy, "eq spy for dialectic_feedback should exist");
-      assertEquals(eqSpy.calls[0].args[0], 'id');
-      assertEquals(eqSpy.calls[0].args[1], 'feedback-file-id-456');
-
-      const createSignedUrlSpy = setup.spies.storage.from('test-bucket').createSignedUrlSpy;
-      assertExists(createSignedUrlSpy, "createSignedUrl spy should exist");
-      assertEquals(createSignedUrlSpy.calls[0].args[0], 'mock/feedback/path.txt');
-
-    } finally {
-      afterEach()
-    }
-  })
-
   await t.step('uploadAndRegisterFile for a continuation should save the file as an atomic chunk in a _work directory', async () => {
     try {
       // 1. Setup: Define the "original" file that is being continued.
@@ -820,186 +835,84 @@ Deno.test('FileManagerService', async (t) => {
       assert(actualUploadPath.includes('_continuation_1'), "The upload path must include the continuation turn index.");
       assertEquals(actualUploadPath, expectedChunkFullPath, "The upload path does not match the expected atomic chunk path.");
 
+      // parent latest edit should be cleared for continuation
+      const updateHistory = setup.spies.getHistoricQueryBuilderSpies('dialectic_contributions', 'update');
+      assertExists(updateHistory, "Expected to track updates to dialectic_contributions");
+      assert(updateHistory!.callCount >= 1, 'Expected an update to clear prior latest edit on parent contribution');
+      const updatedLatestFalse = updateHistory!.callsArgs.some(args => {
+        const updatePayload = args[0] as Record<string, unknown>;
+        return updatePayload && (updatePayload as { is_latest_edit?: boolean }).is_latest_edit === false;
+      });
+      assert(updatedLatestFalse, 'Expected an update setting is_latest_edit=false for the parent contribution');
+
+      const eqHistory = setup.spies.getHistoricQueryBuilderSpies('dialectic_contributions', 'eq');
+      assertExists(eqHistory, 'Expected to find an eq filter call to target the parent ID');
+      const eqHasParentId = eqHistory!.callsArgs.some(args => args[0] === 'id' && args[1] === 'anchor-contrib-id-123');
+      assert(eqHasParentId, 'Expected eq("id", parentId) for clearing parent latest edit');
+
     } finally {
       afterEach();
     }
   });
 
-  await t.step('assembleAndSaveFinalDocument should query for chunks, concatenate them, and upload the final document', async () => {
+  await t.step('uploadAndRegisterFile should clear parent latest-edit when saving final continuation chunk (isContinuation=false)', async () => {
     try {
-      // 1. Arrange
-      const rootContributionId = 'root-contrib-id-123';
-      const documentRelationships: DocumentRelationships = { thesis: rootContributionId };
-      const rootChunk: DialecticContributionRow = {
-        id: rootContributionId,
-        storage_bucket: 'test-bucket',
-        storage_path: 'projects/p1/sessions/s1/iteration_1/3_synthesis',
-        file_name: 'claude-opus_synthesis_final.md',
-        document_relationships: documentRelationships,
-        created_at: '2025-01-01T12:00:00Z',
-        citations: [],
-        contribution_type: 'synthesis',
-        edit_version: 1,
-        error: null,
-        user_id: 'user-id-123',
-        is_latest_edit: true,
-        iteration_number: 1,
-        mime_type: 'text/markdown',
-        model_id: 'model-id-opus',
-        model_name: 'Claude Opus',
-        session_id: 'session-id-123',
-        tokens_used_input: 100,
-        tokens_used_output: 100,
-        processing_time_ms: 100,
-        original_model_contribution_id: null,
-        prompt_template_id_used: null,
-        raw_response_storage_path: null,
-        seed_prompt_url: null,
-        size_bytes: 100,
-        stage: 'synthesis',
-        target_contribution_id: null,
-        updated_at: '2025-01-01T12:00:00Z',
-      };
-      const continuationChunk1: DialecticContributionRow = {
-        id: 'continuation-chunk-1',
-        storage_bucket: 'test-bucket',
-        storage_path: 'projects/p1/sessions/s1/iteration_1/3_synthesis/_work',
-        file_name: 'claude-opus_synthesis_continuation_1.md',
-        document_relationships: documentRelationships,
-        created_at: '2025-01-01T12:01:00Z',
-        citations: [],
-        contribution_type: 'synthesis',
-        edit_version: 1,
-        error: null,
-        user_id: 'user-id-123',
-        is_latest_edit: true,
-        iteration_number: 1,
-        mime_type: 'text/markdown',
-        model_id: 'model-id-opus',
-        model_name: 'Claude Opus',
-        session_id: 'session-id-123',
-        tokens_used_input: 100,
-        tokens_used_output: 100,
-        processing_time_ms: 100,
-        original_model_contribution_id: null,
-        prompt_template_id_used: null,
-        raw_response_storage_path: null,
-        seed_prompt_url: null,
-        size_bytes: 100,
-        stage: 'synthesis',
-        target_contribution_id: null,
-        updated_at: '2025-01-01T12:01:00Z',
-      };
-      const continuationChunk2: DialecticContributionRow = {
-        id: 'continuation-chunk-2',
-        storage_bucket: 'test-bucket',
-        storage_path: 'projects/p1/sessions/s1/iteration_1/3_synthesis/_work',
-        file_name: 'claude-opus_synthesis_continuation_2.md',
-        document_relationships: documentRelationships,
-        created_at: '2025-01-01T12:02:00Z',
-        citations: [],
-        contribution_type: 'synthesis',
-        edit_version: 1,
-        error: null,
-        user_id: 'user-id-123',
-        is_latest_edit: true,
-        iteration_number: 1,
-        mime_type: 'text/markdown',
-        model_id: 'model-id-opus',
-        model_name: 'Claude Opus',
-        session_id: 'session-id-123',
-        tokens_used_input: 100,
-        tokens_used_output: 100,
-        processing_time_ms: 100,
-        original_model_contribution_id: null,
-        prompt_template_id_used: null,
-        raw_response_storage_path: null,
-        seed_prompt_url: null,
-        size_bytes: 100,
-        stage: 'synthesis',
-        target_contribution_id: null,
-        updated_at: '2025-01-01T12:02:00Z',
-      };
+      const parentId = 'parent-final-0001';
 
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
           dialectic_contributions: {
-            // This mock is now more specific to handle the two calls.
-            select: (state: MockQueryBuilderState) => {
-              // First call: get the root contribution by ID.
-              if (state.filters.some((f) => f.column === 'id' && f.value === rootContributionId)) {
-                return Promise.resolve({ data: [rootChunk], error: null });
-              }
-              // Second call: get all contributions for the session.
-              if (state.filters.some((f) => f.column === 'session_id' && f.value === 'session-id-123')) {
-                return Promise.resolve({ data: [rootChunk, continuationChunk1, continuationChunk2], error: null });
-              }
-              // Default fallback.
-              return Promise.resolve({ data: [], error: new Error('Unexpected select query in test') });
-            },
+            insert: { data: [{ id: 'final-cont-0002' }], error: null },
           },
         },
       };
       beforeEach(config);
 
-      // Mock the download for each chunk
-      const originalStorageFrom = setup.client.storage.from;
-      setup.client.storage.from = (bucketName: string) => {
-        const bucket = originalStorageFrom(bucketName);
-        const originalDownload = bucket.download;
-        bucket.download = async (path: string) => {
-          const fullRootPath = `${rootChunk.storage_path}/${rootChunk.file_name}`;
-          const fullChunk1Path = `${continuationChunk1.storage_path}/${continuationChunk1.file_name}`;
-          const fullChunk2Path = `${continuationChunk2.storage_path}/${continuationChunk2.file_name}`;
-          
-          if (path === fullRootPath) {
-            return { data: new Blob(['Root content. ']), error: null };
-          }
-          if (path === fullChunk1Path) {
-            return { data: new Blob(['Chunk 1 content. ']), error: null };
-          }
-          if (path === fullChunk2Path) {
-            return { data: new Blob(['Chunk 2 content.']), error: null };
-          }
-          return originalDownload.call(bucket, path);
-        };
-        return bucket;
+      const context: UploadContext = {
+        ...baseUploadContext,
+        fileContent: 'final continuation content',
+        pathContext: {
+          fileType: FileType.ModelContributionMain,
+          projectId: 'proj-final-ctn',
+          sessionId: 'sess-final-ctn',
+          iteration: 1,
+          stageSlug: 'thesis',
+          modelSlug: 'final-model',
+          attemptCount: 0,
+        },
+        mimeType: 'text/markdown',
+        contributionMetadata: {
+          // Critical: continuation parent reference present, but isContinuation is false/omitted
+          target_contribution_id: parentId,
+          iterationNumber: 1,
+          modelIdUsed: 'model-id-final',
+          modelNameDisplay: 'Final Model',
+          sessionId: 'sess-final-ctn',
+          stageSlug: 'thesis',
+          contributionType: 'thesis',
+          rawJsonResponseContent: '{}',
+          seedPromptStoragePath: 'projects/proj-final-ctn/sessions/sess-final-ctn/iteration_1/thesis/seed.md',
+          // Explicitly ensure isContinuation is not true
+          isContinuation: false,
+        },
+        userId: 'user-final-ctn',
       };
 
-      // Spy on the final upload
-      const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
+      await fileManager.uploadAndRegisterFile(context);
 
-      // 2. Act
-      // This will fail because the method doesn't exist. We cast to any to bypass TS compilation errors.
-      await fileManager.assembleAndSaveFinalDocument(rootContributionId);
+      // Assert: parent latest edit should be cleared even when isContinuation is false
+      const updateHistory = setup.spies.getHistoricQueryBuilderSpies('dialectic_contributions', 'update');
+      assertExists(updateHistory, 'Expected an update on dialectic_contributions to clear parent latest-edit');
+      const clearedLatest = updateHistory!.callsArgs.some((args) => {
+        const payload = args[0] as Record<string, unknown>;
+        return payload && (payload as { is_latest_edit?: boolean }).is_latest_edit === false;
+      });
+      assert(clearedLatest, 'Expected is_latest_edit=false update for parent contribution');
 
-      // 3. Assert
-      assertExists(uploadSpy, "Upload spy should exist");
-      assertEquals(uploadSpy.calls.length, 1, 'A single final document should be uploaded');
-
-      const finalContentResult = uploadSpy.calls[0].args[1];
-      
-      // CORRECTED: The upload body might be a Blob, not a string or ArrayBuffer. 
-      // We need to handle it correctly to prevent the TextDecoder error.
-      let finalContent = '';
-      if (typeof finalContentResult === 'string') {
-        finalContent = finalContentResult;
-      } else if (finalContentResult instanceof Blob) {
-        finalContent = await finalContentResult.text(); // .text() is the correct way to read a Blob's content.
-      } else {
-        // Failsafe for ArrayBuffer just in case, which was the original logic.
-        finalContent = new TextDecoder().decode(finalContentResult);
-      }
-
-      assertEquals(
-        finalContent,
-        'Root content. Chunk 1 content. Chunk 2 content.',
-      );
-
-      // The final path should be the same path as the root contribution.
-      const expectedFinalPath = `${rootChunk.storage_path}/${rootChunk.file_name}`;
-      assertEquals(uploadSpy.calls[0].args[0], expectedFinalPath);
-      assert(!expectedFinalPath.includes('/_work/'), "Final path must not be in a _work directory");
+      const eqHistory = setup.spies.getHistoricQueryBuilderSpies('dialectic_contributions', 'eq');
+      assertExists(eqHistory, 'Expected an eq filter to target the parent by id');
+      const targetedParent = eqHistory!.callsArgs.some((args) => args[0] === 'id' && args[1] === parentId);
+      assert(targetedParent, 'Expected eq("id", parentId) to scope the latest-edit clearing to the parent');
 
     } finally {
       afterEach();

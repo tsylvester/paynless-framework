@@ -205,12 +205,44 @@ export class RagService implements IRagService {
         `Find conflicting or contradictory recommendations for the ${stageSlug} stage.`,
     ];
     
-    const { embedding: primaryQueryEmbedding } = await this.deps.embeddingClient.getEmbedding(queries[0]);
+    const { embedding: primaryQueryEmbedding, usage: primaryUsage } = await this.deps.embeddingClient.getEmbedding(queries[0]);
+    // Guard: ensure query embedding dimension matches system expectation
+    if (!Array.isArray(primaryQueryEmbedding) || primaryQueryEmbedding.length !== 3072) {
+      this.deps.logger.error('[RagService] Query embedding dimension mismatch', {
+        length: Array.isArray(primaryQueryEmbedding) ? primaryQueryEmbedding.length : null,
+      });
+      throw new RagServiceError('Query embedding dimension mismatch; expected 3072.');
+    }
+    if (this.deps.tokenWalletService) {
+      await this.deps.tokenWalletService.recordTransaction({
+        walletId: `rag-${sessionId}`,
+        type: 'DEBIT_USAGE',
+        amount: String(primaryUsage.total_tokens),
+        recordedByUserId: 'system',
+        idempotencyKey: `rag:query:${sessionId}:${stageSlug}:1`,
+        relatedEntityId: sessionId,
+        relatedEntityType: 'rag_query',
+        notes: 'RAG query embedding debit (1:1)',
+      });
+    }
     const allChunks = new Map<string, { content: string; metadata: unknown; rank: number }>();
 
     // 2. Retrieve Superset
-    for (const queryText of queries) {
-        const { embedding } = await this.deps.embeddingClient.getEmbedding(queryText);
+    for (let qi = 0; qi < queries.length; qi++) {
+        const queryText = queries[qi];
+        const { embedding, usage } = await this.deps.embeddingClient.getEmbedding(queryText);
+        if (this.deps.tokenWalletService) {
+          await this.deps.tokenWalletService.recordTransaction({
+            walletId: `rag-${sessionId}`,
+            type: 'DEBIT_USAGE',
+            amount: String(usage.total_tokens),
+            recordedByUserId: 'system',
+            idempotencyKey: `rag:query:${sessionId}:${stageSlug}:${qi + 1}`,
+            relatedEntityId: sessionId,
+            relatedEntityType: 'rag_query',
+            notes: 'RAG query embedding debit (1:1)',
+          });
+        }
 
         const { data: chunks, error } = await this.deps.dbClient.rpc('match_dialectic_chunks', {
             query_embedding: `[${embedding.join(',')}]`,

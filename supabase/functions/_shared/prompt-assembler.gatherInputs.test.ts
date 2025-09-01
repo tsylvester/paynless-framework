@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@0.225.3";
+import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
 import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
 import { 
     PromptAssembler, 
@@ -348,7 +348,8 @@ Deno.test("PromptAssembler", async (t) => {
                 storageMock: {
                     downloadResult: async (bucketId: string, path: string) => {
                         const expectedPath = join(storagePath, fileName);
-                        if (bucketId === "test-bucket" && path === expectedPath) {
+                        const expectedPathFs = expectedPath.replace(/\\/g, '/');
+                        if (bucketId === "test-bucket" && (path === expectedPath || path === expectedPathFs)) {
                             return { data: new Blob([contribContent]), error: null };
                         }
                         return { data: null, error: new Error("Unexpected download path in mock") };
@@ -430,7 +431,13 @@ Deno.test("PromptAssembler", async (t) => {
                 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 1);
-                assertEquals(downloadSpies.calls[0].args[0], join(storagePath, fileName));
+                const actualPath = downloadSpies.calls[0].args[0];
+                const expectedJoined = join(storagePath, fileName);
+                const expectedFs = expectedJoined.replace(/\\/g, '/');
+                assert(
+                    actualPath === expectedJoined || actualPath === expectedFs,
+                    `Expected download path to be '${expectedJoined}' or '${expectedFs}', got '${actualPath}'`
+                );
             } finally {
                 teardown();
             }
@@ -480,7 +487,8 @@ Deno.test("PromptAssembler", async (t) => {
                 },
                 storageMock: {
                     downloadResult: async (bucketId: string, path: string) => {
-                        if (bucketId === "test-bucket" && path === expectedFeedbackPath) {
+                        const expectedFeedbackPathFs = expectedFeedbackPath.replace(/\\/g, '/');
+                        if (bucketId === "test-bucket" && (path === expectedFeedbackPath || path === expectedFeedbackPathFs)) {
                             return { data: new Blob([feedbackContent]), error: null };
                         }
                         return { data: null, error: new Error(`Unexpected download path for feedback: ${path}, expected ${expectedFeedbackPath}`) };
@@ -559,7 +567,12 @@ Deno.test("PromptAssembler", async (t) => {
 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 1);
-                assertEquals(downloadSpies.calls[0].args[0], expectedFeedbackPath);
+                const actualPath = downloadSpies.calls[0].args[0];
+                const expectedFs = expectedFeedbackPath.replace(/\\/g, '/');
+                assert(
+                    actualPath === expectedFeedbackPath || actualPath === expectedFs,
+                    `Expected download path to be '${expectedFeedbackPath}' or '${expectedFs}', got '${actualPath}'`
+                );
 
             } finally {
                 teardown();
@@ -638,10 +651,12 @@ Deno.test("PromptAssembler", async (t) => {
                 storageMock: {
                     downloadResult: async (bucketId: string, path: string) => {
                         const expectedContribPath = join(contribStoragePath, contribFileName);
-                        if (bucketId === "test-bucket" && path === expectedContribPath) {
+                        const expectedContribPathFs = expectedContribPath.replace(/\\/g, '/');
+                        const expectedFeedbackPathFs = expectedFeedbackPath.replace(/\\/g, '/');
+                        if (bucketId === "test-bucket" && (path === expectedContribPath || path === expectedContribPathFs)) {
                             return { data: new Blob([contribContent]), error: null };
                         }
-                        if (bucketId === "test-bucket" && path === expectedFeedbackPath) {
+                        if (bucketId === "test-bucket" && (path === expectedFeedbackPath || path === expectedFeedbackPathFs)) {
                             return { data: new Blob([feedbackContent]), error: null };
                         }
                         return { data: null, error: new Error(`Unexpected download path (both): ${path}`) };
@@ -813,8 +828,16 @@ Deno.test("PromptAssembler", async (t) => {
                 },
                 storageMock: {
                     downloadResult: async (bucketId: string, path: string) => {
-                        if (bucketId === "test-bucket" && path === expectedContribPath) return { data: new Blob([contribContent]), error: null };
-                        if (bucketId === "test-bucket" && path === expectedFeedbackPath) return { data: new Blob([feedbackContent]), error: null };
+                        const expectedContribPathFs = expectedContribPath.replace(/\\/g, '/');
+                        const expectedFeedbackPathFs = expectedFeedbackPath.replace(/\\/g, '/');
+                        if (
+                            bucketId === "test-bucket" &&
+                            (path === expectedContribPath || path === expectedContribPathFs)
+                        ) return { data: new Blob([contribContent]), error: null };
+                        if (
+                            bucketId === "test-bucket" &&
+                            (path === expectedFeedbackPath || path === expectedFeedbackPathFs)
+                        ) return { data: new Blob([feedbackContent]), error: null };
                         return { data: null, error: new Error(`Unexpected download path (custom header): ${path}`) };
                     }
                 }
