@@ -1279,160 +1279,160 @@ END;
 $function$
 ;
 
-CREATE OR REPLACE FUNCTION public.save_contribution_edit_atomic(p_original_contribution_id uuid, p_session_id uuid, p_user_id uuid, p_stage text, p_iteration_number integer, p_actual_prompt_sent text, p_content_storage_bucket text, p_content_storage_path text, p_content_mime_type text, p_content_size_bytes bigint, p_raw_response_storage_path text, p_tokens_used_input integer, p_tokens_used_output integer, p_processing_time_ms integer, p_citations jsonb, p_target_contribution_id uuid, p_edit_version integer, p_is_latest_edit boolean, p_original_model_contribution_id uuid, p_error_details text, p_model_id uuid, p_contribution_type text)
- RETURNS uuid
- LANGUAGE plpgsql
- SET search_path TO ''
-AS $function$
-DECLARE
-    new_contribution_id UUID;
-BEGIN
-    -- Update the old contribution to no longer be the latest
-    UPDATE public.dialectic_contributions
-    SET is_latest_edit = FALSE,
-        updated_at = now()
-    WHERE id = p_original_contribution_id;
+-- CREATE OR REPLACE FUNCTION public.save_contribution_edit_atomic(p_original_contribution_id uuid, p_session_id uuid, p_user_id uuid, p_stage text, p_iteration_number integer, p_actual_prompt_sent text, p_content_storage_bucket text, p_content_storage_path text, p_content_mime_type text, p_content_size_bytes bigint, p_raw_response_storage_path text, p_tokens_used_input integer, p_tokens_used_output integer, p_processing_time_ms integer, p_citations jsonb, p_target_contribution_id uuid, p_edit_version integer, p_is_latest_edit boolean, p_original_model_contribution_id uuid, p_error_details text, p_model_id uuid, p_contribution_type text)
+--  RETURNS uuid
+--  LANGUAGE plpgsql
+--  SET search_path TO ''
+-- AS $function$
+-- DECLARE
+--     new_contribution_id UUID;
+-- BEGIN
+--     -- Update the old contribution to no longer be the latest
+--     UPDATE public.dialectic_contributions
+--     SET is_latest_edit = FALSE,
+--         updated_at = now()
+--     WHERE id = p_original_contribution_id;
 
-    -- Insert the new edited contribution
-    INSERT INTO public.dialectic_contributions (
-        session_id,
-        user_id,
-        stage,
-        iteration_number,
-        actual_prompt_sent,
-        content_storage_bucket,
-        content_storage_path,
-        content_mime_type,
-        content_size_bytes,
-        raw_response_storage_path,
-        tokens_used_input,
-        tokens_used_output,
-        processing_time_ms,
-        citations,
-        target_contribution_id, -- Links to the contribution it is an edit OF
-        edit_version,
-        is_latest_edit,
-        original_model_contribution_id,
-        error, -- Storing p_error_details in the 'error' column
-        model_id,
-        contribution_type,
-        created_at,
-        updated_at
-    )
-    VALUES (
-        p_session_id,
-        p_user_id,
-        p_stage,
-        p_iteration_number,
-        p_actual_prompt_sent,
-        p_content_storage_bucket,
-        p_content_storage_path,
-        p_content_mime_type,
-        p_content_size_bytes,
-        p_raw_response_storage_path,
-        p_tokens_used_input,
-        p_tokens_used_output,
-        p_processing_time_ms,
-        p_citations,
-        p_target_contribution_id,
-        p_edit_version,
-        p_is_latest_edit,
-        p_original_model_contribution_id,
-        p_error_details,
-        p_model_id,
-        p_contribution_type,
-        now(),
-        now()
-    )
-    RETURNING id INTO new_contribution_id;
+--     -- Insert the new edited contribution
+--     INSERT INTO public.dialectic_contributions (
+--         session_id,
+--         user_id,
+--         stage,
+--         iteration_number,
+--         actual_prompt_sent,
+--         content_storage_bucket,
+--         content_storage_path,
+--         content_mime_type,
+--         content_size_bytes,
+--         raw_response_storage_path,
+--         tokens_used_input,
+--         tokens_used_output,
+--         processing_time_ms,
+--         citations,
+--         target_contribution_id, -- Links to the contribution it is an edit OF
+--         edit_version,
+--         is_latest_edit,
+--         original_model_contribution_id,
+--         error, -- Storing p_error_details in the 'error' column
+--         model_id,
+--         contribution_type,
+--         created_at,
+--         updated_at
+--     )
+--     VALUES (
+--         p_session_id,
+--         p_user_id,
+--         p_stage,
+--         p_iteration_number,
+--         p_actual_prompt_sent,
+--         p_content_storage_bucket,
+--         p_content_storage_path,
+--         p_content_mime_type,
+--         p_content_size_bytes,
+--         p_raw_response_storage_path,
+--         p_tokens_used_input,
+--         p_tokens_used_output,
+--         p_processing_time_ms,
+--         p_citations,
+--         p_target_contribution_id,
+--         p_edit_version,
+--         p_is_latest_edit,
+--         p_original_model_contribution_id,
+--         p_error_details,
+--         p_model_id,
+--         p_contribution_type,
+--         now(),
+--         now()
+--     )
+--     RETURNING id INTO new_contribution_id;
 
-    RETURN new_contribution_id;
-EXCEPTION
-    WHEN OTHERS THEN
-        -- Log the error (optional, depends on your logging setup within Postgres)
-        RAISE WARNING 'Error in save_contribution_edit_atomic: %', SQLERRM;
-        RETURN NULL; -- Or re-raise the exception: RAISE;
-END;
-$function$
-;
+--     RETURN new_contribution_id;
+-- EXCEPTION
+--     WHEN OTHERS THEN
+--         -- Log the error (optional, depends on your logging setup within Postgres)
+--         RAISE WARNING 'Error in save_contribution_edit_atomic: %', SQLERRM;
+--         RETURN NULL; -- Or re-raise the exception: RAISE;
+-- END;
+-- $function$
+-- ;
 
-CREATE OR REPLACE FUNCTION public.save_contribution_edit_atomic(p_original_contribution_id uuid, p_session_id uuid, p_user_id uuid, p_stage text, p_iteration_number integer, p_storage_bucket text, p_storage_path text, p_mime_type text, p_size_bytes bigint, p_raw_response_storage_path text, p_tokens_used_input integer, p_tokens_used_output integer, p_processing_time_ms integer, p_citations jsonb, p_target_contribution_id uuid, p_edit_version integer, p_is_latest_edit boolean, p_original_model_contribution_id uuid, p_error_details text, p_model_id uuid, p_contribution_type text)
- RETURNS uuid
- LANGUAGE plpgsql
- SET search_path TO ''
-AS $function$
-DECLARE
-    new_contribution_id UUID;
-BEGIN
-    -- Concurrently update the old contribution to no longer be the latest.
-    -- This prevents race conditions where two edits could be marked as latest.
-    UPDATE public.dialectic_contributions
-    SET is_latest_edit = FALSE,
-        updated_at = now()
-    WHERE id = p_original_contribution_id;
+-- CREATE OR REPLACE FUNCTION public.save_contribution_edit_atomic(p_original_contribution_id uuid, p_session_id uuid, p_user_id uuid, p_stage text, p_iteration_number integer, p_storage_bucket text, p_storage_path text, p_mime_type text, p_size_bytes bigint, p_raw_response_storage_path text, p_tokens_used_input integer, p_tokens_used_output integer, p_processing_time_ms integer, p_citations jsonb, p_target_contribution_id uuid, p_edit_version integer, p_is_latest_edit boolean, p_original_model_contribution_id uuid, p_error_details text, p_model_id uuid, p_contribution_type text)
+--  RETURNS uuid
+--  LANGUAGE plpgsql
+--  SET search_path TO ''
+-- AS $function$
+-- DECLARE
+--     new_contribution_id UUID;
+-- BEGIN
+--     -- Concurrently update the old contribution to no longer be the latest.
+--     -- This prevents race conditions where two edits could be marked as latest.
+--     UPDATE public.dialectic_contributions
+--     SET is_latest_edit = FALSE,
+--         updated_at = now()
+--     WHERE id = p_original_contribution_id;
 
-    -- Insert the new edited contribution record.
-    -- Note the mapping from `p_content_*` parameters to the `storage_*` table columns.
-    INSERT INTO public.dialectic_contributions (
-        session_id,
-        user_id,
-        stage,
-        iteration_number,
-        storage_bucket, -- Corrected column name
-        storage_path,   -- Corrected column name
-        mime_type,      -- Corrected column name
-        size_bytes,     -- Corrected column name
-        raw_response_storage_path,
-        tokens_used_input,
-        tokens_used_output,
-        processing_time_ms,
-        citations,
-        target_contribution_id, 
-        edit_version,
-        is_latest_edit,
-        original_model_contribution_id,
-        error, 
-        model_id,
-        contribution_type,
-        created_at,
-        updated_at
-    )
-    VALUES (
-        p_session_id,
-        p_user_id,
-        p_stage,
-        p_iteration_number,
-        p_storage_bucket, -- Parameter name
-        p_storage_path,   -- Parameter name
-        p_mime_type,      -- Parameter name
-        p_size_bytes,     -- Parameter name
-        p_raw_response_storage_path,
-        p_tokens_used_input,
-        p_tokens_used_output,
-        p_processing_time_ms,
-        p_citations,
-        p_target_contribution_id,
-        p_edit_version,
-        p_is_latest_edit,
-        p_original_model_contribution_id,
-        p_error_details,
-        p_model_id,
-        p_contribution_type,
-        now(),
-        now()
-    )
-    RETURNING id INTO new_contribution_id;
+--     -- Insert the new edited contribution record.
+--     -- Note the mapping from `p_content_*` parameters to the `storage_*` table columns.
+--     INSERT INTO public.dialectic_contributions (
+--         session_id,
+--         user_id,
+--         stage,
+--         iteration_number,
+--         storage_bucket, -- Corrected column name
+--         storage_path,   -- Corrected column name
+--         mime_type,      -- Corrected column name
+--         size_bytes,     -- Corrected column name
+--         raw_response_storage_path,
+--         tokens_used_input,
+--         tokens_used_output,
+--         processing_time_ms,
+--         citations,
+--         target_contribution_id, 
+--         edit_version,
+--         is_latest_edit,
+--         original_model_contribution_id,
+--         error, 
+--         model_id,
+--         contribution_type,
+--         created_at,
+--         updated_at
+--     )
+--     VALUES (
+--         p_session_id,
+--         p_user_id,
+--         p_stage,
+--         p_iteration_number,
+--         p_storage_bucket, -- Parameter name
+--         p_storage_path,   -- Parameter name
+--         p_mime_type,      -- Parameter name
+--         p_size_bytes,     -- Parameter name
+--         p_raw_response_storage_path,
+--         p_tokens_used_input,
+--         p_tokens_used_output,
+--         p_processing_time_ms,
+--         p_citations,
+--         p_target_contribution_id,
+--         p_edit_version,
+--         p_is_latest_edit,
+--         p_original_model_contribution_id,
+--         p_error_details,
+--         p_model_id,
+--         p_contribution_type,
+--         now(),
+--         now()
+--     )
+--     RETURNING id INTO new_contribution_id;
 
-    RETURN new_contribution_id;
-EXCEPTION
-    WHEN OTHERS THEN
-        -- Log the error and return NULL if any part of the transaction fails.
-        -- The calling service is responsible for handling the NULL response.
-        RAISE WARNING 'Error in save_contribution_edit_atomic: %', SQLERRM;
-        RETURN NULL;
-END;
-$function$
-;
+--     RETURN new_contribution_id;
+-- EXCEPTION
+--     WHEN OTHERS THEN
+--         -- Log the error and return NULL if any part of the transaction fails.
+--         -- The calling service is responsible for handling the NULL response.
+--         RAISE WARNING 'Error in save_contribution_edit_atomic: %', SQLERRM;
+--         RETURN NULL;
+-- END;
+-- $function$
+-- ;
 
 CREATE OR REPLACE FUNCTION public.set_current_timestamp_updated_at()
  RETURNS trigger
