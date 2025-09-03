@@ -3,7 +3,8 @@ import type {
     DialecticProject, 
     DialecticProjectResource, 
     DialecticSession, 
-    DialecticContribution 
+    DialecticContribution,
+    ExportProjectResponse
 } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
@@ -14,7 +15,6 @@ import {
     BlobWriter,
 } from "jsr:@zip-js/zip-js";
 // Removed direct import of storage functions
-import type { ServiceError } from "../_shared/types.ts";
 import { FileType, type IFileManager, type UploadContext } from "../_shared/types/file_manager.types.ts";
 import type { IStorageUtils } from "../_shared/types/storage_utils.types.ts"; // Added import for the interface
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts'; // For converting ArrayBuffer to Buffer for FileManager
@@ -54,7 +54,7 @@ export async function exportProject(
     storageUtils: IStorageUtils, // Added storageUtils parameter
     projectId: string,
     userId: string,
-): Promise<{ data?: { export_url: string }; error?: ServiceError; status?: number }> {
+): Promise<ExportProjectResponse> {
     logger.info('Starting project export.', { projectId, userId });
 
     try {
@@ -319,8 +319,8 @@ export async function exportProject(
         logger.info('Project export zip Blob created successfully.', { projectId, zipSize: zipBlob.size });
         
         const projectNameSlug = slugify(project.project_name);
-        const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\\.\\d+Z$/, 'Z');
-        const exportFileName = `project_export_${projectNameSlug}_${timestamp}.zip`;
+        // Deterministic filename to support overwrite semantics and avoid race conditions
+        const exportFileName = `project_export_${projectNameSlug}.zip`;
         
         // Convert Blob to ArrayBuffer, then to Buffer for FileManagerService
         const zipArrayBuffer = await zipBlob.arrayBuffer();
@@ -349,7 +349,7 @@ export async function exportProject(
                     message: 'Failed to store project export file using FileManager.', 
                     status: 500, 
                     code: 'EXPORT_FM_UPLOAD_FAILED', 
-                    details: fmError?.message 
+                    details: fmError?.details || fmError?.message 
                 } 
             };
         }
@@ -373,10 +373,14 @@ export async function exportProject(
                     details: signedUrlError?.message 
                 } 
             };
+        } else {
+            if (!fileRecord.file_name) {
+                logger.error('Project export file name is missing.', { projectId });
+                return { error: { message: 'Project export file name is missing.', status: 500, code: 'EXPORT_FILE_NAME_MISSING' } };
+            }
+            logger.info('Signed URL created for project export.', { projectId, signedUrlExpiry: SIGNED_URL_EXPIRES_IN });
+            return { data: { export_url: signedUrl, file_name: fileRecord.file_name }, status: 200 };
         }
-
-        logger.info('Signed URL created for project export.', { projectId, signedUrlExpiry: SIGNED_URL_EXPIRES_IN });
-        return { data: { export_url: signedUrl }, status: 200 };
 
     } catch (error) {
         let errorMessage = 'An unknown error occurred.';

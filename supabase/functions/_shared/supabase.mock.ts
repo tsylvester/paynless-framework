@@ -1064,7 +1064,7 @@ export function restoreFetch() {
 }
 
 // Utility to stub Deno.env.get for a test scope
-export function withMockEnv(envVars: Record<string, string>, testFn: () => Promise<void>) {
+export async function withMockEnv(envVars: Record<string, string>, testFn: () => Promise<void>) {
     const originalValues: Record<string, string | undefined> = {};
     const envGetStubInstance = stub(Deno.env, 'get', (key: string): string | undefined => {
         console.log(`[Test Env Stub] Deno.env.get called with: ${key}`);
@@ -1079,7 +1079,7 @@ export function withMockEnv(envVars: Record<string, string>, testFn: () => Promi
         for (const key in envVars) {
             originalValues[key] = Deno.env.get(key);
         }
-        return testFn();
+        await testFn();
     } finally {
         envGetStubInstance.restore();
     }

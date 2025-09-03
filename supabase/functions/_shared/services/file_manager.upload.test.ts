@@ -93,6 +93,67 @@ Deno.test('FileManagerService', async (t) => {
     },
   )
 
+  await t.step('uploadAndRegisterFile returns structured error and cleans up on DB insert failure (project_export_zip)',
+    async () => {
+      try {
+        const projectId = 'project-uuid-err';
+        const originalZipName = 'Fail Export.zip';
+        const context: UploadContext = {
+          ...baseUploadContext,
+          pathContext: {
+            fileType: FileType.ProjectExportZip,
+            projectId,
+            originalFileName: originalZipName,
+          },
+          fileContent: 'zip-bytes',
+          mimeType: 'application/zip',
+          sizeBytes: 9999,
+          description: 'Project export archive (should fail insert)',
+        };
+
+        const expectedPathParts = constructStoragePath(context.pathContext);
+        const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+
+        const postgrestStyleError = { message: 'insert failed', code: 'PGRST116', details: 'constraint violation on resource_description' } as unknown as Error;
+
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            dialectic_project_resources: {
+              insert: { data: null, error: postgrestStyleError },
+            },
+          },
+          storageMock: {
+            uploadResult: { data: { path: expectedFullPath }, error: null },
+            // Ensure cleanup path executes (list returns the uploaded file name)
+            listResult: { data: [{ name: expectedPathParts.fileName }], error: null },
+            removeResult: { data: [], error: null },
+          },
+        };
+        beforeEach(config);
+
+        const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+        // Expect RED: prove intended behavior (message + details) and cleanup attempted
+        assertEquals(record, null);
+        assertExists(error);
+        assertEquals(error?.message, 'Database registration failed after successful upload.');
+        // Intended: details should include DB code/details for easier diagnosis
+        // This will be RED until implementation propagates details
+        const detailsText = String(error?.details ?? '');
+        assert(detailsText.includes('PGRST116') || detailsText.includes('constraint'));
+
+        const removeSpy = setup.spies.storage.from('test-bucket').removeSpy;
+        assertExists(removeSpy);
+        // Ensure we attempted to remove the uploaded file path
+        const removedPathsArg = removeSpy.calls[0]?.args[0];
+        assertExists(removedPathsArg);
+        assert(removedPathsArg!.some((p: string) => p === expectedFullPath));
+      } finally {
+        afterEach();
+      }
+    },
+  )
+
   await t.step('uploadAndRegisterFile should use bucket from environment variable',
     async () => {
       try {
@@ -192,11 +253,17 @@ Deno.test('FileManagerService', async (t) => {
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
             dialectic_project_resources: {
-              insert: { data: [{ id: 'zip-res-123' }], error: null },
+              upsert: { data: [{ id: 'zip-res-123' }], error: null },
             },
           },
           storageMock: {
-            uploadResult: { data: { path: expectedFullPath }, error: null },
+            uploadResult: (bucketId: string, path: string, _body: unknown, options?: IMockStorageFileOptions) => {
+              assertEquals(bucketId, 'test-bucket');
+              assertEquals(path, expectedFullPath);
+              // Ensure storage upload uses upsert: true for overwrite semantics
+              assertEquals(options?.upsert, true);
+              return Promise.resolve({ data: { path }, error: null });
+            },
           },
         };
         beforeEach(config);
@@ -207,13 +274,17 @@ Deno.test('FileManagerService', async (t) => {
         assertExists(record);
         assertEquals(setup.spies.fromSpy.calls[0].args[0], 'dialectic_project_resources');
 
-        const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert;
-        assertExists(insertSpy);
-        const insertData = insertSpy.calls[0].args[0];
+        const upsertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.upsert;
+        assertExists(upsertSpy);
+        const upsertArgs = upsertSpy.calls[0].args;
+        const insertData = upsertArgs[0];
         assertEquals(insertData.project_id, projectId);
         assertEquals(insertData.storage_path, expectedPathParts.storagePath);
         assertEquals(insertData.file_name, expectedPathParts.fileName);
         assertEquals(insertData.mime_type, 'application/zip');
+        const upsertOptions = upsertArgs[1] as { onConflict?: string } | undefined;
+        assertExists(upsertOptions);
+        assertEquals(upsertOptions?.onConflict, 'storage_bucket,storage_path,file_name');
 
         const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
         assertExists(uploadSpy);

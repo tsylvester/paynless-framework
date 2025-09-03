@@ -31,6 +31,7 @@ import {
   type DialecticProgressUpdatePayload,
   type ProgressData,
   isContributionStatus,
+  ExportProjectResponse,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { useWalletStore } from './walletStore';
@@ -879,27 +880,38 @@ export const useDialecticStore = create<DialecticStore>()(
 
 	exportDialecticProject: async (
 		projectId: string,
-	): Promise<ApiResponse<{ export_url: string }>> => {
+	): Promise<ApiResponse<ExportProjectResponse>> => {
 		set({ isExportingProject: true, exportProjectError: null });
 		logger.info(`[DialecticStore] Exporting project with ID: ${projectId}`);
 		try {
-			const response = await api.dialectic().exportProject({ projectId });
+			const response: ApiResponse<ExportProjectResponse> = await api
+				.dialectic()
+				.exportProject({ projectId });
 			if (response.error) {
 				logger.error("[DialecticStore] Error exporting project:", {
 					projectId,
 					errorDetails: response.error,
 				});
 				set({ isExportingProject: false, exportProjectError: response.error });
-			} else {
-				logger.info("[DialecticStore] Successfully requested project export:", {
-					projectId,
-					exportDetails: response.data,
-				});
-				set({ isExportingProject: false, exportProjectError: null });
-				// Depending on the backend, the export might be a URL to a file or the file itself.
-				// The component calling this will handle the response.data.export_url
+				return { error: response.error, status: response.status };
 			}
-			return response;
+
+			const data = response.data;
+			const hasUrl = !!data?.export_url;
+			const hasName = !!data?.file_name;
+			if (!hasUrl || !hasName) {
+				const err: ApiError = { code: hasUrl ? 'MISSING_FILE_NAME' : 'MALFORMED_EXPORT_RESPONSE', message: hasUrl ? 'Missing file name' : 'Missing export data' };
+				logger.error('[DialecticStore] Malformed export response (missing required fields).', { projectId, exportData: data, errorDetails: err });
+				set({ isExportingProject: false, exportProjectError: err });
+				return { error: err, status: 500 };
+			}
+
+			logger.info("[DialecticStore] Successfully requested project export:", {
+				projectId,
+				exportDetails: data,
+			});
+			set({ isExportingProject: false, exportProjectError: null });
+			return { data: data, status: response.status || 200 };
 		} catch (error: unknown) {
 			const networkError: ApiError = {
 				message:

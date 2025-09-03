@@ -22,6 +22,7 @@ import type { IPromptAssembler } from '../_shared/prompt-assembler.interface.ts'
 import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
 import type { debitTokens } from '../chat/debitTokens.ts';
 import { ICompressionStrategy } from '../_shared/utils/vector_utils.ts';
+import type { ServiceError } from "../_shared/types.ts";
 
 export type DialecticProjectRow = Database['public']['Tables']['dialectic_projects']['Row'];
 export type DialecticProjectInsert = Database['public']['Tables']['dialectic_projects']['Insert'];
@@ -841,3 +842,19 @@ export interface StartSessionDeps {
   randomUUID: () => string;
   getAiProviderAdapter: (deps: FactoryDependencies) => AiProviderAdapterInstance | null;
 }
+
+export type ExportProjectSuccess = {
+	status: 200;
+	data: {
+		export_url: string;
+		file_name: string;
+	};
+  error?: undefined;
+};
+
+export type ExportProjectFailure = {
+	error: ServiceError;
+  data?: undefined;
+};
+
+export type ExportProjectResponse = ExportProjectSuccess | ExportProjectFailure;
