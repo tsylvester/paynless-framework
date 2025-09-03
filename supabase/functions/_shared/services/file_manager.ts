@@ -3,7 +3,9 @@ import { constructStoragePath } from '../utils/path_constructor.ts'
 import type {
   Database,
   TablesInsert,
+  Json,
 } from '../../types_db.ts'
+import { isJson, isPostgrestError, isRecord } from '../utils/type_guards.ts'
 import type { FileManagerResponse, UploadContext, PathContext } from '../types/file_manager.types.ts'
 import { FileType } from '../types/file_manager.types.ts'
 
@@ -182,19 +184,44 @@ export class FileManagerService {
 
     try {
       if (targetTable === 'dialectic_project_resources') {
-        let finalDescriptionString: string | null = null;
-        if (typeof context.description === 'string') {
-          try {
-            const parsedJson = JSON.parse(context.description);
-            const descriptionObject = typeof parsedJson === 'object' && parsedJson !== null 
-              ? { ...parsedJson, type: pathContextForStorage.fileType }
-              : { type: pathContextForStorage.fileType, originalDescription: context.description };
-            finalDescriptionString = JSON.stringify(descriptionObject);
-          } catch (e) {
-            finalDescriptionString = JSON.stringify({ type: pathContextForStorage.fileType, originalDescription: context.description });
+        // Build resource_description. For project_export_zip we persist JSON; otherwise keep existing behavior.
+        let resourceDescriptionForDb: Json | null = null;
+        if (pathContextForStorage.fileType === 'project_export_zip') {
+          let descriptionJson: Record<string, unknown> = { type: pathContextForStorage.fileType };
+          if (typeof context.description === 'string') {
+            try {
+              const parsed = JSON.parse(context.description);
+              if (typeof parsed === 'object' && parsed !== null) {
+                descriptionJson = { ...parsed, type: pathContextForStorage.fileType };
+              } else {
+                descriptionJson = { type: pathContextForStorage.fileType, originalDescription: context.description };
+              }
+            } catch (_e) {
+              descriptionJson = { type: pathContextForStorage.fileType, originalDescription: context.description };
+            }
+          }
+          if (isJson(descriptionJson)) {
+            resourceDescriptionForDb = descriptionJson;
+          } else {
+            // Fallback to minimal valid JSON payload
+            const minimal = { type: pathContextForStorage.fileType };
+            resourceDescriptionForDb = isJson(minimal) ? minimal : null;
           }
         } else {
-          finalDescriptionString = null;
+          // Legacy behavior for non-export types: store provided description stringified when present
+          if (typeof context.description === 'string') {
+            try {
+              const parsedJson = JSON.parse(context.description);
+              const descriptionObject = typeof parsedJson === 'object' && parsedJson !== null 
+                ? { ...parsedJson, type: pathContextForStorage.fileType }
+                : { type: pathContextForStorage.fileType, originalDescription: context.description };
+              resourceDescriptionForDb = JSON.stringify(descriptionObject);
+            } catch (_e) {
+              resourceDescriptionForDb = JSON.stringify({ type: pathContextForStorage.fileType, originalDescription: context.description });
+            }
+          } else {
+            resourceDescriptionForDb = null;
+          }
         }
 
         const recordData: TablesInsert<'dialectic_project_resources'> = {
@@ -205,8 +232,22 @@ export class FileManagerService {
           size_bytes: context.sizeBytes,
           storage_bucket: this.storageBucket,
           storage_path: finalMainContentFilePath,
-          resource_description: finalDescriptionString,
+          resource_description: resourceDescriptionForDb,
         };
+        // Use upsert only for project export zip; otherwise, insert as before
+        if (pathContextForStorage.fileType === 'project_export_zip') {
+          const { data: newRecord, error: upsertError } = await this.supabase
+            .from(targetTable)
+            .upsert(recordData, { onConflict: 'storage_bucket,storage_path,file_name' })
+            .select()
+            .single();
+
+          if (upsertError) {
+            throw upsertError;
+          }
+          return { record: newRecord, error: null };
+        }
+
         const { data: newRecord, error: insertError } = await this.supabase
           .from(targetTable)
           .insert(recordData)
@@ -343,10 +384,29 @@ export class FileManagerService {
           await this.supabase.storage.from(this.storageBucket).remove(pathsToRemove);
         }
       }
-      const errorMessage = e instanceof Error ? e.message : 'Unknown database error';
+      let errorDetails: string | undefined = undefined;
+      if (isPostgrestError(e)) {
+        errorDetails = JSON.stringify({ code: e.code, details: e.details, message: e.message });
+      } else if (isRecord(e)) {
+        const code = 'code' in e && typeof e.code === 'string' ? e.code : undefined;
+        const details = 'details' in e && typeof e.details === 'string' ? e.details : undefined;
+        const message = 'message' in e && typeof e.message === 'string'
+          ? e.message
+          : (e instanceof Error ? e.message : 'Unknown database error');
+        // If only a simple message exists (no code/details), return the raw message string
+        if (!code && !details && typeof message === 'string') {
+          errorDetails = message;
+        } else {
+          errorDetails = JSON.stringify({ code, details, message });
+        }
+      } else if (e instanceof Error) {
+        errorDetails = e.message;
+      } else {
+        errorDetails = 'Unknown database error';
+      }
       return {
         record: null,
-        error: { message: "Database registration failed after successful upload.", details: errorMessage },
+        error: { message: "Database registration failed after successful upload.", details: errorDetails },
       }
     }
   }

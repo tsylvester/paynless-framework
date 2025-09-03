@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useDialecticStore, selectSortedStages } from '@paynless/store';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -16,7 +16,6 @@ export const DialecticSessionDetailsPage: React.FC = () => {
   
   // Actions from store
   const activateContextForDeepLink = useDialecticStore(state => state.activateProjectAndSessionContextForDeepLink);
-  const setActiveDialecticContextAction = useDialecticStore(state => state.setActiveDialecticContext);
 
   // Selectors from store for context and data
   const activeContextProjectId = useDialecticStore(state => state.activeContextProjectId);
@@ -24,7 +23,6 @@ export const DialecticSessionDetailsPage: React.FC = () => {
   const activeSessionDetail = useDialecticStore(state => state.activeSessionDetail) as DialecticSession | null;
   const currentProjectDetail = useDialecticStore(state => state.currentProjectDetail) as DialecticProject | null;
   const activeContextStage = useDialecticStore(state => state.activeContextStage) as DialecticStage | null;
-  const currentProcessTemplate = useDialecticStore(state => state.currentProcessTemplate);
   const sortedStages = useDialecticStore(selectSortedStages);
   
   // Loading and error states from store
@@ -51,16 +49,6 @@ export const DialecticSessionDetailsPage: React.FC = () => {
     return () => {
     };
   }, []);
-  
-  const handleStageCardClick = (selectedStage: DialecticStage) => {
-    if (activeContextProjectId && activeContextSessionId) {
-        setActiveDialecticContextAction({
-            projectId: activeContextProjectId,
-            sessionId: activeContextSessionId,
-            stage: selectedStage,
-        });
-    }
-  };
 
   const isLoading = isLoadingProject || isLoadingSession;
 

@@ -63,7 +63,7 @@ import { exportProject } from './exportProject.ts';
 import { getProjectResourceContent } from "./getProjectResourceContent.ts";
 import { saveContributionEdit } from './saveContributionEdit.ts';
 import { submitStageResponses } from './submitStageResponses.ts';
-import { downloadFromStorage, deleteFromStorage } from '../_shared/supabase_storage_utils.ts';
+import { downloadFromStorage, deleteFromStorage, createSignedUrlForPath } from '../_shared/supabase_storage_utils.ts';
 import { listDomains, type DialecticDomain } from './listDomains.ts';
 import { fetchProcessTemplate } from './fetchProcessTemplate.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
@@ -428,7 +428,7 @@ export async function handleRequest(
           }
           const storageUtils: IStorageUtils = {
             downloadFromStorage,
-            createSignedUrlForPath: createSignedUrlDefaultFn // Assuming createSignedUrlDefaultFn matches the required signature
+            createSignedUrlForPath
           };
           const { data, error, status } = await handlers.exportProject(adminClient, fileManager, storageUtils, payload.projectId, userForJson!.id);
           if (error) {

@@ -3,7 +3,7 @@ import { describe, it, beforeAll, afterAll, beforeEach, afterEach } from "jsr:@s
 import { spy, stub, type Spy, assertSpyCall, assertSpyCalls, assertSpyCallAsync } from "jsr:@std/testing/mock";
 
 import { uploadToStorage, downloadFromStorage, deleteFromStorage, createSignedUrlForPath, getFileMetadata } from "./supabase_storage_utils.ts";
-import { createMockSupabaseClient, type IMockClientSpies, type MockSupabaseDataConfig, getStorageSpies, type MockSupabaseClientSetup } from "./supabase.mock.ts";
+import { createMockSupabaseClient, type IMockClientSpies, type MockSupabaseDataConfig, getStorageSpies, type MockSupabaseClientSetup, withMockEnv } from "./supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@^2.43.4";
 
 describe("uploadToStorage", () => {
@@ -439,6 +439,88 @@ describe("createSignedUrlForPath", () => {
     assertEquals(error?.message, exceptionError.message);
     assertSpyCall(storageSpies.createSignedUrlSpy, 0, { args: [filePath, expiresIn] });
     if (clear) clear();
+  });
+
+  it("normalizes internal host to SUPABASE_URL base for browser consumption", async () => {
+    const internalSignedUrl = `http://kong:8000/storage/v1/object/sign/${bucketName}/${filePath}?token=abc123&expires_in=${expiresIn}`;
+    const publicBase = 'http://localhost:54321';
+
+    await withMockEnv({ SUPABASE_URL: publicBase }, async () => {
+      const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+        storageMock: {
+          createSignedUrlResult: async () => ({ data: { signedUrl: internalSignedUrl }, error: null })
+        }
+      });
+      client.storage.from(bucketName);
+      const { signedUrl, error } = await createSignedUrlForPath(client as unknown as SupabaseClient, bucketName, filePath, expiresIn);
+
+      assertStrictEquals(error, null);
+      assertExists(signedUrl);
+      const expected = `${publicBase}/storage/v1/object/sign/${bucketName}/${filePath}?token=abc123&expires_in=${expiresIn}`;
+      assertStrictEquals(signedUrl, expected);
+      if (clear) clear();
+    });
+  });
+
+  it("returns same URL when host already matches SUPABASE_URL base", async () => {
+    const publicBase = 'http://localhost:54321';
+    const alreadyPublicUrl = `${publicBase}/storage/v1/object/sign/${bucketName}/${filePath}?token=xyz987&expires_in=${expiresIn}`;
+
+    await withMockEnv({ SUPABASE_URL: publicBase }, async () => {
+      const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+        storageMock: {
+          createSignedUrlResult: async () => ({ data: { signedUrl: alreadyPublicUrl }, error: null })
+        }
+      });
+      client.storage.from(bucketName);
+      const { signedUrl, error } = await createSignedUrlForPath(client as unknown as SupabaseClient, bucketName, filePath, expiresIn);
+
+      assertStrictEquals(error, null);
+      assertStrictEquals(signedUrl, alreadyPublicUrl);
+      if (clear) clear();
+    });
+  });
+
+  it("normalizes when SUPABASE_URL is kong (internal) to localhost:54321", async () => {
+    const internalBase = 'http://kong:8000';
+    const internalSignedUrl = `http://kong:8000/storage/v1/object/sign/${bucketName}/${filePath}?token=intabc&expires_in=${expiresIn}`;
+
+    await withMockEnv({ SUPABASE_URL: internalBase }, async () => {
+      const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+        storageMock: {
+          createSignedUrlResult: async () => ({ data: { signedUrl: internalSignedUrl }, error: null })
+        }
+      });
+      client.storage.from(bucketName);
+      const { signedUrl, error } = await createSignedUrlForPath(client as unknown as SupabaseClient, bucketName, filePath, expiresIn);
+
+      assertStrictEquals(error, null);
+      assertExists(signedUrl);
+      const expected = `http://localhost:54321/storage/v1/object/sign/${bucketName}/${filePath}?token=intabc&expires_in=${expiresIn}`;
+      assertStrictEquals(signedUrl, expected);
+      if (clear) clear();
+    });
+  });
+
+  it("normalizes when SUPABASE_URL is host.docker.internal:54321 to localhost:54321", async () => {
+    const internalBase = 'http://host.docker.internal:54321';
+    const internalSignedUrl = `http://host.docker.internal:54321/storage/v1/object/sign/${bucketName}/${filePath}?token=intxyz&expires_in=${expiresIn}`;
+
+    await withMockEnv({ SUPABASE_URL: internalBase }, async () => {
+      const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+        storageMock: {
+          createSignedUrlResult: async () => ({ data: { signedUrl: internalSignedUrl }, error: null })
+        }
+      });
+      client.storage.from(bucketName);
+      const { signedUrl, error } = await createSignedUrlForPath(client as unknown as SupabaseClient, bucketName, filePath, expiresIn);
+
+      assertStrictEquals(error, null);
+      assertExists(signedUrl);
+      const expected = `http://localhost:54321/storage/v1/object/sign/${bucketName}/${filePath}?token=intxyz&expires_in=${expiresIn}`;
+      assertStrictEquals(signedUrl, expected);
+      if (clear) clear();
+    });
   });
 });
 

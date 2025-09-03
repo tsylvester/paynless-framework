@@ -264,6 +264,10 @@ describe("exportProject", () => {
         assertInstanceOf(uploadArgs.fileContent, Buffer);
         assertEquals(uploadArgs.pathContext.fileType, 'project_export_zip'); 
         assertExists(uploadArgs.pathContext.originalFileName);
+        // Strengthened assertion: originalFileName should derive from the project name
+        const originalFileName = String(uploadArgs.pathContext.originalFileName);
+        const expectedSlug = mockProjectName.toLowerCase().replace(/\s+/g, '-');
+        assertEquals(originalFileName.toLowerCase().includes(expectedSlug), true);
 
         assertEquals(createSignedUrlForPathSpy.calls.length, 1);
         assertEquals(createSignedUrlForPathSpy.calls[0].args, [
@@ -304,6 +308,22 @@ describe("exportProject", () => {
         assertExists(contribRawEntry, "Contribution raw JSON file not found in zip");
 
         await zipReader.close();
+    });
+
+    it("includes exact file_name in the export response matching stored file", async () => {
+        mockFileManager.setUploadAndRegisterFileResponse(mockFileRecordForZip, null);
+
+        const result = await exportProject(
+            mockSupabaseSetup.client as any,
+            mockFileManager,
+            mockStorageUtils,
+            mockProjectId,
+            mockUser.id
+        );
+
+        assertExists(result.data, "Export data should exist on success.");
+        // New assertion for filename passthrough
+        assertEquals(result.data && 'file_name' in result.data ? (result.data).file_name : undefined, mockFileRecordForZip.file_name);
     });
 
     it("should return 404 if project not found", async () => {
@@ -570,7 +590,7 @@ describe("exportProject", () => {
         const initialFileManagerCalls = mockFileManager.uploadAndRegisterFile.calls.length;
 
         // Configure FileManager to fail
-        const fmError = { message: "Simulated FileManager upload error", status: 500, code: "FM_UPLOAD_ERROR" };
+        const fmError = { message: "Simulated FileManager upload error", status: 500, code: "FM_UPLOAD_ERROR", details: "Underlying DB unique constraint violation" };
         mockFileManager.setUploadAndRegisterFileResponse(null, fmError as any);
 
         // Supabase client and storage utils will use the global mocks from beforeEach, which should succeed for fetching/downloading.
@@ -586,7 +606,10 @@ describe("exportProject", () => {
         assertExists(result.error, "Error should exist when FileManager fails.");
         assertEquals(result.error?.status, 500);
         assertEquals(result.error?.code, 'EXPORT_FM_UPLOAD_FAILED');
-        assertEquals(result.error?.details, fmError.message);
+        // Strengthened assertion: standardized error message text
+        assertEquals(result.error?.message, 'Failed to store project export file using FileManager.');
+        // Assert the backend surfaces fmError.details if present
+        assertEquals(result.error?.details, fmError.details);
         assertEquals(result.data, undefined);
 
         // Downloads should have occurred before the FileManager failure
@@ -704,6 +727,65 @@ describe("exportProject", () => {
 
         await zipReader.close();
         localMockSupabaseSetup.clearAllStubs?.();
+    });
+
+    it("uses a deterministic export filename at the project root to enable overwrite", async () => {
+        mockFileManager.setUploadAndRegisterFileResponse(mockFileRecordForZip, null);
+
+        const result = await exportProject(
+            mockSupabaseSetup.client as any,
+            mockFileManager,
+            mockStorageUtils,
+            mockProjectId,
+            mockUser.id
+        );
+
+        assertExists(result.data);
+        assertEquals(result.status, 200);
+
+        assertEquals(mockFileManager.uploadAndRegisterFile.calls.length > 0, true);
+        const uploadArgs: UploadContext = mockFileManager.uploadAndRegisterFile.calls[mockFileManager.uploadAndRegisterFile.calls.length - 1].args[0];
+        const expectedSlug = mockProjectName.toLowerCase().replace(/\s+/g, '-');
+        const expectedDeterministic = `project_export_${expectedSlug}.zip`;
+        assertEquals(uploadArgs.pathContext.fileType, 'project_export_zip');
+        assertEquals(uploadArgs.pathContext.projectId, mockProjectId);
+        assertEquals(uploadArgs.pathContext.originalFileName, expectedDeterministic);
+    });
+
+    it("repeated exports use the same deterministic filename to support overwrite semantics", async () => {
+        const localFM = createMockFileManagerService();
+        localFM.setUploadAndRegisterFileResponse(mockFileRecordForZip, null);
+
+        // First export
+        const first = await exportProject(
+            mockSupabaseSetup.client as any,
+            localFM,
+            mockStorageUtils,
+            mockProjectId,
+            mockUser.id
+        );
+        assertExists(first.data);
+        assertEquals(first.status, 200);
+
+        // Second export
+        const second = await exportProject(
+            mockSupabaseSetup.client as any,
+            localFM,
+            mockStorageUtils,
+            mockProjectId,
+            mockUser.id
+        );
+        assertExists(second.data);
+        assertEquals(second.status, 200);
+
+        assertEquals(localFM.uploadAndRegisterFile.calls.length >= 2, true);
+        const firstArgs: UploadContext = localFM.uploadAndRegisterFile.calls[0].args[0];
+        const secondArgs: UploadContext = localFM.uploadAndRegisterFile.calls[1].args[0];
+        assertEquals(firstArgs.pathContext.originalFileName, secondArgs.pathContext.originalFileName);
+        const expectedSlug = mockProjectName.toLowerCase().replace(/\s+/g, '-');
+        const expectedDeterministic = `project_export_${expectedSlug}.zip`;
+        assertEquals(firstArgs.pathContext.originalFileName, expectedDeterministic);
+        assertEquals(secondArgs.pathContext.originalFileName, expectedDeterministic);
     });
 
     // TODO: Add more test cases:
