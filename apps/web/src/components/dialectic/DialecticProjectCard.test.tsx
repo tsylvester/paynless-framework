@@ -5,6 +5,20 @@ import { DialecticProjectCard } from './DialecticProjectCard';
 import { useDialecticStore, initialDialecticStateValues } from '@paynless/store';
 import type { DialecticProject, DialecticStore, DialecticDomain } from '@paynless/types';
 
+// Mock ExportProjectButton to assert composition
+const mockExportButtonClick = vi.fn();
+vi.mock('./ExportProjectButton', () => ({
+  ExportProjectButton: vi.fn((props: { projectId: string; children?: React.ReactNode; variant?: string; size?: string; className?: string }) => (
+    <button
+      data-testid="export-project-button-mock"
+      data-project-id={props.projectId}
+      onClick={mockExportButtonClick}
+    >
+      {props.children || 'Export'}
+    </button>
+  )),
+}));
+
 // Mock ViewProjectButton by defining the mock directly in the factory function
 vi.mock('./ViewProjectButton', () => ({
   ViewProjectButton: vi.fn(
@@ -90,7 +104,7 @@ const baseMockProject: DialecticProject = { // Or MockDialecticProjectWithUserDe
 
 const createMockStore = (projectOverrides?: Partial<MockDialecticProjectWithUserDetails>): DialecticStore => {
   const project = { ...baseMockProject, ...projectOverrides };
-  const domains: DialecticDomain[] = [{ id: 'domain-general', name: 'General', description: '', parent_domain_id: null }];
+  const domains: DialecticDomain[] = [{ id: 'domain-general', name: 'General', description: '', parent_domain_id: null, is_enabled: true }];
   return {
     ...initialDialecticStateValues,
     deleteDialecticProject: mockDeleteDialecticProject,
@@ -370,6 +384,20 @@ describe('DialecticProjectCard', () => {
   });
 
   describe('Action Button Interactions', () => {
+    it('should render ExportProjectButton via composition and be clickable', () => {
+      render(
+        <MemoryRouter>
+          <DialecticProjectCard project={baseMockProject} />
+        </MemoryRouter>
+      );
+      const exportBtn = screen.queryByTestId('export-project-button-mock');
+      expect(exportBtn).toBeInTheDocument();
+      if (exportBtn) {
+        exportBtn.click();
+      }
+      expect(mockExportButtonClick).toHaveBeenCalled();
+    });
+
     it('should render the Export Project button', () => {
       render(
         <MemoryRouter>
@@ -432,20 +460,6 @@ describe('DialecticProjectCard', () => {
       const cloneButton = screen.getByRole('button', { name: /Clone project/i });
       fireEvent.click(cloneButton);
       expect(mockCloneDialecticProject).toHaveBeenCalledWith(baseMockProject.id);
-    });
-
-    it('should call exportDialecticProject when Export Project button is clicked', () => {
-      const mockStore = createMockStore();
-      vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-
-      render(
-        <MemoryRouter>
-          <DialecticProjectCard project={baseMockProject} />
-        </MemoryRouter>
-      );
-      const exportButton = screen.getByRole('button', { name: /Export project/i });
-      fireEvent.click(exportButton);
-      expect(mockExportDialecticProject).toHaveBeenCalledWith(baseMockProject.id);
     });
   });
 

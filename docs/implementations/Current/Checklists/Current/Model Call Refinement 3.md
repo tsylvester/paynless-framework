@@ -172,28 +172,12 @@ The implementation plan uses the following labels to categorize work steps:
 - Updated Master Plan reflecting WBS & backlog  
 
 
-*   `[ ]` Create migration for seed.sql and push live
+*   `[X]` Create migration for seed.sql and push live
 *   `[ ]` Fix export zip button & add to end of project 
-*   `[ ]` Prompt improvements 
+*   `[ ]` Prompt improvements & convergent logic
 *   `[ ]` System instructions 
 *   `[ ]` Github integration
 *   `[ ]` Site integrations 
-
-## Convergent Logic
-
-#### 33. [BE] [REFACTOR] Implement Convergent Logic for Final Stages
-
-*   `[ ]` 33.a. **Update `Parenthesis` and `Paralysis` Stage Recipes and Prompts:**
-    *   `[DB]` `[PROMPT]` **Action:** The stage recipes and system prompts for `Parenthesis` and `Paralysis` will be updated to be convergent. The prompt will explicitly instruct the models to synthesize a single, unified document from the diverse context provided by the advanced RAG pipeline, which is sourced from *all* relevant documents from the prior stage.
-*   `[ ]` 33.b. **Implement the Final "Advisor" Job:**
-    *   `[BE]` **Action:** Create a new job type, `'advisor'`, and a corresponding `processAdvisorJob.ts` worker.
-    *   `[BE]` **Action:** After the `Paralysis` stage completes, the `submitStageResponses` function will enqueue a single `advisor` job.
-    *   `[BE]` **Action:** This job's purpose is not to create a new, single plan, but to aid the user's decision-making process. It will use the RAG pipeline to retrieve context from all `paralysis` documents (the final plans from each model) and instruct a high-capability model to produce a concise executive summary.
-    *   `[BE]` **Output:** The summary should be a new `dialectic_contribution` of type `final_summary` and should highlight:
-        *   **Key Differences & Philosophies:** e.g., "Plan A prioritizes microservices, while Plan B uses a modular monolith."
-        *   **Strengths & Trade-offs:** e.g., "Plan A is more scalable but complex; Plan B is faster to start."
-        *   **Points of Agreement:** e.g., "All plans recommend using PostgreSQL and React."
-    *   `[BE]` **Action:** The final output presented to the user will be the `n` plans from the `Paralysis` stage, accompanied by this single `final_summary` to guide their selection.
 
 ## Section 2.Z: Implementing Data-Driven AI Response Formatting via `expected_output_artifacts`
 

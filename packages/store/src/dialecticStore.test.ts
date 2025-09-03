@@ -549,6 +549,7 @@ describe('useDialecticStore', () => {
             iterationNumber: 1,
             stageSlug: 'thesis',
             continueUntilComplete: true,
+            walletId: 'wallet-123',
         };
 
         const mockProject: DialecticProject = {
@@ -1248,4 +1249,48 @@ describe('useDialecticStore', () => {
             expect(getMockDialecticClient().getProjectDetails).toHaveBeenCalledWith('proj-1');
         });
     });
+
+	describe('exportDialecticProject action', () => {
+		it('returns export_url and file_name unchanged on success', async () => {
+			const projectId = 'proj-export-1';
+			const payload = { projectId };
+			const responseData = { export_url: 'https://cdn.example.com/signed/export.zip', file_name: 'project_export_proj-export-1.zip' };
+			getMockDialecticClient().exportProject.mockResolvedValue({ status: 200, data: responseData });
+
+			const { exportDialecticProject } = useDialecticStore.getState();
+			const result = await exportDialecticProject(projectId);
+
+			expect(getMockDialecticClient().exportProject).toHaveBeenCalledWith(payload);
+			expect(result.status).toBe(200);
+			expect(result.data).toEqual(responseData);
+			expect(useDialecticStore.getState().exportProjectError).toBeNull();
+		});
+
+		it('surfaces error and sets exportProjectError when backend omits file_name (no defaults)', async () => {
+			const projectId = 'proj-export-missing-file-name';
+			// Backend incorrectly returns success without file_name
+			getMockDialecticClient().exportProject.mockResolvedValue({ status: 200, data: { export_url: 'https://cdn.example.com/signed/export.zip' } });
+
+			const { exportDialecticProject } = useDialecticStore.getState();
+			const result = await exportDialecticProject(projectId);
+
+			// Store must convert to error and not pass through a synthesized filename
+			expect(result.error).toBeDefined();
+			expect(result.status).not.toBe(200);
+			expect(useDialecticStore.getState().exportProjectError).not.toBeNull();
+		});
+
+		it('propagates backend error and sets exportProjectError', async () => {
+			const projectId = 'proj-export-error';
+			const apiError = { code: 'EXPORT_FAILED', message: 'Failed to export' };
+			getMockDialecticClient().exportProject.mockResolvedValue({ status: 500, error: apiError });
+
+			const { exportDialecticProject } = useDialecticStore.getState();
+			const result = await exportDialecticProject(projectId);
+
+			expect(result.status).toBe(500);
+			expect(result.error).toEqual(apiError);
+			expect(useDialecticStore.getState().exportProjectError).toEqual(apiError);
+		});
+	});
 }); 

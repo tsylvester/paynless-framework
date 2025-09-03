@@ -36,6 +36,7 @@ import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 import { cn } from '@/lib/utils';
+import { ExportProjectButton } from './ExportProjectButton';
 
 const isApiError = (error: unknown): error is ApiError => {
   return (
@@ -76,6 +77,15 @@ export const SessionContributionsDisplayCard: React.FC = () => {
   const activeStage = useMemo(() => {
     return processTemplate?.stages?.find(s => s.slug === activeStageSlug) || null;
   }, [processTemplate, activeStageSlug]);
+  
+  // Determine if the active stage is the terminal stage in the process template
+  const isFinalStageInProcess = useMemo(() => {
+    if (!processTemplate || !activeStage) return false;
+    const transitions = (processTemplate as unknown as { transitions?: { source_stage_id: string; target_stage_id: string }[] }).transitions;
+    if (!Array.isArray(transitions) || transitions.length === 0) return false;
+    // A final stage has no outgoing transition from its stage id
+    return transitions.every(t => t.source_stage_id !== activeStage.id);
+  }, [processTemplate, activeStage]);
   
   const submitStageResponses = useDialecticStore(state => state.submitStageResponses);
   const isSubmitting = useDialecticStore(state => state.isSubmittingStageResponses);
@@ -410,7 +420,19 @@ export const SessionContributionsDisplayCard: React.FC = () => {
             Contributions for: <span className="font-bold text-primary">{activeStage.display_name}</span>
             <span className="text-sm text-muted-foreground ml-2">(Iteration {session.iteration_count})</span>
           </CardTitle>
-          {displayedContributions.length > 0 && renderSubmitButton()}
+          <div className="flex items-center space-x-2">
+            {project && (
+              <ExportProjectButton
+                projectId={project.id}
+                variant={isFinalStageInProcess ? 'default' : 'outline'}
+                size="sm"
+                className={cn({ 'animate-pulse': isFinalStageInProcess && !isSubmitting && isStageReady })}
+              >
+                Export Project
+              </ExportProjectButton>
+            )}
+            {displayedContributions.length > 0 && !isFinalStageInProcess && renderSubmitButton()}
+          </div>
         </div>
         {isGenerating && (
           <div className="flex items-center text-sm text-muted-foreground">
@@ -475,7 +497,17 @@ export const SessionContributionsDisplayCard: React.FC = () => {
                 </Alert>
             )}
 
-            {renderSubmitButton()}
+            {!isFinalStageInProcess && renderSubmitButton()}
+            {isFinalStageInProcess && project && (
+              <ExportProjectButton
+                projectId={project.id}
+                variant="default"
+                size="sm"
+                className={cn({ 'animate-pulse': !isSubmitting && isStageReady })}
+              >
+                Export Project
+              </ExportProjectButton>
+            )}
         </CardFooter>
       )}
 
