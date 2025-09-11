@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/card';
 import { AttributionDisplay } from '../common/AttributionDisplay';
 import { useAiStore } from '@paynless/store';
 import { MarkdownRenderer } from '../common/MarkdownRenderer';
-import { Pencil } from 'lucide-react';
+import { Pencil, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MessageSelectionCheckbox } from './MessageSelectionCheckbox';
 import { TokenUsageDisplay } from './TokenUsageDisplay';
@@ -17,9 +17,13 @@ export interface ChatMessageBubbleProps {
 export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({ message, onEditClick }) => {
   const { currentChatId } = useAiStore(state => ({ currentChatId: state.currentChatId }));
   const isUserMessage = message.role === 'user';
+  const isStreaming = message.status === 'streaming';
+  
   const bubbleColorClass = isUserMessage 
     ? 'bg-blue-100 dark:bg-blue-900' 
-    : 'bg-gray-100 dark:bg-gray-700';
+    : isStreaming 
+      ? 'bg-gradient-to-r from-purple-100 to-blue-100 dark:from-purple-900 dark:to-blue-900 animate-pulse' 
+      : 'bg-gray-100 dark:bg-gray-700';
 
   return (
     <div 
@@ -60,6 +64,12 @@ export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({ message, o
         />
         <div className="mt-1">
           <MarkdownRenderer content={message.content} />
+          {isStreaming && (
+            <div className="flex items-center mt-2 text-xs text-purple-600 dark:text-purple-400">
+              <Zap className="w-3 h-3 mr-1 animate-pulse" />
+              <span>Streaming...</span>
+            </div>
+          )}
         </div>
         {/* Conditionally render PER-MESSAGE TokenUsageDisplay for assistant messages */}
         {message.role === 'assistant' && message.token_usage && (

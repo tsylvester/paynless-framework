@@ -18,8 +18,10 @@ import { toast } from 'sonner';
 import { CurrentMessageTokenEstimator } from './CurrentMessageTokenEstimator';
 import { useAIChatAffordabilityStatus } from '@/hooks/useAIChatAffordabilityStatus';
 import { useTokenEstimator } from '@/hooks/useTokenEstimator';
-import { AlertCircle, Info } from 'lucide-react';
+import { AlertCircle, Info, Zap } from 'lucide-react';
 import { ContinueUntilCompleteToggle } from '../common/ContinueUntilCompleteToggle';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 export interface ChatInputProps {
   // No props for now, revised from previous attempt
@@ -27,10 +29,12 @@ export interface ChatInputProps {
 
 const ChatInput: React.FC<ChatInputProps> = (/* Removed currentChatSession prop */) => {
   const [inputMessage, setInputMessage] = useState(''); // Reverted to local state
+  const [isStreamingEnabled, setIsStreamingEnabled] = useState(false); // Add streaming toggle state
 
   // Actions from store
   const {
     sendMessage,
+    sendStreamingMessage,
     clearAiError,
     cancelRewindPreparation,
     currentChatId, // Get currentChatId directly
@@ -78,7 +82,7 @@ const ChatInput: React.FC<ChatInputProps> = (/* Removed currentChatSession prop 
       content: msg.content,
     }));
 
-    logger.info(`[ChatInput] handleSend called. Provider: ${selectedProviderId}, Prompt: ${selectedPromptId}, Rewinding: ${isRewinding}, Can Afford: ${canAffordNext}`);
+    logger.info(`[ChatInput] handleSend called. Provider: ${selectedProviderId}, Prompt: ${selectedPromptId}, Rewinding: ${isRewinding}, Can Afford: ${canAffordNext}, Streaming: ${isStreamingEnabled}`);
 
     if (!selectedProviderId) {
       logger.error('[ChatInput] Cannot send message: No provider selected');
@@ -86,20 +90,50 @@ const ChatInput: React.FC<ChatInputProps> = (/* Removed currentChatSession prop 
       return;
     }
 
+    const messageData = {
+      message: inputMessage,
+      chatId: currentChatId ?? undefined,
+      providerId: selectedProviderId,
+      promptId: selectedPromptId,
+      contextMessages: contextMessages,
+    };
+
     try {
-      await sendMessage({
-        message: inputMessage,
-        chatId: currentChatId ?? undefined,
-        providerId: selectedProviderId,
-        promptId: selectedPromptId,
-        contextMessages: contextMessages,
-      });
+      if (isStreamingEnabled && !isRewinding) {
+        // Use streaming for new messages (not rewind)
+        const eventSource = await sendStreamingMessage(
+          messageData,
+          (event) => {
+            // Handle streaming message events (optional)
+            logger.info('[ChatInput] Streaming chunk received');
+          },
+          (assistantMessage) => {
+            // Handle completion
+            logger.info('[ChatInput] Streaming completed:', { assistantMessageId: assistantMessage.id });
+            toast.success("Message sent via streaming");
+          },
+          (error) => {
+            // Handle streaming errors
+            logger.error('[ChatInput] Streaming error:', { error });
+            toast.error(`Streaming failed: ${error}`);
+          }
+        );
 
-      setInputMessage('');
+        if (eventSource) {
+          setInputMessage('');
+          toast.info("Starting streaming response...");
+        }
+      } else {
+        // Use regular send for rewind or when streaming is disabled
+        await sendMessage(messageData);
+        setInputMessage('');
 
-      if (isRewinding) {
-        cancelRewindPreparation();
-        toast.success("Message rewound and resubmitted successfully");
+        if (isRewinding) {
+          cancelRewindPreparation();
+          toast.success("Message rewound and resubmitted successfully");
+        } else {
+          toast.success("Message sent");
+        }
       }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -138,6 +172,18 @@ const ChatInput: React.FC<ChatInputProps> = (/* Removed currentChatSession prop 
       <div className="flex items-center space-x-2 border-t pt-4 border-[rgb(var(--color-border)))]">
         <MessageSelectionControls />
         <ContinueUntilCompleteToggle />
+        <div className="flex items-center space-x-2">
+          <Switch
+            id="streaming-toggle"
+            checked={isStreamingEnabled}
+            onCheckedChange={setIsStreamingEnabled}
+            disabled={isRewinding || isLoadingAiResponse}
+          />
+          <Label htmlFor="streaming-toggle" className="flex items-center space-x-1 text-sm">
+            <Zap className="w-3 h-3" />
+            <span>Stream</span>
+          </Label>
+        </div>
         <div className="relative flex-grow">
           <Textarea
             placeholder={rewindTargetMessageId ? "Edit your message..." : "Type your message here..."}
@@ -177,8 +223,16 @@ const ChatInput: React.FC<ChatInputProps> = (/* Removed currentChatSession prop 
             onClick={handleSend}
             disabled={sendButtonDisabled}
             data-testid="send-message-button"
+            className={isStreamingEnabled ? "bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700" : ""}
           >
-            Send
+            {isStreamingEnabled ? (
+              <span className="flex items-center space-x-1">
+                <Zap className="w-4 h-4" />
+                <span>Stream</span>
+              </span>
+            ) : (
+              "Send"
+            )}
           </Button>
         )}
       </div>

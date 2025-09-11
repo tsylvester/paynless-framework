@@ -442,6 +442,7 @@ export interface ChatHandlerDeps {
   handleDialecticPath: typeof handleDialecticPath;
   debitTokens: typeof debitTokens;
   handlePostRequest?: (requestBody: ChatApiRequest, supabaseClient: SupabaseClient<Database>, userId: string, deps: ChatHandlerDeps) => Promise<ChatHandlerSuccessResponse | { error: { message: string, status?: number } }>;
+  handleStreamingRequest?: (requestBody: ChatApiRequest, supabaseClient: SupabaseClient<Database>, userId: string, deps: ChatHandlerDeps) => Promise<Response>;
 }
 
 export type PerformChatRewindResult = Database['public']['Functions']['perform_chat_rewind']['Returns'];
