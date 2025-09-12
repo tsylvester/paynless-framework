@@ -225,6 +225,11 @@ describe('planComplexStage', () => {
             randomUUID: () => 'random-uuid',
             deleteFromStorage: () => Promise.resolve({ data: null, error: null }),
         };
+
+        // Default: parent payload carries a valid user_jwt under new contract
+        Object.defineProperty(mockParentJob.payload, 'user_jwt', {
+            value: 'parent-jwt-default', configurable: true, enumerable: true, writable: true,
+        });
     });
     
     it('should throw an error if no planner is found for the strategy', async () => {
@@ -619,7 +624,7 @@ describe('planComplexStage', () => {
         assertEquals(params.pairedModelSlug, 'paired-model');
     });
 
-    it('should correctly pass the authToken to child job payloads', async () => {
+    it('should correctly inherit user_jwt from parent payload into child job payloads', async () => {
         // 1. Setup: Define a mock JWT
         const MOCK_AUTH_TOKEN = 'mock-user-jwt-for-test';
 
@@ -653,10 +658,219 @@ describe('planComplexStage', () => {
             MOCK_AUTH_TOKEN
         );
 
-        // 4. Assert: Check that the payload of the created child job contains the JWT
+        // 4. Assert: Check that the payload of the created child job contains the parent payload JWT
         assertEquals(childJobs.length, 1);
         const childPayload = childJobs[0].payload;
         assert(isDialecticExecuteJobPayload(childPayload), 'Payload should be a valid execute job payload');
-        assertEquals(childPayload.user_jwt, MOCK_AUTH_TOKEN, "The user_jwt was not correctly passed to the child job payload.");
+        assertEquals(childPayload.user_jwt, 'parent-jwt-default', "The user_jwt was not correctly inherited from the parent payload.");
+    });
+
+    // =============================================================
+    // user_jwt must be inherited from parent payload (not param)
+    // =============================================================
+    it('planComplexStage should construct child payload with user_jwt inherited from parent payload (ignoring authToken param)', async () => {
+        // Arrange
+        const PARENT_JWT = 'parent-payload-jwt';
+        const PARAM_JWT = 'param-auth-jwt-should-be-ignored';
+
+        // Inject user_jwt into the parent plan payload at runtime without casting
+        Object.defineProperty(mockParentJob.payload, 'user_jwt', { value: PARENT_JWT, configurable: true, enumerable: true, writable: true });
+
+        const mockExecutePayload: DialecticExecuteJobPayload = {
+            job_type: 'execute',
+            step_info: { current_step: 1, total_steps: 1 },
+            prompt_template_name: 'test-prompt',
+            output_type: 'synthesis',
+            inputs: { documentId: 'doc-1-thesis' },
+            model_id: 'model-1',
+            projectId: 'proj-1',
+            sessionId: 'sess-1',
+            stageSlug: 'test-stage',
+            iterationNumber: 1,
+            walletId: 'wallet-1',
+            continueUntilComplete: false,
+            maxRetries: 3,
+            continuation_count: 0,
+            canonicalPathParams: { contributionType: 'synthesis' },
+        };
+        const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        // Act
+        const childJobs = await planComplexStage(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockDeps,
+            mockRecipeStep,
+            PARAM_JWT
+        );
+
+        // Assert
+        assertEquals(childJobs.length, 1);
+        const payload = childJobs[0].payload;
+        assert(isDialecticExecuteJobPayload(payload));
+        // RED expectation: implementation should inherit from parent (PARENT_JWT), not PARAM_JWT
+        assertEquals(payload.user_jwt, PARENT_JWT);
+    });
+
+    // =============================================================
+    // hard-fail when parent payload.user_jwt is missing/empty
+    // =============================================================
+    it('planComplexStage should throw when parent payload.user_jwt is missing', async () => {
+        // Ensure parent payload has no user_jwt at all
+        // If it exists from prior tests, remove it without casting
+        if (Object.prototype.hasOwnProperty.call(mockParentJob.payload, 'user_jwt')) {
+            // Redefine to undefined and then delete to simulate truly missing
+            Object.defineProperty(mockParentJob.payload, 'user_jwt', { value: undefined, configurable: true, enumerable: true, writable: true });
+            // Delete property so it is absent
+            // deno-lint-ignore no-explicit-any
+            delete (mockParentJob.payload as any).user_jwt; // delete is the only way; the delete needs any to satisfy TS here in test
+        }
+
+        const plannerFn: GranularityPlannerFn = () => [{
+            job_type: 'execute',
+            step_info: { current_step: 1, total_steps: 1 },
+            prompt_template_name: 'test-prompt',
+            output_type: 'synthesis',
+            inputs: { documentId: 'doc-1-thesis' },
+            model_id: 'model-1',
+            projectId: 'proj-1',
+            sessionId: 'sess-1',
+            stageSlug: 'test-stage',
+            iterationNumber: 1,
+            walletId: 'wallet-1',
+            continueUntilComplete: false,
+            maxRetries: 3,
+            continuation_count: 0,
+            canonicalPathParams: { contributionType: 'synthesis' },
+        } as DialecticExecuteJobPayload];
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        await assertRejects(
+            () => planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                mockRecipeStep,
+                'param-jwt-irrelevant'
+            ),
+            Error,
+            'parent payload.user_jwt is required'
+        );
+    });
+
+    it('planComplexStage should throw when parent payload.user_jwt is empty', async () => {
+        // Inject empty user_jwt without casting
+        Object.defineProperty(mockParentJob.payload, 'user_jwt', { value: '', configurable: true, enumerable: true, writable: true });
+
+        const plannerFn: GranularityPlannerFn = () => [{
+            job_type: 'execute',
+            step_info: { current_step: 1, total_steps: 1 },
+            prompt_template_name: 'test-prompt',
+            output_type: 'synthesis',
+            inputs: { documentId: 'doc-1-thesis' },
+            model_id: 'model-1',
+            projectId: 'proj-1',
+            sessionId: 'sess-1',
+            stageSlug: 'test-stage',
+            iterationNumber: 1,
+            walletId: 'wallet-1',
+            continueUntilComplete: false,
+            maxRetries: 3,
+            continuation_count: 0,
+            canonicalPathParams: { contributionType: 'synthesis' },
+        } as DialecticExecuteJobPayload];
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        await assertRejects(
+            () => planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                mockRecipeStep,
+                'param-jwt-irrelevant'
+            ),
+            Error,
+            'parent payload.user_jwt is required'
+        );
+    });
+
+    // =============================================================
+    // dynamic stage slug identification  
+    // =============================================================
+    it('constructs execute child rows with consistent dynamic stage markers (row.stage_slug === payload.stageSlug)', async () => {
+        const plannerFn: GranularityPlannerFn = () => [{
+            job_type: 'execute',
+            step_info: { current_step: 1, total_steps: 1 },
+            prompt_template_name: 'test-prompt',
+            output_type: 'synthesis',
+            inputs: { documentId: 'doc-1-thesis' },
+            model_id: mockParentJob.payload.model_id,
+            projectId: mockParentJob.payload.projectId,
+            sessionId: mockParentJob.payload.sessionId,
+            stageSlug: mockParentJob.payload.stageSlug,
+            iterationNumber: mockParentJob.payload.iterationNumber,
+            walletId: mockParentJob.payload.walletId,
+            continueUntilComplete: false,
+            maxRetries: 3,
+            continuation_count: 0,
+            canonicalPathParams: { contributionType: 'synthesis' },
+        }];
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        const childJobs = await planComplexStage(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockDeps,
+            mockRecipeStep,
+            'user-jwt-123'
+        );
+
+        assertEquals(childJobs.length, 1);
+        const child = childJobs[0];
+        assert(isDialecticExecuteJobPayload(child.payload));
+
+        const expectedStage = mockParentJob.payload.stageSlug;
+        assertEquals(child.stage_slug, expectedStage);
+        assertEquals(child.payload.stageSlug, expectedStage);
+    });
+
+    it('throws when parent payload.stageSlug is missing (no healing, no defaults)', async () => {
+        // Remove stageSlug from parent payload without casting
+        if (Object.prototype.hasOwnProperty.call(mockParentJob.payload, 'stageSlug')) {
+            // deno-lint-ignore no-explicit-any
+            delete (mockParentJob.payload as any).stageSlug;
+        }
+
+        const plannerFn: GranularityPlannerFn = () => [{
+            job_type: 'execute',
+            step_info: { current_step: 1, total_steps: 1 },
+            prompt_template_name: 'test-prompt',
+            output_type: 'synthesis',
+            inputs: { documentId: 'doc-1-thesis' },
+            model_id: 'model-1',
+            projectId: 'proj-1',
+            sessionId: 'sess-1',
+            stageSlug: 'should-not-be-used-when-parent-missing',
+            iterationNumber: 1,
+            walletId: 'wallet-1',
+            continueUntilComplete: false,
+            maxRetries: 3,
+            continuation_count: 0,
+            canonicalPathParams: { contributionType: 'synthesis' },
+        } as DialecticExecuteJobPayload];
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        await assertRejects(
+            () => planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                mockRecipeStep,
+                'user-jwt-123'
+            ),
+            Error,
+            'parent payload.stageSlug is required'
+        );
     });
 }); 

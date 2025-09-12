@@ -359,9 +359,6 @@ verify_jwt = false
 [functions.sync-ai-models]
 verify_jwt = false
 
-[functions.dialectic-service]
-verify_jwt = false 
-
 # ---> Remove entry for notifications-stream <--- 
 # [functions.notifications-stream]
 # verify_jwt = false

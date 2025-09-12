@@ -10,12 +10,13 @@ import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import type { UnifiedAIResponse } from '../dialectic-service/dialectic.interface.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { isJson } from '../_shared/utils/type_guards.ts';
+import { isJson, isRecord } from '../_shared/utils/type_guards.ts';
 import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
 import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
+type PlanWithJwt = DialecticPlanJobPayload & { user_jwt: string };
 const mockDeps: IDialecticJobDeps = {
     logger,
     callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => ({
@@ -67,6 +68,7 @@ Deno.test('processJob - routes to processSimpleJob for simple stages', async () 
         model_id: 'model-id',
         continueUntilComplete: false,
         walletId: 'wallet-id-simple',
+        user_jwt: 'jwt.token.here',
     };
     
     if (!isJson(mockPayload)) {
@@ -126,12 +128,93 @@ Deno.test('processJob - routes to processSimpleJob for simple stages', async () 
     }
 });
 
+
+// plan→execute simple transform preserves dynamic stage consistency
+Deno.test('processJob - simple transform preserves dynamic stage consistency (row.stage_slug === payload.stageSlug)', async () => {
+	const { processors, spies } = createMockJobProcessors();
+
+	// Arrange a non-thesis simple stage; make DB and row agree with payload.stageSlug
+	const expectedStage = 'parenthesis';
+	const planPayload: DialecticJobPayload = {
+		job_type: 'plan',
+		step_info: { current_step: 1, total_steps: 1 },
+		sessionId: 'session-id-stage-consistency',
+		projectId: 'project-id-stage-consistency',
+		stageSlug: expectedStage,
+		model_id: 'model-id-stage-consistency',
+		walletId: 'wallet-id-stage-consistency',
+		user_jwt: 'jwt.token.here',
+	};
+	if (!isJson(planPayload)) throw new Error('Test setup failed: planPayload not Json');
+
+	const mockJob: MockJob = {
+		id: 'job-id-stage-consistency',
+		user_id: 'user-id-stage-consistency',
+		session_id: 'session-id-stage-consistency',
+		stage_slug: expectedStage,
+		payload: planPayload,
+		iteration_number: 1,
+		status: 'pending',
+		attempt_count: 0,
+		max_retries: 3,
+		created_at: new Date().toISOString(),
+		started_at: null,
+		completed_at: null,
+		results: null,
+		error_details: null,
+		parent_job_id: null,
+		target_contribution_id: null,
+		prerequisite_job_id: null,
+	};
+
+	const mockSupabase = createMockSupabaseClient(undefined, {
+		genericMockResults: {
+			'dialectic_stages': {
+				select: {
+					data: [{ id: 'stage-id-parenthesis', slug: expectedStage, display_name: 'Parenthesis', input_artifact_rules: null }],
+				},
+			},
+			'dialectic_sessions': { select: { data: [{ id: 'session-id-stage-consistency' }] } },
+		},
+	});
+
+	try {
+		await processJob(
+			mockSupabase.client as unknown as SupabaseClient<Database>,
+			{ ...mockJob, payload: planPayload },
+			'user-id-stage-consistency',
+			mockDeps,
+			'mock-token',
+			processors,
+		);
+
+		// Assert we transformed and delegated once
+		assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called once');
+
+		// Grab the transformed job passed to processSimpleJob
+		const transformedJob = spies.processSimpleJob.calls[0].args[1];
+		const transformedPayload = transformedJob.payload;
+
+		// Assert row.stage_slug === payload.stageSlug and both equal the expected dynamic stage
+		assertEquals(transformedJob.stage_slug, expectedStage, 'row.stage_slug should equal expected stage');
+		assertEquals(
+			typeof transformedPayload.stageSlug === 'string' ? transformedPayload.stageSlug : undefined,
+			expectedStage,
+			'payload.stageSlug should equal expected stage',
+		);
+	} finally {
+		spies.processSimpleJob.restore();
+		spies.processComplexJob.restore();
+		mockSupabase.clearAllStubs?.();
+	}
+});
+
 Deno.test('processJob - routes to processComplexJob for complex stages', async () => {
     // 1. Setup
     const { processors, spies } = createMockJobProcessors();
 
     const mockJobId = 'job-id-complex-route';
-    const mockPayload: DialecticPlanJobPayload = {
+    const mockPayload: DialecticJobPayload = {
         job_type: 'plan',
         step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id-complex',
@@ -139,6 +222,7 @@ Deno.test('processJob - routes to processComplexJob for complex stages', async (
         stageSlug: 'antithesis', // A complex stage
         model_id: 'model-id-complex',
         walletId: 'wallet-id-complex',
+        user_jwt: 'jwt.token.here',
     };
 
     if (!isJson(mockPayload)) {
@@ -216,6 +300,7 @@ Deno.test('processJob - throws error when stage not found', async () => {
         stageSlug: 'nonexistent-stage',
         model_id: 'model-id',
         walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
     };
     
     if (!isJson(mockPayload)) {
@@ -281,7 +366,7 @@ Deno.test('processJob - routes to simple processor for unsupported processing st
     const { processors, spies } = createMockJobProcessors();
 
     const mockJobId = 'job-id-unsupported-strategy';
-    const mockPayload: DialecticPlanJobPayload = {
+    const mockPayload: DialecticJobPayload = {
         job_type: 'plan',
         step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id',
@@ -289,6 +374,7 @@ Deno.test('processJob - routes to simple processor for unsupported processing st
         stageSlug: 'thesis', // Use a valid slug
         model_id: 'model-id',
         walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
     };
     
     if (!isJson(mockPayload)) {
@@ -354,7 +440,7 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
     const { processors, spies } = createMockJobProcessors();
 
     const mockJobId = 'job-id-verify-params';
-    const mockPayload: DialecticPlanJobPayload = {
+    const mockPayload: DialecticJobPayload = {
         job_type: 'plan',
         step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id-params',
@@ -364,6 +450,7 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
         iterationNumber: 1,
         continueUntilComplete: true,
         walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
     };
     
     if (!isJson(mockPayload)) {
@@ -434,6 +521,7 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
             canonicalPathParams: {
                 contributionType: 'thesis',
             },
+            user_jwt: 'jwt.token.here',
         };
         const expectedJob = { ...mockJob, payload: transformedPayload };
 
@@ -540,7 +628,7 @@ Deno.test('processJob - simple plan→execute should NOT set prompt_template_nam
     const { processors, spies } = createMockJobProcessors();
 
     const mockJobId = 'job-id-no-prompt-template-name';
-    const simplePlanPayload: DialecticPlanJobPayload = {
+    const simplePlanPayload: DialecticJobPayload = {
         job_type: 'plan',
         step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id-simple',
@@ -550,6 +638,7 @@ Deno.test('processJob - simple plan→execute should NOT set prompt_template_nam
         iterationNumber: 1,
         continueUntilComplete: false,
         walletId: 'wallet-id-simple',
+        user_jwt: 'jwt.token.here',
     };
 
     if (!isJson(simplePlanPayload)) {
@@ -626,7 +715,7 @@ Deno.test('should clear target_contribution_id when transforming a simple plan j
     const { processors, spies } = createMockJobProcessors();
 
     const mockJobId = 'job-id-simple-transform-clear';
-    const mockPayload: DialecticPlanJobPayload = {
+    const mockPayload: DialecticJobPayload = {
         job_type: 'plan',
         step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id-simple-transform',
@@ -637,6 +726,7 @@ Deno.test('should clear target_contribution_id when transforming a simple plan j
         // THIS IS THE CRITICAL PART: the plan job has a target from the previous stage
         target_contribution_id: 'synthesis-doc-uuid', 
         walletId: 'wallet-id-simple-transform',
+        user_jwt: 'jwt.token.here',
         };
 
     if (!isJson(mockPayload)) {
@@ -698,3 +788,140 @@ Deno.test('should clear target_contribution_id when transforming a simple plan j
     }
 });
 
+
+// =============================================================
+// processJob (plan → execute transform)
+// =============================================================
+Deno.test('processJob - plan→execute transform preserves payload.user_jwt', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const planPayload: DialecticJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 1 },
+        sessionId: 'session-id-preserve',
+        projectId: 'project-id-preserve',
+        stageSlug: 'thesis',
+        model_id: 'model-id-preserve',
+        walletId: 'wallet-id-preserve',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(planPayload)) throw new Error('Test setup failed: planPayload not Json');
+
+    const mockJob: MockJob = {
+        id: 'job-id-preserve',
+        user_id: 'user-id-preserve',
+        session_id: 'session-id-preserve',
+        stage_slug: 'thesis',
+        payload: planPayload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+    };
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_stages': { select: { data: [{ id: 'stage-id-thesis', slug: 'thesis', display_name: 'Thesis', input_artifact_rules: null }] } },
+            'dialectic_sessions': { select: { data: [{ id: 'session-id-preserve' }] } },
+        }
+    });
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload: planPayload },
+            'user-id-preserve',
+            mockDeps,
+            'mock-token',
+            processors,
+        );
+
+        assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called once');
+        const transformed = spies.processSimpleJob.calls[0].args[1];
+        const p = transformed && transformed.payload;
+        let preserved = false;
+        let value = '';
+        if (isRecord(p) && 'user_jwt' in p) {
+            const v = p['user_jwt'];
+            if (typeof v === 'string' && v.length > 0) { preserved = true; value = v; }
+        }
+        assertEquals(preserved, true);
+        assertEquals(value, 'jwt.token.here');
+    } finally {
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+Deno.test('processJob - missing payload.user_jwt in plan job fails before transform', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const planPayload: DialecticPlanJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 1 },
+        sessionId: 'session-id-missing',
+        projectId: 'project-id-missing',
+        stageSlug: 'thesis',
+        model_id: 'model-id-missing',
+        walletId: 'wallet-id-missing',
+        // user_jwt intentionally omitted
+    };
+    if (!isJson(planPayload)) throw new Error('Test setup failed: planPayload not Json');
+
+    const mockJob: MockJob = {
+        id: 'job-id-missing',
+        user_id: 'user-id-missing',
+        session_id: 'session-id-missing',
+        stage_slug: 'thesis',
+        payload: planPayload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+    };
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_stages': { select: { data: [{ id: 'stage-id-thesis', slug: 'thesis', display_name: 'Thesis', input_artifact_rules: null }] } },
+            'dialectic_sessions': { select: { data: [{ id: 'session-id-missing' }] } },
+        }
+    });
+
+    let threw = false;
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload: planPayload },
+            'user-id-missing',
+            mockDeps,
+            'mock-token',
+            processors,
+        );
+    } catch (_e) {
+        threw = true;
+    } finally {
+        // Assert transform not called
+        assertEquals(spies.processSimpleJob.calls.length, 0, 'processSimpleJob must not be called when jwt is missing');
+        assertEquals(threw, true);
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});

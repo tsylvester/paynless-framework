@@ -11,6 +11,7 @@ import { processComplexJob } from './processComplexJob.ts';
 import { planComplexStage } from './task_isolator.ts';
 import { isDialecticPlanJobPayload, isDialecticExecuteJobPayload, isDialecticJobRow } from '../_shared/utils/type_guards.ts';
 import { isContributionType } from '../_shared/utils/type_guards.ts';
+import { isRecord } from '../_shared/utils/type_guards.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -90,6 +91,18 @@ export async function processJob(
               throw new Error(`Job ${job.id} has a simple payload but its stageSlug ('${stageSlug}') is missing or not a valid ContributionType.`);
           }
 
+          // Validate and preserve user_jwt from the incoming plan payload (no healing, no fallback)
+          let userJwt: string | undefined = undefined;
+          if (isRecord(job.payload) && 'user_jwt' in job.payload) {
+              const v = job.payload['user_jwt'];
+              if (typeof v === 'string' && v.trim().length > 0) {
+                  userJwt = v;
+              }
+          }
+          if (!userJwt) {
+              throw new Error('payload.user_jwt required');
+          }
+
           const executePayload: DialecticExecuteJobPayload = {
               job_type: 'execute',
               model_id,
@@ -108,10 +121,11 @@ export async function processJob(
               canonicalPathParams: {
                 contributionType: stageSlug,
               },
+              user_jwt: userJwt,
           };
 
 
-          const transformedJob = { ...job, payload: executePayload };
+          const transformedJob = { ...job, stage_slug: stageSlug, payload: executePayload };
           if(isDialecticJobRow(transformedJob)) {
             await processors.processSimpleJob(dbClient, transformedJob, projectOwnerUserId, deps, authToken);
           } else {

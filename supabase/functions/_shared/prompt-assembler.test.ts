@@ -5,6 +5,7 @@ import {
 } from "./prompt-assembler.ts";
 import { ProjectContext, SessionContext, StageContext, DynamicContextVariables } from "./prompt-assembler.interface.ts";
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockSupabaseClientSetup } from "./supabase.mock.ts";
+import { isRecord } from "./utils/type_guards.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Json, Database } from "../types_db.ts";
 import type { AiModelExtendedConfig, Messages } from "./types.ts";
@@ -177,6 +178,65 @@ Deno.test("PromptAssembler", async (t) => {
         }
     });
 
+    await t.step("does not include expected_output_artifacts_json when stage.expected_output_artifacts is null", async () => {
+        const renderPromptMockFn: RenderPromptMock = (_base, _vars, sysOverlays, userOverlays) => {
+            // Narrow overlays to records before checking keys; no casts
+            const sysVal = isRecord(sysOverlays) ? sysOverlays['expected_output_artifacts_json'] : undefined;
+            const usrVal = isRecord(userOverlays) ? userOverlays['expected_output_artifacts_json'] : undefined;
+            if (typeof sysVal === 'string' || typeof usrVal === 'string') {
+                throw new Error('expected_output_artifacts_json should not be present when stage.expected_output_artifacts is null');
+            }
+            return 'ok';
+        };
+
+        const { assembler } = setup({}, renderPromptMockFn);
+        try {
+            const stageWithoutArtifacts: StageContext = {
+                ...defaultStage,
+                expected_output_artifacts: null,
+            };
+
+            const result = await assembler.assemble(defaultProject, defaultSession, stageWithoutArtifacts, defaultProject.initial_user_prompt, 1);
+            assertEquals(result, 'ok');
+        } finally {
+            teardown();
+        }
+    });
+
+    await t.step("includes expected_output_artifacts_json when stage.expected_output_artifacts is provided", async () => {
+        let capturedSysOverlay: Json | undefined;
+        const renderPromptMockFn: RenderPromptMock = (_base, _vars, sysOverlays) => {
+            capturedSysOverlay = sysOverlays;
+            return 'ok';
+        };
+
+        const artifacts = { a: 1, b: { c: 'x' } };
+        const stageWithArtifacts: StageContext = {
+            ...defaultStage,
+            expected_output_artifacts: artifacts,
+        };
+
+        const { assembler } = setup({}, renderPromptMockFn);
+        try {
+            const result = await assembler.assemble(defaultProject, defaultSession, stageWithArtifacts, defaultProject.initial_user_prompt, 1);
+            assertEquals(result, 'ok');
+
+            // Assert renderer receives expected_output_artifacts_json in overlays as a JSON object
+            if (capturedSysOverlay && isRecord(capturedSysOverlay)) {
+                const val = capturedSysOverlay["expected_output_artifacts_json"];
+                if (isRecord(val)) {
+                    assertEquals(val, artifacts);
+                } else {
+                    throw new Error('expected_output_artifacts_json must be a JSON object');
+                }
+            } else {
+                throw new Error('System overlays were not provided to renderer');
+            }
+        } finally {
+            teardown();
+        }
+    });
+
     await t.step("should correctly assemble for a subsequent stage with prior inputs", async () => {
         const stageSlug = 'prev-stage';
         const contribContent = "AI contribution content.";
@@ -263,7 +323,7 @@ Deno.test("PromptAssembler", async (t) => {
                     await assembler.assemble(defaultProject, defaultSession, stageWithMissingPrompt, defaultProject.initial_user_prompt, 1);
                 },
                 Error,
-                `No system prompt template found for stage ${stageWithMissingPrompt.id}`
+                `RENDER_PRECONDITION_FAILED: missing system prompt text for stage ${stageWithMissingPrompt.slug}`
             );
         } finally {
             teardown();
@@ -483,6 +543,183 @@ Deno.test("PromptAssembler", async (t) => {
             assertEquals(renderArgs?.[2], stageOverlayValues); 
             assertEquals(renderArgs?.[3], null);
 
+        } finally {
+            teardown();
+        }
+    });
+
+    await t.step("render enforces required style guide and artifacts when template includes those sections", async () => {
+        // Prompt template declares both sections as required via section tags
+        const basePrompt = [
+            "SYSTEM INSTRUCTIONS",
+            "{{#section:style_guide_markdown}}",
+            "Style Guide:\n{style_guide_markdown}",
+            "{{/section:style_guide_markdown}}",
+            "",
+            "EXPECTED JSON OUTPUT",
+            "{{#section:expected_output_artifacts_json}}",
+            "Artifacts:\n{expected_output_artifacts_json}",
+            "{{/section:expected_output_artifacts_json}}",
+        ].join("\n");
+
+        // Create a stage missing both values (no style_guide_markdown in overlays; no artifacts on stage)
+        const stageMissingValues: StageContext = {
+            ...defaultStage,
+            system_prompts: { prompt_text: basePrompt },
+            domain_specific_prompt_overlays: [{ overlay_values: { role: "architect" } }],
+            expected_output_artifacts: null,
+        };
+
+        // Minimal context for render; values don't matter for this precondition test
+        const context: DynamicContextVariables = {
+            user_objective: "Test",
+            domain: "Software Development",
+            agent_count: 1,
+            context_description: "Desc",
+            original_user_request: null,
+            prior_stage_ai_outputs: "",
+            prior_stage_user_feedback: "",
+            deployment_context: null,
+            reference_documents: null,
+            constraint_boundaries: null,
+            stakeholder_considerations: null,
+            deliverable_format: "Standard markdown format.",
+        };
+
+        // Renderer should not be called if preconditions are enforced
+        let rendererCalled = false;
+        const renderPromptMockFn: RenderPromptMock = () => {
+            rendererCalled = true;
+            return "ok";
+        };
+
+        const { assembler } = setup({}, renderPromptMockFn);
+        let threw = false;
+        try {
+            assembler.render(stageMissingValues, context, null);
+        } catch (_e) {
+            threw = true;
+        } finally {
+            teardown();
+        }
+
+        // Expect assembler to enforce preconditions and throw before calling renderer
+        assertEquals(threw, true);
+        assertEquals(rendererCalled, false);
+    });
+
+    await t.step("render fails with precondition error when style guide section is present but overlay value is missing", async () => {
+        const basePrompt = [
+            "{{#section:style_guide_markdown}}",
+            "Style Guide:\n{style_guide_markdown}",
+            "{{/section:style_guide_markdown}}",
+        ].join("\n");
+
+        const stageMissingStyle: StageContext = {
+            ...defaultStage,
+            system_prompts: { prompt_text: basePrompt },
+            domain_specific_prompt_overlays: [{ overlay_values: { role: "architect" } }],
+            expected_output_artifacts: null,
+        };
+
+        const context: DynamicContextVariables = {
+            user_objective: "Test",
+            domain: "Software Development",
+            agent_count: 1,
+            context_description: "Desc",
+            original_user_request: null,
+            prior_stage_ai_outputs: "",
+            prior_stage_user_feedback: "",
+            deployment_context: null,
+            reference_documents: null,
+            constraint_boundaries: null,
+            stakeholder_considerations: null,
+            deliverable_format: "Standard markdown format.",
+        };
+
+        let rendererCalled = false;
+        const renderPromptMockFn: RenderPromptMock = () => {
+            rendererCalled = true;
+            return "ok";
+        };
+
+        const { assembler } = setup({}, renderPromptMockFn);
+        let threw = false;
+        try {
+            assembler.render(stageMissingStyle, context, null);
+        } catch (e) {
+            threw = true;
+            // Check the precondition failure marker
+            if (e instanceof Error) {
+                assertEquals(e.message.includes("RENDER_PRECONDITION_FAILED"), true);
+            }
+        } finally {
+            teardown();
+        }
+
+        assertEquals(threw, true);
+        assertEquals(rendererCalled, false);
+    });
+
+    await t.step("render proceeds and provides both style guide and artifacts when present", async () => {
+        const basePrompt = [
+            "{{#section:style_guide_markdown}}",
+            "Style Guide:\n{style_guide_markdown}",
+            "{{/section:style_guide_markdown}}",
+            "",
+            "{{#section:expected_output_artifacts_json}}",
+            "Artifacts:\n{expected_output_artifacts_json}",
+            "{{/section:expected_output_artifacts_json}}",
+        ].join("\n");
+
+        const artifacts = { shape: "object", ok: true };
+        const stageOk: StageContext = {
+            ...defaultStage,
+            system_prompts: { prompt_text: basePrompt },
+            domain_specific_prompt_overlays: [{ overlay_values: { role: "architect", style_guide_markdown: "# Guide" } }],
+            expected_output_artifacts: artifacts,
+        };
+
+        const context: DynamicContextVariables = {
+            user_objective: "Test",
+            domain: "Software Development",
+            agent_count: 1,
+            context_description: "Desc",
+            original_user_request: null,
+            prior_stage_ai_outputs: "",
+            prior_stage_user_feedback: "",
+            deployment_context: null,
+            reference_documents: null,
+            constraint_boundaries: null,
+            stakeholder_considerations: null,
+            deliverable_format: "Standard markdown format.",
+        };
+
+        let rendererCalled = false;
+        let capturedOverlay: Json | undefined;
+        const renderPromptMockFn: RenderPromptMock = (_base, _vars, sysOverlays) => {
+            rendererCalled = true;
+            capturedOverlay = sysOverlays;
+            return "ok";
+        };
+
+        const { assembler } = setup({}, renderPromptMockFn);
+        try {
+            const result = assembler.render(stageOk, context, null);
+            assertEquals(result, "ok");
+            assertEquals(rendererCalled, true);
+            if (capturedOverlay && isRecord(capturedOverlay)) {
+                const sg = capturedOverlay["style_guide_markdown"];
+                const artifactsVal = capturedOverlay["expected_output_artifacts_json"];
+                assertEquals(typeof sg === 'string' && sg.length > 0, true);
+                if (isRecord(artifactsVal)) {
+                    assertEquals(artifactsVal, artifacts);
+                } else {
+                    throw new Error("expected_output_artifacts_json must be a JSON object");
+                }
+            } else {
+                throw new Error("system overlays missing in renderer call");
+            }
         } finally {
             teardown();
         }

@@ -7,6 +7,10 @@ import type {
 import type { FileManagerResponse, UploadContext, PathContext } from '../types/file_manager.types.ts'
 import { FileType } from '../types/file_manager.types.ts'
 
+export interface FileManagerDependencies {
+  constructStoragePath: typeof constructStoragePath
+}
+
 const MAX_UPLOAD_ATTEMPTS = 5; // Max attempts for filename collision resolution
 
 /**
@@ -40,9 +44,14 @@ function getTableForFileType(
 export class FileManagerService {
   private supabase: SupabaseClient<Database>
   private storageBucket: string
+  private constructStoragePath: (context: PathContext) => { storagePath: string; fileName: string; }
 
-  constructor(supabaseClient: SupabaseClient<Database>) {
+  constructor(
+    supabaseClient: SupabaseClient<Database>,
+    dependencies: FileManagerDependencies,
+  ) {
     this.supabase = supabaseClient
+    this.constructStoragePath = dependencies.constructStoragePath
     const bucket = Deno.env.get('SB_CONTENT_STORAGE_BUCKET')
     if (!bucket) {
       throw new Error('SB_CONTENT_STORAGE_BUCKET environment variable is not set.')
@@ -64,19 +73,14 @@ export class FileManagerService {
 
     // --- Path Construction ---
     // Decide which PathContext to use based on whether this is a continuation chunk.
-    const pathContextForStorage: PathContext = isContinuation
-      ? {
-        // For continuations, we construct a new PathContext to ensure it includes
-        // the necessary flags for chunked path generation.
-        ...context.pathContext, // Base context
+    let pathContextForStorage: PathContext = context.pathContext;
+    if (isContinuation) {
+      pathContextForStorage = {
+        ...context.pathContext,
         isContinuation: true,
-        turnIndex: context.contributionMetadata?.turnIndex ?? 0,
-        // Ensure critical fields from metadata are present if not on base context
-        modelSlug: context.contributionMetadata?.modelNameDisplay, // Use modelNameDisplay for slug consistency
-        stageSlug: context.contributionMetadata?.stageSlug,
-        contributionType: context.contributionMetadata?.contributionType,
-      }
-      : context.pathContext;
+        turnIndex: context.contributionMetadata?.turnIndex,
+      };
+    }
 
     // --- Standard Upload Logic (Now handles both cases) ---
     let finalMainContentFilePath = ""; 
@@ -91,7 +95,7 @@ export class FileManagerService {
           ...pathContextForStorage,
           attemptCount: currentAttemptCount,
         };
-        const pathParts = constructStoragePath(attemptPathContext);
+        const pathParts = this.constructStoragePath(attemptPathContext);
         const fullPathForUpload = `${pathParts.storagePath}/${pathParts.fileName}`;
 
         const uploadResult = await this.supabase.storage
@@ -126,7 +130,7 @@ export class FileManagerService {
         }
       }
     } else {
-      const pathParts = constructStoragePath(pathContextForStorage);
+      const pathParts = this.constructStoragePath(pathContextForStorage);
       const fullPathForUpload = `${pathParts.storagePath}/${pathParts.fileName}`;
       finalMainContentFilePath = pathParts.storagePath; // Directory path
       finalFileName = pathParts.fileName;          // Filename
@@ -157,7 +161,7 @@ export class FileManagerService {
           fileType: FileType.ModelContributionRawJson,
           attemptCount: currentAttemptCount,
         };
-        const rawJsonPathParts = constructStoragePath(rawJsonPathContext);
+        const rawJsonPathParts = this.constructStoragePath(rawJsonPathContext);
         const fullPathForRawJsonUpload = `${rawJsonPathParts.storagePath}/${rawJsonPathParts.fileName}`;
         rawJsonResponseFullStoragePath = fullPathForRawJsonUpload; // Full path for DB
 

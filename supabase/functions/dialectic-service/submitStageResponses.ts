@@ -1,6 +1,6 @@
 // supabase/functions/dialectic-service/submitStageResponses.ts
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
-import type { AiModelExtendedConfig, ServiceError } from '../_shared/types.ts';
+import type { ServiceError } from '../_shared/types.ts';
 import type { Database } from '../types_db.ts';
 import {
   SubmitStageResponsesPayload,
@@ -15,7 +15,6 @@ import { PromptAssembler } from "../_shared/prompt-assembler.ts";
 import { ProjectContext, SessionContext, StageContext } from "../_shared/prompt-assembler.interface.ts";
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
-import { getAiProviderConfig } from '../dialectic-worker/processComplexJob.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 
 // Get storage bucket from environment variables, with a fallback for safety.
@@ -52,7 +51,7 @@ export async function submitStageResponses(
     };
   }
   
-  const { logger, fileManager, indexingService, embeddingClient } = dependencies;
+  const { logger, fileManager } = dependencies;
   const userId = user?.id;
 
   if (!STORAGE_BUCKET) {
@@ -398,7 +397,7 @@ export async function submitStageResponses(
   
   const { data: systemPrompt, error: promptError } = await dbClient
     .from('system_prompts')
-    .select('prompt_text')
+    .select('id, prompt_text')
     .eq('id', nextStageFull.default_system_prompt_id || '')
     .single();
 
@@ -406,10 +405,29 @@ export async function submitStageResponses(
     logger.warn(`Could not fetch system prompt for stage ${nextStageFull.slug}`, { error: promptError });
   }
   
+  // Fetch overlays for next stage based on (system_prompt_id, project.selected_domain_id)
+  let overlays: { overlay_values: ProjectContext['user_domain_overlay_values'] }[] | null = null;
+  if (!systemPrompt || !systemPrompt.id || !project.selected_domain_id) {
+    logger.error('[submitStageResponses] Missing required identifiers for overlay fetch.', { system_prompt: systemPrompt, selected_domain_id: project.selected_domain_id });
+    return { error: { message: 'Required domain overlays are missing for this stage.', status: 500, code: 'STAGE_CONFIG_MISSING_OVERLAYS' }, status: 500 };
+  }
+
+  const { data: overlayRows, error: overlaysError } = await dbClient
+    .from('domain_specific_prompt_overlays')
+    .select('overlay_values')
+    .eq('system_prompt_id', systemPrompt.id)
+    .eq('domain_id', project.selected_domain_id);
+
+  if (overlaysError || !overlayRows || overlayRows.length === 0) {
+    logger.error('[submitStageResponses] Overlays missing for next stage.', { overlaysError, system_prompt_id: systemPrompt.id, domain_id: project.selected_domain_id });
+    return { error: { message: 'Required domain overlays are missing for this stage.', status: 500, code: 'STAGE_CONFIG_MISSING_OVERLAYS' }, status: 500 };
+  }
+  overlays = overlayRows as { overlay_values: ProjectContext['user_domain_overlay_values'] }[];
+
   const stageContextForAssembler: StageContext = {
     ...nextStageFull,
     system_prompts: systemPrompt ? { prompt_text: systemPrompt.prompt_text } : null,
-    domain_specific_prompt_overlays: [], // TODO: Re-implement overlay fetching if needed
+    domain_specific_prompt_overlays: overlays,
   };
   
   // Robust handling for getInitialPromptContent

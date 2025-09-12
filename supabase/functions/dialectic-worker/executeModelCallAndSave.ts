@@ -28,7 +28,6 @@ export async function executeModelCallAndSave(
     const { 
         dbClient, 
         deps, 
-        authToken, 
         job, 
         projectOwnerUserId, 
         providerDetails, 
@@ -417,6 +416,27 @@ export async function executeModelCallAndSave(
         
         const candidates = await compressionStrategy(dbClient, deps, workingResourceDocs, workingHistory, currentUserPrompt);
         console.log(`[DEBUG] Number of compression candidates found: ${candidates.length}`);
+
+        // Prefetch which candidates are already indexed so we don't re-index them during compression
+        const idsToCheck = candidates
+            .map((c) => c.id)
+            .filter((id) => typeof id === 'string' && id.length > 0);
+
+        let indexedIds = new Set<string>();
+        if (idsToCheck.length > 0) {
+            const { data: indexedRows, error: indexedErr } = await dbClient
+                .from('dialectic_memory')
+                .select('source_contribution_id')
+                .in('source_contribution_id', idsToCheck);
+
+            if (!indexedErr && Array.isArray(indexedRows)) {
+                indexedIds = new Set(
+                    indexedRows
+                        .map((r) => (r && typeof (r as Record<string, unknown>)['source_contribution_id'] === 'string' ? (r as Record<string, unknown>)['source_contribution_id'] as string : undefined))
+                        .filter((v): v is string => typeof v === 'string'),
+                );
+            }
+        }
         
         while (candidates.length > 0) {
             // Compress until we reach the preflight-computed final target threshold
@@ -425,6 +445,11 @@ export async function executeModelCallAndSave(
             }
             const victim = candidates.shift(); // Takes the lowest-value item and removes it from the array
             if (!victim) break; // Should not happen with the loop condition, but good for safety
+
+            // Skip re-indexing for already-indexed candidates to avoid double billing and re-summarization
+            if (typeof victim.id === 'string' && indexedIds.has(victim.id)) {
+                continue;
+            }
 
             const ragResult = await ragService.getContextForModel(
                 [{ id: victim.id, content: victim.content || '' }], 
@@ -599,8 +624,41 @@ export async function executeModelCallAndSave(
     // Do not append resourceDocuments into messages; they are not implemented as chat messages
 
     // chatApiRequest already constructed and kept in sync above; use it directly for the adapter call
-
-    const userAuthToken = 'user_jwt' in job.payload && job.payload.user_jwt ? job.payload.user_jwt : authToken;
+    // Diagnostics without casting: observe payload user_jwt presence before guard
+    {
+        const p = job && job.payload;
+        let hasJwtKey = false;
+        let jwtType: string = 'undefined';
+        let jwtLen = 0;
+        if (isRecord(p) && 'user_jwt' in p) {
+            const v = p['user_jwt'];
+            jwtType = typeof v;
+            if (typeof v === 'string') {
+                jwtLen = v.length;
+            }
+            hasJwtKey = true;
+        }
+        deps.logger.info('[executeModelCallAndSave] DIAGNOSTIC: payload user_jwt presence before guard', {
+            jobId,
+            hasJwtKey,
+            jwtType,
+            jwtLen,
+            continueUntilComplete: job.payload.continueUntilComplete,
+            target_contribution_id: job.payload.target_contribution_id,
+        });
+    }
+    // Enforce presence of user_jwt on the payload (no fallback to function authToken)
+    let userAuthToken: string | undefined = undefined;
+    {
+        const desc = Object.getOwnPropertyDescriptor(job.payload, 'user_jwt');
+        const potential = desc ? desc.value : undefined;
+        if (typeof potential === 'string' && potential.length > 0) {
+            userAuthToken = potential;
+        }
+    }
+    if (!userAuthToken) {
+        throw new Error('payload.user_jwt required');
+    }
 
     if (!deps.callUnifiedAIModel) {
         throw new Error("Dependency 'callUnifiedAIModel' is not provided.");
@@ -690,6 +748,8 @@ export async function executeModelCallAndSave(
             attemptCount: job.attempt_count,
             ...restOfCanonicalPathParams,
             contributionType,
+            isContinuation: isContinuationForStorage,
+            turnIndex: isContinuationForStorage ? job.payload.continuation_count ?? 0 : undefined,
         },
         fileContent: contentForStorage, 
         mimeType: aiResponse.contentType || "text/markdown",
@@ -712,8 +772,6 @@ export async function executeModelCallAndSave(
             target_contribution_id: targetContributionId,
             document_relationships: document_relationships,
             isIntermediate: 'isIntermediate' in job.payload && job.payload.isIntermediate,
-            isContinuation: isContinuationForStorage,
-            turnIndex: isContinuationForStorage ? job.payload.continuation_count ?? 0 : undefined,
         },
     };
 
@@ -844,8 +902,3 @@ export async function executeModelCallAndSave(
 
     deps.logger.info(`[dialectic-worker] [executeModelCallAndSave] Job ${jobId} finished successfully. Results: ${JSON.stringify(modelProcessingResult)}. Final Status: completed`);
 }
-
-
-
-
-

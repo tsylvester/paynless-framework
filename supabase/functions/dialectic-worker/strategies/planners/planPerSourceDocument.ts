@@ -7,8 +7,20 @@ export const planPerSourceDocument: GranularityPlannerFn = (
     sourceDocs,
     parentJob,
     recipeStep,
-    authToken,
 ) => {
+    // Enforce presence of user_jwt on the parent payload (no fallback to authToken)
+    let parentJwt: string | undefined = undefined;
+    {
+        const desc = Object.getOwnPropertyDescriptor(parentJob.payload, 'user_jwt');
+        const potential = desc ? desc.value : undefined;
+        if (typeof potential === 'string' && potential.length > 0) {
+            parentJwt = potential;
+        }
+    }
+    if (!parentJwt) {
+        throw new Error('parent payload.user_jwt is required');
+    }
+
     const childPayloads: DialecticExecuteJobPayload[] = [];
 
     console.log('[planPerSourceDocument] Received sourceDocs:', JSON.stringify(sourceDocs, null, 2));
@@ -39,7 +51,7 @@ export const planPerSourceDocument: GranularityPlannerFn = (
             canonicalPathParams, // Use the new contract
             document_relationships: { source_group: doc.id },
             inputs,
-            user_jwt: authToken,
+            user_jwt: parentJwt,
             walletId: parentJob.payload.walletId,
         };
         console.log(`[planPerSourceDocument] Constructed newPayload for doc ${doc.id}:`, JSON.stringify(newPayload, null, 2));

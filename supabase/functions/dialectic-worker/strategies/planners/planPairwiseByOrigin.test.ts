@@ -273,6 +273,20 @@ Deno.test('planPairwiseByOrigin should return an empty array for empty source do
     assertEquals(childPayloads.length, 0);
 });
 
+Deno.test('planPairwiseByOrigin constructs child payloads with dynamic stage consistency (payload.stageSlug === parent.payload.stageSlug)', () => {
+	const expectedStage = 'parenthesis';
+	const parent: typeof MOCK_PARENT_JOB = JSON.parse(JSON.stringify(MOCK_PARENT_JOB));
+	Object.defineProperty(parent, 'stage_slug', { value: expectedStage, configurable: true, enumerable: true, writable: true });
+	Object.defineProperty(parent.payload, 'stageSlug', { value: expectedStage, configurable: true, enumerable: true, writable: true });
+
+	const childPayloads = planPairwiseByOrigin(MOCK_SOURCE_DOCS, parent, MOCK_RECIPE_STEP, 'ignored.jwt');
+
+	assertEquals(childPayloads.length, 3);
+	for (const child of childPayloads) {
+		assertEquals(child.stageSlug, expectedStage);
+	}
+});
+
 Deno.test('should return an empty array if theses exist but no antitheses are related', () => {
     const unrelatedAntitheses = [
         { 

@@ -164,4 +164,130 @@ Deno.test('planPerSourceDocumentByLineage', async (t) => {
         assertExists(payloadForGroupA.stageSlug);
         assertEquals(payloadForGroupA.stageSlug, 'synthesis');
     });
+
+    await t.step('dynamic stage consistency: all child payloads inherit parent payload.stageSlug for each lineage group', () => {
+        const sourceDocs = [
+            getMockSourceDoc('model-a-id', 'doc-a1-id', 'thesis-a'),
+            getMockSourceDoc('model-b-id', 'doc-a2-id', 'thesis-a'),
+            getMockSourceDoc('model-a-id', 'doc-b1-id', 'thesis-b'),
+            getMockSourceDoc('model-b-id', 'doc-b2-id', 'thesis-b'),
+        ];
+        const mockParentJob = getMockParentJob();
+        const expectedStage = 'parenthesis';
+        Object.defineProperty(mockParentJob, 'stage_slug', { value: expectedStage, configurable: true, enumerable: true, writable: true });
+        Object.defineProperty(mockParentJob.payload, 'stageSlug', { value: expectedStage, configurable: true, enumerable: true, writable: true });
+
+        const mockRecipeStep = getMockRecipeStep();
+
+        const childPayloads = planPerSourceDocumentByLineage(sourceDocs, mockParentJob, mockRecipeStep, 'ignored.jwt');
+
+        // Should have one child per group
+        assertEquals(childPayloads.length, 2);
+
+        for (const child of childPayloads) {
+            assertEquals(child.stageSlug, expectedStage, 'Child payload.stageSlug must equal parent.payload.stageSlug');
+        }
+    });
+});
+
+Deno.test('planPerSourceDocumentByLineage should treat a doc without a source_group as the root of a new lineage', async (t) => {
+    const getMockSourceDoc = (modelId: string | null, docId: string, sourceGroup: string | null = null): SourceDocument => ({
+        id: docId,
+        session_id: 'sess-id',
+        contribution_type: 'thesis', // This is a root document type
+        model_id: modelId,
+        model_name: `model-${modelId}-name`,
+        content: `content for ${docId}`,
+        user_id: 'user-id',
+        stage: 'thesis',
+        iteration_number: 1,
+        prompt_template_id_used: 'prompt-a',
+        seed_prompt_url: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        target_contribution_id: null,
+        tokens_used_input: 10,
+        tokens_used_output: 10,
+        processing_time_ms: 100,
+        error: null,
+        citations: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: `file-${docId}`,
+        storage_bucket: 'bucket',
+        storage_path: `path-${docId}`,
+        size_bytes: 100,
+        mime_type: 'text/plain',
+        document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
+    });
+
+    const getMockParentJob = (): DialecticJobRow & { payload: DialecticPlanJobPayload } => ({
+        id: 'parent-job-id',
+        created_at: new Date().toISOString(),
+        status: 'in_progress',
+        user_id: 'user-id',
+        session_id: 'sess-id',
+        iteration_number: 1,
+        parent_job_id: null,
+        attempt_count: 1,
+        max_retries: 3,
+        completed_at: null,
+        error_details: null,
+        prerequisite_job_id: null,
+        results: null,
+        stage_slug: 'antithesis',
+        started_at: new Date().toISOString(),
+        target_contribution_id: null,
+        payload: {
+            projectId: 'proj-id',
+            sessionId: 'sess-id',
+            stageSlug: 'antithesis',
+            job_type: 'plan',
+            model_id: 'model-a-id',
+            step_info: {
+                current_step: 0,
+                total_steps: 1,
+            },
+            walletId: 'wallet-default',
+        },
+    });
+
+    const getMockRecipeStep = (): DialecticRecipeStep => ({
+        step: 1,
+        name: 'antithesis-step',
+        prompt_template_name: 'antithesis_prompt',
+        output_type: 'antithesis',
+        granularity_strategy: 'per_source_document_by_lineage',
+        inputs_required: [{ type: 'thesis' }],
+    });
+
+    await t.step('should create a new lineage group using doc ID if source_group is missing', () => {
+        // Arrange: A source document that is a 'thesis' and has no 'source_group'
+        const sourceDocWithoutLineage = getMockSourceDoc('model-a-id', 'thesis-doc-1', null);
+        const mockParentJob = getMockParentJob();
+        const mockRecipeStep = getMockRecipeStep();
+
+        // Act: Run the planner
+        const childPayloads = planPerSourceDocumentByLineage([sourceDocWithoutLineage], mockParentJob, mockRecipeStep, 'user-jwt-123');
+
+        // Assert: It should create exactly one child job
+        assertEquals(childPayloads.length, 1, "Expected one child job to be created for the document without a source group.");
+
+        const childPayload = childPayloads[0];
+        assertExists(childPayload.document_relationships, "Child payload must have document_relationships.");
+        
+        // Assert: The new source_group for the child job should be the ID of the source document itself.
+        assertEquals(
+            childPayload.document_relationships.source_group,
+            sourceDocWithoutLineage.id,
+            "The source_group of the new lineage should be the ID of the root document."
+        );
+
+        // Assert: The inputs for the new job should contain the ID of the source document.
+        assertExists(childPayload.inputs, "Inputs should exist for the new payload.");
+        assertExists(childPayload.inputs.thesis_ids, "The correct input type ('thesis_ids') should exist.");
+        assertEquals(childPayload.inputs.thesis_ids, [sourceDocWithoutLineage.id]);
+    });
 });
