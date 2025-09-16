@@ -68,8 +68,7 @@ enabled = true
 enabled = true
 # Port to use for Supabase Studio.
 port = 54323
-# External URL of the API server that frontend connects to.
-api_url = "http://127.0.0.1"
+api_url = "http://localhost"
 # OpenAI API Key to use for Supabase AI in the Supabase Studio.
 openai_api_key = "env(OPENAI_API_KEY)"
 
@@ -336,12 +335,12 @@ verify_jwt = false
 
 # Add section for the new generic webhooks router
 [functions.webhooks] # For the function in supabase/functions/webhooks/
-  verify_jwt = false
+verify_jwt = false
 
 # Keep function sections below if they exist for other specific settings,
 # otherwise they can be removed if verify_jwt=false is set globally above.
 
-# AI Function "Chat" must disable JWT to enable replay flow 
+# AI Function "Chat" must disable JWT to enable replay flow # External URL of the API server that frontend connects to.
 [functions.chat]
 verify_jwt = false
 
@@ -360,7 +359,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.dialectic-service]
-verify_jwt = false 
+verify_jwt = false
 
 # ---> Remove entry for notifications-stream <--- 
 # [functions.notifications-stream]
