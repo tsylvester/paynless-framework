@@ -192,7 +192,44 @@ export async function createSignedUrlForPath(
       return { signedUrl: null, error: new Error("Failed to create signed URL: No URL in response.") };
     }
 
-    return { signedUrl: data.signedUrl, error: null };
+    // Normalize signed URL host to the public SUPABASE_URL base for browser consumption
+    // Only rewrite when the original host is a known internal host (e.g., docker gateway)
+    // Preserves the "/storage/v1/..." path and original query string (including token)
+    try {
+      const publicBase = Deno.env.get('SUPABASE_URL');
+      if (!publicBase) {
+        return { signedUrl: data.signedUrl, error: null };
+      }
+
+      const original = new URL(data.signedUrl);
+      const publicBaseUrl = new URL(publicBase);
+
+      // Rewrite only when the original signed URL host is an internal host
+      const internalHosts = new Set(["kong", "host.docker.internal"]);
+      const originalIsInternal = internalHosts.has(original.hostname);
+      if (!originalIsInternal) {
+        return { signedUrl: data.signedUrl, error: null };
+      }
+
+      const storagePrefix = '/storage/v1';
+      const idx = original.pathname.indexOf(storagePrefix);
+      // Always map internal host to localhost:54321 (preserve protocol)
+      const proto = publicBaseUrl.protocol || 'http:';
+      const normalizedOrigin = `${proto}//localhost:54321`;
+      const storagePublicBase = new URL(storagePrefix, normalizedOrigin);
+      const base = storagePublicBase.toString().replace(/\/$/, '');
+
+      // Keep the suffix after "/storage/v1" if present; otherwise, keep the original pathname
+      const suffix = idx >= 0
+        ? original.pathname.substring(idx + storagePrefix.length)
+        : original.pathname;
+
+      const normalized = `${base}${suffix}${original.search}`;
+      return { signedUrl: normalized, error: null };
+    } catch (_) {
+      // If normalization fails for any reason, fall back to the raw URL
+      return { signedUrl: data.signedUrl, error: null };
+    }
   } catch (e) {
     console.error("Exception in createSignedUrlForPath:", e);
     return { signedUrl: null, error: e instanceof Error ? e : new Error(String(e)) };

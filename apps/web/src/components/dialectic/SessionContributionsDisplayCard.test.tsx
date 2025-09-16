@@ -12,6 +12,20 @@ vi.mock('./GeneratedContributionCard', () => ({
   )),
 }));
 
+// Mock ExportProjectButton to assert composition presence on session page
+vi.mock('./ExportProjectButton', () => ({
+  ExportProjectButton: vi.fn((props: { projectId: string; children?: React.ReactNode; variant?: string; className?: string }) => (
+    <button
+      data-testid="export-project-button-mock"
+      data-project-id={props.projectId}
+      data-variant={props.variant}
+      className={props.className}
+    >
+      {props.children || 'Export'}
+    </button>
+  )),
+}));
+
 // Then mock libraries/aliased paths
 vi.mock('@paynless/store', async () => {
   // CORRECTED: Import and spread ALL exports from the actual mock file.
@@ -463,6 +477,52 @@ describe('SessionContributionsDisplayCard', () => {
   });
 
   describe('General UI and No Contributions Message', () => {
+    it('renders ExportProjectButton whenever a project is active (session view)', () => {
+      setup({ projectInStore: mockProject });
+      expect(screen.getByTestId('export-project-button-mock')).toBeInTheDocument();
+    });
+
+    it('hides Submit button and shows a pulsing default Export button at terminal stage', () => {
+      const terminalStage = { ...mockAntithesisStage }; // use antithesis as terminal for this test
+      const templateWithTransitions = {
+        ...mockProcessTemplate,
+        starting_stage_id: mockThesisStage.id,
+        stages: [mockThesisStage, terminalStage],
+        transitions: [
+          { 
+            source_stage_id: mockThesisStage.id, 
+            target_stage_id: terminalStage.id, 
+            condition_description: null, 
+            created_at: 'now', 
+            id: 't1', 
+            process_template_id: mockProcessTemplate.id 
+          },
+          // No transition out of terminalStage
+        ],
+      };
+
+      // Active stage is terminal, stage ready, not submitting
+      setup({
+        projectInStore: mockProject,
+        activeSessionInStore: { ...mockBaseSession, current_stage_id: terminalStage.id },
+        activeStageInStore: terminalStage,
+        processTemplateInStore: templateWithTransitions,
+        overrides: { isSubmittingStageResponses: false },
+        isStageReadyOverride: true,
+      });
+
+      // Submit button should not be present
+      expect(screen.queryByRole('button', { name: /Submit Responses & Advance Stage/i })).toBeNull();
+
+      // Export button should be present in both header and footer with default styling and pulse class
+      const exportBtns = screen.getAllByTestId('export-project-button-mock');
+      expect(exportBtns.length).toBe(2);
+      exportBtns.forEach((btn) => {
+        expect(btn).toHaveAttribute('data-variant', 'default');
+        expect(btn.className).toContain('animate-pulse');
+      });
+    });
+
     it('should display no contributions message if session has no contributions for the active stage and iteration', () => {
       const sessionWithOnlyAntithesisContributions = {
         ...mockBaseSession,

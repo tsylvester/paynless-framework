@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useDialecticStore } from '@paynless/store'; // Added store import
 import { ViewProjectButton } from './ViewProjectButton'; // Import the new button
+import { ExportProjectButton } from './ExportProjectButton';
 
 interface DialecticProjectCardProps {
   project: DialecticProject & { // Assume these fields will be added to DialecticProject type
@@ -30,7 +31,6 @@ export const DialecticProjectCard: React.FC<DialecticProjectCardProps> = ({ proj
   const deleteDialecticProject = useDialecticStore((state) => state.deleteDialecticProject);
   const cloneDialecticProject = useDialecticStore((state) => state.cloneDialecticProject);
   const fetchDialecticProjects = useDialecticStore((state) => state.fetchDialecticProjects);
-  const exportDialecticProject = useDialecticStore((state) => state.exportDialecticProject);
 
   let creatorName = project.user_id; // Default to user_id
 
@@ -63,15 +63,6 @@ export const DialecticProjectCard: React.FC<DialecticProjectCardProps> = ({ proj
       if (fetchDialecticProjects) fetchDialecticProjects();
     } else {
       console.error("cloneDialecticProject action is not available in the store.");
-    }
-  };
-
-  const handleExport = async () => {
-    if (exportDialecticProject) {
-      await exportDialecticProject(project.id);
-      // Optionally, provide feedback to the user
-    } else {
-      console.error("exportDialecticProject action is not available in the store.");
     }
   };
 
@@ -117,9 +108,10 @@ export const DialecticProjectCard: React.FC<DialecticProjectCardProps> = ({ proj
             {project.initial_user_prompt}
           </p>
             <div className="flex items-center space-x-1">
-              <Button variant="ghost" size="icon" aria-label="Export project" onClick={handleExport}>
+              <ExportProjectButton projectId={project.id} variant="ghost" size="icon">
+                <span className="sr-only">Export project</span>
                 <FileUp className="h-5 w-5" />
-              </Button>
+              </ExportProjectButton>
               <Button variant="ghost" size="icon" aria-label="Clone project" onClick={handleClone}>
                 <Copy className="h-5 w-5" />
               </Button>

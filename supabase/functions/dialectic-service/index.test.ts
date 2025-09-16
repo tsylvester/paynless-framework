@@ -1090,6 +1090,53 @@ withSupabaseEnv("handleRequest - exportProject", async (t) => {
     });
 });
 
+withSupabaseEnv("handleRequest - exportProject returns normalized URL", async (t) => {
+  const projectId = 'proj-to-export-normalization';
+  const publicBase = 'http://localhost:54321';
+  const bucketName = 'dialectic-contributions';
+  const filePath = 'bucket/file.zip';
+  const expiresIn = 3600;
+
+  await t.step("should normalize signed URL origin to SUPABASE_URL and preserve path/query", async () => {
+    const internalSignedUrl = `http://kong:8000/storage/v1/object/sign/${bucketName}/${filePath}?token=abc123&expires_in=${expiresIn}`;
+
+    const exportSpy = spy(async (
+      dbClient: SupabaseClient,
+      _fileManager: unknown,
+      storageUtils: { createSignedUrlForPath: (c: SupabaseClient, b: string, p: string, e: number) => Promise<{ signedUrl: string | null; error: Error | null }> },
+      _projectId: string,
+      _userId: string,
+    ) => {
+      const { signedUrl } = await storageUtils.createSignedUrlForPath(dbClient, bucketName, filePath, expiresIn);
+      return { data: { export_url: signedUrl || '' }, status: 200 };
+    });
+
+    const mockHandlers = createMockHandlers({ exportProject: exportSpy });
+
+    const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+      getUserResult: { data: { user: mockUser }, error: null }
+    });
+    const { client: mockAdminClient } = createMockSupabaseClient(undefined, {
+      storageMock: {
+        createSignedUrlResult: async () => ({ data: { signedUrl: internalSignedUrl }, error: null })
+      }
+    });
+
+    const req = createJsonRequest("exportProject", { projectId }, "mock-jwt");
+    const response = await handleRequest(
+      req,
+      mockHandlers,
+      mockUserClient as any,
+      mockAdminClient as any
+    );
+
+    // Expect normalized URL using SUPABASE_URL base (will FAIL until handler wires normalized util)
+    const body = await response.json();
+    const expected = `${publicBase}/storage/v1/object/sign/${bucketName}/${filePath}?token=abc123&expires_in=${expiresIn}`;
+    assertEquals(body.export_url, expected);
+  });
+});
+
 withSupabaseEnv("handleRequest - getProjectResourceContent", async (t) => {
     const payload = { projectId: 'proj-123', resourceId: 'res-456' };
 
