@@ -329,6 +329,7 @@ export interface GenerateContributionsPayload {
   continuation_count?: number;
   target_contribution_id?: string;
   user_jwt?: string;
+  is_test_job?: boolean;
 }
 
 /**
@@ -344,7 +345,6 @@ export interface DialecticStepInfo {
  */
 export interface DialecticBaseJobPayload extends Omit<GenerateContributionsPayload, 'selectedModelIds' | 'chatId'> {
     model_id: string; // Individual model ID for this specific job
-    is_test_job?: boolean;
 }
 
 /**
@@ -352,7 +352,6 @@ export interface DialecticBaseJobPayload extends Omit<GenerateContributionsPaylo
  */
 export interface DialecticSimpleJobPayload extends DialecticBaseJobPayload {
     job_type?: 'simple';
-    is_test_job?: boolean;
 }
 
 /**
@@ -361,7 +360,6 @@ export interface DialecticSimpleJobPayload extends DialecticBaseJobPayload {
 export interface DialecticPlanJobPayload extends DialecticBaseJobPayload {
     job_type: 'plan';
     step_info: DialecticStepInfo;
-    is_test_job?: boolean;
 }
 
 /**

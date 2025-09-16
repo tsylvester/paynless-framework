@@ -58,8 +58,6 @@ DO $$
 BEGIN
   UPDATE public.system_prompts
   SET prompt_text = $PROMPT$You are a {role}. Your task is to {stage_instructions} produce the required outputs using the provided inputs and references.
-User Objective:
-- {user_objective}
 {{#section:context_description}}User Input:
 {context_description}{{/section:context_description}}
 {{#section:domain}}Domain: {domain}{{/section:domain}}
@@ -136,16 +134,18 @@ SET overlay_values = d.overlay_values
 
 ## 3. Continuations 
 - You are requested and strongly encouraged to continue as many times as necessary until the full completion is finished. 
+- If completed, set continuation_needed to false and the finish_reason to "stop".
+- If continuation is needed, set continuation_needed to true, the reason for stopping, and the resume cursor.
 - Control flags (top-level JSON fields when requested by the prompt):
   - continuation_needed: boolean
-  - stop_reason: "continuation" | "token_limit" | "complete"
+  - finish_reason: "max_tokens" | "length" | "content_truncated" | "next_document"
   - resume_cursor: { document_key: string, section_id?: string, line_hint?: number }
 
 Example control flags:
 ```json
 {
   "continuation_needed": true,
-  "stop_reason": "continuation",
+  "finish_reason": "content_truncated",
   "resume_cursor": { "document_key": "actionable_checklist", "section_id": "1.a.iii" }
 }
 ```
@@ -267,16 +267,18 @@ SET overlay_values = d.overlay_values
 
 ## 3. Continuations 
 - You are requested and strongly encouraged to continue as many times as necessary until the full completion is finished. 
+- If completed, set continuation_needed to false and the finish_reason to "stop".
+- If continuation is needed, set continuation_needed to true, the reason for stopping, and the resume cursor.
 - Control flags (top-level JSON fields when requested by the prompt):
   - continuation_needed: boolean
-  - stop_reason: "continuation" | "token_limit" | "complete"
+  - finish_reason: "max_tokens" | "length" | "content_truncated" | "next_document"
   - resume_cursor: { document_key: string, section_id?: string, line_hint?: number }
 
 Example control flags:
 ```json
 {
   "continuation_needed": true,
-  "stop_reason": "continuation",
+  "finish_reason": "content_truncated",
   "resume_cursor": { "document_key": "actionable_checklist", "section_id": "1.a.iii" }
 }
 ```
@@ -415,16 +417,18 @@ SET overlay_values = d.overlay_values
 
 ## 3. Continuations 
 - You are requested and strongly encouraged to continue as many times as necessary until the full completion is finished. 
+- If completed, set continuation_needed to false and the finish_reason to "stop".
+- If continuation is needed, set continuation_needed to true, the reason for stopping, and the resume cursor.
 - Control flags (top-level JSON fields when requested by the prompt):
   - continuation_needed: boolean
-  - stop_reason: "continuation" | "token_limit" | "complete"
+  - finish_reason: "max_tokens" | "length" | "content_truncated" | "next_document"
   - resume_cursor: { document_key: string, section_id?: string, line_hint?: number }
 
 Example control flags:
 ```json
 {
   "continuation_needed": true,
-  "stop_reason": "continuation",
+  "finish_reason": "content_truncated",
   "resume_cursor": { "document_key": "actionable_checklist", "section_id": "1.a.iii" }
 }
 ```
@@ -558,16 +562,18 @@ SET overlay_values = d.overlay_values
 
 ## 3. Continuations 
 - You are requested and strongly encouraged to continue as many times as necessary until the full completion is finished. 
+- If completed, set continuation_needed to false and the finish_reason to "stop".
+- If continuation is needed, set continuation_needed to true, the reason for stopping, and the resume cursor.
 - Control flags (top-level JSON fields when requested by the prompt):
   - continuation_needed: boolean
-  - stop_reason: "continuation" | "token_limit" | "complete"
+  - finish_reason: "max_tokens" | "length" | "content_truncated" | "next_document"
   - resume_cursor: { document_key: string, section_id?: string, line_hint?: number }
 
 Example control flags:
 ```json
 {
   "continuation_needed": true,
-  "stop_reason": "continuation",
+  "finish_reason": "content_truncated",
   "resume_cursor": { "document_key": "actionable_checklist", "section_id": "1.a.iii" }
 }
 ```
@@ -749,16 +755,18 @@ SET overlay_values = d.overlay_values
 
 ## 3. Continuations 
 - You are requested and strongly encouraged to continue as many times as necessary until the full completion is finished. 
+- If completed, set continuation_needed to false and the finish_reason to "stop".
+- If continuation is needed, set continuation_needed to true, the reason for stopping, and the resume cursor.
 - Control flags (top-level JSON fields when requested by the prompt):
   - continuation_needed: boolean
-  - stop_reason: "continuation" | "token_limit" | "complete"
+  - finish_reason: "max_tokens" | "length" | "content_truncated" | "next_document"
   - resume_cursor: { document_key: string, section_id?: string, line_hint?: number }
 
 Example control flags:
 ```json
 {
   "continuation_needed": true,
-  "stop_reason": "continuation",
+  "finish_reason": "content_truncated",
   "resume_cursor": { "document_key": "actionable_checklist", "section_id": "1.a.iii" }
 }
 ```
@@ -932,7 +940,7 @@ VALUES
   ('claude-opus-4-1-20250805', 'anthropic-claude-opus-4-1-20250805', '', true, '{"api_identifier":"anthropic-claude-opus-4-1-20250805","context_window_tokens":200000,"input_token_cost_rate":20,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-opus-4-1-20250805"},"hard_cap_output_tokens":8192,"output_token_cost_rate":100,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', 'anthropic', false, false),
   ('claude-opus-4-20250514', 'anthropic-claude-opus-4-20250514', '', true, '{"api_identifier":"anthropic-claude-opus-4-20250514","context_window_tokens":200000,"input_token_cost_rate":18,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-opus-4-20250514"},"hard_cap_output_tokens":8192,"output_token_cost_rate":90,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', 'anthropic', true, false),
   ('claude-sonnet-4-20250514', 'anthropic-claude-sonnet-4-20250514', '', true, '{"api_identifier":"anthropic-claude-sonnet-4-20250514","context_window_tokens":200000,"input_token_cost_rate":4,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-sonnet-4-20250514"},"hard_cap_output_tokens":8192,"output_token_cost_rate":20,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', 'anthropic', true, false),
-  ('Dummy Echo v1', 'dummy-echo-v1', NULL, true, '{"mode":"echo","modelId":"dummy-echo-v1","api_identifier":"dummy-echo-v1","basePromptTokens":2,"context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","tiktoken_encoding_name":"cl100k_base"},"hard_cap_output_tokens":8192,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":8192}', 'dummy', true, false),
+  ('Dummy Echo v1', 'dummy-echo-v1', NULL, true, '{"mode":"echo","modelId":"dummy-echo-v1","api_identifier":"dummy-echo-v1","basePromptTokens":2,"context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","tiktoken_encoding_name":"cl100k_base"},"hard_cap_output_tokens":16000,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":16000}', 'dummy', true, false),
   ('Gemini 1.0 Pro Vision', 'google-gemini-1.0-pro-vision-latest', 'The original Gemini 1.0 Pro Vision model version which was optimized for image understanding. Gemini 1.0 Pro Vision was deprecated on July 12, 2024. Move to a newer Gemini version.', false, '{"api_identifier":"google-gemini-1.0-pro-vision-latest","input_token_cost_rate":5e-7,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":4096,"output_token_cost_rate":0.0000015,"provider_max_input_tokens":12288,"provider_max_output_tokens":4096}', 'google', false, false),
   ('Gemini 1.5 Flash', 'google-gemini-1.5-flash', 'Alias that points to the most recent stable version of Gemini 1.5 Flash, our fast and versatile multimodal model for scaling across diverse tasks.', true, '{"api_identifier":"google-gemini-1.5-flash","context_window_tokens":2000000,"input_token_cost_rate":0.6,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.6,"provider_max_input_tokens":1000000,"provider_max_output_tokens":8192}', 'google', false, false),
   ('Gemini 1.5 Flash 002', 'google-gemini-1.5-flash-002', 'Stable version of Gemini 1.5 Flash, our fast and versatile multimodal model for scaling across diverse tasks, released in September of 2024.', true, '{"api_identifier":"google-gemini-1.5-flash-002","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1000000,"provider_max_output_tokens":8192}', 'google', false, false),

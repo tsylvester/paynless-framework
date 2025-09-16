@@ -459,17 +459,28 @@ Deno.test('processSimpleJob - renders prompt template and omits systemInstructio
     asm.restore();
 });
 
-Deno.test('processSimpleJob - should call gatherContinuationInputs for a continuation job', async () => {
+Deno.test('processSimpleJob - should call gatherContinuationInputs for a continuation job', async () => {    
+  const trueRootId = 'true-root-id-for-test';
+    const continuationChunkId = 'prev-contrib-id';
+    const stageSlug = 'synthesis';
+
+    const mockContinuationChunk = {
+        id: continuationChunkId,
+        stage: stageSlug,
+        document_relationships: { [stageSlug]: trueRootId },
+    };
+
     const { client: dbClient, clearAllStubs } = setupMockClient({
         dialectic_contributions: {
-            select: { data: [ { id: 'prev-contrib-id', content: 'previous content' } ], error: null }
+            select: { data: [mockContinuationChunk], error: null }
         }
     });
     const deps = getMockDeps();
 
     const continuationPayload: DialecticJobPayload = {
         ...mockPayload,
-        target_contribution_id: 'prev-contrib-id',
+        target_contribution_id: continuationChunkId,
+        stageSlug: stageSlug,
     };
 
     if (!isJson(continuationPayload)) {
@@ -477,45 +488,30 @@ Deno.test('processSimpleJob - should call gatherContinuationInputs for a continu
     }
 
     const continuationJob: DialecticJobRow & { payload: DialecticJobPayload } = {
-        id: 'job-123',
-        user_id: 'user-789',
-        session_id: 'session-123',
-        stage_slug: 'synthesis',
+        ...mockJob,
         payload: continuationPayload,
-        iteration_number: 1,
-        status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: 'prev-contrib-id',
-        prerequisite_job_id: null,
+        target_contribution_id: continuationChunkId,
     };
 
-
-    // Spy on the method on the actual dependency object that will be used
     const continuationSpy = spy(deps.promptAssembler!, 'gatherContinuationInputs');
 
-    let contThrew = false;
+    // The current implementation will throw an error because the mock for executeModelCallAndSave is not set up
+    // to handle the return from gatherContinuationInputs. This is acceptable for the RED state,
+    // as the primary assertion on the spy call will fail first.
     try {
-      await processSimpleJob(
-          dbClient as unknown as SupabaseClient<Database>,
-          continuationJob,
-          'user-789',
-          deps,
-          'auth-token'
-      );
+        await processSimpleJob(
+            dbClient as unknown as SupabaseClient<Database>,
+            continuationJob,
+            'user-789',
+            deps,
+            'auth-token'
+        );
     } catch (_e) {
-      contThrew = true;
+        // Silently catch the expected error to allow the spy assertion to proceed.
     }
 
     assertEquals(continuationSpy.calls.length, 1, "Expected gatherContinuationInputs to be called once for a continuation job.");
-    assertEquals(contThrew, true);
-    assertEquals(continuationSpy.calls[0].args[0], 'prev-contrib-id');
+    assertEquals(continuationSpy.calls[0].args[0], trueRootId, "The prompt assembler must be called with the true root ID discovered from the target chunk.");
 
     clearAllStubs?.();
 });

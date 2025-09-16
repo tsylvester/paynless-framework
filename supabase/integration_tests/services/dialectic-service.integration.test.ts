@@ -16,7 +16,7 @@ import {
   fail,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { createClient, type SupabaseClient, FunctionsHttpError } from "npm:@supabase/supabase-js@2";
-import { Database, Json } from "../types_db.ts";
+import { Database, Json } from "../../functions/types_db.ts";
 import {
   initializeTestDeps,
   coreInitializeTestStep,
@@ -26,8 +26,8 @@ import {
   setSharedAdminClient,
   TestResourceRequirement,
   registerUndoAction,
-} from "../_shared/_integration.test.utils.ts";
-import type { DialecticServiceRequest, GenerateContributionsPayload, StartSessionPayload } from "./dialectic.interface.ts";
+} from "../../functions/_shared/_integration.test.utils.ts";
+import type { DialecticServiceRequest, GenerateContributionsPayload, StartSessionPayload } from "../../functions/dialectic-service/dialectic.interface.ts";
 
 const TEST_DOMAIN_TAG_1 = "software_development";
 const TEST_DOMAIN_TAG_2 = "technical_writing";

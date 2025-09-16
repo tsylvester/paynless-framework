@@ -188,6 +188,10 @@ export async function handleRequest(
     authToken = authHeader.substring(7);
   }
 
+  const FileManagerDependencies = {
+    constructStoragePath: constructStoragePath
+  };
+
   const getUserFnForRequest: GetUserFn = async (): Promise<GetUserFnResult> => {
     if (!authHeader) {
       return { data: { user: null }, error: { message: "User not authenticated", status: 401, code: 'AUTH_TOKEN_MISSING' } };
@@ -255,7 +259,7 @@ export async function handleRequest(
         userForJson = userData.user;
       }
 
-      const fileManager = new FileManagerService(adminClient);
+      const fileManager = new FileManagerService(adminClient, FileManagerDependencies);
 
       // Route to the appropriate handler
       switch (requestBody.action) {
@@ -450,7 +454,7 @@ export async function handleRequest(
         case "saveContributionEdit": {
           const payload: SaveContributionEditPayload = requestBody.payload;
           const deps: SaveContributionEditDeps = {
-            fileManager: new FileManagerService(userClient),
+            fileManager: new FileManagerService(userClient, FileManagerDependencies),
             logger,
             dbClient: userClient,
             pathDeconstructor: deconstructStoragePath,

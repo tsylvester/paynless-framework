@@ -14,19 +14,19 @@ import {
   initializeSupabaseAdminClient,
   // Assuming TestSetupConfig and other types are exported from your utils
   // TestSetupConfig, ProcessedResourceInfo, etc.
-} from "../_shared/_integration.test.utils.ts"; // Adjust path as needed
-import type { TestSetupConfig, UndoAction } from "../_shared/_integration.test.utils.ts"; // Adjust path
-import type { Database } from "../types_db.ts"; // Adjust path as needed
-import { DialecticStage, DialecticProject, DialecticSession, StartSessionPayload, StartSessionSuccessResponse, CreateProjectPayload } from "./dialectic.interface.ts"; // Adjust path
-import { startSession } from "./startSession.ts";
-import { StartSessionDeps } from "./startSession.ts";
-import { logger } from "../_shared/logger.ts";
-import { FileManagerService } from "../_shared/services/file_manager.ts";
-import { handleRequest, ActionHandlers } from "./index.ts";
-import { submitStageResponses } from "./submitStageResponses.ts";
-import { generateContributions } from "./generateContribution.ts";
-import { getSessionDetails } from "./getSessionDetails.ts";
-import { getProjectDetails } from "./getProjectDetails.ts";
+} from "../../functions/_shared/_integration.test.utils.ts"; // Adjust path as needed
+import type { TestSetupConfig, UndoAction } from "../../functions/_shared/_integration.test.utils.ts"; // Adjust path
+import type { Database } from "../../functions/types_db.ts"; // Adjust path as needed
+import { DialecticStage, DialecticProject, DialecticSession, StartSessionPayload, StartSessionSuccessResponse, CreateProjectPayload } from "../../functions/dialectic-service/dialectic.interface.ts"; // Adjust path
+import { startSession } from "../../functions/dialectic-service/startSession.ts";
+import { StartSessionDeps } from "../../functions/dialectic-service/startSession.ts";
+import { logger } from "../../functions/_shared/logger.ts";
+import { FileManagerService } from "../../functions/_shared/services/file_manager.ts";
+import { handleRequest, ActionHandlers } from "../../functions/dialectic-service/index.ts";
+import { submitStageResponses } from "../../functions/dialectic-service/submitStageResponses.ts";
+import { generateContributions } from "../../functions/dialectic-service/generateContribution.ts";
+import { getSessionDetails } from "../../functions/dialectic-service/getSessionDetails.ts";
+import { getProjectDetails } from "../../functions/dialectic-service/getProjectDetails.ts";
 
 
 // Minimal local helpers to replace undefined references

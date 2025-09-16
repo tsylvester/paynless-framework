@@ -1176,3 +1176,39 @@ Deno.test('executeModelCallAndSave - continuation jobs should populate pathConte
   assertEquals(uploadContext.pathContext.isContinuation, true, "isContinuation flag should be set to true in pathContext");
   assertEquals(uploadContext.pathContext.turnIndex, 2, "turnIndex should be set to 2 in pathContext");
 });
+
+Deno.test('executeModelCallAndSave - should continue when content contains continuation_needed: true, even if finish_reason is stop', async () => {
+  // Arrange
+  const { client: dbClient } = setupMockClient({
+    'ai_providers': {
+      select: { data: [mockFullProviderData], error: null }
+    }
+  });
+
+  const deps = getMockDeps();
+  const continueJobSpy = spy(deps, 'continueJob');
+
+  const payloadWithContinuation: DialecticExecuteJobPayload = {
+    ...testPayload,
+    continueUntilComplete: true,
+  };
+
+  const jobWithContinuation = createMockJob(payloadWithContinuation);
+
+  deps.callUnifiedAIModel = async () => ({
+    content: '{"continuation_needed": true, "stop_reason": "next_document"}',
+    finish_reason: 'stop', // Provider says stop
+    contentType: 'application/json',
+    inputTokens: 10,
+    outputTokens: 20,
+    processingTimeMs: 100,
+  });
+
+  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job: jobWithContinuation });
+
+  // Act
+  await executeModelCallAndSave(params);
+
+  // Assert
+  assertEquals(continueJobSpy.calls.length, 1, 'continueJob should be called once when content signals continuation');
+});

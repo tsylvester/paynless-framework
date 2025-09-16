@@ -121,13 +121,38 @@ export async function processSimpleJob(
         const resourceDocuments: SourceDocument[] = [];
 
         if (job.payload.target_contribution_id) {
+            // 1. Fetch the target contribution to find the true root.
+            const { data: targetChunk, error: targetChunkError } = await dbClient
+                .from('dialectic_contributions')
+                .select('stage, document_relationships')
+                .eq('id', job.payload.target_contribution_id)
+                .single();
+
+            if (targetChunkError || !targetChunk) {
+                throw new Error(`Failed to retrieve target contribution for id ${job.payload.target_contribution_id}.`);
+            }
+            if (!targetChunk.stage) {
+                throw new Error(`Target contribution ${job.payload.target_contribution_id} has no stage information.`);
+            }
+            
+            // 2. Discover the true root ID from the chunk's relationships.
+            const relationships = targetChunk.document_relationships;
+            let trueRootId = job.payload.target_contribution_id; // Default
+
+            if (isRecord(relationships)) {
+                const potentialRootId = relationships[targetChunk.stage];
+                if (typeof potentialRootId === 'string' && potentialRootId) {
+                    trueRootId = potentialRootId;
+                }
+            }
+
             conversationHistory = await deps.promptAssembler.gatherContinuationInputs(
-                job.payload.target_contribution_id
+                trueRootId
             );
             currentUserPrompt = "Please continue.";
         } else {
             // Fetch domain-specific overlays for this stage's system prompt and selected domain
-            const systemPromptId = (system_prompts as { id?: string }).id;
+            const systemPromptId = system_prompts.id;
             if (!systemPromptId) {
                 throw new Error('STAGE_CONFIG_MISSING_OVERLAYS');
             }

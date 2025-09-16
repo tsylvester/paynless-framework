@@ -357,64 +357,53 @@ export class PromptAssembler implements IPromptAssembler {
         return sourceDocuments;
     }
 
-    public async gatherContinuationInputs(rootContributionId: string): Promise<Messages[]> {
+    public async gatherContinuationInputs(chunkId: string): Promise<Messages[]> {
         // 1. Fetch the root chunk to get the stage slug and other base info.
         const { data: rootChunk, error: rootChunkError } = await this.dbClient
             .from('dialectic_contributions')
             .select('*')
-            .eq('id', rootContributionId)
+            .eq('id', chunkId)
             .single();
 
         if (rootChunkError || !rootChunk) {
-            console.error(`[PromptAssembler.gatherContinuationInputs] Failed to retrieve root contribution.`, { error: rootChunkError, rootContributionId });
-            throw new Error(`Failed to retrieve root contribution for id ${rootContributionId}.`);
+            console.error(`[PromptAssembler.gatherContinuationInputs] Failed to retrieve root contribution.`, { error: rootChunkError, chunkId });
+            throw new Error(`Failed to retrieve root contribution for id ${chunkId}.`);
         }
 
-        // 2. Dynamically determine the stage slug from the document_relationships.
-        if (!rootChunk.document_relationships || typeof rootChunk.document_relationships !== 'object' || Array.isArray(rootChunk.document_relationships)) {
-            throw new Error(`Root contribution ${rootContributionId} has invalid document_relationships.`);
+        // 2. Get the stage slug directly from the stage field
+        if (!rootChunk.stage || typeof rootChunk.stage !== 'string' || rootChunk.stage.trim().length === 0) {
+            throw new Error(`Root contribution ${chunkId} has no stage information`);
         }
-        const relationships: DocumentRelationships = rootChunk.document_relationships;
-        const stageSlugKey = Object.keys(relationships).find(key => key !== 'isContinuation' && key !== 'turnIndex');
 
-        if (!stageSlugKey || !isKeyOf(relationships, stageSlugKey)) {
-            throw new Error(`Could not determine stage slug from root contribution ${rootContributionId}.`);
-        }
-        
-        // The type guard has confirmed stageSlugKey is a keyof DocumentRelationships
-        const stageSlug = stageSlugKey;
-
-        if (relationships[stageSlug] !== rootContributionId) {
-            throw new Error(`Could not determine stage slug from root contribution ${rootContributionId}.`);
-        }
+        const stageSlug = rootChunk.stage;
 
         // 3. Use a .contains query to find all related chunks.
-        const queryMatcher = { [stageSlug]: rootContributionId };
+        const queryMatcher = { [stageSlug]: chunkId };
         const { data: allChunks, error: chunksError } = await this.dbClient
             .from('dialectic_contributions')
             .select('*')
             .contains('document_relationships', queryMatcher);
 
         if (chunksError) {
-            console.error(`[PromptAssembler.gatherContinuationInputs] Failed to retrieve contribution chunks.`, { error: chunksError, rootContributionId });
-            throw new Error(`Failed to retrieve contribution chunks for root ${rootContributionId}.`);
+            console.error(`[PromptAssembler.gatherContinuationInputs] Failed to retrieve contribution chunks.`, { error: chunksError, chunkId });
+            throw new Error(`Failed to retrieve contribution chunks for root ${chunkId}.`);
         }
         // It's valid to have zero continuation chunks (non-continuation flows or single-shot completions).
         const chunksForAssembly = Array.isArray(allChunks) ? allChunks : [];
 
         // Sort chunks client-side: root first, then by document_relationships.turnIndex, then created_at
         const getTurnIndex = (c: Database['public']['Tables']['dialectic_contributions']['Row']): number => {
-            const rel = c && typeof c === 'object' ? (c as Database['public']['Tables']['dialectic_contributions']['Row']).document_relationships : null;
+            const rel = c && typeof c === 'object' ? c.document_relationships : null;
             if (rel && typeof rel === 'object' && !Array.isArray(rel) && 'turnIndex' in rel) {
-                const ti = (rel as Record<string, unknown>).turnIndex;
+                const ti = rel.turnIndex;
                 if (typeof ti === 'number') return ti;
             }
             return Number.POSITIVE_INFINITY;
         };
         const parseTs = (s?: string): number => (s ? Date.parse(s) : 0);
         const allChunksSorted = chunksForAssembly.slice().sort((a: Database['public']['Tables']['dialectic_contributions']['Row'], b: Database['public']['Tables']['dialectic_contributions']['Row']) => {
-            if (a.id === rootContributionId) return -1;
-            if (b.id === rootContributionId) return 1;
+            if (a.id === chunkId) return -1;
+            if (b.id === chunkId) return 1;
             const tiA = getTurnIndex(a);
             const tiB = getTurnIndex(b);
             if (tiA !== tiB) return tiA - tiB;
@@ -437,7 +426,7 @@ export class PromptAssembler implements IPromptAssembler {
 
         if (seedDownloadError || !seedPromptContentData) {
             console.error(`[PromptAssembler.gatherContinuationInputs] Failed to download seed prompt.`, { path: seedPromptPath, error: seedDownloadError });
-            throw new Error(`Failed to download seed prompt for root ${rootContributionId}.`);
+            throw new Error(`Failed to download seed prompt for root ${chunkId}.`);
         }
         const seedPromptContent = new TextDecoder().decode(seedPromptContentData);
 

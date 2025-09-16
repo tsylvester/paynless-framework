@@ -219,13 +219,24 @@ export type ChatMessage = Omit<Database['public']['Tables']['chat_messages']['Ro
     status?: 'pending' | 'sent' | 'error'; 
 };
 
-export type FinishReason = 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call' | 'error' | 'unknown' | 'max_tokens' | 'content_truncated' | null;
+export type FinishReason = 'stop' 
+| 'length' 
+| 'tool_calls' 
+| 'content_filter' 
+| 'function_call' 
+| 'error' 
+| 'unknown' 
+| 'max_tokens' 
+| 'content_truncated' 
+| 'next_document' 
+| null;
 
 export enum ContinueReason {
     MaxTokens = 'max_tokens',
     Length = 'length',
     ContentTruncated = 'content_truncated',
     Unknown = 'unknown',
+    NextDocument = 'next_document',
 }
 
 /**

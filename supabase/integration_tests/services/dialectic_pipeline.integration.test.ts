@@ -158,29 +158,6 @@ const assertPromptHasRequiredSections = (
   assert(norm.includes('Expected JSON Output Structure'), `${stageSlug}: missing expected JSON output structure section`);
 };
 
-const markJobsAsTestJobs = async (jobIds: string[]) => {
-    for (const jobId of jobIds) {
-        const { data: job, error: fetchError } = await adminClient
-            .from('dialectic_generation_jobs')
-            .select('payload')
-            .eq('id', jobId)
-            .single();
-
-        assert(!fetchError, `Failed to fetch job ${jobId} to mark as test job: ${fetchError?.message}`);
-        assertExists(job, `Job ${jobId} not found for marking as test job.`);
-
-        if (job && job.payload && typeof job.payload === 'object' && !Array.isArray(job.payload)) {
-            const newPayload = { ...job.payload, is_test_job: true };
-            const { error: updateError } = await adminClient
-                .from('dialectic_generation_jobs')
-                .update({ payload: newPayload })
-                .eq('id', jobId);
-            assert(!updateError, `Failed to mark job ${jobId} as a test job: ${updateError?.message}`);
-        } else {
-            assert(false, `Payload for job ${jobId} is not a valid object.`);
-        }
-    }
-};
 
 const executePendingDialecticJobs = async (
     sessionId: string,
@@ -491,6 +468,7 @@ Deno.test(
         projectId: testSession.project_id,
         continueUntilComplete: true,
         walletId: testWalletId,
+        is_test_job: true,
       };
       
       // --- Act & Assert: Job Creation ---
@@ -505,7 +483,6 @@ Deno.test(
       assertExists(jobData, "Job creation did not return data");
       
       if (jobData && jobData.job_ids) {
-        await markJobsAsTestJobs(jobData.job_ids);
         assertEquals(jobData.job_ids.length, 2, "Expected exactly two jobs to be created.");
         
         // Find the specific jobs to control their execution order
@@ -848,6 +825,7 @@ Deno.test(
         iterationNumber: 1,
         projectId: testSession.project_id,
         walletId: testWalletId,
+        is_test_job: true,
       };
       
       // --- Act ---
@@ -864,7 +842,6 @@ Deno.test(
       assertExists(jobData, "Parent job creation did not return data");
       
       if (jobData && jobData.job_ids) {
-        await markJobsAsTestJobs(jobData.job_ids);
         assertEquals(jobData.job_ids.length, 2, "Expected two parent jobs to be created for the antithesis stage (one per model).");
         
         const [parentJobIdA, parentJobIdB] = jobData.job_ids;
@@ -1061,13 +1038,13 @@ Deno.test(
             iterationNumber: 1,
             projectId: testSession.project_id,
             walletId: testWalletId,
+            is_test_job: true,
         };
         const { data: jobData, error: creationError } = await generateContributions(adminClient, generatePayload, primaryUser, testDeps, primaryUserJwt);
         assert(!creationError, `Error creating parent job for synthesis: ${creationError?.message}`);
         assertExists(jobData?.job_ids, "Parent job creation for synthesis did not return job IDs.");
         
         if (jobData && jobData.job_ids) {
-            await markJobsAsTestJobs(jobData.job_ids);
             assertEquals(jobData.job_ids.length, 2, "Expected 2 parent synthesis jobs (one per model).");
     
             await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
@@ -1200,6 +1177,7 @@ Deno.test(
             iterationNumber: 1,
             projectId: testSession.project_id,
             walletId: testWalletId,
+            is_test_job: true,
         };
         // Wait for current_stage to be parenthesis before planning it
         await pollForCondition(async () => {
@@ -1216,9 +1194,6 @@ Deno.test(
         assert(!creationError, `Error creating parent job for parenthesis: ${creationError?.message}`);
         assertExists(jobData?.job_ids, "Parent job creation for parenthesis did not return job IDs.");
 
-        if (jobData && jobData.job_ids) {
-            await markJobsAsTestJobs(jobData.job_ids);
-        }
 
         const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
         await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
@@ -1334,14 +1309,13 @@ Deno.test(
             iterationNumber: 1,
             projectId: testSession.project_id,
             walletId: testWalletId,
+            is_test_job: true,
         };
         const { data: jobData, error: creationError } = await generateContributions(adminClient, generatePayload, primaryUser, testDeps, primaryUserJwt);
         assert(!creationError, `Error creating parent job for paralysis: ${creationError?.message}`);
         assertExists(jobData?.job_ids, "Parent job creation for paralysis did not return job IDs.");
 
-        if (jobData && jobData.job_ids) {
-            await markJobsAsTestJobs(jobData.job_ids);
-        }
+
 
         const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
         await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);

@@ -693,7 +693,20 @@ export async function executeModelCallAndSave(
     } else if (isRecord(aiResponse.rawProviderResponse) && isFinishReason(aiResponse.rawProviderResponse['finish_reason'])) {
         resolvedFinish = aiResponse.rawProviderResponse['finish_reason'];
     }
-    const shouldContinue = isContinueReason(resolvedFinish);
+    let shouldContinue = isContinueReason(resolvedFinish);
+
+    // Check the content for a continuation flag if the finish_reason doesn't already indicate it.
+    if (!shouldContinue && aiResponse.content) {
+        try {
+            const contentJson = JSON.parse(aiResponse.content);
+            if (isRecord(contentJson) && contentJson.continuation_needed === true) {
+                shouldContinue = true;
+            }
+        } catch (e) {
+            // Not a JSON response, so we can't check for the flag. Ignore error.
+            deps.logger.debug(`[executeModelCallAndSave] Could not parse AI response content as JSON for continuation check. Content starts with: "${aiResponse.content.slice(0, 100)}"`);
+        }
+    }
 
     const contentForStorage: string = aiResponse.content;
     

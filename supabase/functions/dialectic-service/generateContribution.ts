@@ -122,6 +122,11 @@ export async function generateContributions(
                 }
             };
             
+            // Explicitly preserve the is_test_job flag to prevent accidental override
+            if (payload.is_test_job) {
+                jobPayload.is_test_job = true;
+            }
+            
             console.log(`[generateContributions] Final jobPayload for model ${modelId}:`, JSON.stringify(jobPayload, null, 2));
 
 
