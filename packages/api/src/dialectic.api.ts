@@ -27,6 +27,7 @@ import type {
     GenerateContributionsPayload,
     GenerateContributionsResponse,
     DialecticProjectRow,
+    ExportProjectResponse,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -389,10 +390,10 @@ export class DialecticApiClient {
         }
     }
 
-    async exportProject(payload: { projectId: string }): Promise<ApiResponse<{ export_url: string }>> {
+    async exportProject(payload: { projectId: string }): Promise<ApiResponse<ExportProjectResponse>> {
         logger.info('Exporting dialectic project', { projectId: payload.projectId });
         try {
-            const response = await this.apiClient.post<{ export_url: string }, DialecticServiceActionPayload>(
+            const response = await this.apiClient.post<ExportProjectResponse, DialecticServiceActionPayload>(
                 'dialectic-service',
                 { action: 'exportProject', payload } as DialecticServiceActionPayload
             );

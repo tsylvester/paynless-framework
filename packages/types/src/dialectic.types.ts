@@ -330,7 +330,7 @@ export interface DialecticActions {
   // New actions
   deleteDialecticProject: (projectId: string) => Promise<ApiResponse<void>>;
   cloneDialecticProject: (projectId: string) => Promise<ApiResponse<DialecticProject>>;
-  exportDialecticProject: (projectId: string) => Promise<ApiResponse<{ export_url: string }>>;
+  exportDialecticProject: (projectId: string) => Promise<ApiResponse<ExportProjectResponse>>;
   updateDialecticProjectInitialPrompt: (payload: UpdateProjectInitialPromptPayload) => Promise<ApiResponse<DialecticProjectRow>>;
   setSelectedModelIds: (modelIds: string[]) => void;
   setModelMultiplicity: (modelId: string, count: number) => void;
@@ -578,7 +578,7 @@ export interface DialecticApiClient {
   deleteProject(payload: DeleteProjectPayload): Promise<ApiResponse<void>>;
 
   cloneProject(payload: { projectId: string }): Promise<ApiResponse<DialecticProject>>;
-  exportProject(payload: { projectId: string }): Promise<ApiResponse<{ export_url: string }>>;
+  exportProject(payload: { projectId: string }): Promise<ApiResponse<ExportProjectResponse>>;
 
   updateDialecticProjectInitialPrompt(payload: UpdateProjectInitialPromptPayload): Promise<ApiResponse<DialecticProject>>;
 
@@ -590,6 +590,11 @@ export interface DialecticApiClient {
   getProjectResourceContent(payload: GetProjectResourceContentPayload): Promise<ApiResponse<GetProjectResourceContentResponse>>;
 }
 
+
+export interface ExportProjectResponse {
+  export_url: string;
+  file_name: string;
+}
 export interface GenerateContributionsPayload {
   sessionId: string;
   projectId: string;

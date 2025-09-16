@@ -22,6 +22,8 @@ import { Link } from "react-router-dom";
 
 export function NavMain({
 	items,
+	hideLogo = false,
+	subtitle,
 }: {
 	items: {
 		title: string;
@@ -33,16 +35,20 @@ export function NavMain({
 			url: string;
 		}[];
 	}[];
+	hideLogo?: boolean;
+	subtitle?: string;
 }) {
 	return (
 		<SidebarGroup>
-			<Link to="/" className="flex items-center justify-center my-5">
-				<img
-					src="/logos/app_icon_240x240.png"
-					alt="Paynless Logo"
-					className="h-16 w-16"
-				/>
-			</Link>
+			{!hideLogo && (
+				<Link to="/" className="flex items-center justify-center my-5">
+					<img
+						src="/logos/app_icon_240x240.png"
+						alt="Paynless Logo"
+						className="h-16 w-16"
+					/>
+				</Link>
+			)}
 			<SidebarGroupLabel>Platform</SidebarGroupLabel>
 			<SidebarMenu>
 				{items.map((item) => (
