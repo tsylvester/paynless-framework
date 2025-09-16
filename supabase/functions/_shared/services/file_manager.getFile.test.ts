@@ -11,6 +11,7 @@ import {
 import { FileManagerService } from './file_manager.ts'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '../../types_db.ts'
+import { constructStoragePath } from '../utils/path_constructor.ts'
 
 Deno.test('FileManagerService', async (t) => {
   let setup: MockSupabaseClientSetup
@@ -28,7 +29,7 @@ Deno.test('FileManagerService', async (t) => {
     })
 
     setup = createMockSupabaseClient('test-user-id', config)
-    fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>)
+    fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath })
   }
 
   const afterEach = () => {

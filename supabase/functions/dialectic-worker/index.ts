@@ -21,6 +21,7 @@ import {
   deleteFromStorage,
 } from '../_shared/supabase_storage_utils.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
+import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { createSupabaseAdminClient, } from '../_shared/auth.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
@@ -65,7 +66,7 @@ export async function createDialecticWorkerDeps(
     throw new Error('OPENAI_API_KEY is not set');
   }
 
-  const fileManager = new FileManagerService(adminClient);
+  const fileManager = new FileManagerService(adminClient, { constructStoragePath });
 
   const embeddingAdapter = getAiProviderAdapter({
     provider: modelProvider,
@@ -169,6 +170,22 @@ export async function handleJob(
   const effectiveProcessors = testProcessors || processors;
   //console.log('[handleJob] Entered function for job:', job.id);
   const { id: jobId, user_id: projectOwnerUserId } = job;
+  const isTestRunner = job.payload && typeof job.payload === 'object' && 'is_test_runner_context' in job.payload 
+    ? job.payload.is_test_runner_context 
+    : false;
+
+  // Diagnostic: worker entry before any status updates
+  deps.logger.info('[dialectic-worker] [handleJob] worker_entry', {
+    jobId,
+    incomingStatus: job.status,
+    phase: 'worker_entry',
+    isTestRunner,
+  });
+  
+  // Log for the unit test to capture
+  if (isTestRunner) {
+    deps.logger.info(`[handleJob] context_check`, { jobId: job.id, isTestRunner });
+  }
 
   // --- Start of Validation Block ---
   //console.log('[handleJob] Starting validation for job:', jobId);
@@ -230,8 +247,16 @@ export async function handleJob(
   //console.log(`[handleJob] payload check PASSED for job: ${jobId}`);
   // --- End of Validation Block ---
 
+  // consider wrapping the entire try block in a transaction so that nothing else can touch the job while it is being processed
+
   try {
-    //console.log(`[handleJob] Validation passed. Entering TRY block for job: ${jobId}`);
+    // check that the job is not processing before sending it processing
+    const { data: jobData, error: jobError } = await adminClient.from('dialectic_generation_jobs').select('*').eq('id', jobId).single();
+    if (jobError || !jobData || jobData.status === 'processing') {
+      throw new Error(`Job ${jobId} is already processing.`);
+    }
+
+    // console.log(`[handleJob] Validation passed. Entering TRY block for job: ${jobId}`);
     // Update job status to 'processing'
     //console.log(`[handleJob] Updating job ${jobId} status to 'processing'...`);
     await adminClient.from('dialectic_generation_jobs').update({

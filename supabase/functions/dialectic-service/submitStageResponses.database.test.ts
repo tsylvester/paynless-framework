@@ -177,6 +177,12 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         'dialectic_stage_transitions': { 
           select: { data: [mockStageTransitionData('34961bdc-35ec-4f91-821d-7c73f5f76c0f')], error: null }
         },
+        'system_prompts': {
+          select: { data: [{ id: 'fe6ec604-3cc1-41e5-ad75-8044247476c4', prompt_text: 'Mock system prompt text' }], error: null }
+        },
+        'domain_specific_prompt_overlays': {
+          select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null }
+        },
         'dialectic_project_resources': {
           select: { data: null, error: new Error("Simulated DB error") }
         },
@@ -241,7 +247,10 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
           select: { data: [mockStageTransitionData('94cd4fee-b44c-465d-bad0-38e8e2116b5b')], error: null }
         },
         'system_prompts': {
-          select: { data: [{ prompt_text: 'Mock system prompt text' }], error: null }
+          select: { data: [{ id: 'fe6ec604-3cc1-41e5-ad75-8044247476c4', prompt_text: 'Mock system prompt text' }], error: null }
+        },
+        'domain_specific_prompt_overlays': {
+          select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null }
         },
         'dialectic_contributions': {
           select: { data: [
@@ -348,7 +357,10 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
           }
         },
         'system_prompts': {
-          select: { data: [{ prompt_text: 'Mock system prompt text' }], error: null }
+          select: { data: [{ id: 'fe6ec604-3cc1-41e5-ad75-8044247476c4', prompt_text: 'Mock system prompt text' }], error: null }
+        },
+        'domain_specific_prompt_overlays': {
+          select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null }
         },
         'dialectic_contributions': {
           select: { data: [], error: null }

@@ -110,7 +110,7 @@ Deno.test("startSession - Error: Initial stage has no associated system prompt",
     const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelIds: ["model-abc"] };
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
-            dialectic_projects: { select: async () => ({ data: [{ id: mockProjectId, user_id: MOCK_USER.id, process_template_id: "proc-template-ok", project_name: 'test', initial_user_prompt: 'test', dialectic_domains: { name: 'test' } }], error: null, status: 200, statusText: 'ok' }) },
+            dialectic_projects: { select: async () => ({ data: [{ id: mockProjectId, user_id: MOCK_USER.id, process_template_id: "proc-template-ok", project_name: 'test', initial_user_prompt: 'test', dialectic_domains: { name: 'test' }, selected_domain_id: 'd-1' }], error: null, status: 200, statusText: 'ok' }) },
             dialectic_process_templates: {
                 select: async () => ({
                     data: [{ id: "proc-template-ok", name: "Test Template", starting_stage_id: 'stage-1' }],
@@ -118,7 +118,7 @@ Deno.test("startSession - Error: Initial stage has no associated system prompt",
                 })
             },
             dialectic_stages: { select: async () => ({ data: [{ id: 'stage-1', display_name: "Hypothesis", slug: 'hypothesis', default_system_prompt_id: null }], error: null, status: 200, statusText: 'ok' }) },
-            domain_specific_prompt_overlays: { select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' }) },
+            domain_specific_prompt_overlays: { select: async () => ({ data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null, status: 200, statusText: 'ok' }) },
             dialectic_sessions: {
                 insert: async () => ({ data: null, error: { name: 'PostgrestError', message: "Simulated DB error"} }),
                 delete: async () => ({ data: null, error: null, status: 204, statusText: 'no content' })
@@ -161,7 +161,7 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
     const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelIds: ["model-abc"] };
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
-            dialectic_projects: { select: async () => ({ data: [{ id: mockProjectId, user_id: MOCK_USER.id, process_template_id: "proc-template-ok", project_name: 'test', initial_user_prompt: 'test', dialectic_domains: { name: 'test' } }], error: null, status: 200, statusText: 'ok' }) },
+            dialectic_projects: { select: async () => ({ data: [{ id: mockProjectId, user_id: MOCK_USER.id, process_template_id: "proc-template-ok", project_name: 'test', initial_user_prompt: 'test', dialectic_domains: { name: 'test' }, selected_domain_id: 'd-1' }], error: null, status: 200, statusText: 'ok' }) },
             dialectic_process_templates: {
                 select: async () => ({
                     data: [{ id: "proc-template-ok", name: "Test Template", starting_stage_id: 'stage-1' }],
@@ -170,7 +170,7 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
             },
             dialectic_stages: { select: async () => ({ data: [{ id: 'stage-1', display_name: "Hypothesis", slug: 'hypothesis', default_system_prompt_id: 'p-1', system_prompts: [{ id: "p-1", prompt_text: "t" }] }], error: null, status: 200, statusText: 'ok' }) },
             system_prompts: { select: async () => ({ data: [{id: 'p-1', prompt_text: 'test prompt'}], error: null, status: 200, statusText: 'ok' }) },
-            domain_specific_prompt_overlays: { select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' }) },
+            domain_specific_prompt_overlays: { select: async () => ({ data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null, status: 200, statusText: 'ok' }) },
             dialectic_sessions: {
                 insert: async () => ({ data: null, error: { name: 'PostgrestError', message: "Simulated DB error"} }),
                 delete: async () => ({ data: null, error: null, status: 204, statusText: 'no content' })
@@ -228,7 +228,7 @@ Deno.test("startSession - Error: Fails to upload user prompt and cleans up sessi
             },
             dialectic_stages: { select: async () => ({ data: [{ id: 'stage-1', slug: 'hypothesis', display_name: "Hypothesis Stage", default_system_prompt_id: 'p-1', system_prompts: [{ id: "p-1", prompt_text: "t" }] }], error: null, status: 200, statusText: 'ok' }) },
             system_prompts: { select: async () => ({ data: [{ id: 'p-1', prompt_text: 'test prompt' }], error: null, status: 200, statusText: 'ok' }) },
-            domain_specific_prompt_overlays: { select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' }) },
+            domain_specific_prompt_overlays: { select: async () => ({ data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null, status: 200, statusText: 'ok' }) },
             ai_providers: {
                 select: async () => ({
                     data: [{ 
@@ -281,4 +281,37 @@ Deno.test("startSession - Error: Fails to upload user prompt and cleans up sessi
     assertEquals(assembleArgs.length, 5, "assembler.assemble should be called with 5 arguments in error case.");
     assert(typeof assembleArgs[3] === 'string', "Forth argument (projectInitialUserPrompt) should be a string in error case."); 
     assertEquals(assembleArgs[4], 1, "Fifth argument (iterationNumber) should be 1 for startSession in error case.");
+});
+
+Deno.test("startSession - Error: Missing overlays should fail fast", async () => {
+    const mockProjectId = "project-overlays-missing";
+    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelIds: ["model-abc"] };
+
+    const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
+        genericMockResults: {
+            dialectic_projects: { select: async () => ({ data: [{ id: mockProjectId, user_id: MOCK_USER.id, project_name: 'test', initial_user_prompt: 'test', selected_domain_id: 'd-1', dialectic_domains: { name: 'test' }, process_template_id: "proc-template-ok" }], error: null, status: 200, statusText: 'ok' }) },
+            dialectic_process_templates: { select: async () => ({ data: [{ id: "proc-template-ok", name: "Test Template", starting_stage_id: 'stage-1' }], error: null, status: 200, statusText: 'ok' }) },
+            dialectic_stages: { select: async () => ({ data: [{ id: 'stage-1', display_name: "Hypothesis", slug: 'hypothesis', default_system_prompt_id: 'p-1' }], error: null, status: 200, statusText: 'ok' }) },
+            system_prompts: { select: async () => ({ data: [{ id: 'p-1', prompt_text: 'test prompt' }], error: null, status: 200, statusText: 'ok' }) },
+            domain_specific_prompt_overlays: { select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' }) },
+            // Session insert default OK; we expect function to fail earlier once we implement fail-fast
+            dialectic_sessions: { insert: async () => ({ data: [{ id: 'session-new', project_id: mockProjectId, current_stage_id: 'stage-1', iteration_count: 1, selected_model_ids: ['model-abc'] }], error: null, status: 201, statusText: 'created' }) },
+            ai_providers: { select: async () => ({ data: [{ id: 'model-abc', api_identifier: 'openai-gpt-4o', provider_max_input_tokens: 8000, config: { tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } } }], error: null, status: 200, statusText: 'ok' }) },
+        },
+        mockUser: MOCK_USER,
+    });
+
+    const mockLogger = new MockLogger();
+    const assembler = createMockPromptAssembler();
+
+    const result = await startSession(
+        MOCK_USER,
+        mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>,
+        payload,
+        { logger: mockLogger, fileManager: MOCK_FILE_MANAGER, promptAssembler: assembler }
+    );
+
+    // RED: Once 2.d is implemented, this should fail fast with overlays error code
+    assertExists(result.error);
+    assertEquals(result.error?.code, 'STAGE_CONFIG_MISSING_OVERLAYS');
 });

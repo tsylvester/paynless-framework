@@ -3,15 +3,23 @@ import { assert, assertEquals, assertExists, assertObjectMatch } from 'https://d
 import { spy } from 'https://deno.land/std@0.224.0/testing/mock.ts';
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { MockLogger } from '../_shared/logger.mock.ts';
-import { createMockSupabaseClient, type MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
+import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockQueryBuilderState } from '../_shared/supabase.mock.ts';
 import type { Database, Json } from '../types_db.ts';
 import {
   type UnifiedAIResponse,
   type DialecticContributionRow,
   type DialecticJobPayload,
   type IContinueJobDeps,
+  type DialecticExecuteJobPayload,
+  type DialecticJobRow,
 } from '../dialectic-service/dialectic.interface.ts';
-import { isDialecticJobPayload, isRecord, isJson, isDialecticExecuteJobPayload } from '../_shared/utils/type_guards.ts';
+import { 
+    isDialecticJobPayload, 
+    isRecord, 
+    isJson, 
+    isDialecticExecuteJobPayload, 
+    isDialecticJobRow 
+} from '../_shared/utils/type_guards.ts';
 import { type Messages } from '../_shared/types.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
@@ -77,6 +85,7 @@ Deno.test('continueJob', async (t) => {
     canonicalPathParams: {
         contributionType: 'thesis'
     },
+    user_jwt: 'jwt.token.here',
 };
     
     const baseJob = createMockJob(basePayload);
@@ -450,6 +459,7 @@ Deno.test('continueJob', async (t) => {
                 contributionType: 'thesis'
             },
             walletId: 'wallet-default',
+            user_jwt: 'jwt.token.here',
         };
         
         const testJob = createMockJob(testPayload);
@@ -498,6 +508,7 @@ Deno.test('continueJob', async (t) => {
             canonicalPathParams: {
                 contributionType: 'thesis'
             },
+            user_jwt: 'jwt.token.here',
         };
 
         const testJob = createMockJob(testPayload);
@@ -544,6 +555,7 @@ Deno.test('continueJob', async (t) => {
                 contributionType: 'thesis'
             },
             walletId: 'wallet-default',
+            user_jwt: 'jwt.token.here',
         };
 
         const testJob = createMockJob(testPayload);
@@ -600,6 +612,7 @@ Deno.test('continueJob', async (t) => {
                 contributionType: 'thesis'
             },
             walletId: 'wallet-default',
+            user_jwt: 'jwt.token.here',
         };
 
         const testJob = createMockJob(testPayload);
@@ -1057,5 +1070,416 @@ Deno.test('continueJob', async (t) => {
             (call.args[0].includes('Continuation') || call.args[0].includes('continuation'))
         );
         assertEquals(continuationLogCalls.length, 0, 'Should not log anything about continuation when not needed');
+    });
+});
+
+Deno.test("continueJob enqueues with full original payload preserved and overlays only required fields", async () => {
+    // Arrange: build an original execute payload containing many fields that must be preserved
+    const originalPayload: DialecticExecuteJobPayload = {
+      job_type: "execute",
+      sessionId: "sess-1",
+      projectId: "proj-1",
+      model_id: "model-1",
+      stageSlug: "thesis",
+      iterationNumber: 1,
+      continueUntilComplete: true,
+      continuation_count: 2,
+      walletId: "wallet-123",
+      maxRetries: 3,
+      step_info: { current_step: 1, total_steps: 5 },
+      prompt_template_name: "template-A",
+      output_type: "thesis",
+      canonicalPathParams: { contributionType: "thesis" },
+      inputs: { seed_prompt_resource_id: "res-1" },
+      document_relationships: { thesis: "contrib-root-1" },
+      isIntermediate: false,
+      user_jwt: "user.jwt.token",
+    };
+
+    if (!originalPayload.stageSlug) {
+      throw new Error("stageSlug is required");
+    }
+
+    if (!isJson(originalPayload)) {
+        throw new Error("originalPayload is not valid JSON");
+    }
+
+    // Mock job row with the above payload
+    const originalJob: DialecticJobRow = {
+      id: "job-initial-1",
+      user_id: "user-1",
+      session_id: originalPayload.sessionId,
+      stage_slug: originalPayload.stageSlug,
+      iteration_number: originalPayload.iterationNumber ?? 1,
+      payload: originalPayload,
+      status: "completed",
+      attempt_count: 0,
+      max_retries: 3,
+      created_at: new Date().toISOString(),
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+      parent_job_id: null,
+      target_contribution_id: null,
+      prerequisite_job_id: null,
+    };
+  
+    // Contribution just saved from the prior call
+    const savedContribution: DialecticContributionRow = {
+      id: "contrib-root-1",
+      session_id: originalPayload.sessionId,
+      stage: originalPayload.stageSlug,
+      iteration_number: originalPayload.iterationNumber ?? 1,
+      model_id: originalPayload.model_id,
+      edit_version: 1,
+      is_latest_edit: true,
+      citations: null,
+      contribution_type: "thesis",
+      created_at: new Date().toISOString(),
+      error: null,
+      file_name: "chunk_1.md",
+      mime_type: "text/markdown",
+      model_name: "Model One",
+      original_model_contribution_id: null,
+      processing_time_ms: 10,
+      prompt_template_id_used: null,
+      raw_response_storage_path: null,
+      seed_prompt_url: null,
+      size_bytes: 100,
+      storage_bucket: "dialectic-content",
+      storage_path: "projects/proj-1/sessions/sess-1/thesis/_work",
+      target_contribution_id: null,
+      tokens_used_input: 1,
+      tokens_used_output: 1,
+      updated_at: new Date().toISOString(),
+      user_id: "user-1",
+      document_relationships: { thesis: "contrib-root-1" },
+    };
+  
+    const aiResponse: UnifiedAIResponse = {
+      content: "partial",
+      finish_reason: "max_tokens",
+    };
+  
+    // Capture holder for inserted row to dialectic_generation_jobs
+    let insertedRow: unknown = undefined;
+  
+    // Mock client with insert interceptor on dialectic_generation_jobs
+    const { client } = createMockSupabaseClient("user-1", {
+      genericMockResults: {
+        dialectic_generation_jobs: {
+          insert: async (state: MockQueryBuilderState) => {
+            insertedRow = (state.insertData) || null;
+            return { data: [{}], error: null, count: 1, status: 201, statusText: "Created" };
+            
+          },
+        },
+        // Minimal selects used by continueJob path are not required here
+      },
+    });
+  
+    const dbClient = client as unknown as SupabaseClient<Database>;
+  
+    // Minimal deps for continueJob
+    const testLogger = new MockLogger();
+    const deps = { logger: testLogger };
+  
+    // Act: request a continuation enqueue
+    const result = await continueJob(
+      deps,
+      dbClient,
+      originalJob,
+      aiResponse,
+      savedContribution,
+      originalJob.user_id,
+    );
+  
+    // Assert: enqueued result
+    assert(result.enqueued === true, "Continuation should be enqueued");
+    assertExists(insertedRow, "A row should be inserted into dialectic_generation_jobs");
+  
+    if (!isDialecticJobRow(insertedRow)) {
+        throw new Error("insertedRow is not a valid DialecticJobRow");
+    }
+    const inserted: DialecticJobRow = insertedRow;
+    assertEquals(inserted.session_id, originalJob.session_id);
+    assertEquals(inserted.user_id, originalJob.user_id);
+    assertEquals(inserted.stage_slug, originalJob.stage_slug);
+    assertEquals(inserted.iteration_number, originalJob.iteration_number);
+    assertEquals(inserted.status, "pending_continuation");
+  
+    // Validate payload preservation + overlays
+
+    if (!isDialecticExecuteJobPayload(inserted.payload)) {
+        throw new Error("inserted.payload is not a valid DialecticExecuteJobPayload");
+    }
+    const payload: DialecticExecuteJobPayload = inserted.payload;
+  
+    // Overlays expected
+    assertEquals(payload.job_type, "execute");
+    assertEquals(payload.target_contribution_id, savedContribution.id);
+    assertEquals(payload.continuation_count, (originalPayload.continuation_count ?? 0) + 1);
+    assertExists(payload.canonicalPathParams, "canonicalPathParams must exist");
+    assertEquals(payload.canonicalPathParams.contributionType, originalPayload.output_type);
+  
+    // Preserved fields (selected critical ones)
+    assertEquals(payload.sessionId, originalPayload.sessionId);
+    assertEquals(payload.projectId, originalPayload.projectId);
+    assertEquals(payload.model_id, originalPayload.model_id);
+    assertEquals(payload.stageSlug, originalPayload.stageSlug);
+    assertEquals(payload.iterationNumber, originalPayload.iterationNumber);
+    assertEquals(payload.walletId, originalPayload.walletId);
+    assertEquals(payload.maxRetries, originalPayload.maxRetries);
+    assertEquals(payload.step_info.current_step, originalPayload.step_info.current_step);
+    assertEquals(payload.step_info.total_steps, originalPayload.step_info.total_steps);
+    assertEquals(payload.prompt_template_name, originalPayload.prompt_template_name);
+    assertEquals(payload.output_type, originalPayload.output_type);
+    assertEquals(payload.inputs.seed_prompt_resource_id, originalPayload.inputs.seed_prompt_resource_id);
+    assertEquals(payload.user_jwt, originalPayload.user_jwt);
+  
+    // Relationships must be available for continuation
+    assert(payload.document_relationships !== undefined && payload.document_relationships !== null, "document_relationships must be present");
+  });
+  
+
+  // (JWT enforcement tests defined below)
+
+Deno.test('continueJob enforces user_jwt presence: missing user_jwt fails and does not insert', async () => {
+    const payload: DialecticJobPayload = { 
+        job_type: 'execute',
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        model_id: 'model-1',
+        stageSlug: 'test-stage',
+        iterationNumber: 1,
+        step_info: { current_step: 0, total_steps: 1 },
+        prompt_template_name: 'test_template',
+        inputs: { source: 'some_input' },
+        output_type: 'thesis',
+        continueUntilComplete: true, 
+        continuation_count: 0,
+        walletId: 'wallet-1',
+        maxRetries: 5,
+        canonicalPathParams: { contributionType: 'thesis' },
+    };
+
+    const job = createMockJob(payload);
+    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+    const mock = createMockSupabaseClient(undefined, {});
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+
+    const result = await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        {
+            id: 'contrib-1', session_id: payload.sessionId, stage: payload.stageSlug!, model_name: 'm', file_name: 'f.md',
+            contribution_type: 'model_generated', citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
+            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: payload.model_id, original_model_contribution_id: null,
+            processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 1,
+            storage_bucket: 'b', storage_path: '/p', target_contribution_id: null, tokens_used_input: null, tokens_used_output: null,
+            updated_at: new Date().toISOString(), user_id: null, document_relationships: { thesis: 'contrib-1' },
+        },
+        'user-1',
+    );
+
+    assertEquals(result.enqueued, false);
+    assertExists(result.error);
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertEquals(insertSpy?.callCount ?? 0, 0);
+});
+
+Deno.test('continueJob enforces user_jwt presence: empty user_jwt fails and does not insert', async () => {
+    const payload = { 
+        job_type: 'execute',
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        model_id: 'model-1',
+        stageSlug: 'test-stage',
+        iterationNumber: 1,
+        step_info: { current_step: 0, total_steps: 1 },
+        prompt_template_name: 'test_template',
+        inputs: { source: 'some_input' },
+        output_type: 'thesis',
+        continueUntilComplete: true, 
+        continuation_count: 0,
+        walletId: 'wallet-1',
+        maxRetries: 5,
+        canonicalPathParams: { contributionType: 'thesis' },
+        user_jwt: '',
+    } as unknown as DialecticJobPayload;
+
+    const job = createMockJob(payload);
+    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+    const mock = createMockSupabaseClient(undefined, {});
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+
+    const result = await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        {
+            id: 'contrib-1', session_id: payload.sessionId, stage: payload.stageSlug!, model_name: 'm', file_name: 'f.md',
+            contribution_type: 'model_generated', citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
+            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: payload.model_id, original_model_contribution_id: null,
+            processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 1,
+            storage_bucket: 'b', storage_path: '/p', target_contribution_id: null, tokens_used_input: null, tokens_used_output: null,
+            updated_at: new Date().toISOString(), user_id: null, document_relationships: { thesis: 'contrib-1' },
+        },
+        'user-1',
+    );
+
+    assertEquals(result.enqueued, false);
+    assertExists(result.error);
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertEquals(insertSpy?.callCount ?? 0, 0);
+});
+
+// Explicit preservation test per checklist: payload with user_jwt should enqueue and keep user_jwt unchanged
+Deno.test('JWT_PRESERVATION: when payload.user_jwt is present, continueJob enqueues and preserves it unchanged', async () => {
+    const payload: DialecticExecuteJobPayload = {
+        job_type: 'execute',
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        model_id: 'model-1',
+        stageSlug: 'test-stage',
+        iterationNumber: 1,
+        step_info: { current_step: 0, total_steps: 1 },
+        prompt_template_name: 'test_template',
+        inputs: { source: 'some_input' },
+        output_type: 'thesis',
+        continueUntilComplete: true,
+        continuation_count: 0,
+        walletId: 'wallet-1',
+        canonicalPathParams: { contributionType: 'thesis' },
+        user_jwt: 'jwt.token.here',
+    };
+    const job = createMockJob(payload);
+    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+    let insertedRow: unknown = undefined;
+    const { client } = createMockSupabaseClient('user-1', {
+        genericMockResults: {
+            dialectic_generation_jobs: {
+                insert: async (state: MockQueryBuilderState) => {
+                    insertedRow = state.insertData || null;
+                    return { data: [{}], error: null, count: 1, status: 201, statusText: 'Created' };
+                },
+            },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+
+    const result = await continueJob(
+        depsLocal,
+        client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        {
+            id: 'contrib-1', session_id: payload.sessionId, stage: payload.stageSlug!, model_name: 'm', file_name: 'f.md',
+            contribution_type: 'model_generated', citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
+            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: payload.model_id, original_model_contribution_id: null,
+            processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 1,
+            storage_bucket: 'b', storage_path: '/p', target_contribution_id: null, tokens_used_input: null, tokens_used_output: null,
+            updated_at: new Date().toISOString(), user_id: null, document_relationships: { thesis: 'contrib-1' },
+        },
+        'user-1',
+    );
+
+    assertEquals(result.enqueued, true);
+    assertExists(insertedRow);
+    if (!isDialecticJobRow(insertedRow)) {
+        throw new Error('insertedRow is not a valid DialecticJobRow');
+    }
+    const inserted = insertedRow;
+    assert(isDialecticExecuteJobPayload(inserted.payload));
+    const newPayload = inserted.payload;
+    assertEquals(newPayload.user_jwt, payload.user_jwt);
+});
+
+Deno.test('is_test_job propagation', async (t) => {
+    let mockSupabase: MockSupabaseClientSetup;
+    let mockLogger: MockLogger;
+    let deps: IContinueJobDeps;
+    let insertedRow: unknown = undefined;
+
+    const setup = (mockOverrides?: any) => {
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_generation_jobs: {
+                    insert: async (state: MockQueryBuilderState) => {
+                        insertedRow = state.insertData || null;
+                        return { data: [{}], error: null, count: 1, status: 201, statusText: 'Created' };
+                    },
+                },
+            },
+            ...mockOverrides,
+        });
+        mockLogger = new MockLogger();
+        deps = { logger: mockLogger };
+    };
+
+    const basePayload: DialecticExecuteJobPayload = {
+        job_type: 'execute',
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        model_id: 'model-1',
+        stageSlug: 'test-stage',
+        iterationNumber: 1,
+        output_type: 'thesis',
+        continueUntilComplete: true,
+        walletId: 'wallet-1',
+        user_jwt: 'jwt.token.here',
+        step_info: { current_step: 0, total_steps: 1 },
+        canonicalPathParams: { contributionType: 'thesis' },
+        inputs: { seed_prompt_resource_id: 'res-1' },
+    };
+
+    const baseSavedContribution: DialecticContributionRow = {
+        id: 'contrib-1',
+        session_id: 'session-1',
+        stage: 'test-stage',
+        model_name: 'test-model',
+        file_name: 'test.md',
+        contribution_type: 'model_generated',
+        created_at: new Date().toISOString(),
+        edit_version: 1,
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'text/markdown',
+        model_id: 'model-1',
+        storage_bucket: 'test-bucket',
+        storage_path: '/path/to/file',
+        updated_at: new Date().toISOString(),
+        document_relationships: { 'test-stage': 'contrib-1' },
+        citations: null, error: null, original_model_contribution_id: null, processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: null, target_contribution_id: null, tokens_used_input: null, tokens_used_output: null, user_id: null,
+    };
+
+    await t.step("continueJob should propagate 'is_test_job' flag from parent to new job", async () => {
+        setup();
+        const testPayload = { ...basePayload, is_test_job: true };
+        const parentJob = createMockJob(testPayload);
+        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+        await continueJob(
+            deps,
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            parentJob,
+            aiResponse,
+            baseSavedContribution,
+            'user-1'
+        );
+
+        assertExists(insertedRow, "A row should have been inserted");
+        assert(isDialecticJobRow(insertedRow));
+
+        const newPayload = insertedRow.payload;
+        assert(isDialecticExecuteJobPayload(newPayload));
+        assertEquals(newPayload.is_test_job, true, "The 'is_test_job' flag must be propagated to the continuation job");
     });
 });

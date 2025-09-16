@@ -205,4 +205,29 @@ export function createMockJobProcessors(): {
         processors: dummyInstance,
         spies: spies,
     };
+}
+
+// --- ProcessJob Mock ---
+
+// Dummy implementation for processJob function
+class _ProcessJobDummyImpl {
+    // deno-lint-ignore no-explicit-any
+    processJob = async (..._args: any[]): Promise<void> => { /* dummy */ }
+}
+
+// Type for processJob spy
+export type MockProcessJobSpy = Spy<_ProcessJobDummyImpl, Parameters<typeof _ProcessJobDummyImpl.prototype.processJob>, ReturnType<typeof _ProcessJobDummyImpl.prototype.processJob>>;
+
+// Creator function for processJob mock
+export function createMockProcessJob(): {
+    processJob: MockProcessJobSpy;
+    restore: () => void;
+} {
+    const dummyInstance = new _ProcessJobDummyImpl();
+    const processJobSpy = spy(dummyInstance, "processJob");
+
+    return {
+        processJob: processJobSpy,
+        restore: () => processJobSpy.restore(),
+    };
 } 

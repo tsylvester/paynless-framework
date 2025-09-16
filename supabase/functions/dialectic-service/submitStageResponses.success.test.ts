@@ -315,6 +315,9 @@ Deno.test('submitStageResponses', async (t) => {
         'ai_providers': {
             select: { data: [{ id: MOCK_MODEL_ID, config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
         },
+        domain_specific_prompt_overlays: {
+          select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null }
+        },
       },
       storageMock: {
         downloadResult: async (bucket: string, path: string) => {
@@ -755,6 +758,9 @@ Deno.test('submitStageResponses', async (t) => {
         },
         'ai_providers': {
             select: { data: [{ id: MOCK_MODEL_ID, config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
+        },
+        domain_specific_prompt_overlays: {
+          select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null }
         },
       },
       storageMock: {

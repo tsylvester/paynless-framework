@@ -90,7 +90,7 @@ Deno.test("startSession - TDD RED: Prove Flaw in startSession", async () => {
                 })
             },
             domain_specific_prompt_overlays: {
-                select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' })
+                select: async () => ({ data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null, status: 200, statusText: 'ok' })
             },
             dialectic_sessions: {
                 insert: async () => ({
@@ -222,7 +222,7 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
                 })
             },
             domain_specific_prompt_overlays: {
-                select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' })
+                select: async () => ({ data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null, status: 200, statusText: 'ok' })
             },
             dialectic_sessions: {
                 insert: async () => ({
@@ -357,7 +357,7 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
                 })
             },
             domain_specific_prompt_overlays: {
-                select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' })
+                select: async () => ({ data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null, status: 200, statusText: 'ok' })
             },
             dialectic_sessions: {
                 insert: async () => ({
@@ -523,7 +523,7 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
                 })
             },
             domain_specific_prompt_overlays: {
-                select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' })
+                select: async () => ({ data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null, status: 200, statusText: 'ok' })
             },
             dialectic_sessions: {
                 insert: async () => ({
@@ -638,7 +638,7 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
             dialectic_process_templates: { select: async () => ({ data: [{ id: mockProcessTemplateId, name: 'Dummy Template', starting_stage_id: mockInitialStageId }], error: null, status: 200, statusText: 'ok' }) },
             dialectic_stages: { select: async () => ({ data: [{ id: mockInitialStageId, slug: mockInitialStageSlug, display_name: mockInitialStageName, default_system_prompt_id: mockSystemPromptId }], error: null, status: 200, statusText: 'ok' }) },
             system_prompts: { select: async () => ({ data: [{ id: mockSystemPromptId, prompt_text: mockSystemPromptText }], error: null, status: 200, statusText: 'ok' }) },
-            domain_specific_prompt_overlays: { select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' }) },
+            domain_specific_prompt_overlays: { select: async () => ({ data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null, status: 200, statusText: 'ok' }) },
             dialectic_sessions: { insert: async () => ({ data: [{ id: mockNewSessionId, project_id: mockProjectId, session_description: payload.sessionDescription, status: `pending_${mockInitialStageName}`, iteration_count: 1, associated_chat_id: 'chat-id', current_stage_id: mockInitialStageId, selected_model_ids: payload.selectedModelIds }], error: null, status: 201, statusText: 'ok' }) },
             ai_providers: { select: async () => ({ data: [{ id: 'prov-dummy', api_identifier: 'dummy-model-v1', name: 'Dummy', description: 'Dummy', is_active: true, provider: 'dummy', config: dummyConfig, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), is_default_embedding: true, is_enabled: true }], error: null, status: 200, statusText: 'ok' }) },
         },

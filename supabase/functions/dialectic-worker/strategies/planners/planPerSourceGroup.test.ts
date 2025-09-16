@@ -115,3 +115,20 @@ Deno.test('planPerSourceGroup should return an empty array for empty source docu
     const childJobs = planPerSourceGroup([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
     assertEquals(childJobs.length, 0);
 });
+
+// ==============================================
+// Assert all children have payload.stageSlug equal to the parent’s dynamic stage
+// ==============================================
+Deno.test('planPerSourceGroup constructs child payloads with dynamic stage consistency (payload.stageSlug === parent.payload.stageSlug)', () => {
+	const expectedStage = 'parenthesis'; // choose a non-thesis simple stage
+	const parent: typeof MOCK_PARENT_JOB = JSON.parse(JSON.stringify(MOCK_PARENT_JOB));
+	Object.defineProperty(parent, 'stage_slug', { value: expectedStage, configurable: true, enumerable: true, writable: true });
+	Object.defineProperty(parent.payload, 'stageSlug', { value: expectedStage, configurable: true, enumerable: true, writable: true });
+
+	const childJobs = planPerSourceGroup(MOCK_SOURCE_DOCS, parent, { ...MOCK_RECIPE_STEP }, 'ignored.jwt');
+
+	assertEquals(childJobs.length > 0, true, 'Planner should produce one job per group');
+	for (const child of childJobs) {
+		assertEquals(child.stageSlug, expectedStage, 'Child payload.stageSlug must equal parent.payload.stageSlug');
+	}
+});

@@ -1017,6 +1017,7 @@
     }
   },
   "redirects": {
+    "https://deno.land/x/deno/cli/types/v1.0.0/index.d.ts": "https://deno.land/x/deno@v2.4.5/cli/types/v1.0.0/index.d.ts",
     "https://esm.sh/@supabase/node-fetch@^2.6.13?target=denonext": "https://esm.sh/@supabase/node-fetch@2.6.15?target=denonext",
     "https://esm.sh/@supabase/node-fetch@^2.6.14?target=denonext": "https://esm.sh/@supabase/node-fetch@2.6.15?target=denonext",
     "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.50.2",

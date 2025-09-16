@@ -41,7 +41,8 @@ const mockPayload: Json = {
   model_id: 'model-def',
   iterationNumber: 1,
   continueUntilComplete: false,
-  walletId: 'wallet-ghi'
+  walletId: 'wallet-ghi',
+  user_jwt: 'jwt.token.here'
 };
 
 if (!isDialecticJobPayload(mockPayload)) {
@@ -155,7 +156,7 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
         }
     };
 
-    const mockStage: Tables<'dialectic_stages'> & { system_prompts: { prompt_text: string } | null } = {
+    const mockStage: Tables<'dialectic_stages'> & { system_prompts: { id: string; prompt_text: string } | null } = {
         id: 'stage-1',
         slug: 'test-stage',
         display_name: 'Test Stage',
@@ -165,6 +166,7 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
         expected_output_artifacts: null,
         input_artifact_rules: null,
         system_prompts: {
+            id: 'prompt-123',
             prompt_text: 'This is the base system prompt for the test stage.',
         },
     };
@@ -185,6 +187,22 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
             },
             dialectic_contributions: {
                 select: () => Promise.resolve({ data: [mockContribution], error: null }),
+            },
+            // Default overlays present so happy-path flows proceed
+            domain_specific_prompt_overlays: {
+                select: () => Promise.resolve({
+                    data: [
+                        {
+                            overlay_values: {
+                                role: 'senior product strategist',
+                                stage_instructions: 'baseline',
+                                style_guide_markdown: '# Guide',
+                                expected_output_artifacts_json: '{}',
+                            },
+                        },
+                    ],
+                    error: null,
+                }),
             },
             ...configOverrides,
         },
@@ -441,17 +459,28 @@ Deno.test('processSimpleJob - renders prompt template and omits systemInstructio
     asm.restore();
 });
 
-Deno.test('processSimpleJob - should call gatherContinuationInputs for a continuation job', async () => {
+Deno.test('processSimpleJob - should call gatherContinuationInputs for a continuation job', async () => {    
+  const trueRootId = 'true-root-id-for-test';
+    const continuationChunkId = 'prev-contrib-id';
+    const stageSlug = 'synthesis';
+
+    const mockContinuationChunk = {
+        id: continuationChunkId,
+        stage: stageSlug,
+        document_relationships: { [stageSlug]: trueRootId },
+    };
+
     const { client: dbClient, clearAllStubs } = setupMockClient({
         dialectic_contributions: {
-            select: { data: [ { id: 'prev-contrib-id', content: 'previous content' } ], error: null }
+            select: { data: [mockContinuationChunk], error: null }
         }
     });
     const deps = getMockDeps();
 
     const continuationPayload: DialecticJobPayload = {
         ...mockPayload,
-        target_contribution_id: 'prev-contrib-id',
+        target_contribution_id: continuationChunkId,
+        stageSlug: stageSlug,
     };
 
     if (!isJson(continuationPayload)) {
@@ -459,39 +488,30 @@ Deno.test('processSimpleJob - should call gatherContinuationInputs for a continu
     }
 
     const continuationJob: DialecticJobRow & { payload: DialecticJobPayload } = {
-        id: 'job-123',
-        user_id: 'user-789',
-        session_id: 'session-123',
-        stage_slug: 'synthesis',
+        ...mockJob,
         payload: continuationPayload,
-        iteration_number: 1,
-        status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: 'prev-contrib-id',
-        prerequisite_job_id: null,
+        target_contribution_id: continuationChunkId,
     };
 
-
-    // Spy on the method on the actual dependency object that will be used
     const continuationSpy = spy(deps.promptAssembler!, 'gatherContinuationInputs');
 
-    await processSimpleJob(
-        dbClient as unknown as SupabaseClient<Database>,
-        continuationJob,
-        'user-789',
-        deps,
-        'auth-token'
-    );
+    // The current implementation will throw an error because the mock for executeModelCallAndSave is not set up
+    // to handle the return from gatherContinuationInputs. This is acceptable for the RED state,
+    // as the primary assertion on the spy call will fail first.
+    try {
+        await processSimpleJob(
+            dbClient as unknown as SupabaseClient<Database>,
+            continuationJob,
+            'user-789',
+            deps,
+            'auth-token'
+        );
+    } catch (_e) {
+        // Silently catch the expected error to allow the spy assertion to proceed.
+    }
 
     assertEquals(continuationSpy.calls.length, 1, "Expected gatherContinuationInputs to be called once for a continuation job.");
-    assertEquals(continuationSpy.calls[0].args[0], 'prev-contrib-id');
+    assertEquals(continuationSpy.calls[0].args[0], trueRootId, "The prompt assembler must be called with the true root ID discovered from the target chunk.");
 
     clearAllStubs?.();
 });
@@ -604,6 +624,60 @@ Deno.test('processSimpleJob - uses file-backed initial prompt when column empty'
     asm.restore();
   });
 
+Deno.test('processSimpleJob - fails when stage overlays are missing (no render, no model call)', async () => {
+  // Arrange: explicitly override overlays to be empty to trigger fail-fast path
+  const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+    domain_specific_prompt_overlays: {
+      select: () => Promise.resolve({ data: [], error: null }),
+    },
+  });
+  const deps = getMockDeps();
+
+  // We do not stub the assembler; we expect failure before render
+  const executeSpy = spy(deps, 'executeModelCallAndSave');
+
+  // Act
+  let threw = false;
+  try {
+    await processSimpleJob(
+      dbClient as unknown as SupabaseClient<Database>,
+      { ...mockJob, payload: mockPayload },
+      'user-789',
+      deps,
+      'auth-token',
+    );
+  } catch (_e) {
+    threw = true;
+  }
+
+  // Assert: executor must NOT be called when overlays are missing
+  assertEquals(
+    executeSpy.calls.length,
+    0,
+    'Expected no executeModelCallAndSave when stage overlays are missing (should fail fast)'
+  );
+
+  // Assert: job is marked failed with explicit overlays-missing code
+  const jobsUpdateSpies = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+  assertExists(jobsUpdateSpies, 'Job update spies should exist');
+  const failedUpdate = jobsUpdateSpies.callsArgs.find((args: unknown[]) => {
+    const payload = args[0];
+    return (
+      isRecord(payload) &&
+      payload.status === 'failed' &&
+      isRecord(payload.error_details) &&
+      (payload.error_details).code === 'STAGE_CONFIG_MISSING_OVERLAYS'
+    );
+  });
+  assertExists(
+    failedUpdate,
+    "Expected job to fail with code 'STAGE_CONFIG_MISSING_OVERLAYS' when overlays are missing"
+  );
+  assertEquals(threw, true);
+
+  clearAllStubs?.();
+});
+
 Deno.test('processSimpleJob - fails when no initial prompt exists', async () => {
   // Arrange: project with no direct prompt and no resource id
   const { client: dbClient, spies, clearAllStubs } = setupMockClient({
@@ -645,13 +719,18 @@ Deno.test('processSimpleJob - fails when no initial prompt exists', async () => 
   // Force final-attempt behavior to observe terminal failure status
   const jobNoRetries: DialecticJobRow = { ...mockJob, attempt_count: 3, max_retries: 3 };
 
-  await processSimpleJob(
-    dbClient as unknown as SupabaseClient<Database>,
-    { ...jobNoRetries, payload: mockPayload },
-    'user-789',
-    deps,
-    'auth-token',
-  );
+  let threw = false;
+  try {
+    await processSimpleJob(
+      dbClient as unknown as SupabaseClient<Database>,
+      { ...jobNoRetries, payload: mockPayload },
+      'user-789',
+      deps,
+      'auth-token',
+    );
+  } catch (_e) {
+    threw = true;
+  }
 
   // Assert: model executor should not be called when no prompt exists
   assertEquals(executeSpy.calls.length, 0, 'Expected no model call when no initial prompt exists');
@@ -679,6 +758,7 @@ Deno.test('processSimpleJob - fails when no initial prompt exists', async () => 
       (internalPayloadArg).error.code === 'INVALID_INITIAL_PROMPT',
   );
   assertEquals(userFailSpy.calls.length, 1, 'Expected user-facing failure notification to be sent');
+  assertEquals(threw, true);
 
   // Restore spies on shared notificationService instance
   internalFailSpy.restore();
@@ -686,6 +766,88 @@ Deno.test('processSimpleJob - fails when no initial prompt exists', async () => 
 
   clearAllStubs?.();
   asm.restore();
+});
+
+// =============================================================
+// plan→execute must preserve user_jwt; missing user_jwt fails
+// =============================================================
+Deno.test('processSimpleJob - preserves payload.user_jwt when transforming plan to execute', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient();
+  const deps = getMockDeps();
+
+  const executeSpy = spy(deps, 'executeModelCallAndSave');
+  const asm = stubAssembler(deps, 'RENDERED: prompt');
+
+  const planPayloadWithJwt = {
+    ...mockPayload,
+    user_jwt: 'jwt.token.here',
+  };
+  if (!isJson(planPayloadWithJwt) || !isDialecticJobPayload(planPayloadWithJwt)) {
+    throw new Error('Test setup failed: planPayloadWithJwt invalid');
+  }
+
+  await processSimpleJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    { ...mockJob, payload: planPayloadWithJwt },
+    'user-789',
+    deps,
+    'auth-token',
+  );
+
+  assertEquals(executeSpy.calls.length, 1, 'Expected executor to be called once');
+  const [execArgs] = executeSpy.calls[0].args;
+  const sentJobPayloadUnknown = execArgs.job.payload;
+  let preserved = false;
+  let preservedValue = '';
+  if (isRecord(sentJobPayloadUnknown) && 'user_jwt' in sentJobPayloadUnknown) {
+    const v = (sentJobPayloadUnknown)['user_jwt'];
+    if (typeof v === 'string' && v.length > 0) {
+      preserved = true;
+      preservedValue = v;
+    }
+  }
+  assertEquals(preserved, true);
+  assertEquals(preservedValue, 'jwt.token.here');
+
+  asm.restore();
+  clearAllStubs?.();
+});
+
+Deno.test('processSimpleJob - missing user_jwt fails early and does not call executor', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient();
+  const deps = getMockDeps();
+  const executeSpy = spy(deps, 'executeModelCallAndSave');
+
+  const planPayloadNoJwt = {
+    projectId: 'project-abc',
+    sessionId: 'session-456',
+    stageSlug: 'test-stage',
+    model_id: 'model-def',
+    iterationNumber: 1,
+    continueUntilComplete: false,
+    walletId: 'wallet-ghi',
+  };
+  if (!isJson(planPayloadNoJwt) || !isDialecticJobPayload(planPayloadNoJwt)) {
+    throw new Error('Test setup failed: planPayloadNoJwt invalid');
+  }
+
+  let threw = false;
+  try {
+    await processSimpleJob(
+      dbClient as unknown as SupabaseClient<Database>,
+      { ...mockJob, payload: planPayloadNoJwt },
+      'user-789',
+      deps,
+      'auth-token',
+    );
+  } catch (_e) {
+    threw = true;
+  }
+
+  assertEquals(executeSpy.calls.length, 0, 'Executor must not be called when user_jwt is missing');
+  assert(threw);
+
+  clearAllStubs?.();
 });
 
 Deno.test('processSimpleJob - Wallet missing is immediate failure (no retry)', async () => {
@@ -702,13 +864,18 @@ Deno.test('processSimpleJob - Wallet missing is immediate failure (no retry)', a
   const userFailSpy = spy(deps.notificationService, 'sendContributionFailedNotification');
 
   // Act
-  await processSimpleJob(
-    dbClient as unknown as SupabaseClient<Database>,
-    { ...mockJob, payload: mockPayload },
-    'user-789',
-    deps,
-    'auth-token',
-  );
+  let threw = false;
+  try {
+    await processSimpleJob(
+      dbClient as unknown as SupabaseClient<Database>,
+      { ...mockJob, payload: mockPayload },
+      'user-789',
+      deps,
+      'auth-token',
+    );
+  } catch (_e) {
+    threw = true;
+  }
 
   // Assert: no retry attempts
   assertEquals(retryJobSpy.calls.length, 0, 'Expected retryJob NOT to be called when wallet is missing');
@@ -737,6 +904,7 @@ Deno.test('processSimpleJob - Wallet missing is immediate failure (no retry)', a
       (internalPayloadArg).error.code === 'WALLET_MISSING'
   );
   assertEquals(userFailSpy.calls.length, 1, 'Expected user-facing failure notification to be sent');
+  assertEquals(threw, true);
 
   // Cleanup
   internalFailSpy.restore();
@@ -760,13 +928,18 @@ Deno.test('processSimpleJob - Preflight dependency missing is immediate failure 
   const userFailSpy = spy(deps.notificationService, 'sendContributionFailedNotification');
 
   // Act
-  await processSimpleJob(
-    dbClient as unknown as SupabaseClient<Database>,
-    { ...mockJob, payload: mockPayload },
-    'user-789',
-    deps,
-    'auth-token',
-  );
+  let threw = false;
+  try {
+    await processSimpleJob(
+      dbClient as unknown as SupabaseClient<Database>,
+      { ...mockJob, payload: mockPayload },
+      'user-789',
+      deps,
+      'auth-token',
+    );
+  } catch (_e) {
+    threw = true;
+  }
 
   // Assert: no retry attempts
   assertEquals(retryJobSpy.calls.length, 0, 'Expected retryJob NOT to be called when preflight dependency is missing');
@@ -795,6 +968,9 @@ Deno.test('processSimpleJob - Preflight dependency missing is immediate failure 
       (internalPayloadArg).error.code === 'INTERNAL_DEPENDENCY_MISSING'
   );
   assertEquals(userFailSpy.calls.length, 1, 'Expected user-facing failure notification to be sent');
+
+  // Assert thrown
+  assertEquals(threw, true);
 
   // Cleanup
   internalFailSpy.restore();

@@ -5,6 +5,7 @@
 // You might also want to load this from environment variables for more flexibility.
 const allowedOrigins = [
   'http://localhost:5173', // Local Vite dev server
+  'http://127.0.0.1:5173', // Local Vite dev server unaliased
   'https://paynless.app', // Production URL 1
   'https://paynless-framework.netlify.app' // Production URL 2 (Netlify)
   // Add any other origins (e.g., staging environment) if needed
