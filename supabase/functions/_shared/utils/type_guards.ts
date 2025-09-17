@@ -183,18 +183,20 @@ export function isStageContext(obj: unknown): obj is StageContext {
 
 /**
  * Type guard to check if a value is a valid array of Citation objects.
+ * A citation must have a 'text' property of type string.
+ * It may optionally have a 'url' property of type string.
  * @param value The value to check.
  * @returns True if the value is a Citation[], false otherwise.
  */
-export function isCitationsArray(value: unknown): value is Citation[] {
+export function isCitationsArray(value: unknown): value is { text: string; url?: string }[] {
   return (
     Array.isArray(value) &&
     value.every(
       (item) =>
-        typeof item === 'object' &&
-        item !== null &&
+        isRecord(item) &&
         'text' in item &&
-        typeof item.text === 'string'
+        typeof item.text === 'string' &&
+        (!('url' in item) || typeof item.url === 'string')
     )
   );
 }

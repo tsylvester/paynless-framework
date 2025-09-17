@@ -18,7 +18,7 @@ import {
 import { FileType, type IFileManager, type UploadContext } from "../_shared/types/file_manager.types.ts";
 import type { IStorageUtils } from "../_shared/types/storage_utils.types.ts"; // Added import for the interface
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts'; // For converting ArrayBuffer to Buffer for FileManager
-import { isContributionType } from "../_shared/utils/type_guards.ts";
+import { isContributionType, isCitationsArray } from "../_shared/utils/type_guards.ts";
 
 // --- START: Constants ---
 const SIGNED_URL_EXPIRES_IN = 3600; // 1 hour
@@ -91,7 +91,7 @@ export async function exportProject(
 
         if (resourcesError) {
             logger.error('Error fetching project resources.', { details: resourcesError, projectId });
-            // Non-fatal, proceed with export but log the error
+            return { error: { message: 'Database error fetching project resources.', status: 500, code: 'DB_RESOURCE_FETCH_FAILED', details: resourcesError.message } };
         }
         
         // Determine the export bucket from project resources. This is a hard requirement.
@@ -138,7 +138,7 @@ export async function exportProject(
                      ...r,
                      status: 'active', // Assuming status active for export
                      resource_description: desc 
-                } as DialecticProjectResource; // Cast to ensure type alignment
+                };
             }) || [],
             sessions: [],
         };
@@ -147,7 +147,7 @@ export async function exportProject(
             for (const session of sessionsData) {
                 const { data: contributionsSql, error: contributionsError } = await supabaseClient
                     .from('dialectic_contributions')
-                    .select('*, dialectic_stages(*), parent_contribution_id:target_contribution_id')
+                    .select('*, parent_contribution_id:target_contribution_id')
                     .eq('session_id', session.id);
 
                 if (contributionsError) {
@@ -157,23 +157,12 @@ export async function exportProject(
                 const validContributions: DialecticContribution[] = [];
                 if (contributionsSql) {
                     for (const c of contributionsSql) {
-                        // Check if dialectic_stages is a valid stage object and not an error or null
-                        // Supabase might return an error object if the relation isn't found, or null.
-                        // We need to ensure it's a plain object with an 'id' property.
-                        const stageObject = (c.dialectic_stages && typeof c.dialectic_stages === 'object' && 'id' in c.dialectic_stages)
-                            ? c.dialectic_stages as Database['public']['Tables']['dialectic_stages']['Row']
-                            : null;
-
-                        if (!stageObject) {
-                            logger.warn('Contribution found without a valid related stage object during export. Skipping contribution from manifest.', { contributionId: c.id, sessionId: session.id, stageData: c.dialectic_stages });
-                            continue; // Skip this contribution
-                        }
 
                         const mappedContribution: DialecticContribution = {
                             id: c.id,
                             session_id: c.session_id,
                             user_id: c.user_id,
-                            stage: stageObject.slug, // Now validated
+                            stage: c.stage,
                             iteration_number: c.iteration_number,
                             model_id: c.model_id,
                             model_name: c.model_name,
@@ -188,12 +177,12 @@ export async function exportProject(
                             tokens_used_output: c.tokens_used_output,
                             processing_time_ms: c.processing_time_ms,
                             error: c.error, // Corrected mapping
-                            citations: c.citations as { text: string; url?: string }[] | null,
+                            citations: isCitationsArray(c.citations) ? c.citations : null,
                             created_at: c.created_at,
                             updated_at: c.updated_at,
                             contribution_type: (c.contribution_type && isContributionType(c.contribution_type))
                                 ? c.contribution_type
-                                : (isContributionType(stageObject.slug) ? stageObject.slug : null),
+                                : (isContributionType(c.stage) ? c.stage : null),
                             file_name: c.file_name,
                             storage_bucket: c.storage_bucket,
                             storage_path: c.storage_path,
@@ -220,6 +209,9 @@ export async function exportProject(
 
         if (manifest.resources) {
             for (const resource of manifest.resources) {
+                if (resource.mime_type === 'application/zip') {
+                    continue;
+                }
                 if (resource.storage_path && resource.file_name) {
                     const currentResourceBucket = resource.storage_bucket || downloadBucketName;
                     if (!currentResourceBucket) {
@@ -235,13 +227,16 @@ export async function exportProject(
                         );
 
                         if (downloadError) {
-                            logger.warn('Failed to download project resource for export. Skipping file.', { details: downloadError, resourceId: resource.id, path: resource.storage_path });
+                            logger.error('Failed to download project resource for export. Halting export.', { details: downloadError, resourceId: resource.id, path: resource.storage_path });
+                            return { error: { message: `Failed to download a critical project resource: ${resource.file_name}.`, status: 500, code: 'EXPORT_DOWNLOAD_FAILED', details: downloadError.message } };
                         } else if (fileArrayBuffer) {
-                            await zipWriter.add(`resources/${resource.file_name}`, new Uint8ArrayReader(new Uint8Array(fileArrayBuffer)));
-                            logger.info('Added project resource to zip.', { projectId, resourceId: resource.id, fileName: resource.file_name });
+                            const canonicalPath = `${resource.storage_path}/${resource.file_name}`;
+                            await zipWriter.add(canonicalPath, new Uint8ArrayReader(new Uint8Array(fileArrayBuffer)));
+                            logger.info('Added project resource to zip.', { projectId, resourceId: resource.id, canonicalPath });
                         }
                     } catch (err) {
-                        logger.error('Catastrophic error downloading project resource. Skipping file.', { error: err, resourceId: resource.id, path: resource.storage_path });
+                        logger.error('Catastrophic error downloading project resource. Halting export.', { error: err, resourceId: resource.id, path: resource.storage_path });
+                        return { error: { message: 'An unexpected error occurred while downloading a project resource.', status: 500, code: 'EXPORT_DOWNLOAD_UNHANDLED_ERROR', details: String(err) } };
                     }
                 }
             }
@@ -264,24 +259,16 @@ export async function exportProject(
                                     `${contribution.storage_path}/${contribution.file_name}`
                                 );
                                 if (downloadError) {
-                                    logger.warn('Failed to download contribution content for export. Skipping file.', { details: downloadError, contributionId: contribution.id, path: contribution.storage_path });
+                                    logger.error('Failed to download contribution content for export. Halting export.', { details: downloadError, contributionId: contribution.id, path: contribution.storage_path });
+                                    return { error: { message: `Failed to download a critical contribution file: ${contribution.file_name}.`, status: 500, code: 'EXPORT_DOWNLOAD_FAILED', details: downloadError.message } };
                                 } else if (contentArrayBuffer) {
-                                    let extension = '.md'; // Default extension
-                                    if (contribution.mime_type) {
-                                        const typeParts = contribution.mime_type.split('/');
-                                        if (typeParts.length === 2 && typeParts[1]) {
-                                            extension = `.${typeParts[1].split('+')[0]}`;
-                                        }
-                                    } else if (contribution.storage_path) { // Fallback to storage_path
-                                        const pathParts = contribution.storage_path.split('.');
-                                        if (pathParts.length > 1) extension = `.${pathParts.pop()}`;
-                                    }
-                                    const contentFileName = `${contribution.id}_content${extension}`;
-                                    await zipWriter.add(`sessions/${session.id}/contributions/${contentFileName}`, new Uint8ArrayReader(new Uint8Array(contentArrayBuffer)));
-                                    logger.info('Added contribution content to zip.', { projectId, sessionId: session.id, contributionId: contribution.id, fileName: contentFileName });
+                                    const canonicalPath = `${contribution.storage_path}/${contribution.file_name}`;
+                                    await zipWriter.add(canonicalPath, new Uint8ArrayReader(new Uint8Array(contentArrayBuffer)));
+                                    logger.info('Added contribution content to zip.', { projectId, sessionId: session.id, contributionId: contribution.id, canonicalPath });
                                 }
                             } catch (err) {
-                                logger.error('Catastrophic error downloading contribution content. Skipping file.', { error: err, contributionId: contribution.id, path: contribution.storage_path });
+                                logger.error('Catastrophic error downloading contribution content. Halting export.', { error: err, contributionId: contribution.id, path: contribution.storage_path });
+                                return { error: { message: 'An unexpected error occurred while downloading contribution content.', status: 500, code: 'EXPORT_DOWNLOAD_UNHANDLED_ERROR', details: String(err) } };
                             }
                         }
                     }
@@ -300,14 +287,16 @@ export async function exportProject(
                                     contribution.raw_response_storage_path
                                 );
                                 if (downloadError) {
-                                    logger.warn('Failed to download contribution raw response for export. Skipping file.', { details: downloadError, contributionId: contribution.id, path: contribution.raw_response_storage_path });
+                                    logger.error('Failed to download contribution raw response for export. Halting export.', { details: downloadError, contributionId: contribution.id, path: contribution.raw_response_storage_path });
+                                    return { error: { message: `Failed to download a critical raw response file for contribution ${contribution.id}.`, status: 500, code: 'EXPORT_DOWNLOAD_FAILED', details: downloadError.message } };
                                 } else if (rawResponseArrayBuffer) {
-                                    const rawResponseFileName = `${contribution.id}_raw.json`;
-                                    await zipWriter.add(`sessions/${session.id}/contributions/${rawResponseFileName}`, new Uint8ArrayReader(new Uint8Array(rawResponseArrayBuffer)));
-                                    logger.info('Added contribution raw response to zip.', { projectId, sessionId: session.id, contributionId: contribution.id, fileName: rawResponseFileName });
+                                    const canonicalPath = contribution.raw_response_storage_path;
+                                    await zipWriter.add(canonicalPath, new Uint8ArrayReader(new Uint8Array(rawResponseArrayBuffer)));
+                                    logger.info('Added contribution raw response to zip.', { projectId, sessionId: session.id, contributionId: contribution.id, canonicalPath });
                                 }
                             } catch (err) {
-                                 logger.error('Catastrophic error downloading contribution raw response. Skipping file.', { error: err, contributionId: contribution.id, path: contribution.raw_response_storage_path });
+                                 logger.error('Catastrophic error downloading contribution raw response. Halting export.', { error: err, contributionId: contribution.id, path: contribution.raw_response_storage_path });
+                                 return { error: { message: 'An unexpected error occurred while downloading a raw response file.', status: 500, code: 'EXPORT_DOWNLOAD_UNHANDLED_ERROR', details: String(err) } };
                             }
                         }
                     }
