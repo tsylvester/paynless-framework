@@ -8,7 +8,7 @@ const allowedOrigins: (string | RegExp)[] = [
   'http://127.0.0.1:5173', // Local Vite dev server unaliased
   'https://paynless.app', // Production URL 1
   'https://paynless-framework.netlify.app', // Production URL 2 (Netlify)
-  /^https:\/\/deploy-preview-\d+--paynless-framework\.netlify\.app$/, // Netlify deploy previews
+  /^https:\/\/.*paynless.*\.netlify\.app$/, // Netlify deploy previews
 ];
 
 /**

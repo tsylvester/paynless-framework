@@ -83,17 +83,24 @@ Deno.test("CORS Headers Utilities with Dynamic Origin", async (t) => {
         assertEquals(res.headers.get("Access-Control-Allow-Origin"), null, "Should NOT have Allow-Origin header");
     });
 
-    await t.step("handleCorsPreflightRequest: OPTIONS with Netlify deploy preview origin", () => {
-        const origin = "https://deploy-preview-80--paynless-framework.netlify.app";
-        const req = new Request("http://example.com", {
-            method: "OPTIONS",
-            headers: { "Origin": origin }
-        });
-        const res = handleCorsPreflightRequest(req);
-        assertExists(res);
-        assertEquals(res.status, 204);
-        assertEquals(res.headers.get("Access-Control-Allow-Origin"), origin);
-        checkBaseCorsHeaders(res.headers);
+    await t.step("handleCorsPreflightRequest: OPTIONS with various Netlify deploy preview origins", () => {
+        const testOrigins = [
+            "https://deploy-preview-80--paynless-framework.netlify.app",
+            "https://68cae84145158400087e539e--paynless-framework.netlify.app",
+            "https://preview--paynless.netlify.app"
+        ];
+
+        for (const origin of testOrigins) {
+            const req = new Request("http://example.com", {
+                method: "OPTIONS",
+                headers: { "Origin": origin }
+            });
+            const res = handleCorsPreflightRequest(req);
+            assertExists(res, `Response should exist for origin: ${origin}`);
+            assertEquals(res.status, 204, `Status should be 204 for origin: ${origin}`);
+            assertEquals(res.headers.get("Access-Control-Allow-Origin"), origin, `Allow-Origin header should be set for origin: ${origin}`);
+            checkBaseCorsHeaders(res.headers);
+        }
     });
 
      await t.step("handleCorsPreflightRequest: OPTIONS with no origin header", () => {
