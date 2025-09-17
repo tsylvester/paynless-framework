@@ -5,7 +5,6 @@ import {
   type DialecticContributionRow,
   type IContinueJobDeps,
   type IContinueJobResult,
-  type DialecticExecuteJobPayload,
 } from '../dialectic-service/dialectic.interface.ts';
 import { shouldContinue } from '../_shared/utils/continue_util.ts';
 import {
@@ -43,6 +42,21 @@ export async function continueJob(
     return { enqueued: false, error };
   }
 
+  // Enforce presence of user_jwt in the triggering payload (no healing/injection allowed)
+  let userJwt: string | undefined = undefined;
+  if (isRecord(job.payload)) {
+    const desc = Object.getOwnPropertyDescriptor(job.payload, 'user_jwt');
+    const potential = desc ? desc.value : undefined;
+    if (typeof potential === 'string' && potential.length > 0) {
+      userJwt = potential;
+    }
+  }
+  if (!userJwt) {
+    const error = new Error('payload.user_jwt required');
+    deps.logger.error('[dialectic-worker] [continueJob] Missing or empty user_jwt on triggering payload.', { jobId: job.id });
+    return { enqueued: false, error };
+  }
+
   const willContinue = shouldContinue(aiResponse.finish_reason ?? null, job.payload.continuation_count ?? 0, 5) && job.payload.continueUntilComplete;
   
   if (!willContinue) {
@@ -59,41 +73,60 @@ export async function continueJob(
     return { enqueued: false, error };
   }
 
-  const payloadObject: DialecticExecuteJobPayload = {
-    job_type: 'execute',
-    sessionId: job.payload.sessionId,
-    projectId: job.payload.projectId,
-    model_id: job.payload.model_id,
-    stageSlug: job.payload.stageSlug,
-    iterationNumber: job.payload.iterationNumber,
-    continueUntilComplete: job.payload.continueUntilComplete,
-    target_contribution_id: savedContribution.id,
-    continuation_count: newContinuationCount,
-    walletId: job.payload.walletId,
-    maxRetries: job.payload.maxRetries,
-    // Carry over execution-specific details from the original payload
-    step_info: 'step_info' in job.payload && isDialecticStepInfo(job.payload.step_info)
-        ? job.payload.step_info 
-        : { current_step: newContinuationCount, total_steps: -1 }, // Fallback, -1 indicates unknown total
-    prompt_template_name: ('prompt_template_name' in job.payload && typeof job.payload.prompt_template_name === 'string')
-        ? job.payload.prompt_template_name
-        : undefined,
-    output_type: job.payload.output_type, // We have already validated this is a valid ContributionType.
-    inputs: 'inputs' in job.payload && isStringRecord(job.payload.inputs)
-        ? job.payload.inputs
-        : {},
-    canonicalPathParams: {
-      // Carry over the original canonical context if it exists, but ensure the output type is correct.
-      ...('canonicalPathParams' in job.payload && isRecord(job.payload.canonicalPathParams) ? job.payload.canonicalPathParams : {}),
-      contributionType: job.payload.output_type,
-    },
-    document_relationships:
-      ('document_relationships' in job.payload && isDocumentRelationships(job.payload.document_relationships))
-        ? job.payload.document_relationships
-        : (isDocumentRelationships(savedContribution.document_relationships)
-            ? savedContribution.document_relationships
-            : undefined),
-  };
+  // Start from the original payload (full pass-through), then overlay only required fields
+  const basePayload: { [key: string]: Json } = {};
+  if (isRecord(job.payload)) {
+    for (const [key, value] of Object.entries(job.payload)) {
+      if (isJson(value)) {
+        basePayload[key] = value;
+      }
+    }
+  }
+
+  // Explicitly preserve user_jwt from the triggering payload
+  basePayload.user_jwt = userJwt;
+
+  // Ensure required structural fields exist and are correct
+  basePayload.job_type = 'execute';
+  basePayload.target_contribution_id = savedContribution.id;
+  basePayload.continuation_count = newContinuationCount;
+  basePayload.output_type = job.payload.output_type;
+
+  // Ensure inputs exists and is a record of strings
+  if (!('inputs' in basePayload) || !isStringRecord((basePayload).inputs)) {
+    basePayload.inputs = {};
+  }
+
+  // Canonical path params: preserve existing, enforce contributionType = output_type
+  const existingCanon = 'canonicalPathParams' in job.payload && isRecord(job.payload.canonicalPathParams)
+    ? job.payload.canonicalPathParams
+    : undefined;
+  const canonical: Record<string, Json> = {};
+  if (existingCanon && isRecord(existingCanon)) {
+    for (const [k, v] of Object.entries(existingCanon)) {
+      if (isJson(v)) {
+        canonical[k] = v;
+      }
+    }
+  }
+  canonical.contributionType = job.payload.output_type;
+  basePayload.canonicalPathParams = canonical;
+
+  // Document relationships: keep original if valid; otherwise use saved contribution relationships
+  if (
+    !('document_relationships' in job.payload && isDocumentRelationships(job.payload.document_relationships)) &&
+    isDocumentRelationships(savedContribution.document_relationships)
+  ) {
+    basePayload.document_relationships = savedContribution.document_relationships;
+  }
+
+  // Preserve step_info only if valid (do not invent structure here)
+  if ('step_info' in job.payload && !isDialecticStepInfo((job.payload).step_info)) {
+    delete basePayload.step_info;
+  }
+
+  // Validate payloadObject shape after overlays
+  const payloadObject = basePayload;
 
   // Invariant: Continuation enqueue requires valid document_relationships from either the triggering payload
   // or the saved contribution. Do not enqueue if missing.
@@ -130,6 +163,8 @@ export async function continueJob(
   }
 
   const newJobToInsert: JobInsert = {
+    // Provide an id so tests can validate a full row shape via type guard
+    id: (globalThis.crypto && 'randomUUID' in globalThis.crypto) ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
     session_id: job.session_id,
     user_id: projectOwnerUserId,
     stage_slug: job.stage_slug,

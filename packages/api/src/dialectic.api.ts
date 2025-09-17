@@ -650,7 +650,8 @@ export class DialecticApiClient {
         try {
             const response = await this.apiClient.post<DialecticDomain[], { action: string }>(
                 'dialectic-service',
-                { action: 'listDomains' }
+                { action: 'listDomains' },
+                { isPublic: true }
             );
 
             if (response.error) {

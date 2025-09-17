@@ -19,6 +19,7 @@ import { FileType } from "../_shared/types/file_manager.types.ts";
 import { FactoryDependencies, AiProviderAdapterInstance, AiProviderAdapter } from '../_shared/types.ts';
 import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
 import { defaultProviderMap } from '../_shared/ai_service/factory.ts';
+import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 
 export interface StartSessionDeps {
     logger: ILogger;
@@ -38,7 +39,7 @@ export async function startSession(
   partialDeps?: Partial<StartSessionDeps>
 ): Promise<{ data?: StartSessionSuccessResponse; error?: { message: string; status?: number; details?: string, code?: string } }> {
     const log: ILogger = partialDeps?.logger || logger;
-    const fileManager: IFileManager = partialDeps?.fileManager || new FileManagerService(dbClient);
+    const fileManager: IFileManager = partialDeps?.fileManager || new FileManagerService(dbClient, { constructStoragePath });
     const randomUUID = partialDeps?.randomUUID || (() => crypto.randomUUID());
     const getAiProviderAdapterDep = partialDeps?.getAiProviderAdapter || getAiProviderAdapter;
 
@@ -202,9 +203,13 @@ export async function startSession(
         .select('overlay_values')
         .eq('system_prompt_id', defaultSystemPrompt.id)
         .eq('domain_id', project.selected_domain_id);
-    
-    if (overlaysError) {
-        log.warn(`[startSession] Could not fetch overlays for prompt ${defaultSystemPrompt.id} and domain ${project.selected_domain_id}. Proceeding without.`, { dbError: overlaysError });
+
+    if (overlaysError || !overlays || overlays.length === 0) {
+        log.error(
+            `[startSession] Missing overlays for prompt ${defaultSystemPrompt.id} and domain ${project.selected_domain_id}.`,
+            { overlaysError }
+        );
+        return { error: { message: 'Required domain overlays are missing for this stage.', status: 500, code: 'STAGE_CONFIG_MISSING_OVERLAYS' } };
     }
 
     log.info(`[startSession] Determined initial stage: '${initialStageName}' (ID: ${initialStageId})`);
@@ -219,7 +224,7 @@ export async function startSession(
     const stageContext: StageContext = {
         ...fullStageData,
         system_prompts: { prompt_text: defaultSystemPrompt.prompt_text },
-        domain_specific_prompt_overlays: overlaysError ? [] : (overlays || []).map(o => ({ overlay_values: o.overlay_values as Json })),
+        domain_specific_prompt_overlays: overlays.map(o => ({ overlay_values: o.overlay_values })),
     };
     
     const initialPrompt = await getInitialPromptContent(dbClient, projectContext, log, downloadFromStorage);

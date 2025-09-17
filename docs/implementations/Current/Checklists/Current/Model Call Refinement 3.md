@@ -301,7 +301,7 @@ When generating implementation plans, detailed checklists, or any hierarchically
         *   `[🚫]` : Task is blocked by an unresolved issue or dependency.
     *   The status marker is mandatory for all list items that represent an actionable step.
 
-3.  **Component Type Labels (Optional but Recommended):**
+3.  **Component Type Labels:**
     *   If a task directly relates to a specific type of system component or development activity, include ONE of the following labels immediately after the status marker and before the task description.
     *   Use these labels judiciously where they add clarity.
     *   Available Labels: `[DB]`, `[RLS]`, `[BE]`, `[API]`, `[STORE]`, `[UI]`, `[CLI]`, `[IDE]`, `[TEST-UNIT]`, `[TEST-INT]`, `[TEST-E2E]`, `[DOCS]`, `[REFACTOR]`, `[PROMPT]`, `[CONFIG]`.
@@ -329,18 +329,24 @@ When generating implementation plans, detailed checklists, or any hierarchically
     *   **Documentation:** Include explicit tasks for documentation (e.g., `[ ] [DOCS] Update the API documentation for the new endpoint.`).
 
 **Example of Expected Output Format:**
-
 ```markdown
-[ ] 1. [BE] Phase 1: Setup Core Backend Infrastructure
-    [ ] a. [DB] Define database schema for user profiles.
-    [ ] b. [TEST-UNIT] Write failing unit tests for profile creation (RED).
-    [ ] c. [BE] Implement API endpoint for user profile creation (GREEN).
-        [ ] i. [BE] Add input validation.
-        [ ] ii. [BE] Implement database insertion logic.
-    [ ] d. [DOCS] Document the user profile API endpoint.
-[ ] 2. [UI] Phase 2: Develop User Interface
-    [ ] a. [UI] Design wireframes for the registration page.
-    [ ] b. [UI] Implement the registration form component.
+# Phase Name
+[ ] 1. [BE] Milestone 1: Add `table_name` database table
+    [ ] a. [DB] Define database schema for `table_name`.
+        [ ] i. [TEST-UNIT] Write test for `table_name` migration. (RED) 
+        [ ] ii. [DB] Write migration for `table_name`.
+        [ ] iii. [TEST-UNIT] Ensure migration for `table_name` passes tests. (GREEN)
+        [ ] iv. [DB] Sync migration to db. 
+    [ ] b. [TEST-UNIT] Write failing unit tests for `new_function`. (RED)
+    [ ] c. [API] Implement `API` endpoint for `new_function`.
+        [ ] i. [TEST-UNIT] Write failing tests for `new_function`. 
+        [ ] ii. [UI] Implement `new_function`.
+        [ ] ii. [TEST-UNIT] Ensure `new_function` passes tests. (GREEN)
+    [ ] d. [TEST-INT] Run integration tests to ensure `new_function` can access `table_name`. (GREEN)
+    [ ] e. [DOCS] Document `new_function`.
+    [ ] f. [COMMIT] feature(db,be,api,ui): Add `table_name` and `new_function` to deliver `feature`. 
+[ ] 2. [area] Milestone 2: `Next_milestone`
+
 ```
 
 By including such a guide in your system prompts, you are setting clear expectations for the AI, which should lead to more consistent, human-readable, and useful implementation plans and checklists. This aligns perfectly with making your overall system more robust and predictable.

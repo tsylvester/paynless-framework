@@ -5,6 +5,7 @@ import {
     DialecticProject 
   } from "./dialectic.interface.ts";
 import { FileManagerService } from "../_shared/services/file_manager.ts";
+import { constructStoragePath } from "../_shared/utils/path_constructor.ts";
 import { FileType } from "../_shared/types/file_manager.types.ts";
 
   console.log("createProject function started");
@@ -101,7 +102,7 @@ export async function createProject(
     }
 
     // Always create a file resource for the initial prompt, whether from string or file input
-    const fileManager = new FileManagerService(dbAdminClient);
+    const fileManager = new FileManagerService(dbAdminClient, { constructStoragePath });
     let promptResourceId: string;
 
     if (isFile) {

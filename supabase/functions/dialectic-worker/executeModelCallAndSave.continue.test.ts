@@ -43,6 +43,101 @@ import type { Messages } from '../_shared/types.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { withMockEnv, getStorageSpies } from '../_shared/supabase.mock.ts';
   
+Deno.test('executeModelCallAndSave - missing payload.user_jwt causes immediate failure before adapter call', async () => {
+  const { client: dbClient } = setupMockClient({
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+  });
+  const deps = getMockDeps();
+  const callSpy = spy(deps, 'callUnifiedAIModel');
+
+  // Build execute job WITHOUT user_jwt and without using helpers that inject defaults
+  const job: DialecticJobRow = {
+    id: 'job-id-123',
+    status: 'pending',
+    created_at: new Date().toISOString(),
+    user_id: 'user-789',
+    session_id: 'sess-123',
+    attempt_count: 0,
+    completed_at: null,
+    error_details: null,
+    iteration_number: 1,
+    max_retries: 3,
+    parent_job_id: null,
+    prerequisite_job_id: null,
+    results: null,
+    stage_slug: 'test-stage',
+    started_at: null,
+    target_contribution_id: null,
+    payload: {
+      job_type: 'execute',
+      step_info: { current_step: 1, total_steps: 1 },
+      prompt_template_name: 'test-prompt',
+      inputs: {},
+      output_type: 'thesis',
+      projectId: 'project-abc',
+      sessionId: 'sess-123',
+      stageSlug: 'test-stage',
+      model_id: 'model-def',
+      iterationNumber: 1,
+      continueUntilComplete: true,
+      walletId: 'wallet-ghi',
+      canonicalPathParams: { contributionType: 'thesis' },
+      // intentionally no user_jwt
+    },
+  };
+
+  let threw = false;
+  try {
+    await executeModelCallAndSave({
+      dbClient: dbClient as unknown as SupabaseClient<Database>,
+      deps,
+      authToken: 'external-token',
+      job,
+      projectOwnerUserId: 'user-789',
+      providerDetails: mockProviderData,
+      promptConstructionPayload: buildPromptPayload({ currentUserPrompt: 'Please continue.' }),
+      sessionData: mockSessionData,
+      compressionStrategy: getSortedCompressionCandidates,
+    });
+  } catch (_e) {
+    threw = true;
+  }
+
+  assert(threw, 'Expected immediate failure when payload.user_jwt is missing');
+  assertEquals(callSpy.calls.length, 0, 'Adapter must not be called when jwt is missing');
+});
+
+Deno.test('executeModelCallAndSave - uses payload.user_jwt and never external auth token', async () => {
+  const { client: dbClient } = setupMockClient({
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+  });
+  const deps = getMockDeps();
+  const callSpy = spy(deps, 'callUnifiedAIModel');
+
+  const expectedJwt = 'payload.jwt.value';
+  const payload: DialecticExecuteJobPayload = {
+    ...testPayload,
+    user_jwt: expectedJwt,
+  };
+  const job = createMockJob(payload);
+
+  await executeModelCallAndSave({
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'external-token-should-not-be-used',
+    job,
+    projectOwnerUserId: 'user-789',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: buildPromptPayload({ currentUserPrompt: 'Hi' }),
+    sessionData: mockSessionData,
+    compressionStrategy: getSortedCompressionCandidates,
+  });
+
+  assertEquals(callSpy.calls.length, 1, 'Adapter should be invoked exactly once');
+  const sentAuth = callSpy.calls[0].args[1];
+  assertEquals(sentAuth, expectedJwt, 'Adapter must receive jwt from payload, not external token');
+});
+
 Deno.test('executeModelCallAndSave - Continuation Enqueued', async (t) => {
     const { client: dbClient, spies, clearAllStubs } = setupMockClient({
         'ai_providers': {
@@ -224,7 +319,7 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
     // Assert first save is NOT a continuation for storage (root save), aligning with invariant:
     assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
     const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
-    assertEquals(uploadContext.contributionMetadata?.isContinuation, false, 'First chunk must not be marked as continuation for storage');
+    assertEquals(uploadContext.pathContext.isContinuation, false, 'First chunk must not be marked as continuation for storage');
 
     if (!uploadContext.contributionMetadata) {
       throw new Error('uploadContext.contributionMetadata is undefined');
@@ -271,6 +366,7 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
         stageSlug,
         modelId: 'model-def',
         walletId: 'wallet-ghi',
+        user_jwt: 'jwt.token.here',
         // --- Properties to satisfy the type guard ---
         job_type: 'execute',
         prompt_template_name: 'test-prompt',
@@ -344,7 +440,7 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
       'Should preserve the original document_relationships from the job payload.',
     );
 
-    assertEquals(uploadContext.contributionMetadata?.turnIndex, 1, 'turnIndex should be 1');
+    assertEquals(uploadContext.pathContext.turnIndex, 1, 'turnIndex should be 1');
 
     clearAllStubs?.();
   });
@@ -529,7 +625,7 @@ await executeModelCallAndSave(params);
 assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected uploadAndRegisterFile to be called');
 const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
 assertExists(uploadContext.contributionMetadata, 'Expected contributionMetadata');
-assert(uploadContext.contributionMetadata.isContinuation === false, 'First chunk must not be marked as continuation for storage');
+assert(uploadContext.pathContext.isContinuation === false, 'First chunk must not be marked as continuation for storage');
 assert(
   !('target_contribution_id' in uploadContext.contributionMetadata) || !uploadContext.contributionMetadata.target_contribution_id,
   'First chunk must not carry target_contribution_id',
@@ -845,6 +941,7 @@ Deno.test("executeModelCallAndSave saves final model_contribution_main to stage 
       model_id: 'model-1',
       sessionId: 'sess',
       walletId: 'wallet',
+      user_jwt: 'jwt.token.here',
       output_type: 'thesis',
       canonicalPathParams: {
         projectId: 'proj',
@@ -1017,18 +1114,18 @@ Deno.test('executeModelCallAndSave - three-chunk finalization uses saved root id
 
   // Root upload: not a continuation; no target_contribution_id
   assertEquals(u0.fileContent, expectedRoot);
-  assertEquals(u0.contributionMetadata?.isContinuation, false);
+  assertEquals(u0.pathContext.isContinuation, false);
   assert(!u0.contributionMetadata?.target_contribution_id);
 
   // Continuation 1: continuation linked to root; relationships persisted on continuation
   assertEquals(u1.fileContent, expectedC1);
-  assertEquals(u1.contributionMetadata?.isContinuation, true);
+  assertEquals(u1.pathContext.isContinuation, true);
   assertEquals(u1.contributionMetadata?.target_contribution_id, rootId);
   assertEquals(u1.contributionMetadata?.document_relationships, relationships);
 
   // Continuation 2: continuation linked to cont1; relationships persisted on continuation
   assertEquals(u2.fileContent, expectedC2);
-  assertEquals(u2.contributionMetadata?.isContinuation, true);
+  assertEquals(u2.pathContext.isContinuation, true);
   assertEquals(u2.contributionMetadata?.target_contribution_id, cont1Id);
   assertEquals(u2.contributionMetadata?.document_relationships, relationships);
 
@@ -1036,4 +1133,82 @@ Deno.test('executeModelCallAndSave - three-chunk finalization uses saved root id
   assertEquals(uploadedContents.join(''), expectedRoot + expectedC1 + expectedC2, 'expected concatenation of root+chunk1+chunk2');
 
   clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - continuation jobs should populate pathContext with continuation flags', async () => {
+  // Arrange
+  const { client: dbClient } = setupMockClient({
+      'ai_providers': {
+          select: { data: [mockFullProviderData], error: null }
+      }
+  });
+
+  const fileManager = new MockFileManagerService();
+  fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+  const deps = getMockDeps();
+  deps.fileManager = fileManager;
+
+  const continuationPayload: DialecticExecuteJobPayload = {
+      ...testPayload,
+      continuation_count: 2,
+      document_relationships: { 'thesis': 'contrib-123' },
+  };
+
+  const continuationJob = createMockJob(
+      continuationPayload, 
+      {
+          target_contribution_id: 'existing-contrib-id',
+      }
+  );
+
+  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+      job: continuationJob,
+      promptConstructionPayload: buildPromptPayload(),
+  });
+
+  // Act
+  await executeModelCallAndSave(params);
+
+  // Assert
+  assertEquals(fileManager.uploadAndRegisterFile.calls.length, 1, "uploadAndRegisterFile should be called once");
+  const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+  
+  assertEquals(uploadContext.pathContext.isContinuation, true, "isContinuation flag should be set to true in pathContext");
+  assertEquals(uploadContext.pathContext.turnIndex, 2, "turnIndex should be set to 2 in pathContext");
+});
+
+Deno.test('executeModelCallAndSave - should continue when content contains continuation_needed: true, even if finish_reason is stop', async () => {
+  // Arrange
+  const { client: dbClient } = setupMockClient({
+    'ai_providers': {
+      select: { data: [mockFullProviderData], error: null }
+    }
+  });
+
+  const deps = getMockDeps();
+  const continueJobSpy = spy(deps, 'continueJob');
+
+  const payloadWithContinuation: DialecticExecuteJobPayload = {
+    ...testPayload,
+    continueUntilComplete: true,
+  };
+
+  const jobWithContinuation = createMockJob(payloadWithContinuation);
+
+  deps.callUnifiedAIModel = async () => ({
+    content: '{"continuation_needed": true, "stop_reason": "next_document"}',
+    finish_reason: 'stop', // Provider says stop
+    contentType: 'application/json',
+    inputTokens: 10,
+    outputTokens: 20,
+    processingTimeMs: 100,
+  });
+
+  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job: jobWithContinuation });
+
+  // Act
+  await executeModelCallAndSave(params);
+
+  // Assert
+  assertEquals(continueJobSpy.calls.length, 1, 'continueJob should be called once when content signals continuation');
 });

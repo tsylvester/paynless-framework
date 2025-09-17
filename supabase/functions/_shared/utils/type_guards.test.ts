@@ -459,7 +459,7 @@ Deno.test('Type Guard: isCitationsArray', async (t) => {
     await t.step('should return true for a valid array of Citation objects', () => {
         const citations = [
             { text: 'Source 1', url: 'http://example.com/1' },
-            { text: 'Source 2' }
+            { text: 'Source 2' },
         ];
         assert(isCitationsArray(citations));
     });
@@ -475,6 +475,11 @@ Deno.test('Type Guard: isCitationsArray', async (t) => {
 
     await t.step('should return false if text property is not a string', () => {
         const invalidCitations = [{ text: 123 }];
+        assert(!isCitationsArray(invalidCitations));
+    });
+
+    await t.step('should return false if url property is present but not a string', () => {
+        const invalidCitations = [{ text: 'Valid text', url: 123 }];
         assert(!isCitationsArray(invalidCitations));
     });
 

@@ -153,7 +153,7 @@ describe("exportProject", () => {
             resource_description: JSON.stringify({type: "project_export_zip"}),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-        } as FileRecord;
+        };
 
         mockSupabaseSetup = createMockSupabaseClient(mockUser.id, {
             genericMockResults: {
@@ -162,7 +162,7 @@ describe("exportProject", () => {
                         if (state.filters.some(f => f.column === 'id' && f.value === mockProjectId)) {
                             return Promise.resolve({ data: [projectData], error: null, count: 1, status: 200, statusText: "OK" });
                         }
-                        return Promise.resolve({ data: [], error: { message: "Not found" } as any, count: 0, status: 404, statusText: "Not Found" });
+                        return Promise.resolve({ data: [], error: Object.assign(new Error("Not found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" });
                     }
                 },
                 'dialectic_project_resources': {
@@ -214,7 +214,7 @@ describe("exportProject", () => {
             _path: string, 
             _expiresIn: number
         ): Promise<{ signedUrl: string | null; error: Error | null }> => {
-            return Promise.resolve({ signedUrl: mockSignedUrl, error: null }); // Removed redundant await
+            return Promise.resolve({ signedUrl: mockSignedUrl, error: null });
         };
 
         mockStorageUtils = {
@@ -258,7 +258,7 @@ describe("exportProject", () => {
         assertEquals(downloadFromStorageSpy.calls[2].args, [mockSupabaseSetup.client as any, mockExportBucket, contribution1Data.raw_response_storage_path]);
 
         assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1);
-        const uploadArgs = mockFileManager.uploadAndRegisterFile.calls[0].args[0] as UploadContext;
+        const uploadArgs: UploadContext = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
         assertEquals(uploadArgs.pathContext.projectId, mockProjectId);
         assertEquals(uploadArgs.userId, mockUser.id);
         assertInstanceOf(uploadArgs.fileContent, Buffer);
@@ -277,7 +277,7 @@ describe("exportProject", () => {
             3600
         ]);
         
-        const zipBufferSentToFileManager = mockFileManager.uploadAndRegisterFile.calls[0].args[0].fileContent as Buffer;
+        const zipBufferSentToFileManager = mockFileManager.uploadAndRegisterFile.calls[0].args[0].fileContent;
         const zipBlobForReading = new Blob([zipBufferSentToFileManager]);
         const zipReader = new ZipReader(new BlobReader(zipBlobForReading));
         const entries = await zipReader.getEntries();
@@ -298,14 +298,14 @@ describe("exportProject", () => {
             assertEquals(manifest.sessions[0].contributions[0].id, contribution1Data.id);
         }
 
-        const resourceFileEntry = entries.find(e => e.filename === `resources/${resource1Data.file_name}`);
-        assertExists(resourceFileEntry, "Resource file not found in zip");
+        const resourceFileEntry = entries.find(e => e.filename === `${resource1Data.storage_path}/${resource1Data.file_name}`);
+        assertExists(resourceFileEntry, "Resource file with canonical path not found in zip");
 
-        const contribContentEntry = entries.find(e => e.filename.startsWith(`sessions/${session1Data.id}/contributions/${contribution1Data.id}_content`));
-        assertExists(contribContentEntry, "Contribution content file not found in zip");
+        const contribContentEntry = entries.find(e => e.filename === `${contribution1Data.storage_path}/${contribution1Data.file_name}`);
+        assertExists(contribContentEntry, "Contribution content file with canonical path not found in zip");
         
-        const contribRawEntry = entries.find(e => e.filename.startsWith(`sessions/${session1Data.id}/contributions/${contribution1Data.id}_raw.json`));
-        assertExists(contribRawEntry, "Contribution raw JSON file not found in zip");
+        const contribRawEntry = entries.find(e => e.filename === contribution1Data.raw_response_storage_path);
+        assertExists(contribRawEntry, "Contribution raw JSON file with canonical path not found in zip");
 
         await zipReader.close();
     });
@@ -336,10 +336,10 @@ describe("exportProject", () => {
                     select: (state: MockQueryBuilderState) => {
                         if (state.filters.some(f => f.column === 'id' && f.value === nonExistentProjectId)) {
                             // Simulate PGRST116 (no rows for .single()) which exportProject handles as a 404
-                            return Promise.resolve({ data: null, error: { message: "No rows found for single()", code: "PGRST116", details: "The query returned no rows" } as any, count: 0, status: 404, statusText: "Not Found" });
+                            return Promise.resolve({ data: null, error: Object.assign(new Error("No rows found for single()"), { code: "PGRST116", details: "The query returned no rows" }), count: 0, status: 404, statusText: "Not Found" });
                         }
                         // Fallback for this specific mock setup if any other ID is queried (should not happen in this test)
-                        return Promise.resolve({ data: [], error: { message: `Unexpected project ID queried in 'project not found' test: ${state.filters.find(f=>f.column==='id')?.value}`, code: "UNEXPECTED_QUERY" } as any, count: 0, status: 500, statusText: "Internal Server Error" });
+                        return Promise.resolve({ data: [], error: Object.assign(new Error(`Unexpected project ID queried in 'project not found' test: ${state.filters.find(f=>f.column==='id')?.value}`), { code: "UNEXPECTED_QUERY" }), count: 0, status: 500, statusText: "Internal Server Error" });
                     }
                 },
                 // No need to mock other tables for this test as the function should exit early.
@@ -383,7 +383,7 @@ describe("exportProject", () => {
                             // Return the project data as if the project exists
                             return Promise.resolve({ data: [projectData], error: null, count: 1, status: 200, statusText: "OK" });
                         }
-                        return Promise.resolve({ data: [], error: { message: "Not found" } as any, count: 0, status: 404, statusText: "Not Found" });
+                        return Promise.resolve({ data: [], error: Object.assign(new Error("Not found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" });
                     }
                 },
             }
@@ -410,94 +410,34 @@ describe("exportProject", () => {
         localMockSupabaseSetup.clearAllStubs?.();
     });
 
-    it("should continue export if fetching project_resources fails (non-fatal)", async () => {
+    it("should return 500 and halt if fetching project_resources fails", async () => {
         const localMockSupabaseSetup = createMockSupabaseClient(mockUser.id, {
             genericMockResults: {
                 'dialectic_projects': {
-                    select: (state: MockQueryBuilderState) => {
-                        if (state.filters.some(f => f.column === 'id' && f.value === mockProjectId)) {
-                            return Promise.resolve({ data: [projectData], error: null, count: 1, status: 200, statusText: "OK" });
-                        }
-                        return Promise.resolve({ data: [], error: { message: "Project not found for this test scenario" } as any, count: 0, status: 404, statusText: "Not Found" });
-                    }
+                    select: () => Promise.resolve({ data: [projectData], error: null }),
                 },
                 'dialectic_project_resources': {
-                    select: (state: MockQueryBuilderState) => {
-                        if (state.filters.some(f => f.column === 'project_id' && f.value === mockProjectId)) {
-                            return Promise.resolve({ data: null, error: { message: "Simulated DB error fetching resources", code: "DB_FETCH_ERROR" } as any, count: 0, status: 500, statusText: "Internal Server Error" });
-                        }
-                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }); // Should not be called if project_id matches
-                    }
+                    select: () => Promise.resolve({ data: null, error: Object.assign(new Error("Simulated DB error"), { code: "DB_ERROR" }) }),
                 },
-                'dialectic_sessions': {
-                    select: (state: MockQueryBuilderState) => {
-                        if (state.filters.some(f => f.column === 'project_id' && f.value === mockProjectId)) {
-                            return Promise.resolve({ data: [session1Data], error: null, count: 1, status: 200, statusText: "OK" });
-                        }
-                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
-                    }
-                },
-                'dialectic_contributions': {
-                    select: (state: MockQueryBuilderState) => {
-                        if (state.filters.some(f => f.column === 'session_id' && f.value === session1Data.id)) {
-                            return Promise.resolve({ data: [{ ...contribution1Data, parent_contribution_id: contribution1Data.target_contribution_id, dialectic_stages: mockStage1Data }], error: null, count: 1, status: 200, statusText: "OK" });
-                        }
-                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
-                    }
-                }
             }
         });
 
-        // FileManager should still be called to upload the zip
-        mockFileManager.setUploadAndRegisterFileResponse(mockFileRecordForZip, null);
-
         const result = await exportProject(
-            localMockSupabaseSetup.client as any, 
-            mockFileManager, 
-            mockStorageUtils, 
-            mockProjectId, 
+            localMockSupabaseSetup.client as any,
+            mockFileManager,
+            mockStorageUtils,
+            mockProjectId,
             mockUser.id
         );
 
-        assertExists(result.data, "Export data should exist even if fetching resources failed.");
-        assertEquals(result.data?.export_url, mockSignedUrl);
-        assertEquals(result.error, undefined); // The error is logged but not returned as fatal
-        assertEquals(result.status, 200);
-        
-        // Should only download contribution files, not project resources
-        assertEquals(downloadFromStorageSpy.calls.length, 2, "Should attempt to download 2 contribution files.");
-        assertEquals(downloadFromStorageSpy.calls[0].args[2], `${contribution1Data.storage_path}/${contribution1Data.file_name}`);
-        assertEquals(downloadFromStorageSpy.calls[1].args[2], contribution1Data.raw_response_storage_path);
+        assertExists(result.error, "Function should return an error when resource fetch fails.");
+        assertEquals(result.error?.status, 500);
+        assertEquals(result.data, undefined, "Export data should not exist on fatal error.");
 
-        assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "File manager should be called to upload the zip.");
-        assertEquals(createSignedUrlForPathSpy.calls.length, 1, "Create signed URL should be called.");
-
-        const zipBuffer = mockFileManager.uploadAndRegisterFile.calls[0].args[0].fileContent as Buffer;
-        const zipBlob = new Blob([zipBuffer]);
-        const zipReader = new ZipReader(new BlobReader(zipBlob));
-        const entries = await zipReader.getEntries();
-
-        assertEquals(entries.length, 3, "Zip should contain manifest, 1 contrib content, 1 contrib raw.");
-        
-        const manifestEntry = entries.find(e => e.filename === "project_manifest.json");
-        assertExists(manifestEntry, "project_manifest.json not found in zip");
-        if (manifestEntry && manifestEntry.getData) {
-            const manifest = JSON.parse(await manifestEntry.getData(new TextWriter()));
-            assertEquals(manifest.project.id, mockProjectId);
-            assertEquals(manifest.resources.length, 0, "Manifest resources array should be empty.");
-            assertEquals(manifest.sessions.length, 1);
-            assertEquals(manifest.sessions[0].contributions.length, 1);
-        }
-
-        assertExists(entries.find(e => e.filename.startsWith(`sessions/${session1Data.id}/contributions/${contribution1Data.id}_content`)), "Contrib content missing");
-        assertExists(entries.find(e => e.filename.startsWith(`sessions/${session1Data.id}/contributions/${contribution1Data.id}_raw.json`)), "Contrib raw JSON missing");
-        assertEquals(entries.find(e => e.filename.startsWith("resources/")), undefined, "No resource files should be in the zip.");
-
-        await zipReader.close();
         localMockSupabaseSetup.clearAllStubs?.();
     });
 
-    it("should skip a resource and continue if its downloadFromStorage fails", async () => {
+    it("should return 500 and halt if a resource downloadFromStorage fails", async () => {
         const resource2Data: Tables<'dialectic_project_resources'> = {
             id: "res-2-fails",
             project_id: mockProjectId,
@@ -511,76 +451,43 @@ describe("exportProject", () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
         };
-        const resource2ContentBuffer = await new Blob(["Resource 2 content - should not be in zip"]).arrayBuffer(); // Not used by download
 
         const localMockSupabaseSetup = createMockSupabaseClient(mockUser.id, {
             genericMockResults: {
                 'dialectic_projects': { select: () => Promise.resolve({ data: [projectData], error: null }) },
                 'dialectic_project_resources': { select: () => Promise.resolve({ data: [resource1Data, resource2Data], error: null }) },
-                'dialectic_sessions': { select: () => Promise.resolve({ data: [session1Data], error: null }) },
-                'dialectic_contributions': { select: () => Promise.resolve({ data: [{ ...contribution1Data, parent_contribution_id: contribution1Data.target_contribution_id, dialectic_stages: mockStage1Data }], error: null }) },
+                'dialectic_sessions': { select: () => Promise.resolve({ data: [], error: null }) }, // No sessions needed for this test
             }
         });
 
-        const localDownloadImpl = async (_client: SupabaseClient, bucket: string, path: string): Promise<DownloadStorageResult> => {
+        // This local utility will fail on the second resource
+        const localDownloadImpl = async (_client: SupabaseClient, _bucket: string, path: string): Promise<DownloadStorageResult> => {
             if (path === `${resource1Data.storage_path}/${resource1Data.file_name}`) return { data: resource1ContentBuffer, error: null };
-            if (path === `${resource2Data.storage_path}/${resource2Data.file_name}`) return { data: null, error: new Error("Simulated download failure for resource2") };
-            if (path === `${contribution1Data.storage_path}/${contribution1Data.file_name}`) return { data: contribution1ContentBuffer, error: null };
-            if (path === contribution1Data.raw_response_storage_path) return { data: contribution1RawJsonContentBuffer, error: null };
-            return { data: null, error: new Error(`Test localDownloadImpl: Unknown path ${path}`) };
+            if (path === `${resource2Data.storage_path}/${resource2Data.file_name}`) return { data: null, error: new Error("Simulated download failure") };
+            return { data: null, error: new Error(`Test localDownloadImpl: Unexpected path ${path}`) };
         };
-        const localCreateSignedUrlImpl = async () => Promise.resolve({ signedUrl: mockSignedUrl, error: null });
-
-        const localTestStorageUtils: IStorageUtils = {
-            downloadFromStorage: localDownloadImpl,
-            createSignedUrlForPath: localCreateSignedUrlImpl,
-        };
+        const localTestStorageUtils: IStorageUtils = { ...mockStorageUtils, downloadFromStorage: localDownloadImpl };
         const localDownloadSpy = stub(localTestStorageUtils, "downloadFromStorage", localDownloadImpl);
-        const localSignedUrlSpy = stub(localTestStorageUtils, "createSignedUrlForPath", localCreateSignedUrlImpl);
-
-        mockFileManager.setUploadAndRegisterFileResponse(mockFileRecordForZip, null);
 
         const result = await exportProject(
-            localMockSupabaseSetup.client as any, 
-            mockFileManager, 
-            localTestStorageUtils, // Pass the locally configured storage utils
-            mockProjectId, 
+            localMockSupabaseSetup.client as any,
+            mockFileManager,
+            localTestStorageUtils,
+            mockProjectId,
             mockUser.id
         );
 
-        assertExists(result.data, "Export should succeed even if one resource download fails.");
-        assertEquals(result.data?.export_url, mockSignedUrl);
-        assertEquals(result.error, undefined);
-        assertEquals(result.status, 200);
+        assertExists(result.error, "Function should return an error when a download fails.");
+        assertEquals(result.error?.status, 500, "Status should be 500 for a critical download failure.");
+        assertEquals(result.error?.code, 'EXPORT_DOWNLOAD_FAILED', "Error code should indicate a download failure.");
+        assertEquals(result.data, undefined);
 
-        assertEquals(localDownloadSpy.calls.length, 4, "Download should be attempted for all 4 files.");
-        assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1);
-        assertEquals(localSignedUrlSpy.calls.length, 1);
+        assertEquals(localDownloadSpy.calls.length, 2, "Should attempt to download first and second file.");
+        assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 0, "Should not upload a zip if a file is missing.");
+        assertEquals(createSignedUrlForPathSpy.calls.length, 0, "Should not create a signed URL if the zip isn't uploaded.");
 
-        const zipBuffer = mockFileManager.uploadAndRegisterFile.calls[0].args[0].fileContent as Buffer;
-        const zipReader = new ZipReader(new BlobReader(new Blob([zipBuffer])));
-        const entries = await zipReader.getEntries();
-
-        assertEquals(entries.length, 4, "Zip should contain manifest, 1 successful resource, 1 contrib content, 1 contrib raw.");
-        const fileNamesInZip = entries.map(e => e.filename);
-
-        assertExists(fileNamesInZip.find(name => name === "project_manifest.json"));
-        assertExists(fileNamesInZip.find(name => name === `resources/${resource1Data.file_name}`), "Resource1 should be in zip");
-        assertEquals(fileNamesInZip.find(name => name === `resources/${resource2Data.file_name}`), undefined, "Failed resource2 should not be in zip");
-        assertExists(fileNamesInZip.find(name => name.startsWith(`sessions/${session1Data.id}/contributions/${contribution1Data.id}_content`)));
-        assertExists(fileNamesInZip.find(name => name.startsWith(`sessions/${session1Data.id}/contributions/${contribution1Data.id}_raw.json`)));
-        
-        const manifestEntry = entries.find(e => e.filename === "project_manifest.json");
-        assertExists(manifestEntry);
-        if (manifestEntry && manifestEntry.getData) {
-            const manifest = JSON.parse(await manifestEntry.getData(new TextWriter()));
-            assertEquals(manifest.resources.length, 2, "Manifest should still list both resources, even if one failed to download.");
-        }
-
-        await zipReader.close();
-        localMockSupabaseSetup.clearAllStubs?.();
         localDownloadSpy.restore();
-        localSignedUrlSpy.restore();
+        localMockSupabaseSetup.clearAllStubs?.();
     });
 
     it("should return 500 if FileManager.uploadAndRegisterFile fails", async () => {
@@ -590,7 +497,7 @@ describe("exportProject", () => {
         const initialFileManagerCalls = mockFileManager.uploadAndRegisterFile.calls.length;
 
         // Configure FileManager to fail
-        const fmError = { message: "Simulated FileManager upload error", status: 500, code: "FM_UPLOAD_ERROR", details: "Underlying DB unique constraint violation" };
+        const fmError = { name: 'FMError', message: "Simulated FileManager upload error", status: 500, code: "FM_UPLOAD_ERROR", details: "Underlying DB unique constraint violation" };
         mockFileManager.setUploadAndRegisterFileResponse(null, fmError as any);
 
         // Supabase client and storage utils will use the global mocks from beforeEach, which should succeed for fetching/downloading.
@@ -681,7 +588,7 @@ describe("exportProject", () => {
                         if (state.filters.some(f => f.column === 'id' && f.value === mockProjectId)) {
                             return Promise.resolve({ data: [projectData], error: null, count: 1, status: 200, statusText: "OK" });
                         }
-                        return Promise.resolve({ data: [], error: { message: "Project not found" } as any, count: 0, status: 404, statusText: "Not Found" });
+                        return Promise.resolve({ data: [], error: Object.assign(new Error("Project not found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" });
                     }
                 },
                 'dialectic_project_resources': { select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }) },
@@ -710,7 +617,7 @@ describe("exportProject", () => {
         assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, initialFileManagerCalls + 1, "File manager should be called to upload the zip.");
         assertEquals(createSignedUrlForPathSpy.calls.length, initialSignedUrlCalls + 1, "Create signed URL should be called.");
 
-        const zipBuffer = mockFileManager.uploadAndRegisterFile.calls[0].args[0].fileContent as Buffer;
+        const zipBuffer = mockFileManager.uploadAndRegisterFile.calls[0].args[0].fileContent;
         const zipReader = new ZipReader(new BlobReader(new Blob([zipBuffer])));
         const entries = await zipReader.getEntries();
 
@@ -786,6 +693,66 @@ describe("exportProject", () => {
         const expectedDeterministic = `project_export_${expectedSlug}.zip`;
         assertEquals(firstArgs.pathContext.originalFileName, expectedDeterministic);
         assertEquals(secondArgs.pathContext.originalFileName, expectedDeterministic);
+    });
+
+    it("should ignore project resources with 'application/zip' mime type", async () => {
+        const zipResourceData: Tables<'dialectic_project_resources'> = {
+            id: "res-zip",
+            project_id: mockProjectId,
+            user_id: mockUser.id,
+            file_name: "archive.zip",
+            mime_type: "application/zip",
+            size_bytes: 5000,
+            storage_bucket: mockExportBucket,
+            storage_path: `${mockProjectId}/general_resource`,
+            resource_description: JSON.stringify({type: "archive"}),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        };
+
+        const localMockSupabaseSetup = createMockSupabaseClient(mockUser.id, {
+            genericMockResults: {
+                'dialectic_projects': { select: () => Promise.resolve({ data: [projectData], error: null }) },
+                'dialectic_project_resources': { select: () => Promise.resolve({ data: [resource1Data, zipResourceData], error: null }) },
+                'dialectic_sessions': { select: () => Promise.resolve({ data: [session1Data], error: null }) },
+                'dialectic_contributions': { select: () => Promise.resolve({ data: [{ ...contribution1Data, parent_contribution_id: contribution1Data.target_contribution_id, dialectic_stages: mockStage1Data }], error: null }) },
+            }
+        });
+
+        mockFileManager.setUploadAndRegisterFileResponse(mockFileRecordForZip, null);
+
+        await exportProject(
+            localMockSupabaseSetup.client as any,
+            mockFileManager,
+            mockStorageUtils,
+            mockProjectId,
+            mockUser.id
+        );
+
+        // Assert that download was NOT called for the zip file.
+        const downloadCalls = downloadFromStorageSpy.calls;
+        assertEquals(downloadCalls.length, 3, "Should download the txt resource and two contribution files, but not the zip.");
+        const downloadedPaths = downloadCalls.map(call => call.args[2]);
+        assertEquals(downloadedPaths.includes(`${zipResourceData.storage_path}/${zipResourceData.file_name}`), false, "Should not attempt to download the zip resource.");
+
+        // Assert that the zip file is not included in the final export zip.
+        const zipBuffer = mockFileManager.uploadAndRegisterFile.calls[0].args[0].fileContent;
+        const zipReader = new ZipReader(new BlobReader(new Blob([zipBuffer])));
+        const entries = await zipReader.getEntries();
+        const zipEntry = entries.find(e => e.filename === `${zipResourceData.storage_path}/${zipResourceData.file_name}`);
+        assertEquals(zipEntry, undefined, "The zip resource should not be present in the final export bundle.");
+        
+        // Assert the manifest still lists the zip resource
+        const manifestEntry = entries.find(e => e.filename === "project_manifest.json");
+        assertExists(manifestEntry);
+        if (manifestEntry && manifestEntry.getData) {
+            const manifest = JSON.parse(await manifestEntry.getData(new TextWriter()));
+            assertEquals(manifest.resources.length, 2, "Manifest should list both resources.");
+            assertExists(manifest.resources.find((r: DialecticProjectResource) => r.id === zipResourceData.id), "Zip resource should be listed in the manifest.");
+        }
+
+        await zipReader.close();
+        localMockSupabaseSetup.clearAllStubs?.();
     });
 
     // TODO: Add more test cases:

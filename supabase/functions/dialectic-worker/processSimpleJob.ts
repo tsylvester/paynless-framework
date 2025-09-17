@@ -11,6 +11,7 @@ import {
   type SourceDocument,
 } from '../dialectic-service/dialectic.interface.ts';
 import { isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
+import { isRecord } from "../_shared/utils/type_guards.ts";
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { type Messages } from '../_shared/types.ts';
 import { type AssemblerSourceDocument, type StageContext } from '../_shared/prompt-assembler.interface.ts';
@@ -69,7 +70,7 @@ export async function processSimpleJob(
 
         const { data: stageResult, error: stageError } = await dbClient
             .from('dialectic_stages')
-            .select('*, system_prompts(prompt_text)')
+            .select('*, system_prompts(id, prompt_text)')
             .eq('slug', stageSlug)
             .single();
 
@@ -85,18 +86,91 @@ export async function processSimpleJob(
             throw new Error('PromptAssembler dependency is missing.');
         }
 
+        // Normalize payload to an object (Supabase rows may return JSON as string)
+        const normalizedPayloadUnknown = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
+        {
+            let hasJwtKey = false;
+            let jwtLen = 0;
+            if (isRecord(normalizedPayloadUnknown) && 'user_jwt' in normalizedPayloadUnknown) {
+                const v = normalizedPayloadUnknown['user_jwt'];
+                if (typeof v === 'string') jwtLen = v.length;
+                hasJwtKey = true;
+            }
+            deps.logger.info('[processSimpleJob] DIAGNOSTIC: normalized payload jwt presence', {
+                jobId,
+                typeofPayload: typeof normalizedPayloadUnknown,
+                hasJwtKey,
+                jwtLen,
+            });
+        }
+        // Validate user_jwt presence on payload (no healing, no substitution)
+        let hasUserJwt = false;
+        if (isRecord(normalizedPayloadUnknown) && 'user_jwt' in normalizedPayloadUnknown) {
+            const v = normalizedPayloadUnknown['user_jwt'];
+            if (typeof v === 'string' && v.trim().length > 0) {
+                hasUserJwt = true;
+            }
+        }
+        if (!hasUserJwt) {
+            throw new Error('payload.user_jwt required');
+        }
+
         let conversationHistory: Messages[] = [];
         let gatheredInputs: AssemblerSourceDocument[] = [];
         let currentUserPrompt: string;
         const resourceDocuments: SourceDocument[] = [];
 
         if (job.payload.target_contribution_id) {
+            // 1. Fetch the target contribution to find the true root.
+            const { data: targetChunk, error: targetChunkError } = await dbClient
+                .from('dialectic_contributions')
+                .select('stage, document_relationships')
+                .eq('id', job.payload.target_contribution_id)
+                .single();
+
+            if (targetChunkError || !targetChunk) {
+                throw new Error(`Failed to retrieve target contribution for id ${job.payload.target_contribution_id}.`);
+            }
+            if (!targetChunk.stage) {
+                throw new Error(`Target contribution ${job.payload.target_contribution_id} has no stage information.`);
+            }
+            
+            // 2. Discover the true root ID from the chunk's relationships.
+            const relationships = targetChunk.document_relationships;
+            let trueRootId = job.payload.target_contribution_id; // Default
+
+            if (isRecord(relationships)) {
+                const potentialRootId = relationships[targetChunk.stage];
+                if (typeof potentialRootId === 'string' && potentialRootId) {
+                    trueRootId = potentialRootId;
+                }
+            }
+
             conversationHistory = await deps.promptAssembler.gatherContinuationInputs(
-                job.payload.target_contribution_id
+                trueRootId
             );
             currentUserPrompt = "Please continue.";
         } else {
-            const stageContext: StageContext = { ...stageData, system_prompts, domain_specific_prompt_overlays: [] };
+            // Fetch domain-specific overlays for this stage's system prompt and selected domain
+            const systemPromptId = system_prompts.id;
+            if (!systemPromptId) {
+                throw new Error('STAGE_CONFIG_MISSING_OVERLAYS');
+            }
+            const { data: overlayRows, error: overlayErr } = await dbClient
+                .from('domain_specific_prompt_overlays')
+                .select('overlay_values')
+                .eq('system_prompt_id', systemPromptId)
+                .eq('domain_id', project.selected_domain_id);
+
+            if (overlayErr || !overlayRows || overlayRows.length === 0) {
+                throw new Error('STAGE_CONFIG_MISSING_OVERLAYS');
+            }
+
+            const stageContext: StageContext = {
+                ...stageData,
+                system_prompts,
+                domain_specific_prompt_overlays: overlayRows.map((o) => ({ overlay_values: o.overlay_values})),
+            };
             gatheredInputs = await deps.promptAssembler.gatherInputsForStage(
                 stageContext,
                 project,
@@ -160,11 +234,33 @@ export async function processSimpleJob(
             currentUserPrompt,
         };
 
+        // Ensure executor receives a normalized payload object
+        const jobForExec = {
+            ...job,
+            payload: (typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload),
+        };
+        {
+            const p = jobForExec.payload;
+            let hasJwtKey = false;
+            let jwtLen = 0;
+            if (isRecord(p) && 'user_jwt' in p) {
+                const v = p['user_jwt'];
+                if (typeof v === 'string') jwtLen = v.length;
+                hasJwtKey = true;
+            }
+            deps.logger.info('[processSimpleJob] DIAGNOSTIC: jobForExec payload jwt presence', {
+                jobId,
+                typeofPayload: typeof p,
+                hasJwtKey,
+                jwtLen,
+            });
+        }
+
         await deps.executeModelCallAndSave({
             dbClient,
             deps,
             authToken,
-            job,
+            job: jobForExec,
             projectOwnerUserId,
             providerDetails,
             sessionData,
@@ -242,80 +338,92 @@ export async function processSimpleJob(
             }
         };
 
+        // Auth missing on payload should fail immediately and surface to caller
+        if (lower.includes('payload.user_jwt required')) {
+            await emitImmediateFailure('AUTH_MISSING', message);
+            throw error;
+        }
+
         // Affordability / NSF signals
         if (lower.includes('insufficient funds')) {
             await emitImmediateFailure('INSUFFICIENT_FUNDS', message);
-            return;
+            throw error;
         }
 
         // Wallet missing
         if (lower.includes('wallet is required')) {
             await emitImmediateFailure('WALLET_MISSING', message);
-            return;
+            throw error;
         }
 
         // Missing or invalid initial prompt signals
         if (lower.includes('initial prompt is required') || lower.includes('rendered initial prompt is empty')) {
             await emitImmediateFailure('INVALID_INITIAL_PROMPT', message);
-            return;
+            throw error;
+        }
+
+        // Overlays missing for stage configuration
+        if (lower.includes('stage_config_missing_overlays')) {
+            await emitImmediateFailure('STAGE_CONFIG_MISSING_OVERLAYS', message);
+            throw error;
         }
 
         // Continuation dependency missing
         if (lower.includes('failed to retrieve root contribution')) {
             await emitImmediateFailure('CONTINUATION_ROOT_MISSING', message);
-            return;
+            throw error;
         }
 
         // Missing core entities / config
         if (lower.includes('session ') && lower.includes(' not found')) {
             await emitImmediateFailure('SESSION_NOT_FOUND', message);
-            return;
+            throw error;
         }
         if (lower.startsWith('project ') && lower.includes(' not found')) {
             await emitImmediateFailure('PROJECT_NOT_FOUND', message);
-            return;
+            throw error;
         }
         if (lower.includes('project domain not found')) {
             await emitImmediateFailure('DOMAIN_NOT_FOUND', message);
-            return;
+            throw error;
         }
         if (lower.includes('could not retrieve stage details') || lower.includes('system prompt not found')) {
             await emitImmediateFailure('STAGE_CONFIG_MISSING', message);
-            return;
+            throw error;
         }
 
         // Dependency/configuration problems
         if (lower.includes('affordability preflight') || lower.includes('token wallet service is required')) {
             await emitImmediateFailure('INTERNAL_DEPENDENCY_MISSING', message);
-            return;
+            throw error;
         }
         if (lower.includes('promptassembler dependency is missing')) {
             await emitImmediateFailure('INTERNAL_DEPENDENCY_MISSING', message);
-            return;
+            throw error;
         }
         if (lower.includes("dependency 'counttokens' is not provided") ||
             lower.includes("dependency 'callunifiedaimodel' is not provided") ||
             lower.includes('required services for prompt compression')) {
             await emitImmediateFailure('INTERNAL_DEPENDENCY_MISSING', message);
-            return;
+            throw error;
         }
         if (lower.includes('could not fetch full provider details') ||
             lower.includes('failed to fetch valid provider details') ||
             lower.includes('has invalid or missing configuration')) {
             await emitImmediateFailure('PROVIDER_CONFIG_INVALID', message);
-            return;
+            throw error;
         }
 
         // Wallet/balance parsing issues
         if (lower.includes('could not parse wallet balance')) {
             await emitImmediateFailure('WALLET_BALANCE_INVALID', message);
-            return;
+            throw error;
         }
 
         // File save failures
         if (lower.includes('failed to save contribution')) {
             await emitImmediateFailure('SAVE_FAILED', message);
-            return;
+            throw error;
         }
 
         const failedAttempt: FailedAttemptError = {

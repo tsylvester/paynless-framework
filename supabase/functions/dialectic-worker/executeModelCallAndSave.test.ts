@@ -104,6 +104,7 @@ export const testPayload: DialecticExecuteJobPayload = {
     iterationNumber: 1,
     continueUntilComplete: false,
     walletId: 'wallet-ghi',
+    user_jwt: 'jwt.token.here',
     canonicalPathParams: {
         contributionType: 'thesis',
     }

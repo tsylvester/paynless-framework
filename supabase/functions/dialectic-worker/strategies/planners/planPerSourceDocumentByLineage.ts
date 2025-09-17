@@ -23,7 +23,13 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
             }
             groups[groupId].push(doc);
         } else {
-            console.warn(`[planPerSourceDocumentByLineage] Source document ${doc.id} is missing a source_group in document_relationships. It will be skipped.`);
+            // If a document is missing a source_group, treat it as the root of a new lineage.
+            // The document's own ID becomes the new group ID for this lineage.
+            const newGroupId = doc.id;
+            if (!groups[newGroupId]) {
+                groups[newGroupId] = [];
+            }
+            groups[newGroupId].push(doc);
         }
     }
 

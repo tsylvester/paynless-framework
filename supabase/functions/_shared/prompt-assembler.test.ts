@@ -5,11 +5,13 @@ import {
 } from "./prompt-assembler.ts";
 import { ProjectContext, SessionContext, StageContext, DynamicContextVariables } from "./prompt-assembler.interface.ts";
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockSupabaseClientSetup } from "./supabase.mock.ts";
+import { isRecord } from "./utils/type_guards.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Json, Database } from "../types_db.ts";
 import type { AiModelExtendedConfig, Messages } from "./types.ts";
 import { ContributionMetadata, DocumentRelationships } from "./types/file_manager.types.ts";
 import { MockQueryBuilderState } from "./supabase.mock.ts";
+import { DownloadStorageResult } from "./supabase_storage_utils.ts";
 
 
 // Define a type for the mock implementation of renderPrompt
@@ -19,6 +21,9 @@ type RenderPromptMock = (
     _systemDefaultOverlayValues?: Json, 
     _userProjectOverlayValues?: Json
 ) => string;
+
+// Define the correct two-argument function type for the download mock
+type DownloadFnMock = (bucket: string, path: string) => Promise<DownloadStorageResult>;
 
 Deno.test("PromptAssembler", async (t) => {
     let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
@@ -37,7 +42,12 @@ Deno.test("PromptAssembler", async (t) => {
         default_temperature: 0.5,
     };
 
-    const setup = (config: MockSupabaseDataConfig = {}, renderPromptFn?: RenderPromptMock, countTokensFn?: () => number) => {
+    const setup = (
+        config: MockSupabaseDataConfig = {}, 
+        renderPromptFn?: RenderPromptMock, 
+        countTokensFn?: () => number,
+        downloadFn?: DownloadFnMock
+    ) => {
         denoEnvStub = stub(Deno.env, "get", (key: string) => {
             if (key === "SB_CONTENT_STORAGE_BUCKET") {
                 return "test-bucket";
@@ -52,7 +62,7 @@ Deno.test("PromptAssembler", async (t) => {
 
         const assembler = new PromptAssembler(
             mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
-            undefined, // Use default download function
+            downloadFn,
             renderPromptFn,
             countTokensFn
         );
@@ -177,6 +187,65 @@ Deno.test("PromptAssembler", async (t) => {
         }
     });
 
+    await t.step("does not include expected_output_artifacts_json when stage.expected_output_artifacts is null", async () => {
+        const renderPromptMockFn: RenderPromptMock = (_base, _vars, sysOverlays, userOverlays) => {
+            // Narrow overlays to records before checking keys; no casts
+            const sysVal = isRecord(sysOverlays) ? sysOverlays['expected_output_artifacts_json'] : undefined;
+            const usrVal = isRecord(userOverlays) ? userOverlays['expected_output_artifacts_json'] : undefined;
+            if (typeof sysVal === 'string' || typeof usrVal === 'string') {
+                throw new Error('expected_output_artifacts_json should not be present when stage.expected_output_artifacts is null');
+            }
+            return 'ok';
+        };
+
+        const { assembler } = setup({}, renderPromptMockFn);
+        try {
+            const stageWithoutArtifacts: StageContext = {
+                ...defaultStage,
+                expected_output_artifacts: null,
+            };
+
+            const result = await assembler.assemble(defaultProject, defaultSession, stageWithoutArtifacts, defaultProject.initial_user_prompt, 1);
+            assertEquals(result, 'ok');
+        } finally {
+            teardown();
+        }
+    });
+
+    await t.step("includes expected_output_artifacts_json when stage.expected_output_artifacts is provided", async () => {
+        let capturedSysOverlay: Json | undefined;
+        const renderPromptMockFn: RenderPromptMock = (_base, _vars, sysOverlays) => {
+            capturedSysOverlay = sysOverlays;
+            return 'ok';
+        };
+
+        const artifacts = { a: 1, b: { c: 'x' } };
+        const stageWithArtifacts: StageContext = {
+            ...defaultStage,
+            expected_output_artifacts: artifacts,
+        };
+
+        const { assembler } = setup({}, renderPromptMockFn);
+        try {
+            const result = await assembler.assemble(defaultProject, defaultSession, stageWithArtifacts, defaultProject.initial_user_prompt, 1);
+            assertEquals(result, 'ok');
+
+            // Assert renderer receives expected_output_artifacts_json in overlays as a JSON object
+            if (capturedSysOverlay && isRecord(capturedSysOverlay)) {
+                const val = capturedSysOverlay["expected_output_artifacts_json"];
+                if (isRecord(val)) {
+                    assertEquals(val, artifacts);
+                } else {
+                    throw new Error('expected_output_artifacts_json must be a JSON object');
+                }
+            } else {
+                throw new Error('System overlays were not provided to renderer');
+            }
+        } finally {
+            teardown();
+        }
+    });
+
     await t.step("should correctly assemble for a subsequent stage with prior inputs", async () => {
         const stageSlug = 'prev-stage';
         const contribContent = "AI contribution content.";
@@ -263,7 +332,7 @@ Deno.test("PromptAssembler", async (t) => {
                     await assembler.assemble(defaultProject, defaultSession, stageWithMissingPrompt, defaultProject.initial_user_prompt, 1);
                 },
                 Error,
-                `No system prompt template found for stage ${stageWithMissingPrompt.id}`
+                `RENDER_PRECONDITION_FAILED: missing system prompt text for stage ${stageWithMissingPrompt.slug}`
             );
         } finally {
             teardown();
@@ -483,6 +552,183 @@ Deno.test("PromptAssembler", async (t) => {
             assertEquals(renderArgs?.[2], stageOverlayValues); 
             assertEquals(renderArgs?.[3], null);
 
+        } finally {
+            teardown();
+        }
+    });
+
+    await t.step("render enforces required style guide and artifacts when template includes those sections", async () => {
+        // Prompt template declares both sections as required via section tags
+        const basePrompt = [
+            "SYSTEM INSTRUCTIONS",
+            "{{#section:style_guide_markdown}}",
+            "Style Guide:\n{style_guide_markdown}",
+            "{{/section:style_guide_markdown}}",
+            "",
+            "EXPECTED JSON OUTPUT",
+            "{{#section:expected_output_artifacts_json}}",
+            "Artifacts:\n{expected_output_artifacts_json}",
+            "{{/section:expected_output_artifacts_json}}",
+        ].join("\n");
+
+        // Create a stage missing both values (no style_guide_markdown in overlays; no artifacts on stage)
+        const stageMissingValues: StageContext = {
+            ...defaultStage,
+            system_prompts: { prompt_text: basePrompt },
+            domain_specific_prompt_overlays: [{ overlay_values: { role: "architect" } }],
+            expected_output_artifacts: null,
+        };
+
+        // Minimal context for render; values don't matter for this precondition test
+        const context: DynamicContextVariables = {
+            user_objective: "Test",
+            domain: "Software Development",
+            agent_count: 1,
+            context_description: "Desc",
+            original_user_request: null,
+            prior_stage_ai_outputs: "",
+            prior_stage_user_feedback: "",
+            deployment_context: null,
+            reference_documents: null,
+            constraint_boundaries: null,
+            stakeholder_considerations: null,
+            deliverable_format: "Standard markdown format.",
+        };
+
+        // Renderer should not be called if preconditions are enforced
+        let rendererCalled = false;
+        const renderPromptMockFn: RenderPromptMock = () => {
+            rendererCalled = true;
+            return "ok";
+        };
+
+        const { assembler } = setup({}, renderPromptMockFn);
+        let threw = false;
+        try {
+            assembler.render(stageMissingValues, context, null);
+        } catch (_e) {
+            threw = true;
+        } finally {
+            teardown();
+        }
+
+        // Expect assembler to enforce preconditions and throw before calling renderer
+        assertEquals(threw, true);
+        assertEquals(rendererCalled, false);
+    });
+
+    await t.step("render fails with precondition error when style guide section is present but overlay value is missing", async () => {
+        const basePrompt = [
+            "{{#section:style_guide_markdown}}",
+            "Style Guide:\n{style_guide_markdown}",
+            "{{/section:style_guide_markdown}}",
+        ].join("\n");
+
+        const stageMissingStyle: StageContext = {
+            ...defaultStage,
+            system_prompts: { prompt_text: basePrompt },
+            domain_specific_prompt_overlays: [{ overlay_values: { role: "architect" } }],
+            expected_output_artifacts: null,
+        };
+
+        const context: DynamicContextVariables = {
+            user_objective: "Test",
+            domain: "Software Development",
+            agent_count: 1,
+            context_description: "Desc",
+            original_user_request: null,
+            prior_stage_ai_outputs: "",
+            prior_stage_user_feedback: "",
+            deployment_context: null,
+            reference_documents: null,
+            constraint_boundaries: null,
+            stakeholder_considerations: null,
+            deliverable_format: "Standard markdown format.",
+        };
+
+        let rendererCalled = false;
+        const renderPromptMockFn: RenderPromptMock = () => {
+            rendererCalled = true;
+            return "ok";
+        };
+
+        const { assembler } = setup({}, renderPromptMockFn);
+        let threw = false;
+        try {
+            assembler.render(stageMissingStyle, context, null);
+        } catch (e) {
+            threw = true;
+            // Check the precondition failure marker
+            if (e instanceof Error) {
+                assertEquals(e.message.includes("RENDER_PRECONDITION_FAILED"), true);
+            }
+        } finally {
+            teardown();
+        }
+
+        assertEquals(threw, true);
+        assertEquals(rendererCalled, false);
+    });
+
+    await t.step("render proceeds and provides both style guide and artifacts when present", async () => {
+        const basePrompt = [
+            "{{#section:style_guide_markdown}}",
+            "Style Guide:\n{style_guide_markdown}",
+            "{{/section:style_guide_markdown}}",
+            "",
+            "{{#section:expected_output_artifacts_json}}",
+            "Artifacts:\n{expected_output_artifacts_json}",
+            "{{/section:expected_output_artifacts_json}}",
+        ].join("\n");
+
+        const artifacts = { shape: "object", ok: true };
+        const stageOk: StageContext = {
+            ...defaultStage,
+            system_prompts: { prompt_text: basePrompt },
+            domain_specific_prompt_overlays: [{ overlay_values: { role: "architect", style_guide_markdown: "# Guide" } }],
+            expected_output_artifacts: artifacts,
+        };
+
+        const context: DynamicContextVariables = {
+            user_objective: "Test",
+            domain: "Software Development",
+            agent_count: 1,
+            context_description: "Desc",
+            original_user_request: null,
+            prior_stage_ai_outputs: "",
+            prior_stage_user_feedback: "",
+            deployment_context: null,
+            reference_documents: null,
+            constraint_boundaries: null,
+            stakeholder_considerations: null,
+            deliverable_format: "Standard markdown format.",
+        };
+
+        let rendererCalled = false;
+        let capturedOverlay: Json | undefined;
+        const renderPromptMockFn: RenderPromptMock = (_base, _vars, sysOverlays) => {
+            rendererCalled = true;
+            capturedOverlay = sysOverlays;
+            return "ok";
+        };
+
+        const { assembler } = setup({}, renderPromptMockFn);
+        try {
+            const result = assembler.render(stageOk, context, null);
+            assertEquals(result, "ok");
+            assertEquals(rendererCalled, true);
+            if (capturedOverlay && isRecord(capturedOverlay)) {
+                const sg = capturedOverlay["style_guide_markdown"];
+                const artifactsVal = capturedOverlay["expected_output_artifacts_json"];
+                assertEquals(typeof sg === 'string' && sg.length > 0, true);
+                if (isRecord(artifactsVal)) {
+                    assertEquals(artifactsVal, artifacts);
+                } else {
+                    throw new Error("expected_output_artifacts_json must be a JSON object");
+                }
+            } else {
+                throw new Error("system overlays missing in renderer call");
+            }
         } finally {
             teardown();
         }
@@ -902,6 +1148,229 @@ Deno.test("PromptAssembler", async (t) => {
                 noTiLateContent,
                 'Please continue.'
             ]);
+        } finally {
+            teardown();
+        }
+    });
+
+    await t.step("gatherContinuationInputs uses direct stage field instead of parsing document_relationships", async () => {
+        const rootContributionId = 'contrib-stage-test-123';
+        const expectedStageSlug = 'thesis';
+        const seedPromptContent = "This is the seed prompt content.";
+
+        // Create a root contribution with a stage field and document_relationships that would cause
+        // the current implementation to fail when trying to parse stage slug from relationships
+        const rootChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
+            id: rootContributionId,
+            session_id: 'sess-stage-test',
+            iteration_number: 1,
+            storage_path: 'path/to/root',
+            file_name: 'root_chunk.md',
+            storage_bucket: 'test-bucket',
+            // This document_relationships structure would cause the current implementation to fail
+            // because it doesn't have a clear stage slug key (only has isContinuation and turnIndex)
+            document_relationships: { 
+                "isContinuation": false,
+                "turnIndex": 0
+            },
+            created_at: new Date().toISOString(),
+            is_latest_edit: true,
+            model_name: 'test-model',
+            user_id: 'user-stage-test',
+            citations: null,
+            contribution_type: null,
+            edit_version: 1,
+            error: null,
+            mime_type: 'text/markdown',
+            model_id: 'model-stage-test',
+            original_model_contribution_id: null,
+            processing_time_ms: 100,
+            target_contribution_id: null,
+            prompt_template_id_used: null,
+            raw_response_storage_path: null,
+            seed_prompt_url: null,
+            size_bytes: 100,
+            tokens_used_input: 100,
+            tokens_used_output: 100,
+            // The stage field contains the correct stage slug that should be used directly
+            stage: expectedStageSlug,
+            updated_at: new Date().toISOString(),
+        };
+
+        const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        const isQueryingForRootById = modifier.filters.some(f => f.column === 'id' && f.value === rootContributionId);
+                        if (isQueryingForRootById) {
+                            return Promise.resolve({ data: [rootChunk], error: null });
+                        }
+                        // Return empty array for the contains query (no continuation chunks for this test)
+                        return Promise.resolve({ data: [], error: null });
+                    }
+                },
+            },
+            storageMock: {
+                downloadResult: (_bucket, path) => {
+                    if (path.includes('seed_prompt.md')) {
+                        return Promise.resolve({ data: new Blob([seedPromptContent]), error: null });
+                    }
+                    return Promise.resolve({ data: null, error: new Error('File not found in mock') });
+                }
+            }
+        };
+
+        const { assembler } = setup(config);
+
+        try {
+            // This test should fail with the current implementation because it tries to parse
+            // stage slug from document_relationships, but the relationships only contain
+            // isContinuation and turnIndex keys, not a stage slug key.
+            // When fixed, it should use the direct stage field and succeed.
+            const result = await assembler.gatherContinuationInputs(rootContributionId);
+            
+            // Verify the function succeeded and returned the expected messages
+            assertEquals(result.length, 2); // seed prompt + "Please continue."
+            assertEquals(result[0].role, 'user');
+            assertEquals(result[0].content, seedPromptContent);
+            assertEquals(result[1].role, 'user');
+            assertEquals(result[1].content, 'Please continue.');
+
+        } finally {
+            teardown();
+        }
+    });
+
+    await t.step("gatherContinuationInputs throws error when stage field is missing", async () => {
+        const rootContributionId = 'contrib-missing-stage-123';
+
+        // Create a root contribution without a stage field
+        const rootChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
+            id: rootContributionId,
+            session_id: 'sess-missing-stage',
+            iteration_number: 1,
+            storage_path: 'path/to/root',
+            file_name: 'root_chunk.md',
+            storage_bucket: 'test-bucket',
+            document_relationships: { "thesis": rootContributionId },
+            created_at: new Date().toISOString(),
+            is_latest_edit: true,
+            model_name: 'test-model',
+            user_id: 'user-missing-stage',
+            citations: null,
+            contribution_type: null,
+            edit_version: 1,
+            error: null,
+            mime_type: 'text/markdown',
+            model_id: 'model-missing-stage',
+            original_model_contribution_id: null,
+            processing_time_ms: 100,
+            target_contribution_id: null,
+            prompt_template_id_used: null,
+            raw_response_storage_path: null,
+            seed_prompt_url: null,
+            size_bytes: 100,
+            tokens_used_input: 100,
+            tokens_used_output: 100,
+            // Missing stage field - should cause error
+            stage: null as any,
+            updated_at: new Date().toISOString(),
+        };
+
+        const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        const isQueryingForRootById = modifier.filters.some(f => f.column === 'id' && f.value === rootContributionId);
+                        if (isQueryingForRootById) {
+                            return Promise.resolve({ data: [rootChunk], error: null });
+                        }
+                        return Promise.resolve({ data: [], error: null });
+                    }
+                },
+            },
+        };
+
+        const { assembler } = setup(config);
+
+        try {
+            await assertRejects(
+                async () => {
+                    await assembler.gatherContinuationInputs(rootContributionId);
+                },
+                Error,
+                'Root contribution contrib-missing-stage-123 has no stage information'
+            );
+        } finally {
+            teardown();
+        }
+    });
+
+    await t.step("gatherContinuationInputs throws an error when a content chunk download fails", async () => {
+        const rootContributionId = 'contrib-download-fail-123';
+        const rootChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
+            id: rootContributionId,
+            session_id: 'sess-download-fail',
+            iteration_number: 1,
+            storage_path: 'path/to/root',
+            file_name: 'root_chunk.md',
+            storage_bucket: 'test-bucket',
+            document_relationships: { thesis: rootContributionId },
+            created_at: new Date().toISOString(),
+            is_latest_edit: true,
+            model_name: 'test-model',
+            user_id: 'user-download-fail',
+            citations: null, contribution_type: null, edit_version: 1, error: null,
+            mime_type: 'text/markdown', model_id: 'model-download-fail', original_model_contribution_id: null,
+            processing_time_ms: 100, target_contribution_id: null, prompt_template_id_used: null,
+            raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 100,
+            tokens_used_input: 100, tokens_used_output: 100,
+            stage: 'thesis',
+            updated_at: new Date().toISOString(),
+        };
+
+        const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        if (modifier.filters.some(f => f.column === 'id' && f.value === rootContributionId)) {
+                            return Promise.resolve({ data: [rootChunk], error: null });
+                        }
+                        // Return the same chunk for the 'contains' query to trigger the download
+                        return Promise.resolve({ data: [rootChunk], error: null });
+                    }
+                },
+            },
+        };
+
+        // Create a mock download function that simulates an error only for the chunk
+        const failingDownloadFn: DownloadFnMock = async (_bucket, path) => {
+            if (path.includes('seed_prompt.md')) {
+                // Allow the seed prompt download to succeed by creating a proper ArrayBuffer from a Blob.
+                return {
+                    data: await new Blob(['seed content']).arrayBuffer(),
+                    error: null,
+                };
+            }
+            // Fail the chunk download
+            return {
+                data: null,
+                error: new Error('File not found'),
+            };
+        };
+
+        const { assembler } = setup(config, undefined, undefined, failingDownloadFn);
+
+        try {
+            // This test must fail initially. The current implementation catches the download error,
+            // logs it, and continues, which means assertRejects will not find a thrown error.
+            await assertRejects(
+                async () => {
+                    await assembler.gatherContinuationInputs(rootContributionId);
+                },
+                Error,
+                'Failed to download content for chunk'
+            );
         } finally {
             teardown();
         }

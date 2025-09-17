@@ -39,6 +39,12 @@ export async function generateContributions(
         return { success: false, error: { message: "walletId is required to create generation jobs.", status: 400 } };
     }
 
+    // Enforce presence of a non-empty auth token for downstream triggers and worker flows
+    if (typeof authToken !== 'string' || authToken.length === 0) {
+        logger.warn("[generateContributions] authToken is required to create generation jobs.", { sessionId, stageSlug });
+        return { success: false, error: { message: "authToken is required to create generation jobs.", status: 400 } };
+    }
+
     try {
         // Fetch session details to get the selected models and validate context
         const { data: sessionData, error: sessionError } = await dbClient
@@ -115,6 +121,11 @@ export async function generateContributions(
                     status: 'pending',
                 }
             };
+            
+            // Explicitly preserve the is_test_job flag to prevent accidental override
+            if (payload.is_test_job) {
+                jobPayload.is_test_job = true;
+            }
             
             console.log(`[generateContributions] Final jobPayload for model ${modelId}:`, JSON.stringify(jobPayload, null, 2));
 

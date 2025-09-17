@@ -72,3 +72,17 @@ Deno.test('planAllToOne should return an empty array if there are no source docu
     const childJobs = planAllToOne([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
     assertEquals(childJobs.length, 0, "Should create no jobs for empty input");
 });
+
+Deno.test('planAllToOne constructs child payload with dynamic stage consistency (payload.stageSlug === parent.payload.stageSlug)', () => {
+    const expectedStage = 'parenthesis';
+    const parent: typeof MOCK_PARENT_JOB = JSON.parse(JSON.stringify(MOCK_PARENT_JOB));
+    Object.defineProperty(parent, 'stage_slug', { value: expectedStage, configurable: true, enumerable: true, writable: true });
+    Object.defineProperty(parent.payload, 'stageSlug', { value: expectedStage, configurable: true, enumerable: true, writable: true });
+
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, parent, MOCK_RECIPE_STEP, 'ignored.jwt');
+
+    assertEquals(childJobs.length, 1);
+    const child = childJobs[0];
+    assertExists(child);
+    assertEquals(child.stageSlug, expectedStage);
+});

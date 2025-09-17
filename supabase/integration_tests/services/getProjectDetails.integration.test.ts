@@ -6,7 +6,7 @@ import {
 } from "https://deno.land/std@0.208.0/testing/bdd.ts";
 import { assertExists, assert, assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { createClient, type SupabaseClient, FunctionsHttpError } from "npm:@supabase/supabase-js@2";
-import { Database } from "../types_db.ts"; // Corrected path relative to this file's new location
+import { Database } from "../../functions/types_db.ts"; // Corrected path relative to this file's new location
 import {
   coreInitializeTestStep,
   coreCleanupTestResources,
@@ -15,9 +15,9 @@ import {
   // getSharedAdminClient, // This would be used if run via a main test runner that initializes and shares it
   TestResourceRequirement,
   ProcessedResourceInfo, // Import this type
-} from "../_shared/_integration.test.utils.ts"; // Corrected path
-import type { DialecticServiceRequest } from "./dialectic.interface.ts"; 
-import { initializeTestDeps } from "../_shared/_integration.test.utils.ts";
+} from "../../functions/_shared/_integration.test.utils.ts"; // Corrected path
+import type { DialecticServiceRequest } from "../../functions/dialectic-service/dialectic.interface.ts"; 
+import { initializeTestDeps } from "../../functions/_shared/_integration.test.utils.ts";
 
 describe("Edge Function: dialectic-service - Action: getProjectDetails", () => {
   let testUserClient: SupabaseClient<Database>;

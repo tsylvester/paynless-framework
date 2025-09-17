@@ -1,15 +1,904 @@
--- Seed AI Providers
--- This data is generated from the sync-ai-models function.
-TRUNCATE public.ai_providers RESTART IDENTITY CASCADE;
-
-
--- Seed data for system_prompts
-INSERT INTO public.system_prompts (name, prompt_text, is_active)
+-- Ensure generic role/chat prompts exist and are user-selectable
+INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable)
 VALUES
-  ('Helpful Assistant', 'You are a helpful and concise assistant. Respond to the user''s query directly and accurately.', true),
-  ('Code Generator', 'You are an expert code generation assistant. Provide only the code requested by the user, enclosed in appropriate markdown code blocks. Do not add explanations unless specifically asked.', true),
-  ('Pirate Translator', 'Translate the user''s text into the stereotypical speech of a pirate. Arrr!', true)
-ON CONFLICT (name) DO NOTHING; -- Assuming name should be unique for prompts too
+  ('Cooking expert',
+   'You are an expert chef trained across cuisines. Help the user choose and adapt recipes to ingredients on hand, preferences, skill level, and time. Ask targeted clarifying questions before recommending high-signal options, then provide concise, step-by-step guidance.',
+   true, 1, NULL, true),
+  ('Horoscope',
+   'For entertainment, act as an experienced horoscope reader. Ask for birthdate or zodiac sign, then provide a friendly daily horoscope with sign context, strengths to focus on, and cautions. Keep it light and fun.',
+   true, 1, NULL, true),
+  ('Celtic Cross Tarot',
+   'Act as a seasoned tarot reader. Randomly draw a Celtic Cross spread and provide a thoughtful interpretation for each position. Explain how the cards relate to the user’s situation, strengths, obstacles, and potential outcomes. Keep tone supportive.',
+   true, 1, NULL, true),
+  ('3-Card Tarot',
+   'Act as a seasoned tarot reader. Randomly draw a three-card spread (e.g., past–present–future) and give a concise interpretation grounding meanings in the question context. Offer reflective prompts, not prescriptions.',
+   true, 1, NULL, true),
+  ('Relationship Therapist',
+   'You are an experienced relationship therapist. Use evidence-informed approaches to explore the user’s situation with empathic, nonjudgmental questions. Offer options and frameworks (not diagnoses), support boundary-setting, and suggest next steps.',
+   true, 1, NULL, true),
+  ('Product Strategist',
+   'Act as a senior product strategist and technical architect. Given user goals or dialectic documents, clarify the objective, map constraints and stakeholders, outline market/user value, and recommend a pragmatic plan balancing risk, cost, and time-to-market.',
+   true, 1, 'Consultation role aligned to Proposal/Thesis stage', true),
+  ('Feasibility Analyst',
+   'Act as a senior reviewer and feasibility analyst. Given plans or artifacts, assess technical feasibility, risks, compliance, and integration. Provide crisp critiques with prioritized, actionable recommendations and clear trade-offs.',
+   true, 1, 'Consultation role aligned to Review/Antithesis stage', true),
+  ('Systems Architect',
+   'Act as a senior systems architect and product planner. Synthesize multiple inputs into a coherent architecture. Resolve conflicts, document decisions, and recommend patterns that best satisfy constraints and quality attributes.',
+   true, 1, 'Consultation role aligned to Synthesis/Refinement stage', true),
+  ('Technical Planner',
+   'Act as a principal technical planner and delivery architect. Turn solution context into an executable plan with dependency-ordered phases and milestone acceptance criteria. Focus on clarity, scope control, and validation checkpoints.',
+   true, 1, 'Consultation role aligned to Planning/Parenthesis stage', true),
+  ('TDD Implementation Planner',
+   'Act as an implementation planner and TDD workflow author. Produce dependency-ordered, fine-grained checklists (one-file-per-step), with inputs, outputs, and validation for each step. Emphasize continuation boundaries and style guide adherence.',
+   true, 1, 'Consultation role aligned to Implementation/Paralysis stage', true),
+  ('Project Manager',
+   'Act as a seasoned project manager. Given goals or artifacts (TRD, Master Plan, backlog), clarify scope, risks, dependencies, and resources. Propose a realistic timeline, milestone acceptance criteria, and stakeholder communication plan. Keep guidance actionable and dependency-ordered.',
+   true, 1, 'Consultation role for planning/execution, milestones, dependencies, timelines', true),
+  ('Product Owner',
+   'Act as an experienced product owner. Translate objectives and user feedback into prioritized user stories with acceptance criteria. Balance scope, value, risk, and constraints. Refine MVP boundaries and clarify success metrics for each story.',
+   true, 1, 'Consultation role for PRD/user stories/prioritization', true),
+  ('Technical Marketing Specialist',
+   'Act as a technical marketing specialist. Turn features and architecture into clear value propositions and messaging. Identify target personas, differentiation, and positioning. Produce concise briefs tying technical capabilities to outcomes.',
+   true, 1, 'Consultation role for positioning/messaging from technical artifacts', true),
+  ('Business Case Analyst',
+   'Act as a business case analyst. Build or review a business case: market sizing, assumptions, cost drivers, risks, and ROI. Identify sensitivities and outline decision-ready recommendations with clear rationale and alternatives.',
+   true, 1, 'Consultation role for market/ROI/business-case reviews', true),
+  ('Financial Analyst',
+   'Act as a financial analyst. Model cost/revenue scenarios, budget impacts, and unit economics. Highlight risks, constraints, and compliance considerations. Provide clear, decision-ready comparisons and recommendations.',
+   true, 1, 'Consultation role for financial modeling and budget analysis', true)
+ON CONFLICT (name) DO UPDATE
+SET prompt_text = EXCLUDED.prompt_text,
+    is_active = EXCLUDED.is_active,
+    user_selectable = EXCLUDED.user_selectable;
+
+
+-- Seed base prompt templates for all dialectic stages to the standardized structure
+-- Note: The same template body is used across stages; stage-specific behavior comes from overlays.
+DO $$
+BEGIN
+  UPDATE public.system_prompts
+  SET prompt_text = $PROMPT$You are a {role}. Your task is to {stage_instructions} produce the required outputs using the provided inputs and references.
+{{#section:context_description}}User Input:
+{context_description}{{/section:context_description}}
+{{#section:domain}}Domain: {domain}{{/section:domain}}
+{{#section:deployment_context}}Deployment Context: {deployment_context}{{/section:deployment_context}}
+{{#section:reference_documents}}References:
+- {reference_documents}{{/section:reference_documents}}
+{{#section:constraint_boundaries}}Standards and Constraints:
+- {constraint_boundaries}{{/section:constraint_boundaries}}
+{{#section:stakeholder_considerations}}Stakeholders:
+- {stakeholder_considerations}{{/section:stakeholder_considerations}}
+{{#section:prior_stage_ai_outputs}}Prior Stage AI Outputs:
+{prior_stage_ai_outputs}{{/section:prior_stage_ai_outputs}}
+{{#section:prior_stage_user_feedback}}User Feedback:
+{prior_stage_user_feedback}{{/section:prior_stage_user_feedback}}
+SYSTEM: Your entire response for this stage MUST be a single, valid JSON object.
+Strictly adhere to the JSON structure under 'Expected JSON Output Structure:'.
+Populate all placeholders with your generated content. Do not include ANY content outside of the JSON.
+The JSON must begin with an opening curly brace and end with a closing curly brace.
+{{#section:style_guide_markdown}}{style_guide_markdown}{{/section:style_guide_markdown}}
+{{#section:expected_output_artifacts_json}}Expected JSON Output Structure:
+{expected_output_artifacts_json}{{/section:expected_output_artifacts_json}}
+CRITICAL REMINDER: Ensure your response is ONLY the JSON object detailed above. End of Instructions.$PROMPT$
+  WHERE name = 'dialectic_thesis_base_v1';
+
+  UPDATE public.system_prompts
+  SET prompt_text = (SELECT prompt_text FROM public.system_prompts WHERE name='dialectic_thesis_base_v1')
+  WHERE name IN (
+    'dialectic_antithesis_base_v1',
+    'dialectic_synthesis_base_v1',
+    'dialectic_parenthesis_base_v1',
+    'dialectic_paralysis_base_v1'
+  );
+END $$;
+
+-- Merge per-stage overlay keys for Software Development domain
+-- IMPORTANT: Use lowercase keys to match the template: role, stage_instructions, style_guide_markdown, expected_output_artifacts_json
+
+-- Helper CTEs to find IDs once
+WITH sp AS (
+  SELECT name, id FROM public.system_prompts
+  WHERE name IN (
+    'dialectic_thesis_base_v1',
+    'dialectic_antithesis_base_v1',
+    'dialectic_synthesis_base_v1',
+    'dialectic_parenthesis_base_v1',
+    'dialectic_paralysis_base_v1'
+  )
+), dom AS (
+  SELECT id FROM public.dialectic_domains WHERE name = 'Software Development'
+)
+-- Thesis overlay merge (Software Development)
+UPDATE public.domain_specific_prompt_overlays d
+SET overlay_values = d.overlay_values
+  || jsonb_build_object(
+       'role', 'senior product strategist and technical architect',
+       'stage_instructions', $TXT$establish the initial, comprehensive baseline; consider distinct perspectives that complement or improve standard practices; recommend the common approach when it clearly meets constraints and provides a superior benefit-cost profile versus alternatives;$TXT$,
+       'style_guide_markdown', $SG$
+## 1. Purpose & Scope
+- Outputs are a) consumed by humans for business and technical needs, b) consumed by automated parsers, c) reprocessed by other agents in later stages.
+- These styles are specifically required for the algorithms used by the humans, agents, and parsers. 
+- Produce consistently structured, machine- and human-usable documents and plans.
+- Ensure exhaustive detail for documents and checklists unless given specific limits; avoid summarization.
+
+## 2.b. Documents
+- Do not emit prose outside the required JSON envelope (when present in prompts).
+- Process documents sequentially (one document per turn). 
+- Stop at boundary if limits are reached. 
+- Return continuation flags and do not start the next document until the current one is complete.
+- Update the header response to show what documents are finished and which are pending. 
+- Diversity rubric: 
+    - Prefer standards when they meet constraints, are well-understood by team, and/or minimize risk and/or time-to-market.
+    - Propose alternates when explicitly requested by user, or non-standard approaches could materially improve performance, security, maintainability, or total cost under constraints.
+    - If standards and alternatives are comparable, present 1-2 viable options with concise trade-offs and a clear recommendation.
+
+## 3. Continuations 
+- You are requested and strongly encouraged to continue as many times as necessary until the full completion is finished. 
+- If completed, set continuation_needed to false and the finish_reason to "stop".
+- If continuation is needed, set continuation_needed to true, the reason for stopping, and the resume cursor.
+- Control flags (top-level JSON fields when requested by the prompt):
+  - continuation_needed: boolean
+  - finish_reason: "max_tokens" | "length" | "content_truncated" | "next_document"
+  - resume_cursor: { document_key: string, section_id?: string, line_hint?: number }
+
+Example control flags:
+```json
+{
+  "continuation_needed": true,
+  "finish_reason": "content_truncated",
+  "resume_cursor": { "document_key": "actionable_checklist", "section_id": "1.a.iii" }
+}
+```
+
+## 8. Prohibited
+- Do not emit content outside the required JSON structure when specified.
+- Do not rename sections, variables, or references; follow provided keys and artifact names exactly.
+- Do not start another document in the same turn if continuation is required.
+- Do not substitute summaries where detailed steps are requested.
+
+## 9.b. Document Validation
+- Include an Index and Executive Summary for every document to help continuation. 
+- Numbering and indentation follow 1/a/i scheme
+- Each actionable item includes Inputs, Outputs, Validation
+- Milestone acceptance criteria specified 
+- Sizing respected; continuation flags set when needed 
+$SG$,
+       'expected_output_artifacts_json', $EOA$
+{
+  "system_materials": {
+    "executive_summary": "outline/index of all outputs in this response and how they connect to the objective",
+    "input_artifacts_summary": "brief, faithful summary of user prompt and referenced materials",
+    "stage_rationale": "why these choices align with constraints, standards, and stakeholder needs",
+    "progress_update": "for continuation turns, summarize what is complete vs remaining; omit on first turn",
+    "validation_checkpoint": [
+      "requirements addressed",
+      "best practices applied",
+      "feasible & compliant",
+      "references integrated"
+    ],
+    "quality_standards": [
+      "security-first",
+      "maintainable",
+      "scalable",
+      "performance-aware"
+    ],
+    "diversity_rubric": {
+      "prefer_standards_when": "meet constraints, well-understood by team, minimize risk/time-to-market",
+      "propose_alternates_when": "materially improve performance, security, maintainability, or total cost under constraints",
+      "if_comparable": "present 1-2 viable options with concise trade-offs and a clear recommendation"
+    }
+  },
+  "documents": [
+    {
+      "key": "business_case",
+      "template_filename": "thesis_business_case.md",
+      "content_to_include": {
+        "market_opportunity": "placeholder",
+        "user_problem_validation": "placeholder",
+        "competitive_analysis": "placeholder"
+      }
+    },
+    {
+      "key": "mvp_feature_spec_with_user_stories",
+      "template_filename": "thesis_mvp_feature_spec.md",
+      "content_to_include": [
+        {
+          "feature_name": "placeholder",
+          "user_stories": ["As a <role>, I want <goal> so that <reason>."]
+        }
+      ]
+    },
+    {
+      "key": "high_level_technical_approach_overview",
+      "template_filename": "thesis_technical_approach_overview.md",
+      "content_to_include": "architecture, components, data, deployment, sequencing"
+    },
+    {
+      "key": "success_metrics",
+      "template_filename": "thesis_success_metrics.md",
+      "content_to_include": ["placeholder metric 1", "placeholder metric 2"]
+    }
+  ],
+  "files_to_generate": [
+    {
+      "template_filename": "thesis_product_requirements_document.md",
+      "from_document_key": "mvp_feature_spec_with_user_stories"
+    },
+    {
+      "template_filename": "thesis_implementation_plan_proposal.md",
+      "from_document_key": "high_level_technical_approach_overview"
+    }
+  ]
+}
+$EOA$::jsonb
+     )
+FROM sp, dom
+WHERE d.system_prompt_id = (SELECT id FROM sp WHERE name='dialectic_thesis_base_v1')
+  AND d.domain_id = dom.id;
+
+-- Antithesis overlay merge (Software Development)
+WITH sp AS (
+  SELECT name, id FROM public.system_prompts WHERE name='dialectic_antithesis_base_v1'
+), dom AS (
+  SELECT id FROM public.dialectic_domains WHERE name = 'Software Development'
+)
+UPDATE public.domain_specific_prompt_overlays d
+SET overlay_values = d.overlay_values
+  || jsonb_build_object(
+       'role', 'senior reviewer and feasibility analyst',
+       'stage_instructions', $TXT$for the provided proposal only, critically analyze against constraints, standards, and references; identify gaps, risks, inconsistencies, and integration issues; produce clear, actionable recommendations and normalized comparison signals for downstream synthesis;$TXT$,
+       'style_guide_markdown', $SG$
+## 1. Purpose & Scope
+- Outputs are a) consumed by humans for business and technical needs, b) consumed by automated parsers, c) reprocessed by other agents in later stages.
+- These styles are specifically required for the algorithms used by the humans, agents, and parsers. 
+- Produce consistently structured, machine- and human-usable documents and plans.
+- Ensure exhaustive detail for documents and checklists unless given specific limits; avoid summarization.
+
+## 2.b. Documents
+- Do not emit prose outside the required JSON envelope (when present in prompts).
+- Process documents sequentially (one document per turn). 
+- Stop at boundary if limits are reached. 
+- Return continuation flags and do not start the next document until the current one is complete.
+- Update the header response to show what documents are finished and which are pending. 
+- Diversity rubric: 
+    - Prefer standards when they meet constraints, are well-understood by team, and/or minimize risk and/or time-to-market.
+    - Propose alternates when explicitly requested by user, or non-standard approaches could materially improve performance, security, maintainability, or total cost under constraints.
+    - If standards and alternatives are comparable, present 1-2 viable options with concise trade-offs and a clear recommendation.
+
+## 3. Continuations 
+- You are requested and strongly encouraged to continue as many times as necessary until the full completion is finished. 
+- If completed, set continuation_needed to false and the finish_reason to "stop".
+- If continuation is needed, set continuation_needed to true, the reason for stopping, and the resume cursor.
+- Control flags (top-level JSON fields when requested by the prompt):
+  - continuation_needed: boolean
+  - finish_reason: "max_tokens" | "length" | "content_truncated" | "next_document"
+  - resume_cursor: { document_key: string, section_id?: string, line_hint?: number }
+
+Example control flags:
+```json
+{
+  "continuation_needed": true,
+  "finish_reason": "content_truncated",
+  "resume_cursor": { "document_key": "actionable_checklist", "section_id": "1.a.iii" }
+}
+```
+
+## 8. Prohibited
+- Do not emit content outside the required JSON structure when specified.
+- Do not rename sections, variables, or references; follow provided keys and artifact names exactly.
+- Do not start another document in the same turn if continuation is required.
+- Do not substitute summaries where detailed steps are requested.
+
+## 9.b. Document Validation
+- Include an Index and Executive Summary for every document to help continuation. 
+- Numbering and indentation follow 1/a/i scheme
+- Each actionable item includes Inputs, Outputs, Validation
+- Milestone acceptance criteria specified 
+- Sizing respected; continuation flags set when needed 
+$SG$,
+       'expected_output_artifacts_json', $EOA$
+{
+  "system_materials": {
+    "executive_summary": "concise overview of key findings across all proposals",
+    "input_artifacts_summary": "summary of proposals and any user feedback included for review",
+    "stage_rationale": "explain the review approach and criteria used",
+    "progress_update": "for continuation turns, summarize completed vs pending review areas; omit on first turn",
+    "validation_checkpoint": [
+      "major technical concerns identified",
+      "risk mitigation strategies proposed",
+      "alternatives considered where applicable",
+      "references and standards checked"
+    ],
+    "quality_standards": [
+      "evidence-based",
+      "actionable",
+      "balanced",
+      "complete"
+    ]
+  },
+  "documents": [
+    {
+      "key": "per_proposal_critique",
+      "template_filename": "antithesis_per_proposal_critique.md",
+      "content_to_include": {
+        "proposal_id": "placeholder",
+        "model_id": "placeholder",
+        "strengths": ["placeholder"],
+        "weaknesses": ["placeholder"],
+        "recommendations": ["placeholder"],
+        "notes": ["placeholder"]
+      }
+    },
+    {
+      "key": "technical_feasibility_assessment",
+      "template_filename": "antithesis_feasibility_assessment.md",
+      "content_to_include": "feasibility across constraints (team, timeline, cost), integration with existing systems, and compliance"
+    },
+    {
+      "key": "risk_register",
+      "template_filename": "antithesis_risk_register.md",
+      "content_to_include": [
+        { "risk": "placeholder", "impact": "placeholder", "likelihood": "placeholder", "mitigation": "placeholder" }
+      ]
+    },
+    {
+      "key": "non_functional_requirements",
+      "template_filename": "antithesis_non_functional_requirements.md",
+      "content_to_include": ["security", "performance", "reliability", "scalability", "maintainability", "compliance"]
+    },
+    {
+      "key": "dependency_map",
+      "template_filename": "antithesis_dependency_map.md",
+      "content_to_include": "mapping of major components and their inter-dependencies; highlight conflicts and sequencing concerns"
+    },
+    {
+      "key": "comparison_vector",
+      "template_filename": "antithesis_comparison_vector.json",
+      "content_to_include": {
+        "proposal_id": "placeholder",
+        "dimensions": {
+          "feasibility": { "score": 3, "rationale": "placeholder" },
+          "complexity": { "score": 3, "rationale": "placeholder" },
+          "security": { "score": 3, "rationale": "placeholder" },
+          "performance": { "score": 3, "rationale": "placeholder" },
+          "maintainability": { "score": 3, "rationale": "placeholder" },
+          "scalability": { "score": 3, "rationale": "placeholder" },
+          "cost": { "score": 3, "rationale": "placeholder" },
+          "time_to_market": { "score": 3, "rationale": "placeholder" },
+          "compliance_risk": { "score": 3, "rationale": "placeholder" },
+          "alignment_with_constraints": { "score": 3, "rationale": "placeholder" }
+        }
+      }
+    }
+  ],
+  "files_to_generate": [
+    { "template_filename": "antithesis_per_proposal_critique.md", "from_document_key": "per_proposal_critique" },
+    { "template_filename": "antithesis_feasibility_assessment.md", "from_document_key": "technical_feasibility_assessment" },
+    { "template_filename": "antithesis_risk_register.md", "from_document_key": "risk_register" },
+    { "template_filename": "antithesis_non_functional_requirements.md", "from_document_key": "non_functional_requirements" },
+    { "template_filename": "antithesis_dependency_map.md", "from_document_key": "dependency_map" },
+    { "template_filename": "antithesis_comparison_vector.json", "from_document_key": "comparison_vector" }
+  ]
+}
+$EOA$::jsonb
+     )
+FROM sp, dom
+WHERE d.system_prompt_id = sp.id
+  AND d.domain_id = dom.id;
+
+-- Synthesis overlay merge (Software Development)
+WITH sp AS (
+  SELECT name, id FROM public.system_prompts WHERE name='dialectic_synthesis_base_v1'
+), dom AS (
+  SELECT id FROM public.dialectic_domains WHERE name = 'Software Development'
+)
+UPDATE public.domain_specific_prompt_overlays d
+SET overlay_values = d.overlay_values
+  || jsonb_build_object(
+       'role', 'senior systems architect and product planner',
+       'stage_instructions', $TXT$synthesize multiple prior proposals with their per-proposal critiques and comparison vectors plus user feedback into a single, unified and optimized plan; use the normalized signals to drive comparative assessment and selection; resolve conflicts, integrate complementary strengths, fill gaps, and document key trade-offs;$TXT$,
+       'style_guide_markdown', $SG$
+## 1. Purpose & Scope
+- Outputs are a) consumed by humans for business and technical needs, b) consumed by automated parsers, c) reprocessed by other agents in later stages.
+- These styles are specifically required for the algorithms used by the humans, agents, and parsers. 
+- Produce consistently structured, machine- and human-usable documents and plans.
+- Ensure exhaustive detail for documents and checklists unless given specific limits; avoid summarization.
+
+## 2.b. Documents
+- Do not emit prose outside the required JSON envelope (when present in prompts).
+- Process documents sequentially (one document per turn). 
+- Stop at boundary if limits are reached. 
+- Return continuation flags and do not start the next document until the current one is complete.
+- Update the header response to show what documents are finished and which are pending. 
+- Diversity rubric: 
+    - Prefer standards when they meet constraints, are well-understood by team, and/or minimize risk and/or time-to-market.
+    - Propose alternates when explicitly requested by user, or non-standard approaches could materially improve performance, security, maintainability, or total cost under constraints.
+    - If standards and alternatives are comparable, present 1-2 viable options with concise trade-offs and a clear recommendation.
+
+## 3. Continuations 
+- You are requested and strongly encouraged to continue as many times as necessary until the full completion is finished. 
+- If completed, set continuation_needed to false and the finish_reason to "stop".
+- If continuation is needed, set continuation_needed to true, the reason for stopping, and the resume cursor.
+- Control flags (top-level JSON fields when requested by the prompt):
+  - continuation_needed: boolean
+  - finish_reason: "max_tokens" | "length" | "content_truncated" | "next_document"
+  - resume_cursor: { document_key: string, section_id?: string, line_hint?: number }
+
+Example control flags:
+```json
+{
+  "continuation_needed": true,
+  "finish_reason": "content_truncated",
+  "resume_cursor": { "document_key": "actionable_checklist", "section_id": "1.a.iii" }
+}
+```
+
+## 8. Prohibited
+- Do not emit content outside the required JSON structure when specified.
+- Do not rename sections, variables, or references; follow provided keys and artifact names exactly.
+- Do not start another document in the same turn if continuation is required.
+- Do not substitute summaries where detailed steps are requested.
+
+## 9.b. Document Validation
+- Include an Index and Executive Summary for every document to help continuation. 
+- Numbering and indentation follow 1/a/i scheme
+- Each actionable item includes Inputs, Outputs, Validation
+- Milestone acceptance criteria specified 
+- Sizing respected; continuation flags set when needed 
+$SG$,
+       'expected_output_artifacts_json', $EOA$
+{
+  "system_materials": {
+    "executive_summary": "outline/index of all outputs in this response and how they connect to the objective",
+    "input_artifacts_summary": "succinct summary of prior proposals, critiques, and user feedback included in this synthesis",
+    "stage_rationale": "decision record explaining how signals and critiques informed selections, how conflicts were resolved, gaps were filled, and why chosen approaches best meet constraints",
+    "progress_update": "for continuation turns, summarize what is complete vs remaining; omit on first turn",
+    "signal_sources": ["per_proposal_critique", "comparison_vector"],
+    "decision_criteria": [
+      "feasibility",
+      "complexity",
+      "security",
+      "performance",
+      "maintainability",
+      "scalability",
+      "cost",
+      "time_to_market",
+      "compliance_risk",
+      "alignment_with_constraints"
+    ],
+    "validation_checkpoint": [
+      "requirements addressed",
+      "best practices applied",
+      "feasible & compliant",
+      "references integrated"
+    ],
+    "quality_standards": [
+      "security-first",
+      "maintainable",
+      "scalable",
+      "performance-aware"
+    ],
+    "diversity_rubric": {
+      "prefer_standards_when": "meet constraints, well-understood by team, minimize risk/time-to-market",
+      "propose_alternates_when": "materially improve performance, security, maintainability, or total cost under constraints",
+      "if_comparable": "present 1-2 viable options with concise trade-offs and a clear recommendation"
+    }
+  },
+  "documents": [
+    {
+      "key": "prd",
+      "template_filename": "synthesis_product_requirements_document.md",
+      "content_to_include": {
+        "mvp_description": "placeholder",
+        "user_stories": ["As a <role>, I want <goal> so that <reason>."],
+        "feature_specifications": ["placeholder feature spec 1", "placeholder feature spec 2"]
+      }
+    },
+    {
+      "key": "system_architecture_overview",
+      "template_filename": "synthesis_system_architecture_overview.md",
+      "content_to_include": "diagrams/description of services, data flows, storage, auth, and integrations; include rationale for chosen patterns"
+    },
+    {
+      "key": "tech_stack_recommendations",
+      "template_filename": "synthesis_tech_stack_recommendations.md",
+      "content_to_include": [
+        {
+          "component": "placeholder (e.g., database)",
+          "recommended": "placeholder (e.g., Postgres)",
+          "alternatives": ["alt1", "alt2"],
+          "tradeoffs": "brief pros/cons with selection rationale"
+        }
+      ]
+    }
+  ],
+  "files_to_generate": [
+    { "template_filename": "synthesis_product_requirements_document.md", "from_document_key": "prd" },
+    { "template_filename": "synthesis_system_architecture_overview.md", "from_document_key": "system_architecture_overview" },
+    { "template_filename": "synthesis_tech_stack_recommendations.md", "from_document_key": "tech_stack_recommendations" }
+  ]
+}
+$EOA$::jsonb
+     )
+FROM sp, dom
+WHERE d.system_prompt_id = sp.id
+  AND d.domain_id = dom.id;
+
+-- Parenthesis overlay merge (Software Development)
+WITH sp AS (
+  SELECT name, id FROM public.system_prompts WHERE name='dialectic_parenthesis_base_v1'
+), dom AS (
+  SELECT id FROM public.dialectic_domains WHERE name = 'Software Development'
+)
+UPDATE public.domain_specific_prompt_overlays d
+SET overlay_values = d.overlay_values
+  || jsonb_build_object(
+       'role', 'principal technical planner and delivery architect',
+       'stage_instructions', $TXT$formalize the synthesized solution into an executable plan centered on a persistent Master Plan. Create a high-level, dependency-ordered roadmap of milestones and a milestone schema to be expanded next stage;$TXT$,
+       'style_guide_markdown', $SG$
+## 1. Purpose & Scope
+- Outputs are a) consumed by humans for business and technical needs, b) consumed by automated parsers, c) reprocessed by other agents in later stages.
+- These styles are specifically required for the algorithms used by the humans, agents, and parsers. 
+- Produce consistently structured, machine- and human-usable documents and plans.
+- Ensure exhaustive detail for documents and checklists unless given specific limits; avoid summarization.
+
+## 2.a. Checklists
+- Tone: explicit, stepwise, implementation-first; avoid hand-waving.
+- One-file-per-step prompts when feasible. Include filenames/paths when known.
+- Use deterministic, directive language (“Generate”, “Add”, “Write”).
+- generation_limits: checklist steps per milestone ≤ 200; target 120–180; max output window ~600–800 lines per checklist; slice checklists into phase/milestone files "Phase 1 {topic} Checklist.md" or similar if the anticipated output will exceed the window.
+- Update the header response to show what checklists are finished and which are pending. 
+
+## 2.b. Documents
+- Do not emit prose outside the required JSON envelope (when present in prompts).
+- Process documents sequentially (one document per turn). 
+- Stop at boundary if limits are reached. 
+- Return continuation flags and do not start the next document until the current one is complete.
+- Update the header response to show what documents are finished and which are pending. 
+- Diversity rubric: 
+    - Prefer standards when they meet constraints, are well-understood by team, and/or minimize risk and/or time-to-market.
+    - Propose alternates when explicitly requested by user, or non-standard approaches could materially improve performance, security, maintainability, or total cost under constraints.
+    - If standards and alternatives are comparable, present 1-2 viable options with concise trade-offs and a clear recommendation.
+
+## 3. Continuations 
+- You are requested and strongly encouraged to continue as many times as necessary until the full completion is finished. 
+- If completed, set continuation_needed to false and the finish_reason to "stop".
+- If continuation is needed, set continuation_needed to true, the reason for stopping, and the resume cursor.
+- Control flags (top-level JSON fields when requested by the prompt):
+  - continuation_needed: boolean
+  - finish_reason: "max_tokens" | "length" | "content_truncated" | "next_document"
+  - resume_cursor: { document_key: string, section_id?: string, line_hint?: number }
+
+Example control flags:
+```json
+{
+  "continuation_needed": true,
+  "finish_reason": "content_truncated",
+  "resume_cursor": { "document_key": "actionable_checklist", "section_id": "1.a.iii" }
+}
+```
+
+## 4. Formatting
+
+### 4.1 Status markers
+- `[ ]` Unstarted
+- `[✅]` Completed
+- `[🚧]` In progress / partially completed
+- `[⏸️]` Paused / waiting for input
+- `[❓]` Uncertainty to resolve
+- `[🚫]` Blocked by dependency/issue
+
+Place the marker at the start of every actionable item.
+
+### 4.2 Component labels
+When relevant, add ONE label immediately after the marker:
+`[DB]` `[RLS]` `[BE]` `[API]` `[STORE]` `[UI]` `[CLI]` `[IDE]` `[TEST-UNIT]` `[TEST-INT]` `[TEST-E2E]` `[DOCS]` `[REFACTOR]` `[PROMPT]` `[CONFIG]` `[COMMIT]` `[DEPLOY]`.
+
+### 4.3 Numbering & indentation (exact)
+* `[ ]` 1. [Label] Task instruction for `path/file.name` in `workspace`
+    * `[ ]` a. [Label] Level 2 `sub-task instruction` for `file.name` (tab indented under Level 1)
+        * `[ ]` i. [Label] Level 3 `detail instruction` for `function` in `file.name` (tab indented under Level 2)
+- Avoid deeper nesting. If absolutely necessary, restart numbering appropriately or use a simple bullet `-` for micro-points.
+- Maintain proper Markdown indentation so nesting renders correctly.
+
+### 4.4 Required Milestone Fields
+- Inputs: what is required to start
+- Outputs: what is produced
+- Validation: how correctness is verified (tests, scripts, acceptance criteria)
+- Dependencies: call out when non-obvious (structure should imply most ordering)
+
+## 6. Master Plan & Milestones
+- A persistent, high-level Master Plan drives iterative generation of low-level implementation checklists.
+- Milestone schema fields:
+  - id, title, objective, dependencies[], acceptance_criteria[], status (`[ ]`, `[🚧]`, `[✅]`)
+- Organize Master Plan as phases → milestones; ensure dependency ordering.
+- Do not delve into low-level individual work steps in a Master Plan or Milestones. 
+
+## 8. Prohibited
+- Do not emit content outside the required JSON structure when specified.
+- Do not rename sections, variables, or references; follow provided keys and artifact names exactly.
+- Do not start another document in the same turn if continuation is required.
+- Do not substitute summaries where detailed steps are requested.
+
+## 9.a Checklist Validation
+- Status markers present at every actionable item
+- Component labels used where relevant
+- Numbering and indentation follow 1/a/i scheme
+- Each actionable item includes Inputs, Outputs, Validation
+- TDD RED→GREEN→REFACTOR sequencing present where applicable
+- Milestone acceptance criteria specified 
+- Sizing respected; continuation flags set when needed 
+
+## 9.b. Document Validation
+- Include an Index and Executive Summary for every document to help continuation. 
+- Numbering and indentation follow 1/a/i scheme
+- Each actionable item includes Inputs, Outputs, Validation
+- Milestone acceptance criteria specified 
+- Sizing respected; continuation flags set when needed 
+
+## 10.a. Milestone Skeleton
+```markdown
+*   `[ ]` 1. [area] Milestone <ID>: <Title>
+    *   `[ ]` a. Objective: <objective>
+    *   `[ ]` b. Dependencies: <ids or none>
+    *   `[ ]` c. Acceptance criteria:
+        *   `[ ]` i. <criterion 1>
+        *   `[ ]` ii. <criterion 2>
+```
+$SG$,
+       'expected_output_artifacts_json', $EOA$
+{
+  "system_materials": {
+    "executive_summary": "overview of formalization scope and how the Master Plan will drive iterative execution",
+    "input_artifacts_summary": "succinct recap of synthesis outputs informing this plan",
+    "stage_rationale": "why the chosen milestone breakdown, ordering, and architecture structure best fit constraints and objectives",
+    "progress_update": "for continuation turns, summarize Master Plan changes since last iteration; omit on first turn",
+    "validation_checkpoint": [
+      "complete coverage of synthesized scope",
+      "dependency ordering validated",
+      "milestone acceptance criteria present",
+      "style guide structure applied"
+    ],
+    "quality_standards": [
+      "consistent formatting",
+      "explicit ordering",
+      "clear acceptance criteria",
+      "testability of milestones"
+    ]
+  },
+  "documents": [
+    {
+      "key": "trd",
+      "template_filename": "parenthesis_trd.md",
+      "content_to_include": {
+        "subsystems": ["placeholder"],
+        "apis": ["placeholder"],
+        "schemas": ["placeholder"],
+        "proposed_file_tree": "placeholder",
+        "architecture_overview": "placeholder"
+      }
+    },
+    {
+      "key": "master_plan",
+      "template_filename": "parenthesis_master_plan.md",
+      "content_to_include": {
+        "phases": [
+          {
+            "name": "placeholder",
+            "milestones": [
+              {
+                "id": "M1",
+                "title": "placeholder",
+                "objective": "placeholder",
+                "dependencies": ["none"],
+                "acceptance_criteria": ["placeholder"],
+                "status": "[ ]"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "milestone_schema",
+      "template_filename": "parenthesis_milestone_schema.md",
+      "content_to_include": {
+        "fields": [
+          "id",
+          "title",
+          "objective",
+          "dependencies",
+          "acceptance_criteria",
+          "status"
+        ],
+        "style_guide_notes": "Use standardized checklist markers, component labels when relevant, and keep scope at milestone granularity; detailed steps belong to next stage."
+      }
+    }
+  ],
+  "files_to_generate": [
+    { "template_filename": "parenthesis_trd.md", "from_document_key": "trd" },
+    { "template_filename": "parenthesis_master_plan.md", "from_document_key": "master_plan" },
+    { "template_filename": "parenthesis_milestone_schema.md", "from_document_key": "milestone_schema" }
+  ]
+}
+$EOA$::jsonb,
+       'generation_limits', '{"max_steps":200,"target_steps":"120-180","max_output_lines":"600-800"}'::jsonb
+     )
+FROM sp, dom
+WHERE d.system_prompt_id = sp.id
+  AND d.domain_id = dom.id;
+
+-- Paralysis overlay merge (Software Development)
+WITH sp AS (
+  SELECT name, id FROM public.system_prompts WHERE name='dialectic_paralysis_base_v1'
+), dom AS (
+  SELECT id FROM public.dialectic_domains WHERE name = 'Software Development'
+)
+UPDATE public.domain_specific_prompt_overlays d
+SET overlay_values = d.overlay_values
+  || jsonb_build_object(
+       'role', 'implementation planner and TDD workflow author',
+       'stage_instructions', $TXT$using the TRD, Master Plan, and selected milestones, generate a dependency-ordered, fine-grained, high-detail checklist of implementation prompts that follow the style guide;$TXT$,
+       'style_guide_markdown', $SG$
+## 1. Purpose & Scope
+- Outputs are a) consumed by humans for business and technical needs, b) consumed by automated parsers, c) reprocessed by other agents in later stages.
+- These styles are specifically required for the algorithms used by the humans, agents, and parsers. 
+- Produce consistently structured, machine- and human-usable documents and plans.
+- Ensure exhaustive detail for documents and checklists unless given specific limits; avoid summarization.
+
+## 2.a. Checklists
+- Tone: explicit, stepwise, implementation-first; avoid hand-waving.
+- One-file-per-step prompts when feasible. Include filenames/paths when known.
+- Use deterministic, directive language (“Generate”, “Add”, “Write”).
+- generation_limits: checklist steps per milestone ≤ 200; target 120–180; max output window ~600–800 lines per checklist; slice checklists into phase/milestone files "Phase 1 {topic} Checklist.md" or similar if the anticipated output will exceed the window.
+- Update the header response to show what checklists are finished and which are pending. 
+
+## 3. Continuations 
+- You are requested and strongly encouraged to continue as many times as necessary until the full completion is finished. 
+- If completed, set continuation_needed to false and the finish_reason to "stop".
+- If continuation is needed, set continuation_needed to true, the reason for stopping, and the resume cursor.
+- Control flags (top-level JSON fields when requested by the prompt):
+  - continuation_needed: boolean
+  - finish_reason: "max_tokens" | "length" | "content_truncated" | "next_document"
+  - resume_cursor: { document_key: string, section_id?: string, line_hint?: number }
+
+Example control flags:
+```json
+{
+  "continuation_needed": true,
+  "finish_reason": "content_truncated",
+  "resume_cursor": { "document_key": "actionable_checklist", "section_id": "1.a.iii" }
+}
+```
+
+## 4. Formatting
+
+### 4.1 Status markers
+- `[ ]` Unstarted
+- `[✅]` Completed
+- `[🚧]` In progress / partially completed
+- `[⏸️]` Paused / waiting for input
+- `[❓]` Uncertainty to resolve
+- `[🚫]` Blocked by dependency/issue
+
+Place the marker at the start of every actionable item.
+
+### 4.2 Component labels
+When relevant, add ONE label immediately after the marker:
+`[DB]` `[RLS]` `[BE]` `[API]` `[STORE]` `[UI]` `[CLI]` `[IDE]` `[TEST-UNIT]` `[TEST-INT]` `[TEST-E2E]` `[DOCS]` `[REFACTOR]` `[PROMPT]` `[CONFIG]` `[COMMIT]` `[DEPLOY]`.
+
+### 4.3 Numbering & indentation (exact)
+* `[ ]` 1. [Label] Task instruction for `path/file.name` in `workspace`
+    * `[ ]` a. [Label] Level 2 `sub-task instruction` for `file.name` (tab indented under Level 1)
+        * `[ ]` i. [Label] Level 3 `detail instruction` for `function` in `file.name` (tab indented under Level 2)
+- Avoid deeper nesting. If absolutely necessary, restart numbering appropriately or use a simple bullet `-` for micro-points.
+- Maintain proper Markdown indentation so nesting renders correctly.
+
+## 5. TDD Sequencing
+Enforce RED → Implement → GREEN → Refactor, and label steps accordingly.
+
+## 6. Master Plan & Milestone
+- A persistent, high-level Master Plan drives iterative generation of low-level implementation checklists.
+- Milestone schema fields:
+  - id, title, objective, dependencies[], acceptance_criteria[], status (`[ ]`, `[🚧]`, `[✅]`)
+- Organize Master Plan as phases → milestones; ensure dependency ordering.
+- Do not delve into low-level individual work steps in a Master Plan or Milestones. 
+
+## 7. Implementation Checklists
+- Extreme detail; no summarization. Each step includes Inputs, Outputs, Validation.
+- Use 1/a/i numbering and component labels.
+- One-file-per-step prompts when possible; prefer explicit filenames/paths.
+- Respect sizing & continuation policy (Section 3).
+
+## 8. Prohibited
+- Do not emit content outside the required JSON structure when specified.
+- Do not rename sections, variables, or references; follow provided keys and artifact names exactly.
+- Do not start another document in the same turn if continuation is required.
+- Do not substitute summaries where detailed steps are requested.
+
+## 9.a. Checklist Validation
+- Status markers present at every actionable item
+- Component labels used where relevant
+- Numbering and indentation follow 1/a/i scheme
+- Each actionable item includes Inputs, Outputs, Validation
+- TDD RED→GREEN→REFACTOR sequencing present where applicable
+- Milestone acceptance criteria specified 
+- Sizing respected; continuation flags set when needed 
+
+## 10.a. Milestone Skeleton
+```markdown
+*   `[ ]` 1. [area] Milestone <ID>: <Title>
+    *   `[ ]` a. Objective: <objective>
+    *   `[ ]` b. Dependencies: <ids or none>
+    *   `[ ]` c. Acceptance criteria:
+        *   `[ ]` i. <criterion 1>
+        *   `[ ]` ii. <criterion 2>
+```
+
+## 10.b. Checklist Skeleton
+```markdown
+*   `[ ]` 1. [COMP] Step title
+    *   `[ ]` a. Inputs: <inputs>
+    *   `[ ]` b. Outputs: <outputs>
+    *   `[ ]` c. Validation: <how verified>
+    *   `[ ]` d. [TEST-UNIT] <RED test>
+    *   `[ ]` e. [COMP] <implementation>
+    *   `[ ]` f. [TEST-UNIT] <GREEN test>
+    *   `[ ]` g. [COMMIT] <message>
+```
+$SG$,
+       'expected_output_artifacts_json', $EOA$
+{
+  "system_materials": {
+    "executive_summary": "summary of which milestones are detailed in this iteration and why",
+    "input_artifacts_summary": "TRD sections used, Master Plan phase/milestone references",
+    "stage_rationale": "explain ordering, TDD emphasis, and how checklist conforms to style guide",
+    "progress_update": "summarize completed vs remaining milestones; denote updated statuses in Master Plan",
+    "generation_limits": { "max_steps": 200, "target_steps": "120-180", "max_output_lines": "600-800" },
+    "document_order": ["actionable_checklist","updated_master_plan"],
+    "current_document": "actionable_checklist",
+    "continuation_policy": "stop-at-boundary; one-document-per-turn; resume where left off",
+    "exhaustiveness_requirement": "extreme detail; no summaries; each step includes inputs, outputs, validation; 1/a/i numbering; component labels",
+    "validation_checkpoint": [
+      "checklist uses style guide (status, numbering, labels)",
+      "steps are atomic and testable",
+      "dependency ordering enforced",
+      "coverage aligns to milestone acceptance criteria"
+    ],
+    "quality_standards": [
+      "TDD sequence present",
+      "no missing dependencies",
+      "no speculative steps beyond selected milestones",
+      "clear file-by-file prompts"
+    ]
+  },
+  "documents": [
+    {
+      "key": "actionable_checklist",
+      "template_filename": "paralysis_actionable_checklist.md",
+      "content_to_include": "full low-level checklist using style guide: status markers, 1/a/i numbering, component labels; each step contains inputs, outputs, validation; one-file-per-step prompts"
+    },
+    {
+      "key": "updated_master_plan",
+      "template_filename": "paralysis_updated_master_plan.md",
+      "content_to_include": "copy of Master Plan with the detailed milestones set to [🚧], others unchanged"
+    }
+  ],
+  "files_to_generate": [
+    { "template_filename": "paralysis_actionable_checklist.md", "from_document_key": "actionable_checklist" },
+    { "template_filename": "paralysis_updated_master_plan.md", "from_document_key": "updated_master_plan" }
+  ]
+}
+$EOA$::jsonb,
+       'generation_limits', '{"max_steps":200,"target_steps":"120-180","max_output_lines":"600-800"}'::jsonb,
+       'continuation_policy', 'stop-at-boundary; one-document-per-turn; resume where left off',
+       'document_order', '["actionable_checklist","updated_master_plan"]',
+       'current_document', 'actionable_checklist',
+       'exhaustiveness_requirement', 'extreme detail; no summaries; each step includes inputs, outputs, validation; 1/a/i numbering; component labels'
+     )
+FROM sp, dom
+WHERE d.system_prompt_id = sp.id
+  AND d.domain_id = dom.id;
 
 -- Note: Chats and chat_messages tables are typically populated by user interaction, not seeding. 
 
@@ -37,127 +926,136 @@ ON CONFLICT (id) DO NOTHING; -- Avoid errors if users already exist
 
 -- START AI PROVIDERS
 
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('1c4bb562-f2dd-54a5-b978-d8d615002575', 'claude-2.0', 'anthropic-claude-2.0', '[SANITIZED/OBSOLETE]: No description.', false, '{"api_identifier":"anthropic-claude-2.0","context_window_tokens":1,"input_token_cost_rate":1,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":1,"output_token_cost_rate":1}', '"2025-07-01T03:33:24.722Z"', '"2025-08-11T15:00:46.025Z"', 'anthropic', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('be34440f-625b-54bb-b1c4-6a6f675e27f6', 'claude-2.1', 'anthropic-claude-2.1', '[SANITIZED/OBSOLETE]: No description.', false, '{"api_identifier":"anthropic-claude-2.1","context_window_tokens":1,"input_token_cost_rate":1,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":1,"output_token_cost_rate":1}', '"2025-07-01T03:33:24.722Z"', '"2025-08-11T15:00:46.030Z"', 'anthropic', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('b4066cb8-b694-5549-902d-a374ab1672cd', 'claude-3-5-haiku-20241022', 'anthropic-claude-3-5-haiku-20241022', '', true, '{"api_identifier":"anthropic-claude-3-5-haiku-20241022","context_window_tokens":200000,"input_token_cost_rate":0.8,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-3.5-haiku-20241022"},"hard_cap_output_tokens":8192,"output_token_cost_rate":4,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.722Z"', '"2025-08-11T15:25:03.708Z"', 'anthropic', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('5a93784a-15e1-50ac-9d64-b58e434b201e', 'claude-3-5-sonnet-20240620', 'anthropic-claude-3-5-sonnet-20240620', '', true, '{"api_identifier":"anthropic-claude-3-5-sonnet-20240620","context_window_tokens":200000,"input_token_cost_rate":3,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-3.5-sonnet-20240620"},"hard_cap_output_tokens":8192,"output_token_cost_rate":15,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.722Z"', '"2025-08-11T15:25:03.710Z"', 'anthropic', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('c485f3fe-28ac-5745-b420-51334beb8772', 'claude-3-5-sonnet-20241022', 'anthropic-claude-3-5-sonnet-20241022', '', true, '{"api_identifier":"anthropic-claude-3-5-sonnet-20241022","context_window_tokens":200000,"input_token_cost_rate":3,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-3.5-sonnet-20241022"},"hard_cap_output_tokens":8192,"output_token_cost_rate":15,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.722Z"', '"2025-08-11T15:25:03.705Z"', 'anthropic', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('2dfbdfda-36f3-54ed-863c-fe769514aefd', 'claude-3-7-sonnet-20250219', 'anthropic-claude-3-7-sonnet-20250219', '', true, '{"api_identifier":"anthropic-claude-3-7-sonnet-20250219","context_window_tokens":200000,"input_token_cost_rate":3,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-3-7-sonnet-20250219"},"hard_cap_output_tokens":8192,"output_token_cost_rate":15,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.722Z"', '"2025-08-11T15:25:03.703Z"', 'anthropic', true, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('b637dddf-2e1e-512c-b4f9-2f0cacb79c12', 'claude-3-haiku-20240307', 'anthropic-claude-3-haiku-20240307', '', true, '{"api_identifier":"anthropic-claude-3-haiku-20240307","context_window_tokens":200000,"input_token_cost_rate":0.25,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-3-haiku-20240307"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1.25,"provider_max_input_tokens":200000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.722Z"', '"2025-08-11T15:25:03.712Z"', 'anthropic', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('dae3997f-de7f-5be8-b6d9-d8e888f7faad', 'claude-3-opus-20240229', 'anthropic-claude-3-opus-20240229', '', true, '{"api_identifier":"anthropic-claude-3-opus-20240229","context_window_tokens":200000,"input_token_cost_rate":15,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-3-opus-20240229"},"hard_cap_output_tokens":4096,"output_token_cost_rate":75,"provider_max_input_tokens":200000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.722Z"', '"2025-08-11T15:25:03.714Z"', 'anthropic', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('7ded463c-d4bf-5e00-9334-6eb6d9b12c19', 'claude-3-sonnet-20240229', 'anthropic-claude-3-sonnet-20240229', '[SANITIZED/OBSOLETE]: No description.', false, '{"api_identifier":"anthropic-claude-3-sonnet-20240229","context_window_tokens":1,"input_token_cost_rate":1,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":1,"output_token_cost_rate":1}', '"2025-07-01T03:33:24.722Z"', '"2025-08-11T15:00:46.033Z"', 'anthropic', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('19e4b945-62f6-57af-a782-81628682dc64', 'claude-opus-4-1-20250805', 'anthropic-claude-opus-4-1-20250805', '', true, '{"api_identifier":"anthropic-claude-opus-4-1-20250805","context_window_tokens":200000,"input_token_cost_rate":20,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-opus-4-1-20250805"},"hard_cap_output_tokens":8192,"output_token_cost_rate":100,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', '"2025-08-07T16:34:48.398Z"', '"2025-08-11T15:25:03.695Z"', 'anthropic', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('52f65f30-ba8b-5887-aaa1-7822edc35718', 'claude-opus-4-20250514', 'anthropic-claude-opus-4-20250514', '', true, '{"api_identifier":"anthropic-claude-opus-4-20250514","context_window_tokens":200000,"input_token_cost_rate":18,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-opus-4-20250514"},"hard_cap_output_tokens":8192,"output_token_cost_rate":90,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.722Z"', '"2025-08-11T15:25:03.699Z"', 'anthropic', true, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('b37eb120-0de8-59e1-9b01-c9aeb8e57e6b', 'claude-sonnet-4-20250514', 'anthropic-claude-sonnet-4-20250514', '', true, '{"api_identifier":"anthropic-claude-sonnet-4-20250514","context_window_tokens":200000,"input_token_cost_rate":4,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-sonnet-4-20250514"},"hard_cap_output_tokens":8192,"output_token_cost_rate":20,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.722Z"', '"2025-08-11T15:25:03.701Z"', 'anthropic', true, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('02e45bc4-c584-52a0-b647-77570c2208cd', 'Dummy Echo v1', 'dummy-echo-v1', NULL, true, '{"mode":"echo","modelId":"dummy-echo-v1","api_identifier":"dummy-echo-v1","basePromptTokens":2,"context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","tiktoken_encoding_name":"cl100k_base"},"hard_cap_output_tokens":8192,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:29:33.800Z"', '"2025-07-01T03:29:33.800Z"', 'dummy', true, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('01a87276-f7ff-5416-9b7c-d49b6720932a', 'Gemini 1.0 Pro Vision', 'google-gemini-1.0-pro-vision-latest', 'The original Gemini 1.0 Pro Vision model version which was optimized for image understanding. Gemini 1.0 Pro Vision was deprecated on July 12, 2024. Move to a newer Gemini version.', false, '{"api_identifier":"google-gemini-1.0-pro-vision-latest","input_token_cost_rate":5e-7,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":4096,"output_token_cost_rate":0.0000015,"provider_max_input_tokens":12288,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.896Z"', '"2025-08-07T16:34:48.423Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('0c2146b0-1536-579f-99ba-591069aad838', 'Gemini 1.5 Flash', 'google-gemini-1.5-flash', 'Alias that points to the most recent stable version of Gemini 1.5 Flash, our fast and versatile multimodal model for scaling across diverse tasks.', true, '{"api_identifier":"google-gemini-1.5-flash","context_window_tokens":2000000,"input_token_cost_rate":0.6,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.6,"provider_max_input_tokens":1000000,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.785Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('63f219ef-29df-5364-9e44-59df4cdf859c', 'Gemini 1.5 Flash 002', 'google-gemini-1.5-flash-002', 'Stable version of Gemini 1.5 Flash, our fast and versatile multimodal model for scaling across diverse tasks, released in September of 2024.', true, '{"api_identifier":"google-gemini-1.5-flash-002","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1000000,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.787Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('e37ed2fe-591c-5aeb-acb0-26592a30450f', 'Gemini 1.5 Flash-8B', 'google-gemini-1.5-flash-8b', 'Stable version of Gemini 1.5 Flash-8B, our smallest and most cost effective Flash model, released in October of 2024.', true, '{"api_identifier":"google-gemini-1.5-flash-8b","context_window_tokens":2000000,"input_token_cost_rate":0.3,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.3,"provider_max_input_tokens":1000000,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.789Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('ab34b2ad-8f73-53b3-ba07-337cd6c7f44b', 'Gemini 1.5 Flash-8B 001', 'google-gemini-1.5-flash-8b-001', 'Stable version of Gemini 1.5 Flash-8B, our smallest and most cost effective Flash model, released in October of 2024.', true, '{"api_identifier":"google-gemini-1.5-flash-8b-001","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1000000,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.792Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('702d41d7-a38c-5a91-8e7d-368c7e707cad', 'Gemini 1.5 Flash-8B Latest', 'google-gemini-1.5-flash-8b-latest', 'Alias that points to the most recent production (non-experimental) release of Gemini 1.5 Flash-8B, our smallest and most cost effective Flash model, released in October of 2024.', true, '{"api_identifier":"google-gemini-1.5-flash-8b-latest","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1000000,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.794Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('0a666c94-216a-55ec-ae73-e405396ad5db', 'Gemini 1.5 Flash Latest', 'google-gemini-1.5-flash-latest', 'Alias that points to the most recent production (non-experimental) release of Gemini 1.5 Flash, our fast and versatile multimodal model for scaling across diverse tasks.', true, '{"api_identifier":"google-gemini-1.5-flash-latest","context_window_tokens":2000000,"input_token_cost_rate":0.6,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.6,"provider_max_input_tokens":1000000,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.782Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('92b8d9c3-ec43-5a7a-a9a8-e9af29c4940b', 'Gemini 1.5 Pro', 'google-gemini-1.5-pro', 'Stable version of Gemini 1.5 Pro, our mid-size multimodal model that supports up to 2 million tokens, released in May of 2024.', true, '{"api_identifier":"google-gemini-1.5-pro","context_window_tokens":2000000,"input_token_cost_rate":2.5,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":10,"provider_max_input_tokens":2000000,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.779Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('4fdf51fc-08ab-5dc0-b0c3-d437fca39282', 'Gemini 1.5 Pro 002', 'google-gemini-1.5-pro-002', 'Stable version of Gemini 1.5 Pro, our mid-size multimodal model that supports up to 2 million tokens, released in September of 2024.', true, '{"api_identifier":"google-gemini-1.5-pro-002","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":2000000,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.776Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('74213515-3bd3-54cf-a45b-989f0520a7ca', 'Gemini 1.5 Pro Latest', 'google-gemini-1.5-pro-latest', 'Alias that points to the most recent production (non-experimental) release of Gemini 1.5 Pro, our mid-size multimodal model that supports up to 2 million tokens.', true, '{"api_identifier":"google-gemini-1.5-pro-latest","context_window_tokens":2000000,"input_token_cost_rate":2.5,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":10,"provider_max_input_tokens":2000000,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.773Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('2b69bb3e-aa45-5d80-830b-4d6378737341', 'Gemini 2.0 Flash', 'google-gemini-2.0-flash', 'Gemini 2.0 Flash', true, '{"api_identifier":"google-gemini-2.0-flash","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.816Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('06f63169-87a8-5637-bca4-2d4df6d549cd', 'Gemini 2.0 Flash 001', 'google-gemini-2.0-flash-001', 'Stable version of Gemini 2.0 Flash, our fast and versatile multimodal model for scaling across diverse tasks, released in January of 2025.', true, '{"api_identifier":"google-gemini-2.0-flash-001","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.819Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('9802b928-c509-5d43-b9c2-61a685f81305', 'Gemini 2.0 Flash Experimental', 'google-gemini-2.0-flash-exp', 'Gemini 2.0 Flash Experimental', true, '{"api_identifier":"google-gemini-2.0-flash-exp","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.814Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('b16ac66e-d163-5219-b371-4e41c1a5dbff', 'Gemini 2.0 Flash (Image Generation) Experimental', 'google-gemini-2.0-flash-exp-image-generation', 'Gemini 2.0 Flash (Image Generation) Experimental', true, '{"api_identifier":"google-gemini-2.0-flash-exp-image-generation","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.821Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('73b8216a-3358-5a57-894a-5a813a9a297c', 'Gemini 2.0 Flash-Lite', 'google-gemini-2.0-flash-lite', 'Gemini 2.0 Flash-Lite', true, '{"api_identifier":"google-gemini-2.0-flash-lite","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.826Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('05b6e73e-2c19-52a7-8161-f4ddc473217b', 'Gemini 2.0 Flash-Lite 001', 'google-gemini-2.0-flash-lite-001', 'Stable version of Gemini 2.0 Flash-Lite', true, '{"api_identifier":"google-gemini-2.0-flash-lite-001","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.824Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('32ce5671-0e17-53c6-a516-821422dfd01e', 'Gemini 2.0 Flash-Lite Preview', 'google-gemini-2.0-flash-lite-preview', 'Preview release (February 5th, 2025) of Gemini 2.0 Flash-Lite', true, '{"api_identifier":"google-gemini-2.0-flash-lite-preview","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.832Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('c44aa6be-34fa-5695-98c7-bc7005ae97f6', 'Gemini 2.0 Flash-Lite Preview 02-05', 'google-gemini-2.0-flash-lite-preview-02-05', 'Preview release (February 5th, 2025) of Gemini 2.0 Flash-Lite', true, '{"api_identifier":"google-gemini-2.0-flash-lite-preview-02-05","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.830Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('4b5ec9c8-b1a2-5e78-b1d7-9be1e7ec77f0', 'Gemini 2.0 Flash Preview Image Generation', 'google-gemini-2.0-flash-preview-image-generation', 'Gemini 2.0 Flash Preview Image Generation', true, '{"api_identifier":"google-gemini-2.0-flash-preview-image-generation","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":32768,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.828Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('f1eafe2b-aa52-53c0-838c-e2b49f5259bc', 'Gemini 2.5 Flash Preview 05-20', 'google-gemini-2.0-flash-thinking-exp', 'Preview release (April 17th, 2025) of Gemini 2.5 Flash', true, '{"api_identifier":"google-gemini-2.0-flash-thinking-exp","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.843Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('98de183e-9cbd-512f-8f23-9350a99c9f11', 'Gemini 2.5 Flash Preview 05-20', 'google-gemini-2.0-flash-thinking-exp-01-21', 'Preview release (April 17th, 2025) of Gemini 2.5 Flash', true, '{"api_identifier":"google-gemini-2.0-flash-thinking-exp-01-21","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.841Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('edebbb7f-40a8-544d-b0ab-28a6f3b3791c', 'Gemini 2.5 Flash Preview 05-20', 'google-gemini-2.0-flash-thinking-exp-1219', 'Preview release (April 17th, 2025) of Gemini 2.5 Flash', true, '{"api_identifier":"google-gemini-2.0-flash-thinking-exp-1219","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.845Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('ff06c21c-d44f-531c-a2c1-8a69ab18a11a', 'Gemini 2.0 Pro Experimental', 'google-gemini-2.0-pro-exp', 'Experimental release (March 25th, 2025) of Gemini 2.5 Pro', true, '{"api_identifier":"google-gemini-2.0-pro-exp","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.835Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('d39ea7d3-c13c-5e63-bc8d-6e9d4e57e260', 'Gemini 2.0 Pro Experimental 02-05', 'google-gemini-2.0-pro-exp-02-05', 'Experimental release (March 25th, 2025) of Gemini 2.5 Pro', true, '{"api_identifier":"google-gemini-2.0-pro-exp-02-05","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.837Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('4bdbf0a2-997f-59ca-8702-b55c6d6c8ef8', 'Gemini 2.5 Flash', 'google-gemini-2.5-flash', 'Stable version of Gemini 2.5 Flash, our mid-size multimodal model that supports up to 1 million tokens, released in June of 2025.', true, '{"api_identifier":"google-gemini-2.5-flash","context_window_tokens":2000000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":2.5,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.802Z"', 'google', true, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('28af149d-06c5-51a4-b030-587e187e0abf', 'Nano Banana', 'google-gemini-2.5-flash-image-preview', 'Gemini 2.5 Flash Preview Image', true, '{"api_identifier":"google-gemini-2.5-flash-image-preview","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":32768,"provider_max_output_tokens":8192}', '"2025-08-29T22:20:46.769Z"', '"2025-08-29T22:20:46.769Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('c4504686-6a48-5a71-ac59-d42590f11b51', 'Gemini 2.5 Flash-Lite', 'google-gemini-2.5-flash-lite', 'Stable version of Gemini 2.5 Flash-Lite, released in July of 2025', true, '{"api_identifier":"google-gemini-2.5-flash-lite","context_window_tokens":2000000,"input_token_cost_rate":0.3,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.4,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-08-07T17:03:00.125Z"', '"2025-08-29T22:20:46.868Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('1b52d396-e053-5090-a8ba-cb71846f5a15', 'Gemini 2.5 Flash-Lite Preview 06-17', 'google-gemini-2.5-flash-lite-preview-06-17', 'Preview release (June 11th, 2025) of Gemini 2.5 Flash-Lite', true, '{"api_identifier":"google-gemini-2.5-flash-lite-preview-06-17","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.804Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('9623214b-0a29-509d-a300-362e602273bd', 'Gemini 2.5 Flash Preview 04-17', 'google-gemini-2.5-flash-preview-04-17', 'Preview release (April 17th, 2025) of Gemini 2.5 Flash', false, '{"api_identifier":"google-gemini-2.5-flash-preview-04-17","input_token_cost_rate":5e-7,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.0000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-07-01T03:33:24.896Z"', '"2025-08-07T16:34:48.423Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('4602536b-6f16-5d83-8a5c-90ecc18ed52c', 'Gemini 2.5 Flash Preview 04-17 for cursor testing', 'google-gemini-2.5-flash-preview-04-17-thinking', 'Preview release (April 17th, 2025) of Gemini 2.5 Flash', false, '{"api_identifier":"google-gemini-2.5-flash-preview-04-17-thinking","input_token_cost_rate":5e-7,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.0000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-07-01T03:33:24.896Z"', '"2025-08-07T16:34:48.423Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('3ba25e23-17cd-501c-8708-52a46942b6be', 'Gemini 2.5 Flash Preview 05-20', 'google-gemini-2.5-flash-preview-05-20', 'Preview release (April 17th, 2025) of Gemini 2.5 Flash', true, '{"api_identifier":"google-gemini-2.5-flash-preview-05-20","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.799Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('b94e73ea-8357-5e80-a4cd-70bad671a2ba', 'Gemini 2.5 Flash Preview TTS', 'google-gemini-2.5-flash-preview-tts', 'Gemini 2.5 Flash Preview TTS', true, '{"api_identifier":"google-gemini-2.5-flash-preview-tts","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":8192,"provider_max_output_tokens":16384}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.848Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('251a58f5-b392-5cb6-b272-333366956a7e', 'Gemini 2.5 Pro', 'google-gemini-2.5-pro', 'Stable release (June 17th, 2025) of Gemini 2.5 Pro', true, '{"api_identifier":"google-gemini-2.5-pro","context_window_tokens":2000000,"input_token_cost_rate":2.5,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":15,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.812Z"', 'google', true, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('bf8cc5be-8f1d-5fb0-83cc-950c30b30fc2', 'Gemini 2.5 Pro Preview 03-25', 'google-gemini-2.5-pro-preview-03-25', 'Gemini 2.5 Pro Preview 03-25', true, '{"api_identifier":"google-gemini-2.5-pro-preview-03-25","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.797Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('e4e94fbd-ede8-509f-a2e3-ff3ea1a65a39', 'Gemini 2.5 Pro Preview 05-06', 'google-gemini-2.5-pro-preview-05-06', 'Preview release (May 6th, 2025) of Gemini 2.5 Pro', true, '{"api_identifier":"google-gemini-2.5-pro-preview-05-06","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.807Z"', 'google', true, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('6ab92253-8dce-50f9-8db9-7ddcf40f9ea6', 'Gemini 2.5 Pro Preview', 'google-gemini-2.5-pro-preview-06-05', 'Preview release (June 5th, 2025) of Gemini 2.5 Pro', true, '{"api_identifier":"google-gemini-2.5-pro-preview-06-05","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.809Z"', 'google', true, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('fbf931ef-ba4d-52cb-a3b2-2eee8eec7698', 'Gemini 2.5 Pro Preview TTS', 'google-gemini-2.5-pro-preview-tts', 'Gemini 2.5 Pro Preview TTS', true, '{"api_identifier":"google-gemini-2.5-pro-preview-tts","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":8192,"provider_max_output_tokens":16384}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.850Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('1142eac0-882d-5003-ab99-c91011103145', 'Gemini Experimental 1206', 'google-gemini-exp-1206', 'Experimental release (March 25th, 2025) of Gemini 2.5 Pro', true, '{"api_identifier":"google-gemini-exp-1206","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.839Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('640ee688-1497-5541-af55-aefa5f5d5b14', 'Gemini 1.0 Pro Vision', 'google-gemini-pro-vision', 'The original Gemini 1.0 Pro Vision model version which was optimized for image understanding. Gemini 1.0 Pro Vision was deprecated on July 12, 2024. Move to a newer Gemini version.', false, '{"api_identifier":"google-gemini-pro-vision","input_token_cost_rate":0.000001,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":4096,"output_token_cost_rate":0.000002,"provider_max_input_tokens":12288,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.896Z"', '"2025-08-07T16:34:48.423Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('d31ff6b8-b3c3-5087-a621-07e26c3c8a48', 'Gemma 3 12B', 'google-gemma-3-12b-it', '', true, '{"api_identifier":"google-gemma-3-12b-it","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":32768,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.859Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('912383cb-290d-5034-bdc8-5177c82145b6', 'Gemma 3 1B', 'google-gemma-3-1b-it', '', true, '{"api_identifier":"google-gemma-3-1b-it","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":32768,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.855Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('3279638d-4416-5d97-af6f-c4de5717c607', 'Gemma 3 27B', 'google-gemma-3-27b-it', '', true, '{"api_identifier":"google-gemma-3-27b-it","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":131072,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.861Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('ddfb5240-2e08-5ece-94a7-dfe135efffd2', 'Gemma 3 4B', 'google-gemma-3-4b-it', '', true, '{"api_identifier":"google-gemma-3-4b-it","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":32768,"provider_max_output_tokens":8192}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.857Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('1770ddfc-34aa-5b46-96df-cd1aa9071d79', 'Gemma 3n E2B', 'google-gemma-3n-e2b-it', '', true, '{"api_identifier":"google-gemma-3n-e2b-it","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":8192,"provider_max_output_tokens":2048}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.866Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('9be904c8-c407-52ef-b5ee-82e8dfcc9bf2', 'Gemma 3n E4B', 'google-gemma-3n-e4b-it', '', true, '{"api_identifier":"google-gemma-3n-e4b-it","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":8192,"provider_max_output_tokens":2048}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.864Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('a57b2814-314b-51ae-b0d4-4e3bfc72b316', 'LearnLM 2.0 Flash Experimental', 'google-learnlm-2.0-flash-experimental', 'LearnLM 2.0 Flash Experimental', true, '{"api_identifier":"google-learnlm-2.0-flash-experimental","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":32768}', '"2025-07-01T03:33:24.896Z"', '"2025-08-29T22:20:46.852Z"', 'google', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('33913d86-68e3-55c7-b830-4de24f3a0e18', 'OpenAI chatgpt-4o-latest', 'openai-chatgpt-4o-latest', 'Owned by: system', true, '{"api_identifier":"openai-chatgpt-4o-latest","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.336Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('3e913593-6c5f-5400-b2fb-b556e06e92c2', 'OpenAI gpt-3.5-turbo', 'openai-gpt-3.5-turbo', 'Owned by: openai', true, '{"api_identifier":"openai-gpt-3.5-turbo","context_window_tokens":16385,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":16385,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.120Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('d56609da-7bbd-51b1-a8f2-94bc06fbf4d2', 'OpenAI gpt-3.5-turbo-0125', 'openai-gpt-3.5-turbo-0125', 'Owned by: system', true, '{"api_identifier":"openai-gpt-3.5-turbo-0125","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.317Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('296e1d20-68d1-5986-9891-8153064151a4', 'OpenAI gpt-3.5-turbo-1106', 'openai-gpt-3.5-turbo-1106', 'Owned by: system', true, '{"api_identifier":"openai-gpt-3.5-turbo-1106","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.305Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('f30bab2f-f79e-5379-b04c-af115c5354be', 'OpenAI gpt-3.5-turbo-16k', 'openai-gpt-3.5-turbo-16k', 'Owned by: openai-internal', true, '{"api_identifier":"openai-gpt-3.5-turbo-16k","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.414Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('d96d60b1-e871-564e-9fc4-af95aa72071c', 'OpenAI gpt-3.5-turbo-instruct', 'openai-gpt-3.5-turbo-instruct', 'Owned by: system', true, '{"api_identifier":"openai-gpt-3.5-turbo-instruct","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.297Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('a1a1ebef-ad11-5a0e-8764-25558a22db67', 'OpenAI gpt-3.5-turbo-instruct-0914', 'openai-gpt-3.5-turbo-instruct-0914', 'Owned by: system', true, '{"api_identifier":"openai-gpt-3.5-turbo-instruct-0914","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.300Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('04979699-b140-5ace-b820-46f3a2ead1d3', 'OpenAI gpt-4', 'openai-gpt-4', 'Owned by: openai', true, '{"api_identifier":"openai-gpt-4","context_window_tokens":8192,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":8192,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.117Z"', 'openai', true, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('40ec18ac-15e8-59db-8437-d74ae550c8e5', 'OpenAI gpt-4-0125-preview', 'openai-gpt-4-0125-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4-0125-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.312Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('27457295-1923-5754-adcb-f7079f0d03cd', 'OpenAI gpt-4-0613', 'openai-gpt-4-0613', 'Owned by: openai', true, '{"api_identifier":"openai-gpt-4-0613","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.113Z"', 'openai', true, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('e61f83ea-5c86-5f38-be33-5ff07c1e1742', 'OpenAI gpt-4.1', 'openai-gpt-4.1', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4.1","context_window_tokens":1047576,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":1047576,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.382Z"', 'openai', true, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('c82577c3-17ac-5339-af88-f9666ab22bd2', 'OpenAI gpt-4-1106-preview', 'openai-gpt-4-1106-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4-1106-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.302Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('6f5643f5-0978-522e-a418-87be48357d94', 'OpenAI gpt-4.1-2025-04-14', 'openai-gpt-4.1-2025-04-14', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4.1-2025-04-14","context_window_tokens":1047576,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":1047576,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.380Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('2f57df95-f318-50f8-bac9-09a920fdbcab', 'OpenAI gpt-4.1-mini', 'openai-gpt-4.1-mini', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4.1-mini","context_window_tokens":1047576,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":1047576,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.386Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('dd0fc07d-c8f1-5c77-964c-a7f6d9834167', 'OpenAI gpt-4.1-mini-2025-04-14', 'openai-gpt-4.1-mini-2025-04-14', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4.1-mini-2025-04-14","context_window_tokens":1047576,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":1047576,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.384Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('2d3cbfd3-9bad-5186-abfe-f270a0990264', 'OpenAI gpt-4.1-nano', 'openai-gpt-4.1-nano', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4.1-nano","context_window_tokens":1047576,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":1047576,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.391Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('ad3fa092-7083-53f6-ad2a-5fa5db31ff9d', 'OpenAI gpt-4.1-nano-2025-04-14', 'openai-gpt-4.1-nano-2025-04-14', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4.1-nano-2025-04-14","context_window_tokens":1047576,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":1047576,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.389Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('cc3e8e0d-c17a-5fb5-9298-5816ea2f4387', 'OpenAI gpt-4.5-preview', 'openai-gpt-4.5-preview', 'Owned by: system', false, '{"api_identifier":"openai-gpt-4.5-preview","input_token_cost_rate":0.00003,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4.5-preview"},"output_token_cost_rate":0.00006}', '"2025-07-01T03:33:24.484Z"', '"2025-08-07T16:34:48.194Z"', 'openai', true, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('7108a3ab-96e7-5bda-8fdb-11dc38a0d51b', 'OpenAI gpt-4.5-preview-2025-02-27', 'openai-gpt-4.5-preview-2025-02-27', 'Owned by: system', false, '{"api_identifier":"openai-gpt-4.5-preview-2025-02-27","input_token_cost_rate":0.00003,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4.5-preview-2025-02-27"},"output_token_cost_rate":0.00006}', '"2025-07-01T03:33:24.484Z"', '"2025-08-07T16:34:48.194Z"', 'openai', true, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('165dfcb3-a0f7-521a-8707-3a1a66f275cc', 'OpenAI gpt-4o', 'openai-gpt-4o', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:29:32.550Z"', '"2025-08-29T22:20:46.324Z"', 'openai', true, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('86e155dc-e55b-59f1-b98b-779fb2b2392b', 'OpenAI gpt-4o-2024-05-13', 'openai-gpt-4o-2024-05-13', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-2024-05-13","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.326Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('9f0604e3-4d57-5d82-a9ef-def8b50c7afe', 'OpenAI gpt-4o-2024-08-06', 'openai-gpt-4o-2024-08-06', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-2024-08-06","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.334Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('746ad8a5-64dd-59fb-8493-7d3de82610ff', 'OpenAI gpt-4o-2024-11-20', 'openai-gpt-4o-2024-11-20', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-2024-11-20","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.361Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('af33d7be-6feb-5f34-a781-be46f838c71c', 'OpenAI gpt-4o-audio-preview', 'openai-gpt-4o-audio-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-audio-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.342Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('709a9ab4-983d-51c7-8587-ca86854655c8', 'OpenAI gpt-4o-audio-preview-2024-10-01', 'openai-gpt-4o-audio-preview-2024-10-01', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-audio-preview-2024-10-01","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.340Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('d4398d04-4e48-5c27-bdcf-40b9aa6d92f7', 'OpenAI gpt-4o-audio-preview-2024-12-17', 'openai-gpt-4o-audio-preview-2024-12-17', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-audio-preview-2024-12-17","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.349Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('f25ec3ff-adde-5599-93ed-475993636f4d', 'OpenAI gpt-4o-audio-preview-2025-06-03', 'openai-gpt-4o-audio-preview-2025-06-03', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-audio-preview-2025-06-03","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.398Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('7b2f8739-5b99-5105-9907-342285aa1531', 'OpenAI gpt-4o-mini', 'openai-gpt-4o-mini', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.331Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('92ee9c7d-c8ff-59e8-b434-9f178ced3549', 'OpenAI gpt-4o-mini-2024-07-18', 'openai-gpt-4o-mini-2024-07-18', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-2024-07-18","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.329Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('9d2faf97-925f-52b6-a2bb-b9007b090ae7', 'OpenAI gpt-4o-mini-audio-preview', 'openai-gpt-4o-mini-audio-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-audio-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.359Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('82cc6dbd-5d60-5f34-b2a0-8be6d8a14f0a', 'OpenAI gpt-4o-mini-audio-preview-2024-12-17', 'openai-gpt-4o-mini-audio-preview-2024-12-17', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-audio-preview-2024-12-17","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.354Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('966350dd-69ee-5781-8dcf-e8dd8375bf5a', 'OpenAI gpt-4o-mini-realtime-preview', 'openai-gpt-4o-mini-realtime-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-realtime-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.357Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('26b815a2-ade0-5b95-8487-41e0a317b9bf', 'OpenAI gpt-4o-mini-realtime-preview-2024-12-17', 'openai-gpt-4o-mini-realtime-preview-2024-12-17', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-realtime-preview-2024-12-17","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.352Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('42ee8a1a-8a70-5c87-b88c-7d6145412d82', 'OpenAI gpt-4o-mini-search-preview', 'openai-gpt-4o-mini-search-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-search-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.371Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('b4e52152-d2f3-537c-a3c6-6d5f7cddcee3', 'OpenAI gpt-4o-mini-search-preview-2025-03-11', 'openai-gpt-4o-mini-search-preview-2025-03-11', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-search-preview-2025-03-11","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.368Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('fdaa3498-639c-59aa-bb31-20b72906a357', 'OpenAI gpt-4o-mini-transcribe', 'openai-gpt-4o-mini-transcribe', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-transcribe","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.375Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('312e9e37-73e5-5615-8875-862bbd333bc1', 'OpenAI gpt-4o-mini-tts', 'openai-gpt-4o-mini-tts', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-tts","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.377Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('4be5a5bb-e540-5aae-9f27-33e12b1493ab', 'OpenAI gpt-4o-realtime-preview', 'openai-gpt-4o-realtime-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-realtime-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.345Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('8fed6202-7894-52a2-812a-7f86cd1bacc8', 'OpenAI gpt-4o-realtime-preview-2024-10-01', 'openai-gpt-4o-realtime-preview-2024-10-01', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-realtime-preview-2024-10-01","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.338Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('898d6ee4-f5e5-536b-9767-a0be91f63392', 'OpenAI gpt-4o-realtime-preview-2024-12-17', 'openai-gpt-4o-realtime-preview-2024-12-17', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-realtime-preview-2024-12-17","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.347Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('f24d92b6-e447-5aac-b29a-19794aba6699', 'OpenAI gpt-4o-realtime-preview-2025-06-03', 'openai-gpt-4o-realtime-preview-2025-06-03', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-realtime-preview-2025-06-03","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.395Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('ad85e9d9-44d2-5a85-84b8-b1dee9fdc013', 'OpenAI gpt-4o-search-preview', 'openai-gpt-4o-search-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-search-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.366Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('37e937b1-ac1e-5b9e-ba14-ba21e5297b41', 'OpenAI gpt-4o-search-preview-2025-03-11', 'openai-gpt-4o-search-preview-2025-03-11', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-search-preview-2025-03-11","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.364Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('741bef4f-fbba-5546-95b3-21dd0190b01b', 'OpenAI gpt-4o-transcribe', 'openai-gpt-4o-transcribe', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-transcribe","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.373Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('0ce8401b-230d-52fa-b08b-b07eda8a74e9', 'OpenAI gpt-4-turbo', 'openai-gpt-4-turbo', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4-turbo","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.319Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('26c862b1-8a4f-577f-9444-47af74458aaa', 'OpenAI gpt-4-turbo-2024-04-09', 'openai-gpt-4-turbo-2024-04-09', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4-turbo-2024-04-09","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.322Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('3f815708-7edb-581b-8777-9e167a10ebea', 'OpenAI gpt-4-turbo-preview', 'openai-gpt-4-turbo-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4-turbo-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.315Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('9a247aa1-0a9a-5e38-bc06-7fe86d673a56', 'OpenAI gpt-5', 'openai-gpt-5', 'Owned by: system', true, '{"api_identifier":"openai-gpt-5","context_window_tokens":400000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":400000,"provider_max_output_tokens":4096}', '"2025-08-08T14:31:02.504Z"', '"2025-08-29T22:20:46.405Z"', 'openai', true, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('eee5040c-42be-5710-b0db-301f120023c5', 'OpenAI gpt-5-2025-08-07', 'openai-gpt-5-2025-08-07', 'Owned by: system', true, '{"api_identifier":"openai-gpt-5-2025-08-07","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-08-08T14:31:02.504Z"', '"2025-08-29T22:20:46.403Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('e8292560-a43c-5d92-95b7-9de9dc00e414', 'OpenAI gpt-5-chat-latest', 'openai-gpt-5-chat-latest', 'Owned by: system', true, '{"api_identifier":"openai-gpt-5-chat-latest","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-08-08T14:31:02.504Z"', '"2025-08-29T22:20:46.400Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('4d7c579e-345b-52cc-868b-d7a0aa18f64b', 'OpenAI gpt-5-mini', 'openai-gpt-5-mini', 'Owned by: system', true, '{"api_identifier":"openai-gpt-5-mini","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-08-08T14:31:02.504Z"', '"2025-08-29T22:20:46.409Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('425a9698-c6f7-5eae-a5ff-3ee277ba4ef3', 'OpenAI gpt-5-mini-2025-08-07', 'openai-gpt-5-mini-2025-08-07', 'Owned by: system', true, '{"api_identifier":"openai-gpt-5-mini-2025-08-07","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-08-08T14:31:02.504Z"', '"2025-08-29T22:20:46.407Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('3e885fea-509b-5907-b62c-7f260f604f4a', 'OpenAI gpt-5-nano', 'openai-gpt-5-nano', 'Owned by: system', true, '{"api_identifier":"openai-gpt-5-nano","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-08-08T14:31:02.504Z"', '"2025-08-29T22:20:46.123Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('a5869f5b-9193-5c5e-9153-71c54efbdf1b', 'OpenAI gpt-5-nano-2025-08-07', 'openai-gpt-5-nano-2025-08-07', 'Owned by: system', true, '{"api_identifier":"openai-gpt-5-nano-2025-08-07","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-08-08T14:31:02.504Z"', '"2025-08-29T22:20:46.411Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('752144d7-5d2a-5bcc-bb48-d29ce426733a', 'OpenAI gpt-audio', 'openai-gpt-audio', 'Owned by: system', true, '{"api_identifier":"openai-gpt-audio","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-08-29T22:20:46.107Z"', '"2025-08-29T22:20:46.107Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('f45e9669-096b-551f-82f9-0035abf2e4cb', 'OpenAI gpt-audio-2025-08-28', 'openai-gpt-audio-2025-08-28', 'Owned by: system', true, '{"api_identifier":"openai-gpt-audio-2025-08-28","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-08-29T22:20:46.107Z"', '"2025-08-29T22:20:46.107Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('b490cbf2-80e3-5b1d-af85-f7aa3cb6e431', 'OpenAI gpt-image-1', 'openai-gpt-image-1', 'Owned by: system', true, '{"api_identifier":"openai-gpt-image-1","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-07-01T03:33:24.484Z"', '"2025-08-29T22:20:46.393Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('94332ca2-84d5-5ca5-8f93-f916e511297e', 'OpenAI gpt-realtime', 'openai-gpt-realtime', 'Owned by: system', true, '{"api_identifier":"openai-gpt-realtime","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-08-29T22:20:46.107Z"', '"2025-08-29T22:20:46.107Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('24ad267f-0194-54a7-8dba-09a8c12c7066', 'OpenAI gpt-realtime-2025-08-28', 'openai-gpt-realtime-2025-08-28', 'Owned by: system', true, '{"api_identifier":"openai-gpt-realtime-2025-08-28","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-08-29T22:20:46.107Z"', '"2025-08-29T22:20:46.107Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('e6df05e8-7147-54be-bb87-fb631446e249', 'OpenAI text-embedding-3-large', 'openai-text-embedding-3-large', 'Owned by: system', true, '{"api_identifier":"openai-text-embedding-3-large","context_window_tokens":8191,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":8191,"provider_max_output_tokens":4096}', '"2025-08-07T16:34:48.096Z"', '"2025-08-29T22:20:46.310Z"', 'openai', false, true);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('1c8f7073-0321-5f75-8bce-0269bf1e0f6d', 'OpenAI text-embedding-3-small', 'openai-text-embedding-3-small', 'Owned by: system', true, '{"api_identifier":"openai-text-embedding-3-small","context_window_tokens":8191,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":8191,"provider_max_output_tokens":4096}', '"2025-08-07T16:34:48.096Z"', '"2025-08-29T22:20:46.307Z"', 'openai', false, false);
-INSERT INTO "public"."ai_providers" ("id", "name", "api_identifier", "description", "is_active", "config", "created_at", "updated_at", "provider", "is_enabled", "is_default_embedding") VALUES ('b5245d76-1581-5bae-99c9-3b63241d68aa', 'OpenAI text-embedding-ada-002', 'openai-text-embedding-ada-002', 'Owned by: openai-internal', true, '{"api_identifier":"openai-text-embedding-ada-002","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', '"2025-08-07T16:34:48.096Z"', '"2025-08-29T22:20:46.416Z"', 'openai', false, false);
+INSERT INTO "public"."ai_providers" ("name", "api_identifier", "description", "is_active", "config", "provider", "is_enabled", "is_default_embedding")
+VALUES
+  ('claude-2.0', 'anthropic-claude-2.0', '[SANITIZED/OBSOLETE]: No description.', false, '{"api_identifier":"anthropic-claude-2.0","context_window_tokens":1,"input_token_cost_rate":1,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":1,"output_token_cost_rate":1}', 'anthropic', false, false),
+  ('claude-2.1', 'anthropic-claude-2.1', '[SANITIZED/OBSOLETE]: No description.', false, '{"api_identifier":"anthropic-claude-2.1","context_window_tokens":1,"input_token_cost_rate":1,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":1,"output_token_cost_rate":1}', 'anthropic', false, false),
+  ('claude-3-5-haiku-20241022', 'anthropic-claude-3-5-haiku-20241022', '', true, '{"api_identifier":"anthropic-claude-3-5-haiku-20241022","context_window_tokens":200000,"input_token_cost_rate":0.8,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-3.5-haiku-20241022"},"hard_cap_output_tokens":8192,"output_token_cost_rate":4,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', 'anthropic', false, false),
+  ('claude-3-5-sonnet-20240620', 'anthropic-claude-3-5-sonnet-20240620', '', true, '{"api_identifier":"anthropic-claude-3-5-sonnet-20240620","context_window_tokens":200000,"input_token_cost_rate":3,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-3.5-sonnet-20240620"},"hard_cap_output_tokens":8192,"output_token_cost_rate":15,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', 'anthropic', false, false),
+  ('claude-3-5-sonnet-20241022', 'anthropic-claude-3-5-sonnet-20241022', '', true, '{"api_identifier":"anthropic-claude-3-5-sonnet-20241022","context_window_tokens":200000,"input_token_cost_rate":3,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-3.5-sonnet-20241022"},"hard_cap_output_tokens":8192,"output_token_cost_rate":15,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', 'anthropic', false, false),
+  ('claude-3-7-sonnet-20250219', 'anthropic-claude-3-7-sonnet-20250219', '', true, '{"api_identifier":"anthropic-claude-3-7-sonnet-20250219","context_window_tokens":200000,"input_token_cost_rate":3,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-3-7-sonnet-20250219"},"hard_cap_output_tokens":8192,"output_token_cost_rate":15,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', 'anthropic', true, false),
+  ('claude-3-haiku-20240307', 'anthropic-claude-3-haiku-20240307', '', true, '{"api_identifier":"anthropic-claude-3-haiku-20240307","context_window_tokens":200000,"input_token_cost_rate":0.25,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-3-haiku-20240307"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1.25,"provider_max_input_tokens":200000,"provider_max_output_tokens":4096}', 'anthropic', false, false),
+  ('claude-3-opus-20240229', 'anthropic-claude-3-opus-20240229', '', true, '{"api_identifier":"anthropic-claude-3-opus-20240229","context_window_tokens":200000,"input_token_cost_rate":15,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-3-opus-20240229"},"hard_cap_output_tokens":4096,"output_token_cost_rate":75,"provider_max_input_tokens":200000,"provider_max_output_tokens":4096}', 'anthropic', false, false),
+  ('claude-3-sonnet-20240229', 'anthropic-claude-3-sonnet-20240229', '[SANITIZED/OBSOLETE]: No description.', false, '{"api_identifier":"anthropic-claude-3-sonnet-20240229","context_window_tokens":1,"input_token_cost_rate":1,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":1,"output_token_cost_rate":1}', 'anthropic', false, false),
+  ('claude-opus-4-1-20250805', 'anthropic-claude-opus-4-1-20250805', '', true, '{"api_identifier":"anthropic-claude-opus-4-1-20250805","context_window_tokens":200000,"input_token_cost_rate":20,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-opus-4-1-20250805"},"hard_cap_output_tokens":8192,"output_token_cost_rate":100,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', 'anthropic', false, false),
+  ('claude-opus-4-20250514', 'anthropic-claude-opus-4-20250514', '', true, '{"api_identifier":"anthropic-claude-opus-4-20250514","context_window_tokens":200000,"input_token_cost_rate":18,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-opus-4-20250514"},"hard_cap_output_tokens":8192,"output_token_cost_rate":90,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', 'anthropic', true, false),
+  ('claude-sonnet-4-20250514', 'anthropic-claude-sonnet-4-20250514', '', true, '{"api_identifier":"anthropic-claude-sonnet-4-20250514","context_window_tokens":200000,"input_token_cost_rate":4,"tokenization_strategy":{"type":"anthropic_tokenizer","model":"claude-sonnet-4-20250514"},"hard_cap_output_tokens":8192,"output_token_cost_rate":20,"provider_max_input_tokens":200000,"provider_max_output_tokens":8192}', 'anthropic', true, false),
+  ('Dummy Echo v1', 'dummy-echo-v1', NULL, true, '{"mode":"echo","modelId":"dummy-echo-v1","api_identifier":"dummy-echo-v1","basePromptTokens":2,"context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","tiktoken_encoding_name":"cl100k_base"},"hard_cap_output_tokens":16000,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":16000}', 'dummy', true, false),
+  ('Gemini 1.0 Pro Vision', 'google-gemini-1.0-pro-vision-latest', 'The original Gemini 1.0 Pro Vision model version which was optimized for image understanding. Gemini 1.0 Pro Vision was deprecated on July 12, 2024. Move to a newer Gemini version.', false, '{"api_identifier":"google-gemini-1.0-pro-vision-latest","input_token_cost_rate":5e-7,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":4096,"output_token_cost_rate":0.0000015,"provider_max_input_tokens":12288,"provider_max_output_tokens":4096}', 'google', false, false),
+  ('Gemini 1.5 Flash', 'google-gemini-1.5-flash', 'Alias that points to the most recent stable version of Gemini 1.5 Flash, our fast and versatile multimodal model for scaling across diverse tasks.', true, '{"api_identifier":"google-gemini-1.5-flash","context_window_tokens":2000000,"input_token_cost_rate":0.6,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.6,"provider_max_input_tokens":1000000,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 1.5 Flash 002', 'google-gemini-1.5-flash-002', 'Stable version of Gemini 1.5 Flash, our fast and versatile multimodal model for scaling across diverse tasks, released in September of 2024.', true, '{"api_identifier":"google-gemini-1.5-flash-002","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1000000,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 1.5 Flash-8B', 'google-gemini-1.5-flash-8b', 'Stable version of Gemini 1.5 Flash-8B, our smallest and most cost effective Flash model, released in October of 2024.', true, '{"api_identifier":"google-gemini-1.5-flash-8b","context_window_tokens":2000000,"input_token_cost_rate":0.3,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.3,"provider_max_input_tokens":1000000,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 1.5 Flash-8B 001', 'google-gemini-1.5-flash-8b-001', 'Stable version of Gemini 1.5 Flash-8B, our smallest and most cost effective Flash model, released in October of 2024.', true, '{"api_identifier":"google-gemini-1.5-flash-8b-001","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1000000,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 1.5 Flash-8B Latest', 'google-gemini-1.5-flash-8b-latest', 'Alias that points to the most recent production (non-experimental) release of Gemini 1.5 Flash-8B, our smallest and most cost effective Flash model, released in October of 2024.', true, '{"api_identifier":"google-gemini-1.5-flash-8b-latest","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1000000,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 1.5 Flash Latest', 'google-gemini-1.5-flash-latest', 'Alias that points to the most recent production (non-experimental) release of Gemini 1.5 Flash, our fast and versatile multimodal model for scaling across diverse tasks.', true, '{"api_identifier":"google-gemini-1.5-flash-latest","context_window_tokens":2000000,"input_token_cost_rate":0.6,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.6,"provider_max_input_tokens":1000000,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 1.5 Pro', 'google-gemini-1.5-pro', 'Stable version of Gemini 1.5 Pro, our mid-size multimodal model that supports up to 2 million tokens, released in May of 2024.', true, '{"api_identifier":"google-gemini-1.5-pro","context_window_tokens":2000000,"input_token_cost_rate":2.5,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":10,"provider_max_input_tokens":2000000,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 1.5 Pro 002', 'google-gemini-1.5-pro-002', 'Stable version of Gemini 1.5 Pro, our mid-size multimodal model that supports up to 2 million tokens, released in September of 2024.', true, '{"api_identifier":"google-gemini-1.5-pro-002","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":2000000,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 1.5 Pro Latest', 'google-gemini-1.5-pro-latest', 'Alias that points to the most recent production (non-experimental) release of Gemini 1.5 Pro, our mid-size multimodal model that supports up to 2 million tokens.', true, '{"api_identifier":"google-gemini-1.5-pro-latest","context_window_tokens":2000000,"input_token_cost_rate":2.5,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":10,"provider_max_input_tokens":2000000,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 2.0 Flash', 'google-gemini-2.0-flash', 'Gemini 2.0 Flash', true, '{"api_identifier":"google-gemini-2.0-flash","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 2.0 Flash 001', 'google-gemini-2.0-flash-001', 'Stable version of Gemini 2.0 Flash, our fast and versatile multimodal model for scaling across diverse tasks, released in January of 2025.', true, '{"api_identifier":"google-gemini-2.0-flash-001","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 2.0 Flash Experimental', 'google-gemini-2.0-flash-exp', 'Gemini 2.0 Flash Experimental', true, '{"api_identifier":"google-gemini-2.0-flash-exp","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 2.0 Flash (Image Generation) Experimental', 'google-gemini-2.0-flash-exp-image-generation', 'Gemini 2.0 Flash (Image Generation) Experimental', true, '{"api_identifier":"google-gemini-2.0-flash-exp-image-generation","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 2.0 Flash-Lite', 'google-gemini-2.0-flash-lite', 'Gemini 2.0 Flash-Lite', true, '{"api_identifier":"google-gemini-2.0-flash-lite","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 2.0 Flash-Lite 001', 'google-gemini-2.0-flash-lite-001', 'Stable version of Gemini 2.0 Flash-Lite', true, '{"api_identifier":"google-gemini-2.0-flash-lite-001","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 2.0 Flash-Lite Preview', 'google-gemini-2.0-flash-lite-preview', 'Preview release (February 5th, 2025) of Gemini 2.0 Flash-Lite', true, '{"api_identifier":"google-gemini-2.0-flash-lite-preview","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 2.0 Flash-Lite Preview 02-05', 'google-gemini-2.0-flash-lite-preview-02-05', 'Preview release (February 5th, 2025) of Gemini 2.0 Flash-Lite', true, '{"api_identifier":"google-gemini-2.0-flash-lite-preview-02-05","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 2.0 Flash Preview Image Generation', 'google-gemini-2.0-flash-preview-image-generation', 'Gemini 2.0 Flash Preview Image Generation', true, '{"api_identifier":"google-gemini-2.0-flash-preview-image-generation","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":32768,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 2.5 Flash Preview 05-20', 'google-gemini-2.0-flash-thinking-exp', 'Preview release (April 17th, 2025) of Gemini 2.5 Flash', true, '{"api_identifier":"google-gemini-2.0-flash-thinking-exp","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', false, false),
+  ('Gemini 2.5 Flash Preview 05-20', 'google-gemini-2.0-flash-thinking-exp-01-21', 'Preview release (April 17th, 2025) of Gemini 2.5 Flash', true, '{"api_identifier":"google-gemini-2.0-flash-thinking-exp-01-21","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', false, false),
+  ('Gemini 2.5 Flash Preview 05-20', 'google-gemini-2.0-flash-thinking-exp-1219', 'Preview release (April 17th, 2025) of Gemini 2.5 Flash', true, '{"api_identifier":"google-gemini-2.0-flash-thinking-exp-1219","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', false, false),
+  ('Gemini 2.0 Pro Experimental', 'google-gemini-2.0-pro-exp', 'Experimental release (March 25th, 2025) of Gemini 2.5 Pro', true, '{"api_identifier":"google-gemini-2.0-pro-exp","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', false, false),
+  ('Gemini 2.0 Pro Experimental 02-05', 'google-gemini-2.0-pro-exp-02-05', 'Experimental release (March 25th, 2025) of Gemini 2.5 Pro', true, '{"api_identifier":"google-gemini-2.0-pro-exp-02-05","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', false, false),
+  ('Gemini 2.5 Flash', 'google-gemini-2.5-flash', 'Stable version of Gemini 2.5 Flash, our mid-size multimodal model that supports up to 1 million tokens, released in June of 2025.', true, '{"api_identifier":"google-gemini-2.5-flash","context_window_tokens":2000000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":2.5,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', true, false),
+  ('Nano Banana', 'google-gemini-2.5-flash-image-preview', 'Gemini 2.5 Flash Preview Image', true, '{"api_identifier":"google-gemini-2.5-flash-image-preview","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":32768,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemini 2.5 Flash-Lite', 'google-gemini-2.5-flash-lite', 'Stable version of Gemini 2.5 Flash-Lite, released in July of 2025', true, '{"api_identifier":"google-gemini-2.5-flash-lite","context_window_tokens":2000000,"input_token_cost_rate":0.3,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.4,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', false, false),
+  ('Gemini 2.5 Flash-Lite Preview 06-17', 'google-gemini-2.5-flash-lite-preview-06-17', 'Preview release (June 11th, 2025) of Gemini 2.5 Flash-Lite', true, '{"api_identifier":"google-gemini-2.5-flash-lite-preview-06-17","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', false, false),
+  ('Gemini 2.5 Flash Preview 04-17', 'google-gemini-2.5-flash-preview-04-17', 'Preview release (April 17th, 2025) of Gemini 2.5 Flash', false, '{"api_identifier":"google-gemini-2.5-flash-preview-04-17","input_token_cost_rate":5e-7,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.0000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', false, false),
+  ('Gemini 2.5 Flash Preview 04-17 for cursor testing', 'google-gemini-2.5-flash-preview-04-17-thinking', 'Preview release (April 17th, 2025) of Gemini 2.5 Flash', false, '{"api_identifier":"google-gemini-2.5-flash-preview-04-17-thinking","input_token_cost_rate":5e-7,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.0000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', false, false),
+  ('Gemini 2.5 Flash Preview 05-20', 'google-gemini-2.5-flash-preview-05-20', 'Preview release (April 17th, 2025) of Gemini 2.5 Flash', true, '{"api_identifier":"google-gemini-2.5-flash-preview-05-20","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', false, false),
+  ('Gemini 2.5 Flash Preview TTS', 'google-gemini-2.5-flash-preview-tts', 'Gemini 2.5 Flash Preview TTS', true, '{"api_identifier":"google-gemini-2.5-flash-preview-tts","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":8192,"provider_max_output_tokens":16384}', 'google', false, false),
+  ('Gemini 2.5 Pro', 'google-gemini-2.5-pro', 'Stable release (June 17th, 2025) of Gemini 2.5 Pro', true, '{"api_identifier":"google-gemini-2.5-pro","context_window_tokens":2000000,"input_token_cost_rate":2.5,"tokenization_strategy":{"type":"google_gemini_tokenizer"},"hard_cap_output_tokens":65536,"output_token_cost_rate":15,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', true, false),
+  ('Gemini 2.5 Pro Preview 03-25', 'google-gemini-2.5-pro-preview-03-25', 'Gemini 2.5 Pro Preview 03-25', true, '{"api_identifier":"google-gemini-2.5-pro-preview-03-25","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', false, false),
+  ('Gemini 2.5 Pro Preview 05-06', 'google-gemini-2.5-pro-preview-05-06', 'Preview release (May 6th, 2025) of Gemini 2.5 Pro', true, '{"api_identifier":"google-gemini-2.5-pro-preview-05-06","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', true, false),
+  ('Gemini 2.5 Pro Preview', 'google-gemini-2.5-pro-preview-06-05', 'Preview release (June 5th, 2025) of Gemini 2.5 Pro', true, '{"api_identifier":"google-gemini-2.5-pro-preview-06-05","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', true, false),
+  ('Gemini 2.5 Pro Preview TTS', 'google-gemini-2.5-pro-preview-tts', 'Gemini 2.5 Pro Preview TTS', true, '{"api_identifier":"google-gemini-2.5-pro-preview-tts","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":8192,"provider_max_output_tokens":16384}', 'google', false, false),
+  ('Gemini Experimental 1206', 'google-gemini-exp-1206', 'Experimental release (March 25th, 2025) of Gemini 2.5 Pro', true, '{"api_identifier":"google-gemini-exp-1206","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":65536}', 'google', false, false),
+  ('Gemma 3 12B', 'google-gemma-3-12b-it', '', true, '{"api_identifier":"google-gemma-3-12b-it","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":32768,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemma 3 1B', 'google-gemma-3-1b-it', '', true, '{"api_identifier":"google-gemma-3-1b-it","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":32768,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemma 3 27B', 'google-gemma-3-27b-it', '', true, '{"api_identifier":"google-gemma-3-27b-it","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":131072,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemma 3 4B', 'google-gemma-3-4b-it', '', true, '{"api_identifier":"google-gemma-3-4b-it","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":32768,"provider_max_output_tokens":8192}', 'google', false, false),
+  ('Gemma 3n E2B', 'google-gemma-3n-e2b-it', '', true, '{"api_identifier":"google-gemma-3n-e2b-it","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":8192,"provider_max_output_tokens":2048}', 'google', false, false),
+  ('Gemma 3n E4B', 'google-gemma-3n-e4b-it', '', true, '{"api_identifier":"google-gemma-3n-e4b-it","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":8192,"provider_max_output_tokens":2048}', 'google', false, false),
+  ('LearnLM 2.0 Flash Experimental', 'google-learnlm-2.0-flash-experimental', 'LearnLM 2.0 Flash Experimental', true, '{"api_identifier":"google-learnlm-2.0-flash-experimental","context_window_tokens":2000000,"input_token_cost_rate":0.000075,"tokenization_strategy":{"type":"rough_char_count","chars_per_token_ratio":4},"hard_cap_output_tokens":65536,"output_token_cost_rate":0.000015,"provider_max_input_tokens":1048576,"provider_max_output_tokens":32768}', 'google', false, false),
+  ('OpenAI chatgpt-4o-latest', 'openai-chatgpt-4o-latest', 'Owned by: system', true, '{"api_identifier":"openai-chatgpt-4o-latest","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-3.5-turbo', 'openai-gpt-3.5-turbo', 'Owned by: openai', true, '{"api_identifier":"openai-gpt-3.5-turbo","context_window_tokens":16385,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":16385,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-3.5-turbo-0125', 'openai-gpt-3.5-turbo-0125', 'Owned by: system', true, '{"api_identifier":"openai-gpt-3.5-turbo-0125","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-3.5-turbo-1106', 'openai-gpt-3.5-turbo-1106', 'Owned by: system', true, '{"api_identifier":"openai-gpt-3.5-turbo-1106","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-3.5-turbo-16k', 'openai-gpt-3.5-turbo-16k', 'Owned by: openai-internal', true, '{"api_identifier":"openai-gpt-3.5-turbo-16k","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-3.5-turbo-instruct', 'openai-gpt-3.5-turbo-instruct', 'Owned by: system', true, '{"api_identifier":"openai-gpt-3.5-turbo-instruct","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-3.5-turbo-instruct-0914', 'openai-gpt-3.5-turbo-instruct-0914', 'Owned by: system', true, '{"api_identifier":"openai-gpt-3.5-turbo-instruct-0914","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4', 'openai-gpt-4', 'Owned by: openai', true, '{"api_identifier":"openai-gpt-4","context_window_tokens":8192,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":8192,"provider_max_output_tokens":4096}', 'openai', true, false),
+  ('OpenAI gpt-4-0125-preview', 'openai-gpt-4-0125-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4-0125-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4-0613', 'openai-gpt-4-0613', 'Owned by: openai', true, '{"api_identifier":"openai-gpt-4-0613","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', true, false),
+  ('OpenAI gpt-4.1', 'openai-gpt-4.1', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4.1","context_window_tokens":1047576,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":1047576,"provider_max_output_tokens":4096}', 'openai', true, false),
+  ('OpenAI gpt-4-1106-preview', 'openai-gpt-4-1106-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4-1106-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4.1-2025-04-14', 'openai-gpt-4.1-2025-04-14', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4.1-2025-04-14","context_window_tokens":1047576,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":1047576,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4.1-mini', 'openai-gpt-4.1-mini', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4.1-mini","context_window_tokens":1047576,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":1047576,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4.1-mini-2025-04-14', 'openai-gpt-4.1-mini-2025-04-14', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4.1-mini-2025-04-14","context_window_tokens":1047576,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":1047576,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4.1-nano', 'openai-gpt-4.1-nano', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4.1-nano","context_window_tokens":1047576,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":1047576,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4.1-nano-2025-04-14', 'openai-gpt-4.1-nano-2025-04-14', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4.1-nano-2025-04-14","context_window_tokens":1047576,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":1047576,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4.5-preview', 'openai-gpt-4.5-preview', 'Owned by: system', false, '{"api_identifier":"openai-gpt-4.5-preview","input_token_cost_rate":0.00003,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4.5-preview"},"output_token_cost_rate":0.00006}', 'openai', true, false),
+  ('OpenAI gpt-4.5-preview-2025-02-27', 'openai-gpt-4.5-preview-2025-02-27', 'Owned by: system', false, '{"api_identifier":"openai-gpt-4.5-preview-2025-02-27","input_token_cost_rate":0.00003,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4.5-preview-2025-02-27"},"output_token_cost_rate":0.00006}', 'openai', true, false),
+  ('OpenAI gpt-4o', 'openai-gpt-4o', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', true, false),
+  ('OpenAI gpt-4o-2024-05-13', 'openai-gpt-4o-2024-05-13', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-2024-05-13","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-2024-08-06', 'openai-gpt-4o-2024-08-06', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-2024-08-06","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-2024-11-20', 'openai-gpt-4o-2024-11-20', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-2024-11-20","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-audio-preview', 'openai-gpt-4o-audio-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-audio-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-audio-preview-2024-10-01', 'openai-gpt-4o-audio-preview-2024-10-01', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-audio-preview-2024-10-01","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-audio-preview-2024-12-17', 'openai-gpt-4o-audio-preview-2024-12-17', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-audio-preview-2024-12-17","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-audio-preview-2025-06-03', 'openai-gpt-4o-audio-preview-2025-06-03', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-audio-preview-2025-06-03","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-mini', 'openai-gpt-4o-mini', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-mini-2024-07-18', 'openai-gpt-4o-mini-2024-07-18', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-2024-07-18","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-mini-audio-preview', 'openai-gpt-4o-mini-audio-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-audio-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-mini-audio-preview-2024-12-17', 'openai-gpt-4o-mini-audio-preview-2024-12-17', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-audio-preview-2024-12-17","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-mini-realtime-preview', 'openai-gpt-4o-mini-realtime-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-realtime-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-mini-realtime-preview-2024-12-17', 'openai-gpt-4o-mini-realtime-preview-2024-12-17', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-realtime-preview-2024-12-17","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-mini-search-preview', 'openai-gpt-4o-mini-search-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-search-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-mini-search-preview-2025-03-11', 'openai-gpt-4o-mini-search-preview-2025-03-11', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-search-preview-2025-03-11","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-mini-transcribe', 'openai-gpt-4o-mini-transcribe', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-transcribe","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-mini-tts', 'openai-gpt-4o-mini-tts', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-mini-tts","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-realtime-preview', 'openai-gpt-4o-realtime-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-realtime-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-realtime-preview-2024-10-01', 'openai-gpt-4o-realtime-preview-2024-10-01', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-realtime-preview-2024-10-01","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-realtime-preview-2024-12-17', 'openai-gpt-4o-realtime-preview-2024-12-17', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-realtime-preview-2024-12-17","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-realtime-preview-2025-06-03', 'openai-gpt-4o-realtime-preview-2025-06-03', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-realtime-preview-2025-06-03","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-search-preview', 'openai-gpt-4o-search-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-search-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-search-preview-2025-03-11', 'openai-gpt-4o-search-preview-2025-03-11', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-search-preview-2025-03-11","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4o-transcribe', 'openai-gpt-4o-transcribe', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4o-transcribe","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4-turbo', 'openai-gpt-4-turbo', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4-turbo","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4-turbo-2024-04-09', 'openai-gpt-4-turbo-2024-04-09', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4-turbo-2024-04-09","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-4-turbo-preview', 'openai-gpt-4-turbo-preview', 'Owned by: system', true, '{"api_identifier":"openai-gpt-4-turbo-preview","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-5', 'openai-gpt-5', 'Owned by: system', true, '{"api_identifier":"openai-gpt-5","context_window_tokens":400000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":400000,"provider_max_output_tokens":4096}', 'openai', true, false),
+  ('OpenAI gpt-5-2025-08-07', 'openai-gpt-5-2025-08-07', 'Owned by: system', true, '{"api_identifier":"openai-gpt-5-2025-08-07","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-5-chat-latest', 'openai-gpt-5-chat-latest', 'Owned by: system', true, '{"api_identifier":"openai-gpt-5-chat-latest","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-5-mini', 'openai-gpt-5-mini', 'Owned by: system', true, '{"api_identifier":"openai-gpt-5-mini","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-5-mini-2025-08-07', 'openai-gpt-5-mini-2025-08-07', 'Owned by: system', true, '{"api_identifier":"openai-gpt-5-mini-2025-08-07","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-5-nano', 'openai-gpt-5-nano', 'Owned by: system', true, '{"api_identifier":"openai-gpt-5-nano","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-5-nano-2025-08-07', 'openai-gpt-5-nano-2025-08-07', 'Owned by: system', true, '{"api_identifier":"openai-gpt-5-nano-2025-08-07","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-audio', 'openai-gpt-audio', 'Owned by: system', true, '{"api_identifier":"openai-gpt-audio","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-audio-2025-08-28', 'openai-gpt-audio-2025-08-28', 'Owned by: system', true, '{"api_identifier":"openai-gpt-audio-2025-08-28","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-image-1', 'openai-gpt-image-1', 'Owned by: system', true, '{"api_identifier":"openai-gpt-image-1","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-realtime', 'openai-gpt-realtime', 'Owned by: system', true, '{"api_identifier":"openai-gpt-realtime","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI gpt-realtime-2025-08-28', 'openai-gpt-realtime-2025-08-28', 'Owned by: system', true, '{"api_identifier":"openai-gpt-realtime-2025-08-28","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI text-embedding-3-large', 'openai-text-embedding-3-large', 'Owned by: system', true, '{"api_identifier":"openai-text-embedding-3-large","context_window_tokens":8191,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":8191,"provider_max_output_tokens":4096}', 'openai', false, true),
+  ('OpenAI text-embedding-3-small', 'openai-text-embedding-3-small', 'Owned by: system', true, '{"api_identifier":"openai-text-embedding-3-small","context_window_tokens":8191,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":8191,"provider_max_output_tokens":4096}', 'openai', false, false),
+  ('OpenAI text-embedding-ada-002', 'openai-text-embedding-ada-002', 'Owned by: openai-internal', true, '{"api_identifier":"openai-text-embedding-ada-002","context_window_tokens":128000,"input_token_cost_rate":1,"tokenization_strategy":{"type":"tiktoken","is_chatml_model":true,"tiktoken_encoding_name":"cl100k_base","api_identifier_for_tokenization":"gpt-4o"},"hard_cap_output_tokens":4096,"output_token_cost_rate":1,"provider_max_input_tokens":128000,"provider_max_output_tokens":4096}', 'openai', false, false)
+ON CONFLICT (api_identifier) DO UPDATE SET
+  name                 = EXCLUDED.name,
+  description          = EXCLUDED.description,
+  is_active            = EXCLUDED.is_active,
+  config               = EXCLUDED.config,
+  provider             = EXCLUDED.provider,
+  is_enabled           = EXCLUDED.is_enabled,
+  is_default_embedding = EXCLUDED.is_default_embedding;
 
 -- END AI PROVIDERS
 

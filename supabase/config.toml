@@ -360,7 +360,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.dialectic-service]
-verify_jwt = false 
+verify_jwt = false
 
 # ---> Remove entry for notifications-stream <--- 
 # [functions.notifications-stream]
