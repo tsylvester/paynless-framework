@@ -132,78 +132,39 @@ export async function scoreResourceDocuments(
 /**
  * Scores compressible portions of the conversation history.
  *
- * Immutable by position (compatibility with existing tests):
- *  - First 3 messages (typically system, seed user, first assistant)
- *  - Last 3 messages by index
- *
- * Immutable by role (role-aware anchors):
- *  - First user message (seed prompt)
- *  - First assistant reply that follows the seed
- *  - Last two assistant replies
- *  - Final user message if exactly 'Please continue.'
+ * Immutable anchors are preserved based on their position:
+ *  - Head: The first message if it's a system prompt, plus the next two messages (the first full user/assistant turn).
+ *  - Tail: The last four messages of the conversation.
  */
 export function scoreHistory(
     history: Messages[],
-    immutableTailCount = 3,
 ): CompressionCandidate[] {
-    const immutableHeadCount = 3;
+    // Determine the number of immutable messages at the start of the conversation.
+    let immutableHeadCount = 0;
+    if (history.length > 0 && history[0].role === 'system') {
+        immutableHeadCount = 3; // System prompt + first user turn (user + assistant)
+    } else {
+        immutableHeadCount = 2; // First user turn (user + assistant)
+    }
+
+    const immutableTailCount = 4;
     const totalLength = history.length;
 
-    // Positional immutables guard
+    // If the history is too short to have any compressible messages between the head and tail, return empty.
     if (totalLength <= immutableHeadCount + immutableTailCount) {
         return [];
     }
 
-    // Candidate window by position (exclude head/tail blocks)
-    const candidateStart = immutableHeadCount;
-    const candidateEndExclusive = totalLength - immutableTailCount;
-
-    // Compute role-aware anchors to exclude from candidates
-    const excludedIndices = new Set<number>();
-
-    // Anchor: first user (seed)
-    const firstUserIdx = history.findIndex(m => m.role === 'user');
-    if (firstUserIdx >= 0) excludedIndices.add(firstUserIdx);
-
-    // Anchor: first assistant after seed
-    if (firstUserIdx >= 0) {
-        const afterSeedAssistantRel = history.slice(firstUserIdx + 1).findIndex(m => m.role === 'assistant');
-        if (afterSeedAssistantRel >= 0) {
-            const idx = firstUserIdx + 1 + afterSeedAssistantRel;
-            excludedIndices.add(idx);
-        }
-    }
-
-    // Anchor: last two assistant replies
-    const assistantIndices: number[] = [];
-    for (let i = 0; i < totalLength; i++) {
-        if (history[i].role === 'assistant') assistantIndices.push(i);
-    }
-    if (assistantIndices.length >= 1) excludedIndices.add(assistantIndices[assistantIndices.length - 1]);
-    if (assistantIndices.length >= 2) excludedIndices.add(assistantIndices[assistantIndices.length - 2]);
-
-    // Anchor: final user 'Please continue.'
-    for (let i = totalLength - 1; i >= 0; i--) {
-        const msg = history[i];
-        if (msg.role === 'user') {
-            const content = (msg.content || '').trim();
-            if (content === 'Please continue.') {
-                excludedIndices.add(i);
-            }
-            break; // only inspect the final user message
-        }
-    }
-
-    // Build candidate list excluding role-aware anchors
+    // Identify the indices of messages that are candidates for compression.
     const candidateIndices: number[] = [];
-    for (let i = candidateStart; i < candidateEndExclusive; i++) {
-        if (!excludedIndices.has(i)) candidateIndices.push(i);
+    for (let i = immutableHeadCount; i < totalLength - immutableTailCount; i++) {
+        candidateIndices.push(i);
     }
 
     if (candidateIndices.length === 0) return [];
 
     return candidateIndices.map((originalIndex, relativeIndex) => {
-        // Normalize value score across candidates: oldest (first in window) -> 0, newest -> 1
+        // Normalize value score across candidates: oldest (first) -> 0, newest (last) -> 1
         const valueScore = candidateIndices.length > 1
             ? relativeIndex / (candidateIndices.length - 1)
             : 0;

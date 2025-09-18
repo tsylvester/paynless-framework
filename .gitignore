@@ -37,4 +37,4 @@ target/
 /target/
 
 # web build stats
-web/stats.html
+apps/web/stats.html
