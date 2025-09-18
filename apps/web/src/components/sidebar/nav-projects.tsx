@@ -23,7 +23,10 @@ export function NavProjects() {
 
 	useQuery({
 		queryKey: ["projects"],
-		queryFn: () => fetchDialecticProjects(),
+		queryFn: async () => {
+			const result = await fetchDialecticProjects();
+			return result || [];
+		},
 	});
 
 	if (isLoading) {

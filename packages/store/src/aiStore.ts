@@ -15,6 +15,7 @@ import {
     ChatContextPreferences,
     UserProfile, // Import UserProfile from @paynless/types
     Messages,
+    ChatRole,
     ChatHandlerSuccessResponse, // For casting the api call result type
     IAuthService,
     IWalletService,
@@ -1266,6 +1267,290 @@ export const useAiStore = create<AiStore>()(
 				}
 				return assistantMessage; // Return the assistant message or null
 			},
+
+            // STREAMING sendMessage ACTION
+            sendStreamingMessage: async (
+                data: { message: string; providerId: string; promptId: string | null; chatId?: string | null; contextMessages?: Messages[] },
+                onMessage?: (event: MessageEvent) => void,
+                onComplete?: (assistantMessage: ChatMessage) => void,
+                onError?: (error: string) => void
+            ): Promise<EventSource | null> => {
+                // --- Create Adapters for Service Dependencies ---
+                const authStoreState = useAuthStore.getState();
+                const walletServiceAdapter: IWalletService = {
+                    getActiveWalletInfo: () => selectActiveChatWalletInfo(useWalletStore.getState(), get().newChatContext)
+                };
+
+                const activeWalletInfo = walletServiceAdapter.getActiveWalletInfo();
+                const session = authStoreState.session;
+
+                // --- Wallet Status Check ---
+                switch (activeWalletInfo.status) {
+                    case 'ok': break;
+                    case 'loading':
+                        set({ isLoadingAiResponse: false, aiError: authStoreState.user ? (activeWalletInfo.message || 'Wallet loading.') : 'Auth required.' });
+                        if (!authStoreState.user && authStoreState.navigate) authStoreState.navigate('/login');
+                        return null;
+                    case 'error':
+                    case 'consent_required':
+                    case 'consent_refused':
+                    case 'policy_org_wallet_unavailable':
+                        set({ isLoadingAiResponse: false, aiError: activeWalletInfo.message || 'Wallet issue.' });
+                        return null;
+                    default:
+                        set({ isLoadingAiResponse: false, aiError: activeWalletInfo.message || 'Wallet issue.' });
+                        return null;
+                }
+
+                const token = session?.access_token;
+                if (!token) {
+                    set({ aiError: 'Auth required.', isLoadingAiResponse: false });
+                    if (authStoreState.navigate) authStoreState.navigate('/login');
+                    return null;
+                }
+
+                const state = get();
+                if (!state.selectedProviderId) {
+                    set({ isLoadingAiResponse: false, aiError: 'No AI provider selected.' });
+                    return null;
+                }
+
+                // Add optimistic user message
+                const { tempId: tempUserMessageId, chatIdUsed: optimisticMessageChatId } = state._addOptimisticUserMessage(data.message, data.chatId);
+                
+                const effectiveChatIdForApi = data.chatId ?? state.currentChatId ?? null;
+                let organizationIdForApi: string | undefined | null = undefined;
+                if (!effectiveChatIdForApi) {
+                    organizationIdForApi = state.newChatContext && state.newChatContext !== 'personal' ? state.newChatContext : undefined;
+                } else if (activeWalletInfo.type === 'organization' && activeWalletInfo.orgId) {
+                    organizationIdForApi = activeWalletInfo.orgId;
+                }
+
+                const apiPromptId = state.selectedPromptId === null || state.selectedPromptId === '__none__' ? '__none__' : state.selectedPromptId;
+
+                // Prepare context messages
+                let finalContextMessages: Messages[] = [];
+                if (data.contextMessages && data.contextMessages.length > 0) {
+                    finalContextMessages = data.contextMessages;
+                } else if (optimisticMessageChatId && state.messagesByChatId[optimisticMessageChatId]) {
+                    const currentMessages = state.messagesByChatId[optimisticMessageChatId] || [];
+                    const currentSelections = state.selectedMessagesMap[optimisticMessageChatId] || {};
+
+                    finalContextMessages = currentMessages
+                        .filter(m => m.id !== tempUserMessageId && currentSelections[m.id])
+                        .reduce<Messages[]>((acc, m) => {
+                            if (['system', 'user', 'assistant'].includes(m.role)) {
+                                const role = m.role === 'system' ? ChatRole.SYSTEM 
+                                          : m.role === 'user' ? ChatRole.USER 
+                                          : ChatRole.ASSISTANT;
+                                acc.push({ role, content: m.content });
+                            }
+                            return acc;
+                        }, []);
+                }
+
+                set({ isLoadingAiResponse: true, aiError: null });
+
+                // Prepare streaming request
+                const streamingRequest: ChatApiRequest = {
+                    message: data.message,
+                    providerId: state.selectedProviderId,
+                    promptId: apiPromptId,
+                    ...(effectiveChatIdForApi && { chatId: effectiveChatIdForApi }),
+                    ...(organizationIdForApi && { organizationId: organizationIdForApi }),
+                    contextMessages: finalContextMessages,
+                    stream: true
+                };
+
+                try {
+                    const streamOrError = await api.ai().sendStreamingChatMessage(streamingRequest, { token });
+                    
+                    if ('error' in streamOrError) {
+                        // Handle error
+                        set(state => {
+                            const newMsgsByChatId = { ...state.messagesByChatId };
+                            const chatMsgs = newMsgsByChatId[optimisticMessageChatId] || [];
+                            newMsgsByChatId[optimisticMessageChatId] = chatMsgs.filter(msg => msg.id !== tempUserMessageId);
+                            return { 
+                                aiError: streamOrError.error.message || 'Streaming failed.', 
+                                isLoadingAiResponse: false, 
+                                messagesByChatId: newMsgsByChatId 
+                            };
+                        });
+                        if (onError) onError(streamOrError.error.message || 'Streaming failed.');
+                        return null;
+                    }
+
+                    const eventSource = streamOrError;
+                    let assistantContent = '';
+                    let assistantMessageId = '';
+                    let streamedChatId = '';
+
+                    eventSource.addEventListener('message', (event: MessageEvent) => {
+                        try {
+                            const data = event.data;
+                            
+                            switch (data.type) {
+                                case 'chat_start':
+                                    streamedChatId = data.chatId;
+                                    logger.info('[Streaming] Chat started:', { chatId: streamedChatId });
+                                    break;
+                                    
+                                case 'content_chunk':
+                                    assistantContent += data.content;
+                                    assistantMessageId = data.assistantMessageId;
+                                    
+                                    // Update the optimistic message in real-time
+                                    set(state => {
+                                        const newMsgsByChatId = { ...state.messagesByChatId };
+                                        const chatMsgs = [...(newMsgsByChatId[optimisticMessageChatId] || [])];
+                                        
+                                        // Find or create streaming assistant message
+                                        let assistantMsgIndex = chatMsgs.findIndex(msg => 
+                                            msg.role === 'assistant' && msg.id === assistantMessageId
+                                        );
+                                        
+                                        if (assistantMsgIndex === -1) {
+                                            // Create new streaming message
+                                            const streamingMessage: ChatMessage = {
+                                                id: assistantMessageId,
+                                                chat_id: streamedChatId || optimisticMessageChatId,
+                                                user_id: authStoreState.user?.id || '',
+                                                role: 'assistant',
+                                                content: assistantContent,
+                                                ai_provider_id: state.selectedProviderId || '',
+                                                system_prompt_id: apiPromptId === '__none__' ? null : apiPromptId,
+                                                created_at: new Date().toISOString(),
+                                                updated_at: new Date().toISOString(),
+                                                is_active_in_thread: true,
+                                                token_usage: null,
+                                                error_type: null,
+                                                response_to_message_id: null,
+                                                status: 'streaming'
+                                            };
+                                            chatMsgs.push(streamingMessage);
+                                        } else {
+                                            // Update existing streaming message
+                                            chatMsgs[assistantMsgIndex] = {
+                                                ...chatMsgs[assistantMsgIndex],
+                                                content: assistantContent,
+                                                status: 'streaming'
+                                            };
+                                        }
+                                        
+                                        newMsgsByChatId[optimisticMessageChatId] = chatMsgs;
+                                        return { messagesByChatId: newMsgsByChatId };
+                                    });
+                                    
+                                    if (onMessage) onMessage(event);
+                                    break;
+                                    
+                                case 'chat_complete':
+                                    const finalAssistantMessage = data.assistantMessage;
+                                    
+                                    // Update state with final message
+                                    set(state => {
+                                        const actualChatId = streamedChatId || optimisticMessageChatId;
+                                        const newMsgsByChatId = { ...state.messagesByChatId };
+                                        const chatMsgs = [...(newMsgsByChatId[optimisticMessageChatId] || [])];
+                                        
+                                        // Update user message status
+                                        const userMsgIndex = chatMsgs.findIndex(msg => msg.id === tempUserMessageId);
+                                        if (userMsgIndex !== -1) {
+                                            chatMsgs[userMsgIndex] = { ...chatMsgs[userMsgIndex], status: 'sent' };
+                                        }
+                                        
+                                        // Update assistant message with final data
+                                        const assistantMsgIndex = chatMsgs.findIndex(msg => 
+                                            msg.role === 'assistant' && msg.id === assistantMessageId
+                                        );
+                                        
+                                        if (assistantMsgIndex !== -1) {
+                                            chatMsgs[assistantMsgIndex] = {
+                                                ...finalAssistantMessage,
+                                                status: 'sent'
+                                            };
+                                        }
+                                        
+                                        // Handle chat ID change if streaming created new chat
+                                        if (optimisticMessageChatId !== actualChatId) {
+                                            newMsgsByChatId[actualChatId] = chatMsgs;
+                                            delete newMsgsByChatId[optimisticMessageChatId];
+                                        } else {
+                                            newMsgsByChatId[optimisticMessageChatId] = chatMsgs;
+                                        }
+                                        
+                                        return {
+                                            messagesByChatId: newMsgsByChatId,
+                                            currentChatId: actualChatId,
+                                            isLoadingAiResponse: false,
+                                            aiError: null
+                                        };
+                                    });
+                                    
+                                    if (onComplete) onComplete(finalAssistantMessage);
+                                    
+                                    // Trigger wallet refresh
+                                    try {
+                                        if (activeWalletInfo.type === "organization" && activeWalletInfo.orgId) {
+                                            useWalletStore.getState().loadOrganizationWallet(activeWalletInfo.orgId);
+                                        } else {
+                                            useWalletStore.getState().loadPersonalWallet();
+                                        }
+                                    } catch (walletError) {
+                                        logger.error('[Streaming] Error refreshing wallet:', { error: walletError });
+                                    }
+                                    break;
+                                    
+                                case 'error':
+                                    const errorMessage = data.message || 'Streaming error occurred';
+                                    set(state => {
+                                        const newMsgsByChatId = { ...state.messagesByChatId };
+                                        const chatMsgs = newMsgsByChatId[optimisticMessageChatId] || [];
+                                        newMsgsByChatId[optimisticMessageChatId] = chatMsgs.filter(msg => msg.id !== tempUserMessageId);
+                                        return { 
+                                            aiError: errorMessage, 
+                                            isLoadingAiResponse: false, 
+                                            messagesByChatId: newMsgsByChatId 
+                                        };
+                                    });
+                                    if (onError) onError(errorMessage);
+                                    break;
+                            }
+                        } catch (parseError) {
+                            logger.error('[Streaming] Error parsing message:', { error: parseError });
+                            if (onError) onError('Error parsing stream data');
+                        }
+                    });
+
+                    eventSource.addEventListener('error', () => {
+                        set({ isLoadingAiResponse: false, aiError: 'Streaming connection error' });
+                        if (onError) onError('Streaming connection error');
+                    });
+
+                    eventSource.addEventListener('close', () => {
+                        set({ isLoadingAiResponse: false });
+                        logger.info('[Streaming] Connection closed');
+                    });
+
+                    return eventSource;
+
+                } catch (error) {
+                    const errorMessage = error instanceof Error ? error.message : 'Streaming failed';
+                    set(state => {
+                        const newMsgsByChatId = { ...state.messagesByChatId };
+                        const chatMsgs = newMsgsByChatId[optimisticMessageChatId] || [];
+                        newMsgsByChatId[optimisticMessageChatId] = chatMsgs.filter(msg => msg.id !== tempUserMessageId);
+                        return { 
+                            aiError: errorMessage, 
+                            isLoadingAiResponse: false, 
+                            messagesByChatId: newMsgsByChatId 
+                        };
+                    });
+                    if (onError) onError(errorMessage);
+                    return null;
+                }
+            },
 		};
 	},
 	// )
