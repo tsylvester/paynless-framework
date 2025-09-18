@@ -16,9 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageSelectionControls } from "./MessageSelectionControls";
 import { toast } from "sonner";
-import { CurrentMessageTokenEstimator } from "./CurrentMessageTokenEstimator";
 import { useAIChatAffordabilityStatus } from "@/hooks/useAIChatAffordabilityStatus";
-import { useTokenEstimator } from "@/hooks/useTokenEstimator";
 import { AlertCircle, Info, Zap } from "lucide-react";
 import { ContinueUntilCompleteToggle } from "../common/ContinueUntilCompleteToggle";
 import { Switch } from "@/components/ui/switch";
@@ -53,11 +51,9 @@ const ChatInput: React.FC<ChatInputProps> = (
 	const isRewinding = useAiStore(selectIsRewinding);
 	const selectedMessages = useAiStore(selectCurrentChatMessages); // Moved to top level
 
-	// Token estimation and affordability using local inputMessage
-	const { estimatedTokens, isLoading: isLoadingTokens } =
-		useTokenEstimator(inputMessage);
+	// Simplified affordability check without token estimation
 	const { canAffordNext, lowBalanceWarning, currentBalance } =
-		useAIChatAffordabilityStatus(estimatedTokens);
+		useAIChatAffordabilityStatus(0);
 
 	React.useEffect(() => {
 		if (rewindTargetMessageId && currentChatId) {
@@ -83,7 +79,6 @@ const ChatInput: React.FC<ChatInputProps> = (
 		if (
 			!inputMessage.trim() ||
 			isLoadingAiResponse ||
-			isLoadingTokens ||
 			!canAffordNext
 		)
 			return;
@@ -125,11 +120,17 @@ const ChatInput: React.FC<ChatInputProps> = (
 						logger.info("[ChatInput] Streaming chunk received");
 					},
 					(assistantMessage) => {
-						// Handle completion
+						// Handle completion - navigate to chat URL after streaming is done
 						logger.info("[ChatInput] Streaming completed:", {
 							assistantMessageId: assistantMessage.id,
 						});
 						toast.success("Message sent via streaming");
+						
+						// Navigate to chat URL after streaming completes
+						const { currentChatId } = useAiStore.getState();
+						if (currentChatId && !location.pathname.includes(currentChatId)) {
+							navigate(`/chat/${currentChatId}`, { replace: true });
+						}
 					},
 					(error) => {
 						// Handle streaming errors
@@ -141,12 +142,6 @@ const ChatInput: React.FC<ChatInputProps> = (
 				if (eventSource) {
 					setInputMessage("");
 					toast.info("Starting streaming response...");
-					
-					// Navigate to chat URL if we're not already there and this is a new chat
-					const { currentChatId } = useAiStore.getState();
-					if (currentChatId && !location.pathname.includes(currentChatId)) {
-						navigate(`/chat/${currentChatId}`, { replace: true });
-					}
 				}
 			} else {
 				// Use regular send for rewind or when streaming is disabled
@@ -199,7 +194,6 @@ const ChatInput: React.FC<ChatInputProps> = (
 
 	const sendButtonDisabled =
 		isLoadingAiResponse ||
-		isLoadingTokens ||
 		!inputMessage.trim() ||
 		!canAffordNext;
 
@@ -234,9 +228,6 @@ const ChatInput: React.FC<ChatInputProps> = (
 
 				{/* Send button positioned inside the textarea like ChatGPT */}
 				<div className="absolute right-2 bottom-2 flex items-center space-x-2">
-					<div className="pointer-events-none">
-						<CurrentMessageTokenEstimator textInput={inputMessage} />
-					</div>
 					{rewindTargetMessageId ? (
 						<div className="flex space-x-1">
 							<Button

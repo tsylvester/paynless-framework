@@ -192,28 +192,36 @@ export default function AiChatPage() {
 
 	return (
 		<ErrorBoundary>
-			<div className="px-6 py-12">
-				<div className="flex flex-wrap items-center gap-x-2 gap-y-2">
-					<ChatContextSelector
-					// currentContextId={typeof nextChatOrgContext === 'undefined' ? null : nextChatOrgContext}
-					// onContextChange={handleContextSelection}
-					// Pass any necessary props like 'disabled' if needed, e.g., disabled={isDetailsLoading}
-					/>
-					<ModelSelector />
-					<PromptSelector />
-					<WalletSelector />
-					<Button
-						variant="default"
-						onClick={handleNewChat}
-						className="ml-auto"
-						data-testid="new-chat-button"
-					>
-						<Plus className="mr-2 h-4 w-4" /> New Chat
-					</Button>
+			{/* Clean header bar */}
+			<div className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+				<div className="flex items-center justify-between px-6 py-3">
+					{/* Left side - Primary controls */}
+					<div className="flex items-center space-x-3">
+						<ChatContextSelector />
+						<div className="h-4 w-px bg-border" />
+						<ModelSelector />
+						<PromptSelector />
+					</div>
+
+					{/* Right side - Secondary controls */}
+					<div className="flex items-center space-x-3">
+						<WalletSelector />
+						<Button
+							variant="default"
+							size="sm"
+							onClick={handleNewChat}
+							data-testid="new-chat-button"
+							className="shadow-sm"
+						>
+							<Plus className="mr-2 h-4 w-4" />
+							New Chat
+						</Button>
+					</div>
 				</div>
 			</div>
 
-			<div className="flex-grow overflow-y-auto p-4">
+			{/* Chat content area */}
+			<div className="flex-grow overflow-y-auto">
 				{isDetailsLoading ? (
 					<>
 						{/* Conditional console.log for debugging */}

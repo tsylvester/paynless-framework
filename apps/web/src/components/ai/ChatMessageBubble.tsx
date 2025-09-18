@@ -49,16 +49,18 @@ export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({
 
 				{/* Toggle button and conditionally shown details at bottom */}
 				<div className="flex items-center mt-1 px-1">
-					<Button
-						variant="ghost"
-						size="icon"
-						className="h-5 w-5 opacity-50 hover:opacity-100 transition-opacity mr-2"
-						onClick={() => setShowDetails(!showDetails)}
-						aria-label="Toggle message details"
-					>
-						<Info className="h-4 w-4" />
-					</Button>
-					
+					{message.role === "assistant" && message.token_usage && (
+						<Button
+							variant="ghost"
+							size="icon"
+							className="h-5 w-5 opacity-50 hover:opacity-100 transition-opacity mr-2"
+							onClick={() => setShowDetails(!showDetails)}
+							aria-label="Toggle message details"
+						>
+							<Info className="h-4 w-4" />
+						</Button>
+					)}
+
 					{/* Conditionally shown details to the right of the button */}
 					{showDetails && (
 						<div className="flex items-center space-x-2 text-xs text-muted-foreground opacity-70">

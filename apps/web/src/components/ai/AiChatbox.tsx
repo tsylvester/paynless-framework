@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect, memo, useState } from "react";
+import React, { useEffect, memo, useState, useCallback, useRef } from "react";
 import { useAiStore, selectCurrentChatMessages } from "@paynless/store";
 import type { ChatMessage, AiState } from "@paynless/types";
 //import { logger } from '@paynless/utils'
@@ -14,7 +14,8 @@ export interface AiChatboxProps {
 }
 
 const AiChatboxComponent: React.FC<AiChatboxProps> = () => {
-	const scrollContainerRef = useRef<HTMLDivElement>(null);
+	const lastScrollTime = useRef<number>(0);
+	const SCROLL_THROTTLE = 1500; // Only scroll every 500ms during streaming
 
 	const currentChatMessages = useAiStore(selectCurrentChatMessages);
 	const { currentChatId, isLoadingAiResponse, aiError } = useAiStore(
@@ -34,28 +35,36 @@ const AiChatboxComponent: React.FC<AiChatboxProps> = () => {
 	const [isRewindMode, setIsRewindMode] = useState(false);
 	const [originalContentForRewind, setOriginalContentForRewind] = useState("");
 
-	useEffect(() => {
-		if (currentChatMessages.length === 0) return;
-		const latestMessage = currentChatMessages[currentChatMessages.length - 1];
-		if (latestMessage && latestMessage.role === "assistant") {
-			const container = scrollContainerRef.current;
-			if (!container) return;
-			const messageElements = container.querySelectorAll("[data-message-id]");
-			const lastMessageElement = messageElements?.[
-				messageElements.length - 1
-			] as HTMLElement | undefined;
-			if (
-				lastMessageElement &&
-				lastMessageElement.getAttribute("data-message-id") === latestMessage.id
-			) {
-				const targetScrollTop =
-					lastMessageElement.offsetTop - container.offsetTop;
-				requestAnimationFrame(() => {
-					container.scrollTop = targetScrollTop;
-				});
-			}
+	// Throttled scroll function
+	const throttledScroll = useCallback(() => {
+		const now = Date.now();
+		if (now - lastScrollTime.current >= SCROLL_THROTTLE) {
+			lastScrollTime.current = now;
+			window.scrollTo({
+				top: document.documentElement.scrollHeight,
+				behavior: "auto",
+			});
 		}
-	}, [currentChatMessages]);
+	}, [SCROLL_THROTTLE]);
+
+	// Auto-scroll effect - scroll on changes but throttled during streaming
+	useEffect(() => {
+		const latestMessage = currentChatMessages[currentChatMessages.length - 1];
+		const isStreaming = latestMessage?.status === "streaming";
+
+		if (isStreaming) {
+			// During streaming - use throttled scroll
+			throttledScroll();
+		} else if (currentChatMessages.length > 0) {
+			// New complete message - always scroll smoothly
+			setTimeout(() => {
+				window.scrollTo({
+					top: document.documentElement.scrollHeight,
+					behavior: "smooth",
+				});
+			}, 100);
+		}
+	}, [currentChatMessages, throttledScroll]);
 
 	useEffect(() => {
 		//logger.info("AiChatbox MOUNTED");
@@ -89,7 +98,6 @@ const AiChatboxComponent: React.FC<AiChatboxProps> = () => {
 			<div
 				className="flex-grow pr-4 overflow-y-scroll min-h-[200px] scrollbar-none"
 				data-testid="ai-chatbox-scroll-area"
-				ref={scrollContainerRef}
 			>
 				<div className="flex flex-col space-y-2">
 					{currentChatMessages.map((msg: ChatMessage, index: number) => {

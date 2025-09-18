@@ -19,7 +19,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     prose 
     dark:prose-invert 
     prose-sm 
-    max-w-none
+    max-w-2xl
     min-w-0
     prose-headings:font-semibold 
     prose-a:text-blue-600 prose-a:hover:underline
@@ -74,7 +74,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
 								maxWidth: "100%",
 								scrollbarWidth: "none", // Firefox
 								msOverflowStyle: "none", // IE/Edge
-								backgroundColor: "none",
+								backgroundColor: "#66666630",
 								border: "none",
 								borderRadius: "0.375rem",
 								padding: "25px",
