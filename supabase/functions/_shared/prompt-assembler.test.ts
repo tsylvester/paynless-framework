@@ -868,8 +868,8 @@ Deno.test("PromptAssembler", async (t) => {
             const expectedMessages: Messages[] = [
                 { role: 'user', content: seedPromptContent },
                 { role: 'assistant', content: rootAiChunkContent, id: rootContributionId },
+                { role: 'user', content: 'Please continue.' },
                 { role: 'assistant', content: continuationAiChunkContent, id: continuationId },
-                { role: 'user', content: 'Please continue.' }
             ];
 
             const result = await (assembler).gatherContinuationInputs(rootContributionId);
@@ -881,7 +881,106 @@ Deno.test("PromptAssembler", async (t) => {
         }
     });
 
-    await t.step("gatherContinuationInputs never reads seed prompt from _work", async () => {
+    await t.step("gatherContinuationInputs creates a valid, alternating 3-turn conversation history", async () => {
+        const rootId = 'root-3-turn';
+        const stageSlug = 'test-stage';
+        const seedContent = "Initial user prompt for 3-turn test.";
+        const turn1Content = "Assistant turn 1 content.";
+        const turn2Content = "Assistant turn 2 content.";
+        const turn3Content = "Assistant turn 3 content.";
+
+        const baseRow = (
+            id: string,
+            content: string,
+            turnIndex?: number,
+            createdAtOffset = 0
+        ): Database['public']['Tables']['dialectic_contributions']['Row'] => ({
+            id,
+            session_id: 'sess-3-turn',
+            iteration_number: 1,
+            storage_path: `path/to/${id}`,
+            file_name: `${id}.md`,
+            storage_bucket: 'test-bucket',
+            document_relationships: {
+                [stageSlug]: rootId,
+                ...(turnIndex !== undefined && { isContinuation: true, turnIndex: turnIndex }),
+            },
+            created_at: new Date(Date.now() + createdAtOffset).toISOString(),
+            is_latest_edit: true,
+            model_name: 'test-model',
+            user_id: 'user-3-turn',
+            stage: stageSlug,
+            // --- other fields ---
+            citations: null, contribution_type: null, edit_version: 1, error: null, mime_type: 'text/markdown',
+            model_id: 'model-3-turn', original_model_contribution_id: null, processing_time_ms: 1,
+            target_contribution_id: turnIndex !== undefined ? rootId : null, prompt_template_id_used: null, raw_response_storage_path: null,
+            seed_prompt_url: null, size_bytes: 1, tokens_used_input: 1, tokens_used_output: 1, updated_at: new Date().toISOString()
+        });
+
+        const turn1Chunk = baseRow('turn1', turn1Content, 1, 100);
+        const turn3Chunk = baseRow('turn3', turn3Content, 3, 300);
+        const rootChunk = baseRow(rootId, 'Root content should be included but its content is from a separate download', undefined, 0);
+        const turn2Chunk = baseRow('turn2', turn2Content, 2, 200);
+        
+        const mockChunks = [turn1Chunk, turn3Chunk, rootChunk, turn2Chunk];
+
+        const { assembler } = setup({
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        if (modifier.filters.some(f => f.column === 'id' && f.value === rootId)) {
+                            return Promise.resolve({ data: [rootChunk], error: null });
+                        }
+                        // Return all chunks for the .contains query
+                        return Promise.resolve({ data: mockChunks, error: null });
+                    }
+                }
+            },
+            storageMock: {
+                downloadResult: (_bucket, path) => {
+                    if (path.endsWith('seed_prompt.md')) return Promise.resolve({ data: new Blob([seedContent]), error: null });
+                    if (path.endsWith(`${rootId}.md`)) return Promise.resolve({ data: new Blob([rootChunk.id]), error: null });
+                    if (path.endsWith('turn1.md')) return Promise.resolve({ data: new Blob([turn1Content]), error: null });
+                    if (path.endsWith('turn2.md')) return Promise.resolve({ data: new Blob([turn2Content]), error: null });
+                    if (path.endsWith('turn3.md')) return Promise.resolve({ data: new Blob([turn3Content]), error: null });
+                    return Promise.resolve({ data: null, error: new Error(`Mock download fail for path: ${path}`) });
+                }
+            }
+        });
+
+        try {
+            const result = await assembler.gatherContinuationInputs(rootId);
+
+            const expectedMessages: Messages[] = [
+                { role: 'user', content: seedContent },
+                { role: 'assistant', content: rootId, id: rootId },
+                { role: 'user', content: 'Please continue.' },
+                { role: 'assistant', content: turn1Content, id: 'turn1' },
+                { role: 'user', content: 'Please continue.' },
+                { role: 'assistant', content: turn2Content, id: 'turn2' },
+                { role: 'user', content: 'Please continue.' },
+                { role: 'assistant', content: turn3Content, id: 'turn3' },
+            ];
+            
+            assertEquals(result.length, expectedMessages.length, "Should have the correct number of messages");
+            for (let i = 0; i < expectedMessages.length; i++) {
+                assertEquals(result[i].role, expectedMessages[i].role, `Message ${i} should have role '${expectedMessages[i].role}'`);
+                // Only assert content for user messages as assistant content is complex
+                if(expectedMessages[i].role === 'user') {
+                    assertEquals(result[i].content, expectedMessages[i].content, `Message ${i} should have correct content`);
+                }
+            }
+
+        } finally {
+            teardown();
+        }
+    });
+
+    // This test was previously named "gatherContinuationInputs never reads seed prompt from _work" but was
+    // failing due to an incomplete mock after a bug fix. The name was also misleading as it did not
+    // test the "_work" directory logic. It has been renamed and its mocks and assertions updated to
+    // correctly verify that a single root chunk is downloaded and included.
+    await t.step("gatherContinuationInputs correctly downloads seed and a single root chunk", async () => {
         const stageRoot = 'proj-xyz/session_abcd1234/iteration_1/1_thesis';
         const rootContributionId = 'root-abc';
         const bucket = 'test-bucket';
@@ -917,56 +1016,46 @@ Deno.test("PromptAssembler", async (t) => {
             document_relationships: { thesis: rootContributionId },
         };
 
-        // Continuation chunk lives under _work
-        const contChunkId = 'cont-1';
-        const contChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
-            ...rootChunk,
-            id: contChunkId,
-            file_name: 'gpt-4_0_thesis_continuation_0.md',
-            storage_path: `${stageRoot}/_work`,
-            target_contribution_id: rootContributionId,
-            document_relationships: { thesis: rootContributionId, isContinuation: true as unknown as never, turnIndex: 0 as unknown as never },
-        };
-
         const seedPromptPath = `${stageRoot}/seed_prompt.md`;
-        const wrongWorkSeedPath = `${stageRoot}/_work/seed_prompt.md`;
+        const rootChunkPath = `${stageRoot}/${rootChunk.file_name}`;
 
         const config: MockSupabaseDataConfig = {
             genericMockResults: {
                 dialectic_contributions: {
                     select: async (state: MockQueryBuilderState) => {
-                        // First select for root by id, then subsequent select for all by session
+                        // First select for root by id
                         if (state.filters.some(f => f.column === 'id' && f.value === rootContributionId)) {
                             return { data: [rootChunk], error: null, count: 1, status: 200, statusText: 'OK' };
                         }
-                        if (state.filters.some(f => f.column === 'session_id')) {
-                            return { data: [rootChunk, contChunk], error: null, count: 2, status: 200, statusText: 'OK' };
-                        }
+                        // Then the .contains query will find no other chunks
                         return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
                     },
                 },
             },
             storageMock: {
                 downloadResult: async (_bucket: string, path: string) => {
-                    // Only succeed for the correct, non-_work seed prompt path
                     if (path === seedPromptPath) {
                         return { data: new Blob(["Seed content"], { type: 'text/markdown' }), error: null };
                     }
-                    if (path === wrongWorkSeedPath) {
-                        return { data: null, error: new Error('Should not read seed from _work') };
+                    // The bug fix causes the root chunk to be downloaded. The mock must provide it.
+                    if (path === rootChunkPath) {
+                        return { data: new Blob(["Root chunk content"], { type: 'text/markdown' }), error: null };
                     }
-                    return { data: null, error: new Error('Not found') };
+                    return { data: null, error: new Error(`Mock not implemented for path: ${path}`) };
                 },
             },
         };
 
         const { assembler } = setup(config);
         try {
-            const inputMessage = await assembler.gatherContinuationInputs(rootContributionId);
-            // RED intent: current implementation wrongly builds _work path; assertRejects when fixed this will pass differently
-            // For now, ensure it attempts the correct non-_work path by succeeding and producing at least the seed message
-            assert(inputMessage.length >= 1);
-            assert(inputMessage[0]?.content?.includes('Seed content'));
+            const messages = await assembler.gatherContinuationInputs(rootContributionId);
+
+            const expectedMessages: Messages[] = [
+                { role: 'user', content: 'Seed content' },
+                { role: 'assistant', content: 'Root chunk content', id: rootContributionId },
+            ];
+
+            assertEquals(messages, expectedMessages);
         } finally {
             teardown();
         }
@@ -1137,17 +1226,17 @@ Deno.test("PromptAssembler", async (t) => {
         try {
             const messages = await assembler.gatherContinuationInputs(rootId);
             const contents = messages.map(m => m.content);
-            // Expected order: seed, root, cont0, cont1, cont2, noTiEarly (earlier created_at), noTiLate (later created_at), 'Please continue.'
-            assertEquals(contents, [
+            // Expected order: seed, root, cont0, cont1, cont2, noTiEarly (earlier created_at), noTiLate (later created_at), followed by 'Please continue.' after each assistant turn
+            const expectedContents = [
                 seedPromptContent,
-                rootContent,
-                cont0Content,
-                cont1Content,
-                cont2Content,
-                noTiEarlyContent,
+                rootContent, "Please continue.",
+                cont0Content, "Please continue.",
+                cont1Content, "Please continue.",
+                cont2Content, "Please continue.",
+                noTiEarlyContent, "Please continue.",
                 noTiLateContent,
-                'Please continue.'
-            ]);
+            ];
+            assertEquals(contents, expectedContents);
         } finally {
             teardown();
         }
@@ -1155,11 +1244,9 @@ Deno.test("PromptAssembler", async (t) => {
 
     await t.step("gatherContinuationInputs uses direct stage field instead of parsing document_relationships", async () => {
         const rootContributionId = 'contrib-stage-test-123';
-        const expectedStageSlug = 'thesis';
-        const seedPromptContent = "This is the seed prompt content.";
+        const correctStageSlug = 'correct-stage';
+        const incorrectStageSlug = 'incorrect-stage';
 
-        // Create a root contribution with a stage field and document_relationships that would cause
-        // the current implementation to fail when trying to parse stage slug from relationships
         const rootChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
             id: rootContributionId,
             session_id: 'sess-stage-test',
@@ -1167,12 +1254,7 @@ Deno.test("PromptAssembler", async (t) => {
             storage_path: 'path/to/root',
             file_name: 'root_chunk.md',
             storage_bucket: 'test-bucket',
-            // This document_relationships structure would cause the current implementation to fail
-            // because it doesn't have a clear stage slug key (only has isContinuation and turnIndex)
-            document_relationships: { 
-                "isContinuation": false,
-                "turnIndex": 0
-            },
+            document_relationships: { [incorrectStageSlug]: rootContributionId },
             created_at: new Date().toISOString(),
             is_latest_edit: true,
             model_name: 'test-model',
@@ -1192,8 +1274,7 @@ Deno.test("PromptAssembler", async (t) => {
             size_bytes: 100,
             tokens_used_input: 100,
             tokens_used_output: 100,
-            // The stage field contains the correct stage slug that should be used directly
-            stage: expectedStageSlug,
+            stage: correctStageSlug,
             updated_at: new Date().toISOString(),
         };
 
@@ -1201,21 +1282,73 @@ Deno.test("PromptAssembler", async (t) => {
             genericMockResults: {
                 dialectic_contributions: {
                     select: (modifier: MockQueryBuilderState) => {
-                        const isQueryingForRootById = modifier.filters.some(f => f.column === 'id' && f.value === rootContributionId);
-                        if (isQueryingForRootById) {
+                        if (modifier.filters.some(f => f.column === 'id' && f.value === rootContributionId)) {
                             return Promise.resolve({ data: [rootChunk], error: null });
                         }
-                        // Return empty array for the contains query (no continuation chunks for this test)
-                        return Promise.resolve({ data: [], error: null });
+                        // This query should use the correct stage slug.
+                        if (modifier.filters.some(f => f.column === 'document_relationships' && f.type === 'contains' && isRecord(f.value) && f.value[correctStageSlug])) {
+                            return Promise.resolve({ data: [], error: null });
+                        }
+                        return Promise.resolve({ data: [], error: new Error(`Query was called with incorrect stage slug`) });
                     }
                 },
             },
             storageMock: {
-                downloadResult: (_bucket, path) => {
-                    if (path.includes('seed_prompt.md')) {
-                        return Promise.resolve({ data: new Blob([seedPromptContent]), error: null });
+                downloadResult: () => Promise.resolve({ data: new Blob(["seed content"]), error: null })
+            }
+        };
+
+        const { assembler } = setup(config);
+
+        try {
+            // This will throw if the mock receives a query with the incorrect stage slug.
+            await assembler.gatherContinuationInputs(rootContributionId);
+        } finally {
+            teardown();
+        }
+    });
+
+    await t.step("gatherContinuationInputs includes root chunk when no other chunks are found", async () => {
+        const rootContributionId = 'contrib-root-only-123';
+        const rootContent = "Root content here.";
+        const seedContent = "Seed prompt for root-only test.";
+
+        const rootChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
+            id: rootContributionId,
+            session_id: 'sess-root-only',
+            iteration_number: 1,
+            storage_path: 'path/to/root',
+            file_name: 'root.md',
+            storage_bucket: 'test-bucket',
+            document_relationships: { 'thesis': rootContributionId },
+            created_at: new Date().toISOString(),
+            is_latest_edit: true,
+            model_name: 'test-model',
+            user_id: 'user-root-only',
+            stage: 'thesis',
+            citations: null, contribution_type: null, edit_version: 1, error: null, mime_type: 'text/markdown',
+            model_id: 'model-root-only', original_model_contribution_id: null, processing_time_ms: 1,
+            target_contribution_id: null, prompt_template_id_used: null, raw_response_storage_path: null,
+            seed_prompt_url: null, size_bytes: 1, tokens_used_input: 1, tokens_used_output: 1, updated_at: new Date().toISOString()
+        };
+
+        const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        if (modifier.filters.some(f => f.column === 'id' && f.value === rootContributionId)) {
+                            return Promise.resolve({ data: [rootChunk], error: null });
+                        }
+                        // Simulate no other chunks being found.
+                        return Promise.resolve({ data: [], error: null });
                     }
-                    return Promise.resolve({ data: null, error: new Error('File not found in mock') });
+                }
+            },
+            storageMock: {
+                downloadResult: (_bucket, path) => {
+                    if (path.endsWith('seed_prompt.md')) return Promise.resolve({ data: new Blob([seedContent]), error: null });
+                    if (path.endsWith('root.md')) return Promise.resolve({ data: new Blob([rootContent]), error: null });
+                    return Promise.resolve({ data: null, error: new Error('File not found') });
                 }
             }
         };
@@ -1223,19 +1356,12 @@ Deno.test("PromptAssembler", async (t) => {
         const { assembler } = setup(config);
 
         try {
-            // This test should fail with the current implementation because it tries to parse
-            // stage slug from document_relationships, but the relationships only contain
-            // isContinuation and turnIndex keys, not a stage slug key.
-            // When fixed, it should use the direct stage field and succeed.
-            const result = await assembler.gatherContinuationInputs(rootContributionId);
-            
-            // Verify the function succeeded and returned the expected messages
-            assertEquals(result.length, 2); // seed prompt + "Please continue."
-            assertEquals(result[0].role, 'user');
-            assertEquals(result[0].content, seedPromptContent);
-            assertEquals(result[1].role, 'user');
-            assertEquals(result[1].content, 'Please continue.');
-
+            const messages = await assembler.gatherContinuationInputs(rootContributionId);
+            const expectedMessages: Messages[] = [
+                { role: 'user', content: seedContent },
+                { role: 'assistant', content: rootContent, id: rootContributionId },
+            ];
+            assertEquals(messages, expectedMessages);
         } finally {
             teardown();
         }
@@ -1371,6 +1497,80 @@ Deno.test("PromptAssembler", async (t) => {
                 Error,
                 'Failed to download content for chunk'
             );
+        } finally {
+            teardown();
+        }
+    });
+
+    await t.step("gatherContinuationInputs history ends with the last assistant message", async () => {
+        const rootId = 'root-last-msg-test';
+        const stageSlug = 'test-stage';
+        const seedContent = "Initial user prompt for last message test.";
+        const turn1Content = "Assistant turn 1 content.";
+        const turn2Content = "Assistant turn 2 content.";
+
+        const baseRow = (
+            id: string,
+            turnIndex?: number
+        ): Database['public']['Tables']['dialectic_contributions']['Row'] => ({
+            id,
+            session_id: 'sess-last-msg-test',
+            iteration_number: 1,
+            storage_path: `path/to/${id}`,
+            file_name: `${id}.md`,
+            storage_bucket: 'test-bucket',
+            document_relationships: {
+                [stageSlug]: rootId,
+                ...(turnIndex !== undefined && { isContinuation: true, turnIndex: turnIndex }),
+            },
+            created_at: new Date().toISOString(),
+            is_latest_edit: true,
+            model_name: 'test-model',
+            user_id: 'user-last-msg-test',
+            stage: stageSlug,
+            citations: null, contribution_type: null, edit_version: 1, error: null, mime_type: 'text/markdown',
+            model_id: 'model-last-msg-test', original_model_contribution_id: null, processing_time_ms: 1,
+            target_contribution_id: null, prompt_template_id_used: null, raw_response_storage_path: null,
+            seed_prompt_url: null, size_bytes: 1, tokens_used_input: 1, tokens_used_output: 1, updated_at: new Date().toISOString()
+        });
+
+        const rootChunk = baseRow(rootId);
+        const turn1Chunk = baseRow('turn1', 1);
+        const turn2Chunk = baseRow('turn2', 2);
+        
+        const mockChunks = [rootChunk, turn1Chunk, turn2Chunk];
+
+        const { assembler } = setup({
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        if (modifier.filters.some(f => f.column === 'id' && f.value === rootId)) {
+                            return Promise.resolve({ data: [rootChunk], error: null });
+                        }
+                        return Promise.resolve({ data: mockChunks, error: null });
+                    }
+                }
+            },
+            storageMock: {
+                downloadResult: (_bucket, path) => {
+                    if (path.endsWith('seed_prompt.md')) return Promise.resolve({ data: new Blob([seedContent]), error: null });
+                    if (path.endsWith(`${rootId}.md`)) return Promise.resolve({ data: new Blob([rootId]), error: null });
+                    if (path.endsWith('turn1.md')) return Promise.resolve({ data: new Blob([turn1Content]), error: null });
+                    if (path.endsWith('turn2.md')) return Promise.resolve({ data: new Blob([turn2Content]), error: null });
+                    return Promise.resolve({ data: null, error: new Error(`Mock download fail for path: ${path}`) });
+                }
+            }
+        });
+
+        try {
+            const result = await assembler.gatherContinuationInputs(rootId);
+
+            // This test will fail because the current implementation adds a final user message.
+            assert(result.length > 0, "Should have messages");
+            const lastMessage = result[result.length - 1];
+            assertEquals(lastMessage.role, 'assistant', "The last message in the history should be from the assistant");
+            assertEquals(lastMessage.content, turn2Content);
+
         } finally {
             teardown();
         }

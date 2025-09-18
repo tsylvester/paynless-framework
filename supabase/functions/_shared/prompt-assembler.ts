@@ -11,8 +11,7 @@ import { AiModelExtendedConfig, Messages } from "./types.ts";
 import { countTokens } from "./utils/tokenizer_utils.ts";
 import type { CountTokensDeps, CountableChatPayload } from "./types/tokenizer.types.ts";
 import type { IPromptAssembler } from "./prompt-assembler.interface.ts";
-import { DocumentRelationships } from "./types/file_manager.types.ts";
-import { isKeyOf, isRecord, isJson } from "./utils/type_guards.ts";
+import { isRecord, isJson } from "./utils/type_guards.ts";
 export class PromptAssembler implements IPromptAssembler {
     private dbClient: SupabaseClient<Database>;
     private storageBucket: string;
@@ -388,8 +387,15 @@ export class PromptAssembler implements IPromptAssembler {
             console.error(`[PromptAssembler.gatherContinuationInputs] Failed to retrieve contribution chunks.`, { error: chunksError, chunkId });
             throw new Error(`Failed to retrieve contribution chunks for root ${chunkId}.`);
         }
+        
         // It's valid to have zero continuation chunks (non-continuation flows or single-shot completions).
         const chunksForAssembly = Array.isArray(allChunks) ? allChunks : [];
+        
+        // Ensure the root chunk is always included for sorting, even if it's the only one.
+        const combinedChunks = [...chunksForAssembly];
+        if (!combinedChunks.some(c => c.id === rootChunk.id)) {
+            combinedChunks.push(rootChunk);
+        }
 
         // Sort chunks client-side: root first, then by document_relationships.turnIndex, then created_at
         const getTurnIndex = (c: Database['public']['Tables']['dialectic_contributions']['Row']): number => {
@@ -401,7 +407,7 @@ export class PromptAssembler implements IPromptAssembler {
             return Number.POSITIVE_INFINITY;
         };
         const parseTs = (s?: string): number => (s ? Date.parse(s) : 0);
-        const allChunksSorted = chunksForAssembly.slice().sort((a: Database['public']['Tables']['dialectic_contributions']['Row'], b: Database['public']['Tables']['dialectic_contributions']['Row']) => {
+        const allChunksSorted = combinedChunks.slice().sort((a: Database['public']['Tables']['dialectic_contributions']['Row'], b: Database['public']['Tables']['dialectic_contributions']['Row']) => {
             if (a.id === chunkId) return -1;
             if (b.id === chunkId) return 1;
             const tiA = getTurnIndex(a);
@@ -431,8 +437,9 @@ export class PromptAssembler implements IPromptAssembler {
         const seedPromptContent = new TextDecoder().decode(seedPromptContentData);
 
         // 5. Download and create atomic messages for all chunks.
-        const assistantMessages: Messages[] = [];
-        for (const chunk of allChunksSorted) {
+        const messages: Messages[] = [{ role: 'user', content: seedPromptContent }];
+        for (let i = 0; i < allChunksSorted.length; i++) {
+            const chunk = allChunksSorted[i];
             if (chunk.storage_path && chunk.file_name && chunk.storage_bucket) {
                 const chunkPath = `${chunk.storage_path}/${chunk.file_name}`;
                 const { data: chunkContentData, error: chunkDownloadError } = await this.downloadFromStorageFn(chunk.storage_bucket, chunkPath);
@@ -442,19 +449,23 @@ export class PromptAssembler implements IPromptAssembler {
                     throw new Error(`Failed to download content for chunk ${chunk.id}.`);
                 }
                 const chunkContent = new TextDecoder().decode(chunkContentData);
-                assistantMessages.push({
+                messages.push({
                     role: 'assistant',
                     content: chunkContent,
                     id: chunk.id,
                 });
+                
+                // Only add a "Please continue." message if it's NOT the last chunk.
+                if (i < allChunksSorted.length - 1) {
+                    messages.push({
+                        role: 'user',
+                        content: 'Please continue.',
+                    });
+                }
             }
         }
         
         // 6. Return formatted messages.
-        return [
-            { role: 'user', content: seedPromptContent },
-            ...assistantMessages,
-            { role: 'user', content: 'Please continue.' }
-        ];
+        return messages;
     }
 }
