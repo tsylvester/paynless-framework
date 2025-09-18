@@ -3,11 +3,12 @@
 
 // Define allowed origins. Replace 'YOUR_PRODUCTION_FRONTEND_URL' with your actual production frontend URL.
 // You might also want to load this from environment variables for more flexibility.
-const allowedOrigins = [
+const allowedOrigins: (string | RegExp)[] = [
   'http://localhost:5173', // Local Vite dev server
+  'http://127.0.0.1:5173', // Local Vite dev server unaliased
   'https://paynless.app', // Production URL 1
-  'https://paynless-framework.netlify.app' // Production URL 2 (Netlify)
-  // Add any other origins (e.g., staging environment) if needed
+  'https://paynless-framework.netlify.app', // Production URL 2 (Netlify)
+  /^https:\/\/.*paynless.*\.netlify\.app$/, // Netlify deploy previews
 ];
 
 /**
@@ -28,9 +29,24 @@ export const baseCorsHeaders = {
  */
 export const isOriginAllowed = (requestOrigin: string | null): boolean => {
   console.log(`[cors-headers] Checking origin: ${requestOrigin}`); // Log received origin
-  const allowed = !!requestOrigin && allowedOrigins.includes(requestOrigin);
-  console.log(`[cors-headers] Origin allowed? ${allowed}`); // Log result
-  return allowed;
+  if (!requestOrigin) {
+    console.log(`[cors-headers] Origin allowed? false (No origin header)`);
+    return false;
+  }
+
+  for (const pattern of allowedOrigins) {
+    if (typeof pattern === 'string' && pattern === requestOrigin) {
+      console.log(`[cors-headers] Origin allowed? true (Exact match: ${pattern})`);
+      return true;
+    }
+    if (pattern instanceof RegExp && pattern.test(requestOrigin)) {
+      console.log(`[cors-headers] Origin allowed? true (Regex match: ${pattern})`);
+      return true;
+    }
+  }
+
+  console.log(`[cors-headers] Origin allowed? false (No match found)`);
+  return false;
 };
 
 /**

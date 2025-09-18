@@ -11,9 +11,7 @@ import { AiModelExtendedConfig, Messages } from "./types.ts";
 import { countTokens } from "./utils/tokenizer_utils.ts";
 import type { CountTokensDeps, CountableChatPayload } from "./types/tokenizer.types.ts";
 import type { IPromptAssembler } from "./prompt-assembler.interface.ts";
-import { DocumentRelationships } from "./types/file_manager.types.ts";
-import { isKeyOf } from "./utils/type_guards.ts";
-
+import { isRecord, isJson } from "./utils/type_guards.ts";
 export class PromptAssembler implements IPromptAssembler {
     private dbClient: SupabaseClient<Database>;
     private storageBucket: string;
@@ -132,11 +130,47 @@ export class PromptAssembler implements IPromptAssembler {
         context: DynamicContextVariables,
         userProjectOverlayValues: Json | null = null
     ): string {
-        const systemDefaultOverlayValues = stage.domain_specific_prompt_overlays[0]?.overlay_values ?? null;
-        const basePromptText: string | undefined | null = stage.system_prompts?.prompt_text;
+        // Start from the stage default overlays
+        let systemDefaultOverlayValues = stage.domain_specific_prompt_overlays[0]?.overlay_values;
 
-        if (!basePromptText) {
-            throw new Error(`No system prompt template found for stage ${stage.id}`);
+        const basePromptText: string | undefined | null = stage.system_prompts?.prompt_text;
+        if (!basePromptText || typeof basePromptText !== 'string' || basePromptText.trim().length === 0) {
+            throw new Error(`RENDER_PRECONDITION_FAILED: missing system prompt text for stage ${stage.slug}`);
+        }
+
+        const requiresStyleGuide = basePromptText.includes('{{#section:style_guide_markdown}}');
+        const requiresArtifacts = basePromptText.includes('{{#section:expected_output_artifacts_json}}');
+
+        if (requiresStyleGuide) {
+            const styleGuideVal = isRecord(systemDefaultOverlayValues) ? systemDefaultOverlayValues['style_guide_markdown'] : undefined;
+            if (typeof styleGuideVal !== 'string' || styleGuideVal.trim().length === 0) {
+                throw new Error(`RENDER_PRECONDITION_FAILED: missing style_guide_markdown for stage ${stage.slug}`);
+            }
+        }
+
+        // Inject artifacts JSON when provided on stage
+        if (stage.expected_output_artifacts !== null && isRecord(stage.expected_output_artifacts)) {
+            if (!isJson(stage.expected_output_artifacts)) {
+                throw new Error('expected_output_artifacts must be JSON-compatible');
+            }
+            const injected: Record<string, Json> = {};
+            if (isRecord(systemDefaultOverlayValues)) {
+                for (const [key, value] of Object.entries(systemDefaultOverlayValues)) {
+                    if (isJson(value)) {
+                        injected[key] = value;
+                    }
+                }
+            }
+            injected["expected_output_artifacts_json"] = stage.expected_output_artifacts;
+            systemDefaultOverlayValues = injected;
+        }
+
+        if (requiresArtifacts) {
+            const artifactsVal = isRecord(systemDefaultOverlayValues) ? systemDefaultOverlayValues['expected_output_artifacts_json'] : undefined;
+            const artifactsOk = isRecord(artifactsVal) || Array.isArray(artifactsVal) || typeof artifactsVal === 'string' || typeof artifactsVal === 'number' || typeof artifactsVal === 'boolean';
+            if (!artifactsOk) {
+                throw new Error(`RENDER_PRECONDITION_FAILED: missing expected_output_artifacts_json for stage ${stage.slug}`);
+            }
         }
 
         try {
@@ -322,64 +356,60 @@ export class PromptAssembler implements IPromptAssembler {
         return sourceDocuments;
     }
 
-    public async gatherContinuationInputs(rootContributionId: string): Promise<Messages[]> {
+    public async gatherContinuationInputs(chunkId: string): Promise<Messages[]> {
         // 1. Fetch the root chunk to get the stage slug and other base info.
         const { data: rootChunk, error: rootChunkError } = await this.dbClient
             .from('dialectic_contributions')
             .select('*')
-            .eq('id', rootContributionId)
+            .eq('id', chunkId)
             .single();
 
         if (rootChunkError || !rootChunk) {
-            console.error(`[PromptAssembler.gatherContinuationInputs] Failed to retrieve root contribution.`, { error: rootChunkError, rootContributionId });
-            throw new Error(`Failed to retrieve root contribution for id ${rootContributionId}.`);
+            console.error(`[PromptAssembler.gatherContinuationInputs] Failed to retrieve root contribution.`, { error: rootChunkError, chunkId });
+            throw new Error(`Failed to retrieve root contribution for id ${chunkId}.`);
         }
 
-        // 2. Dynamically determine the stage slug from the document_relationships.
-        if (!rootChunk.document_relationships || typeof rootChunk.document_relationships !== 'object' || Array.isArray(rootChunk.document_relationships)) {
-            throw new Error(`Root contribution ${rootContributionId} has invalid document_relationships.`);
+        // 2. Get the stage slug directly from the stage field
+        if (!rootChunk.stage || typeof rootChunk.stage !== 'string' || rootChunk.stage.trim().length === 0) {
+            throw new Error(`Root contribution ${chunkId} has no stage information`);
         }
-        const relationships: DocumentRelationships = rootChunk.document_relationships;
-        const stageSlugKey = Object.keys(relationships).find(key => key !== 'isContinuation' && key !== 'turnIndex');
 
-        if (!stageSlugKey || !isKeyOf(relationships, stageSlugKey)) {
-            throw new Error(`Could not determine stage slug from root contribution ${rootContributionId}.`);
-        }
-        
-        // The type guard has confirmed stageSlugKey is a keyof DocumentRelationships
-        const stageSlug = stageSlugKey;
-
-        if (relationships[stageSlug] !== rootContributionId) {
-            throw new Error(`Could not determine stage slug from root contribution ${rootContributionId}.`);
-        }
+        const stageSlug = rootChunk.stage;
 
         // 3. Use a .contains query to find all related chunks.
-        const queryMatcher = { [stageSlug]: rootContributionId };
+        const queryMatcher = { [stageSlug]: chunkId };
         const { data: allChunks, error: chunksError } = await this.dbClient
             .from('dialectic_contributions')
             .select('*')
             .contains('document_relationships', queryMatcher);
 
         if (chunksError) {
-            console.error(`[PromptAssembler.gatherContinuationInputs] Failed to retrieve contribution chunks.`, { error: chunksError, rootContributionId });
-            throw new Error(`Failed to retrieve contribution chunks for root ${rootContributionId}.`);
+            console.error(`[PromptAssembler.gatherContinuationInputs] Failed to retrieve contribution chunks.`, { error: chunksError, chunkId });
+            throw new Error(`Failed to retrieve contribution chunks for root ${chunkId}.`);
         }
+        
         // It's valid to have zero continuation chunks (non-continuation flows or single-shot completions).
         const chunksForAssembly = Array.isArray(allChunks) ? allChunks : [];
+        
+        // Ensure the root chunk is always included for sorting, even if it's the only one.
+        const combinedChunks = [...chunksForAssembly];
+        if (!combinedChunks.some(c => c.id === rootChunk.id)) {
+            combinedChunks.push(rootChunk);
+        }
 
         // Sort chunks client-side: root first, then by document_relationships.turnIndex, then created_at
         const getTurnIndex = (c: Database['public']['Tables']['dialectic_contributions']['Row']): number => {
-            const rel = c && typeof c === 'object' ? (c as Database['public']['Tables']['dialectic_contributions']['Row']).document_relationships : null;
+            const rel = c && typeof c === 'object' ? c.document_relationships : null;
             if (rel && typeof rel === 'object' && !Array.isArray(rel) && 'turnIndex' in rel) {
-                const ti = (rel as Record<string, unknown>).turnIndex;
+                const ti = rel.turnIndex;
                 if (typeof ti === 'number') return ti;
             }
             return Number.POSITIVE_INFINITY;
         };
         const parseTs = (s?: string): number => (s ? Date.parse(s) : 0);
-        const allChunksSorted = chunksForAssembly.slice().sort((a: Database['public']['Tables']['dialectic_contributions']['Row'], b: Database['public']['Tables']['dialectic_contributions']['Row']) => {
-            if (a.id === rootContributionId) return -1;
-            if (b.id === rootContributionId) return 1;
+        const allChunksSorted = combinedChunks.slice().sort((a: Database['public']['Tables']['dialectic_contributions']['Row'], b: Database['public']['Tables']['dialectic_contributions']['Row']) => {
+            if (a.id === chunkId) return -1;
+            if (b.id === chunkId) return 1;
             const tiA = getTurnIndex(a);
             const tiB = getTurnIndex(b);
             if (tiA !== tiB) return tiA - tiB;
@@ -402,13 +432,14 @@ export class PromptAssembler implements IPromptAssembler {
 
         if (seedDownloadError || !seedPromptContentData) {
             console.error(`[PromptAssembler.gatherContinuationInputs] Failed to download seed prompt.`, { path: seedPromptPath, error: seedDownloadError });
-            throw new Error(`Failed to download seed prompt for root ${rootContributionId}.`);
+            throw new Error(`Failed to download seed prompt for root ${chunkId}.`);
         }
         const seedPromptContent = new TextDecoder().decode(seedPromptContentData);
 
         // 5. Download and create atomic messages for all chunks.
-        const assistantMessages: Messages[] = [];
-        for (const chunk of allChunksSorted) {
+        const messages: Messages[] = [{ role: 'user', content: seedPromptContent }];
+        for (let i = 0; i < allChunksSorted.length; i++) {
+            const chunk = allChunksSorted[i];
             if (chunk.storage_path && chunk.file_name && chunk.storage_bucket) {
                 const chunkPath = `${chunk.storage_path}/${chunk.file_name}`;
                 const { data: chunkContentData, error: chunkDownloadError } = await this.downloadFromStorageFn(chunk.storage_bucket, chunkPath);
@@ -418,19 +449,23 @@ export class PromptAssembler implements IPromptAssembler {
                     throw new Error(`Failed to download content for chunk ${chunk.id}.`);
                 }
                 const chunkContent = new TextDecoder().decode(chunkContentData);
-                assistantMessages.push({
+                messages.push({
                     role: 'assistant',
                     content: chunkContent,
                     id: chunk.id,
                 });
+                
+                // Only add a "Please continue." message if it's NOT the last chunk.
+                if (i < allChunksSorted.length - 1) {
+                    messages.push({
+                        role: 'user',
+                        content: 'Please continue.',
+                    });
+                }
             }
         }
         
         // 6. Return formatted messages.
-        return [
-            { role: 'user', content: seedPromptContent },
-            ...assistantMessages,
-            { role: 'user', content: 'Please continue.' }
-        ];
+        return messages;
     }
 }

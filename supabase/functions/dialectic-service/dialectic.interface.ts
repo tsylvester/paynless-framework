@@ -329,6 +329,8 @@ export interface GenerateContributionsPayload {
   maxRetries?: number;
   continuation_count?: number;
   target_contribution_id?: string;
+  user_jwt?: string;
+  is_test_job?: boolean;
 }
 
 /**
@@ -748,7 +750,7 @@ export interface IDialecticJobDeps extends GenerateContributionsDeps {
     downloadFromStorage: GenerateContributionsDeps['downloadFromStorage']
   ) => Promise<SeedPromptData>;
   continueJob: (
-    deps: { logger: ILogger },
+    deps: IContinueJobDeps,
     dbClient: SupabaseClient<Database>,
     job: DialecticJobRow,
     aiResponse: UnifiedAIResponse,

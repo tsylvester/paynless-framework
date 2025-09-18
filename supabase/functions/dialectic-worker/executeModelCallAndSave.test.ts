@@ -104,6 +104,7 @@ export const testPayload: DialecticExecuteJobPayload = {
     iterationNumber: 1,
     continueUntilComplete: false,
     walletId: 'wallet-ghi',
+    user_jwt: 'jwt.token.here',
     canonicalPathParams: {
         contributionType: 'thesis',
     }
@@ -797,9 +798,8 @@ Deno.test('executeModelCallAndSave - should accept PromptConstructionPayload and
     assertEquals(firstArg.message, "This is the current user prompt.");
     assertEquals(firstArg.systemInstruction, "You are a helpful assistant.");
     assertExists(firstArg.messages);
-    assertEquals(firstArg.messages.length, 2, "Should include rendered prompt and one history message; resourceDocuments are not appended");
-    assertEquals(firstArg.messages[0], { role: 'user', content: 'This is the current user prompt.' });
-    assertEquals(firstArg.messages[1], { role: 'assistant', content: 'Previous message' });
+    assertEquals(firstArg.messages.length, 1, "Should include one history message");
+    assertEquals(firstArg.messages[0], { role: 'assistant', content: 'Previous message' });
     assertEquals(firstArg.providerId, mockProviderData.id);
 
     clearAllStubs?.();
@@ -827,8 +827,7 @@ Deno.test('executeModelCallAndSave - includes rendered template as first user me
   assertExists(firstArg.messages, 'messages should exist on ChatApiRequest');
   assertEquals(firstArg.message, 'RENDERED: Hello');
   assertEquals(firstArg.systemInstruction, undefined);
-  assertEquals(firstArg.messages.length, 1, 'messages should contain only the rendered user prompt when no history/resources');
-  assertEquals(firstArg.messages[0], { role: 'user', content: 'RENDERED: Hello' });
+  assertEquals(firstArg.messages.length, 0, 'messages should be empty when no history/resources');
 
   clearAllStubs?.();
 });

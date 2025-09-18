@@ -254,7 +254,10 @@ Deno.test('submitStageResponses', async (t) => {
                 } 
             },
             system_prompts: {
-                select: { data: [{ prompt_text: 'Next prompt' }], error: null }
+                select: { data: [{ id: testSystemPromptId, prompt_text: 'Next prompt' }], error: null }
+            },
+            domain_specific_prompt_overlays: {
+                select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null }
             },
             dialectic_process_templates: {
               select: { data: [mockProcessTemplate] }
@@ -353,10 +356,12 @@ Deno.test('submitStageResponses', async (t) => {
         },
         dialectic_stage_transitions: {
           select: () => Promise.resolve({ // Transition from thesis to antithesis
-            data: [{ target_stage: { ...mockAntithesisStage, system_prompts: { id: 'antithesis-sys-prompt-id', prompt_text: 'Antithesis system prompt' } } }],
+            data: [{ target_stage: { ...mockAntithesisStage, default_system_prompt_id: 'antithesis-sys-prompt-id', system_prompts: { id: 'antithesis-sys-prompt-id', prompt_text: 'Antithesis system prompt' } } }],
             error: null, status: 200, count: 1
           })
         },
+        system_prompts: { select: { data: [{ id: 'antithesis-sys-prompt-id', prompt_text: 'Antithesis system prompt' }], error: null, status: 200, statusText: 'ok' } },
+        domain_specific_prompt_overlays: { select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null, status: 200, statusText: 'ok' } },
         dialectic_project_resources: { // For initial project prompt
           select: (state) => {
             if (state.filters.some(f => f.column === 'id' && f.value === testInitialPromptResourceId5_3)) {

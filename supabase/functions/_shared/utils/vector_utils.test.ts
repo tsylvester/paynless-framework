@@ -248,29 +248,31 @@ Deno.test("scoreHistory", async (t) => {
         { id: 'msg-0', role: 'system', content: 'system prompt' },
         { id: 'msg-1', role: 'user', content: 'user prompt 1' },
         { id: 'msg-2', role: 'assistant', content: 'assistant response 1' },
-        { id: 'msg-3', role: 'user', content: 'user prompt 2' },
+        { id: 'msg-3', role: 'user', content: 'user prompt 2' }, // The one compressible message
         { id: 'msg-4', role: 'assistant', content: 'assistant response 2' },
         { id: 'msg-5', role: 'user', content: 'user prompt 3' },
-        { id: 'msg-6', role: 'assistant', content: 'assistant response 3' }
+        { id: 'msg-6', role: 'assistant', content: 'assistant response 3' },
+        { id: 'msg-7', role: 'user', content: 'user prompt 4' },
     ];
 
     await t.step("should correctly identify and score the mutable middle, excluding head and tail", () => {
         const candidates = scoreHistory(fullHistory);
 
-        // Head (3) and Tail (3) are immutable. Middle is msg-3.
-        assertEquals(candidates.length, 1);
+        // New logic: 3 head + 4 tail = 7 immutable. With 8 total messages, 1 should be mutable.
+        assertEquals(candidates.length, 1, "Expected exactly one candidate with the new 3+4 logic.");
         
         const candidateIds = candidates.map(c => c.id);
-        assert(candidateIds.includes('msg-3'), "msg-3 should be a candidate");
+        assert(candidateIds.includes('msg-3'), "msg-3 should be the single candidate");
         
         // Assert that immutable tail messages are NOT candidates
         assert(!candidateIds.includes('msg-4'), "msg-4 should be immutable");
         assert(!candidateIds.includes('msg-5'), "msg-5 should be immutable");
         assert(!candidateIds.includes('msg-6'), "msg-6 should be immutable");
+        assert(!candidateIds.includes('msg-7'), "msg-7 should be immutable");
     });
 
     await t.step("should return an empty array if history is too short to have a middle part", () => {
-        const shortHistory: Messages[] = fullHistory.slice(0, 6); // 3 head + 3 tail = 6, no middle
+        const shortHistory: Messages[] = fullHistory.slice(0, 7); // 3 head + 4 tail = 7, no middle
         const candidates = scoreHistory(shortHistory);
         assertEquals(candidates.length, 0);
     });
@@ -290,7 +292,8 @@ Deno.test("getSortedCompressionCandidates", async (t) => {
         { id: 'msg-3', role: 'user', content: 'user prompt 2' }, // oldest mutable, score 0
         { id: 'msg-4', role: 'assistant', content: 'assistant response 2' },
         { id: 'msg-5', role: 'user', content: 'user prompt 3' },
-        { id: 'msg-6', role: 'assistant', content: 'assistant response 3' }, // newest mutable, score 1
+        { id: 'msg-6', role: 'assistant', content: 'assistant response 3' },
+        { id: 'msg-7', role: 'user', content: 'user prompt 4' }, // newest mutable, score 1
     ];
     
     await t.step("should combine and sort candidates from both sources", async () => {
@@ -442,5 +445,76 @@ Deno.test("getSortedCompressionCandidates - role-aware anchors preserved; non-an
   // This is the critical RED assertion: the second-to-last assistant (msg-8) must also be preserved
   // Current index-based logic will incorrectly include it as a candidate, causing this test to fail.
   assert(!candidateIds.includes('msg-8'), 'Second-to-last assistant should be preserved (role-aware)');
+});
+ 
+ Deno.test("scoreHistory preserves correct anchors (system, first turn, last two turns)", () => {
+    const history: Messages[] = [
+        // --- Immutable Head ---
+        { id: 'msg-0', role: 'system', content: 'You are an architect.' }, // Anchor: System prompt
+        { id: 'msg-1', role: 'user', content: 'First user message.' },      // Anchor: First turn
+        { id: 'msg-2', role: 'assistant', content: 'First assistant reply.' }, // Anchor: First turn
+        // --- Compressible Middle ---
+        { id: 'msg-3', role: 'user', content: 'Compressible message 1' },
+        { id: 'msg-4', role: 'assistant', content: 'Compressible message 2' },
+        { id: 'msg-5', role: 'user', content: 'Compressible message 3' },
+        // --- Immutable Tail ---
+        { id: 'msg-6', role: 'assistant', content: 'Second to last assistant reply.' }, // Anchor: Last 4
+        { id: 'msg-7', role: 'user', content: 'Second to last user reply.' },      // Anchor: Last 4
+        { id: 'msg-8', role: 'assistant', content: 'Last assistant reply.' },         // Anchor: Last 4
+        { id: 'msg-9', role: 'user', content: 'Last user reply.' },              // Anchor: Last 4
+    ];
+ 
+    const candidates = scoreHistory(history);
+    const candidateIds = new Set(candidates.map(c => c.id));
+ 
+    // Assert IMMUTABLE anchors are NOT candidates for compression
+    assert(!candidateIds.has('msg-0'), "System prompt (msg-0) should be immutable.");
+    assert(!candidateIds.has('msg-1'), "First user message (msg-1) should be immutable.");
+    assert(!candidateIds.has('msg-2'), "First assistant message (msg-2) should be immutable.");
+    assert(!candidateIds.has('msg-6'), "Tail assistant message (msg-6) should be immutable.");
+    assert(!candidateIds.has('msg-7'), "Tail user message (msg-7) should be immutable.");
+    assert(!candidateIds.has('msg-8'), "Tail assistant message (msg-8) should be immutable.");
+    assert(!candidateIds.has('msg-9'), "Tail user message (msg-9) should be immutable.");
+ 
+    // Assert COMPRESSIBLE middle messages ARE candidates
+    assert(candidateIds.has('msg-3'), "Middle message (msg-3) should be compressible.");
+    assert(candidateIds.has('msg-4'), "Middle message (msg-4) should be compressible.");
+    assert(candidateIds.has('msg-5'), "Middle message (msg-5) should be compressible.");
+ 
+    // Assert the total number of candidates is correct
+    assertEquals(candidateIds.size, 3, "There should be exactly 3 compressible candidates.");
+ });
+ 
+Deno.test("scoreHistory fails to preserve anchors with non-alternating tail roles (RED)", () => {
+    const history: Messages[] = [
+        // --- Immutable Head ---
+        { id: 'msg-0', role: 'system', content: 'You are an architect.' },
+        { id: 'msg-1', role: 'user', content: 'First user message.' },
+        { id: 'msg-2', role: 'assistant', content: 'First assistant reply.' },
+        // --- Compressible Middle ---
+        { id: 'msg-3', role: 'user', content: 'Compressible message 1' },
+        { id: 'msg-4', role: 'assistant', content: 'Compressible message 2' },
+        { id: 'msg-5', role: 'user', content: 'Compressible message 3' },
+        // --- Immutable Tail (where the flaw is) ---
+        { id: 'msg-6', role: 'user', content: 'This user message should be immutable but will fail.' },
+        { id: 'msg-7', role: 'assistant', content: 'First assistant reply in tail.' },
+        { id: 'msg-8', role: 'assistant', content: 'Second consecutive assistant reply in tail.' },
+        { id: 'msg-9', role: 'user', content: 'Final user reply.' },
+    ];
+ 
+    const candidates = scoreHistory(history);
+    const candidateIds = new Set(candidates.map(c => c.id));
+ 
+    // This is the key assertion that is expected to fail.
+    // The positional rule (`immutableTailCount=3`) only protects msg-7, msg-8, msg-9.
+    // The role-based rule protects the last two assistants (msg-7, msg-8).
+    // Nothing protects msg-6.
+    assert(!candidateIds.has('msg-6'), "The user message at the start of a non-alternating tail (msg-6) must be immutable.");
+ 
+    // Verify other anchors are still correctly handled
+    assert(!candidateIds.has('msg-7'), "Tail assistant message (msg-7) should be immutable.");
+    assert(!candidateIds.has('msg-8'), "Tail assistant message (msg-8) should be immutable.");
+    assert(!candidateIds.has('msg-9'), "Tail user message (msg-9) should be immutable.");
+    assert(candidateIds.has('msg-5'), "Middle message (msg-5) should be compressible.");
 });
 

@@ -143,7 +143,8 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
                     assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
                 },
                 deleteFromStorage: () => Promise.resolve({ error: null }),
-            }
+            },
+            'jwt.token.here'
         );
 
         // Assertions for the main function result
@@ -251,7 +252,8 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
                     assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
                 },
                 deleteFromStorage: () => Promise.resolve({ error: null }),
-            }
+            },
+            'jwt.token.here'
         );
 
         // Assertions for the main function result
@@ -333,7 +335,8 @@ Deno.test("generateContributions - Failure Path: Fails if stage recipe lookup fa
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
-        }
+        },
+        'jwt.token.here'
     );
 
     assertEquals(result.success, false);
@@ -413,7 +416,7 @@ Deno.test("generateContributions - Failure Path: Fails to enqueue a job", async 
             mockPayload,
             { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
             mockDeps
-        );
+        , 'jwt.token.here');
 
         // Assertions for the main function result
         assertEquals(result.success, false, "Function should return success: false");
@@ -453,7 +456,8 @@ Deno.test("generateContributions - Validation: Fails if stageSlug is missing", a
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
-        }
+        },
+        'jwt.token.here'
     );
 
     assertEquals(result.success, false);
@@ -487,7 +491,8 @@ Deno.test("generateContributions - Validation: Fails if sessionId is missing", a
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
-        }
+        },
+        'jwt.token.here'
     );
 
     assertEquals(result.success, false);
@@ -573,7 +578,8 @@ Deno.test("generateContributions - Validation: Fails if selectedModelIds is empt
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
-        }
+        },
+        'jwt.token.here'
     );
 
     assertEquals(result.success, false);
@@ -652,4 +658,255 @@ Deno.test("generateContributions - Validation: Fails if walletId is missing (man
     // And no job insert should occur
     const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
     assertEquals(insertSpy?.callCount ?? 0, 0);
+});
+
+// =============================================================
+// auth token contract for initial plan jobs
+// =============================================================
+
+Deno.test("generateContributions - Fails when authToken is missing and does not insert jobs", async () => {
+    const mockSessionId = "sess-missing-auth";
+    const mockProjectId = "proj-missing-auth";
+    const mockUserId = "user-missing-auth";
+    const mockModelIds = ["model-X"]; // ensure we'd reach insert if not blocked
+
+    const mockPayload: GenerateContributionsPayload = {
+        sessionId: mockSessionId,
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        projectId: mockProjectId,
+        walletId: 'wallet-1',
+    };
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        project_id: mockProjectId,
+                        selected_model_ids: mockModelIds,
+                        iteration_count: 1,
+                        current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
+            'dialectic_stages': {
+                select: {
+                    data: [{ id: 'stage-1', slug: 'thesis', input_artifact_rules: { steps: [{}] } }],
+                    error: null
+                }
+            },
+            'dialectic_generation_jobs': {
+                insert: { data: [{ id: 'should-not-insert' }], error: null }
+            },
+        },
+    });
+
+    const result = await generateContributions(
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockPayload,
+        { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
+        {
+            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
+            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(1), error: null }),
+            getExtensionFromMimeType: () => 'txt',
+            logger,
+            randomUUID: () => 'uuid',
+            fileManager: {
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
+            },
+            deleteFromStorage: () => Promise.resolve({ error: null }),
+        },
+        // RED: missing/empty auth token
+        ''
+    );
+
+    // RED expectations: should fail and not insert
+    assertEquals(result.success, false);
+    const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertEquals(insertSpy?.callCount ?? 0, 0);
+});
+
+Deno.test("generateContributions - plan jobs carry payload.user_jwt equal to provided authToken", async () => {
+    const mockSessionId = "sess-auth";
+    const mockProjectId = "proj-auth";
+    const mockUserId = "user-auth";
+    const mockModelIds = ["model-A", "model-B"];
+    const mockJobIds = ["job-A", "job-B"];
+    let insertIdx = 0;
+
+    const mockPayload: GenerateContributionsPayload = {
+        sessionId: mockSessionId,
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        projectId: mockProjectId,
+        walletId: 'wallet-1',
+        continueUntilComplete: true,
+    };
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        project_id: mockProjectId,
+                        selected_model_ids: mockModelIds,
+                        iteration_count: 1,
+                        current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
+            'dialectic_stages': {
+                select: {
+                    data: [{ id: 'stage-1', slug: 'thesis', input_artifact_rules: { steps: [{}] } }],
+                    error: null
+                }
+            },
+            'dialectic_generation_jobs': {
+                insert: (_state: MockQueryBuilderState) => {
+                    const id = mockJobIds[insertIdx] || `job-${insertIdx}`;
+                    insertIdx++;
+                    return Promise.resolve({ data: [{ id }], error: null, count: 1, status: 201, statusText: 'Created' });
+                }
+            },
+        },
+    });
+
+    const providedJwt = 'jwt.token.here';
+
+    const result = await generateContributions(
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockPayload,
+        { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
+        {
+            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
+            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(1), error: null }),
+            getExtensionFromMimeType: () => 'txt',
+            logger,
+            randomUUID: () => 'uuid',
+            fileManager: {
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
+            },
+            deleteFromStorage: () => Promise.resolve({ error: null }),
+        },
+        providedJwt
+    );
+
+    assertEquals(result.success, true);
+
+    const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertExists(insertSpy);
+    assertEquals(insertSpy.callCount, mockModelIds.length);
+
+    for (let i = 0; i < insertSpy.callCount; i++) {
+        const insertArg = insertSpy.callsArgs[i][0];
+        if (!isPlanJobInsert(insertArg)) {
+            throw new Error(`insert payload shape mismatch at call ${i}`);
+        }
+        const payload = insertArg.payload;
+        const jwtDesc = Object.getOwnPropertyDescriptor(payload, 'user_jwt');
+        const jwtVal = jwtDesc ? jwtDesc.value : undefined;
+        assertEquals(typeof jwtVal === 'string' && jwtVal.length > 0, true);
+    assertEquals(jwtVal, providedJwt);
+    assertEquals(payload.job_type, 'plan');
+    }
+});
+
+Deno.test("should create jobs with an 'is_test_job' flag in the payload when specified", async () => {
+    const mockSessionId = "test-session-is-test-job";
+    const mockProjectId = "test-project-is-test-job";
+    const mockUserId = "test-user-is-test-job";
+    const mockModelId = "model-is-test-job";
+    const mockJobId = "new-job-id-is-test-job";
+
+    const mockPayload: GenerateContributionsPayload = {
+        sessionId: mockSessionId,
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        projectId: mockProjectId,
+        walletId: 'test-wallet-id',
+        is_test_job: true,
+    };
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        project_id: mockProjectId,
+                        selected_model_ids: [mockModelId],
+                        iteration_count: 1,
+                        current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
+            'dialectic_stages': {
+                select: {
+                    data: [{
+                        id: 'stage-1',
+                        slug: 'thesis',
+                        input_artifact_rules: { steps: [{}] },
+                        created_at: new Date().toISOString(),
+                        default_system_prompt_id: 'prompt-1',
+                        description: 'Test stage',
+                        display_name: 'Thesis',
+                        expected_output_artifacts: {},
+                    }],
+                    error: null
+                }
+            },
+            'dialectic_generation_jobs': {
+                insert: { data: [{ id: mockJobId }] }
+            },
+        },
+    });
+
+    try {
+        const result = await generateContributions(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockPayload,
+            { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
+            {
+                callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
+                downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(100), error: null }),
+                getExtensionFromMimeType: () => 'txt',
+                logger: logger,
+                randomUUID: () => '123',
+                fileManager: {
+                    uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId }, error: null }),
+                    assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
+                },
+                deleteFromStorage: () => Promise.resolve({ error: null }),
+            },
+            'jwt.token.here'
+        );
+
+        // Assertions for the main function result
+        assertEquals(result.success, true, "Function should return success: true");
+        assertExists(result.data, "Result should contain data");
+        assertEquals(result.data.job_ids, [mockJobId], "Returned data should contain the correct job_id in an array");
+
+        // Assert that the insert spy was called correctly
+        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+        assertExists(insertSpy, "Insert spy for dialectic_generation_jobs should exist");
+        assertEquals(insertSpy.callCount, 1, "Insert should be called exactly once");
+
+        // Assert the shape of the data passed to insert
+        const insertArgs = insertSpy.callsArgs[0][0];
+
+        if (isPlanJobInsert(insertArgs)) {
+            const payload = insertArgs.payload;
+            assertEquals(payload.is_test_job, true, "The job payload should contain is_test_job: true");
+        } else {
+            throw new Error(`insert was not called with an object of the expected shape. Got: ${JSON.stringify(insertArgs)}`);
+        }
+
+    } finally {
+        mockSupabase.clearAllStubs?.();
+    }
 });

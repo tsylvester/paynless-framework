@@ -104,6 +104,31 @@ export async function planComplexStage(
 ): Promise<DialecticJobRow[]> {
     //deps.logger.info(`[task_isolator] [planComplexStage] Planning step "${recipeStep.name}" for parent job ID: ${parentJob.id}`);
     
+    // Enforce presence of user_jwt on the parent payload (no healing, no fallback)
+    let parentJwt: string | undefined = undefined;
+    {
+        const desc = Object.getOwnPropertyDescriptor(parentJob.payload, 'user_jwt');
+        const potential = desc ? desc.value : undefined;
+        if (typeof potential === 'string' && potential.length > 0) {
+            parentJwt = potential;
+        }
+    }
+    if (!parentJwt) {
+        throw new Error('parent payload.user_jwt is required');
+    }
+
+    // Validate stageSlug correctness: must exist on payload and match row if present
+    {
+        const desc = Object.getOwnPropertyDescriptor(parentJob.payload, 'stageSlug');
+        const stageSlugValue = desc ? desc.value : undefined;
+        if (typeof stageSlugValue !== 'string') {
+            throw new Error('parent payload.stageSlug is required');
+        }
+        if (typeof parentJob.stage_slug === 'string' && parentJob.stage_slug !== stageSlugValue) {
+            throw new Error('parent row.stage_slug mismatch');
+        }
+    }
+
     // 1. Fetch source documents required for this specific step.
     const sourceDocuments = await findSourceDocuments(
         dbClient, 
@@ -139,11 +164,14 @@ export async function planComplexStage(
     if (estimatedTokens > maxTokens) {
         //deps.logger.info(`[task_isolator] Context for job ${parentJob.id} exceeds token limit (${estimatedTokens} > ${maxTokens}). Invoking RAG service.`);
         
+        if (!parentJob.payload.stageSlug) {
+            throw new Error('parent payload.stageSlug is required');
+        }
         const ragResult = await deps.ragService!.getContextForModel(
             sourceDocuments.map(doc => ({ id: doc.id, content: doc.content })),
             modelConfig,
             parentJob.session_id,
-            parentJob.stage_slug || ''
+            parentJob.payload.stageSlug
         );
 
         if (ragResult.error || !ragResult.context) {
@@ -223,7 +251,7 @@ export async function planComplexStage(
                 rag_summary_id: ragResource.id,
             },
             canonicalPathParams: cleanedParams,
-            user_jwt: authToken,
+            user_jwt: parentJwt,
         };
         childJobPayloads = [newPayload];
 
@@ -254,7 +282,7 @@ export async function planComplexStage(
 
             const payloadWithAuth: DialecticExecuteJobPayload = {
                 ...validatedPayload,
-                user_jwt: authToken,
+                user_jwt: parentJwt,
             };
 
             if (!isJson(payloadWithAuth)) {
@@ -262,12 +290,15 @@ export async function planComplexStage(
                 throw new Error('FATAL: Constructed child job payload is not a valid JSON object.');
             }
 
+            if (!parentJob.payload.stageSlug) {
+                throw new Error('parent payload.stageSlug is required');
+            }
             childJobsToInsert.push({
                 id: crypto.randomUUID(),
                 parent_job_id: parentJob.id,
                 session_id: parentJob.session_id,
                 user_id: parentJob.user_id,
-                stage_slug: parentJob.stage_slug,
+                stage_slug: parentJob.payload.stageSlug,
                 iteration_number: parentJob.iteration_number,
                 status: 'pending',
                 max_retries: parentJob.max_retries,

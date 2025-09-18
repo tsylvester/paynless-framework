@@ -87,6 +87,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
             total_steps: 1,
         },
         walletId: 'wallet-default',
+        user_jwt: 'parent-jwt-default',
     },
     attempt_count: 0,
     completed_at: null,
@@ -265,6 +266,7 @@ Deno.test('planPerSourceDocument Test Case A: The Failing Case (Proves the bug e
                 total_steps: 1,
             },
             walletId: 'wallet-default',
+            user_jwt: 'parent-jwt-default',
         },
         attempt_count: 0,
         completed_at: null,
@@ -320,6 +322,7 @@ Deno.test('planPerSourceDocument Test Case B: The Passing Case (Describes the co
                 total_steps: 1,
             },
             walletId: 'wallet-default',
+            user_jwt: 'parent-jwt-default',
         },
         attempt_count: 0,
         completed_at: null,
@@ -341,5 +344,67 @@ Deno.test('planPerSourceDocument Test Case B: The Passing Case (Describes the co
     childPayloads.forEach(child => {
         assertEquals(child.model_id, passingParentJob.payload.model_id, "Child job model_id must match the parent job's model_id");
     });
+});
+
+// ==============================================
+// user_jwt inheritance and enforcement
+// ==============================================
+
+Deno.test('planPerSourceDocument constructs child payloads with user_jwt inherited from parent payload', () => {
+    const parentWithJwt: typeof MOCK_PARENT_JOB = JSON.parse(JSON.stringify(MOCK_PARENT_JOB));
+    Object.defineProperty(parentWithJwt.payload, 'user_jwt', { value: 'parent.jwt.value', configurable: true, enumerable: true, writable: true });
+
+    const result = planPerSourceDocument(MOCK_SOURCE_DOCS, parentWithJwt, MOCK_RECIPE_STEP, 'param.jwt.should.be.ignored');
+
+    assertEquals(result.length, 2);
+    for (const payload of result) {
+        assertEquals(payload.user_jwt, 'parent.jwt.value', 'Child payload must inherit user_jwt from parent payload');
+    }
+});
+
+Deno.test('planPerSourceDocument throws when parent payload.user_jwt is missing or empty', () => {
+    const parentMissing: typeof MOCK_PARENT_JOB = JSON.parse(JSON.stringify(MOCK_PARENT_JOB));
+    // Ensure no user_jwt on payload
+    if (Object.prototype.hasOwnProperty.call(parentMissing.payload, 'user_jwt')) {
+        // deno-lint-ignore no-explicit-any
+        delete (parentMissing.payload as any).user_jwt;
+    }
+
+    let threwForMissing = false;
+    try {
+        planPerSourceDocument(MOCK_SOURCE_DOCS, parentMissing, MOCK_RECIPE_STEP, 'param.jwt');
+    } catch {
+        threwForMissing = true;
+    }
+    assert(threwForMissing, 'Expected an error when parent payload.user_jwt is missing');
+
+    const parentEmpty: typeof MOCK_PARENT_JOB = JSON.parse(JSON.stringify(MOCK_PARENT_JOB));
+    Object.defineProperty(parentEmpty.payload, 'user_jwt', { value: '', configurable: true, enumerable: true, writable: true });
+
+    let threwForEmpty = false;
+    try {
+        planPerSourceDocument(MOCK_SOURCE_DOCS, parentEmpty, MOCK_RECIPE_STEP, 'param.jwt');
+    } catch {
+        threwForEmpty = true;
+    }
+    assert(threwForEmpty, 'Expected an error when parent payload.user_jwt is empty');
+});
+
+// ==============================================
+// planner constructs child payloads with dynamic stage consistency
+// Assert payload.stageSlug equals the parent’s dynamic stage for every child
+// ==============================================
+Deno.test('planPerSourceDocument constructs child payloads with dynamic stage consistency (payload.stageSlug === parent.payload.stageSlug)', () => {
+	const expectedStage = 'parenthesis'; // use a non-thesis simple stage
+	const parent: typeof MOCK_PARENT_JOB = JSON.parse(JSON.stringify(MOCK_PARENT_JOB));
+	Object.defineProperty(parent, 'stage_slug', { value: expectedStage, configurable: true, enumerable: true, writable: true });
+	Object.defineProperty(parent.payload, 'stageSlug', { value: expectedStage, configurable: true, enumerable: true, writable: true });
+
+	const result = planPerSourceDocument(MOCK_SOURCE_DOCS, parent, { ...MOCK_RECIPE_STEP, output_type: expectedStage }, 'ignored.jwt');
+
+	assertEquals(result.length, MOCK_SOURCE_DOCS.length);
+	for (const child of result) {
+		assertEquals(child.stageSlug, expectedStage, 'Child payload.stageSlug must equal parent.payload.stageSlug');
+	}
 });
  

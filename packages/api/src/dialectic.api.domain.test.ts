@@ -261,8 +261,8 @@ describe('DialecticApiClient', () => {
         const endpoint = 'dialectic-service';
         const requestBody = { action: 'listDomains' };
         const mockDomains: DialecticDomain[] = [
-            { id: '1', name: 'Software Development', description: 'All about code', parent_domain_id: null },
-            { id: '2', name: 'Finance', description: 'All about money', parent_domain_id: null },
+            { id: '1', name: 'Software Development', description: 'All about code', parent_domain_id: null, is_enabled: true },
+            { id: '2', name: 'Finance', description: 'All about money', parent_domain_id: null, is_enabled: true },
         ];
 
         it('should call apiClient.post with the correct endpoint and body', async () => {
@@ -275,7 +275,7 @@ describe('DialecticApiClient', () => {
             await dialecticApiClient.listDomains();
 
             expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody, { isPublic: true });
         });
 
         it('should return the domains array on successful response', async () => {
