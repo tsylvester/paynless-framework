@@ -63,17 +63,35 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
                 whiteSpace: 'pre',
                 overflowX: 'auto',
                 maxWidth: '100%',
+                scrollbarWidth: 'none', // Firefox
+                msOverflowStyle: 'none', // IE/Edge
+                backgroundColor: 'hsl(var(--muted))',
+                border: 'none',
+                borderRadius: '0.375rem',
               };
               return (
-                <Prism
-                  style={oneDark} // Theme for syntax highlighting
-                  language={language}
-                  PreTag="div"
-                  customStyle={preStyle}
-                  {...(props as SyntaxHighlighterProps)}
-                >
-                  {String(children).replace(/\n$/, '')}
-                </Prism>
+                <div className="[&>div]:scrollbar-none [&>div]:[-webkit-scrollbar]:hidden">
+                  <Prism
+                    style={{
+                      ...oneDark,
+                      'pre[class*="language-"]': {
+                        ...oneDark['pre[class*="language-"]'],
+                        background: 'hsl(var(--muted))',
+                        border: 'none',
+                      },
+                      'code[class*="language-"]': {
+                        ...oneDark['code[class*="language-"]'],
+                        background: 'hsl(var(--muted))',
+                      }
+                    }}
+                    language={language}
+                    PreTag="div"
+                    customStyle={preStyle}
+                    {...(props as SyntaxHighlighterProps)}
+                  >
+                    {String(children).replace(/\n$/, '')}
+                  </Prism>
+                </div>
               );
             }
 

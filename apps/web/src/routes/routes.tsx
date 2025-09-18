@@ -101,6 +101,14 @@ const routes: RouteObject[] = [
         ),
       },
       {
+        path: 'chat/:chatId',
+        element: (
+          <ProtectedRoute>
+            <AiChatPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
         path: 'dashboard',
         element: (
           <ProtectedRoute>

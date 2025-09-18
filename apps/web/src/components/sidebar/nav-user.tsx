@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Badge } from "@/components/ui/badge"
+import { Badge } from "@/components/ui/badge";
 
 import {
 	BadgeCheck,
@@ -34,14 +34,15 @@ export function NavUser({
 
 	// const { isMobile } = useSidebar();
 	const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
-	const { 
-		// notifications, 
-		unreadCount, fetchNotifications } =
-		useNotificationStore((state) => ({
-			// notifications: state.notifications,
-			unreadCount: state.unreadCount,
-			fetchNotifications: state.fetchNotifications,
-		}));
+	const {
+		// notifications,
+		unreadCount,
+		fetchNotifications,
+	} = useNotificationStore((state) => ({
+		// notifications: state.notifications,
+		unreadCount: state.unreadCount,
+		fetchNotifications: state.fetchNotifications,
+	}));
 
 	const { logout } = useAuthStore((state) => ({
 		logout: state.logout,
@@ -49,7 +50,10 @@ export function NavUser({
 
 	useQuery({
 		queryKey: ["notifications"],
-		queryFn: () => fetchNotifications(),
+		queryFn: async () => {
+			const result = await fetchNotifications();
+			return result || [];
+		},
 	});
 
 	const handleOpenChange = useCallback((open: boolean) => {
@@ -66,16 +70,17 @@ export function NavUser({
 
 	return (
 		<div>
-			<div className={`flex items-center justify-center w-full ${isSwitcherOpen && "hidden"}`}>
+			<div
+				className={`flex items-center justify-center w-full ${isSwitcherOpen && "hidden"}`}
+			>
 				<Button
 					variant="ghost"
 					onClick={() => navigate("/notifications")}
 					className="p-2 rounded-lg text-textSecondary hover:bg-surface hover:text-textPrimary"
-					aria-label={
-						"Notifications"
-					}
+					aria-label={"Notifications"}
 				>
-					<Bell /><Badge className="ml-1 text-xs" >{unreadCount}</Badge>
+					<Bell />
+					<Badge className="ml-1 text-xs text-white">{unreadCount}</Badge>
 				</Button>
 
 				<Button
