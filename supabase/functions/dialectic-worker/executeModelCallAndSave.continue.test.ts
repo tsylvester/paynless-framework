@@ -846,9 +846,8 @@ Deno.test('executeModelCallAndSave - continuation uses gathered history and does
   const gatheredHistory: Messages[] = [
     { role: 'user', content: 'SEED: Original user prompt' },
     { role: 'assistant', content: 'First assistant reply' },
-    { role: 'user', content: '' }, // spacer to maintain alternation in strict mode
-    { role: 'assistant', content: 'Intermediate assistant chunk' },
     { role: 'user', content: 'Please continue.' },
+    { role: 'assistant', content: 'Intermediate assistant chunk' },
   ];
 
   const stageSlugGH = 'thesis';
@@ -869,12 +868,12 @@ Deno.test('executeModelCallAndSave - continuation uses gathered history and does
 
   // message should be the continuation prompt
   assertEquals(firstArg.message, 'Please continue.');
-  // messages should match gathered history exactly (no extra prepend)
+  
+  // messages should match the gathered history, which ends with the last assistant turn
   assertExists(firstArg.messages, 'messages should exist on ChatApiRequest');
-  assertEquals(firstArg.messages, gatheredHistory.map((m) => ({ role: m.role, content: m.content })));
-  // ensure exactly one trailing "Please continue." message
-  const continueCount = firstArg.messages.filter((m: { role: string; content: string }) => m.role === 'user' && m.content === 'Please continue.').length;
-  assertEquals(continueCount, 1);
+  
+  const expectedHistory = gatheredHistory.map((m) => ({ role: m.role, content: m.content }));
+  assertEquals(firstArg.messages, expectedHistory);
 
   clearAllStubs?.();
 });
@@ -1211,4 +1210,49 @@ Deno.test('executeModelCallAndSave - should continue when content contains conti
 
   // Assert
   assertEquals(continueJobSpy.calls.length, 1, 'continueJob should be called once when content signals continuation');
+});
+
+Deno.test('executeModelCallAndSave - does not inject spacer messages when history is already alternating', async () => {
+  // Arrange
+  const { client: dbClient } = setupMockClient({
+    'ai_providers': {
+      select: { data: [mockFullProviderData], error: null }
+    }
+  });
+
+  const deps = getMockDeps();
+  const callUnifiedAISpy = spyCallModel(deps);
+
+  const perfectlyAlternatingHistory: Messages[] = [
+    { role: 'user', content: 'U1' },
+    { role: 'assistant', content: 'A1' },
+    { role: 'user', content: 'U2' },
+    { role: 'assistant', content: 'A2' },
+  ];
+
+  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+    job: createMockJob(testPayload),
+    promptConstructionPayload: buildPromptPayload({
+      conversationHistory: perfectlyAlternatingHistory,
+      currentUserPrompt: 'This is the current prompt.',
+    }),
+  });
+
+  // Act
+  await executeModelCallAndSave(params);
+
+  // Assert
+  const firstArg = callUnifiedAISpy.calls[0].args[0];
+  assert(isChatApiRequest(firstArg), 'First argument to callUnifiedAIModel should be a ChatApiRequest');
+  
+  // Assert against the distinct properties of the ChatApiRequest
+  assertEquals(firstArg.message, 'This is the current prompt.', 'The current user prompt should be in the message property.');
+  
+  const sentMessages = firstArg.messages;
+  assertExists(sentMessages, 'messages should exist on ChatApiRequest');
+  
+  // The sent history should match the alternating history, without the current prompt.
+  const expectedMessages = perfectlyAlternatingHistory.map(m => ({ role: m.role, content: m.content }));
+  
+  assertEquals(sentMessages, expectedMessages, 'The message history sent to the model should not contain the current user prompt.');
 });

@@ -123,41 +123,12 @@ export async function executeModelCallAndSave(
         return text.replace(/[{}]/g, '');
     };
     const sanitizedCurrentUserPrompt = sanitizeMessage(currentUserPrompt) ?? '';
-    const initialAssembledMessages: Messages[] = [];
-    if (!isContinuationFlowInitial) {
-        initialAssembledMessages.push({ role: 'user', content: sanitizedCurrentUserPrompt });
-    }
-    conversationHistory.forEach(msg => {
-        if (msg.role !== 'function') {
-            initialAssembledMessages.push({ role: msg.role, content: msg.content });
-        }
-    });
-    // Enforce strict alternation (user/assistant) ignoring 'system' by inserting empty user spacers only when necessary
-    const enforceStrictTurnOrder = (
-        input: { role: 'system'|'user'|'assistant'; content: string }[],
-    ): { role: 'system'|'user'|'assistant'; content: string }[] => {
-        const output: { role: 'system'|'user'|'assistant'; content: string }[] = [];
-        let lastNonSystemRole: 'user' | 'assistant' | null = null;
-        for (const m of input) {
-            if (m.role === 'system') {
-                output.push(m);
-                continue;
-            }
-            if (lastNonSystemRole !== null && lastNonSystemRole === m.role) {
-                // Insert an empty user spacer to maintain alternation without affecting token counts
-                const spacer: { role: 'user'|'assistant'; content: string } = {
-                    role: lastNonSystemRole === 'assistant' ? 'user' : 'assistant',
-                    content: '',
-                };
-                // Only insert if it actually flips the role to alternate
-                output.push(spacer);
-                lastNonSystemRole = spacer.role;
-            }
-            output.push(m);
-            lastNonSystemRole = m.role;
-        }
-        return output;
-    };
+    
+    // The conversation history from the prompt assembler is the source of truth for the `messages` array.
+    // It must not be mutated.
+    const initialAssembledMessages: Messages[] = conversationHistory
+        .filter(msg => msg.role !== 'function');
+
     // Track the single source of truth for what we size and what we send
     let currentAssembledMessages: Messages[] = initialAssembledMessages;
     let currentResourceDocuments: ResourceDocuments = [...resourceDocuments];
@@ -166,7 +137,7 @@ export async function executeModelCallAndSave(
     const initialEffectiveMessages: { role: 'system'|'user'|'assistant'; content: string }[] = initialAssembledMessages
         .filter(isApiChatMessage)
         .filter((m): m is { role: 'system'|'user'|'assistant'; content: string } => m.content !== null);
-    const normalizedInitialMessages = enforceStrictTurnOrder(initialEffectiveMessages);
+    const normalizedInitialMessages = initialEffectiveMessages;
 
     const fullPayload: CountableChatPayload = {
         systemInstruction,
@@ -254,11 +225,9 @@ export async function executeModelCallAndSave(
     // Build a single ChatApiRequest instance early and keep it in sync; use it to drive both sizing and send
     let chatApiRequest: ChatApiRequest = {
         message: sanitizedCurrentUserPrompt,
-        messages: enforceStrictTurnOrder(
-            currentAssembledMessages
+        messages: currentAssembledMessages
                 .filter(isApiChatMessage)
                 .filter((m): m is { role: 'user' | 'assistant' | 'system', content: string } => m.content !== null),
-        ),
         providerId: providerDetails.id,
         promptId: '__none__',
         systemInstruction: systemInstruction,
@@ -432,7 +401,7 @@ export async function executeModelCallAndSave(
             if (!indexedErr && Array.isArray(indexedRows)) {
                 indexedIds = new Set(
                     indexedRows
-                        .map((r) => (r && typeof (r as Record<string, unknown>)['source_contribution_id'] === 'string' ? (r as Record<string, unknown>)['source_contribution_id'] as string : undefined))
+                        .map((r) => (r && typeof (r)['source_contribution_id'] === 'string' ? (r)['source_contribution_id'] : undefined))
                         .filter((v): v is string => typeof v === 'string'),
                 );
             }
@@ -504,11 +473,29 @@ export async function executeModelCallAndSave(
                 if (docIndex > -1) workingResourceDocs[docIndex].content = newContent;
             }
             
+            // Enforce strict user/assistant alternation after each compression
+            const enforcedHistory: Messages[] = [];
+            if (workingHistory.length > 0) {
+                enforcedHistory.push(workingHistory[0]);
+                for (let i = 1; i < workingHistory.length; i++) {
+                    const prevMsg = enforcedHistory[enforcedHistory.length - 1];
+                    const currentMsg = workingHistory[i];
+                    if (prevMsg.role === currentMsg.role) {
+                        if (currentMsg.role === 'assistant') {
+                            enforcedHistory.push({ role: 'user', content: 'Please continue.' });
+                        } else {
+                            enforcedHistory.push({ role: 'assistant', content: '' });
+                        }
+                    }
+                    enforcedHistory.push(currentMsg);
+                }
+            }
+            
             const loopAssembledMessages: Messages[] = [];
             if (!isContinuationFlowInitial) {
                 loopAssembledMessages.push({ role: 'user', content: currentUserPrompt });
             }
-            workingHistory.forEach(msg => {
+            enforcedHistory.forEach(msg => {
                 if (msg.role !== 'function') {
                     loopAssembledMessages.push({ role: msg.role, content: msg.content });
                 }
@@ -522,11 +509,9 @@ export async function executeModelCallAndSave(
             chatApiRequest = {
                 ...chatApiRequest,
                 message: sanitizedCurrentUserPrompt,
-                messages: enforceStrictTurnOrder(
-                    currentAssembledMessages
+                messages: currentAssembledMessages
                         .filter(isApiChatMessage)
                         .filter((m): m is { role: 'user' | 'assistant' | 'system', content: string } => m.content !== null),
-                ),
                 resourceDocuments: currentResourceDocuments.map((d) => ({ id: d.id, content: d.content })),
             };
             const loopPayload: CountableChatPayload = {
@@ -561,11 +546,9 @@ export async function executeModelCallAndSave(
         chatApiRequest = {
             ...chatApiRequest,
             message: sanitizedCurrentUserPrompt,
-            messages: enforceStrictTurnOrder(
-                currentAssembledMessages
+            messages: currentAssembledMessages
                     .filter(isApiChatMessage)
                     .filter((m): m is { role: 'user' | 'assistant' | 'system', content: string } => m.content !== null),
-            ),
             resourceDocuments: currentResourceDocuments.map((d) => ({ id: d.id, content: d.content })),
         };
         const finalPayloadAfterCompression: CountableChatPayload = {
