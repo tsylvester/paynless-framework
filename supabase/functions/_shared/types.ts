@@ -176,6 +176,7 @@ export interface ChatApiRequest {
   continue_until_complete?: boolean; // ADDED: Flag to enable response continuation
   isDialectic?: boolean; // ADDED: Flag to indicate a 'headless' dialectic job that should not be saved to the DB
   systemInstruction?: SystemInstruction;
+  stream?: boolean; // ADDED: Flag to indicate a streaming request
 }
 
 /**
