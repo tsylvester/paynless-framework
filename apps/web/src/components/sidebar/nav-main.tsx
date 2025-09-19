@@ -23,7 +23,7 @@ import { Link } from "react-router-dom";
 export function NavMain({
 	items,
 	hideLogo = false,
-	subtitle,
+	subtitle = "Platform",
 }: {
 	items: {
 		title: string;
@@ -49,7 +49,7 @@ export function NavMain({
 					/>
 				</Link>
 			)}
-			<SidebarGroupLabel>Platform</SidebarGroupLabel>
+			<SidebarGroupLabel>{subtitle}</SidebarGroupLabel>
 			<SidebarMenu>
 				{items.map((item) => (
 					<Collapsible
@@ -86,7 +86,9 @@ export function NavMain({
 									<CollapsibleContent>
 										<SidebarMenuSub>
 											{item.items?.map((subItem) => (
-												<SidebarMenuSubItem key={subItem.title}>
+												<SidebarMenuSubItem
+													key={`${item.title}-${subItem.url}`}
+												>
 													<SidebarMenuSubButton asChild>
 														<a href={subItem.url}>
 															<span>{subItem.title}</span>
