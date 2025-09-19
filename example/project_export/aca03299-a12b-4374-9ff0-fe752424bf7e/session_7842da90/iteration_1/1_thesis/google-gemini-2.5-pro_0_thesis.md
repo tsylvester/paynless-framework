@@ -1,0 +1,212 @@
+```json
+{
+  "documents": [
+    {
+      "key": "business_case",
+      "template_filename": "thesis_business_case.md",
+      "content_to_include": {
+        "market_opportunity": "The project targets the resilient and growing market for retro and nostalgia-based gaming. By creating a high-quality, browser-based version of a beloved classic, we eliminate the high friction of emulators (e.g., DOSBox) required to play the original. The low barrier to entry (no installation, no cost) makes it accessible to a wide audience, from original fans to new casual gamers. The 'same-seat' multiplayer feature directly serves the social, in-person gaming niche, which is a key differentiator from most online-only modern titles.",
+        "competitive_analysis": "Primary competitors include modern artillery games like 'ShellShock Live' (Steam) and the 'Worms' series. These are established, feature-rich titles but are not free and require installation on specific platforms. Our key advantages are instant accessibility via any modern web browser, zero cost, and nostalgic fidelity to the original 'Scorched Earth'. While numerous free, web-based clones exist, they often suffer from poor quality, incomplete features, and intrusive ads. This project will stand out through its completeness, polish, and modern quality-of-life features (e.g., themes, trajectory preview) without compromising the core classic experience.",
+        "user_problem_validation": "The core user problem is the lack of a convenient, feature-complete way to play 'Scorched Earth'. Fans of the original must navigate the technical hurdles of DOS emulation. Newer players interested in the genre are met with either paid titles or low-quality browser games. This project solves the problem by providing a 'one-click-to-play' definitive version that is faithful to the original while incorporating modern UX improvements, making it the most accessible and enjoyable way to experience the classic artillery game."
+      }
+    },
+    {
+      "key": "mvp_feature_spec_with_user_stories",
+      "template_filename": "thesis_mvp_feature_spec.md",
+      "content_to_include": [
+        {
+          "feature_name": "Game Setup & Configuration",
+          "user_stories": [
+            "As a player, I want to see a main menu to start a new game so that I can initiate a play session.",
+            "As a player, I want to select the number of human players (1-8) for a 'same-seat' multiplayer experience so my friends can join in.",
+            "As a player, I want to select the number of computer-controlled opponents so I can fill the game to a total of up to 8 players.",
+            "As a player, I want the game to assign random, anonymous names to all tanks so we can easily identify who is who.",
+            "As a player, I want to adjust a terrain complexity slider before starting so I can choose between gentle hills, standard mountains, or chaotic landscapes."
+          ]
+        },
+        {
+          "feature_name": "Core Gameplay Loop",
+          "user_stories": [
+            "As a player, I want my tank to be placed on a procedurally generated, destructible terrain so that every round is a unique challenge.",
+            "As a player, I want to take turns with all other players in a sequential order so that gameplay is fair and structured.",
+            "As a player, I want to control my turret's firing angle from -90 to +90 degrees so I can make precise shots over and around terrain.",
+            "As a player, I want to adjust my firing power with a slider so I can control the range of my projectile.",
+            "As a player, I want to fire my weapon and see the projectile travel according to physics (gravity, wind) so I get immediate feedback on my aim.",
+            "As a player, I want to see explosions and damage when a projectile hits a tank or the ground so the game feels impactful.",
+            "As a player, I want the terrain to be visibly and permanently destroyed by explosions so the battlefield evolves strategically."
+          ]
+        },
+        {
+          "feature_name": "Player Controls & Interface",
+          "user_stories": [
+            "As a player, I want a heads-up display (HUD) showing my health, fuel, money, and current weapon so I have all critical information available at a glance.",
+            "As a player, I want to use fuel to move my tank left or right during my turn so I can find a better tactical position.",
+            "As a player, I want my fuel to deplete faster when moving uphill than downhill so that movement is a strategic resource to manage.",
+            "As a player, I want the fire power slider to have a minimum power that clears my own blast radius and a maximum that can shoot across 3/4 of the map so that the power range feels useful and balanced.",
+            "As a player, I want the projectile to originate from my tank's turret so that aiming is intuitive and visually consistent."
+          ]
+        },
+        {
+          "feature_name": "Weapons & Economy",
+          "user_stories": [
+            "As a player, I want to access an in-game shop at any time during my turn via a dropdown or button so I can purchase items whenever I have enough money.",
+            "As a player, I want to be able to purchase and use the complete set of weapons, defenses, and accessories as described in the original Scorched Earth manual, so I can experience the full strategic depth of the game.",
+            "As a player, I want to select from my inventory of purchased weapons before each shot so I can use the right tool for the job."
+          ]
+        },
+        {
+          "feature_name": "Modern Enhancements & Game State",
+          "user_stories": [
+            "As a player, I want to toggle a trajectory preview on or off so I can see the calculated flight path of my shot before firing for easier aiming.",
+            "As a player, I want to be able to switch between visual themes (light, dark, vaporwave, cyberpunk, original) so I can customize the game's aesthetic.",
+            "As a player, I want an in-game restart button so I can immediately start a new game with the same players and settings, but with a new terrain map.",
+            "As a player, I want the game to be structured as a best-of-three-rounds match so there is a clear overall winner.",
+            "As a player, I want the round to conclude when only one tank remains (or when all human players are eliminated) so there is a clear round winner."
+          ]
+        },
+        {
+          "feature_name": "AI Opponent",
+          "user_stories": [
+            "As a player, I want to compete against AI opponents that can intelligently aim, fire, and use different weapons to provide a challenging single-player or mixed-player experience."
+          ]
+        }
+      ]
+    },
+    {
+      "key": "high_level_technical_approach_overview",
+      "template_filename": "thesis_technical_approach_overview.md",
+      "content_to_include": {
+        "architecture": "A client-side only Single Page```json
+{
+  "documents": [
+    {
+      "key": "business_case",
+      "template_filename": "thesis_business_case.md",
+      "content_to_include": {
+        "market_opportunity": "The project targets the resilient and growing market for retro and nostalgia-based gaming. By creating a high-quality, browser-based version of a beloved classic, we eliminate the high friction of emulators (e.g., DOSBox) required to play the original. The low barrier to entry (no installation, no cost) makes it accessible to a wide audience, from original fans to new casual gamers. The 'same-seat' multiplayer feature directly serves the social, in-person gaming niche, which is a key differentiator from most online-only modern titles.",
+        "competitive_analysis": "Primary competitors include modern artillery games like 'ShellShock Live' (Steam) and the 'Worms' series. These are established, feature-rich titles but are not free and require installation on specific platforms. Our key advantages are instant accessibility via any modern web browser, zero cost, and nostalgic fidelity to the original 'Scorched Earth'. While numerous free, web-based clones exist, they often suffer from poor quality, incomplete features, and intrusive ads. This project will stand out through its completeness, polish, and modern quality-of-life features (e.g., themes, trajectory preview) without compromising the core classic experience.",
+        "user_problem_validation": "The core user problem is the lack of a convenient, feature-complete way to play 'Scorched Earth'. Fans of the original must navigate the technical hurdles of DOS emulation. Newer players interested in the genre are met with either paid titles or low-quality browser games. This project solves the problem by providing a 'one-click-to-play' definitive version that is faithful to the original while incorporating modern UX improvements, making it the most accessible and enjoyable way to experience the classic artillery game."
+      }
+    },
+    {
+      "key": "mvp_feature_spec_with_user_stories",
+      "template_filename": "thesis_mvp_feature_spec.md",
+      "content_to_include": [
+        {
+          "feature_name": "Game Setup & Configuration",
+          "user_stories": [
+            "As a player, I want to see a main menu to start a new game so that I can initiate a play session.",
+            "As a player, I want to select the number of human players (1-8) for a 'same-seat' multiplayer experience so my friends can join in.",
+            "As a player, I want to select the number of computer-controlled opponents so I can fill the game to a total of up to 8 players.",
+            "As a player, I want the game to assign random, anonymous names to all tanks so we can easily identify who is who.",
+            "As a player, I want to adjust a terrain complexity slider before starting so I can choose between gentle hills, standard mountains, or chaotic landscapes."
+          ]
+        },
+        {
+          "feature_name": "Core Gameplay Loop",
+          "user_stories": [
+            "As a player, I want my tank to be placed on a procedurally generated, destructible terrain so that every round is a unique challenge.",
+            "As a player, I want to take turns with all other players in a sequential order so that gameplay is fair and structured.",
+            "As a player, I want to control my turret's firing angle from -90 to +90 degrees so I can make precise shots over and around terrain.",
+            "As a player, I want to adjust my firing power with a slider so I can control the range of my projectile.",
+            "As a player, I want to fire my weapon and see the projectile travel according to physics (gravity, wind) so I get immediate feedback on my aim.",
+            "As a player, I want to see explosions and damage when a projectile hits a tank or the ground so the game feels impactful.",
+            "As a player, I want the terrain to be visibly and permanently destroyed by explosions so the battlefield evolves strategically."
+          ]
+        },
+        {
+          "feature_name": "Player Controls & Interface",
+          "user_stories": [
+            "As a player, I want a heads-up display (HUD) showing my health, fuel, money, and current weapon so I have all critical information available at a glance.",
+            "As a player, I want to use fuel to move my tank left or right during my turn so I can find a better tactical position.",
+            "As a player, I want my fuel to deplete faster when moving uphill than downhill so that movement is a strategic resource to manage.",
+            "As a player, I want the fire power slider to have a minimum power that clears my own blast radius and a maximum that can shoot across 3/4 of the map so that the power range feels useful and balanced.",
+            "As a player, I want the projectile to originate from my tank's turret so that aiming is intuitive and visually consistent."
+          ]
+        },
+        {
+          "feature_name": "Weapons & Economy",
+          "user_stories": [
+            "As a player, I want to access an in-game shop at any time during my turn via a dropdown or button so I can purchase items whenever I have enough money.",
+            "As a player, I want to be able to purchase and use the complete set of weapons, defenses, and accessories as described in the original Scorched Earth manual, so I can experience the full strategic depth of the game.",
+            "As a player, I want to select from my inventory of purchased weapons before each shot so I can use the right tool for the job."
+          ]
+        },
+        {
+          "feature_name": "Modern Enhancements & Game State",
+          "user_stories": [
+            "As a player, I want to toggle a trajectory preview on or off so I can see the calculated flight path of my shot before firing for easier aiming.",
+            "As a player, I want to be able to switch between visual themes (light, dark, vaporwave, cyberpunk, original) so I can customize the game's aesthetic.",
+            "As a player, I want an in-game restart button so I can immediately start a new game with the same players and settings, but with a new terrain map.",
+            "As a player, I want the game to be structured as a best-of-three-rounds match so there is a clear overall winner.",
+            "As a player, I want the round to conclude when only one tank remains (or when all human players are eliminated) so there is a clear round winner."
+          ]
+        },
+        {
+          "feature_name": "AI Opponent",
+          "user_stories": [
+            "As a player, I want to compete against AI opponents that can intelligently aim, fire, and use different weapons to provide a challenging single-player or mixed-player experience."
+          ]
+        }
+      ]
+    },
+    {
+      "key": "high_level_technical_approach_overview",
+      "template_filename": "thesis_technical_approach_overview.md",
+      "content_to_include": {
+        "architecture": "A client-side only Single Page Application (SPA) architecture using React and TypeScript. This aligns perfectly with the requirements for offline play, no user accounts, and simple deployment. The core game logic will be separated from the rendering layer to ensure maintainability. We will use a state management library (like Redux Toolkit or Zustand) to manage the complex game state (players, terrain, weapons, turn order). The game view itself will be rendered on an HTML5 `<canvas>` element for performance, leveraging a library like Pixi.js or Konva for hardware-accelerated 2D graphics, which is ideal for handling dynamic terrain destruction and many particle effects.",
+        "components": "Key technical components will include: 1) **Game Engine**: Manages the main game loop (`requestAnimationFrame`), turn sequencing, and calls to other systems. 2) **Physics Engine**: A custom, simple physics module to handle projectile motion (parabolic arcs influenced by power, angle, wind, and gravity) and collision detection. 3) **Terrain System**: A module for procedurally generating the terrain (e.g., using simplex noise) and, crucially, modifying its data structure in real-time to reflect destruction from explosions. This will likely be represented as a heightmap array. 4) **Rendering Engine**: Responsible for drawing the terrain, tanks, projectiles, explosions, and UI onto the canvas. 5) **AI Controller**: A module that calculates shots for computer-controlled players, with varying difficulty levels influencing accuracy and weapon choice. 6) **State Manager**: The single source of truth for the application state.",
+        "data": "All game data will be managed in-memory on the client. The main data structure will be a `GameState` object containing: an array of `Player` objects (with properties like `id`, `name`, `isAI`, `tankPosition`, `health`, `fuel`, `money`, `inventory`), a `Terrain` object (e.g., `heightMap: number[]`), a `GameSettings` object (`wind: {direction, strength}`, `gravity`), and the current turn information (`currentPlayerIndex`, `roundNumber`). This entire state is ephemeral and resets on page reload or via the in-game restart button.",
+        "deployment": "The application will be built into a set of static files (HTML, CSS, JS). Deployment is therefore extremely simple and cost-effective. Options include: Vercel, Netlify, or GitHub Pages. A Continuous Integration/Continuous Deployment (CI/CD) pipeline will be set up to automatically build and deploy the application to a hosting provider on every push to the main branch.",
+        "sequencing": "1. **Milestone 1 (Core Engine):** Build the canvas renderer, procedural terrain generation, and the core physics for firing a single projectile type. 2. **Milestone 2 (Gameplay Loop):** Implement turn-based logic, player controls for angle/power, basic tank sprites, and dynamic terrain destruction. 3. **Milestone 3 (Features & Weapons):** Implement player movement with fuel consumption, the in-game shop, and the complete arsenal of weapons and defensive items. 4. **Milestone 4 (Polish & AI):** Develop the AI opponent logic. Implement all modern features: UI/HUD, trajectory viewer, visual themes, and game state controls (restart). 5. **Milestone 5 (Launch):** Final bug fixing, performance optimization, and deployment."
+      }
+    },
+    {
+      "key": "success_metrics",
+      "template_filename": "thesis_success_metrics.md",
+      "content_to_include": [
+        "**Player Engagement - Average Session Duration:** Track how long users play the game per session. Longer sessions indicate a more engaging and enjoyable experience.",
+        "**Replayability - Games Played Per Session:** Measure the number of times a user clicks the 'Restart' button or starts a new game from the menu within a single session. A high number suggests strong replay value.",
+        "**Feature Adoption - Theme & Trajectory Preview Usage:** Monitor the percentage of sessions where players switch themes or enable the trajectory preview. This validates the value of these modern additions.",
+        "**Qualitative Feedback - Community Sentiment:** Actively monitor social media, gaming forums, and code repository issues for mentions. Positive sentiment, feature requests, and community buzz serve as key indicators of success for a free, passion-project-style game."
+      ]
+    }
+  ],
+  "system_materials": {
+    "progress_update": "This is the complete response. All documents (Business Case, MVP Feature Spec, Technical Approach, Success Metrics) have been fully generated.",
+    "stage_rationale": "The chosen strategy—a fully client-side React/TypeScript SPA with canvas rendering—is the common, standard, and superior approach for this project. It directly addresses all user constraints: no logins, no server dependency for gameplay, and ease of deployment. This architecture minimizes complexity and operational costs while maximizing performance for the required in-browser graphics and physics. It provides a robust foundation for implementing all specified game mechanics and modern features.",
+    "diversity_rubric": {
+      "if_comparable": "present 1-2 viable options with concise trade-offs and a clear recommendation",
+      "prefer_standards_when": "meet constraints, well-understood by team, minimize risk/time-to-market",
+      "propose_alternates_when": "materially improve performance, security, maintainability, or total cost under constraints"
+    },
+    "executive_summary": "This response establishes a comprehensive baseline for building a browser-based version of 'Scorched Earth'. It includes a Business Case validating the market need, a detailed MVP Feature Spec with User Stories translating requirements into actionable items, a High-Level Technical Approach outlining a modern, client-side SPA architecture, and Success Metrics to measure project outcomes. The plan ensures a faithful recreation of the original game's features, augmented with modern enhancements as requested, all within a technically sound and feasible framework.",
+    "quality_standards": [
+      "security-first",
+      "maintainable",
+      "scalable",
+      "performance-aware"
+    ],
+    "validation_checkpoint": [
+      "requirements addressed",
+      "best practices applied",
+      "feasible & compliant",
+      "references integrated"
+    ],
+    "input_artifacts_summary": "The user requested a comprehensive plan to build a browser-based, client-side JavaScript/React/TypeScript version of the classic DOS game 'Scorched Earth'. Key requirements include: single-player vs. AI, same-seat multiplayer for up to 8 total players, full implementation of all original weapons and modes, and several modern features like an in-game shop, terrain complexity slider, trajectory preview, and visual themes. The game must be anonymous, with no logins, and function offline once loaded."
+  },
+  "files_to_generate": [
+    {
+      "from_document_key": "mvp_feature_spec_with_user_stories",
+      "template_filename": "thesis_product_requirements_document.md"
+    },
+    {
+      "from_document_key": "high_level_technical_approach_overview",
+      "template_filename": "thesis_implementation_plan_proposal.md"
+    }
+  ],
+  "continuation_needed": false,
+  "stop_reason": "complete",
+  "resume_cursor": null
+}
+```
