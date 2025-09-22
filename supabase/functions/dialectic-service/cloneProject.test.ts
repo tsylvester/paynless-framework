@@ -88,6 +88,8 @@ describe("cloneProject", () => {
                         size_bytes: context.sizeBytes,
                         mime_type: context.mimeType,
                         document_relationships: meta.document_relationships ?? null,
+                        is_header: false,
+                        source_prompt_resource_id: null,
                     }; // conforms to dialectic_contributions.Row
                     return Promise.resolve({ record: contributionRecord, error: null });
                 } else {
@@ -103,6 +105,11 @@ describe("cloneProject", () => {
                         resource_description: context.description ? context.description : null,
                         created_at: nowIso,
                         updated_at: nowIso,
+                        iteration_number: null,
+                        resource_type: null,
+                        session_id: null,
+                        source_contribution_id: null,
+                        stage_slug: null,
                     }; // conforms to dialectic_project_resources.Row
                     return Promise.resolve({ record: resourceRecord, error: null });
                 }
@@ -396,6 +403,8 @@ describe("cloneProject", () => {
                 error: "", citations: null, processing_time_ms: 1000, prompt_template_id_used: null, target_contribution_id: null,
                 tokens_used_input: 100, tokens_used_output: 200, edit_version: 1, is_latest_edit: true, original_model_contribution_id: null,
                 document_relationships: null,
+                is_header: false,
+                source_prompt_resource_id: null,
             },
             {
                 id: "contrib2-uuid", session_id: originalSessionId1, user_id: cloningUserId,
@@ -410,6 +419,8 @@ describe("cloneProject", () => {
                 error: "", citations: null, processing_time_ms: 800, prompt_template_id_used: null, target_contribution_id: "contrib1-uuid",
                 tokens_used_input: 50, tokens_used_output: 150, edit_version: 2, is_latest_edit: true, original_model_contribution_id: "some_prior_edit_id_for_contrib2",
                 document_relationships: null,
+                is_header: false,
+                source_prompt_resource_id: null,
             }
         ];
         
@@ -622,6 +633,8 @@ describe("cloneProject", () => {
                 error: null, citations: null, processing_time_ms: 900, prompt_template_id_used: null, target_contribution_id: null,
                 tokens_used_input: 10, tokens_used_output: 20, edit_version: 1, is_latest_edit: true, original_model_contribution_id: null,
                 document_relationships: { thesis: contrib1Id },
+                is_header: false,
+                source_prompt_resource_id: null,
             },
             {
                 id: contrib2Id, session_id: originalSessionId, user_id: cloningUserId,
@@ -636,6 +649,8 @@ describe("cloneProject", () => {
                 error: null, citations: null, processing_time_ms: 700, prompt_template_id_used: null, target_contribution_id: contrib1Id,
                 tokens_used_input: 15, tokens_used_output: 25, edit_version: 1, is_latest_edit: true, original_model_contribution_id: null,
                 document_relationships: { thesis: contrib1Id, antithesis: contrib2Id },
+                is_header: false,
+                source_prompt_resource_id: null,
             },
         ];
 

@@ -2,8 +2,9 @@
 import {
     GenerateContributionsPayload,
     GenerateContributionsDeps,
+    JobType,
   } from "./dialectic.interface.ts";
-import type { Database, Json } from "../types_db.ts";
+import type { Database, Json, TablesInsert } from "../types_db.ts";
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { logger } from "../_shared/logger.ts";
 import { User } from "npm:@supabase/supabase-js@2";
@@ -110,37 +111,42 @@ export async function generateContributions(
         const jobIds: string[] = [];
         for (const modelId of selectedModelIds) {
             // 3. Create a formal 'plan' payload for each job
+            const jobType: JobType = 'PLAN';
             const jobPayload: Json = {
                 ...payload,
                 model_id: modelId,
                 user_jwt: authToken,
-                job_type: 'plan',
+                job_type: jobType,
                 step_info: {
                     current_step: 1,
                     total_steps: totalSteps,
                     status: 'pending',
                 }
             };
-            
-            // Explicitly preserve the is_test_job flag to prevent accidental override
-            if (payload.is_test_job) {
-                jobPayload.is_test_job = true;
-            }
-            
+
+
             console.log(`[generateContributions] Final jobPayload for model ${modelId}:`, JSON.stringify(jobPayload, null, 2));
 
 
+            const jobToInsert: TablesInsert<'dialectic_generation_jobs'> = {
+                session_id: sessionId,
+                user_id: user.id,
+                stage_slug: stageSlug,
+                iteration_number: iterationNumber,
+                payload: jobPayload,
+                status: 'pending',
+                max_retries: maxRetries,
+                job_type: jobType, // Add the mandatory top-level job_type
+            };
+
+            if (payload.is_test_job === true) {
+                jobToInsert.is_test_job = true;
+                delete jobPayload.is_test_job;
+            }
+
             const { data: job, error: insertError } = await dbClient
                 .from('dialectic_generation_jobs')
-                .insert({
-                    session_id: sessionId,
-                    user_id: user.id,
-                    stage_slug: stageSlug,
-                    iteration_number: iterationNumber,
-                    payload: jobPayload,
-                    status: 'pending',
-                    max_retries: maxRetries,
-                })
+                .insert(jobToInsert)
                 .select('id')
                 .single();
         

@@ -5,10 +5,10 @@ import { planAllToOne } from './planAllToOne.ts';
 
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
-    { id: 'doc-1', content: '', citations: [], error: null, mime_type: 'text/plain', original_model_contribution_id: null, raw_response_storage_path: null, tokens_used_input: 0, tokens_used_output: 0, processing_time_ms: 0, contribution_type: 'reduced_synthesis', size_bytes: 0, target_contribution_id: 't', seed_prompt_url: null },
-    { id: 'doc-2', content: '', citations: [], error: null, mime_type: 'text/plain', original_model_contribution_id: null, raw_response_storage_path: null, tokens_used_input: 0, tokens_used_output: 0, processing_time_ms: 0, contribution_type: 'reduced_synthesis', size_bytes: 0, target_contribution_id: 't', seed_prompt_url: null },
+    { id: 'doc-1', content: '', citations: [], error: null, mime_type: 'text/plain', original_model_contribution_id: null, raw_response_storage_path: null, tokens_used_input: 0, tokens_used_output: 0, processing_time_ms: 0, contribution_type: 'reduced_synthesis', size_bytes: 0, target_contribution_id: 't', seed_prompt_url: null, is_header: false, source_prompt_resource_id: null },
+    { id: 'doc-2', content: '', citations: [], error: null, mime_type: 'text/plain', original_model_contribution_id: null, raw_response_storage_path: null, tokens_used_input: 0, tokens_used_output: 0, processing_time_ms: 0, contribution_type: 'reduced_synthesis', size_bytes: 0, target_contribution_id: 't', seed_prompt_url: null, is_header: false, source_prompt_resource_id: null },
     { id: 'doc-3', content: '', citations: [], error: null, mime_type: 'text/plain', original_model_contribution_id: null, raw_response_storage_path: null, tokens_used_input: 0, tokens_used_output: 0, processing_time_ms: 0, contribution_type: 'reduced_synthesis', size_bytes: 0, target_contribution_id: 't', seed_prompt_url: null },
-].map(d => ({ ...d, document_relationships: null, attempt_count: 0, contribution_type: 'reduced_synthesis', session_id: 's1', user_id: 'u1', stage: 'synthesis', iteration_number: 1, edit_version: 1, is_latest_edit: true, created_at: 't', updated_at: 't', file_name: 'f', storage_bucket: 'b', storage_path: 'p', model_id: 'm', model_name: 'M', prompt_template_id_used: 'p', target_contribution_id: 't' }));
+].map(d => ({ ...d, document_relationships: null, attempt_count: 0, contribution_type: 'reduced_synthesis', session_id: 's1', user_id: 'u1', stage: 'synthesis', iteration_number: 1, edit_version: 1, is_latest_edit: true, created_at: 't', updated_at: 't', file_name: 'f', storage_bucket: 'b', storage_path: 'p', model_id: 'm', model_name: 'M', prompt_template_id_used: 'p', target_contribution_id: 't', is_header: false, source_prompt_resource_id: null }));
 
 const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
     id: 'parent-job-123',
@@ -17,7 +17,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
     stage_slug: 'synthesis',
     iteration_number: 1,
     payload: {
-        job_type: 'plan',
+        job_type: 'PLAN',
         projectId: 'project-xyz',
         sessionId: 'session-abc',
         stageSlug: 'synthesis',
@@ -26,7 +26,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
         step_info: { current_step: 1, total_steps: 3 },
         walletId: 'wallet-default',
     },
-    attempt_count: 0, completed_at: null, created_at: '', error_details: null, max_retries: 3, parent_job_id: null, prerequisite_job_id: null, results: null, started_at: null, status: 'pending', target_contribution_id: null
+    attempt_count: 0, completed_at: null, created_at: '', error_details: null, max_retries: 3, parent_job_id: null, prerequisite_job_id: null, results: null, started_at: null, status: 'pending', target_contribution_id: null, is_test_job: false, job_type: 'PLAN'
 };
 
 const MOCK_RECIPE_STEP: DialecticRecipeStep = {

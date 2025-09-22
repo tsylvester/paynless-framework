@@ -179,6 +179,9 @@ Deno.test('submitStageResponses', async (t) => {
             iteration_number: pathContext.iteration!,
             session_id: pathContext.sessionId!,
             stage_slug: pathContext.stageSlug!,
+            is_header: false,
+            source_prompt_resource_id: null,
+            target_contribution_id: null,
           },
           error: null,
         });
@@ -504,6 +507,9 @@ Deno.test('submitStageResponses', async (t) => {
             iteration_number: pathContext.iteration!,
             session_id: pathContext.sessionId!,
             stage_slug: pathContext.stageSlug!,
+            is_header: false,
+            source_prompt_resource_id: null,
+            target_contribution_id: null,
           },
           error: null,
         });
@@ -624,6 +630,9 @@ Deno.test('submitStageResponses', async (t) => {
             iteration_number: pathContext.iteration!,
             session_id: pathContext.sessionId!,
             stage_slug: pathContext.stageSlug!,
+            is_header: false,
+            source_prompt_resource_id: null,
+            target_contribution_id: null,
           },
           error: null,
         });
@@ -843,6 +852,14 @@ Deno.test('submitStageResponses', async (t) => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       resource_description: null,
+      is_header: false,
+      source_prompt_resource_id: null,
+      target_contribution_id: null,
+      stage_slug: mockParalysisStage.slug,
+      iteration_number: 1,
+      resource_type: null,
+      source_contribution_id: null,
+      session_id: testSessionId,
     }, null);
 
     const mockPayload: SubmitStageResponsesPayload = {
@@ -939,7 +956,14 @@ Deno.test('submitStageResponses', async (t) => {
       size_bytes: 100,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      resource_description: null
+      resource_description: null,
+      is_header: false,
+      source_prompt_resource_id: null,
+      target_contribution_id: null,
+      stage_slug: mockParalysisStage.slug,
+      iteration_number: 1,
+      resource_type: null,
+      source_contribution_id: null,
     }
     mockFileManager.uploadAndRegisterFile = spy(async (context: UploadContext): Promise<FileManagerResponse> => {
       if (context.pathContext.fileType === 'user_feedback') return { record: { ...mockRecord, storage_path: 'path/to/feedback.md' }, error: null };
@@ -1096,6 +1120,14 @@ Deno.test('submitStageResponses', async (t) => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             resource_description: null,
+            is_header: false,
+            source_prompt_resource_id: null,
+            target_contribution_id: null,
+            stage_slug: mockThesisStage.slug,
+            iteration_number: 1,
+            resource_type: null,
+            source_contribution_id: null,
+            session_id: testSessionId,
           }, 
           error: null 
         });
@@ -1157,7 +1189,14 @@ Deno.test('submitStageResponses', async (t) => {
           size_bytes: 123,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          resource_description: null
+          resource_description: null,
+          is_header: false,
+          source_prompt_resource_id: null,
+          target_contribution_id: null,
+          stage_slug: mockParalysisStage.slug,
+          iteration_number: 1,
+          resource_type: null,
+          source_contribution_id: null,
       };
       return Promise.resolve({ record: record, error: null });
     });

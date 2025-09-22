@@ -35,6 +35,8 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         mime_type: 'text/plain', 
         target_contribution_id: null,
         document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
     },
     { 
         id: 'doc-2', 
@@ -66,6 +68,8 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         mime_type: 'text/plain', 
         target_contribution_id: null,
         document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
     },
 ];
 
@@ -76,7 +80,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
     stage_slug: 'antithesis',
     iteration_number: 1,
     payload: {
-        job_type: 'plan',
+        job_type: 'PLAN',
         projectId: 'project-xyz',
         sessionId: 'session-abc',
         stageSlug: 'antithesis',
@@ -100,6 +104,8 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
     started_at: null,
     status: 'pending',
     target_contribution_id: null,
+    is_test_job: false,
+    job_type: 'PLAN',
 };
 
 const MOCK_RECIPE_STEP: DialecticRecipeStep = {
@@ -188,6 +194,8 @@ Deno.test('should correctly plan jobs for antithesis stage', () => {
             seed_prompt_url: null,
             updated_at: new Date().toISOString(),
             user_id: 'user-def',
+            is_header: false,
+            source_prompt_resource_id: null,
         },
         {
             id: 'thesis-doc-2',
@@ -219,6 +227,8 @@ Deno.test('should correctly plan jobs for antithesis stage', () => {
             seed_prompt_url: null,
             updated_at: new Date().toISOString(),
             user_id: 'user-def',
+            is_header: false,
+            source_prompt_resource_id: null,
         },
     ];
 
@@ -255,7 +265,7 @@ Deno.test('planPerSourceDocument Test Case A: The Failing Case (Proves the bug e
         stage_slug: 'antithesis',
         iteration_number: 1,
         payload: {
-            job_type: 'plan',
+            job_type: 'PLAN',
             projectId: 'project-xyz',
             sessionId: 'session-abc',
             stageSlug: 'antithesis',
@@ -279,6 +289,8 @@ Deno.test('planPerSourceDocument Test Case A: The Failing Case (Proves the bug e
         started_at: null,
         status: 'pending',
         target_contribution_id: null,
+        is_test_job: false,
+        job_type: 'PLAN',
     };
 
     const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, failingParentJob, MOCK_RECIPE_STEP, 'user-jwt-123');
@@ -311,7 +323,7 @@ Deno.test('planPerSourceDocument Test Case B: The Passing Case (Describes the co
         stage_slug: 'antithesis',
         iteration_number: 1,
         payload: {
-            job_type: 'plan',
+            job_type: 'PLAN',
             projectId: 'project-xyz',
             sessionId: 'session-abc',
             stageSlug: 'antithesis',
@@ -335,6 +347,8 @@ Deno.test('planPerSourceDocument Test Case B: The Passing Case (Describes the co
         started_at: null,
         status: 'pending',
         target_contribution_id: null,
+        is_test_job: false,
+        job_type: 'PLAN',
     };
 
     const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, passingParentJob, MOCK_RECIPE_STEP, 'user-jwt-123');

@@ -82,6 +82,11 @@ describe("exportProject", () => {
             resource_description: JSON.stringify({type: "general_resource"}),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: null,
+            session_id: mockProjectId,
+            source_contribution_id: null,
+            stage_slug: 'thesis',
         };
         resource1ContentBuffer = await new Blob(["Resource 1 content"]).arrayBuffer();
         session1Data = {
@@ -126,6 +131,8 @@ describe("exportProject", () => {
             updated_at: new Date().toISOString(),
             seed_prompt_url: null,
             document_relationships: null,
+            is_header: false,
+            source_prompt_resource_id: null,
         };
         contribution1ContentBuffer = await new Blob(["Contribution 1 main content"]).arrayBuffer();
         contribution1RawJsonContentBuffer = await new Blob([JSON.stringify({ raw: "response" })]).arrayBuffer();
@@ -153,6 +160,14 @@ describe("exportProject", () => {
             resource_description: JSON.stringify({type: "project_export_zip"}),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            is_header: false,
+            source_prompt_resource_id: null,
+            target_contribution_id: null,
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            resource_type: null,
+            source_contribution_id: null,
+            session_id: mockProjectId,
         };
 
         mockSupabaseSetup = createMockSupabaseClient(mockUser.id, {
@@ -450,6 +465,11 @@ describe("exportProject", () => {
             resource_description: JSON.stringify({type: "another_resource"}),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            resource_type: null,
+            session_id: mockProjectId,
+            source_contribution_id: null,
         };
 
         const localMockSupabaseSetup = createMockSupabaseClient(mockUser.id, {
@@ -700,6 +720,11 @@ describe("exportProject", () => {
             id: "res-zip",
             project_id: mockProjectId,
             user_id: mockUser.id,
+            iteration_number: 1,
+            resource_type: null,
+            session_id: mockProjectId,
+            source_contribution_id: null,
+            stage_slug: 'thesis',
             file_name: "archive.zip",
             mime_type: "application/zip",
             size_bytes: 5000,

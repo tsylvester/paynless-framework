@@ -36,6 +36,8 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         size_bytes: 1000, 
         mime_type: 'text/plain',
         document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
     },
     { 
         id: 'thesis-2', 
@@ -67,6 +69,8 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         size_bytes: 1500, 
         mime_type: 'text/plain',
         document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
     },
     { 
         id: 'antithesis-1a', 
@@ -98,6 +102,8 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         size_bytes: 2000, 
         mime_type: 'text/plain',
         document_relationships: { source_group: 'thesis-1' },
+        is_header: false,
+        source_prompt_resource_id: null,
     },
     { 
         id: 'antithesis-1b', 
@@ -129,6 +135,8 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         size_bytes: 2500, 
         mime_type: 'text/plain',
         document_relationships: { source_group: 'thesis-1' },
+        is_header: false,
+        source_prompt_resource_id: null,
     },
     { 
         id: 'antithesis-2a', 
@@ -160,6 +168,8 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         size_bytes: 3000, 
         mime_type: 'text/plain',
         document_relationships: { source_group: 'thesis-2' },
+        is_header: false,
+        source_prompt_resource_id: null,
     },
 ];
 
@@ -170,7 +180,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
     stage_slug: 'synthesis',
     iteration_number: 1,
     payload: {
-        job_type: 'plan',
+        job_type: 'PLAN',
         projectId: 'project-xyz',
         sessionId: 'session-abc',
         stageSlug: 'synthesis',
@@ -193,6 +203,8 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
     started_at: null,
     status: 'pending',
     target_contribution_id: null,
+    is_test_job: false,
+    job_type: 'PLAN',
 };
 
 const MOCK_RECIPE_STEP: DialecticRecipeStep = {
@@ -320,7 +332,7 @@ Deno.test('planPairwiseByOrigin Test Case A: The Failing Case (Proves the bug ex
         stage_slug: 'synthesis',
         iteration_number: 1,
         payload: {
-            job_type: 'plan',
+            job_type: 'PLAN',
             projectId: 'project-xyz',
             sessionId: 'session-abc',
             stageSlug: 'synthesis',
@@ -343,6 +355,8 @@ Deno.test('planPairwiseByOrigin Test Case A: The Failing Case (Proves the bug ex
         started_at: null,
         status: 'pending',
         target_contribution_id: null,
+        is_test_job: false,
+        job_type: 'PLAN',
     };
 
     const childPayloads = planPairwiseByOrigin(MOCK_SOURCE_DOCS, failingParentJob, MOCK_RECIPE_STEP, 'user-jwt-123');
@@ -369,7 +383,7 @@ Deno.test('planPairwiseByOrigin Test Case B: The Passing Case (Describes the cor
         stage_slug: 'synthesis',
         iteration_number: 1,
         payload: {
-            job_type: 'plan',
+            job_type: 'PLAN',
             projectId: 'project-xyz',
             sessionId: 'session-abc',
             stageSlug: 'synthesis',
@@ -392,6 +406,8 @@ Deno.test('planPairwiseByOrigin Test Case B: The Passing Case (Describes the cor
         started_at: null,
         status: 'pending',
         target_contribution_id: null,
+        is_test_job: false,
+        job_type: 'PLAN',
     };
 
     const childPayloads = planPairwiseByOrigin(MOCK_SOURCE_DOCS, passingParentJob, MOCK_RECIPE_STEP, 'user-jwt-123');

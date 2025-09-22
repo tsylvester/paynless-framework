@@ -6,19 +6,19 @@ import { planPerSourceGroup } from './planPerSourceGroup.ts';
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
     // The original thesis documents, which act as anchors
-    { id: 'thesis-1', content: '', contribution_type: 'thesis', document_relationships: null },
-    { id: 'thesis-2', content: '', contribution_type: 'thesis', document_relationships: null },
+    { id: 'thesis-1', content: '', contribution_type: 'thesis', document_relationships: null, is_header: false, source_prompt_resource_id: null },
+    { id: 'thesis-2', content: '', contribution_type: 'thesis', document_relationships: null, is_header: false, source_prompt_resource_id: null },
     // Group 1: Related to original thesis 'thesis-1'
-    { id: 'chunk-1a', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-1' } },
-    { id: 'chunk-1b', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-1' } },
-    { id: 'chunk-1c', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-1' } },
+    { id: 'chunk-1a', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-1' }, is_header: false, source_prompt_resource_id: null },
+    { id: 'chunk-1b', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-1' }, is_header: false, source_prompt_resource_id: null },
+    { id: 'chunk-1c', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-1' }, is_header: false, source_prompt_resource_id: null },
     // Group 2: Related to original thesis 'thesis-2'
-    { id: 'chunk-2a', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-2' } },
-    { id: 'chunk-2b', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-2' } },
+    { id: 'chunk-2a', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-2' }, is_header: false, source_prompt_resource_id: null },
+    { id: 'chunk-2b', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-2' }, is_header: false, source_prompt_resource_id: null },
     // A document with a null source_group, which should be ignored
-    { id: 'chunk-null', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: null } },
+    { id: 'chunk-null', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: null }, is_header: false, source_prompt_resource_id: null },
     // A document with no relationships object, which should be ignored
-    { id: 'chunk-no-rel', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: null },
+    { id: 'chunk-no-rel', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: null, is_header: false, source_prompt_resource_id: null },
 ].map(d => ({
     ...d,
     citations: [],
@@ -57,7 +57,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
     stage_slug: 'synthesis',
     iteration_number: 1,
     payload: {
-        job_type: 'plan',
+        job_type: 'PLAN',
         projectId: 'project-xyz',
         sessionId: 'session-abc',
         stageSlug: 'synthesis',
@@ -65,8 +65,18 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
         model_id: 'model-ghi',
         step_info: { current_step: 2, total_steps: 3 },
         walletId: 'wallet-default',
+        is_test_job: false,
     },
-    attempt_count: 0, completed_at: null, created_at: '', error_details: null, max_retries: 3, parent_job_id: null, prerequisite_job_id: null, results: null, started_at: null, status: 'pending', target_contribution_id: null
+    attempt_count: 0, 
+    completed_at: null, 
+    created_at: '', 
+    error_details: null, 
+    max_retries: 3, 
+    parent_job_id: null, 
+    prerequisite_job_id: null, 
+    results: null, 
+    started_at: null, 
+    status: 'pending', target_contribution_id: null, is_test_job: false, job_type: 'PLAN'
 };
 
 const MOCK_RECIPE_STEP: DialecticRecipeStep = {

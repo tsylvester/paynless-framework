@@ -4,70 +4,9 @@ import { generateContributions } from "./generateContribution.ts";
 import { type GenerateContributionsPayload, type GenerateContributionsDeps } from "./dialectic.interface.ts";
 import type { Database, Json } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
+import { isJobInsert, isPlanJobInsert } from "../_shared/utils/type_guards.ts";
 import { createMockSupabaseClient, type MockQueryBuilderState } from "../_shared/supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-
-type JobInsert = {
-    payload: {
-        model_id: string;
-        selectedModelIds?: string[];
-        [key: string]: unknown;
-    };
-    [key: string]: unknown;
-};
-
-// A more specific type guard for the job insert payload with the new recipe-aware fields.
-type PlanJobInsert = JobInsert & {
-    payload: {
-        job_type: 'plan';
-        step_info: {
-            current_step: number;
-            total_steps: number;
-            status: string;
-        }
-    }
-}
-
-// Type guard for our specific insert payload, written without any type casting.
-function isJobInsert(item: unknown): item is JobInsert {
-    if (typeof item !== 'object' || item === null) {
-        return false;
-    }
-
-    const payloadDescriptor = Object.getOwnPropertyDescriptor(item, 'payload');
-    if (!payloadDescriptor) return false;
-
-    const payloadValue = payloadDescriptor.value;
-    if (typeof payloadValue !== 'object' || payloadValue === null) return false;
-
-    const modelIdDescriptor = Object.getOwnPropertyDescriptor(payloadValue, 'model_id');
-    if (!modelIdDescriptor) return false;
-
-    const modelIdValue = modelIdDescriptor.value;
-    if (typeof modelIdValue !== 'string') return false;
-
-    return true;
-}
-
-function isPlanJobInsert(item: unknown): item is PlanJobInsert {
-    if (!isJobInsert(item)) return false;
-
-    const payload = item.payload;
-
-    if (typeof payload !== 'object' || payload === null) return false;
-
-    if (!('job_type' in payload) || payload.job_type !== 'plan') return false;
-
-    if (!('step_info' in payload) || typeof payload.step_info !== 'object' || payload.step_info === null) return false;
-
-    const stepInfo = payload.step_info;
-    if (!('current_step' in stepInfo) || typeof stepInfo.current_step !== 'number') return false;
-    if (!('total_steps' in stepInfo) || typeof stepInfo.total_steps !== 'number') return false;
-    if (!('status' in stepInfo) || typeof stepInfo.status !== 'string') return false;
-
-    return true;
-}
-
 
 Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jobs for multiple models", async () => {
     const localLoggerInfo = spy(logger, 'info');
@@ -139,7 +78,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
                 logger: logger,
                 randomUUID: () => '123',
                 fileManager: {
-                    uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId }, error: null }),
+                    uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                     assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
                 },
                 deleteFromStorage: () => Promise.resolve({ error: null }),
@@ -161,8 +100,9 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
         const firstInsertCallArgs = insertSpy.callsArgs[0][0];
         if (isPlanJobInsert(firstInsertCallArgs)) {
             const firstInsertPayload = firstInsertCallArgs.payload;
+            assertEquals(firstInsertCallArgs.is_test_job, undefined);
             assertEquals(firstInsertPayload.model_id, mockModelIds[0]);
-            assertEquals(firstInsertPayload.job_type, 'plan');
+            assertEquals(firstInsertPayload.job_type, 'PLAN');
             assertEquals(firstInsertPayload.step_info.total_steps, 1);
         } else {
             throw new Error(`First insert call did not have the expected payload shape. Got: ${JSON.stringify(firstInsertCallArgs)}`);
@@ -171,6 +111,8 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
         // Assert the shape of the data passed to the second insert call
         const secondInsertCallArgs = insertSpy.callsArgs[1][0];
         if (isPlanJobInsert(secondInsertCallArgs)) {
+            assertEquals(secondInsertCallArgs.is_test_job, undefined);
+            assertEquals(secondInsertCallArgs.job_type, 'PLAN');
             const secondInsertPayload = secondInsertCallArgs.payload;
             assertEquals(secondInsertPayload.model_id, mockModelIds[1]);
         } else {
@@ -248,7 +190,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
                 logger: logger,
                 randomUUID: () => '123',
                 fileManager: {
-                    uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId }, error: null }),
+                    uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                     assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
                 },
                 deleteFromStorage: () => Promise.resolve({ error: null }),
@@ -274,10 +216,11 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
                 session_id: mockSessionId,
                 user_id: mockUserId,
                 stage_slug: 'thesis',
-                status: 'pending'
+                status: 'pending',
+                job_type: 'PLAN',
             });
             assertEquals(insertArgs.payload.model_id, mockModelId);
-            assertEquals(insertArgs.payload.job_type, 'plan');
+            assertEquals(insertArgs.payload.job_type, 'PLAN');
             assertEquals(insertArgs.payload.step_info.current_step, 1);
             assertEquals(insertArgs.payload.step_info.total_steps, 3);
         } else {
@@ -331,7 +274,7 @@ Deno.test("generateContributions - Failure Path: Fails if stage recipe lookup fa
             logger,
             randomUUID: () => 'mock-uuid',
             fileManager: {
-                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123' }, error: null }),
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123', iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
@@ -405,7 +348,7 @@ Deno.test("generateContributions - Failure Path: Fails to enqueue a job", async 
       randomUUID: () => 'mock-uuid',
       deleteFromStorage: () => Promise.resolve({ data: [], error: null }),
       fileManager: {
-        uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId }, error: null }),
+        uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
         assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
       },
     };
@@ -452,7 +395,7 @@ Deno.test("generateContributions - Validation: Fails if stageSlug is missing", a
             logger: logger,
             randomUUID: () => '123',
             fileManager: {
-                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123' }, error: null }),
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123', iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
@@ -487,7 +430,7 @@ Deno.test("generateContributions - Validation: Fails if sessionId is missing", a
             logger: logger,
             randomUUID: () => '123',
             fileManager: {
-                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123' }, error: null }),
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123', iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
@@ -523,7 +466,7 @@ Deno.test("generateContributions - Validation: Fails if userId is missing", asyn
             logger: logger,
             randomUUID: () => '123',
             fileManager: {
-                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123' }, error: null }),
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123', iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
@@ -574,7 +517,7 @@ Deno.test("generateContributions - Validation: Fails if selectedModelIds is empt
             logger: logger,
             randomUUID: () => '123',
             fileManager: {
-                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123' }, error: null }),
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123', iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
@@ -642,7 +585,7 @@ Deno.test("generateContributions - Validation: Fails if walletId is missing (man
             logger,
             randomUUID: () => 'uuid',
             fileManager: {
-                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'file', created_at: new Date().toISOString(), file_name: 'name', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: 'user-123' }, error: null }),
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'file', created_at: new Date().toISOString(), file_name: 'name', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: 'user-123', iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
@@ -714,7 +657,7 @@ Deno.test("generateContributions - Fails when authToken is missing and does not 
             logger,
             randomUUID: () => 'uuid',
             fileManager: {
-                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId }, error: null }),
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
@@ -788,7 +731,7 @@ Deno.test("generateContributions - plan jobs carry payload.user_jwt equal to pro
             logger,
             randomUUID: () => 'uuid',
             fileManager: {
-                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId }, error: null }),
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
@@ -807,16 +750,18 @@ Deno.test("generateContributions - plan jobs carry payload.user_jwt equal to pro
         if (!isPlanJobInsert(insertArg)) {
             throw new Error(`insert payload shape mismatch at call ${i}`);
         }
+        assertEquals(insertArg.is_test_job, undefined);
         const payload = insertArg.payload;
         const jwtDesc = Object.getOwnPropertyDescriptor(payload, 'user_jwt');
         const jwtVal = jwtDesc ? jwtDesc.value : undefined;
         assertEquals(typeof jwtVal === 'string' && jwtVal.length > 0, true);
-    assertEquals(jwtVal, providedJwt);
-    assertEquals(payload.job_type, 'plan');
+        assertEquals(jwtVal, providedJwt);
+        assertEquals(payload.job_type, 'PLAN');
+        assertEquals(insertArg.job_type, 'PLAN');
     }
 });
 
-Deno.test("should create jobs with an 'is_test_job' flag in the payload when specified", async () => {
+Deno.test("should create jobs with a top-level 'is_test_job' flag when specified", async () => {
     const mockSessionId = "test-session-is-test-job";
     const mockProjectId = "test-project-is-test-job";
     const mockUserId = "test-user-is-test-job";
@@ -878,7 +823,7 @@ Deno.test("should create jobs with an 'is_test_job' flag in the payload when spe
                 logger: logger,
                 randomUUID: () => '123',
                 fileManager: {
-                    uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId }, error: null }),
+                    uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                     assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
                 },
                 deleteFromStorage: () => Promise.resolve({ error: null }),
@@ -900,8 +845,15 @@ Deno.test("should create jobs with an 'is_test_job' flag in the payload when spe
         const insertArgs = insertSpy.callsArgs[0][0];
 
         if (isPlanJobInsert(insertArgs)) {
+            // Assert the top-level property
+            assertEquals(insertArgs.is_test_job, true, "The top-level is_test_job flag should be true");
+            assertEquals(insertArgs.job_type, 'PLAN');
+            
+            // Assert the payload property is gone
             const payload = insertArgs.payload;
-            assertEquals(payload.is_test_job, true, "The job payload should contain is_test_job: true");
+            assertEquals(Object.prototype.hasOwnProperty.call(payload, 'is_test_job'), false, "The job payload should NOT contain an is_test_job property");
+            assertEquals(payload.job_type, 'PLAN');
+
         } else {
             throw new Error(`insert was not called with an object of the expected shape. Got: ${JSON.stringify(insertArgs)}`);
         }

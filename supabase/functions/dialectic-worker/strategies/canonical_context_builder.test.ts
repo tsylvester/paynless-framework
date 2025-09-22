@@ -34,7 +34,9 @@ const mockSourceDocument1: SourceDocument = {
     tokens_used_output: 0,
     model_id: '',
     updated_at: '',
-}
+    is_header: false,
+    source_prompt_resource_id: null,
+    }
 
 const mockSourceDocument2: SourceDocument = {   
     model_name: 'b-model',
@@ -66,6 +68,8 @@ const mockSourceDocument2: SourceDocument = {
     tokens_used_output: 0,
     model_id: '',
     updated_at: '',
+    is_header: false,
+    source_prompt_resource_id: null,
 }
 
 const mockSourceDocument3: SourceDocument = {
@@ -98,6 +102,8 @@ const mockSourceDocument3: SourceDocument = {
     tokens_used_output: 0,
     model_id: '',
     updated_at: '',
+    is_header: false,
+    source_prompt_resource_id: null,
 }
 
 const mockSourceDocumentNoModelName: SourceDocument = {
@@ -130,6 +136,8 @@ const mockSourceDocumentNoModelName: SourceDocument = {
     tokens_used_output: 0,
     model_id: '',
     updated_at: '',
+    is_header: false,
+    source_prompt_resource_id: null,
 }
 
 const mockAntithesisDocument: SourceDocument = {

@@ -130,7 +130,20 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       });
 
       // Configure FileManager to return a new contribution row if called
-      fm.setUploadAndRegisterFileResponse({ ...originalRow, id: newEditId, user_id: testUserId, edit_version: 2, is_latest_edit: true, original_model_contribution_id: originalContributionId, target_contribution_id: originalContributionId, document_relationships: null }, null);
+      fm.setUploadAndRegisterFileResponse({ 
+        ...originalRow, 
+        id: newEditId, 
+        user_id: testUserId, 
+        edit_version: 2, 
+        is_latest_edit: true, 
+        original_model_contribution_id: originalContributionId, 
+        target_contribution_id: originalContributionId, 
+        document_relationships: null, is_header: false, source_prompt_resource_id: null,
+        stage_slug: stage.slug,
+        iteration_number: iterationNumber,
+        resource_type: null,
+        source_contribution_id: null,
+      }, null);
 
       // Call function directly (unit). Note: function currently lacks DI for FileManager; this test will be RED until refactor.
       const { data: { user } } = await mockSupabaseSetup.client.auth.getUser();
@@ -370,7 +383,34 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
         },
       });
 
-      fm.setUploadAndRegisterFileResponse({ id: 'new-id-mapped', session_id: sessionId, user_id: testUserIdLocal, stage: stage.id, iteration_number: 1, model_id: 'mid', model_name: 'opus', prompt_template_id_used: null, seed_prompt_url: `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/seed_prompt.md`, edit_version: 2, is_latest_edit: true, original_model_contribution_id: originalContributionId, raw_response_storage_path: null, target_contribution_id: originalContributionId, tokens_used_input: null, tokens_used_output: null, processing_time_ms: null, error: null, citations: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), contribution_type: 'thesis', file_name: 'opus_0_thesis.md', storage_bucket: 'dialectic_contributions_content', storage_path: origPath, size_bytes: 1, mime_type: 'text/markdown', document_relationships: null }, null);
+      fm.setUploadAndRegisterFileResponse({ 
+        id: 'new-id-mapped', 
+        session_id: sessionId, 
+        user_id: testUserIdLocal, 
+        stage: stage.id, 
+        iteration_number: 1, 
+        model_id: 'mid', 
+        model_name: 'opus', 
+        prompt_template_id_used: null, 
+        seed_prompt_url: `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/seed_prompt.md`, 
+        edit_version: 2, 
+        is_latest_edit: true, 
+        original_model_contribution_id: originalContributionId, 
+        raw_response_storage_path: null, 
+        target_contribution_id: originalContributionId, 
+        tokens_used_input: null, 
+        tokens_used_output: null, 
+        processing_time_ms: null, 
+        error: null, citations: null, 
+        created_at: new Date().toISOString(), 
+        updated_at: new Date().toISOString(), 
+        contribution_type: 'thesis', 
+        file_name: 'opus_0_thesis.md', 
+        storage_bucket: 'dialectic_contributions_content', 
+        storage_path: origPath, size_bytes: 1, 
+        mime_type: 'text/markdown', document_relationships: null, 
+        is_header: false, source_prompt_resource_id: null, 
+        stage_slug: stage.slug, resource_type: null, source_contribution_id: null }, null);
 
       const { data: { user } } = await mockSupabaseSetup.client.auth.getUser();
       const deps: SaveContributionEditDeps = {

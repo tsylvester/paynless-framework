@@ -54,6 +54,13 @@ Deno.test("startSession - TDD RED: Prove Flaw in startSession", async () => {
         project_id: mockProjectId,
         session_id: mockNewSessionId,
         resource_description: 'Seed prompt',
+        is_header: false,
+        source_prompt_resource_id: null,
+        target_contribution_id: null,
+        stage_slug: mockInitialStageSlug,
+        iteration_number: 1,
+        resource_type: null,
+        source_contribution_id: null,
     }, null);
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
@@ -183,6 +190,13 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
         project_id: mockProjectId,
         session_id: mockNewSessionId,
         resource_description: 'Seed prompt',
+        is_header: false,
+        source_prompt_resource_id: null,
+        target_contribution_id: null,
+        stage_slug: mockInitialStageSlug,
+        iteration_number: 1,
+        resource_type: null,
+        source_contribution_id: null,
     }, null);
 
     // --- End of Mocking Setup ---
@@ -325,6 +339,13 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
         project_id: mockProjectId,
         session_id: mockNewSessionId,
         resource_description: 'Seed prompt',
+        is_header: false,
+        source_prompt_resource_id: null,
+        target_contribution_id: null,
+        stage_slug: mockInitialStageSlug,
+        iteration_number: 1,
+        resource_type: null,
+        source_contribution_id: null,
     }, null);
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
@@ -480,6 +501,13 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
         project_id: mockProjectId,
         session_id: mockNewSessionId,
         resource_description: 'Seed prompt',
+        is_header: false,
+        source_prompt_resource_id: null,
+        target_contribution_id: null,
+        stage_slug: mockInitialStageSlug,
+        iteration_number: 1,
+        resource_type: null,
+        source_contribution_id: null,
     }, null);
     
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
@@ -621,6 +649,13 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
         project_id: mockProjectId,
         session_id: mockNewSessionId,
         resource_description: 'Seed prompt',
+        is_header: false,
+        source_prompt_resource_id: null,
+        target_contribution_id: null,
+        stage_slug: mockInitialStageSlug,
+        iteration_number: 1,
+        resource_type: null,
+        source_contribution_id: null,
     }, null);
 
     const dummyConfig: AiModelExtendedConfig = {

@@ -68,6 +68,8 @@ const mockJob: DialecticJobRow = {
   started_at: null,
   target_contribution_id: null,
   prerequisite_job_id: null,
+  is_test_job: false,
+  job_type: 'PLAN',
 };
 
 const mockSessionData: DialecticSession = {
@@ -120,6 +122,8 @@ const mockContribution: DialecticContributionRow = {
     updated_at: new Date().toISOString(),
     user_id: 'user-789',
     document_relationships: null,
+    is_header: false,
+    source_prompt_resource_id: null,
 };
 
 const mockNotificationService: NotificationServiceType = {

@@ -42,6 +42,8 @@ import {
     isApiChatMessage,
     isFinishReason,
     isContinueReason,
+    isJobInsert,
+    isPlanJobInsert,
 } from './type_guards.ts';
 import type { DialecticContributionRow, DialecticJobRow, FailedAttemptError } from '../../dialectic-service/dialectic.interface.ts';
 import type { AiModelExtendedConfig, TokenUsage, ChatInsert, ChatApiRequest, FinishReason } from '../types.ts';
@@ -526,7 +528,9 @@ Deno.test('Type Guard: isDialecticContribution', async (t) => {
             seed_prompt_url: null,
             size_bytes: 123,
             updated_at: new Date().toISOString(),
-            document_relationships: null
+            document_relationships: null,
+            is_header: false,
+            source_prompt_resource_id: 'prompt-resource-id-1'
         };
         assert(isDialecticContribution(contribution));
     });
@@ -560,18 +564,22 @@ Deno.test('Type Guard: isDialecticContribution', async (t) => {
             seed_prompt_url: null,
             size_bytes: 456,
             updated_at: new Date().toISOString(),
-            document_relationships: null
+            document_relationships: null,
+            is_header: true,
+            source_prompt_resource_id: null
         };
         assert(isDialecticContribution(contribution));
     });
 
-    await t.step('should return false for an object missing a required field (session_id)', () => {
+    await t.step('should return false for an object missing a required field (is_header)', () => {
         const invalidContribution = {
             id: 'c3',
             created_at: new Date().toISOString(),
+            session_id: 's1',
             stage: 'thesis',
             iteration_number: 1,
-            model_id: 'm1'
+            model_id: 'm1',
+            source_prompt_resource_id: 'prompt-resource-id-1'
         };
         assert(!isDialecticContribution(invalidContribution));
     });
@@ -877,6 +885,18 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
         };
         assert(!isDialecticJobPayload(payload));
     });
+
+    await t.step('should return false when is_test_job is present', () => {
+        const payload: Json = {
+            sessionId: 'test-session',
+            projectId: 'test-project',
+            model_id: 'model-1',
+            stageSlug: 'thesis',
+            iterationNumber: 1,
+            is_test_job: true,
+        };
+        assert(!isDialecticJobPayload(payload));
+    });
 });
 
 Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
@@ -900,6 +920,8 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
                 parent_job_id: null,
                 target_contribution_id: null,
                 prerequisite_job_id: null,
+                is_test_job: false,
+                job_type: 'PLAN',
             },
             {
                 id: 'job-2',
@@ -919,6 +941,8 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
                 parent_job_id: 'parent-job-1',
                 target_contribution_id: null,
                 prerequisite_job_id: null,
+                is_test_job: false,
+                job_type: 'EXECUTE',
             },
         ];
         assert(isDialecticJobRowArray(jobs));
@@ -1183,6 +1207,8 @@ Deno.test('Type Guard: isDialecticJobRow', async (t) => {
             parent_job_id: null,
             target_contribution_id: null,
             prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'PLAN',
         };
         assert(isDialecticJobRow(job));
     });
@@ -1195,6 +1221,56 @@ Deno.test('Type Guard: isDialecticJobRow', async (t) => {
             stage_slug: 'thesis',
             iteration_number: 1,
             payload: {},
+            is_test_job: false,
+            job_type: 'PLAN',
+        };
+        assert(!isDialecticJobRow(job));
+    });
+
+    await t.step('should return false if job_type is missing', () => {
+        const job = {
+            id: 'j-missing-type',
+            session_id: 's1',
+            user_id: 'u1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            payload: { model_id: 'm1', projectId: 'p1', sessionId: 's1' },
+            status: 'pending',
+            attempt_count: 0,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: null,
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: null,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+        };
+        assert(!isDialecticJobRow(job));
+    });
+
+    await t.step('should return false if is_test_job is missing', () => {
+        const job = {
+            id: 'j-missing-test-flag',
+            session_id: 's1',
+            user_id: 'u1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            payload: { model_id: 'm1', projectId: 'p1', sessionId: 's1' },
+            status: 'pending',
+            attempt_count: 0,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: null,
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: null,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            job_type: 'PLAN',
         };
         assert(!isDialecticJobRow(job));
     });
@@ -1208,6 +1284,8 @@ Deno.test('Type Guard: isDialecticJobRow', async (t) => {
             iteration_number: 1,
             payload: 'a string',
             status: 'pending',
+            is_test_job: true,
+            job_type: 'PLAN',
         };
         assert(!isDialecticJobRow(job));
     });
@@ -2023,5 +2101,155 @@ Deno.test('Type Guard: isFinishReason and isContinueReason', async (t) => {
         for (const r of contFalse) {
             assert(!isContinueReason(r));
         }
+    });
+});
+
+Deno.test('Type Guard: isJobInsert', async (t) => {
+    const baseInsert = {
+        session_id: 's1',
+        user_id: 'u1',
+        stage_slug: 'thesis',
+        iteration_number: 1,
+        payload: { model_id: 'm1' },
+        is_test_job: true,
+    };
+
+    await t.step('should return true for a valid job insert object with job_type PLAN', () => {
+        const insert = { ...baseInsert, job_type: 'PLAN' };
+        assert(isJobInsert(insert));
+    });
+
+    await t.step('should return true for a valid job insert object with job_type EXECUTE', () => {
+        const insert = { ...baseInsert, job_type: 'EXECUTE' };
+        assert(isJobInsert(insert));
+    });
+
+    await t.step('should return true for a valid job insert object with job_type RENDER', () => {
+        const insert = { ...baseInsert, job_type: 'RENDER' };
+        assert(isJobInsert(insert));
+    });
+
+    await t.step('should return false if job_type is missing', () => {
+        const insert = {
+            session_id: 's1',
+            user_id: 'u1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            payload: { model_id: 'm1' },
+            is_test_job: true,
+        };
+        assert(!isJobInsert(insert));
+    });
+
+    await t.step('should return false if payload is missing model_id', () => {
+        const insert = {
+            session_id: 's1',
+            user_id: 'u1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            payload: {},
+            is_test_job: false,
+            job_type: 'PLAN',
+        };
+        assert(!isJobInsert(insert));
+    });
+
+    await t.step('should return true if is_test_job is missing, as it is optional', () => {
+        const insert = {
+            session_id: 's1',
+            user_id: 'u1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            payload: { model_id: 'm1' },
+            job_type: 'PLAN',
+        };
+        assert(isJobInsert(insert), "isJobInsert should return true when optional is_test_job is omitted");
+    });
+});
+
+Deno.test('Type Guard: isPlanJobInsert', async (t) => {
+    await t.step('should return true for a valid plan job insert object', () => {
+        const insert = {
+            session_id: 's1',
+            user_id: 'u1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            payload: {
+                job_type: 'PLAN',
+                model_id: 'm1',
+                step_info: { current_step: 1, total_steps: 1, status: 'pending' },
+            },
+            job_type: 'PLAN',
+            is_test_job: false,
+        };
+        assert(isPlanJobInsert(insert));
+    });
+
+    await t.step('should return true for a valid plan job insert object where is_test_job is undefined', () => {
+        const insert = {
+            session_id: 's1',
+            user_id: 'u1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            payload: {
+                job_type: 'PLAN',
+                model_id: 'm1',
+                step_info: { current_step: 1, total_steps: 1, status: 'pending' },
+            },
+            job_type: 'PLAN',
+            is_test_job: undefined,
+        };
+        assert(isPlanJobInsert(insert));
+    });
+
+    await t.step('should return false if payload is missing job_type', () => {
+        const insert = {
+            session_id: 's1',
+            user_id: 'u1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            payload: {
+                // job_type: 'plan', // This is missing
+                model_id: 'm1',
+                step_info: { current_step: 1, total_steps: 1, status: 'pending' },
+            },
+            job_type: 'PLAN',
+            is_test_job: false,
+        };
+        assert(!isPlanJobInsert(insert));
+    });
+
+    await t.step('should return false if payload job_type is not PLAN', () => {
+        const insert = {
+            session_id: 's1',
+            user_id: 'u1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            payload: {
+                job_type: 'plan', // lowercase, should fail
+                model_id: 'm1',
+                step_info: { current_step: 1, total_steps: 1, status: 'pending' },
+            },
+            job_type: 'PLAN',
+            is_test_job: false,
+        };
+        assert(!isPlanJobInsert(insert));
+    });
+
+    await t.step('should return false if top-level job_type is not PLAN', () => {
+        const insert = {
+            session_id: 's1',
+            user_id: 'u1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            payload: {
+                job_type: 'PLAN',
+                model_id: 'm1',
+                step_info: { current_step: 1, total_steps: 1, status: 'pending' },
+            },
+            job_type: 'EXECUTE', // Incorrect top-level type
+            is_test_job: false,
+        };
+        assert(!isPlanJobInsert(insert));
     });
 });

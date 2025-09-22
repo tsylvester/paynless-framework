@@ -380,7 +380,7 @@ export interface DialecticSimpleJobPayload extends DialecticBaseJobPayload {
  * The payload for a parent job that plans steps based on a recipe.
  */
 export interface DialecticPlanJobPayload extends DialecticBaseJobPayload {
-    job_type: 'plan';
+    job_type: JobType;
     step_info: DialecticStepInfo;
 }
 
@@ -881,3 +881,26 @@ export type ExportProjectFailure = {
 };
 
 export type ExportProjectResponse = ExportProjectSuccess | ExportProjectFailure;
+
+export type JobType = Database['public']['Enums']['dialectic_job_type_enum'];
+
+export type JobInsert = {
+  payload: {
+      model_id: string;
+      selectedModelIds?: string[];
+      [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
+// A more specific type guard for the job insert payload with the new recipe-aware fields.
+export type PlanJobInsert = JobInsert & {
+  payload: {
+      job_type: JobType;
+      step_info: {
+          current_step: number;
+          total_steps: number;
+          status: string;
+      }
+  }
+}

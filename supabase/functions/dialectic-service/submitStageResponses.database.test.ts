@@ -287,7 +287,12 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         resource_description: null,
         size_bytes: 100,
         stage_slug: mockThesisStage.slug,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        is_header: false,
+        source_prompt_resource_id: null,
+        target_contribution_id: null,
+        resource_type: null,
+        source_contribution_id: null,
     }, null);
 
     const mockDependencies: SubmitStageResponsesDependencies = {
@@ -387,7 +392,12 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         resource_description: null,
         size_bytes: 100,
         stage_slug: mockThesisStage.slug,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        is_header: false,
+        source_prompt_resource_id: null,
+        target_contribution_id: null,
+        resource_type: null,
+        source_contribution_id: null,
     }, null);
 
     const downloadSpy = spy(async (_client: SupabaseClient, bucket: string, path: string): Promise<{ data: ArrayBuffer | null, error: Error | null }> => {

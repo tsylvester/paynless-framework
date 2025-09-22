@@ -235,6 +235,7 @@ export type Database = {
           error: string | null
           file_name: string | null
           id: string
+          is_header: boolean
           is_latest_edit: boolean
           iteration_number: number
           mime_type: string
@@ -247,6 +248,7 @@ export type Database = {
           seed_prompt_url: string | null
           session_id: string
           size_bytes: number | null
+          source_prompt_resource_id: string | null
           stage: string
           storage_bucket: string
           storage_path: string
@@ -265,6 +267,7 @@ export type Database = {
           error?: string | null
           file_name?: string | null
           id?: string
+          is_header?: boolean
           is_latest_edit?: boolean
           iteration_number?: number
           mime_type?: string
@@ -277,6 +280,7 @@ export type Database = {
           seed_prompt_url?: string | null
           session_id: string
           size_bytes?: number | null
+          source_prompt_resource_id?: string | null
           stage: string
           storage_bucket?: string
           storage_path: string
@@ -295,6 +299,7 @@ export type Database = {
           error?: string | null
           file_name?: string | null
           id?: string
+          is_header?: boolean
           is_latest_edit?: boolean
           iteration_number?: number
           mime_type?: string
@@ -307,6 +312,7 @@ export type Database = {
           seed_prompt_url?: string | null
           session_id?: string
           size_bytes?: number | null
+          source_prompt_resource_id?: string | null
           stage?: string
           storage_bucket?: string
           storage_path?: string
@@ -350,6 +356,48 @@ export type Database = {
             columns: ["model_id"]
             isOneToOne: false
             referencedRelation: "ai_providers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_source_prompt_resource_id"
+            columns: ["source_prompt_resource_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_project_resources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_document_templates: {
+        Row: {
+          created_at: string
+          description: string | null
+          domain_id: string
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          domain_id: string
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          domain_id?: string
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_document_templates_domain_id_fkey"
+            columns: ["domain_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_domains"
             referencedColumns: ["id"]
           },
         ]
@@ -407,6 +455,7 @@ export type Database = {
           stage_slug: string
           storage_bucket: string
           storage_path: string
+          target_contribution_id: string | null
           updated_at: string
           user_id: string
         }
@@ -424,6 +473,7 @@ export type Database = {
           stage_slug: string
           storage_bucket: string
           storage_path: string
+          target_contribution_id?: string | null
           updated_at?: string
           user_id: string
         }
@@ -441,6 +491,7 @@ export type Database = {
           stage_slug?: string
           storage_bucket?: string
           storage_path?: string
+          target_contribution_id?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -459,6 +510,13 @@ export type Database = {
             referencedRelation: "dialectic_sessions"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "fk_target_contribution_id"
+            columns: ["target_contribution_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_contributions"
+            referencedColumns: ["id"]
+          },
         ]
       }
       dialectic_generation_jobs: {
@@ -468,7 +526,11 @@ export type Database = {
           created_at: string
           error_details: Json | null
           id: string
+          is_test_job: boolean
           iteration_number: number
+          job_type:
+            | Database["public"]["Enums"]["dialectic_job_type_enum"]
+            | null
           max_retries: number
           parent_job_id: string | null
           payload: Json
@@ -487,7 +549,11 @@ export type Database = {
           created_at?: string
           error_details?: Json | null
           id?: string
+          is_test_job?: boolean
           iteration_number: number
+          job_type?:
+            | Database["public"]["Enums"]["dialectic_job_type_enum"]
+            | null
           max_retries?: number
           parent_job_id?: string | null
           payload: Json
@@ -506,7 +572,11 @@ export type Database = {
           created_at?: string
           error_details?: Json | null
           id?: string
+          is_test_job?: boolean
           iteration_number?: number
+          job_type?:
+            | Database["public"]["Enums"]["dialectic_job_type_enum"]
+            | null
           max_retries?: number
           parent_job_id?: string | null
           payload?: Json
@@ -635,10 +705,15 @@ export type Database = {
           created_at: string
           file_name: string
           id: string
+          iteration_number: number | null
           mime_type: string
           project_id: string
           resource_description: Json | null
+          resource_type: string | null
+          session_id: string | null
           size_bytes: number
+          source_contribution_id: string | null
+          stage_slug: string | null
           storage_bucket: string
           storage_path: string
           updated_at: string
@@ -648,10 +723,15 @@ export type Database = {
           created_at?: string
           file_name: string
           id?: string
+          iteration_number?: number | null
           mime_type: string
           project_id: string
           resource_description?: Json | null
+          resource_type?: string | null
+          session_id?: string | null
           size_bytes: number
+          source_contribution_id?: string | null
+          stage_slug?: string | null
           storage_bucket?: string
           storage_path: string
           updated_at?: string
@@ -661,10 +741,15 @@ export type Database = {
           created_at?: string
           file_name?: string
           id?: string
+          iteration_number?: number | null
           mime_type?: string
           project_id?: string
           resource_description?: Json | null
+          resource_type?: string | null
+          session_id?: string | null
           size_bytes?: number
+          source_contribution_id?: string | null
+          stage_slug?: string | null
           storage_bucket?: string
           storage_path?: string
           updated_at?: string
@@ -676,6 +761,20 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "dialectic_projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_session_id"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_source_contribution_id"
+            columns: ["source_contribution_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_contributions"
             referencedColumns: ["id"]
           },
         ]
@@ -1380,34 +1479,48 @@ export type Database = {
         Row: {
           created_at: string
           description: string | null
+          document_template_id: string | null
           id: string
           is_active: boolean
           name: string
           prompt_text: string
           updated_at: string
+          user_selectable: boolean
           version: number
         }
         Insert: {
           created_at?: string
           description?: string | null
+          document_template_id?: string | null
           id?: string
           is_active?: boolean
           name: string
           prompt_text: string
           updated_at?: string
+          user_selectable?: boolean
           version?: number
         }
         Update: {
           created_at?: string
           description?: string | null
+          document_template_id?: string | null
           id?: string
           is_active?: boolean
           name?: string
           prompt_text?: string
           updated_at?: string
+          user_selectable?: boolean
           version?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fk_document_template_id"
+            columns: ["document_template_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_document_templates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       token_wallet_transactions: {
         Row: {
@@ -1902,6 +2015,7 @@ export type Database = {
       }
     }
     Enums: {
+      dialectic_job_type_enum: "PLAN" | "EXECUTE" | "RENDER"
       dialectic_stage_enum:
         | "THESIS"
         | "ANTITHESIS"
@@ -2028,6 +2142,7 @@ export const Constants = {
   },
   public: {
     Enums: {
+      dialectic_job_type_enum: ["PLAN", "EXECUTE", "RENDER"],
       dialectic_stage_enum: [
         "THESIS",
         "ANTITHESIS",

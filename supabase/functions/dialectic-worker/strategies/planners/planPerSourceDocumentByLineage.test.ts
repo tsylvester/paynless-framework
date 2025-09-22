@@ -36,6 +36,8 @@ Deno.test('planPerSourceDocumentByLineage', async (t) => {
         size_bytes: 100,
         mime_type: 'text/plain',
         document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
+        is_header: false,
+        source_prompt_resource_id: null,
     });
 
     const getMockParentJob = (): DialecticJobRow & { payload: DialecticPlanJobPayload } => ({
@@ -59,7 +61,7 @@ Deno.test('planPerSourceDocumentByLineage', async (t) => {
             projectId: 'proj-id',
             sessionId: 'sess-id',
             stageSlug: 'synthesis', // Add the missing stageSlug
-            job_type: 'plan',
+            job_type: 'PLAN',
             model_id: 'model-a-id',
             step_info: {
                 current_step: 1,
@@ -67,6 +69,8 @@ Deno.test('planPerSourceDocumentByLineage', async (t) => {
             },
             walletId: 'wallet-default',
         },
+        is_test_job: false,
+        job_type: 'PLAN',
     });
 
     const getMockRecipeStep = (): DialecticRecipeStep => ({
@@ -221,6 +225,8 @@ Deno.test('planPerSourceDocumentByLineage should treat a doc without a source_gr
         size_bytes: 100,
         mime_type: 'text/plain',
         document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
+        is_header: false,
+        source_prompt_resource_id: null,
     });
 
     const getMockParentJob = (): DialecticJobRow & { payload: DialecticPlanJobPayload } => ({
@@ -244,7 +250,7 @@ Deno.test('planPerSourceDocumentByLineage should treat a doc without a source_gr
             projectId: 'proj-id',
             sessionId: 'sess-id',
             stageSlug: 'antithesis',
-            job_type: 'plan',
+            job_type: 'PLAN',
             model_id: 'model-a-id',
             step_info: {
                 current_step: 0,
@@ -252,6 +258,8 @@ Deno.test('planPerSourceDocumentByLineage should treat a doc without a source_gr
             },
             walletId: 'wallet-default',
         },
+        is_test_job: false,
+        job_type: 'PLAN',
     });
 
     const getMockRecipeStep = (): DialecticRecipeStep => ({

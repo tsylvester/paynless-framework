@@ -86,6 +86,8 @@ export const mockContributionRow: DialecticContributionRow = {
     size_bytes: 1234,
     mime_type: 'text/markdown',
     document_relationships: null,
+    is_header: false,
+    source_prompt_resource_id: null,
     };
 
     export const mockDialecticContributionReceivedPayload: DialecticContributionReceivedPayload = {

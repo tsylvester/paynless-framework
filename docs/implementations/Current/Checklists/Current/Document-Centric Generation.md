@@ -382,20 +382,35 @@ graph LR
     *   `[✅]` 1.d. `[COMMIT]` docs: Finalize TRD for Document-Centric Generation.
 
 *   `[ ]` 2. `[DB]` Implement Database Schema Changes.
-    *   `[ ]` 2.a. Create a new migration to add a `job_type` column (e.g., `'PLANNER' | 'DOCUMENT_GENERATION' | 'RENDERER'`) to the `dialectic_generation_jobs` table to enable the Strategy Router.
-        *   `[ ]` 2.a.i. This new `job_type` column will supercede the existing tag passed into `handleJob` that currently directs `processJob` to route jobs to `processSimpleJob` or `processComplexJob`
-    *   `[ ]` 2.b. Create a new migration to add an `is_test_job` boolean column (default `false`) to the `dialectic_generation_jobs` table to separate orchestration context from the payload.
-    *   `[ ]` 2.c. Create a new migration to add the following nullable columns to the `dialectic_project_resources` table to elevate it for storing prompt artifacts:
-        *   `[ ]` 2.c.i. `resource_type` (text): For explicit categorization (e.g., 'turn_prompt', 'seed_prompt', 'header_context').
-        *   `[ ]` 2.c.ii. `session_id` (uuid, foreign key to `dialectic_sessions`): To link prompts to a specific session.
-        *   `[ ]` 2.c.iii. `stage_slug` (text): To link prompts to a specific stage.
-        *   `[ ]` 2.c.iv. `iteration_number` (integer): To link prompts to a specific iteration.
-        *   `[ ]` 2.c.v. `source_contribution_id` (uuid, foreign key to `dialectic_contributions`): To link a resource (like a 'header_context') to the model output it was extracted from.
-    *   `[ ]` 2.d. Create a new migration to add the following columns to the `dialectic_contributions` table:
-        *   `[ ]` 2.d.i. `source_prompt_resource_id` (uuid, foreign key to `dialectic_project_resources`): The direct link from a contribution back to the prompt that generated it.
-        *   `[ ]` 2.d.ii. `is_header` (boolean, default false): A flag to identify the "Planner" job's output, which contains the shared context for all subsequent documents in a stage.
-    *   `[ ]` 2.e. Update the database trigger for the `dialectic_generation_jobs` table to include `AND NEW.is_test_job IS FALSE` in its `WHEN` condition, preventing test jobs from running automatically.
-    *   `[ ]` 2.f. `[COMMIT]` feat(db): Add job_type and enhance resource/contribution tables for document-centric workflow.
+    *   `[✅]` 2.a. Create a new migration to add a `job_type` column (e.g., `'PLAN' | 'EXECUTE' | 'RENDER'`) to the `dialectic_generation_jobs` table to enable the Strategy Router.
+        *   `[✅]` 2.a.i. This new `job_type` column will supercede the existing tag passed into `handleJob` that currently directs `processJob` to route jobs to `processSimpleJob` or `processComplexJob`
+        *   `[✅]` 2.a.ii. `'PLAN'` replaces the old `'plan'` job type used in `processJob.ts`. `'EXECUTE'` replaces the old in-memory transform of `'plan'` for simple jobs. `'RENDER'`is a new job type to transform artifacts generated in an `'EXECUTE'` job into the format required for the system or user. The old `'plan'` and `'execute'` job flags will be removed. 
+    *   `[✅]` 2.b. Create a new migration to add an `is_test_job` boolean column (default `false`) to the `dialectic_generation_jobs` table to separate orchestration context from the payload.
+    *   `[✅]` 2.c. Create a new migration to add the following nullable columns to the `dialectic_project_resources` table to elevate it for storing prompt artifacts:
+        *   `[✅]` 2.c.i. `resource_type` (text): For explicit categorization (e.g., 'turn_prompt', 'seed_prompt', 'header_context').
+        *   `[✅]` 2.c.ii. `session_id` (uuid, foreign key to `dialectic_sessions`): To link prompts to a specific session.
+        *   `[✅]` 2.c.iii. `stage_slug` (text): To link prompts to a specific stage.
+        *   `[✅]` 2.c.iv. `iteration_number` (integer): To link prompts to a specific iteration.
+        *   `[✅]` 2.c.v. `source_contribution_id` (uuid, foreign key to `dialectic_contributions`): To link a resource (like a 'header_context') to the model output it was extracted from.
+    *   `[✅]` 2.d. Create a new migration to add the following columns to the `dialectic_contributions` table:
+        *   `[✅]` 2.d.i. `source_prompt_resource_id` (uuid, foreign key to `dialectic_project_resources`): The direct link from a contribution back to the prompt that generated it.
+        *   `[✅]` 2.d.ii. `is_header` (boolean, default false): A flag to identify the "Planner" job's output, which contains the shared context for all subsequent documents in a stage.
+    *   `[ ]` 2.e. `[REFACTOR]` Update and validate all affected type guards to align with the new database schema.
+        *   `[✅]` 2.e.i. `[TEST-UNIT]` In `type_guards.test.ts`, write and update failing unit tests for all affected row and payload type guards:
+            *   `[✅]` 2.e.i.1. For `isDialecticJobRow` and `isDialecticContribution`, update existing test mocks and assertions to prove the guards are outdated by checking for the new top-level columns from the migration (`job_type`, `is_test_job`, `is_header`, etc.).
+            *   `[✅]` 2.e.i.2. For `isDialecticJobRowArray`, update the test mocks and assert that the test fails, proving the guard's implementation is too weak.
+            *   `[✅]` 2.e.i.3. Add new failing test suites for `isJobInsert` and `isPlanJobInsert` that assert against the new, correct schema.
+            *   `[✅]` 2.e.i.4. Update tests for `isDialecticJobPayload` to prove it fails when `is_test_job` is present in the payload.
+        *   `[✅]` 2.e.ii. `[BE]` In `type_guards.ts`, modify the implementations of all affected type guards (`isDialecticJobRow`, `isDialecticContribution`, `isDialecticJobRowArray`, `isJobInsert`, `isPlanJobInsert`, `isDialecticJobPayload`) to correctly validate against the new database schema. Ensure all tests from the previous step now pass.
+    *   `[ ]` 2.f. `[REFACTOR]` Refactor `is_test_job` from a payload property to a dedicated database column.
+        *   `[✅]` 2.f.i. `[TEST-UNIT]` Write a failing unit test for `generateContribution.ts`. The test must prove that when a job is created with `is_test_job: true`, the resulting database row has `is_test_job=true` in its top-level column, and `is_test_job` is *not* present inside the `payload` JSON object.
+        *   `[✅]` 2.f.ii.1. `[REFACTOR]` Correct the `isJobInsert` type guard to align with the database schema.
+            *   `[✅]` 2.f.ii.1.a. `[TEST-UNIT]` In `supabase/functions/_shared/utils/type_guards.test.ts`, write a failing unit test that proves the `isJobInsert` type guard incorrectly returns `false` for a valid job insert object that omits the optional `is_test_job` property.
+            *   `[✅]` 2.f.ii.1.b. `[BE]` In `supabase/functions/_shared/utils/type_guards.ts`, modify the `isJobInsert` implementation to correctly validate objects where the optional `is_test_job` property is not present. Ensure the new test passes.
+        *   `[✅]` 2.f.ii.2. `[BE]` In `generateContribution.ts`, refactor the database insertion logic to conditionally add the `is_test_job` property to the insert object only when `payload.is_test_job` is `true`. For all other cases, the property must be omitted to allow the database default to apply.
+        *   `[✅]` 2.f.ii.3. `[TEST-UNIT]` In `generateContribution.test.ts`, ensure all tests now pass with the corrected implementation and type guards. The test asserting the `is_test_job` behavior must verify that the property is `true` on the top-level insert object and is absent from the nested `payload` object.        
+        *   `[✅]` 2.f.iii. `[DB]` Update the `invoke_dialectic_worker` trigger in the migration script to check `NEW.is_test_job` directly, instead of checking the property within the `payload` JSON. Make the integration test pass.
+    *   `[ ]` 2.g. `[COMMIT]` feat(db): Add job_type and enhance resource/contribution tables for document-centric workflow.
 
 *   `[ ]` 3. `[CONFIG]` Update Configuration and Core Types.
     *   `[ ]` 3.a. `[BE]` In the `file_manager.types.ts`, add new `FileType` enums for `TurnPrompt`, `HeaderContext`, and `RenderedDocument`.
@@ -466,7 +481,7 @@ graph LR
 *   `[ ]` 1.a. `[DB]` **Backend Milestone:** Implement Core Schema and Notification Contracts.
     *   `[ ]` 1.a.i. Implement the database migrations from the TRD (add `job_type`, enhance artifact tables).
     *   `[ ]` 1.a.ii. **Create a new `dialectic_document_templates` table** to explicitly link documents to domains.
-    *   `[ ]` 1.a.iii. **Update the `system_prompts` table** to include a foreign key to `dialectic_document_templates` and an `is_user_selectable` boolean flag.
+    *   `[ ]` 1.a.iii. **Update the `system_prompts` table** to include a foreign key to `dialectic_document_templates`.
     *   `[ ]` 1.a.iv. Define and document the new notification events (e.g., `PLANNER_STARTED`, `DOCUMENT_STARTED`, `DOCUMENT_CHUNK_COMPLETED`, `RENDER_COMPLETED`, `JOB_FAILED`) that the worker will emit.
 *   `[ ]` 1.b. `[UI]` **UI Milestone:** Implement Notification Service and State Management.
     *   `[ ]` 1.b.i. Update the frontend notification service to subscribe to and handle the new backend events.

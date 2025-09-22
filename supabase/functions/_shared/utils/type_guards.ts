@@ -14,6 +14,8 @@ import type {
     DialecticStepInfo,
     ContributionType,
     DocumentRelationships,
+    JobInsert,
+    PlanJobInsert,
 } from '../../dialectic-service/dialectic.interface.ts';
 import { FileType, CanonicalPathParams } from "../types/file_manager.types.ts";
 import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
@@ -82,6 +84,10 @@ export function validatePayload(payload: Json): DialecticJobPayload {
  */
 export function isDialecticJobPayload(payload: unknown): payload is DialecticJobPayload {
     if (!isPlainObject(payload)) {
+        return false;
+    }
+
+    if ('is_test_job' in payload) {
         return false;
     }
 
@@ -270,6 +276,7 @@ export function isDialecticContribution(record: unknown): record is DialecticCon
     { key: 'storage_bucket', type: 'string' },
     { key: 'storage_path', type: 'string' },
     { key: 'updated_at', type: 'string' },
+    { key: 'is_header', type: 'boolean' },
 
     // Nullable fields
     { key: 'citations', type: 'object', nullable: true }, // Json can be object or null
@@ -288,6 +295,7 @@ export function isDialecticContribution(record: unknown): record is DialecticCon
     { key: 'tokens_used_input', type: 'number', nullable: true },
     { key: 'tokens_used_output', type: 'number', nullable: true },
     { key: 'user_id', type: 'string', nullable: true },
+    { key: 'source_prompt_resource_id', type: 'string', nullable: true },
   ];
 
   for (const check of checks) {
@@ -472,6 +480,8 @@ export function isDialecticJobRow(record: unknown): record is DialecticJobRow {
       { key: 'status', type: 'string' },
       { key: 'payload', type: 'object' },
       { key: 'user_id', type: 'string' },
+      { key: 'is_test_job', type: 'boolean' },
+      { key: 'job_type', type: 'string' },
     ];
   
     for (const check of checks) {
@@ -921,15 +931,66 @@ export function isPostgrestError(error: unknown): error is PostgrestError {
 }
 
 export function isChatApiRequest(obj: unknown): obj is ChatApiRequest {
-    if (typeof obj !== 'object' || obj === null) return false;
-    const req = obj as Record<string, unknown>;
+    if (!isRecord(obj)) {
+        return false;
+    }
     return (
-        typeof req.message === 'string' &&
-        typeof req.providerId === 'string' &&
-        typeof req.promptId === 'string'
+        'message' in obj && typeof obj.message === 'string' &&
+        'providerId' in obj && typeof obj.providerId === 'string' &&
+        'promptId' in obj && typeof obj.promptId === 'string'
     );
 }
 
 export function isApiChatMessage(message: Messages): message is { role: 'user' | 'assistant' | 'system', content: string | null } {
     return message.role === 'user' || message.role === 'assistant' || message.role === 'system';
+}
+
+// Type guard for our specific insert payload, written without any type casting.
+export function isJobInsert(item: unknown): item is JobInsert {
+    if (typeof item !== 'object' || item === null) {
+        return false;
+    }
+
+    if ('is_test_job' in item && typeof item.is_test_job !== 'boolean' && typeof item.is_test_job !== 'undefined') {
+        return false;
+    }
+
+    if (!('job_type' in item) || typeof item.job_type !== 'string') {
+        return false;
+    }
+
+    const payloadDescriptor = Object.getOwnPropertyDescriptor(item, 'payload');
+    if (!payloadDescriptor) return false;
+
+    const payloadValue = payloadDescriptor.value;
+    if (typeof payloadValue !== 'object' || payloadValue === null) return false;
+
+    const modelIdDescriptor = Object.getOwnPropertyDescriptor(payloadValue, 'model_id');
+    if (!modelIdDescriptor) return false;
+
+    const modelIdValue = modelIdDescriptor.value;
+    if (typeof modelIdValue !== 'string') return false;
+
+    return true;
+}
+
+export function isPlanJobInsert(item: unknown): item is PlanJobInsert {
+    if (!isJobInsert(item)) return false;
+
+    if (item.job_type !== 'PLAN') return false;
+
+    const payload = item.payload;
+
+    if (typeof payload !== 'object' || payload === null) return false;
+
+    if (!('job_type' in payload) || payload.job_type !== 'PLAN') return false;
+
+    if (!('step_info' in payload) || typeof payload.step_info !== 'object' || payload.step_info === null) return false;
+
+    const stepInfo = payload.step_info;
+    if (!('current_step' in stepInfo) || typeof stepInfo.current_step !== 'number') return false;
+    if (!('total_steps' in stepInfo) || typeof stepInfo.total_steps !== 'number') return false;
+    if (!('status' in stepInfo) || typeof stepInfo.status !== 'string') return false;
+
+    return true;
 }
