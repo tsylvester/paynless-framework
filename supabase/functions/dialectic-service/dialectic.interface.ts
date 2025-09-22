@@ -334,6 +334,27 @@ export interface GenerateContributionsPayload {
 }
 
 /**
+ * Defines the canonical structure for the "Header Context"
+ * produced by a PLANNER job. This object provides the shared context
+ * for all subsequent document generation jobs within a stage.
+ */
+export interface SystemMaterials {
+  progress_update?: string; // This is optional and a remnant of the old monolithic stage generation feature where we had to tell the model what documents they'd already generated.
+  stage_rationale: string;
+  executive_summary: string; // This is the primary means of the agent communicating its intent to itself through different documents, to keep the generation aligned across documents.
+  input_artifacts_summary: string; // This is how we detail what artifacts the agent will use to generate the documents.
+  files_to_generate: {
+    from_document_key: string; // We tell the agent in the prompt "generate this list of documents", the agent's response must include that list so we know it's generating the right documents.
+    template_filename: string; // Each document has specific inclusions that we expect the agent to generate, in addition to whatever the agent decides to add to the document.
+  }[];
+  // Optional, for model self-correction and introspection
+  diversity_rubric?: { [key: string]: string }; // This is how the agent is directed to decide whether to use standard or non-standard approaches.
+  quality_standards?: string[]; // These are quality standards that the agent should follow when generating the documents.
+  validation_checkpoint?: string[]; // This is how the agent self-evaluates whether it's generated what it's been asked to generate. 
+}
+
+
+/**
  * Tracks the progress of a multi-step job.
  */
 export interface DialecticStepInfo {

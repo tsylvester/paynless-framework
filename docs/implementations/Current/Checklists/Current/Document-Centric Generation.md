@@ -250,106 +250,136 @@
 ---
 
 ## Mermaid Diagram
+
 ```mermaid
-graph TD
-    subgraph "User & API"
-        A["User Clicks 'Generate'"] --> B["API: Creates 'Parent' Job"]
+graph LR
+    %% GLOBAL PHASE ORDER: User --> DB --> Worker --> Orchestration --> Rendering
+    %% Architectural note: This reflects a shift from a monolithic serial process
+    %% to a recursive, parallelizable job orchestration system. Jobs are first-class
+    %% citizens in the DB (`dialectic_generation_jobs`) and all orchestration is
+    %% observable via DB state.
+
+    %% -------------------------
+    %% USER + API
+    subgraph USER["User & API"]
+        direction TB
+        A["User Initiates Stage"] --> B["API: Enqueues 'PLANNER' Job"]
+        %% Insight: The API layer only enqueues jobs; no business logic is embedded here.
+        %% This keeps orchestration concerns in the DB + worker layers.
     end
 
-    subgraph "Database (dialectic_generation_jobs)"
-        B -- "INSERT" --> C(("<font size=5><b>Jobs Table</b></font><br/>id, parent_id, status,<br/><b>payload (prompt, metadata)</b>"))
-        L -- "UPDATE status='completed'" --> C
-        M -- "INSERT new job<br/>(status='pending_continuation')" --> C
-        L2 -- "UPDATE status='waiting_for_children'" --> C
-        S -- "UPDATE status='pending_next_step'" --> C
-        D((Webhook)) -- "triggers on INSERT/UPDATE" --> E
-        C -- "triggers" --> D
-    end
+    %% -------------------------
+    %% DATABASE
+    subgraph DB["Database: dialectic_generation_jobs"]
+        direction TB
+        B --> C(("<b>Jobs Table</b><br/>id, parent_id, status, job_type,<br/><b>payload (recipe, metadata)</b>"))
+        C --> D((Webhook))
+        %% Insight: The Jobs table is the **single source of truth** for orchestration.
+        %% Triggers/webhooks turn DB state changes into orchestration signals.
 
-    subgraph "Dialectic Worker (Orchestrator)"
-        E["Worker Fetches Job"] --> F{"Strategy Router"}
-        
-        F -- "Simple Stage" --> G["<b>processSimpleJob</b>"]
-        F -- "Complex Stage" --> H["<b>Plan Job</b><br/>(Task Isolator)"]
-
-        G --> G1{"Is this a<br/>Continuation Job?"}
-        G1 -- No --> G2["<b>Assemble PromptPayload for New Job</b><br/>- currentUserPrompt<br/>- resourceDocuments"]
-        G1 -- Yes --> G3["<b>Assemble PromptPayload for Continuation</b><br/>- currentUserPrompt ('continue')<br/>- resourceDocuments<br/>- conversationHistory"]
-        
-        G2 --> G4_PAYLOAD["PromptPayload Object"]
-        G3 --> G4_PAYLOAD
-
-        G4_PAYLOAD -- " " --> G4_ENTRY
-        
-        subgraph "G4: executeModelCallAndSave (Central Assembler)"
+        subgraph DB_EVENTS["Job Updates & Inserts"]
             direction TB
-            G4_ENTRY["PromptPayload"] --> TOKEN_CHECK_1{"Initial Token Check"}
-            TOKEN_CHECK_1 -- "Fits" --> FINAL_ASSEMBLY["<b>Final Assembly Stage</b>"]
-            TOKEN_CHECK_1 -- "Oversized" --> COMPRESSION_LOOP["<b>Context Compression Loop</b>"]
-
-            subgraph COMPRESSION_LOOP
-                direction TB
-                LOOP_START("Start Loop") --> BUILD_CANDIDATES["<b>2. Build & Score RAG Candidates</b><br/>- Isolate Middle History (by index)<br/>- Score Resources (by relevance)"]
-                BUILD_CANDIDATES --> PICK_CANDIDATE{"<b>3. Pick Lowest-Value<br/>Un-indexed Candidate</b>"}
-                PICK_CANDIDATE -- "None Left" --> G5_FAIL["Fail Job<br/>(ContextWindowError)"]
-                PICK_CANDIDATE -- "Candidate Found" --> RAG_PREFLIGHT["<b>4. Financial Pre-flight</b><br/>- Estimate embedding cost<br/>- Check wallet balance"]
-                RAG_PREFLIGHT -- "Insufficient Balance" --> G5_FAIL
-                RAG_PREFLIGHT -- "Checks Pass" --> RAG_EMBED["<b>5. rag_service (on single candidate)</b>"]
-                RAG_EMBED --> RAG_DEBIT["<b>6. debitTokens</b><br/>- Charge wallet for embedding"]
-                RAG_DEBIT --> RECONSTRUCT["<b>7. Reconstruct Context</b><br/>- Replace original item with summary"]
-                RECONSTRUCT --> TOKEN_CHECK_LOOP{"<b>8. Recalculate Tokens</b>"}
-                TOKEN_CHECK_LOOP -- "Still Oversized" --> LOOP_START
-            end
-
-            TOKEN_CHECK_LOOP -- "Fits" --> FINAL_ASSEMBLY
-            
-            subgraph FINAL_ASSEMBLY
-                direction TB
-                FA_1["<b>9. Assemble Final User Message</b><br/>(currentUserPrompt + Compressed Resource Context)"] --> FA_2
-                FA_2["<b>10. Construct Final Message Array</b><br/>(Compressed History + Final User Message)"] --> FA_3
-                FA_3["<b>11. Wrap with System Prompt</b><br/>Creates final 'AssembledRequest' object"] --> FA_4
-                FA_4{"<b>12. Final Sanity Check</b><br/>(Should always pass if loop is correct)"}
-            end
+            S["UPDATE Parent status='pending_next_step'"]
+            U["UPDATE Parent status='completed'"]
+            W["UPDATE Child status='completed'"]
+            Y["INSERT 'EXECUTE' Job"]
+            Z["INSERT 'RENDERER' Job"]
+            AA["INSERT Continuation Job"]
+            %% Insight: These reflect **state transitions** driven by worker logic.
+            %% This ensures every change is durable and auditable.
         end
 
-        FA_4 -- "Checks Pass" --> G7_CALL["Call Chat Service for AI Response"]
-        FA_4 -- "Checks Fail" --> G5_FAIL
-
-
-        I2 -- "Success (finish_reason='stop')" --> L["<b>Finalize Job</b><br/>- Save full contribution<br/>- Mark job 'completed'"]
-        
-        I2 -- "Needs Continuation<br/>(finish_reason='length'/'max_tokens')" --> I1["<b>Save Partial Result</b><br/>- Append new content to existing contribution"]
-        I1 --> M["<b>continueJob</b><br/>Enqueues NEW job with<br/>target_contribution_id pointing<br/>to the updated contribution"]
-        
-        H --> J["<b>1. Generate Child Job Payloads</b><br/>- Calls refactored PromptAssembler<br/>- <u>Dynamically generates a specific prompt for each child</u>"]
-        J --> K["<b>2. Enqueue Child Jobs</b><br/>(Each with its own custom prompt)"]
-        K --> L2["Finalize Parent Job"]
+        %% Connections
+        S --> C
+        U --> C
+        W --> C
+        Y --> C
+        Z --> C
+        AA --> C
     end
 
-    subgraph "Chat Service (/chat endpoint)"
-        G7["<b>handleDialecticPath<br/>- Pre-flight: Check Wallet Balance<br/>- AI Model Call"]
-        G7 --> I["<b>debitTokens (for AI Call)</b><br/>- Post-flight: Charge Wallet"]
-    end
-    
-    G7_CALL -- " " --> G7
-    I -- " " --> I2
+    %% -------------------------
+    %% DIALECTIC WORKER
+    subgraph WORKER["Dialectic Worker (Orchestrator)"]
+        direction TB
+        D --> E["Worker Fetches Job"]
+        E --> F{"Strategy Router (processJob.ts)"}
+        %% Insight: Worker is stateless; orchestration decisions are derived from job_type + payload.
 
-    subgraph "DB Trigger (on Job status='completed')"
-        C -- on UPDATE --> Q{"Job has a parent_id?"}
-        Q -- Yes --> R{"Are all sibling jobs done?"}
-        R -- Yes --> S["Wake up Parent Job"]
-        R -- No --> T["End"]
-        Q -- No --> T
+        F -->|job_type='execute'| EXECUTE_JOB["processSimpleJob"]
+        F -->|job_type='plan' AND has recipe| PLANNER_JOB["processComplexJob"]
+        F -->|job_type='plan' AND no recipe| TRANSFORM_JOB["Transform → 'execute' Job (in-memory)"]
+        F -->|job_type='render'| RENDERER_JOB["processRendererJob"]
+        TRANSFORM_JOB --> EXECUTE_JOB
+    end
+
+    %% -------------------------
+    %% PHASE 1: PLANNING
+    subgraph PHASE1["Phase 1: Planning & Decomposition"]
+        direction LR
+        %% Insight: This is where recursive decomposition happens.
+        %% Guardrails (job recipes) prevent runaway recursion.
+        PLANNER_JOB --> P1{"Get Current Recipe Step"}
+        P1 --> P2["planComplexStage: Selects strategy"]
+        P2 --> P3{"Execute Strategy Chain"}
+        P3 -->|Loop for Compound Strategy| P2
+        P3 -->|Final Plan Ready| P4["Generate Header + Child Jobs"]
+        P4 --> P5["Enqueue Child EXECUTE Jobs"]
+        P5 --> P6["Parent status='waiting_for_children'"]
+    end
+
+    %% -------------------------
+    %% PHASE 2: EXECUTION
+    subgraph PHASE2["Phase 2: Document Generation"]
+        EXECUTE_JOB --> G4["executeModelCallAndSave"]
+        subgraph G4["executeModelCallAndSave Internals"]
+            direction TB
+            G4_ENTRY["PromptPayload"] --> G4_COMPRESSION{"Context Compression & Wallet Checks"}
+            G4_COMPRESSION --> G4_CALL["Call Chat Service"]
+        end
+        G4_CALL --> RESP["AI Model Response"]
+
+        %% Insight: This is where validation protects downstream steps from LLM brittleness.
+        RESP --> V{"Validate Response"}
+        V -->|VALID JSON stop| W
+        V -->|VALID JSON continuation_needed| X["continueJob: Planned Continuation"]
+        V -->|INVALID JSON or truncation| X2["continueJob: Truncation Recovery"]
+        X --> AA
+        X2 --> AA
+    end
+
+    %% -------------------------
+    %% ORCHESTRATION
+    subgraph ORCH["Phase 3: Orchestration"]
+        direction TB
+        C --> Q{"Job has parent_id?"}
+        Q -->|Yes| R{"All siblings done?"}
+        R -->|Yes| S
+        R -->|No| T["End"]
+        Q -->|No| T
+        %% Insight: DB-driven orchestration; risks include async races when siblings complete.
+    end
+
+    %% -------------------------
+    %% RENDERING
+    subgraph RENDERING["Phase 4: Rendering"]
+        direction TB
+        U --> Z_PREP["Prepare for Rendering"]
+        Z_PREP --> Z
+        RENDERER_JOB --> R1["assembleAndSaveFinalDocument"]
+        R1 --> R2["renderDocument"]
+        R2 --> R3["Save Final Markdown"]
+        %% Insight: Rendering is non-AI, deterministic, and side-effectful (writes final artifacts).
     end
 ```
 
 # Technical Requirements and System Contracts 
 
 *   `[ ]` 1. `[DOCS]` Finalize Technical Requirements and System Contracts.
-    *   `[ ]` 1.a. Update the Mermaid diagram section to represent the target state, depicting a document-centric, planner-driven workflow.
-    *   `[ ]` 1.b. Update the File Structure section to represent the target ttate that accounts for the new artifacts (turn-specific prompts, raw per-document JSON, rendered per-document Markdown).
-    *   `[ ]` 1.c. Define and specify the "Header Context" mechanism that will consist of the `system_materials` block from the initial "Planner" job's completion and will be passed to all subsequent child jobs for that stage.
-    *   `[ ]` 1.d. `[COMMIT]` docs: Finalize TRD for Document-Centric Generation.
+    *   `[✅]` 1.a. Update the Mermaid diagram section to represent the target state, depicting a document-centric, planner-driven workflow.
+    *   `[✅]` 1.b. Update the File Structure section to represent the target ttate that accounts for the new artifacts (turn-specific prompts, raw per-document JSON, rendered per-document Markdown).
+    *   `[✅]` 1.c. Define and specify the "Header Context" mechanism that will consist of the `system_materials` block from the initial "Planner" job's completion and will be passed to all subsequent child jobs for that stage.
+    *   `[✅]` 1.d. `[COMMIT]` docs: Finalize TRD for Document-Centric Generation.
 
 *   `[ ]` 2. `[DB]` Implement Database Schema Changes.
     *   `[ ]` 2.a. Create a new migration to add a `job_type` column (e.g., `'PLANNER' | 'DOCUMENT_GENERATION' | 'RENDERER'`) to the `dialectic_generation_jobs` table to enable the Strategy Router.
@@ -388,56 +418,115 @@ graph TD
 *   `[ ]` 6. `[BE]` Implement the Planner Service and Strategy Router.
     *   `[ ]` 6.a. `[TEST-UNIT]` Write failing unit tests for a new `PlannerService` that verify its ability to:
         *   `[ ]` 6.a.i. Enqueue a "Planner" job that produces a single `dialectic_contributions` record flagged with `is_header: true`.
-        *   `[ ]` 6.a.ii. Trigger a subsequent process that extracts the header context and saves it as a `dialectic_project_resources` record.
-        *   `[ ]` 6.a.iii. Generate correctly-formed child `DOCUMENT_GENERATION` job payloads for each document defined in the stage, ensuring each contains the ID of the header context resource.
+        *   `[ ]` 6.a.ii. After the "Planner" job's contribution is successfully created, extract its `system_materials` block.
+        *   `[ ]` 6.a.iii. Save the extracted block as a new `dialectic_project_resources` record with `resource_type: 'header_context'` and a `source_contribution_id` that correctly links it back to the planner's `dialectic_contributions` record.
+        *   `[ ]` 6.a.iv. Validate the planner's output against the canonical `SystemMaterials` interface to ensure it is well-formed and contains the expected keys (e.g., `documents`, `files_to_generate`) before proceeding. If validation fails after all retries are exhausted, the parent job status should be set to `failed`.
+        *   `[ ]` 6.a.v. Generate correctly-formed child `DOCUMENT_GENERATION` job payloads for each document defined in the stage, ensuring each payload contains the ID of the newly created `header_context` resource.
     *   `[ ]` 6.b. `[API]` Define the `IPlannerService` interface and create the concrete `PlannerService` class and its mock.
     *   `[ ]` 6.c. `[BE]` Implement the `planAndEnqueueChildJobs` method according to the TRD algorithm.
     *   `[ ]` 6.d. `[TEST-UNIT]` Write a failing unit test for the worker's main entry point (Strategy Router) that proves it routes jobs to the new `PlannerService` based on the `job_type`.
-    *   `[ ]` 6.e. `[BE]` Implement the Strategy Router logic in the worker.
+    *   `[ ]` 6.e. `[REFACTOR]` Refactor the primary entry point of the worker (`processJob.ts`) to function as the Strategy Router, removing the old tag-based routing and implementing a `switch` statement based on the new `job_type` column to delegate tasks to the appropriate services (`PlannerService`, `processSimpleJob`, etc.).
     *   `[ ]` 6.f. `[COMMIT]` feat(worker): Implement planner service and strategy router for decomposing monolithic jobs.
 
-*   `[ ]` 7. `[BE]` Implement Document Rendering and Finalization.
-    *   `[ ]` 7.a. `[TEST-UNIT]` Write failing unit tests for a new `DocumentRenderer` service that verify its ability to load a raw JSON contribution, load a template file, render them into Markdown, and save the result using the `FileManagerService`.
-    *   `[ ]` 7.b. `[API]` Define the `IDocumentRenderer` interface and create the concrete `DocumentRenderer` class and its mock.
-    *   `[ ]` 7.c. `[BE]` Implement the `renderDocument` method.
-    *   `[ ]` 7.d. `[BE]` Update the parent job completion logic to enqueue `RENDERER` jobs after all `DOCUMENT_GENERATION` children are complete.
-    *   `[ ]` 7.e. `[COMMIT]` feat(worker): Implement document rendering service for final artifact generation.
+*   `[ ]` 7. `[REFACTOR]` Deconstruct `PromptAssembler` for Modularity and Testability.
+    *   `[ ]` 7.a. `[REFACTOR]` Create a new directory for the `PromptAssembler` service.
+    *   `[ ]` 7.b. `[REFACTOR]` Refactor the `PromptAssembler` class into a lightweight router. Its responsibility will be to delegate tasks to dedicated, single-purpose functions based on the type of prompt assembly required (e.g., initial stage prompt, continuation prompt, document-generation prompt). All files and functions will be built using DI/DIP. 
+    *   `[ ]` 7.c. `[REFACTOR]` Move each major method (`assemble`, `gatherContext`, `render`, `gatherInputsForStage`, `gatherContinuationInputs`) into its own file within the new directory, exporting each as a standalone function.
+    *   `[ ]` 7.d. `[TEST-UNIT]` Create a dedicated unit test file for each extracted function, ensuring each can be tested in isolation.
+    *   `[ ]` 7.e. `[TEST-UNIT]` Write a new failing unit test for the `DOCUMENT_GENERATION` prompt assembly logic. This test must prove the assembler can:
+        *   `[ ]` 7.e.i. Receive a job payload containing a `header_context_resource_id` and a document-specific data slice.
+        *   `[ ]` 7.e.ii. Use the `header_context_resource_id` to fetch the corresponding `dialectic_project_resources` record (the typed `SystemMaterials` object).
+        *   `[ ]` 7.e.iii. Correctly combine the shared context from the fetched `SystemMaterials` object with the document-specific data slice from the payload to construct the final, targeted prompt.
+    *   `[ ]` 7.f. `[BE]` Update the `PromptAssembler` logic to handle the new `DOCUMENT_GENERATION` job type, making the new unit test pass.
+    *   `[ ]` 7.g. `[COMMIT]` refactor(prompt-assembler): Deconstruct monolithic PromptAssembler and enable document-centric context.
+
+*   `[ ]` 8. `[BE]` Implement Document Rendering and Finalization.
+    *   `[ ]` 8.a. `[TEST-UNIT]` Write failing unit tests for the `DocumentRenderer` service that verify its ability to be idempotent and cumulative. It must prove that it can:
+        *   `[ ]` 8.a.i. Be triggered by the completion of a single `DOCUMENT_GENERATION` job (including continuations).
+        *   `[ ]` 8.a.ii. Find all existing contribution chunks for a specific document.
+        *   `[ ]` 8.a.iii. Assemble the chunks in the correct order in memory.
+        *   `[ ]` 8.a.iv. Render the complete-so-far content into a Markdown file, overwriting any previous version.
+    *   `[ ]` 8.b. `[API]` Define the `IDocumentRenderer` interface and create the concrete `DocumentRenderer` class and its mock.
+    *   `[ ]` 8.c. `[BE]` Implement the idempotent and cumulative `renderDocument` method.
+    *   `[ ]` 8.d. `[BE]` Modify the orchestration logic to enqueue a `RENDERER` job every time a `DOCUMENT_GENERATION` job successfully completes.
+    *   `[ ]` 8.e. `[COMMIT]` feat(worker): Implement "live build" document rendering service for final artifact generation.
     
-*   `[ ]` 8. `[BE]` Implement Granular Cross-Stage Document Selection.
-    *   `[ ]` 8.a. `[DOCS]` Update the JSON schema definition for `input_artifact_rules` to include the optional `document_key`.
-    *   `[ ]` 8.b. `[TEST-UNIT]` Write a failing unit test for `PromptAssembler.gatherInputsForStage` that proves it can parse a rule with a `document_key` and return only the specified sub-object from the raw JSON content of a contribution.
-    *   `[ ]` 8.c. `[BE]` Update the implementation of `gatherInputsForStage` to handle the new `document_key` rule.
-    *   `[ ]` 8.d. `[COMMIT]` feat(prompt-assembler): Enable granular document selection for advanced workflows.
+*   `[ ]` 9. `[BE]` Implement Granular Cross-Stage Document Selection.
+    *   `[ ]` 9.a. `[DOCS]` Update the JSON schema definition for `input_artifact_rules` to include the optional `document_key`.
+    *   `[ ]` 9.b. `[TEST-UNIT]` Write a failing unit test for `PromptAssembler.gatherInputsForStage` that proves it can parse a rule with a `document_key` and return only the specified sub-object from the raw JSON content of a contribution.
+    *   `[ ]` 9.c. `[BE]` Update the implementation of `gatherInputsForStage` to handle the new `document_key` rule.
+    *   `[ ]` 9.d. `[COMMIT]` feat(prompt-assembler): Enable granular document selection for advanced workflows.
 
 # Implementation Plan
 
 ### `[DEPLOY]` Epic: Transition to Document-Centric Generation
 
-#### `[ ]` x. Phase: Enhanced Observability and Reliability
-*   `[ ]` x.a. `[DOCS]` Finalize and commit the Technical Requirements Document (this checklist).
-*   `[ ]` x.b. `[DB]` Milestone: Implement Database Schema Changes for Traceability
-    *   `[ ]` x. b. i. 
-*   `[ ]` x.c. `[BE]` Milestone: Implement Robust Continuation Logic
-    *   `[ ]` x. c. i. 
-*   `[ ]` x.d. `[COMMIT]` feat: Enhanced observability and reliable continuations for monolithic jobs.
+#### `[ ]` 1. Phase: Foundational Observability
+*   **Objective:** Establish the foundational backend schema and routing needed for the new architecture, and build the UI hooks to observe these new events, setting the stage for the document-centric view.
+*   `[ ]` 1.a. `[DB]` **Backend Milestone:** Implement Core Schema and Notification Contracts.
+    *   `[ ]` 1.a.i. Implement the database migrations from the TRD (add `job_type`, enhance artifact tables).
+    *   `[ ]` 1.a.ii. **Create a new `dialectic_document_templates` table** to explicitly link documents to domains.
+    *   `[ ]` 1.a.iii. **Update the `system_prompts` table** to include a foreign key to `dialectic_document_templates` and an `is_user_selectable` boolean flag.
+    *   `[ ]` 1.a.iv. Define and document the new notification events (e.g., `PLANNER_STARTED`, `DOCUMENT_STARTED`, `DOCUMENT_CHUNK_COMPLETED`, `RENDER_COMPLETED`, `JOB_FAILED`) that the worker will emit.
+*   `[ ]` 1.b. `[UI]` **UI Milestone:** Implement Notification Service and State Management.
+    *   `[ ]` 1.b.i. Update the frontend notification service to subscribe to and handle the new backend events.
+    *   `[ ]` 1.b.ii. Update the application's state management (`store`) to accommodate the concept of a stage having a collection of individual documents, each with its own status.
+    *   `[ ]` 1.b.iii Update the UI elements to correctly display the model and its current state of generation, with a checklist of its TODOs. 
+    *   `[ ]` 1.b.iv Ensure all UI elements use the SSOT for the current stage state and do not identify as "complete" until the checklist is complete. 
+*   `[ ]` 1.c. `[COMMIT]` feat: Establish foundational DB schema and UI state for document-centric job observability.
 
-#### `[ ]` x. Phase: Deconstruction and Parallelization
-*   `[ ]` x.a. `[BE]` Milestone: Implement the Planner Service
-    *   `[ ]` x. a. i. 
-*   `[ ]` x.b. `[BE]` Milestone: Activate and Route to Planner Service
-    *   `[ ]` x. b. i. 
-*   `[ ]` x.c. `[COMMIT]` feat: Deconstruct monolithic stage generation into parallelizable document-centric jobs.
+#### `[ ]` 2. Phase: Backend Deconstruction & UI Document View
+*   **Objective:** Decompose monolithic backend jobs into document-centric jobs and provide the user with a UI to see and interact with these new, distinct document artifacts for the first time.
+*   `[ ]` 2.a. `[BE]` **Backend Milestone:** Implement `PlannerService` and Document API.
+    *   `[ ]` 2.a.i. Implement the `PlannerService` and the `Strategy Router` to handle `'PLANNER'` jobs, which now generate child `'DOCUMENT_GENERATION'` jobs that create raw JSON artifacts in storage.
+    *   `[ ]` 2.a.ii. Create a new API endpoint that lists all document artifacts associated with a stage run.
+*   `[ ]` 2.b. `[UI]` **UI Milestone:** Build Document-Centric Stage View.
+    *   `[ ]` 2.b.i. Redesign the stage output view to call the new API endpoint and display a list of document artifacts.
+    *   `[ ]` 2.b.ii. Allow users to click on a document artifact to view its raw, un-rendered JSON content.
+    *   `[ ]` 2.b.iii This new document view will replace the current "monolithic per-model contribution" view in the UI. 
+*   `[ ]` 2.c. `[COMMIT]` feat: Deconstruct backend jobs and reflect the new document structure in the UI.
 
-#### `[ ]` x. Phase: Rendering and Finalization
-*   `[ ]` x.a. `[BE]` Milestone: Implement Document Rendering Service
-    *   `[ ]` x. a. i. 
-*   `[ ]` x.b. `[CONFIG]` Milestone: Update File Manager for New Artifacts
-    *   `[ ]` x. b. i. 
-*   `[ ]` x.c. `[COMMIT]` feat: Implement post-processing service to render JSON artifacts into final Markdown documents.
+#### `[ ]` 3. Phase: Live Rendering Pipeline
+*   **Objective:** Implement the "render-on-chunk" logic to provide a near-real-time document generation experience for the user.
+*   `[ ]` 3.a. `[BE]` **Backend Milestone:** Implement Idempotent `DocumentRenderer` and Content API.
+    *   `[ ]` 3.a.i. Implement the revised `DocumentRenderer` service, triggered after each `DOCUMENT_GENERATION` job chunk completes, to cumulatively assemble and render final Markdown files.
+    *   `[ ]` 3.a.ii. Create a new API endpoint that retrieves the latest rendered Markdown content for a specific document from storage.
+*   `[ ]` 3.b. `[UI]` **UI Milestone:** Implement Live Document Refresh.
+    *   `[ ]` 3.b.i. Enhance the document view to use the new content endpoint.
+    *   `[ ]` 3.b.ii. Use the existing notification service with its updated richer state notifications to trigger a refresh of the view when the state change notification is received. 
+    *   `[ ]` 3.b.iii. Update the new per-document view to support displaying the latest version of the currently selected document fully rendered in markdown. 
+    *   `[ ]` 3.b.iv. Let users switch between the unrendered json object and the rendered document in the per-document view. 
+*   `[ ]` 3.c. `[COMMIT]` feat: Implement live rendering pipeline from backend to frontend.
 
-#### `[ ]` x. Phase: Advanced Workflow Capabilities
-*   `[ ]` x.a. `[BE]` Milestone: Implement Granular Cross-Stage Document Selection
-    *   `[ ]` x. a. i. 
-*   `[ ]` x.b. `[COMMIT]` feat: Enable advanced multi-agent workflows via granular document selection.
+#### `[ ]` 4. Phase: Per-Document User Feedback
+*   **Objective:** Refactor the user feedback system to align with the new document-centric model, allowing for precise, targeted feedback on individual artifacts.
+*   `[ ]` 4.a. `[DB]` **Backend Milestone:** Update Feedback Schema.
+    *   `[ ]` 4.a.i. Create a migration to add a nullable `target_contribution_id` foreign key to the `dialectic_feedback` table.
+*   `[ ]` 4.b. `[BE]` **Backend Milestone:** Refactor Feedback API.
+    *   `[ ]` 4.b.i. Create new API endpoints for submitting and retrieving feedback associated with a specific document contribution ID.
+    *   `[ ]` 4.b.ii. Revise the existing feedback handling (`prompt-assembler.ts`, `submitStageResponses.ts`, etc) to be document-specific instead of monolithic per-stage. 
+*   `[ ]` 4.c. `[UI]` **UI Milestone:** Implement In-Document Feedback UI.
+    *   `[ ]` 4.c.i. Redesign the feedback UI to be a component within the document view. (The existing monolithic view model already provides a feedback window, we can reuse this.)
+    *   `[ ]` 4.c.ii. Ensure the new UI submits feedback associated with the specific document being viewed.
+*   `[ ]` 4.d. `[COMMIT]` feat: Enable granular, per-document user feedback.
+
+#### `[ ]` 5. Phase: Advanced Workflow Configuration
+*   **Objective:** Expose the full power of the new architecture to the user by allowing them to configure stage inputs and outputs dynamically.
+*   `[ ]` 5.a. `[BE]` **Backend Milestone:** Implement Granular Document Selection.
+    *   `[ ]` 5.a.i. Implement the granular cross-stage document selection logic in the `PromptAssembler` as defined in the TRD.
+    *   `[ ]` 5.a.ii. Create a new API endpoint that returns a list of all available, templatable documents for a given domain by querying the new `dialectic_document_templates` table.
+*   `[ ]` 5.b. `[UI]` **UI Milestone:** Build Stage Output Configuration View.
+    *   `[ ]` 5.b.i. Build the UI components that allow a user to configure the documents to be generated by a stage (e.g., by modifying the job recipe before execution).
+    *   `[ ]` 5.b.ii. Pre-populate the checklist with the standard documents from the job recipe, but expose the entire list of documents that have domain prompts for selection by the user (fetched from the new API endpoint).
+*   `[ ]` 5.c. `[UI]` **UI Milestone:** Build Next-Stage Input Configuration View.
+    *   `[ ]` 5.c.i. Build the UI components that allow a user to select which specific documents from prior stages should be used as inputs for the next stage (by modifying `input_artifact_rules`).
+    *   `[ ]` 5.c.ii. Pre-populate the checklist with the standard documents from the job recipe, but expose the entire list of documents that have domain prompts for selection by the user.
+*   `[ ]` 5.d. `[COMMIT]` feat: Expose advanced, user-configurable workflow controls in the UI.
+
+#### `[ ]` 6. Phase: Final Polish and Cleanup
+*   `[ ]` 6.a. `[UI]` **UI Milestone:** Filter User-Facing Prompt Selector.
+    *   `[ ]` 6.a.i. Update the API endpoint that fetches prompts for the user chat window to filter on `is_user_selectable = true`.
+    *   `[ ]` 6.a.ii. Verify that the `PromptSelector` component in the chat UI now only displays prompts intended for direct user interaction.
+*   `[ ]` 6.b. `[COMMIT]` fix(ui): Isolate system-level prompts from user-facing chat prompt selector.
 
 ---
