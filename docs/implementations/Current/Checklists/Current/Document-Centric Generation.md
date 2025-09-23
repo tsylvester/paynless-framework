@@ -45,6 +45,9 @@
         * When we test graceful error handling, we often need to pass in malformed objects that must be typecast to pass linting to permit testing of improperly shaped objects. 
 *   We only edit a SINGLE FILE at a time. We NEVER edit multiple files in one turn.
 *   We do EXACTLY what the instruction in the checklist step says without exception.
+*   The Agent does NOT edit the checklist without explicit instruction.
+*   When the Agent is instructed to edit the checklist they only edit the EXACT steps they're instructed to edit and NEVER touch ANY step that is outside the scope of their instruction.  
+*   The Agent NEVER updates the status of any work step without explicit instruction. 
 *   If we cannot perform the step as described or make a discovery, we explain the problem or discovery and HALT! We DO NOT CONTINUE after we encounter a problem or a discovery.
 *   We DO NOT CONTINUE if we encounter a problem or make a discovery. We explain the problem or discovery then halt for user input. 
 *   If our discovery is that more files need to be edited, instead of editing a file, we generate a proposal for a checklist of instructions to insert into the work plan that explains everything required to update the codebase so that the invalid step can be resolved. 
@@ -133,13 +136,13 @@
             ├── 1_thesis/
             │   ├── _work/
             │   │   ├── prompts/
-            │   │   │   ├── {model_slug}_{n}_planner_prompt.md
-            │   │   │   ├── {model_slug}_{n}_{document_key}_prompt.md
+            │   │   │   ├── {model_slug}_{n}[_{step_name}]_planner_prompt.md
+            │   │   │   ├── {model_slug}_{n}_{document_key}[_continuation_{c}]_prompt.md
             │   │   │   └── ... (other document prompts for this model)
             │   │   ├── context/
             │   │   │   └── {model_slug}_{n}_header_context.json
             │   │   └── assembled_json/
-            │   │       ├── {model_slug}_{n}_{document_key}_assembled_raw.json
+            │   │       ├── {model_slug}_{n}_{document_key}_assembled.json
             │   │       └── ... (other assembled documents for this model)
             │   ├── raw_responses/
             │   │   ├── {model_slug}_{n}_planner_raw.json
@@ -156,13 +159,13 @@
             ├── 2_antithesis/
             │   ├── _work/
             │   │   ├── prompts/
-            │   │   │   ├── {model_slug}_critiquing_{source_model_slug}_{n}_planner_prompt.md
-            │   │   │   ├── {model_slug}_critiquing_{source_model_slug}_{n}_{document_key}_prompt.md
+            │   │   │   ├── {model_slug}_critiquing_{source_model_slug}_{n}[_{step_name}]_planner_prompt.md
+            │   │   │   ├── {model_slug}_critiquing_{source_model_slug}_{n}_{document_key}[_continuation_{c}]_prompt.md
             │   │   │   └── ... (other document prompts for this model)
             │   │   ├── context/
             │   │   │   └── {model_slug}_critiquing_{source_model_slug}_{n}_header_context.json
             │   │   └── assembled_json/
-            │   │       ├── {model_slug}_critiquing_{source_model_slug}_{n}_{document_key}_assembled_raw.json
+            │   │       ├── {model_slug}_critiquing_{source_model_slug}_{n}_{document_key}_assembled.json
             │   │       └── ... (other assembled documents for this model)
             │   ├── raw_responses/
             │   │   ├── {model_slug}_critiquing_{source_model_slug}_{n}_planner_raw.json
@@ -179,13 +182,13 @@
             ├── 3_synthesis/
             │   ├── _work/
             │   │   ├── prompts/
-            │   │   │   ├── {model_slug}_{n}_planner_prompt.md
-            │   │   │   ├── {model_slug}_{n}_{document_key}_prompt.md
+            │   │   │   ├── {model_slug}_{n}[_{step_name}]_planner_prompt.md
+            │   │   │   ├── {model_slug}_{n}_{document_key}[_continuation_{c}]_prompt.md
             │   │   │   └── ... (other document prompts for this model)
             │   │   ├── context/
             │   │   │   └── {model_slug}_{n}_header_context.json
             │   │   └── assembled_json/
-            │   │       ├── {model_slug}_{n}_{document_key}_assembled_raw.json
+            │   │       ├── {model_slug}_{n}_{document_key}_assembled.json
             │   │       └── ... (other assembled documents for this model)
             │   ├── raw_responses/
             │   │   ├── {model_slug}_{n}_planner_raw.json
@@ -204,13 +207,13 @@
             ├── 4_parenthesis/
             │   ├── _work/
             │   │   ├── prompts/
-            │   │   │   ├── {model_slug}_{n}_planner_prompt.md
-            │   │   │   ├── {model_slug}_{n}_{document_key}_prompt.md
+            │   │   │   ├── {model_slug}_{n}[_{step_name}]_planner_prompt.md
+            │   │   │   ├── {model_slug}_{n}_{document_key}[_continuation_{c}]_prompt.md
             │   │   │   └── ... (other document prompts for this model)
             │   │   ├── context/
             │   │   │   └── {model_slug}_{n}_header_context.json
             │   │   └── assembled_json/
-            │   │       ├── {model_slug}_{n}_{document_key}_assembled_raw.json
+            │   │       ├── {model_slug}_{n}_{document_key}_assembled.json
             │   │       └── ... (other assembled documents for this model)
             │   ├── raw_responses/
             │   │   ├── {model_slug}_{n}_planner_raw.json
@@ -227,13 +230,13 @@
             └── 5_paralysis/
                 ├── _work/
                 │   ├── prompts/
-                │   │   ├── {model_slug}_{n}_planner_prompt.md
-                │   │   ├── {model_slug}_{n}_{document_key}_prompt.md
+                │   │   ├── {model_slug}_{n}[_{step_name}]_planner_prompt.md
+                │   │   ├── {model_slug}_{n}_{document_key}[_continuation_{c}]_prompt.md
                 │   │   └── ... (other document prompts for this model)
                 │   ├── context/
                 │   │   └── {model_slug}_{n}_header_context.json
                 │   └── assembled_json/
-                │       ├── {model_slug}_{n}_{document_key}_assembled_raw.json
+                │       ├── {model_slug}_{n}_{document_key}_assembled.json
                 │       └── ... (other assembled documents for this model)
                 ├── raw_responses/
                 │   ├── {model_slug}_{n}_planner_raw.json
@@ -410,19 +413,33 @@ graph LR
         *   `[✅]` 2.f.ii.2. `[BE]` In `generateContribution.ts`, refactor the database insertion logic to conditionally add the `is_test_job` property to the insert object only when `payload.is_test_job` is `true`. For all other cases, the property must be omitted to allow the database default to apply.
         *   `[✅]` 2.f.ii.3. `[TEST-UNIT]` In `generateContribution.test.ts`, ensure all tests now pass with the corrected implementation and type guards. The test asserting the `is_test_job` behavior must verify that the property is `true` on the top-level insert object and is absent from the nested `payload` object.        
         *   `[✅]` 2.f.iii. `[DB]` Update the `invoke_dialectic_worker` trigger in the migration script to check `NEW.is_test_job` directly, instead of checking the property within the `payload` JSON. Make the integration test pass.
-    *   `[ ]` 2.g. `[COMMIT]` feat(db): Add job_type and enhance resource/contribution tables for document-centric workflow.
+    *   `[✅]` 2.g. `[COMMIT]` feat(db): Add job_type and enhance resource/contribution tables for document-centric workflow.
 
-*   `[ ]` 3. `[CONFIG]` Update Configuration and Core Types.
-    *   `[ ]` 3.a. `[BE]` In the `file_manager.types.ts`, add new `FileType` enums for `TurnPrompt`, `HeaderContext`, and `RenderedDocument`.
-    *   `[ ]` 3.b. `[BE]` Update the `PathContext` interface and the `constructStoragePath` utility to correctly generate paths for the new file types.
-    *   `[ ]` 3.c. `[BE]` In `dialectic.interface.ts` (or relevant types file), update the type definitions for the `dialectic_generation_jobs` and `dialectic_contributions` tables to reflect the schema changes.
-    *   `[ ]` 3.d. `[COMMIT]` refactor(types): Update core types and file manager config for new artifacts.
+*   `[ ]` 3. `[CONFIG]` Implement Pathing for Document-Centric Artifacts.
+    *   `[✅]` 3.a. `[BE]` In `supabase/functions/_shared/types/file_manager.types.ts`, update core types for new artifacts.
+        *   `[✅]` 3.a.i. Add new enums to the `FileType` enum to represent all new document-centric artifacts as defined in the target file structure, including `TurnPrompt`, `HeaderContext`, `RenderedDocument`, `PlannerPrompt`, and `AssembledDocumentJson`.
+        *   `[✅]` 3.a.ii. Update the `PathContext` interface to include optional properties required for the new path structures, such as `documentKey?: string` and `stepName?: string`.
+    *   `[✅]` 3.b. `[REFACTOR]` Refactor the path constructor utility to support new artifact paths.
+        *   `[✅]` 3.b.i. `[TEST-UNIT]` In `supabase/functions/_shared/utils/path_constructor.test.ts`, write a comprehensive suite of failing unit tests for `constructStoragePath`. These tests must cover the generation of paths for each new `FileType` and the updated `ModelContributionRawJson` to handle planner- and document-specific filenames, as detailed in the work plan's file structure.
+        *   `[✅]` 3.b.ii. `[BE]` In `supabase/functions/_shared/utils/path_constructor.ts`, implement the necessary logic in `constructStoragePath` to handle the new `FileType` enums and context properties, ensuring all new tests pass.
+    *   `[ ]` 3.c. `[REFACTOR]` Refactor the path deconstructor utility to parse new artifact paths.
+        *   `[✅]` 3.c.i. `[BE]` in `path_deconstructor.types.ts` add the missing optional properties: `documentKey?: string`, `stepName?: string`, `isContinuation?: boolean`, `turnIndex?: number`. 
+        *   `[✅]` 3.c.ii. `[TEST-UNIT]` In `supabase/functions/_shared/utils/path_deconstructor.test.ts`, write a suite of failing unit tests for `deconstructStoragePath`. The tests must use the paths generated in the previous step and assert that all contextual information (e.g., `fileTypeGuess`, `documentKey`) is correctly extracted from the path strings.
+        *   `[✅]` 3.c.iii. `[BE]` In `supabase/functions/_shared/utils/path_deconstructor.ts`, implement the new regular expressions and logic required to correctly parse all new path formats, ensuring all new tests pass.
+    *   `[✅]` 3.d. `[BE]` In `dialectic.interface.ts` (or relevant types file), update the type definitions for the `dialectic_generation_jobs` and `dialectic_contributions` tables to reflect the schema changes from the migration.
+    *   `[✅]` 3.e. `[COMMIT]` refactor(types): Update core types and file manager for document-centric artifacts.
 
-*   `[ ]` 4. `[BE]` Implement Enhanced Observability.
-    *   `[ ]` 4.a. `[TEST-UNIT]` Write a failing unit test for `executeModelCallAndSave` that verifies it calls the `FileManagerService.uploadAndRegisterFile` to save the prompt as a `dialectic_project_resources` record before calling the AI model.
-    *   `[ ]` 4.b. `[BE]` Modify `executeModelCallAndSave` to use the `FileManagerService` to save the fully-assembled prompt to storage as a `dialectic_project_resources` row.
-    *   `[ ]` 4.c. `[BE]` Modify the `uploadContext` within `executeModelCallAndSave` for the *contribution* record, ensuring its `contributionMetadata` includes the ID of the newly created prompt resource record, and this ID is saved to the new `source_prompt_resource_id` column.
-    *   `[ ]` 4.d. `[COMMIT]` feat(worker): Implement saving of turn-specific prompts for diagnostic traceability.
+*   `[ ]` 4. `[BE]` Implement Conditional Prompt Saving for Observability.
+    *   `[ ]` 4.a. `[TEST-UNIT]` Write failing unit tests for `executeModelCallAndSave` to enforce conditional prompt saving logic.
+        *   `[ ]` 4.a.i. Write a test case for a **subsequent recipe step** (`current_step > 1`). It must prove that `FileManagerService.uploadAndRegisterFile` is called to save a new, unique prompt artifact.
+        *   `[ ]` 4.a.ii. Write a test case for the **first recipe step** (`current_step === 1`). It must prove that the system queries the `dialectic_project_resources` table to find the existing `seed_prompt.md` and does **not** call `uploadAndRegisterFile`.
+        *   `[ ]` 4.a.iii. Write a test case for a **simple job** (where `step_info` is `undefined`). It must also prove that the system queries for the existing `seed_prompt.md` and does **not** call `uploadAndRegisterFile`.
+    *   `[ ]` 4.b. `[BE]` In `executeModelCallAndSave`, implement the conditional logic to handle prompt artifacts.
+        *   `[ ]` 4.b.i. Implement a conditional check: `if (job.payload.step_info && job.payload.step_info.current_step > 1)`.
+        *   `[ ]` 4.b.ii. If the condition is `true`, use the `FileManagerService` to save the fully-assembled prompt to storage as a new `dialectic_project_resources` row.
+        *   `[ ]` 4.b.iii. Otherwise (for simple jobs or the first step of a complex job), perform a database query to fetch the existing `seed_prompt.md` resource record associated with the current `session_id`, `stage_slug`, and `iteration_number`.
+    *   `[ ]` 4.c. `[BE]` Unify the logic to link the contribution to its source prompt. Ensure that regardless of whether the prompt was newly created or fetched, its resource ID is correctly passed into the `contributionMetadata` and saved to the `source_prompt_resource_id` column of the new contribution record.
+    *   `[ ]` 4.d. `[COMMIT]` feat(worker): Implement conditional prompt saving to prevent redundancy.
 
 *   `[ ]` 5. `[BE]` Implement Robust Continuation Logic.
     *   `[ ]` 5.a. `[TEST-UNIT]` Write a failing unit test for the `continueJob` function. The test should prove that when the `finish_reason` is `'length'`, the new job's payload contains a specific, directive continuation prompt, not the generic "Please continue."
@@ -480,8 +497,12 @@ graph LR
 *   **Objective:** Establish the foundational backend schema and routing needed for the new architecture, and build the UI hooks to observe these new events, setting the stage for the document-centric view.
 *   `[ ]` 1.a. `[DB]` **Backend Milestone:** Implement Core Schema and Notification Contracts.
     *   `[ ]` 1.a.i. Implement the database migrations from the TRD (add `job_type`, enhance artifact tables).
-    *   `[ ]` 1.a.ii. **Create a new `dialectic_document_templates` table** to explicitly link documents to domains.
-    *   `[ ]` 1.a.iii. **Update the `system_prompts` table** to include a foreign key to `dialectic_document_templates`.
+    *   `[ ]` 1.a.ii. `[Migration]` Use the `document_centric_generation` migration to refactor the `dialectic_document_templates` table to support storing templates as files.
+        *   `[ ]` 1.a.ii.1. Add `storage_bucket`, `storage_path`, and `file_name` columns to the `dialectic_document_templates` table.
+    *   `[ ]` 1.a.iii. `[Migration]` Refactor `dialectic_stages` and `domain_specific_prompt_overlays` to use normalized document template references.
+        *   `[ ]` 1.a.iii.1. In `dialectic_stages`, rename the `expected_output_artifacts` column to `expected_output_template_ids` and change its type from `JSONB` to `uuid[]`.
+        *   `[ ]` 1.a.iii.2. Extract the `expected_output_artifacts_json` values from `domain_specific_prompt_overlays`, create new template files in storage, populate the `dialectic_document_templates` table with the corresponding records, link the new template IDs to the appropriate stages in `dialectic_stages.expected_output_template_ids`, and finally remove the `expected_output_artifacts_json` key from all `domain_specific_prompt_overlays.overlay_values`.
+        *   `[ ]` 1.a.iii.3. Update `seed.sql` to reflect the condensed values to ensure the dev database is correctly populated after each reset. 
     *   `[ ]` 1.a.iv. Define and document the new notification events (e.g., `PLANNER_STARTED`, `DOCUMENT_STARTED`, `DOCUMENT_CHUNK_COMPLETED`, `RENDER_COMPLETED`, `JOB_FAILED`) that the worker will emit.
 *   `[ ]` 1.b. `[UI]` **UI Milestone:** Implement Notification Service and State Management.
     *   `[ ]` 1.b.i. Update the frontend notification service to subscribe to and handle the new backend events.
@@ -493,7 +514,7 @@ graph LR
 #### `[ ]` 2. Phase: Backend Deconstruction & UI Document View
 *   **Objective:** Decompose monolithic backend jobs into document-centric jobs and provide the user with a UI to see and interact with these new, distinct document artifacts for the first time.
 *   `[ ]` 2.a. `[BE]` **Backend Milestone:** Implement `PlannerService` and Document API.
-    *   `[ ]` 2.a.i. Implement the `PlannerService` and the `Strategy Router` to handle `'PLANNER'` jobs, which now generate child `'DOCUMENT_GENERATION'` jobs that create raw JSON artifacts in storage.
+    *   `[ ]` 2.a.i. Implement the `PlannerService` and the `Strategy Router` to handle `'PLAN'` jobs, which now generate child `'EXECUTE'` jobs that create raw JSON artifacts in storage.
     *   `[ ]` 2.a.ii. Create a new API endpoint that lists all document artifacts associated with a stage run.
 *   `[ ]` 2.b. `[UI]` **UI Milestone:** Build Document-Centric Stage View.
     *   `[ ]` 2.b.i. Redesign the stage output view to call the new API endpoint and display a list of document artifacts.
@@ -504,7 +525,7 @@ graph LR
 #### `[ ]` 3. Phase: Live Rendering Pipeline
 *   **Objective:** Implement the "render-on-chunk" logic to provide a near-real-time document generation experience for the user.
 *   `[ ]` 3.a. `[BE]` **Backend Milestone:** Implement Idempotent `DocumentRenderer` and Content API.
-    *   `[ ]` 3.a.i. Implement the revised `DocumentRenderer` service, triggered after each `DOCUMENT_GENERATION` job chunk completes, to cumulatively assemble and render final Markdown files.
+    *   `[ ]` 3.a.i. Implement the revised `DocumentRenderer` service, triggered after each `EXECUTE` job `DOCUMENT_CHUNK_COMPLETED` to cumulatively assemble and render final Markdown files.
     *   `[ ]` 3.a.ii. Create a new API endpoint that retrieves the latest rendered Markdown content for a specific document from storage.
 *   `[ ]` 3.b. `[UI]` **UI Milestone:** Implement Live Document Refresh.
     *   `[ ]` 3.b.i. Enhance the document view to use the new content endpoint.

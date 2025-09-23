@@ -453,4 +453,77 @@ Deno.test('constructStoragePath', async (t) => {
     assert(intermPath.storagePath.includes('/_work'), `Intermediate artifact must be in _work. Got: ${intermPath.storagePath}`);
   });
 
+  await t.step('should handle document-centric artifacts correctly', async (t) => {
+    const docContext: PathContext = {
+      ...baseContext,
+      fileType: FileType.TurnPrompt, // Placeholder to satisfy type, overwritten in each test.
+      stageSlug: 'thesis',
+      attemptCount: 1,
+      documentKey: 'executive_summary',
+    };
+
+    await t.step('constructs path for PlannerPrompt', () => {
+      const { storagePath, fileName } = constructStoragePath({ ...docContext, fileType: FileType.PlannerPrompt });
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/_work/prompts`;
+      const expectedFileName = `${modelSlug}_1_planner_prompt.md`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+    });
+
+    await t.step('constructs path for TurnPrompt', () => {
+      const { storagePath, fileName } = constructStoragePath({ ...docContext, fileType: FileType.TurnPrompt });
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/_work/prompts`;
+      const expectedFileName = `${modelSlug}_1_executive_summary_prompt.md`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+    });
+
+    await t.step('constructs path for HeaderContext', () => {
+      const { storagePath, fileName } = constructStoragePath({ ...docContext, fileType: FileType.HeaderContext });
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/_work/context`;
+      const expectedFileName = `${modelSlug}_1_header_context.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+    });
+
+    await t.step('constructs path for AssembledDocumentJson', () => {
+      const { storagePath, fileName } = constructStoragePath({ ...docContext, fileType: FileType.AssembledDocumentJson });
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/_work/assembled_json`;
+      const expectedFileName = `${modelSlug}_1_executive_summary_assembled.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+    });
+
+    await t.step('constructs path for RenderedDocument', () => {
+      const { storagePath, fileName } = constructStoragePath({ ...docContext, fileType: FileType.RenderedDocument });
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/documents`;
+      const expectedFileName = `${modelSlug}_1_executive_summary.md`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+    });
+
+    await t.step('constructs path for continuation TurnPrompt', () => {
+      const { storagePath, fileName } = constructStoragePath({ ...docContext, fileType: FileType.TurnPrompt, isContinuation: true, turnIndex: 2 });
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/_work/prompts`;
+      const expectedFileName = `${modelSlug}_1_executive_summary_continuation_2_prompt.md`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+    });
+
+    await t.step('constructs path for document-specific ModelContributionRawJson', () => {
+      const { storagePath, fileName } = constructStoragePath({ ...docContext, fileType: FileType.ModelContributionRawJson });
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/raw_responses`;
+      const expectedFileName = `${modelSlug}_1_executive_summary_raw.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+    });
+
+    await t.step('constructs path for continuation ModelContributionRawJson', () => {
+      const { storagePath, fileName } = constructStoragePath({ ...docContext, fileType: FileType.ModelContributionRawJson, isContinuation: true, turnIndex: 3 });
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/raw_responses`;
+      const expectedFileName = `${modelSlug}_1_executive_summary_continuation_3_raw.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+    });
+  });
 });

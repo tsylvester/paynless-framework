@@ -65,6 +65,8 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     pairedModelSlug,
     isContinuation,
     turnIndex,
+    documentKey,
+    stepName,
   } = context;
 
   const projectRoot = projectId;
@@ -117,6 +119,44 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       return { storagePath: `${stageRootPath}/documents`, fileName: sanitizeForPath(originalFileName) };
     }
 
+    case FileType.PlannerPrompt: {
+      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
+        throw new Error('Required context missing for planner_prompt.');
+      }
+      const stepNameSegment = stepName ? `_${sanitizeForPath(stepName)}` : '';
+      const fileName = `${modelSlugSanitized}_${attemptCount}${stepNameSegment}_planner_prompt.md`;
+      return { storagePath: `${stageRootPath}/_work/prompts`, fileName };
+    }
+    case FileType.TurnPrompt: {
+      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined || !documentKey) {
+        throw new Error('Required context missing for turn_prompt.');
+      }
+      const continuationSuffix = isContinuation ? `_continuation_${turnIndex}` : '';
+      const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizeForPath(documentKey)}${continuationSuffix}_prompt.md`;
+      return { storagePath: `${stageRootPath}/_work/prompts`, fileName };
+    }
+    case FileType.HeaderContext: {
+      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
+        throw new Error('Required context missing for header_context.');
+      }
+      const fileName = `${modelSlugSanitized}_${attemptCount}_header_context.json`;
+      return { storagePath: `${stageRootPath}/_work/context`, fileName };
+    }
+    case FileType.AssembledDocumentJson: {
+      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined || !documentKey) {
+        throw new Error('Required context missing for assembled_document_json.');
+      }
+      const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizeForPath(documentKey)}_assembled.json`;
+      return { storagePath: `${stageRootPath}/_work/assembled_json`, fileName };
+    }
+    case FileType.RenderedDocument: {
+      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined || !documentKey) {
+        throw new Error('Required context missing for rendered_document.');
+      }
+      const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizeForPath(documentKey)}.md`;
+      return { storagePath: `${stageRootPath}/documents`, fileName };
+    }
+
     // --- All Model Contributions (Main, Raw, and Intermediate Types) ---
     case FileType.ModelContributionMain:
     case FileType.ModelContributionRawJson:
@@ -130,6 +170,14 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       // We must re-validate context with the now-known effectiveContributionType
       if (!stageRootPath || !modelSlugSanitized || !contributionTypeSanitized || attemptCount === undefined) {
         throw new Error('Required context missing for model contribution file.');
+      }
+
+      // Handle new document-centric raw JSONs first, as they have a simpler naming scheme.
+      if (fileType === FileType.ModelContributionRawJson && documentKey) {
+        const sanitizedDocumentKey = sanitizeForPath(documentKey);
+        const continuationSuffix = isContinuation ? `_continuation_${turnIndex}` : '';
+        const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizedDocumentKey}${continuationSuffix}_raw.json`;
+        return { storagePath: `${stageRootPath}/raw_responses`, fileName };
       }
 
       let baseFileName: string;

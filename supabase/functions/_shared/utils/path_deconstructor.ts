@@ -1,5 +1,6 @@
 import { FileType } from '../types/file_manager.types.ts';
 import type { DeconstructedPathInfo } from './path_deconstructor.types.ts';
+import { isContributionType } from './type_guards.ts';
 
 export function mapDirNameToStageSlug(dirName: string): string {
   const lowerCaseDirName = dirName.toLowerCase();
@@ -49,6 +50,15 @@ export function deconstructStoragePath(
   const pairwiseSynthesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(?:raw_responses/)?([^_]+_synthesizing_[^_]+_with_[^_]+_on_[^_]+_\\d+_pairwise_synthesis_chunk(?:_raw\\.json|\\.md))$";
   const reducedSynthesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(?:raw_responses/)?([^_]+_reducing_[^_]+_by_[^_]+_\\d+_reduced_synthesis(?:_raw\\.json|\\.md))$";
   const ragSummaryPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/([^_]+_compressing_.+_rag_summary\\.txt)$";
+  
+  // Document-centric artifact patterns
+  const plannerPromptPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/prompts/(.+)_(\\d+)_?(.*?)_planner_prompt\\.md$";
+  const turnPromptPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/prompts/(.+)_(\\d+)_(.+?)(_continuation_(\\d+))?_prompt\\.md$";
+  const headerContextPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+)_(\\d+)_header_context\\.json$";
+  const assembledJsonPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/assembled_json/(.+)_(\\d+)_(.+?)_assembled\\.json$";
+  const renderedDocumentPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/documents/(.+)_(\\d+)_(.+?)\\.md$";
+  const docCentricRawJsonPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/raw_responses/(.+)_(\\d+)_(.+?)(_continuation_(\\d+))?_raw\\.json$";
+  
   const genericIntermediateFilePatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/([^/]+)$";
 
   // Path: .../raw_responses/{modelSlug}_critiquing_({sourceModelSlug}'s_{sourceContribType}_{sourceAttemptCount})_{attemptCount}_antithesis_raw.json
@@ -105,6 +115,111 @@ export function deconstructStoragePath(
     info.parsedFileNameFromPath = `${modelSlugPart}_${matches[6]}_${matches[7]}_continuation_${info.turnIndex}${extension}`;
     info.fileTypeGuess = extension === '_raw.json' ? FileType.ModelContributionRawJson : FileType.ModelContributionMain;
     return info;
+  }
+
+  // --- Document-Centric Artifacts ---
+  // These are checked with high priority as they are the new canonical format.
+
+  // Path: .../_work/prompts/{modelSlug}_{attemptCount}_{stepName}_planner_prompt.md
+  matches = fullPath.match(new RegExp(plannerPromptPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.attemptCount = parseInt(matches[6], 10);
+    info.stepName = matches[7] || undefined;
+    info.fileTypeGuess = FileType.PlannerPrompt;
+    return info;
+  }
+
+  // Path: .../_work/prompts/{modelSlug}_{attemptCount}_{documentKey}[_continuation_{turnIndex}]_prompt.md
+  matches = fullPath.match(new RegExp(turnPromptPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.attemptCount = parseInt(matches[6], 10);
+    info.documentKey = matches[7];
+    if (matches[9]) {
+      info.isContinuation = true;
+      info.turnIndex = parseInt(matches[9], 10);
+    }
+    info.fileTypeGuess = FileType.TurnPrompt;
+    return info;
+  }
+
+  // Path: .../_work/context/{modelSlug}_{attemptCount}_header_context.json
+  matches = fullPath.match(new RegExp(headerContextPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.attemptCount = parseInt(matches[6], 10);
+    info.fileTypeGuess = FileType.HeaderContext;
+    return info;
+  }
+
+  // Path: .../_work/assembled_json/{modelSlug}_{attemptCount}_{documentKey}_assembled.json
+  matches = fullPath.match(new RegExp(assembledJsonPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.attemptCount = parseInt(matches[6], 10);
+    info.documentKey = matches[7];
+    info.fileTypeGuess = FileType.AssembledDocumentJson;
+    return info;
+  }
+
+  // Path: .../documents/{modelSlug}_{attemptCount}_{documentKey}.md
+  matches = fullPath.match(new RegExp(renderedDocumentPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.attemptCount = parseInt(matches[6], 10);
+    info.documentKey = matches[7];
+    info.fileTypeGuess = FileType.RenderedDocument;
+    return info;
+  }
+  
+  // Path: .../raw_responses/{modelSlug}_{attemptCount}_{documentKey}[_continuation_{turnIndex}]_raw.json
+  matches = fullPath.match(new RegExp(docCentricRawJsonPatternString));
+  if (matches) {
+      info.originalProjectId = matches[1];
+      info.shortSessionId = matches[2];
+      info.iteration = parseInt(matches[3], 10);
+      info.stageDirName = matches[4];
+      info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+      info.modelSlug = matches[5];
+      info.attemptCount = parseInt(matches[6], 10);
+      const ambiguousPart = matches[7];
+      if (isContributionType(ambiguousPart)) {
+        info.contributionType = ambiguousPart;
+      } else {
+        info.documentKey = ambiguousPart;
+      }
+      if (matches[9]) {
+          info.isContinuation = true;
+          info.turnIndex = parseInt(matches[9], 10);
+      }
+      info.fileTypeGuess = FileType.ModelContributionRawJson;
+      return info;
   }
 
   // --- Intermediate _work files ---

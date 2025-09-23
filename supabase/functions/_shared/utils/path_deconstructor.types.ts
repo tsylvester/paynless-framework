@@ -17,4 +17,6 @@ export interface DeconstructedPathInfo {
   error?: string;                // Optional error message if deconstruction fails or is ambiguous
   isContinuation?: boolean;      // Whether this is a continuation chunk
   turnIndex?: number;            // The turn index of this chunk
+  documentKey?: string;          // The document key for document-centric artifacts
+  stepName?: string;             // The step name for planner prompts
 } 

@@ -762,3 +762,98 @@ deconstructReconstructTestCases.forEach((tc) => {
   });
 });
 
+Deno.test('[path_deconstructor] inverse C->D - document-centric artifacts', async (t) => {
+  const projectId = 'proj-doc-centric';
+  const sessionId = 'sess-doc-centric-uuid';
+  const iteration = 1;
+  const modelSlug = 'gpt-4o';
+  const attemptCount = 0;
+  const documentKey = 'technical_specification';
+  const stepName = 'generate_core_components';
+  const stageSlug = 'synthesis';
+
+  const baseDocContext: PathContext = {
+    projectId,
+    sessionId,
+    iteration,
+    modelSlug,
+    attemptCount,
+    documentKey,
+    stepName,
+    stageSlug,
+    fileType: FileType.PlannerPrompt, // Placeholder
+  };
+
+  const testCases: { name: string; context: PathContext; checkFields: Array<keyof DeconstructedPathInfo> }[] = [
+    {
+      name: 'PlannerPrompt',
+      context: { ...baseDocContext, fileType: FileType.PlannerPrompt },
+      checkFields: ['fileTypeGuess', 'modelSlug', 'attemptCount', 'stepName'],
+    },
+    {
+      name: 'TurnPrompt (initial)',
+      context: { ...baseDocContext, fileType: FileType.TurnPrompt },
+      checkFields: ['fileTypeGuess', 'modelSlug', 'attemptCount', 'documentKey'],
+    },
+    {
+      name: 'TurnPrompt (continuation)',
+      context: { ...baseDocContext, fileType: FileType.TurnPrompt, isContinuation: true, turnIndex: 2 },
+      checkFields: ['fileTypeGuess', 'documentKey', 'isContinuation', 'turnIndex'],
+    },
+    {
+      name: 'HeaderContext',
+      context: { ...baseDocContext, fileType: FileType.HeaderContext },
+      checkFields: ['fileTypeGuess', 'modelSlug', 'attemptCount'],
+    },
+    {
+      name: 'AssembledDocumentJson',
+      context: { ...baseDocContext, fileType: FileType.AssembledDocumentJson },
+      checkFields: ['fileTypeGuess', 'documentKey', 'modelSlug', 'attemptCount'],
+    },
+    {
+      name: 'RenderedDocument',
+      context: { ...baseDocContext, fileType: FileType.RenderedDocument },
+      checkFields: ['fileTypeGuess', 'documentKey', 'modelSlug', 'attemptCount'],
+    },
+    {
+      name: 'ModelContributionRawJson (doc-specific)',
+      context: { ...baseDocContext, fileType: FileType.ModelContributionRawJson },
+      checkFields: ['fileTypeGuess', 'documentKey', 'modelSlug', 'attemptCount'],
+    },
+    {
+      name: 'ModelContributionRawJson (doc-specific, continuation)',
+      context: { ...baseDocContext, fileType: FileType.ModelContributionRawJson, isContinuation: true, turnIndex: 3 },
+      checkFields: ['fileTypeGuess', 'documentKey', 'isContinuation', 'turnIndex'],
+    },
+  ];
+
+  for (const tc of testCases) {
+    await t.step(tc.name, () => {
+      const { storagePath, fileName } = constructStoragePath(tc.context);
+      const info = deconstructStoragePath({ storageDir: storagePath, fileName });
+
+      assertEquals(info.error, undefined, `Deconstruction failed with error: ${info.error}`);
+      assertEquals(info.originalProjectId, projectId);
+      assertEquals(info.shortSessionId, generateShortId(sessionId));
+      assertEquals(info.iteration, iteration);
+      assertEquals(info.stageSlug, stageSlug);
+
+      // Check dynamic fields
+      for (const field of tc.checkFields) {
+        let expectedValue: unknown;
+        switch (field) {
+            case 'fileTypeGuess':
+                expectedValue = tc.context.fileType;
+                break;
+            case 'modelSlug':
+                expectedValue = sanitizeForPath(tc.context.modelSlug!);
+                break;
+            default:
+                expectedValue = tc.context[field as keyof PathContext];
+        }
+        assertEquals(info[field], expectedValue, `Field '${field}' mismatch`);
+      }
+    });
+  }
+});
+
