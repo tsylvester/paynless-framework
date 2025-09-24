@@ -11,8 +11,8 @@ import {
   type DialecticProject,
 } from './dialectic.interface.ts';
 import type { PathContext } from '../_shared/types/file_manager.types.ts';
-import { PromptAssembler } from "../_shared/prompt-assembler.ts";
-import { ProjectContext, SessionContext, StageContext } from "../_shared/prompt-assembler.interface.ts";
+import { PromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.ts";
+import { ProjectContext, SessionContext, StageContext } from "../_shared/prompt-assembler/prompt-assembler.interface.ts";
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';

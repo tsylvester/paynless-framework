@@ -251,6 +251,7 @@
                 ├── ... (other models' paralysis outputs)
                 └── user_feedback_paralysis.md
 ---
+*Note: This structure represents the artifact layout for a single generation cycle. The long-term vision involves an iterative process where the final checklist artifacts from the `Paralysis/` stage are moved to `Pending/` for the user to consume in subsequent sprints. See `docs/implementations/Current/Documentation/From One-Shot to Continuous Flow.md` for more details.*
 
 ## Mermaid Diagram
 
@@ -266,7 +267,7 @@ graph LR
     %% USER + API
     subgraph USER["User & API"]
         direction TB
-        A["User Initiates Stage"] --> B["API: Enqueues 'PLANNER' Job"]
+        A["User Initiates Stage"] --> B["API: Enqueues 'PLAN' Job"]
         %% Insight: The API layer only enqueues jobs; no business logic is embedded here.
         %% This keeps orchestration concerns in the DB + worker layers.
     end
@@ -286,7 +287,7 @@ graph LR
             U["UPDATE Parent status='completed'"]
             W["UPDATE Child status='completed'"]
             Y["INSERT 'EXECUTE' Job"]
-            Z["INSERT 'RENDERER' Job"]
+            Z["INSERT 'RENDER' Job"]
             AA["INSERT Continuation Job"]
             %% Insight: These reflect **state transitions** driven by worker logic.
             %% This ensures every change is durable and auditable.
@@ -296,6 +297,7 @@ graph LR
         S --> C
         U --> C
         W --> C
+        W --> Z
         Y --> C
         Z --> C
         AA --> C
@@ -309,41 +311,56 @@ graph LR
         E --> F{"Strategy Router (processJob.ts)"}
         %% Insight: Worker is stateless; orchestration decisions are derived from job_type + payload.
 
-        F -->|job_type='execute'| EXECUTE_JOB["processSimpleJob"]
-        F -->|job_type='plan' AND has recipe| PLANNER_JOB["processComplexJob"]
+        F -->|job_type='execute'| EXECUTE["processSimpleJob"]
+        F -->|job_type='plan' AND has recipe| PLAN["processComplexJob"]
         F -->|job_type='plan' AND no recipe| TRANSFORM_JOB["Transform → 'execute' Job (in-memory)"]
-        F -->|job_type='render'| RENDERER_JOB["processRendererJob"]
-        TRANSFORM_JOB --> EXECUTE_JOB
+        F -->|job_type='render'| RENDER["processRenderJob"]
+        TRANSFORM_JOB --> EXECUTE
     end
 
-    %% -------------------------
-    %% PHASE 1: PLANNING
-    subgraph PHASE1["Phase 1: Planning & Decomposition"]
+    %% Subgraph Connections
+    PLAN --> PHASE1_ENTRY
+    EXECUTE --> PHASE2_ENTRY
+    RENDER --> RENDERING_ENTRY
+
+    subgraph PHASE1["Phase 1: Planning & Decomposition (processComplexJob)"]
         direction LR
+        PHASE1_ENTRY(" ")
+        style PHASE1_ENTRY fill:none,stroke:none
         %% Insight: This is where recursive decomposition happens.
+        %% The PLAN job makes a model call to get a "header", which then seeds child jobs.
         %% Guardrails (job recipes) prevent runaway recursion.
-        PLANNER_JOB --> P1{"Get Current Recipe Step"}
+        PHASE1_ENTRY --> P1{"Get Current Recipe Step"}
         P1 --> P2["planComplexStage: Selects strategy"]
         P2 --> P3{"Execute Strategy Chain"}
         P3 -->|Loop for Compound Strategy| P2
-        P3 -->|Final Plan Ready| P4["Generate Header + Child Jobs"]
-        P4 --> P5["Enqueue Child EXECUTE Jobs"]
-        P5 --> P6["Parent status='waiting_for_children'"]
+        P3 -->|Final Plan Ready| P4["Call Model to Generate Plan (Header)"]
+        P4 --> P5["Validate Plan & Extract Header"]
+        P5 --> P6["Generate Child 'EXECUTE' Jobs from Header"]
+        P6 --> P7["Enqueue Child Jobs"]
+        P7 --> P8["Parent status='waiting_for_children'"]
     end
 
     %% -------------------------
     %% PHASE 2: EXECUTION
-    subgraph PHASE2["Phase 2: Document Generation"]
-        EXECUTE_JOB --> G4["executeModelCallAndSave"]
+    subgraph PHASE2["Phase 2: Document Generation (processSimpleJob)"]
+        direction TB
+        PHASE2_ENTRY(" ")
+        style PHASE2_ENTRY fill:none,stroke:none
+        PHASE2_ENTRY --> G1["Assemble Prompt (PromptAssembler)"]
+        G1 --> G2["Save Prompt Artifact"]
+        G2 --> G4["executeModelCallAndSave"]
+
         subgraph G4["executeModelCallAndSave Internals"]
             direction TB
             G4_ENTRY["PromptPayload"] --> G4_COMPRESSION{"Context Compression & Wallet Checks"}
             G4_COMPRESSION --> G4_CALL["Call Chat Service"]
         end
         G4_CALL --> RESP["AI Model Response"]
+        RESP --> G5["Save Raw Response Artifact"]
 
         %% Insight: This is where validation protects downstream steps from LLM brittleness.
-        RESP --> V{"Validate Response"}
+        G5 --> V{"Validate Response"}
         V -->|VALID JSON stop| W
         V -->|VALID JSON continuation_needed| X["continueJob: Planned Continuation"]
         V -->|INVALID JSON or truncation| X2["continueJob: Truncation Recovery"]
@@ -365,11 +382,11 @@ graph LR
 
     %% -------------------------
     %% RENDERING
-    subgraph RENDERING["Phase 4: Rendering"]
+    subgraph RENDERING["Phase 4: Rendering (processRenderJob)"]
         direction TB
-        U --> Z_PREP["Prepare for Rendering"]
-        Z_PREP --> Z
-        RENDERER_JOB --> R1["assembleAndSaveFinalDocument"]
+        RENDERING_ENTRY(" ")
+        style RENDERING_ENTRY fill:none,stroke:none
+        RENDERING_ENTRY --> R1["assembleAndSaveFinalDocument"]
         R1 --> R2["renderDocument"]
         R2 --> R3["Save Final Markdown"]
         %% Insight: Rendering is non-AI, deterministic, and side-effectful (writes final artifacts).
@@ -378,13 +395,13 @@ graph LR
 
 # Technical Requirements and System Contracts 
 
-*   `[ ]` 1. `[DOCS]` Finalize Technical Requirements and System Contracts.
+*   `[✅]` 1. `[DOCS]` Finalize Technical Requirements and System Contracts.
     *   `[✅]` 1.a. Update the Mermaid diagram section to represent the target state, depicting a document-centric, planner-driven workflow.
     *   `[✅]` 1.b. Update the File Structure section to represent the target ttate that accounts for the new artifacts (turn-specific prompts, raw per-document JSON, rendered per-document Markdown).
     *   `[✅]` 1.c. Define and specify the "Header Context" mechanism that will consist of the `system_materials` block from the initial "Planner" job's completion and will be passed to all subsequent child jobs for that stage.
     *   `[✅]` 1.d. `[COMMIT]` docs: Finalize TRD for Document-Centric Generation.
 
-*   `[ ]` 2. `[DB]` Implement Database Schema Changes.
+*   `[✅]` 2. `[DB]` Implement Database Schema Changes.
     *   `[✅]` 2.a. Create a new migration to add a `job_type` column (e.g., `'PLAN' | 'EXECUTE' | 'RENDER'`) to the `dialectic_generation_jobs` table to enable the Strategy Router.
         *   `[✅]` 2.a.i. This new `job_type` column will supercede the existing tag passed into `handleJob` that currently directs `processJob` to route jobs to `processSimpleJob` or `processComplexJob`
         *   `[✅]` 2.a.ii. `'PLAN'` replaces the old `'plan'` job type used in `processJob.ts`. `'EXECUTE'` replaces the old in-memory transform of `'plan'` for simple jobs. `'RENDER'`is a new job type to transform artifacts generated in an `'EXECUTE'` job into the format required for the system or user. The old `'plan'` and `'execute'` job flags will be removed. 
@@ -415,7 +432,7 @@ graph LR
         *   `[✅]` 2.f.iii. `[DB]` Update the `invoke_dialectic_worker` trigger in the migration script to check `NEW.is_test_job` directly, instead of checking the property within the `payload` JSON. Make the integration test pass.
     *   `[✅]` 2.g. `[COMMIT]` feat(db): Add job_type and enhance resource/contribution tables for document-centric workflow.
 
-*   `[ ]` 3. `[CONFIG]` Implement Pathing for Document-Centric Artifacts.
+*   `[✅]` 3. `[CONFIG]` Implement Pathing for Document-Centric Artifacts.
     *   `[✅]` 3.a. `[BE]` In `supabase/functions/_shared/types/file_manager.types.ts`, update core types for new artifacts.
         *   `[✅]` 3.a.i. Add new enums to the `FileType` enum to represent all new document-centric artifacts as defined in the target file structure, including `TurnPrompt`, `HeaderContext`, `RenderedDocument`, `PlannerPrompt`, and `AssembledDocumentJson`.
         *   `[✅]` 3.a.ii. Update the `PathContext` interface to include optional properties required for the new path structures, such as `documentKey?: string` and `stepName?: string`.
@@ -429,58 +446,90 @@ graph LR
     *   `[✅]` 3.d. `[BE]` In `dialectic.interface.ts` (or relevant types file), update the type definitions for the `dialectic_generation_jobs` and `dialectic_contributions` tables to reflect the schema changes from the migration.
     *   `[✅]` 3.e. `[COMMIT]` refactor(types): Update core types and file manager for document-centric artifacts.
 
-*   `[ ]` 4. `[BE]` Implement Conditional Prompt Saving for Observability.
-    *   `[ ]` 4.a. `[TEST-UNIT]` Write failing unit tests for `executeModelCallAndSave` to enforce conditional prompt saving logic.
-        *   `[ ]` 4.a.i. Write a test case for a **subsequent recipe step** (`current_step > 1`). It must prove that `FileManagerService.uploadAndRegisterFile` is called to save a new, unique prompt artifact.
-        *   `[ ]` 4.a.ii. Write a test case for the **first recipe step** (`current_step === 1`). It must prove that the system queries the `dialectic_project_resources` table to find the existing `seed_prompt.md` and does **not** call `uploadAndRegisterFile`.
-        *   `[ ]` 4.a.iii. Write a test case for a **simple job** (where `step_info` is `undefined`). It must also prove that the system queries for the existing `seed_prompt.md` and does **not** call `uploadAndRegisterFile`.
-    *   `[ ]` 4.b. `[BE]` In `executeModelCallAndSave`, implement the conditional logic to handle prompt artifacts.
-        *   `[ ]` 4.b.i. Implement a conditional check: `if (job.payload.step_info && job.payload.step_info.current_step > 1)`.
-        *   `[ ]` 4.b.ii. If the condition is `true`, use the `FileManagerService` to save the fully-assembled prompt to storage as a new `dialectic_project_resources` row.
-        *   `[ ]` 4.b.iii. Otherwise (for simple jobs or the first step of a complex job), perform a database query to fetch the existing `seed_prompt.md` resource record associated with the current `session_id`, `stage_slug`, and `iteration_number`.
-    *   `[ ]` 4.c. `[BE]` Unify the logic to link the contribution to its source prompt. Ensure that regardless of whether the prompt was newly created or fetched, its resource ID is correctly passed into the `contributionMetadata` and saved to the `source_prompt_resource_id` column of the new contribution record.
-    *   `[ ]` 4.d. `[COMMIT]` feat(worker): Implement conditional prompt saving to prevent redundancy.
+*   `[✅]` 4. `[REFACTOR]` Deconstruct Monolithic `PromptAssembler` for Modularity and Testability.
+    *   **Objective:** To structurally refactor the monolithic `PromptAssembler` class into a collection of modular, single-responsibility, and independently testable functions. This is a prerequisite for adding new features and will not change the external behavior of the service, ensuring a safe, incremental refactor.
+    *   `[✅]` 4.a. `[REFACTOR]` Create a dedicated directory structure for the `PromptAssembler` service to house its new modular components.
+        *   `[✅]` 4.a.i. Create the directory: `supabase/functions/prompt-assembler/`.
+        *   `[✅]` 4.a.ii. Move the existing files `supabase/functions/prompt-assembler.ts`, its interface, and its test file into the new folder. Update all import paths across the project that are broken by this move.
+    *   `[ ]` 4.b. `[REFACTOR]` Extract the core logic of the `PromptAssembler` class into standalone, testable functions. The `PromptAssembler` class will be retained as a thin wrapper to maintain the existing interface and orchestrate calls to the new functions.
+        *   `[✅]` 4.b.i. Create `supabase/functions/_shared/prompt-assembler/gatherInputsForStage.ts` and move the corresponding logic from the class method into a standalone, exported function. Copy its tests into `gatherInputsForStage.test.ts` and write new ones to provide coverage requirements.
+        *   `[✅]` 4.b.ii. Create `supabase/functions/_shared/prompt-assembler/gatherContext.ts` and move the corresponding logic from the class method into a standalone, exported function. Copy its tests into `gatherContext.test.ts` and write new ones to provide coverage requirements.
+        *   `[✅]` 4.b.iii. Create `supabase/functions/_shared/prompt-assembler/render.ts` and move the corresponding logic from the class method into a standalone, exported function. Copy its tests into `render.test.ts` and write new ones to provide coverage requirements.
+        *   `[✅]` 4.b.iv. Create `supabase/functions/_shared/prompt-assembler/gatherContinuationInputs.ts` and move the corresponding logic from the class method into a standalone, exported function. Copy its tests into `gatherContinuationInputs.test.ts` and write new ones to provide coverage requirements.
+        *   `[✅]` 4.b.v. Create `supabase/functions/_shared/prompt-assembler/assemble.ts` and move the corresponding logic from the class method into a standalone, exported function. Copy its tests into `assemble.test.ts` and write new ones to provide coverage requirements.
+        *   `[✅]` 4.b.vi. In `supabase/functions/_shared/prompt-assembler/prompt-assembler.ts`, refactor the `PromptAssembler` class methods to import and delegate their implementation to these new standalone functions.
+    *   `[✅]` 4.c. `[TEST-UNIT]` Review the dedicated unit tests for each extracted function ensure coverage.
+        *   `[✅]` 4.c.i. Now that the sub function unit tests are removed to their sub-function test files, review `prompt-assembler.test.ts` for coverage requirements.
+    *   `[✅]` 4.d. `[COMMIT]` refactor(prompt-assembler): Deconstruct monolithic PromptAssembler into modular, testable functions.
 
-*   `[ ]` 5. `[BE]` Implement Robust Continuation Logic.
-    *   `[ ]` 5.a. `[TEST-UNIT]` Write a failing unit test for the `continueJob` function. The test should prove that when the `finish_reason` is `'length'`, the new job's payload contains a specific, directive continuation prompt, not the generic "Please continue."
-    *   `[ ]` 5.b. `[API]` Update the `continueJob` function signature to accept the `finish_reason`.
-    *   `[ ]` 5.c. `[BE]` Implement logic within `continueJob` to check the `finish_reason` and construct the appropriate continuation prompt.
-    *   `[ ]` 5.d. `[COMMIT]` fix(worker): Implement robust continuation logic to handle unplanned truncations.
+*   `[ ]` 5. `[BE]` Enhance `PromptAssembler` to Generate All Prompt Types.
+    *   **Objective:** To expand the capabilities of the newly refactored `PromptAssembler` so it can generate and persist all prompt types (`Seed`, `Planner`, `Turn`, and context-aware `Continuation`) based on the job context, and to update its direct consumer, `executeModelCallAndSave`, to correctly link contributions back to their source prompt.
+    *   `[ ]` 5.a. `[REFACTOR]` Update the `PromptAssembler` to handle context-aware prompt generation and persistence.
+        *   `[ ]` 5.a.i. `[TEST-UNIT]` In `prompt-assembler.test.ts`, write a failing test to prove the `assemble` method must return a new `AssembledPrompt` object (`{ promptContent: string; source_prompt_resource_id: string; }`), breaking its old signature.
+        *   `[ ]` 5.a.ii. `[BE]` In `prompt-assembler.interface.ts`, define the `AssembledPrompt` type and update the `IPromptAssembler` interface. The `assemble` method signature must also be updated to accept the full `job` object to provide the necessary context for decision-making.
+        *   `[ ]` 5.a.iii. `[TEST-UNIT]` In `prompt-assembler.test.ts`, write a failing test proving that when the job context requires a `PlannerPrompt` (e.g., for a `'PLAN'` job with `current_step > 1`), the `assemble` method saves a new `PlannerPrompt` artifact and returns the UUID of its new `dialectic_project_resources` record.
+        *   `[ ]` 5.a.iv. `[TEST-UNIT]` In `prompt-assembler.test.ts`, write a failing test proving that when the job context requires a `TurnPrompt` (i.e., for an `'EXECUTE'` job), the `assemble` method correctly fetches the `HeaderContext`, constructs the `TurnPrompt`, saves it as an artifact, and returns the UUID of its new `dialectic_project_resources` record.
+        *   `[ ]` 5.a.v. `[TEST-UNIT]` In `prompt-assembler.test.ts`, write a failing test proving that for all other job contexts (e.g., simple jobs or the first step of a complex job), the `assemble` method correctly identifies and returns the UUID of the existing `seed_prompt.md` record.
+        *   `[ ]` 5.a.vi. `[TEST-UNIT]` In `prompt-assembler.test.ts`, write a failing test proving that the `assemble` method, when passed a specific continuation context (e.g., `{ isContinuation: true, finish_reason: 'length' }`), generates and saves a `TurnPrompt` with a specific, directive continuation message, not a generic one.
+        *   `[ ]` 5.a.vii. `[BE]` In `prompt-assembler.ts`, implement the conditional logic within the `assemble` method to handle the three cases defined above. This will involve inspecting the passed-in `job` object's `job_type` and payload, as well as any continuation context. Ensure all new tests pass.
+    *   `[ ]` 5.b. `[REFACTOR]` Update `executeModelCallAndSave` to correctly consume the `source_prompt_resource_id`.
+        *   `[ ]` 5.b.i. `[BE]` In `dialectic.interface.ts`, update the `PromptConstructionPayload` interface to include the optional `source_prompt_resource_id: string` property.
+        *   `[ ]` 5.b.ii. `[TEST-UNIT]` In `executeModelCallAndSave.test.ts`, write a failing unit test that passes a `source_prompt_resource_id` via the `promptConstructionPayload` and asserts that this ID is used to populate the `source_prompt_resource_id` field on the created `dialectic_contributions` record, replacing the hardcoded value.
+        *   `[ ]` 5.b.iii. `[BE]` In `executeModelCallAndSave.ts`, modify the `contributionMetadata` object to use the `source_prompt_resource_id` from the payload, and remove the obsolete `seedPromptStoragePath` property. Ensure the test passes.
+    *   `[ ]` 5.c. `[COMMIT]` feat(worker): Enhance PromptAssembler for all prompt types and update consumer.
 
-*   `[ ]` 6. `[BE]` Implement the Planner Service and Strategy Router.
-    *   `[ ]` 6.a. `[TEST-UNIT]` Write failing unit tests for a new `PlannerService` that verify its ability to:
-        *   `[ ]` 6.a.i. Enqueue a "Planner" job that produces a single `dialectic_contributions` record flagged with `is_header: true`.
-        *   `[ ]` 6.a.ii. After the "Planner" job's contribution is successfully created, extract its `system_materials` block.
-        *   `[ ]` 6.a.iii. Save the extracted block as a new `dialectic_project_resources` record with `resource_type: 'header_context'` and a `source_contribution_id` that correctly links it back to the planner's `dialectic_contributions` record.
-        *   `[ ]` 6.a.iv. Validate the planner's output against the canonical `SystemMaterials` interface to ensure it is well-formed and contains the expected keys (e.g., `documents`, `files_to_generate`) before proceeding. If validation fails after all retries are exhausted, the parent job status should be set to `failed`.
-        *   `[ ]` 6.a.v. Generate correctly-formed child `DOCUMENT_GENERATION` job payloads for each document defined in the stage, ensuring each payload contains the ID of the newly created `header_context` resource.
-    *   `[ ]` 6.b. `[API]` Define the `IPlannerService` interface and create the concrete `PlannerService` class and its mock.
-    *   `[ ]` 6.c. `[BE]` Implement the `planAndEnqueueChildJobs` method according to the TRD algorithm.
-    *   `[ ]` 6.d. `[TEST-UNIT]` Write a failing unit test for the worker's main entry point (Strategy Router) that proves it routes jobs to the new `PlannerService` based on the `job_type`.
-    *   `[ ]` 6.e. `[REFACTOR]` Refactor the primary entry point of the worker (`processJob.ts`) to function as the Strategy Router, removing the old tag-based routing and implementing a `switch` statement based on the new `job_type` column to delegate tasks to the appropriate services (`PlannerService`, `processSimpleJob`, etc.).
-    *   `[ ]` 6.f. `[COMMIT]` feat(worker): Implement planner service and strategy router for decomposing monolithic jobs.
-
-*   `[ ]` 7. `[REFACTOR]` Deconstruct `PromptAssembler` for Modularity and Testability.
-    *   `[ ]` 7.a. `[REFACTOR]` Create a new directory for the `PromptAssembler` service.
-    *   `[ ]` 7.b. `[REFACTOR]` Refactor the `PromptAssembler` class into a lightweight router. Its responsibility will be to delegate tasks to dedicated, single-purpose functions based on the type of prompt assembly required (e.g., initial stage prompt, continuation prompt, document-generation prompt). All files and functions will be built using DI/DIP. 
-    *   `[ ]` 7.c. `[REFACTOR]` Move each major method (`assemble`, `gatherContext`, `render`, `gatherInputsForStage`, `gatherContinuationInputs`) into its own file within the new directory, exporting each as a standalone function.
-    *   `[ ]` 7.d. `[TEST-UNIT]` Create a dedicated unit test file for each extracted function, ensuring each can be tested in isolation.
-    *   `[ ]` 7.e. `[TEST-UNIT]` Write a new failing unit test for the `DOCUMENT_GENERATION` prompt assembly logic. This test must prove the assembler can:
-        *   `[ ]` 7.e.i. Receive a job payload containing a `header_context_resource_id` and a document-specific data slice.
-        *   `[ ]` 7.e.ii. Use the `header_context_resource_id` to fetch the corresponding `dialectic_project_resources` record (the typed `SystemMaterials` object).
-        *   `[ ]` 7.e.iii. Correctly combine the shared context from the fetched `SystemMaterials` object with the document-specific data slice from the payload to construct the final, targeted prompt.
-    *   `[ ]` 7.f. `[BE]` Update the `PromptAssembler` logic to handle the new `DOCUMENT_GENERATION` job type, making the new unit test pass.
-    *   `[ ]` 7.g. `[COMMIT]` refactor(prompt-assembler): Deconstruct monolithic PromptAssembler and enable document-centric context.
+*   `[ ]` 6. `[REFACTOR]` Transform Core Worker Services for Document-Centric Flow.
+    *   **Objective:** To adapt the existing worker services to orchestrate the new two-step planning and execution flow, making targeted changes to the router, orchestrator, planner, and executor.
+    *   `[ ]` 6.a. `[REFACTOR]` Transform `processJob.ts` into the `job_type`-based Strategy Router.
+        *   `[ ]` 6.a.i. `[TEST-UNIT]` In `processJob.test.ts`, write a failing test to prove the router dispatches based on the `job.job_type` DB column, sending `'PLAN'` jobs to `processComplexJob` and `'EXECUTE'` jobs to `processSimpleJob`.
+        *   `[ ]` 6.a.ii. `[BE]` In `processJob.ts`, refactor the main function to implement a `switch` statement on `job.job_type`, replacing the old payload-sniffing and `processing_strategy` logic.
+    *   `[ ]` 6.b. `[REFACTOR]` Adapt `processSimpleJob.ts` to pass the `source_prompt_resource_id`.
+        *   **Justification:** This change is an unavoidable consequence of Step 5's requirement to link every contribution to the prompt that created it. `processSimpleJob` is the component that calls both the `PromptAssembler` (which now creates the ID) and `executeModelCallAndSave` (which now consumes it). This step plumbs that new ID through the existing flow.
+        *   `[ ]` 6.b.i. `[TEST-UNIT]` In `processSimpleJob.test.ts`, write a failing test that mocks `promptAssembler.assemble` to return an `AssembledPrompt` object and asserts that the `source_prompt_resource_id` from that object is correctly passed to `executeModelCallAndSave` via the `promptConstructionPayload`.
+        *   `[ ]` 6.b.ii. `[BE]` In `processSimpleJob.ts`, modify the section that calls the `PromptAssembler` to handle the new `AssembledPrompt` return type and pass the `source_prompt_resource_id` into the `promptConstructionPayload`. No other logic will be changed.
+   *   `[ ]` 6.c. `[DB]` Create a new migration to refactor all stage recipes to be explicit and multi-step.
+       *   **Justification:** This is the core of the solution. By making the generation of the `HeaderContext` an explicit first step in the recipe data, we can drive the entire document-centric workflow with minimal code changes. This migration will also add a `prompt_type` to each step, making the recipes the single source of truth for orchestration.
+       *   `[ ]` 6.c.i. Create a new SQL migration file.
+       *   `[ ]` 6.c.ii. Within the migration, write an `UPDATE` statement for each stage. (`Thesis` does not currently have a recipe, so it will need one.)
+       *   `[ ]` 6.c.iii. The `UPDATE` statement will prepend a new **Step 1 ("Generate Stage Plan")** to the `steps` array in the `input_artifact_rules`. All subsequent steps will be renumbered.
+           *   This new Step 1 will have an `output_type` of `HeaderContext`, a `granularity_strategy` of `all_to_one`, and a new field: `"prompt_type": "Planner"`.
+       *   `[ ]` 6.c.iv. All subsequent steps will be updated to:
+           *   Add the `HeaderContext` to their `inputs_required` list.
+           *   Include the new field `"prompt_type": "Turn"`.
+   *   `[ ]` 6.d. `[REFACTOR]` Adapt `PromptAssembler` to use the new `prompt_type` from the recipe.
+       *   **Justification:** This change makes the `PromptAssembler` a pure consumer of the recipe's instructions.
+       *   `[ ]` 6.d.i. `[TEST-UNIT]` In `prompt-assembler.test.ts`, write a failing test for the `assemble` method. The test must prove that the method inspects the `job.payload.step_info.prompt_type` field and correctly branches its logic:
+           *   If `'Planner'`, it builds and saves a `PlannerPrompt`.
+           *   If `'Turn'`, it finds the `HeaderContext` from the job's inputs, combines it with other inputs, and builds/saves a `TurnPrompt`.
+           *   If `'Seed'` or `undefined`, it uses the existing `seed_prompt.md` logic.
+       *   `[ ]` 6.d.ii. `[BE]` In `prompt-assembler.ts`, implement this branching logic in the `assemble` method.
+   *   `[ ]` 6.e. `[REFACTOR]` Adapt `task_isolator.ts` to handle the `HeaderContext` as just another input.
+       *   **Justification:** With the recipes and `PromptAssembler` now being explicit, the `task_isolator` no longer needs complex special-case logic. It simply needs to pass the `HeaderContext` along with other inputs.
+       *   `[ ]` 6.e.i. `[TEST-UNIT]` In `task_isolator.test.ts`, update and expand the tests for `planComplexStage` to reflect the new recipes. The tests must prove that the planner correctly handles cases where `HeaderContext` is required but missing, correctly finds and provides it when available, and correctly passes all other required inputs alongside it as `SourceDocument` objects.
+       *   `[ ]` 6.e.ii. `[BE]` In `task_isolator.ts`, validate that the existing implementation correctly handles the new recipes and the `HeaderContext` input type. While no major logic change is anticipated, this step focuses on proving correctness through the newly expanded test suite. Adjust the implementation if any gaps are revealed by the tests.
+    *   `[ ]` 6.f. `[COMMIT]` refactor(worker): Implement job_type router and adapt services for document-centric workflow.
+    
+*   `[ ]` 7. `[BE]` Improve Continue Logic to handle explicit and implicit continuations.
+    *   **Objective**: Enhance `continueJob` to handle both explicit, provider-signaled continuations (e.g., `finish_reason: 'length'`) and implicit continuations caused by malformed or incomplete JSON responses. The specific reason for continuation must be passed to the next job's payload to enable context-aware prompt generation.
+    *   `[ ]` 7.a. `[TEST-UNIT]` Write a new suite of failing unit tests for `continueJob`.
+        *   `[ ]` 7.a.i. Write a test that proves when `aiResponse.finish_reason` is a continuable reason (e.g., `'length'`), a new job is enqueued, and its payload contains a `continuation_context` object like `{ reason: 'length' }`.
+        *   `[ ]` 7.a.ii. Write a test that proves when the content of the AI response is an incomplete or malformed JSON string, a new job is enqueued, and its payload contains a `continuation_context` object like `{ reason: 'truncation_recovery' }`.
+        *   `[ ]` 7.a.iii. Write a test proving that even if `aiResponse.finish_reason` is `'stop'`, if the response content is malformed JSON, a continuation is still enqueued with `reason: 'truncation_recovery'`, ensuring that recovery logic takes precedence over a potentially incorrect stop signal.
+    *   `[ ]` 7.b. `[BE]` In `continueJob.ts`, refactor the logic to implement the checks from the new tests.
+        *   `[ ]` 7.b.i. Introduce a JSON validation check at the beginning of the function to inspect the AI response content.
+        *   `[ ]` 7.b.ii. The decision to continue should be `true` if the provider's `finish_reason` is a known continuable reason OR if the JSON validation fails.
+        *   `[ ]` 7.b.iii. When creating the `newPayload` for the continuation job, add a `continuation_context` object. Populate its `reason` property based on which condition triggered the continuation (e.g., `'length'`, `'tool_calls'`, `'truncation_recovery'`). This provides the necessary context for the downstream `PromptAssembler`. Ensure all new tests pass.
+    *   `[ ]` 7.c. `[COMMIT]` feat(worker): Plumb finish_reason through continueJob to enable context-aware prompts.
 
 *   `[ ]` 8. `[BE]` Implement Document Rendering and Finalization.
     *   `[ ]` 8.a. `[TEST-UNIT]` Write failing unit tests for the `DocumentRenderer` service that verify its ability to be idempotent and cumulative. It must prove that it can:
-        *   `[ ]` 8.a.i. Be triggered by the completion of a single `DOCUMENT_GENERATION` job (including continuations).
+        *   `[ ]` 8.a.i. Be triggered by the completion of a single `EXECUTE` job (including continuations).
         *   `[ ]` 8.a.ii. Find all existing contribution chunks for a specific document.
         *   `[ ]` 8.a.iii. Assemble the chunks in the correct order in memory.
         *   `[ ]` 8.a.iv. Render the complete-so-far content into a Markdown file, overwriting any previous version.
     *   `[ ]` 8.b. `[API]` Define the `IDocumentRenderer` interface and create the concrete `DocumentRenderer` class and its mock.
     *   `[ ]` 8.c. `[BE]` Implement the idempotent and cumulative `renderDocument` method.
-    *   `[ ]` 8.d. `[BE]` Modify the orchestration logic to enqueue a `RENDERER` job every time a `DOCUMENT_GENERATION` job successfully completes.
+    *   `[ ]` 8.d. `[BE]` Modify the orchestration logic to enqueue a `RENDER` job every time a `EXECUTE` job successfully completes.
     *   `[ ]` 8.e. `[COMMIT]` feat(worker): Implement "live build" document rendering service for final artifact generation.
     
 *   `[ ]` 9. `[BE]` Implement Granular Cross-Stage Document Selection.

@@ -1,28 +1,28 @@
 import { spy, type Spy } from 'jsr:@std/testing@0.225.1/mock';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database, Json } from '../types_db.ts';
+import type { Database, Json } from '../../types_db.ts';
 import type {
 	ProjectContext,
 	SessionContext,
 	StageContext,
 	DynamicContextVariables,
-	AssemblerSourceDocument,
 	ContributionOverride,
-} from './prompt-assembler.interface.ts';
-import { PromptAssembler } from './prompt-assembler.ts';
-import { IRagServiceDependencies } from './services/rag_service.interface.ts';
-import { AiModelExtendedConfig } from './types.ts';
-import { createMockSupabaseClient } from './supabase.mock.ts';
+    AssemblerSourceDocument,
+} from "./prompt-assembler.interface.ts";
+import { PromptAssembler } from "./prompt-assembler.ts";
+import { Messages } from "../types.ts";
+import { createMockSupabaseClient } from "../supabase.mock.ts";
 
 export class MockPromptAssembler extends PromptAssembler {
 	public override assemble: Spy<PromptAssembler['assemble']>;
 	public override gatherContext: Spy<PromptAssembler['gatherContext']>;
 	public override render: Spy<PromptAssembler['render']>;
 	public override gatherInputsForStage: Spy<PromptAssembler['gatherInputsForStage']>;
+    public override gatherContinuationInputs: Spy<PromptAssembler['gatherContinuationInputs']>;
 
 	constructor(supabaseClient?: SupabaseClient<Database>) {
         const clientToUse = supabaseClient || createMockSupabaseClient().client;
-		super(clientToUse as unknown as SupabaseClient<Database>, undefined, undefined);
+		super(clientToUse as SupabaseClient<Database>, undefined, undefined);
 
 		this.assemble = spy(async (
 			_project: ProjectContext,
@@ -30,8 +30,7 @@ export class MockPromptAssembler extends PromptAssembler {
 			_stage: StageContext,
 			_projectInitialUserPrompt: string,
 			_iterationNumber: number,
-            _modelConfigForTokenization: AiModelExtendedConfig,
-            _minTokenLimit: number
+            _continuationContent?: string
 		): Promise<string> => {
 			return await Promise.resolve('mock assembled prompt');
 		});
@@ -41,9 +40,7 @@ export class MockPromptAssembler extends PromptAssembler {
 			_stage: StageContext,
 			_projectInitialUserPrompt: string,
 			_iterationNumber: number,
-			_overrideContributions?: ContributionOverride[],
-            _modelConfigForTokenization?: AiModelExtendedConfig,
-            _minTokenLimit?: number
+			_overrideContributions?: ContributionOverride[]
 		): Promise<DynamicContextVariables> => {
 			return await Promise.resolve({
 				user_objective: 'mock user objective',
@@ -75,9 +72,15 @@ export class MockPromptAssembler extends PromptAssembler {
 			_project: ProjectContext,
 			_session: SessionContext,
 			_iterationNumber: number,
-		): Promise<any[]> => { // Changed to Promise<any[]> to match new structure
+		): Promise<AssemblerSourceDocument[]> => {
 			return await Promise.resolve([]);
 		});
+
+        this.gatherContinuationInputs = spy(async (
+            _rootContributionId: string
+        ): Promise<Messages[]> => {
+            return await Promise.resolve([]);
+        });
 	}
 }
 

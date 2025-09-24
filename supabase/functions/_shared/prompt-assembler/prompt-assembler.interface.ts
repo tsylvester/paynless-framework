@@ -1,5 +1,5 @@
-import { Json, Tables } from "../types_db.ts";
-import { Messages } from "./types.ts";
+import { Json, Tables } from "../../types_db.ts";
+import { Messages } from "../types.ts";
 
 export interface IPromptAssembler {
     assemble(

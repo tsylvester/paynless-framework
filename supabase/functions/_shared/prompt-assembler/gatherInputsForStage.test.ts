@@ -1,20 +1,19 @@
 import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
 import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
-import { 
-    PromptAssembler, 
-} from "./prompt-assembler.ts";
+import { gatherInputsForStage } from "./gatherInputsForStage.ts";
 import { ProjectContext, SessionContext, StageContext, AssemblerSourceDocument } from "./prompt-assembler.interface.ts";
-import { FileManagerService } from "./services/file_manager.ts";
-import { type InputArtifactRules, type ArtifactSourceRule, type DialecticContribution } from '../dialectic-service/dialectic.interface.ts';
-import { createMockSupabaseClient, type MockSupabaseDataConfig, type IMockSupabaseClient, type IMockClientSpies, type MockSupabaseClientSetup, type MockQueryBuilderState } from "./supabase.mock.ts";
+import { FileManagerService } from "../services/file_manager.ts";
+import { type InputArtifactRules, type ArtifactSourceRule, type DialecticContribution } from '../../dialectic-service/dialectic.interface.ts';
+import { createMockSupabaseClient, type MockSupabaseDataConfig, type IMockSupabaseClient, type IMockClientSpies, type MockSupabaseClientSetup, type MockQueryBuilderState } from "../supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Json, Tables } from "../types_db.ts";
-import { Database } from "../types_db.ts";
-import { constructStoragePath } from './utils/path_constructor.ts';
-import { FileType } from "./types/file_manager.types.ts";
+import { downloadFromStorage } from '../supabase_storage_utils.ts';
+import type { Json, Tables } from "../../types_db.ts";
+import { Database } from "../../types_db.ts";
+import { constructStoragePath } from '../utils/path_constructor.ts';
+import { FileType } from "../types/file_manager.types.ts";
 import { join } from "jsr:@std/path/join";
 
-Deno.test("PromptAssembler", async (t) => {
+Deno.test("gatherInputsForStage", async (t) => {
     await t.step("_gatherInputsForStage tests", async (tCtx) => {
         let denoEnvStub: any;
         let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
@@ -45,8 +44,7 @@ Deno.test("PromptAssembler", async (t) => {
             if (currentConsoleWarnSpy) currentConsoleWarnSpy.restore();
             currentConsoleWarnSpy = spy(console, "warn");
 
-            const assembler = new PromptAssembler(mockSupabaseSetup.client as unknown as SupabaseClient<Database>);
-            return { assembler, mockSupabaseClient: mockSupabaseSetup.client, spies: mockSupabaseSetup.spies };
+            return { mockSupabaseClient: mockSupabaseSetup.client, spies: mockSupabaseSetup.spies };
         };
 
         const teardown = () => {
@@ -65,7 +63,7 @@ Deno.test("PromptAssembler", async (t) => {
         };
 
         await tCtx.step("should return empty strings if stage has no input_artifact_rules", async () => {
-            const { assembler } = setup({}); 
+            const { mockSupabaseClient } = setup({}); 
             try {
                 const project: ProjectContext = { 
                     id: "p1", 
@@ -110,7 +108,8 @@ Deno.test("PromptAssembler", async (t) => {
                 };
                 const iterationNumber = 1;
 
-                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
                 assertEquals(Array.isArray(result), true);
                 assertEquals(result.length, 0);
@@ -120,7 +119,7 @@ Deno.test("PromptAssembler", async (t) => {
         });
         
         await tCtx.step("should return empty strings if input_artifact_rules.sources is empty", async () => {
-            const { assembler, spies } = setup({});
+            const { mockSupabaseClient, spies } = setup({});
             try {
                 const project: ProjectContext = { 
                     id: "p1",
@@ -166,7 +165,8 @@ Deno.test("PromptAssembler", async (t) => {
                 };
                 const iterationNumber = 1;
 
-                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
                 assertEquals(Array.isArray(result), true);
                 assertEquals(result.length, 0);
@@ -180,7 +180,7 @@ Deno.test("PromptAssembler", async (t) => {
         });
         
         await tCtx.step("should return empty strings if input_artifact_rules is invalid JSON (e.g., a plain string)", async () => {
-            const { assembler } = setup({});
+            const { mockSupabaseClient } = setup({});
             try {
                 const project: ProjectContext = { 
                     id: "p1",
@@ -225,7 +225,8 @@ Deno.test("PromptAssembler", async (t) => {
                 };
                 const iterationNumber = 1;
 
-                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
                 assertEquals(Array.isArray(result), true);
                 assertEquals(result.length, 0);
@@ -238,7 +239,7 @@ Deno.test("PromptAssembler", async (t) => {
         });
 
         await tCtx.step("should return empty strings if input_artifact_rules sources contain invalid rule (e.g., missing type)", async () => {
-            const { assembler } = setup({});
+            const { mockSupabaseClient } = setup({});
             try {
                 const project: ProjectContext = { 
                     id: "p1",
@@ -292,7 +293,8 @@ Deno.test("PromptAssembler", async (t) => {
                     expected_output_artifacts: null,
                 };
 
-                const result = await assembler.gatherInputsForStage(stage, project, session, 1);
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, 1);
 
                 assertEquals(Array.isArray(result), true);
                 assertEquals(result.length, 0);
@@ -357,7 +359,7 @@ Deno.test("PromptAssembler", async (t) => {
                 }
             };
 
-            const { assembler, spies } = setup(config);
+            const { mockSupabaseClient, spies } = setup(config);
 
             try {
                 const project: ProjectContext = { 
@@ -413,7 +415,8 @@ Deno.test("PromptAssembler", async (t) => {
                     expected_output_artifacts: null,
                 };
 
-                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
                 
                 console.log("--- TEST LOG: should fetch and format only contributions ---");
                 console.log("ACTUAL:", JSON.stringify(result));
@@ -495,7 +498,7 @@ Deno.test("PromptAssembler", async (t) => {
                     }
                 }
             };
-            const { assembler, spies } = setup(config);
+            const { mockSupabaseClient, spies } = setup(config);
 
             try {
                 const project: ProjectContext = { 
@@ -550,7 +553,8 @@ Deno.test("PromptAssembler", async (t) => {
                     expected_output_artifacts: null,
                 };
                 
-                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
                 
                 console.log("--- TEST LOG: should fetch and format only feedback ---");
                 console.log("ACTUAL:", JSON.stringify(result));
@@ -663,7 +667,7 @@ Deno.test("PromptAssembler", async (t) => {
                     }
                 }
             };
-            const { assembler, spies } = setup(config);
+            const { mockSupabaseClient, spies } = setup(config);
 
             try {
                 const project: ProjectContext = { 
@@ -726,7 +730,8 @@ Deno.test("PromptAssembler", async (t) => {
                     expected_output_artifacts: null,
                 };
 
-                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
                 console.log("--- TEST LOG: should fetch and format both contributions and feedback ---");
                 console.log("ACTUAL:", JSON.stringify(result));
@@ -842,7 +847,7 @@ Deno.test("PromptAssembler", async (t) => {
                     }
                 }
             };
-            const { assembler, spies } = setup(config);
+            const { mockSupabaseClient, spies } = setup(config);
 
             try {
                 const project: ProjectContext = { 
@@ -905,7 +910,8 @@ Deno.test("PromptAssembler", async (t) => {
                     expected_output_artifacts: null,
                 };
 
-                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
                 console.log("--- TEST LOG: should use custom section_headers ---");
                 console.log("ACTUAL:", JSON.stringify(result));
@@ -942,8 +948,8 @@ Deno.test("PromptAssembler", async (t) => {
             const config: MockSupabaseDataConfig = {
                 genericMockResults: {
                     'dialectic_stages': {
-                        select: async (state: MockQueryBuilderState) => {
-                             const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                         select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
                             if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(optionalFeedbackSlug)) {
                                 return { data: [{ slug: optionalFeedbackSlug, display_name: optionalFeedbackDisplayName }], error: null, count: 1, status: 200, statusText: "OK" };
                             }
@@ -967,7 +973,7 @@ Deno.test("PromptAssembler", async (t) => {
                     }
                 }
             };
-            const { assembler, spies } = setup(config);
+            const { mockSupabaseClient, spies } = setup(config);
 
             try {
                 const project: ProjectContext = { 
@@ -1025,7 +1031,8 @@ Deno.test("PromptAssembler", async (t) => {
                 let errorThrown = false;
                 let result: AssemblerSourceDocument[] | null = null;
                 try {
-                     result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
+                     const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                     result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
                 } catch (e) {
                     errorThrown = true;
                     console.error("Test unexpectedly threw an error:", e)
@@ -1076,7 +1083,7 @@ Deno.test("PromptAssembler", async (t) => {
                     }
                 }
             };
-            const { assembler, spies } = setup(config);
+            const { mockSupabaseClient, spies } = setup(config);
             
             try {
                 const project: ProjectContext = { 
@@ -1133,7 +1140,8 @@ Deno.test("PromptAssembler", async (t) => {
 
                 await assertRejects(
                     async () => {
-                        await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
+                        const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                        await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
                     },
                     Error,
                     `Required feedback for stage '${requiredFeedbackDisplayName}' was not found.`
@@ -1166,7 +1174,7 @@ Deno.test("PromptAssembler", async (t) => {
                     }
                 }
             };
-            const { assembler, spies } = setup(config);
+            const { mockSupabaseClient, spies } = setup(config);
             try {
                 const project: ProjectContext = { 
                     id: "p-db-err-req", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -1185,7 +1193,10 @@ Deno.test("PromptAssembler", async (t) => {
                 };
 
                 await assertRejects(
-                    async () => await assembler.gatherInputsForStage(stage, project, session, 1),
+                    async () => {
+                        const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                        await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, 1)
+                    },
                     Error,
                     `Failed to retrieve REQUIRED AI contributions for stage '${mockStageDisplayName}'.`
                 );
@@ -1215,7 +1226,7 @@ Deno.test("PromptAssembler", async (t) => {
                     }
                 }
             };
-            const { assembler, spies } = setup(config);
+            const { mockSupabaseClient, spies } = setup(config);
             try {
                 const project: ProjectContext = { 
                     id: "p-ms-opt", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -1233,7 +1244,8 @@ Deno.test("PromptAssembler", async (t) => {
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, expected_output_artifacts: null,
                 };
 
-                const result = await assembler.gatherInputsForStage(stage, project, session, 1);
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, 1);
 
                 assertEquals(result.length, 0, "Result should be empty");
                 assertEquals(currentConsoleErrorSpy!.calls.some(call => call.args[0].includes("Failed to retrieve AI contributions")), true, "Expected console.error for DB failure");
@@ -1281,7 +1293,7 @@ Deno.test("PromptAssembler", async (t) => {
                     }
                 }
             };
-            const { assembler } = setup(config);
+            const { mockSupabaseClient } = setup(config);
             try {
                 const project: ProjectContext = { 
                     id: "p-cdl-err-req", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -1300,7 +1312,10 @@ Deno.test("PromptAssembler", async (t) => {
                 };
 
                 await assertRejects(
-                    async () => await assembler.gatherInputsForStage(stage, project, session, 1),
+                    async () => {
+                        const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                        await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, 1)
+                    },
                     Error,
                     `Failed to download REQUIRED content for contribution ${badContentContribId} from stage '${mockStageDisplayName}'.`
                 );
@@ -1354,7 +1369,7 @@ Deno.test("PromptAssembler", async (t) => {
                     }
                 }
             };
-            const { assembler } = setup(config);
+            const { mockSupabaseClient, spies } = setup(config);
             try {
                 const project: ProjectContext = { 
                     id: "p-cdl-err-opt", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -1372,7 +1387,8 @@ Deno.test("PromptAssembler", async (t) => {
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, expected_output_artifacts: null,
                 };
 
-                const result = await assembler.gatherInputsForStage(stage, project, session, 1);
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, 1);
 
                 assertEquals(result.length, 0, "Result should be empty");
                 assertEquals(currentConsoleErrorSpy!.calls.some(call => 
@@ -1417,7 +1433,7 @@ Deno.test("PromptAssembler", async (t) => {
                 },
                 // No storageMock needed as download should not be attempted if path/bucket is missing
             };
-            const { assembler } = setup(config);
+            const { mockSupabaseClient, spies } = setup(config);
             try {
                 const project: ProjectContext = { 
                     id: "p-ms-req", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -1436,7 +1452,10 @@ Deno.test("PromptAssembler", async (t) => {
                 };
 
                 await assertRejects(
-                    async () => await assembler.gatherInputsForStage(stage, project, session, 1),
+                    async () => {
+                        const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                        await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, 1)
+                    },
                     Error,
                     `REQUIRED Contribution ${badContribId} from stage '${mockStageDisplayName}' is missing storage details.`
                 );
@@ -1483,7 +1502,7 @@ Deno.test("PromptAssembler", async (t) => {
                 },
                 // No storageMock needed
             };
-            const { assembler } = setup(config);
+            const { mockSupabaseClient, spies } = setup(config);
             try {
                 const project: ProjectContext = { 
                     id: "p-ms-opt", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -1501,7 +1520,8 @@ Deno.test("PromptAssembler", async (t) => {
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, expected_output_artifacts: null,
                 };
 
-                const result = await assembler.gatherInputsForStage(stage, project, session, 1);
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, 1);
 
                 assertEquals(result.length, 0, "Result should be empty");
                 assertEquals(currentConsoleWarnSpy!.calls.some(call => 

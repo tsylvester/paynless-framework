@@ -18,7 +18,7 @@ import type {
     PlanJobInsert,
 } from '../../dialectic-service/dialectic.interface.ts';
 import { FileType, CanonicalPathParams } from "../types/file_manager.types.ts";
-import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
+import { ProjectContext, StageContext } from "../prompt-assembler/prompt-assembler.interface.ts";
 import { FailedAttemptError } from "../../dialectic-service/dialectic.interface.ts";
 import { AiModelExtendedConfig, TokenUsage, ChatMessageRole, ChatInsert, ContinueReason, FinishReason, ChatApiRequest, Messages } from "../types.ts";
 import type { PostgrestError } from "npm:@supabase/supabase-js@2";

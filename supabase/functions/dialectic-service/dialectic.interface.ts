@@ -18,7 +18,7 @@ import type { IIndexingService, IEmbeddingClient } from '../_shared/services/ind
 import type { IRagService } from '../_shared/services/rag_service.interface.ts';
 import type { Messages, AiModelExtendedConfig, ChatApiRequest } from '../_shared/types.ts';
 import type { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
-import type { IPromptAssembler } from '../_shared/prompt-assembler.interface.ts';
+import type { IPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
 import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
 import type { debitTokens } from '../chat/debitTokens.ts';
 import { ICompressionStrategy } from '../_shared/utils/vector_utils.ts';

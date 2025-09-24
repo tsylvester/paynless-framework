@@ -1,17 +1,14 @@
 import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
 import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
-import { 
-    PromptAssembler,
-} from "./prompt-assembler.ts";
-import { ProjectContext, SessionContext, StageContext, DynamicContextVariables } from "./prompt-assembler.interface.ts";
-import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockSupabaseClientSetup } from "./supabase.mock.ts";
-import { isRecord } from "./utils/type_guards.ts";
+import { gatherContinuationInputs } from "./gatherContinuationInputs.ts";
+import { DynamicContextVariables } from "./prompt-assembler.interface.ts";
+import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockSupabaseClientSetup } from "../supabase.mock.ts";
+import { isRecord } from "../utils/type_guards.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Json, Database } from "../types_db.ts";
-import type { AiModelExtendedConfig, Messages } from "./types.ts";
-import { ContributionMetadata, DocumentRelationships } from "./types/file_manager.types.ts";
-import { MockQueryBuilderState } from "./supabase.mock.ts";
-import { DownloadStorageResult } from "./supabase_storage_utils.ts";
+import type { Json, Database } from "../../types_db.ts";
+import type { AiModelExtendedConfig, Messages } from "../types.ts";
+import { MockQueryBuilderState } from "../supabase.mock.ts";
+import { DownloadStorageResult, downloadFromStorage } from "../supabase_storage_utils.ts";
 
 
 // Define a type for the mock implementation of renderPrompt
@@ -60,13 +57,14 @@ Deno.test("PromptAssembler", async (t) => {
         consoleSpies.error = spy(console, "error");
         consoleSpies.warn = spy(console, "warn");
 
-        const assembler = new PromptAssembler(
-            mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
-            downloadFn,
-            renderPromptFn,
-            countTokensFn
-        );
-        return { assembler, spies: mockSupabaseSetup.spies };
+        const client = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
+        const effectiveDownloadFn = downloadFn || ((bucket: string, path: string) => downloadFromStorage(client, bucket, path));
+
+        return { 
+            client, 
+            spies: mockSupabaseSetup.spies, 
+            downloadFn: effectiveDownloadFn 
+        };
     };
 
     const teardown = () => {
@@ -77,686 +75,6 @@ Deno.test("PromptAssembler", async (t) => {
             mockSupabaseSetup.clearAllStubs?.();
         }
     };
-
-    const defaultProject: ProjectContext = {
-        id: "proj-123",
-        user_id: 'user-123',
-        project_name: "Test Project Objective",
-        initial_user_prompt: "This is the initial user prompt content.",
-        initial_prompt_resource_id: null,
-        selected_domain_id: "domain-123",
-        dialectic_domains: { name: "Software Development Domain" },
-        process_template_id: 'pt-123',
-        selected_domain_overlay_id: null,
-        user_domain_overlay_values: null,
-        repo_url: null,
-        status: 'active',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-    };
-
-    const defaultSession: SessionContext = {
-        id: "sess-123",
-        project_id: "proj-123",
-        selected_model_ids: ["model-1", "model-2"],
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        current_stage_id: 'stage-123',
-        iteration_count: 1,
-        session_description: 'Test session',
-        status: 'pending_thesis',
-        associated_chat_id: null,
-        user_input_reference_url: null
-    };
-
-    const stageSystemPromptText = "System prompt for {user_objective} in {domain}.";
-    const stageOverlayValues: Json = { "style": "formal" };
-
-    const defaultStage: StageContext = {
-        id: "stage-123",
-        system_prompts: { prompt_text: stageSystemPromptText },
-        domain_specific_prompt_overlays: [ { overlay_values: stageOverlayValues } ],
-        slug: 'initial-hypothesis',
-        display_name: 'Initial hypothesis',
-        description: 'Initial hypothesis stage',
-        created_at: new Date().toISOString(),
-        default_system_prompt_id: null,
-        expected_output_artifacts: null,
-        input_artifact_rules: null
-    };
-
-    await t.step("should correctly assemble and render a prompt for the initial stage", async () => {
-        const expectedRenderedPrompt = "Mocked Rendered Prompt Output";
-        let renderPromptCallCount = 0;
-        let lastRenderPromptArgs: [string, Record<string, unknown>, Json | undefined, Json | undefined] | null = null;
-        
-        const renderPromptMockFn: RenderPromptMock = (base, vars, sysOverlays, userOverlays) => {
-            renderPromptCallCount++;
-            lastRenderPromptArgs = [base, vars, sysOverlays, userOverlays];
-            return expectedRenderedPrompt;
-        };
-
-        const config: MockSupabaseDataConfig = {
-            genericMockResults: {
-                dialectic_stages: { select: () => Promise.resolve({ data: [], error: null }) },
-                dialectic_contributions: { select: () => Promise.resolve({ data: [], error: null }) },
-                dialectic_feedback: {
-                    select: () => Promise.resolve({
-                        data: [{
-                            storage_bucket: 'test-bucket',
-                            storage_path: 'path/to/feedback',
-                            file_name: 'user_feedback.md'
-                        }],
-                        error: null
-                    })
-                }
-            },
-        };
-
-        const { assembler } = setup(config, renderPromptMockFn);
-
-        try {
-            const result = await assembler.assemble(defaultProject, defaultSession, defaultStage, defaultProject.initial_user_prompt, 1);
-            
-            assertEquals(result, expectedRenderedPrompt);
-            assertEquals(renderPromptCallCount, 1);
-            
-            const renderArgs = lastRenderPromptArgs;
-            assertEquals(renderArgs?.[0], stageSystemPromptText);
-            
-            const expectedDynamicVars: DynamicContextVariables = {
-                user_objective: "Test Project Objective",
-                domain: "Software Development Domain",
-                agent_count: 2,
-                context_description: "This is the initial user prompt content.",
-                original_user_request: null,
-                prior_stage_ai_outputs: "", 
-                prior_stage_user_feedback: "",
-                deployment_context: null,
-                reference_documents: null,
-                constraint_boundaries: null,
-                stakeholder_considerations: null,
-                deliverable_format: 'Standard markdown format.'
-            };
-            assertEquals(renderArgs?.[1], expectedDynamicVars);
-            assertEquals(renderArgs?.[2], stageOverlayValues); 
-            assertEquals(renderArgs?.[3], null);
-
-        } finally {
-            teardown();
-        }
-    });
-
-    await t.step("does not include expected_output_artifacts_json when stage.expected_output_artifacts is null", async () => {
-        const renderPromptMockFn: RenderPromptMock = (_base, _vars, sysOverlays, userOverlays) => {
-            // Narrow overlays to records before checking keys; no casts
-            const sysVal = isRecord(sysOverlays) ? sysOverlays['expected_output_artifacts_json'] : undefined;
-            const usrVal = isRecord(userOverlays) ? userOverlays['expected_output_artifacts_json'] : undefined;
-            if (typeof sysVal === 'string' || typeof usrVal === 'string') {
-                throw new Error('expected_output_artifacts_json should not be present when stage.expected_output_artifacts is null');
-            }
-            return 'ok';
-        };
-
-        const { assembler } = setup({}, renderPromptMockFn);
-        try {
-            const stageWithoutArtifacts: StageContext = {
-                ...defaultStage,
-                expected_output_artifacts: null,
-            };
-
-            const result = await assembler.assemble(defaultProject, defaultSession, stageWithoutArtifacts, defaultProject.initial_user_prompt, 1);
-            assertEquals(result, 'ok');
-        } finally {
-            teardown();
-        }
-    });
-
-    await t.step("includes expected_output_artifacts_json when stage.expected_output_artifacts is provided", async () => {
-        let capturedSysOverlay: Json | undefined;
-        const renderPromptMockFn: RenderPromptMock = (_base, _vars, sysOverlays) => {
-            capturedSysOverlay = sysOverlays;
-            return 'ok';
-        };
-
-        const artifacts = { a: 1, b: { c: 'x' } };
-        const stageWithArtifacts: StageContext = {
-            ...defaultStage,
-            expected_output_artifacts: artifacts,
-        };
-
-        const { assembler } = setup({}, renderPromptMockFn);
-        try {
-            const result = await assembler.assemble(defaultProject, defaultSession, stageWithArtifacts, defaultProject.initial_user_prompt, 1);
-            assertEquals(result, 'ok');
-
-            // Assert renderer receives expected_output_artifacts_json in overlays as a JSON object
-            if (capturedSysOverlay && isRecord(capturedSysOverlay)) {
-                const val = capturedSysOverlay["expected_output_artifacts_json"];
-                if (isRecord(val)) {
-                    assertEquals(val, artifacts);
-                } else {
-                    throw new Error('expected_output_artifacts_json must be a JSON object');
-                }
-            } else {
-                throw new Error('System overlays were not provided to renderer');
-            }
-        } finally {
-            teardown();
-        }
-    });
-
-    await t.step("should correctly assemble for a subsequent stage with prior inputs", async () => {
-        const stageSlug = 'prev-stage';
-        const contribContent = "AI contribution content.";
-        const feedbackContent = "User feedback content.";
-        
-        const config: MockSupabaseDataConfig = {
-            genericMockResults: {
-                dialectic_stages: {
-                    select: () => Promise.resolve({ data: [{ slug: stageSlug, display_name: 'Previous Stage' }], error: null })
-                },
-                dialectic_contributions: {
-                    select: () => Promise.resolve({ 
-                        data: [{
-                            id: 'c1',
-                            storage_path: 'path/to/contrib.md',
-                            storage_bucket: 'test-bucket',
-                            model_name: 'Test Model',
-                        }], 
-                        error: null 
-                    })
-                },
-                dialectic_feedback: {
-                    select: () => Promise.resolve({
-                        data: [{
-                            storage_bucket: 'test-bucket',
-                            storage_path: 'path/to/feedback',
-                            file_name: 'user_feedback.md'
-                        }],
-                        error: null
-                    })
-                }
-            },
-            storageMock: {
-                downloadResult: (bucket, path) => {
-                    if (path.includes('contrib.md')) {
-                        return Promise.resolve({ data: new Blob([contribContent]), error: null });
-                    }
-                    if (path.includes('user_feedback')) {
-                        return Promise.resolve({ data: new Blob([feedbackContent]), error: null });
-                    }
-                    return Promise.resolve({ data: null, error: new Error('File not found in mock') });
-                }
-            }
-        };
-
-        const expectedRenderedPrompt = "Mocked Subsequent Stage Output";
-        const renderPromptMockFn: RenderPromptMock = () => expectedRenderedPrompt;
-
-        const { assembler, spies } = setup(config, renderPromptMockFn);
-        
-        try {
-            const subsequentStage: StageContext = {
-                ...defaultStage,
-                id: 'stage-subsequent',
-                slug: 'subsequent-stage',
-                input_artifact_rules: {
-                    sources: [
-                        { type: 'contribution', stage_slug: stageSlug, required: true },
-                        { type: 'feedback', stage_slug: stageSlug, required: true }
-                    ]
-                }
-            };
-
-            const result = await assembler.assemble(defaultProject, defaultSession, subsequentStage, defaultProject.initial_user_prompt, 1);
-            
-            assertEquals(result, expectedRenderedPrompt);
-
-            // Add assertions to verify that the spy for download was called for feedback
-            const downloadSpy = spies.storage.from('test-bucket').downloadSpy;
-            assert(downloadSpy.calls.some(call => call.args[0].includes('user_feedback')), "Download was not called for feedback file");
-
-        } finally {
-            teardown();
-        }
-    });
-
-    await t.step("should throw an error if stage is missing system prompt", async () => {
-        const { assembler } = setup();
-        try {
-            const stageWithMissingPrompt: StageContext = { ...defaultStage, system_prompts: null };
-            
-            await assertRejects(
-                async () => {
-                    await assembler.assemble(defaultProject, defaultSession, stageWithMissingPrompt, defaultProject.initial_user_prompt, 1);
-                },
-                Error,
-                `RENDER_PRECONDITION_FAILED: missing system prompt text for stage ${stageWithMissingPrompt.slug}`
-            );
-        } finally {
-            teardown();
-        }
-    });
-
-    await t.step("should correctly propagate errors from gatherInputsForStage", async () => {
-        const originalErrorMessage = "Simulated DB Error";
-        const config: MockSupabaseDataConfig = {
-            genericMockResults: {
-                dialectic_stages: { select: () => Promise.resolve({ data: [{slug: 'failing-stage', display_name: 'Failing Stage'}], error: null }) },
-                dialectic_contributions: {
-                    select: () => Promise.resolve({ data: null, error: new Error(originalErrorMessage) })
-                },
-                dialectic_feedback: {
-                    select: () => Promise.resolve({
-                        data: [],
-                        error: null
-                    })
-                }
-            }
-        };
-
-        const { assembler } = setup(config);
-        
-        try {
-            const stageWithRequiredInput: StageContext = {
-                ...defaultStage,
-                id: 'stage-err-prop',
-                slug: 'error-prop-stage',
-                input_artifact_rules: {
-                    sources: [{ type: 'contribution', stage_slug: 'failing-stage', required: true }]
-                }
-            };
-            
-            await assertRejects(
-                async () => {
-                    await assembler.gatherContext(defaultProject, defaultSession, stageWithRequiredInput, defaultProject.initial_user_prompt, 1);
-                },
-                Error,
-                "Failed to gather inputs for prompt assembly"
-            );
-
-        } finally {
-            teardown();
-        }
-    });
-
-
-
-    await t.step("should throw an error if rendering the prompt fails", async () => {
-        const renderPromptMockFn_ThrowsError = () => {
-            throw new Error("Simulated prompt rendering failure.");
-        };
-
-        const { assembler } = setup({}, renderPromptMockFn_ThrowsError);
-
-        try {
-            const context: DynamicContextVariables = {
-                user_objective: "Test Project Objective",
-                domain: "Software Development Domain",
-                agent_count: 2,
-                context_description: "This is the initial user prompt content.",
-                original_user_request: null,
-                prior_stage_ai_outputs: "", 
-                prior_stage_user_feedback: "",
-                deployment_context: null,
-                reference_documents: null,
-                constraint_boundaries: null,
-                stakeholder_considerations: null,
-                deliverable_format: 'Standard markdown format.'
-            };
-
-            await assertRejects(
-                async () => {
-                    assembler.render(defaultStage, context, null);
-                },
-                Error,
-                "Failed to render prompt"
-            );
-        } finally {
-            teardown();
-        }
-    });
-
-    await t.step("gatherContext should use overrideContributions when provided", async () => {
-        const { assembler, spies } = setup();
-
-        try {
-            const overrideContributions = [
-                {
-                    content: 'This is the override content.'
-                }
-            ];
-
-            const context = await assembler.gatherContext(
-                defaultProject,
-                defaultSession,
-                defaultStage,
-                defaultProject.initial_user_prompt,
-                1,
-                overrideContributions
-            );
-
-            assert(context.prior_stage_ai_outputs.includes("This is the override content."));
-            assertEquals(spies.fromSpy.calls.length, 0, "Database should not be queried when overrides are provided");
-
-        } finally {
-            teardown();
-        }
-    });
-
-    await t.step("gatherContext should use gatherInputsForStage when no overrides are provided", async () => {
-        const stageSlug = 'prev-stage';
-        const contribContent = "AI contribution content.";
-
-        const config: MockSupabaseDataConfig = {
-            genericMockResults: {
-                dialectic_stages: {
-                    select: () => Promise.resolve({ data: [{ slug: stageSlug, display_name: 'Previous Stage' }], error: null })
-                },
-                dialectic_contributions: {
-                    select: () => Promise.resolve({ 
-                        data: [{
-                            id: 'c1',
-                            storage_path: 'path/to/contrib.md',
-                            storage_bucket: 'test-bucket',
-                            model_name: 'Test Model',
-                        }], 
-                        error: null 
-                    })
-                },
-                dialectic_feedback: {
-                    select: () => Promise.resolve({
-                        data: [],
-                        error: null
-                    })
-                }
-            },
-            storageMock: {
-                downloadResult: (bucket, path) => {
-                    if (path.includes('contrib.md')) {
-                        return Promise.resolve({ data: new Blob([contribContent]), error: null });
-                    }
-                    return Promise.resolve({ data: null, error: new Error('File not found in mock') });
-                }
-            }
-        };
-
-        const { assembler, spies } = setup(config);
-
-        try {
-            const subsequentStage: StageContext = {
-                ...defaultStage,
-                id: 'stage-subsequent',
-                slug: 'subsequent-stage',
-                input_artifact_rules: {
-                    sources: [
-                        { type: 'contribution', stage_slug: stageSlug, required: true },
-                    ]
-                }
-            };
-
-            const context = await assembler.gatherContext(
-                defaultProject,
-                defaultSession,
-                subsequentStage,
-                defaultProject.initial_user_prompt,
-                1
-            );
-
-            assert(context.prior_stage_ai_outputs.includes(contribContent));
-            assert(spies.fromSpy.calls.length > 0, "Database should be queried when no overrides are provided");
-
-        } finally {
-            teardown();
-        }
-    });
-
-    await t.step("render should correctly call the renderPromptFn", async () => {
-        const expectedRenderedPrompt = "Mocked Rendered Prompt Output";
-        let renderPromptCallCount = 0;
-        let lastRenderPromptArgs: [string, DynamicContextVariables, Json | undefined, Json | undefined] | null = null;
-        
-        const renderPromptMockFn = (base: string, vars: DynamicContextVariables, sysOverlays?: Json, userOverlays?: Json) => {
-            renderPromptCallCount++;
-            lastRenderPromptArgs = [base, vars, sysOverlays, userOverlays];
-            return expectedRenderedPrompt;
-        };
-
-        const { assembler } = setup({}, renderPromptMockFn);
-
-        try {
-            const context: DynamicContextVariables = {
-                user_objective: "Test Project Objective",
-                domain: "Software Development Domain",
-                agent_count: 2,
-                context_description: "This is the initial user prompt content.",
-                original_user_request: null,
-                prior_stage_ai_outputs: "", 
-                prior_stage_user_feedback: "",
-                deployment_context: null,
-                reference_documents: null,
-                constraint_boundaries: null,
-                stakeholder_considerations: null,
-                deliverable_format: 'Standard markdown format.'
-            };
-
-            const result = assembler.render(defaultStage, context, null);
-            
-            assertEquals(result, expectedRenderedPrompt);
-            assertEquals(renderPromptCallCount, 1);
-            
-            const renderArgs = lastRenderPromptArgs;
-            assertEquals(renderArgs?.[0], stageSystemPromptText);
-            assertEquals(renderArgs?.[1], context);
-            assertEquals(renderArgs?.[2], stageOverlayValues); 
-            assertEquals(renderArgs?.[3], null);
-
-        } finally {
-            teardown();
-        }
-    });
-
-    await t.step("render enforces required style guide and artifacts when template includes those sections", async () => {
-        // Prompt template declares both sections as required via section tags
-        const basePrompt = [
-            "SYSTEM INSTRUCTIONS",
-            "{{#section:style_guide_markdown}}",
-            "Style Guide:\n{style_guide_markdown}",
-            "{{/section:style_guide_markdown}}",
-            "",
-            "EXPECTED JSON OUTPUT",
-            "{{#section:expected_output_artifacts_json}}",
-            "Artifacts:\n{expected_output_artifacts_json}",
-            "{{/section:expected_output_artifacts_json}}",
-        ].join("\n");
-
-        // Create a stage missing both values (no style_guide_markdown in overlays; no artifacts on stage)
-        const stageMissingValues: StageContext = {
-            ...defaultStage,
-            system_prompts: { prompt_text: basePrompt },
-            domain_specific_prompt_overlays: [{ overlay_values: { role: "architect" } }],
-            expected_output_artifacts: null,
-        };
-
-        // Minimal context for render; values don't matter for this precondition test
-        const context: DynamicContextVariables = {
-            user_objective: "Test",
-            domain: "Software Development",
-            agent_count: 1,
-            context_description: "Desc",
-            original_user_request: null,
-            prior_stage_ai_outputs: "",
-            prior_stage_user_feedback: "",
-            deployment_context: null,
-            reference_documents: null,
-            constraint_boundaries: null,
-            stakeholder_considerations: null,
-            deliverable_format: "Standard markdown format.",
-        };
-
-        // Renderer should not be called if preconditions are enforced
-        let rendererCalled = false;
-        const renderPromptMockFn: RenderPromptMock = () => {
-            rendererCalled = true;
-            return "ok";
-        };
-
-        const { assembler } = setup({}, renderPromptMockFn);
-        let threw = false;
-        try {
-            assembler.render(stageMissingValues, context, null);
-        } catch (_e) {
-            threw = true;
-        } finally {
-            teardown();
-        }
-
-        // Expect assembler to enforce preconditions and throw before calling renderer
-        assertEquals(threw, true);
-        assertEquals(rendererCalled, false);
-    });
-
-    await t.step("render fails with precondition error when style guide section is present but overlay value is missing", async () => {
-        const basePrompt = [
-            "{{#section:style_guide_markdown}}",
-            "Style Guide:\n{style_guide_markdown}",
-            "{{/section:style_guide_markdown}}",
-        ].join("\n");
-
-        const stageMissingStyle: StageContext = {
-            ...defaultStage,
-            system_prompts: { prompt_text: basePrompt },
-            domain_specific_prompt_overlays: [{ overlay_values: { role: "architect" } }],
-            expected_output_artifacts: null,
-        };
-
-        const context: DynamicContextVariables = {
-            user_objective: "Test",
-            domain: "Software Development",
-            agent_count: 1,
-            context_description: "Desc",
-            original_user_request: null,
-            prior_stage_ai_outputs: "",
-            prior_stage_user_feedback: "",
-            deployment_context: null,
-            reference_documents: null,
-            constraint_boundaries: null,
-            stakeholder_considerations: null,
-            deliverable_format: "Standard markdown format.",
-        };
-
-        let rendererCalled = false;
-        const renderPromptMockFn: RenderPromptMock = () => {
-            rendererCalled = true;
-            return "ok";
-        };
-
-        const { assembler } = setup({}, renderPromptMockFn);
-        let threw = false;
-        try {
-            assembler.render(stageMissingStyle, context, null);
-        } catch (e) {
-            threw = true;
-            // Check the precondition failure marker
-            if (e instanceof Error) {
-                assertEquals(e.message.includes("RENDER_PRECONDITION_FAILED"), true);
-            }
-        } finally {
-            teardown();
-        }
-
-        assertEquals(threw, true);
-        assertEquals(rendererCalled, false);
-    });
-
-    await t.step("render proceeds and provides both style guide and artifacts when present", async () => {
-        const basePrompt = [
-            "{{#section:style_guide_markdown}}",
-            "Style Guide:\n{style_guide_markdown}",
-            "{{/section:style_guide_markdown}}",
-            "",
-            "{{#section:expected_output_artifacts_json}}",
-            "Artifacts:\n{expected_output_artifacts_json}",
-            "{{/section:expected_output_artifacts_json}}",
-        ].join("\n");
-
-        const artifacts = { shape: "object", ok: true };
-        const stageOk: StageContext = {
-            ...defaultStage,
-            system_prompts: { prompt_text: basePrompt },
-            domain_specific_prompt_overlays: [{ overlay_values: { role: "architect", style_guide_markdown: "# Guide" } }],
-            expected_output_artifacts: artifacts,
-        };
-
-        const context: DynamicContextVariables = {
-            user_objective: "Test",
-            domain: "Software Development",
-            agent_count: 1,
-            context_description: "Desc",
-            original_user_request: null,
-            prior_stage_ai_outputs: "",
-            prior_stage_user_feedback: "",
-            deployment_context: null,
-            reference_documents: null,
-            constraint_boundaries: null,
-            stakeholder_considerations: null,
-            deliverable_format: "Standard markdown format.",
-        };
-
-        let rendererCalled = false;
-        let capturedOverlay: Json | undefined;
-        const renderPromptMockFn: RenderPromptMock = (_base, _vars, sysOverlays) => {
-            rendererCalled = true;
-            capturedOverlay = sysOverlays;
-            return "ok";
-        };
-
-        const { assembler } = setup({}, renderPromptMockFn);
-        try {
-            const result = assembler.render(stageOk, context, null);
-            assertEquals(result, "ok");
-            assertEquals(rendererCalled, true);
-            if (capturedOverlay && isRecord(capturedOverlay)) {
-                const sg = capturedOverlay["style_guide_markdown"];
-                const artifactsVal = capturedOverlay["expected_output_artifacts_json"];
-                assertEquals(typeof sg === 'string' && sg.length > 0, true);
-                if (isRecord(artifactsVal)) {
-                    assertEquals(artifactsVal, artifacts);
-                } else {
-                    throw new Error("expected_output_artifacts_json must be a JSON object");
-                }
-            } else {
-                throw new Error("system overlays missing in renderer call");
-            }
-        } finally {
-            teardown();
-        }
-    });
-
-    await t.step("should correctly append continuation content to the prompt", async () => {
-        const expectedRenderedPrompt = "Base Prompt. Continuation Content.";
-        const renderPromptMockFn: RenderPromptMock = (_base, _vars, _sysOverlays, _userOverlays) => {
-            return "Base Prompt."; 
-        };
-        const { assembler } = setup({}, renderPromptMockFn);
-
-        try {
-            const result = await assembler.assemble(
-                defaultProject, 
-                defaultSession, 
-                defaultStage, 
-                defaultProject.initial_user_prompt, 
-                1,
-                "Continuation Content."
-            );
-            
-            assertEquals(result, expectedRenderedPrompt);
-
-        } finally {
-            teardown();
-        }
-    });
 
     await t.step("gatherContinuationInputs returns an atomic message for each chunk", async () => {
         const rootContributionId = 'contrib-root-123';
@@ -795,6 +113,8 @@ Deno.test("PromptAssembler", async (t) => {
                 tokens_used_output: 100,
                 stage: 'thesis',
                 updated_at: new Date().toISOString(),
+                is_header: false,
+                source_prompt_resource_id: null,
             },
             {
                 id: 'contrib-cont-456',
@@ -829,6 +149,8 @@ Deno.test("PromptAssembler", async (t) => {
                 tokens_used_output: 100,
                 stage: 'thesis',
                 updated_at: new Date().toISOString(),
+                is_header: false,
+                source_prompt_resource_id: null,
             }
         ];
 
@@ -862,7 +184,7 @@ Deno.test("PromptAssembler", async (t) => {
             }
         };
 
-        const { assembler } = setup(config);
+        const { client, downloadFn } = setup(config);
 
         try {
             const expectedMessages: Messages[] = [
@@ -872,7 +194,7 @@ Deno.test("PromptAssembler", async (t) => {
                 { role: 'assistant', content: continuationAiChunkContent, id: continuationId },
             ];
 
-            const result = await (assembler).gatherContinuationInputs(rootContributionId);
+            const result = await gatherContinuationInputs(client, downloadFn, rootContributionId);
 
             assertEquals(result, expectedMessages);
 
@@ -914,7 +236,10 @@ Deno.test("PromptAssembler", async (t) => {
             citations: null, contribution_type: null, edit_version: 1, error: null, mime_type: 'text/markdown',
             model_id: 'model-3-turn', original_model_contribution_id: null, processing_time_ms: 1,
             target_contribution_id: turnIndex !== undefined ? rootId : null, prompt_template_id_used: null, raw_response_storage_path: null,
-            seed_prompt_url: null, size_bytes: 1, tokens_used_input: 1, tokens_used_output: 1, updated_at: new Date().toISOString()
+            seed_prompt_url: null, size_bytes: 1, tokens_used_input: 1, tokens_used_output: 1, updated_at: new Date().toISOString(),
+            is_header: false,
+            source_prompt_resource_id: null,
+
         });
 
         const turn1Chunk = baseRow('turn1', turn1Content, 1, 100);
@@ -924,7 +249,7 @@ Deno.test("PromptAssembler", async (t) => {
         
         const mockChunks = [turn1Chunk, turn3Chunk, rootChunk, turn2Chunk];
 
-        const { assembler } = setup({
+        const { client, downloadFn } = setup({
             genericMockResults: {
                 dialectic_contributions: {
                     select: (modifier: MockQueryBuilderState) => {
@@ -949,7 +274,7 @@ Deno.test("PromptAssembler", async (t) => {
         });
 
         try {
-            const result = await assembler.gatherContinuationInputs(rootId);
+            const result = await gatherContinuationInputs(client, downloadFn, rootId);
 
             const expectedMessages: Messages[] = [
                 { role: 'user', content: seedContent },
@@ -976,10 +301,6 @@ Deno.test("PromptAssembler", async (t) => {
         }
     });
 
-    // This test was previously named "gatherContinuationInputs never reads seed prompt from _work" but was
-    // failing due to an incomplete mock after a bug fix. The name was also misleading as it did not
-    // test the "_work" directory logic. It has been renamed and its mocks and assertions updated to
-    // correctly verify that a single root chunk is downloaded and included.
     await t.step("gatherContinuationInputs correctly downloads seed and a single root chunk", async () => {
         const stageRoot = 'proj-xyz/session_abcd1234/iteration_1/1_thesis';
         const rootContributionId = 'root-abc';
@@ -1014,6 +335,8 @@ Deno.test("PromptAssembler", async (t) => {
             mime_type: 'text/markdown',
             size_bytes: 10,
             document_relationships: { thesis: rootContributionId },
+            is_header: false,
+            source_prompt_resource_id: null,
         };
 
         const seedPromptPath = `${stageRoot}/seed_prompt.md`;
@@ -1046,9 +369,9 @@ Deno.test("PromptAssembler", async (t) => {
             },
         };
 
-        const { assembler } = setup(config);
+        const { client, downloadFn } = setup(config);
         try {
-            const messages = await assembler.gatherContinuationInputs(rootContributionId);
+            const messages = await gatherContinuationInputs(client, downloadFn, rootContributionId);
 
             const expectedMessages: Messages[] = [
                 { role: 'user', content: 'Seed content' },
@@ -1096,6 +419,8 @@ Deno.test("PromptAssembler", async (t) => {
             tokens_used_output: 100,
             stage: 'thesis',
             updated_at: new Date().toISOString(),
+            is_header: false,
+            source_prompt_resource_id: null,
         };
 
         const contChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
@@ -1106,7 +431,7 @@ Deno.test("PromptAssembler", async (t) => {
             document_relationships: { thesis: rootContributionId, isContinuation: true, turnIndex: 0 },
         };
 
-        const { assembler } = setup({
+        const { client, downloadFn } = setup({
             genericMockResults: {
                 dialectic_contributions: {
                     select: (modifier: MockQueryBuilderState) => {
@@ -1132,7 +457,7 @@ Deno.test("PromptAssembler", async (t) => {
         try {
             await assertRejects(
                 async () => {
-                    await assembler.gatherContinuationInputs(rootContributionId);
+                    await gatherContinuationInputs(client, downloadFn, rootContributionId);
                 },
                 Error,
                 'Failed to download content for chunk'
@@ -1183,6 +508,8 @@ Deno.test("PromptAssembler", async (t) => {
             tokens_used_output: 10,
             stage: 'thesis',
             updated_at: new Date().toISOString(),
+            is_header: false,
+            source_prompt_resource_id: null,
             ...overrides,
         });
 
@@ -1196,7 +523,7 @@ Deno.test("PromptAssembler", async (t) => {
 
         const scrambled: Database['public']['Tables']['dialectic_contributions']['Row'][] = [cont2, root, noTiLate, cont0, noTiEarly, cont1];
 
-        const { assembler } = setup({
+        const { client, downloadFn } = setup({
             genericMockResults: {
                 dialectic_contributions: {
                     select: (modifier: MockQueryBuilderState) => {
@@ -1224,7 +551,7 @@ Deno.test("PromptAssembler", async (t) => {
         });
 
         try {
-            const messages = await assembler.gatherContinuationInputs(rootId);
+            const messages = await gatherContinuationInputs(client, downloadFn, rootId);
             const contents = messages.map(m => m.content);
             // Expected order: seed, root, cont0, cont1, cont2, noTiEarly (earlier created_at), noTiLate (later created_at), followed by 'Please continue.' after each assistant turn
             const expectedContents = [
@@ -1276,6 +603,8 @@ Deno.test("PromptAssembler", async (t) => {
             tokens_used_output: 100,
             stage: correctStageSlug,
             updated_at: new Date().toISOString(),
+            is_header: false,
+            source_prompt_resource_id: null,
         };
 
         const config: MockSupabaseDataConfig = {
@@ -1298,11 +627,11 @@ Deno.test("PromptAssembler", async (t) => {
             }
         };
 
-        const { assembler } = setup(config);
+        const { client, downloadFn } = setup(config);
 
         try {
             // This will throw if the mock receives a query with the incorrect stage slug.
-            await assembler.gatherContinuationInputs(rootContributionId);
+            await gatherContinuationInputs(client, downloadFn, rootContributionId);
         } finally {
             teardown();
         }
@@ -1329,7 +658,9 @@ Deno.test("PromptAssembler", async (t) => {
             citations: null, contribution_type: null, edit_version: 1, error: null, mime_type: 'text/markdown',
             model_id: 'model-root-only', original_model_contribution_id: null, processing_time_ms: 1,
             target_contribution_id: null, prompt_template_id_used: null, raw_response_storage_path: null,
-            seed_prompt_url: null, size_bytes: 1, tokens_used_input: 1, tokens_used_output: 1, updated_at: new Date().toISOString()
+            seed_prompt_url: null, size_bytes: 1, tokens_used_input: 1, tokens_used_output: 1, updated_at: new Date().toISOString(),
+            is_header: false,
+            source_prompt_resource_id: null,
         };
 
         const config: MockSupabaseDataConfig = {
@@ -1353,10 +684,10 @@ Deno.test("PromptAssembler", async (t) => {
             }
         };
 
-        const { assembler } = setup(config);
+        const { client, downloadFn } = setup(config);
 
         try {
-            const messages = await assembler.gatherContinuationInputs(rootContributionId);
+            const messages = await gatherContinuationInputs(client, downloadFn, rootContributionId);
             const expectedMessages: Messages[] = [
                 { role: 'user', content: seedContent },
                 { role: 'assistant', content: rootContent, id: rootContributionId },
@@ -1401,6 +732,8 @@ Deno.test("PromptAssembler", async (t) => {
             // Missing stage field - should cause error
             stage: null as any,
             updated_at: new Date().toISOString(),
+            is_header: false,
+            source_prompt_resource_id: null,
         };
 
         const config: MockSupabaseDataConfig = {
@@ -1417,12 +750,12 @@ Deno.test("PromptAssembler", async (t) => {
             },
         };
 
-        const { assembler } = setup(config);
+        const { client, downloadFn } = setup(config);
 
         try {
             await assertRejects(
                 async () => {
-                    await assembler.gatherContinuationInputs(rootContributionId);
+                    await gatherContinuationInputs(client, downloadFn, rootContributionId);
                 },
                 Error,
                 'Root contribution contrib-missing-stage-123 has no stage information'
@@ -1453,6 +786,8 @@ Deno.test("PromptAssembler", async (t) => {
             tokens_used_input: 100, tokens_used_output: 100,
             stage: 'thesis',
             updated_at: new Date().toISOString(),
+            is_header: false,
+            source_prompt_resource_id: null,
         };
 
         const config: MockSupabaseDataConfig = {
@@ -1485,14 +820,14 @@ Deno.test("PromptAssembler", async (t) => {
             };
         };
 
-        const { assembler } = setup(config, undefined, undefined, failingDownloadFn);
+        const { client } = setup(config, undefined, undefined, failingDownloadFn);
 
         try {
             // This test must fail initially. The current implementation catches the download error,
             // logs it, and continues, which means assertRejects will not find a thrown error.
             await assertRejects(
                 async () => {
-                    await assembler.gatherContinuationInputs(rootContributionId);
+                    await gatherContinuationInputs(client, failingDownloadFn, rootContributionId);
                 },
                 Error,
                 'Failed to download content for chunk'
@@ -1531,7 +866,9 @@ Deno.test("PromptAssembler", async (t) => {
             citations: null, contribution_type: null, edit_version: 1, error: null, mime_type: 'text/markdown',
             model_id: 'model-last-msg-test', original_model_contribution_id: null, processing_time_ms: 1,
             target_contribution_id: null, prompt_template_id_used: null, raw_response_storage_path: null,
-            seed_prompt_url: null, size_bytes: 1, tokens_used_input: 1, tokens_used_output: 1, updated_at: new Date().toISOString()
+            seed_prompt_url: null, size_bytes: 1, tokens_used_input: 1, tokens_used_output: 1, updated_at: new Date().toISOString(),
+            is_header: false,
+            source_prompt_resource_id: null,
         });
 
         const rootChunk = baseRow(rootId);
@@ -1540,7 +877,7 @@ Deno.test("PromptAssembler", async (t) => {
         
         const mockChunks = [rootChunk, turn1Chunk, turn2Chunk];
 
-        const { assembler } = setup({
+        const { client, downloadFn } = setup({
             genericMockResults: {
                 dialectic_contributions: {
                     select: (modifier: MockQueryBuilderState) => {
@@ -1563,7 +900,7 @@ Deno.test("PromptAssembler", async (t) => {
         });
 
         try {
-            const result = await assembler.gatherContinuationInputs(rootId);
+            const result = await gatherContinuationInputs(client, downloadFn, rootId);
 
             // This test will fail because the current implementation adds a final user message.
             assert(result.length > 0, "Should have messages");

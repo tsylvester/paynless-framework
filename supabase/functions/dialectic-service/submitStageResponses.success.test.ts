@@ -20,7 +20,7 @@ import { createMockFileManagerService, MockFileManagerService } from "../_shared
 import type { UploadContext, FileManagerResponse, FileRecord } from "../_shared/types/file_manager.types.ts";
 import type { Database, Json } from '../types_db.ts';
 import type { ServiceError } from '../_shared/types.ts';
-import { PromptAssembler } from '../_shared/prompt-assembler.ts';
+import { PromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.ts';
 
 // Import the specific action handler we are testing
 import { submitStageResponses } from './submitStageResponses.ts';
