@@ -97,8 +97,8 @@ export function NavUser({
 				</Button>
 			</div>
 			<SimpleDropdown
-				align="end"
-				contentClassName="w-full p-1 overflow-hidden"
+				align="start"
+				contentClassName="w-full p-1 bottom-full mb-2"
 				onOpenChange={handleOpenChange}
 				trigger={
 					<SidebarMenuButton
@@ -118,9 +118,7 @@ export function NavUser({
 					</SidebarMenuButton>
 				}
 			>
-				<div
-					className={"flex flex-col fixed mt-[-250px] animate-slide-up-spring"}
-				>
+				<div className="flex flex-col space-y-1 p-1">
 					<Button
 						variant="ghost"
 						className="w-full justify-start hover:underline"

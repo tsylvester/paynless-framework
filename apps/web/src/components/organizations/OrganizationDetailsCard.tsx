@@ -38,11 +38,18 @@ export const OrganizationDetailsCard: React.FC = () => {
             </div>
           </div>
         ) : currentOrganizationDetails ? (
-          <div className="space-y-2 text-sm">
-            <div><strong>Name:</strong> {currentOrganizationDetails.name}</div>
-            <div><strong>Visibility:</strong> <span className="capitalize">{currentOrganizationDetails.visibility}</span></div>
-            <div><strong>Created:</strong> 
-              {new Date(currentOrganizationDetails.created_at).toLocaleDateString()}
+          <div className="space-y-3 text-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <strong className="text-textSecondary min-w-[80px]">Name:</strong> 
+              <span className="break-words">{currentOrganizationDetails.name}</span>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <strong className="text-textSecondary min-w-[80px]">Visibility:</strong> 
+              <span className="capitalize">{currentOrganizationDetails.visibility}</span>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <strong className="text-textSecondary min-w-[80px]">Created:</strong> 
+              <span>{new Date(currentOrganizationDetails.created_at).toLocaleDateString()}</span>
             </div>
             {/* Add other details as needed */}
           </div>
