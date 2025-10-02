@@ -112,21 +112,21 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 				icon: File,
 				items: [
 					{
-						title: "How it works",
-						url: "/docs/how-it-works",
+						title: "Getting started",
+						url: "/docs/getting-started",
 					},
-					{
-						title: "Pricing",
-						url: "/docs/pricing",
-					},
-					{
-						title: "Tutorials",
-						url: "/docs/tutorials",
-					},
-					{
-						title: "Changelog",
-						url: "/docs/changelog",
-					},
+					// {
+					// 	title: "Pricing",
+					// 	url: "/docs/pricing",
+					// },
+					// {
+					// 	title: "Tutorials",
+					// 	url: "/docs/tutorials",
+					// },
+					// {
+					// 	title: "Changelog",
+					// 	url: "/docs/changelog",
+					// },
 				],
 			},
 		],
