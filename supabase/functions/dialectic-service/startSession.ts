@@ -7,7 +7,7 @@ import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import type { Database, Json } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
 import type { ILogger } from "../_shared/types.ts";
-import { PromptAssembler } from "../_shared/prompt-assembler.ts";
+import { PromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.ts";
 import { ProjectContext, StageContext, SessionContext, IPromptAssembler } from "../_shared/prompt-assembler.interface.ts";
 import { FileManagerService } from "../_shared/services/file_manager.ts";
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts';

@@ -5,13 +5,15 @@ import {
   SessionContext,
   StageContext,
   RenderPromptFunctionType,
+  AssembledPrompt,
 } from "./prompt-assembler.interface.ts";
 import { gatherContext } from "./gatherContext.ts";
 import { render } from "./render.ts";
 import type { DownloadStorageResult } from "../supabase_storage_utils.ts";
 import { GatherInputsForStageFn } from "./gatherInputsForStage.ts";
+import { IFileManager, FileType } from "../types/file_manager.types.ts";
 
-export type AssembleFn = (
+export type AssembleSeedPromptFn = (
   dbClient: SupabaseClient<Database>,
   downloadFromStorageFn: (
     bucket: string,
@@ -19,15 +21,15 @@ export type AssembleFn = (
   ) => Promise<DownloadStorageResult>,
   gatherInputsForStageFn: GatherInputsForStageFn,
   renderPromptFn: RenderPromptFunctionType,
+  fileManager: IFileManager,
   project: ProjectContext,
   session: SessionContext,
   stage: StageContext,
   projectInitialUserPrompt: string,
   iterationNumber: number,
-  continuationContent?: string,
-) => Promise<string>;
+) => Promise<AssembledPrompt>;
 
-export async function assemble(
+export async function assembleSeedPrompt(
   dbClient: SupabaseClient<Database>,
   downloadFromStorageFn: (
     bucket: string,
@@ -35,13 +37,19 @@ export async function assemble(
   ) => Promise<DownloadStorageResult>,
   gatherInputsForStageFn: GatherInputsForStageFn,
   renderPromptFn: RenderPromptFunctionType,
+  fileManager: IFileManager,
   project: ProjectContext,
   session: SessionContext,
   stage: StageContext,
   projectInitialUserPrompt: string,
   iterationNumber: number,
-  continuationContent?: string,
-): Promise<string> {
+): Promise<AssembledPrompt> {
+  if (!session.selected_model_ids || session.selected_model_ids.length === 0) {
+    throw new Error(
+      "PRECONDITION_FAILED: Session must have at least one selected model.",
+    );
+  }
+
   const context = await gatherContext(
     dbClient,
     downloadFromStorageFn,
@@ -53,6 +61,7 @@ export async function assemble(
     iterationNumber,
     undefined,
   );
+
   const renderedPrompt = render(
     renderPromptFn,
     stage,
@@ -60,9 +69,29 @@ export async function assemble(
     project.user_domain_overlay_values,
   );
 
-  if (continuationContent) {
-    return `${renderedPrompt} ${continuationContent}`;
+  const response = await fileManager.uploadAndRegisterFile({
+    pathContext: {
+      projectId: project.id,
+      sessionId: session.id,
+      iteration: iterationNumber,
+      stageSlug: stage.slug,
+      fileType: FileType.SeedPrompt,
+    },
+    fileContent: renderedPrompt,
+    mimeType: "text/markdown",
+    sizeBytes: new TextEncoder().encode(renderedPrompt).length,
+    userId: project.user_id,
+    description: `Seed prompt for stage: ${stage.slug}`,
+  });
+
+  if (response.error) {
+    throw new Error(
+      `Failed to save seed prompt: ${response.error.message}`,
+    );
   }
 
-  return renderedPrompt;
+  return {
+    promptContent: renderedPrompt,
+    source_prompt_resource_id: response.record.id,
+  };
 }

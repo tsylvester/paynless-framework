@@ -1,11 +1,12 @@
 import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
 import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
-import { assemble } from "./assemble.ts";
+import { assembleSeedPrompt } from "./assembleSeedPrompt.ts";
 import {
   ProjectContext,
   SessionContext,
   StageContext,
   DynamicContextVariables,
+  AssembledPrompt,
 } from "./prompt-assembler.interface.ts";
 import {
   createMockSupabaseClient,
@@ -19,6 +20,9 @@ import { DownloadStorageResult } from "../supabase_storage_utils.ts";
 import { downloadFromStorage } from "../supabase_storage_utils.ts";
 import { renderPrompt } from "../prompt-renderer.ts";
 import { gatherInputsForStage } from "./gatherInputsForStage.ts";
+import { createMockFileManagerService } from "../services/file_manager.mock.ts";
+import { FileType, UploadContext } from "../types/file_manager.types.ts";
+import { FileRecord } from "../types/file_manager.types.ts";
 
 // Define a type for the mock implementation of renderPrompt
 type RenderPromptMock = (
@@ -28,10 +32,11 @@ type RenderPromptMock = (
   _userProjectOverlayValues?: Json,
 ) => string;
 
-Deno.test("assemble", async (t) => {
+Deno.test("assembleSeedPrompt", async (t) => {
   let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
   let denoEnvStub: any = null;
   const consoleSpies: { error?: Spy<Console>; warn?: Spy<Console> } = {};
+  const mockFileManager = createMockFileManagerService();
 
   const setup = (
     config: MockSupabaseDataConfig = {},
@@ -51,6 +56,7 @@ Deno.test("assemble", async (t) => {
     return {
       client: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
       spies: mockSupabaseSetup.spies,
+      fileManager: mockFileManager,
     };
   };
 
@@ -110,8 +116,14 @@ Deno.test("assemble", async (t) => {
     input_artifact_rules: null,
   };
 
-  await t.step("should correctly assemble and render a prompt for the initial stage", async () => {
+  await t.step("should correctly assemble, persist, and render a prompt for the initial stage", async () => {
       const expectedRenderedPrompt = "Mocked Rendered Prompt Output";
+      const mockFileRecord: FileRecord = {
+        id: "mock-resource-id-123",
+        storage_path: "path/to/mock/prompt.md",
+        // ... other properties as needed
+      } as FileRecord;
+
       let renderPromptCallCount = 0;
       let lastRenderPromptArgs: [
         string,
@@ -153,16 +165,18 @@ Deno.test("assemble", async (t) => {
         },
       };
 
-      const { client } = setup(config);
+      const { client, fileManager } = setup(config);
+      fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
       const downloadFn = (bucket: string, path: string) =>
         downloadFromStorage(client, bucket, path);
 
       try {
-        const result = await assemble(
+        const result: AssembledPrompt = await assembleSeedPrompt(
           client,
           downloadFn,
           gatherInputsForStage,
           renderPromptMockFn,
+          fileManager,
           defaultProject,
           defaultSession,
           defaultStage,
@@ -170,8 +184,15 @@ Deno.test("assemble", async (t) => {
           1,
         );
 
-        assertEquals(result, expectedRenderedPrompt);
+        assertEquals(result.promptContent, expectedRenderedPrompt);
+        assertEquals(result.source_prompt_resource_id, mockFileRecord.id);
         assertEquals(renderPromptCallCount, 1);
+        
+        assert(fileManager.uploadAndRegisterFile.calls.length === 1, "uploadAndRegisterFile should be called once");
+        const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0] as UploadContext;
+        assertEquals(uploadContext.pathContext.fileType, FileType.SeedPrompt);
+        assertEquals(uploadContext.fileContent, expectedRenderedPrompt);
+
 
         const renderArgs = lastRenderPromptArgs;
         assertEquals(renderArgs?.[0], stageSystemPromptText);
@@ -220,7 +241,9 @@ Deno.test("assemble", async (t) => {
         return "ok";
       };
 
-      const { client } = setup({});
+      const { client, fileManager } = setup({});
+      fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+
       const downloadFn = (bucket: string, path: string) =>
         downloadFromStorage(client, bucket, path);
 
@@ -230,18 +253,19 @@ Deno.test("assemble", async (t) => {
           expected_output_artifacts: null,
         };
 
-        const result = await assemble(
+        const result = await assembleSeedPrompt(
           client,
           downloadFn,
           gatherInputsForStage,
           renderPromptMockFn,
+          fileManager,
           defaultProject,
           defaultSession,
           stageWithoutArtifacts,
           defaultProject.initial_user_prompt,
           1,
         );
-        assertEquals(result, "ok");
+        assertEquals(result.promptContent, "ok");
       } finally {
         teardown();
       }
@@ -265,23 +289,26 @@ Deno.test("assemble", async (t) => {
         expected_output_artifacts: artifacts,
       };
 
-      const { client } = setup({});
+      const { client, fileManager } = setup({});
+      fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+
       const downloadFn = (bucket: string, path: string) =>
         downloadFromStorage(client, bucket, path);
 
       try {
-        const result = await assemble(
+        const result = await assembleSeedPrompt(
           client,
           downloadFn,
           gatherInputsForStage,
           renderPromptMockFn,
+          fileManager,
           defaultProject,
           defaultSession,
           stageWithArtifacts,
           defaultProject.initial_user_prompt,
           1,
         );
-        assertEquals(result, "ok");
+        assertEquals(result.promptContent, "ok");
 
         if (capturedSysOverlay && isRecord(capturedSysOverlay)) {
           const val = capturedSysOverlay["expected_output_artifacts_json"];
@@ -364,7 +391,9 @@ Deno.test("assemble", async (t) => {
       const expectedRenderedPrompt = "Mocked Subsequent Stage Output";
       const renderPromptMockFn: RenderPromptMock = () => expectedRenderedPrompt;
 
-      const { client, spies } = setup(config);
+      const { client, spies, fileManager } = setup(config);
+      fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+
       const downloadFn = (bucket: string, path: string) =>
         downloadFromStorage(client, bucket, path);
 
@@ -381,11 +410,12 @@ Deno.test("assemble", async (t) => {
           },
         };
 
-        const result = await assemble(
+        const result = await assembleSeedPrompt(
           client,
           downloadFn,
           gatherInputsForStage,
           renderPromptMockFn,
+          fileManager,
           defaultProject,
           defaultSession,
           subsequentStage,
@@ -393,7 +423,7 @@ Deno.test("assemble", async (t) => {
           1,
         );
 
-        assertEquals(result, expectedRenderedPrompt);
+        assertEquals(result.promptContent, expectedRenderedPrompt);
 
         const downloadSpy = spies.storage.from("test-bucket").downloadSpy;
         assert(
@@ -428,7 +458,9 @@ Deno.test("assemble", async (t) => {
       },
     };
 
-    const { client } = setup(config);
+    const { client, fileManager } = setup(config);
+    fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+
     const downloadFn = (bucket: string, path: string) =>
       downloadFromStorage(client, bucket, path);
 
@@ -444,11 +476,12 @@ Deno.test("assemble", async (t) => {
 
       await assertRejects(
         async () => {
-          await assemble(
+          await assembleSeedPrompt(
             client,
             downloadFn,
             gatherInputsForStage,
             renderPrompt,
+            fileManager,
             defaultProject,
             defaultSession,
             subsequentStage,
@@ -482,16 +515,19 @@ Deno.test("assemble", async (t) => {
       user_domain_overlay_values: userOverlay,
     };
 
-    const { client } = setup({});
+    const { client, fileManager } = setup({});
+    fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+
     const downloadFn = (bucket: string, path: string) =>
       downloadFromStorage(client, bucket, path);
 
     try {
-      await assemble(
+      await assembleSeedPrompt(
         client,
         downloadFn,
         gatherInputsForStage,
         renderPromptMockFn,
+        fileManager,
         projectWithUserOverlay,
         defaultSession,
         defaultStage,
@@ -505,7 +541,9 @@ Deno.test("assemble", async (t) => {
   });
 
   await t.step("should throw an error if stage is missing system prompt", async () => {
-    const { client } = setup();
+    const { client, fileManager } = setup();
+    fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+
     const downloadFn = (bucket: string, path: string) =>
       downloadFromStorage(client, bucket, path);
 
@@ -517,11 +555,12 @@ Deno.test("assemble", async (t) => {
 
       await assertRejects(
         async () => {
-          await assemble(
+          await assembleSeedPrompt(
             client,
             downloadFn,
             gatherInputsForStage,
             renderPrompt,
+            fileManager,
             defaultProject,
             defaultSession,
             stageWithMissingPrompt,
@@ -538,7 +577,9 @@ Deno.test("assemble", async (t) => {
   });
 
   await t.step("should throw if prompt requires 'style_guide_markdown' but it is not provided", async () => {
-    const { client } = setup();
+    const { client, fileManager } = setup();
+    fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+
     const downloadFn = (bucket: string, path: string) =>
       downloadFromStorage(client, bucket, path);
 
@@ -553,11 +594,12 @@ Deno.test("assemble", async (t) => {
 
       await assertRejects(
         async () => {
-          await assemble(
+          await assembleSeedPrompt(
             client,
             downloadFn,
             gatherInputsForStage,
             renderPrompt,
+            fileManager,
             defaultProject,
             defaultSession,
             stageWithStyleGuidePrompt,
@@ -574,7 +616,9 @@ Deno.test("assemble", async (t) => {
   });
 
   await t.step("should throw if prompt requires 'expected_output_artifacts_json' but it is not provided", async () => {
-    const { client } = setup();
+    const { client, fileManager } = setup();
+    fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+
     const downloadFn = (bucket: string, path: string) =>
       downloadFromStorage(client, bucket, path);
 
@@ -590,11 +634,12 @@ Deno.test("assemble", async (t) => {
 
       await assertRejects(
         async () => {
-          await assemble(
+          await assembleSeedPrompt(
             client,
             downloadFn,
             gatherInputsForStage,
             renderPrompt,
+            fileManager,
             defaultProject,
             defaultSession,
             stageWithArtifactsPrompt,
@@ -611,7 +656,9 @@ Deno.test("assemble", async (t) => {
   });
 
   await t.step("should throw an error if session has no selected models", async () => {
-      const { client } = setup();
+      const { client, fileManager } = setup();
+      fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+
       const downloadFn = (bucket: string, path: string) =>
         downloadFromStorage(client, bucket, path);
       const sessionWithNoModels: SessionContext = {
@@ -622,11 +669,12 @@ Deno.test("assemble", async (t) => {
       try {
         await assertRejects(
           async () => {
-            await assemble(
+            await assembleSeedPrompt(
               client,
               downloadFn,
               gatherInputsForStage,
               renderPrompt,
+              fileManager,
               defaultProject,
               sessionWithNoModels,
               defaultStage,
@@ -643,38 +691,4 @@ Deno.test("assemble", async (t) => {
     },
   );
 
-  await t.step("should correctly append continuation content to the prompt", async () => {
-      const expectedRenderedPrompt = "Base Prompt. Continuation Content.";
-      const renderPromptMockFn: RenderPromptMock = (
-        _base,
-        _vars,
-        _sysOverlays,
-        _userOverlays,
-      ) => {
-        return "Base Prompt.";
-      };
-      const { client } = setup({});
-      const downloadFn = (bucket: string, path: string) =>
-        downloadFromStorage(client, bucket, path);
-
-      try {
-        const result = await assemble(
-          client,
-          downloadFn,
-          gatherInputsForStage,
-          renderPromptMockFn,
-          defaultProject,
-          defaultSession,
-          defaultStage,
-          defaultProject.initial_user_prompt,
-          1,
-          "Continuation Content.",
-        );
-
-        assertEquals(result, expectedRenderedPrompt);
-      } finally {
-        teardown();
-      }
-    },
-  );
 });

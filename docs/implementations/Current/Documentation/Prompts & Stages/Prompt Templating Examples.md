@@ -222,45 +222,36 @@ Use these templates as the base for each stage. Provide `role` and `stage_instru
       "if_comparable": "present 1-2 viable options with concise trade-offs and a clear recommendation"
     }
   },
-  "documents": [
+  "context_for_documents": [
     {
-      "key": "business_case",
-      "template_filename": "thesis_business_case.md",
-      "content_to_include": {
+      "document_key": "business_case",
+      "context_to_include": {
         "market_opportunity": "placeholder",
         "user_problem_validation": "placeholder",
         "competitive_analysis": "placeholder"
       }
     },
     {
-      "key": "mvp_feature_spec_with_user_stories",
-      "template_filename": "thesis_mvp_feature_spec.md",
-      "content_to_include": [
+      "document_key": "feature_spec",
+      "context_to_include": [
         {
           "feature_name": "placeholder",
-          "user_stories": ["As a <role>, I want <goal> so that <reason>."]
+          "user_stories": [
+            "As a <role>, I want <goal> so that <reason>."
+          ]
         }
       ]
     },
     {
-      "key": "high_level_technical_approach_overview",
-      "template_filename": "thesis_technical_approach_overview.md",
-      "content_to_include": "architecture, components, data, deployment, sequencing"
+      "document_key": "technical_approach",
+      "context_to_include": "architecture, components, data, deployment, sequencing"
     },
     {
-      "key": "success_metrics",
-      "template_filename": "thesis_success_metrics.md",
-      "content_to_include": ["placeholder metric 1", "placeholder metric 2"]
-    }
-  ],
-  "files_to_generate": [
-    {
-      "template_filename": "thesis_product_requirements_document.md",
-      "from_document_key": "mvp_feature_spec_with_user_stories"
-    },
-    {
-      "template_filename": "thesis_implementation_plan_proposal.md",
-      "from_document_key": "high_level_technical_approach_overview"
+      "document_key": "success_metrics",
+      "context_to_include": [
+        "placeholder metric 1",
+        "placeholder metric 2"
+      ]
     }
   ]
 }

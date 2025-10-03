@@ -1,42 +1,50 @@
-import { Json, Tables } from "../../types_db.ts";
-import { Messages } from "../types.ts";
+import { Tables } from "../../types_db.ts";
+import { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
 
 export interface IPromptAssembler {
-    assemble(
+    assemble(options: AssemblePromptOptions): Promise<AssembledPrompt>;
+    assembleSeedPrompt(
         project: ProjectContext, 
         session: SessionContext,
         stage: StageContext,
         projectInitialUserPrompt: string,
-        iterationNumber: number,
-        continuationContent?: string,
-    ): Promise<string>;
-
-    gatherContext(
-        project: ProjectContext,
-        session: SessionContext,
-        stage: StageContext,
-        projectInitialUserPrompt: string,
-        iterationNumber: number,
-        overrideContributions?: ContributionOverride[],
-    ): Promise<DynamicContextVariables>;
-
-    render(
-        stage: StageContext,
-        context: DynamicContextVariables,
-        userProjectOverlayValues?: Json | null
-    ): string;
-
-    gatherInputsForStage(
-        stage: StageContext, 
+        iterationNumber: number
+    ): Promise<AssembledPrompt>;
+    assemblePlannerPrompt(
+        job: DialecticJobRow, 
         project: ProjectContext, 
         session: SessionContext, 
-        iterationNumber: number
-    ): Promise<AssemblerSourceDocument[]>;
-
-    gatherContinuationInputs(
-        rootContributionId: string
-    ): Promise<Messages[]>;
+        stage: StageContext
+    ): Promise<AssembledPrompt>;
+    assembleTurnPrompt(
+        job: DialecticJobRow, 
+        project: ProjectContext, 
+        session: SessionContext, 
+        stage: StageContext
+    ): Promise<AssembledPrompt>;
+    assembleContinuationPrompt(
+        job: DialecticJobRow, 
+        project: ProjectContext, 
+        session: SessionContext, 
+        stage: StageContext, 
+        continuationContent: string
+    ): Promise<AssembledPrompt>;
 }
+
+export type AssembledPrompt = {
+    promptContent: string;
+    source_prompt_resource_id: string;
+};
+
+export type AssemblePromptOptions = {
+    project: ProjectContext;
+    session: SessionContext;
+    stage: StageContext;
+    projectInitialUserPrompt: string;
+    iterationNumber: number;
+    job?: DialecticJobRow;
+    continuationContent?: string;
+};
 
 export type DynamicContextVariables = {
     user_objective: string,
