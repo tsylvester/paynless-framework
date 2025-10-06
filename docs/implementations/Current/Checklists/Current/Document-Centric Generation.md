@@ -523,23 +523,19 @@ graph LR
         *   `[✅]` X.d.iv. Inventory Parenthesis overlays (style guide extracts, checklist instructions, etc.).
         *   `[✅]` X.d.v. Describe the **Target State** for each recipe step using `Prompt Templating Examples.md`.
         *   `[✅]` X.d.v.a. Capture the Parenthesis-stage `inputs_relevance` matrix linking Synthesis documents to each generated planning artifact.
-        *   `[ ]` X.d.vi. Record the **Transform Requirement** with the same detail as prior stages, including any dependencies on Synthesis outputs.
-        *   `[ ]` X.d.vii. Note any Seed Prompt reuse patterns and ensure planner steps are documented as consumers of those seed artifacts.
-        *   `[ ]` X.d.viii. Capture provenance and type-alignment notes, plus any new prompt template paths for integration testing.
-    *   `[ ]` X.e. `[DOCS]` **Paralysis Stage** – fill in `.../5-Paralysis-Implementation/paralysis-planning-recipe.md`.
-        *   `[ ]` X.e.i. Paste the existing `dialectic_stage_recipes` JSON for Paralysis from the latest migration or `seed.sql` under "Current State".
-        *   `[ ]` X.e.ii. Copy the current `dialectic_stages.input_artifact_rules` and `expected_output_artifacts` JSON for Paralysis into the worksheet.
-        *   `[ ]` X.e.iii. List every Paralysis-related `system_prompts` row (seed prompt, planner prompt, turn prompts) with ids and file references.
-        *   `[ ]` X.e.iv. Inventory Paralysis overlays (style guide segments, implementation sequencing instructions).
-        *   `[ ]` X.e.v. Describe the **Target State** for each recipe step using `Prompt Templating Examples.md`.
-        *   `[ ]` X.e.v.a. Document `inputs_relevance` matrices for Paralysis steps so each implementation artifact lists its ordered dependencies (TRD sections, Master Plan milestones, prior feedback).
-        *   `[ ]` X.e.vi. Record the **Transform Requirement** with notes on new prompt templates, recipe/document key adjustments, overlay data, and test fixture impact.
-        *   `[ ]` X.e.vii. Note any Seed Prompt reuse patterns and ensure planner steps are documented as consumers of those seed artifacts.
-        *   `[ ]` X.e.viii. Capture provenance, document TypeScript/type-guard changes, and list any new prompt template file paths needed for integration tests.
-    *   `[ ]` X.f. `[DOCS]` Consolidate the completed worksheets into `Prompt Types and Definitions.md` so every stage/step has recorded **Current → Target → Transform** data plus citations to the source files and overlay references.
-        *   `[ ]` X.f.i. Produce a cross-stage dependency matrix listing every document key consumed by downstream stages and its producing step.
-        *   `[ ]` X.f.ii. Call out any file-manager/path-constructor updates required globally and reference the tests that must change.
-        *   `[ ]` X.f.iii. Enumerate the TypeScript payload/type-guard updates required to represent the new `step_info` structures (planner/turn metadata, document keys) so the implementation phase can update shared types before assembler changes land.
+        *   `[✅]` X.d.vi. Record the **Transform Requirement** with the same detail as prior stages, including any dependencies on Synthesis outputs.
+        *   `[✅]` X.d.vii. Note any Seed Prompt reuse patterns and ensure planner steps are documented as consumers of those seed artifacts.
+        *   `[✅]` X.d.viii. Capture provenance and type-alignment notes, plus any new prompt template paths for integration testing.
+    *   `[✅]` X.e. `[DOCS]` **Paralysis Stage** – fill in `.../5-Paralysis-Implementation/paralysis-planning-recipe.md`.
+        *   `[✅]` X.e.i. Paste the existing `dialectic_stage_recipes` JSON for Paralysis from the latest migration or `seed.sql` under "Current State".
+        *   `[✅]` X.e.ii. Copy the current `dialectic_stages.input_artifact_rules` and `expected_output_artifacts` JSON for Paralysis into the worksheet.
+        *   `[✅]` X.e.iii. List every Paralysis-related `system_prompts` row (seed prompt, planner prompt, turn prompts) with ids and file references.
+        *   `[✅]` X.e.iv. Inventory Paralysis overlays (style guide segments, implementation sequencing instructions).
+        *   `[✅]` X.e.v. Describe the **Target State** for each recipe step using `Prompt Templating Examples.md`.
+        *   `[✅]` X.e.v.a. Document `inputs_relevance` matrices for Paralysis steps so each implementation artifact lists its ordered dependencies (TRD sections, Master Plan milestones, prior feedback).
+        *   `[✅]` X.e.vi. Record the **Transform Requirement** with notes on new prompt templates, recipe/document key adjustments, overlay data, and test fixture impact.
+        *   `[✅]` X.e.vii. Note any Seed Prompt reuse patterns and ensure planner steps are documented as consumers of those seed artifacts.
+        *   `[✅]` X.e.viii. Capture provenance, document TypeScript/type-guard changes, and list any new prompt template file paths needed for integration tests.
 
 *   `[ ]` Y. `[DB]` Author Data Migrations and Seed Updates for Stage Contracts
     *   `[ ]` Y.0. Create the `dialectic_stage_recipes` table and update codepaths to reference it

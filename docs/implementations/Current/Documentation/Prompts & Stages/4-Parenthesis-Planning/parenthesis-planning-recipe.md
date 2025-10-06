@@ -156,7 +156,7 @@
 - Prompt templates: only the shared base `dialectic_parenthesis_base_v1` exists today; planner/turn templates have not yet been authored or linked. Path utilities (`FileType.Parenthesis`, `constructStoragePath`, `deconstructStoragePath`) already recognise the `parenthesis` stage slug, but no recipe data drives per-document orchestration yet.
   - Sources: `supabase/seed.sql` (L55-L92); `supabase/functions/_shared/types/file_manager.types.ts` (FileType enum), `supabase/functions/_shared/utils/path_constructor.ts`, `supabase/functions/_shared/utils/path_deconstructor.ts`
 
-## Target State
+# Target State
 
 ## Recipe: `parenthesis_v1`
 - **Recipe Description:** Document-centric planning workflow that converts Synthesis deliverables into an iterative Technical Requirements Document, Master Plan, and Milestone Schema.
@@ -175,6 +175,7 @@
   - `system_architecture_overview` (type `feedback`, stage `synthesis`, required=false)
   - `tech_stack_recommendations` (type `feedback`, stage `synthesis`, required=false)
   - `master_plan` (type `document`, stage `parenthesis`, required=false)
+  - `master_plan` (type `feedback`, stage `parenthesis`, required=false)
 - **Output Artifact Description:** Header context JSON with milestone catalog, dependency graph, TRD outline inputs, continuation policy, and instructions for preserving `[✅]` milestones while marking the next milestones `[🚧]`.
 
 **Recipe Step Definition JSON (target):**
@@ -194,7 +195,8 @@
     { "type": "feedback", "stage_slug": "synthesis", "document_key": "prd", "required": false },
     { "type": "feedback", "stage_slug": "synthesis", "document_key": "system_architecture_overview", "required": false },
     { "type": "feedback", "stage_slug": "synthesis", "document_key": "tech_stack_recommendations", "required": false },
-    { "type": "document", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false }
+    { "type": "document", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false },
+    { "type": "feedback", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false }
   ],
   "inputs_relevance": [
     { "document_key": "seed_prompt", "stage_slug": "parenthesis", "relevance": 0.6 },
@@ -204,23 +206,11 @@
     { "document_key": "prd", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.75 },
     { "document_key": "system_architecture_overview", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.70 },
     { "document_key": "tech_stack_recommendations", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.65 },
-    { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.99 }
+    { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.99 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.85 }
   ],
   "output_type": "HeaderContext",
-  "granularity_strategy": "all_to_one",
-  "outputs_required": {
-    "header_context": {
-      "document_key": "header_context_parenthesis",
-      "fields": [
-        "milestones",
-        "dependencies",
-        "status_preservation_rules",
-        "continuation_policy",
-        "trd_outline_inputs"
-      ]
-    }
-  }
+  "granularity_strategy": "all_to_one"
 }
 ```
 
@@ -233,16 +223,76 @@
     "status_preservation_rules": {
       "completed_status": "[✅]",
       "in_progress_status": "[🚧]",
-      "next_actions_status": "[ ]"
+      "unstarted_status": "[ ]"
     },
     "continuation_policy": {
       "iteration": "resume-from-last-open-milestone",
       "corrective": "restate-delta"
     },
-    "trd_outline_inputs": {}
-  }
+    "trd_outline_inputs": {
+      "subsystems": [],
+      "apis": [],
+      "schemas": [],
+      "proposed_file_tree": "",
+      "architecture_overview": ""
+    }
+  },
+  "header_context_artifact": {
+    "document_key": "header_context_parenthesis",
+    "artifact_class": "header_context",
+    "file_type": "json"
+  },
+  "context_for_documents": [
+    {
+      "document_key": "trd",
+      "template_filename": "parenthesis_trd.md",
+      "context_to_include": {
+        "subsystems": [],
+        "apis": [],
+        "schemas": [],
+        "proposed_file_tree": "",
+        "architecture_overview": ""
+      }
+    },
+    {
+      "document_key": "master_plan",
+      "template_filename": "parenthesis_master_plan.md",
+      "context_to_include": {
+        "phases": [],
+        "status_markers": {
+          "unstarted": "[ ]",
+          "in_progress": "[🚧]",
+          "completed": "[✅]"
+        },
+        "dependency_rules": [],
+        "generation_limits": {
+          "max_steps": 200,
+          "target_steps": "120-180",
+          "max_output_lines": "600-800"
+        }
+      }
+    },
+    {
+      "document_key": "milestone_schema",
+      "template_filename": "parenthesis_milestone_schema.md",
+      "context_to_include": {
+        "fields": [
+          "id",
+          "title",
+          "objective",
+          "dependencies",
+          "acceptance_criteria",
+          "status"
+        ],
+        "style_guide_notes": "Use standardized checklist markers, component labels when relevant, and keep scope at milestone granularity; detailed steps will be generated in the next stage."
+      }
+    }
+  ],
+  "continuation_policy": "If the planning header cannot enumerate all milestone directives in one response, continue with reason 'length' and resume detailing the remaining directives."
 }
 ```
+
+Include the latest committed `master_plan` document and any feedback when rerunning the stage so the planner can maintain status markers across iterations.
 
 ### Step 2: Generate Technical Requirements Document
 - **Objective:** Produce the updated TRD that aligns synthesized architecture with the planner’s milestone breakdown and captures deltas from any previous iteration.
@@ -253,12 +303,14 @@
   - `system_architecture_overview` (type `document`, stage `synthesis`, required)
   - `tech_stack_recommendations` (type `document`, stage `synthesis`, required)
   - `prd` (type `document`, stage `synthesis`, required)
+  - `trd` (type `document`, stage `parenthesis`, required=false — include the prior TRD when this stage is rerun)
   - `system_architecture_overview` (type `feedback`, stage `synthesis`, required=false)
   - `tech_stack_recommendations` (type `feedback`, stage `synthesis`, required=false)
   - `prd` (type `feedback`, stage `synthesis`, required=false)
-  - `trd` (type `document`, stage `parenthesis`, required=false) // if this is an iterative run, we send the last iterations TRD. 
-  - `trd` (type `feedback`, stage `parenthesis`, required=false) // if this is an iterative run, we send the last iterations TRD feedback too. 
+  - `trd` (type `feedback`, stage `parenthesis`, required=false — include the latest TRD feedback on iterative runs)
 - **Output Artifact Description:** Markdown TRD plus assembled JSON capturing subsystems, APIs, schemas, file tree, and architecture rationale.
+
+When this step is executed for subsequent iterations, provide the most recent `trd` document and feedback so the turn prompt can describe deltas accurately.
 
 **Recipe Step Definition JSON (target):**
 ```json
@@ -267,6 +319,7 @@
   "step_slug": "generate-trd",
   "job_type": "EXECUTE",
   "name": "Generate Technical Requirements Document",
+  "branch_key": "trd",
   "prompt_template_id": "<system_prompts.id for parenthesis_trd_turn_v1>",
   "prompt_type": "Turn",
   "inputs_required": [
@@ -285,11 +338,11 @@
     { "document_key": "system_architecture_overview", "stage_slug": "synthesis", "relevance": 0.95 },
     { "document_key": "tech_stack_recommendations", "stage_slug": "synthesis", "relevance": 0.9 },
     { "document_key": "prd", "stage_slug": "synthesis", "relevance": 0.85 },
-    { "document_key": "trd", "stage_slug": "parenthesis", "relevance": 0.99 }, // if we already have a TRD, that's our 2nd most important document
+    { "document_key": "trd", "stage_slug": "parenthesis", "relevance": 0.99 },
     { "document_key": "system_architecture_overview", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.80 },
     { "document_key": "tech_stack_recommendations", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.75 },
     { "document_key": "prd", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.50 },
-    { "document_key": "trd", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.83 } // feedback on an existing TRD is just slightly less important than the prd 
+    { "document_key": "trd", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.83 }
   ],
   "output_type": "RenderedDocument",
   "granularity_strategy": "one_to_one",
@@ -299,16 +352,46 @@
         "document_key": "trd",
         "template_filename": "parenthesis_trd.md",
         "artifact_class": "rendered_document",
-        "file_type": "markdown"
+        "file_type": "markdown",
+        "content_to_include": {
+          "index": [],
+          "executive_summary": "",
+          "subsystems": [{ "name": "", "objective": "", "implementation_notes": "" }],
+          "apis": [{ "name": "", "description": "", "contracts": [] }],
+          "schemas": [{ "name": "", "columns": [], "indexes": [], "rls": [] }],
+          "proposed_file_tree": "",
+          "architecture_overview": "",
+          "delta_summary": "",
+          "iteration_notes": ""
+        }
       }
+    ],
+    "files_to_generate": [
+      { "template_filename": "parenthesis_trd.md", "from_document_key": "trd" }
     ],
     "assembled_json": [
       {
         "document_key": "trd",
         "artifact_class": "assembled_document_json",
-        "fields": ["subsystems", "apis", "schemas", "proposed_file_tree", "architecture_overview"]
+        "fields": [
+          "subsystems[].name",
+          "subsystems[].objective",
+          "subsystems[].implementation_notes",
+          "apis[].name",
+          "apis[].description",
+          "apis[].contracts[]",
+          "schemas[].name",
+          "schemas[].columns[]",
+          "schemas[].indexes[]",
+          "schemas[].rls[]",
+          "proposed_file_tree",
+          "architecture_overview",
+          "delta_summary",
+          "iteration_notes"
+        ]
       }
-    ]
+    ],
+    "continuation_policy": "If the TRD output truncates, continue with reason 'length' and resume at the next unfinished section."
   }
 }
 ```
@@ -320,12 +403,14 @@
 - **Input Source References:**
   - `header_context_parenthesis` (type `header_context`, stage `parenthesis`, required)
   - `trd` (type `document`, stage `parenthesis`, required)
-  - `master_plan` (type `document`, stage `parenthesis`, required=false)
+  - `master_plan` (type `document`, stage `parenthesis`, required=false — supply the prior plan on later iterations)
   - `prd` (type `document`, stage `synthesis`, required)
   - `trd` (type `feedback`, stage `parenthesis`, required=false)
-  - `master_plan` (type `feedback`, stage `parenthesis`, required=false)
+  - `master_plan` (type `feedback`, stage `parenthesis`, required=false — include status feedback when rerunning)
   - `prd` (type `feedback`, stage `synthesis`, required=false)
 - **Output Artifact Description:** Markdown Master Plan plus JSON manifest enumerating phases, milestones, dependencies, acceptance criteria, and status markers.
+
+Present the previously generated Master Plan and feedback during iterative runs so the turn can preserve existing statuses and add `[🚧]` markers only where new work is detailed.
 
 **Recipe Step Definition JSON (target):**
 ```json
@@ -334,6 +419,7 @@
   "step_slug": "generate-master-plan",
   "job_type": "EXECUTE",
   "name": "Generate Master Plan",
+  "branch_key": "master_plan",
   "prompt_template_id": "<system_prompts.id for parenthesis_master_plan_turn_v1>",
   "prompt_type": "Turn",
   "inputs_required": [
@@ -348,10 +434,10 @@
   "inputs_relevance": [
     { "document_key": "header_context_parenthesis", "stage_slug": "parenthesis", "relevance": 1.0 },
     { "document_key": "trd", "stage_slug": "parenthesis", "relevance": 0.95 },
-    { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.99 },// if we already have it, it's the most important
+    { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.99 },
     { "document_key": "prd", "stage_slug": "synthesis", "relevance": 0.75 },
     { "document_key": "trd", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.85 },
-    { "document_key": "master_plan", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.90 }, // if we already have it, it's the most important feedback
+    { "document_key": "master_plan", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.90 },
     { "document_key": "prd", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.70 }
   ],
   "output_type": "RenderedDocument",
@@ -362,16 +448,65 @@
         "document_key": "master_plan",
         "template_filename": "parenthesis_master_plan.md",
         "artifact_class": "rendered_document",
-        "file_type": "markdown"
+        "file_type": "markdown",
+        "content_to_include": {
+          "index": [],
+          "executive_summary": "",
+          "phases": [
+            {
+              "name": "",
+              "objective": "",
+              "milestones": [
+                {
+                  "id": "",
+                  "title": "",
+                  "objective": "",
+                  "inputs": [],
+                  "outputs": [],
+                  "dependencies": [],
+                  "acceptance_criteria": [],
+                  "status": "[ ]",
+                  "coverage_notes": "",
+                  "iteration_delta": ""
+                }
+              ]
+            }
+          ],
+          "status_summary": {
+            "completed": [],
+            "in_progress": [],
+            "up_next": []
+          }
+        }
       }
+    ],
+    "files_to_generate": [
+      { "template_filename": "parenthesis_master_plan.md", "from_document_key": "master_plan" }
     ],
     "assembled_json": [
       {
         "document_key": "master_plan",
         "artifact_class": "assembled_document_json",
-        "fields": ["phases", "milestones", "dependencies", "acceptance_criteria", "status"]
+        "fields": [
+          "phases[].name",
+          "phases[].objective",
+          "phases[].milestones[].id",
+          "phases[].milestones[].title",
+          "phases[].milestones[].objective",
+          "phases[].milestones[].inputs[]",
+          "phases[].milestones[].outputs[]",
+          "phases[].milestones[].dependencies[]",
+          "phases[].milestones[].acceptance_criteria[]",
+          "phases[].milestones[].status",
+          "phases[].milestones[].coverage_notes",
+          "phases[].milestones[].iteration_delta",
+          "status_summary.completed[]",
+          "status_summary.in_progress[]",
+          "status_summary.up_next[]"
+        ]
       }
-    ]
+    ],
+    "continuation_policy": "If the master plan output truncates, continue with reason 'length' and resume from the next unfinished milestone section."
   }
 }
 ```
@@ -383,8 +518,12 @@
 - **Input Source References:**
   - `header_context_parenthesis` (type `header_context`, stage `parenthesis`, required)
   - `master_plan` (type `document`, stage `parenthesis`, required)
-  - `milestone_schema` (type `document`, stage `parenthesis`, required=false)
+  - `milestone_schema` (type `document`, stage `parenthesis`, required=false — include prior schema when refining the structure)
+  - `master_plan` (type `feedback`, stage `parenthesis`, required=false)
+  - `milestone_schema` (type `feedback`, stage `parenthesis`, required=false — provide prior schema feedback on iterative runs)
 - **Output Artifact Description:** Markdown milestone schema plus JSON descriptor covering canonical fields and style-guide notes.
+
+Provide the previous milestone schema and related feedback on subsequent executions so the schema can evolve without losing prior guidance.
 
 **Recipe Step Definition JSON (target):**
 ```json
@@ -393,21 +532,22 @@
   "step_slug": "generate-milestone-schema",
   "job_type": "EXECUTE",
   "name": "Generate Milestone Schema",
+  "branch_key": "milestone_schema",
   "prompt_template_id": "<system_prompts.id for parenthesis_milestone_schema_turn_v1>",
   "prompt_type": "Turn",
   "inputs_required": [
     { "type": "header_context", "stage_slug": "parenthesis", "document_key": "header_context_parenthesis", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "master_plan", "required": true },
-    { "type": "document", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": false }, // If we have one, send it
+    { "type": "document", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": false },
     { "type": "feedback", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false },
     { "type": "feedback", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": false }
   ],
   "inputs_relevance": [
     { "document_key": "header_context_parenthesis", "stage_slug": "parenthesis", "relevance": 1.0 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.90 },
-    { "document_key": "milestone_schema", "stage_slug": "parenthesis", "relevance": 0.95 }, // if we have one, it's more important than the master_plan
-    { "document_key": "master_plan", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.80 }, 
-    { "document_key": "milestone_schema", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.85 } // if we have it, it's more important 
+    { "document_key": "milestone_schema", "stage_slug": "parenthesis", "relevance": 0.95 },
+    { "document_key": "master_plan", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.80 },
+    { "document_key": "milestone_schema", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.85 }
   ],
   "output_type": "RenderedDocument",
   "granularity_strategy": "one_to_one",
@@ -417,18 +557,140 @@
         "document_key": "milestone_schema",
         "template_filename": "parenthesis_milestone_schema.md",
         "artifact_class": "rendered_document",
-        "file_type": "markdown"
+        "file_type": "markdown",
+        "content_to_include": {
+          "index": [],
+          "executive_summary": "",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "description": "Stable milestone identifier (e.g., M1, M1.a)"
+            },
+            {
+              "name": "title",
+              "type": "string",
+              "description": "Short milestone name"
+            },
+            {
+              "name": "objective",
+              "type": "string",
+              "description": "Narrative summary of milestone goal"
+            },
+            {
+              "name": "dependencies",
+              "type": "string[]",
+              "description": "List of prerequisite milestone IDs"
+            },
+            {
+              "name": "acceptance_criteria",
+              "type": "string[]",
+              "description": "Checklist of validation outcomes"
+            },
+            {
+              "name": "inputs",
+              "type": "string[]",
+              "description": "Artifacts required before work begins"
+            },
+            {
+              "name": "outputs",
+              "type": "string[]",
+              "description": "Artifacts produced when milestone completes"
+            },
+            {
+              "name": "status",
+              "type": "enum",
+              "values": ["[ ]", "[🚧]", "[✅]"],
+              "description": "Current completion status"
+            }
+          ],
+          "style_guide_notes": "Use standardized checklist markers, component labels when relevant, and keep scope at milestone granularity; detailed steps belong to next stage.",
+          "validation_rules": [
+            "Status must be one of [ ], [🚧], [✅]",
+            "Dependencies must reference existing milestone IDs",
+            "Acceptance criteria must be non-empty for every milestone"
+          ],
+          "iteration_guidance": {
+            "reuse_policy": "Carry forward schema; append new fields under migration log if expanded",
+            "versioning": "Increment schema_version when fields change"
+          }
+        }
       }
+    ],
+    "files_to_generate": [
+      { "template_filename": "parenthesis_milestone_schema.md", "from_document_key": "milestone_schema" }
     ],
     "assembled_json": [
       {
         "document_key": "milestone_schema",
         "artifact_class": "assembled_document_json",
-        "fields": ["fields", "style_guide_notes", "status_markers"]
+        "fields": [
+          "fields[].name",
+          "fields[].type",
+          "fields[].description",
+          "fields[].values[]",
+          "style_guide_notes",
+          "validation_rules[]",
+          "iteration_guidance.reuse_policy",
+          "iteration_guidance.versioning"
+        ]
       }
-    ]
+    ],
+    "continuation_policy": "If the milestone schema output truncates, continue with reason 'length' and resume documenting the remaining field definitions."
   }
 }
 ```
 
 > *Future extension:* Once iterative forecasting artifacts are defined, insert additional planner/turn steps that generate iteration seeds or backlog harmonization manifests prior to Paralysis.
+
+# Transform Requirements
+
+*   `[ ]` 1. `[PROMPT]` Author and register Parenthesis planner/turn templates.
+    *   `[ ]` 1.a. Create `docs/prompts/parenthesis/parenthesis_planner_header_v1.md` implementing the Step 1 header context schema (system_materials milestone rules, context_for_documents entries, continuation policy) using the overlay guidance for Parenthesis.
+    *   `[ ]` 1.b. Author `docs/prompts/parenthesis/parenthesis_trd_turn_v1.md`, `parenthesis_master_plan_turn_v1.md`, and `parenthesis_milestone_schema_turn_v1.md`, each matching the markdown + assembled JSON structures defined in Steps 2–4 (including delta summaries, status markers, iteration notes, validation rules).
+    *   `[ ]` 1.c. Insert new `system_prompts` rows for all four templates in a migration, documenting id/name/version/prompt_type/stage associations and storing file paths so they can be retrieved by the PromptAssembler.
+    *   `[ ]` 1.d. Update the Parenthesis entry in `domain_specific_prompt_overlays` (Software Development domain) to add per-template overlay values (role, stage instructions, style-guide snippets, continuation wording). Remove the obsolete `expected_output_artifacts_json` payload once the planner template supplies the contract to avoid duplicate definitions.
+
+*   `[ ]` 2. `[DB]` Seed `dialectic_stage_recipes` rows and execution graph.
+    *   `[ ]` 2.a. Insert the Step 1 planner row (`step_number=1`, `step_slug='build-planning-header'`, `job_type='PLAN'`, `prompt_type='Planner'`, `granularity_strategy='all_to_one'`) along with the exact `inputs_required` and `inputs_relevance` values from the target state (seed prompt, Synthesis deliverables/feedback, optional prior master plan + feedback, header context schema).
+    *   `[ ]` 2.b. Insert Step 2, Step 3, and Step 4 turn rows for `trd`, `master_plan`, and `milestone_schema` (`job_type='EXECUTE'`, `prompt_type='Turn'`, `granularity_strategy='one_to_one'`, `branch_key` set to the document key) capturing all required inputs (header context, Synthesis artifacts, optional prior Parenthesis documents + feedback), relevance weights, markdown/JSON outputs, and continuation policies.
+    *   `[ ]` 2.c. Populate `dialectic_stage_recipe_edges` so Step 1 → Step 2 → Step 3 → Step 4, ensuring orchestration waits for each dependency before scheduling the next step.
+
+*   `[ ]` 3. `[DB]` Update Parenthesis stage configuration.
+    *   `[ ]` 3.a. Set `dialectic_stages.recipe_name = 'parenthesis_v1'` and remove the legacy `input_artifact_rules` / `expected_output_artifacts` JSON once downstream code reads from the recipe tables.
+    *   `[ ]` 3.b. Populate `expected_output_template_ids` with the template IDs for `parenthesis_trd.md`, `parenthesis_master_plan.md`, and `parenthesis_milestone_schema.md` so downstream stages can fetch canonical files by id.
+    *   `[ ]` 3.c. Record migration ids/commit hashes that modify the stage row for future provenance.
+
+*   `[ ]` 4. `[PROMPT]` Verify and seed Parenthesis document templates.
+    *   `[ ]` 4.a. Confirm the markdown templates referenced by the target state exist (update them if necessary to include status markers, iteration/delta sections, dependency summaries, validation bullets).
+    *   `[ ]` 4.b. If any template is missing, create it under `docs/templates/parenthesis/` (or the repository’s template location) and seed a matching `dialectic_document_templates` row with the correct bucket/path/document_key so `files_to_generate` pointers resolve.
+
+*   `[ ]` 5. `[BE]` Extend `PromptAssembler` to handle Parenthesis.
+    *   `[ ]` 5.a. Update `assemblePlannerPrompt` to route Parenthesis PLAN jobs to `parenthesis_planner_header_v1`, supply all required inputs, upload `header_context_parenthesis.json`, and return `source_prompt_resource_id` to downstream consumers.
+    *   `[ ]` 5.b. Enhance `assembleTurnPrompt` to support the Parenthesis branch keys (`trd`, `master_plan`, `milestone_schema`), wiring optional prior artifacts, Synthesis outputs, and appropriate storage paths for markdown + assembled JSON artifacts.
+    *   `[ ]` 5.c. Implement continuation handling that queues `continueJob` with the reason strings defined in each step when markdown/JSON outputs truncate or fail validation, ensuring partial artifacts are never persisted.
+
+*   `[ ]` 6. `[CONFIG]` Update storage enums and helpers.
+    *   `[ ]` 6.a. Add Parenthesis-specific entries to `FileType` (header context, TRD, master plan, milestone schema) and reference them inside storage helpers.
+    *   `[ ]` 6.b. Extend `constructStoragePath` / `deconstructStoragePath` so Parenthesis prompts, header contexts, assembled JSON, rendered markdown, and continuation files follow the documented Stage File Structure and naming conventions.
+
+*   `[ ]` 7. `[BE]` Update shared types and guards.
+    *   `[ ]` 7.a. Extend shared interfaces to model the new header context fields (status preservation rules, iteration guidance), TRD schema arrays, master plan milestone structures, and milestone schema attributes.
+    *   `[ ]` 7.b. Update type guards (`isDialecticRecipeStep`, `isDialecticJobPayload`, `isHeaderContextParenthesis`, assembled JSON validators) so they enforce the new schema contracts and optional inputs before runtime execution.
+
+*   `[ ]` 8. `[TEST-UNIT]` Cover Parenthesis planner/turn logic.
+    *   `[ ]` 8.a. Add unit tests for `assemblePlannerPrompt` validating that Parenthesis planner jobs save header context artifacts and register the prompt resource id.
+    *   `[ ]` 8.b. Add unit tests for `assembleTurnPrompt` covering each branch key, asserting correct template selection, storage path, optional prior-iteration handling, and continuation scheduling.
+    *   `[ ]` 8.c. Assert relevance ordering is honored by checking the generated prompt payload includes inputs in the expected priority sequence (header context, prior artifacts, Synthesis outputs).
+
+*   `[ ]` 9. `[TEST-INT]` Update worker/integration coverage.
+    *   `[ ]` 9.a. Build an integration test (or extend existing worker tests) that executes the full Parenthesis workflow (planner → TRD → Master Plan → Milestone Schema), validating persisted artifacts and continuation behavior.
+    *   `[ ]` 9.b. Add scenarios feeding prior `master_plan`, `trd`, or `milestone_schema` to confirm reruns operate without regressions.
+
+*   `[ ]` 10. `[DB]` Package migration bundle.
+    *   `[ ]` 10.a. Compose migrations in a deterministic order (prompts → overlays → templates → recipe rows → edges → stage config) so deployments never hit half-applied states.
+    *   `[ ]` 10.b. Provide rollback statements for each migration segment to remove inserted prompts/recipes/templates/stage changes if deployment fails.
+
+*   `[ ]` 11. `[DOCS]` Capture provenance and cross-references.
+    *   `[ ]` 11.a. Update this worksheet after implementation with migration ids, prompt/template paths, overlay updates, and checklist references so future workers can trace changes quickly.
+    *   `[ ]` 11.b. Update `Prompt Types and Definitions.md` to document the new Parenthesis prompts (planner + turns), iteration behavior, and continuity requirements, citing relevant repositories/style-guide sections.
