@@ -12,7 +12,6 @@ import type { ContributionType } from '../../dialectic-service/dialectic.interfa
  */
 export enum FileType {
   ProjectReadme = 'project_readme', // The main README for a dialectic project.
-  MasterPlan = 'master_plan',
   PendingFile = 'pending_file',
   CurrentFile = 'current_file',
   CompleteFile = 'complete_file',
@@ -38,6 +37,44 @@ export enum FileType {
   Synthesis = 'synthesis',
   RagContextSummary = 'rag_context_summary',
   ProjectExportZip = 'project_export_zip',
+
+  // Thesis document_keys
+  business_case = 'business_case',
+  feature_spec = 'feature_spec',
+  technical_approach = 'technical_approach',
+  success_metrics = 'success_metrics',
+
+  // Antithesis document_keys
+  business_case_critique = 'business_case_critique',
+  technical_feasibility_assessment = 'technical_feasibility_assessment',
+  risk_register = 'risk_register',
+  non_functional_requirements = 'non_functional_requirements',
+  dependency_map = 'dependency_map',
+  comparison_vector = 'comparison_vector',
+
+  // Synthesis document_keys
+  header_context_pairwise = 'header_context_pairwise',
+  synthesis_pairwise_business_case = 'synthesis_pairwise_business_case',
+  synthesis_pairwise_feature_spec = 'synthesis_pairwise_feature_spec',
+  synthesis_pairwise_technical_approach = 'synthesis_pairwise_technical_approach',
+  synthesis_pairwise_success_metrics = 'synthesis_pairwise_success_metrics',
+  synthesis_document_business_case = 'synthesis_document_business_case',
+  synthesis_document_feature_spec = 'synthesis_document_feature_spec',
+  synthesis_document_technical_approach = 'synthesis_document_technical_approach',
+  synthesis_document_success_metrics = 'synthesis_document_success_metrics',
+  prd = 'prd',
+  system_architecture_overview = 'system_architecture_overview',
+  tech_stack_recommendations = 'tech_stack_recommendations',
+
+  // Parenthesis document_keys
+  trd = 'trd',
+  master_plan = 'master_plan',
+  milestone_schema = 'milestone_schema',
+
+  // Paralysis document_keys
+  updated_master_plan = 'updated_master_plan',
+  actionable_checklist = 'actionable_checklist',
+  advisor_recommendations = 'advisor_recommendations',
 }
 
 /**

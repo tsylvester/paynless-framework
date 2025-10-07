@@ -5,7 +5,7 @@ import {
 } from '../_shared/supabase_storage_utils.ts';
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
 import type { Logger } from '../_shared/logger.ts';
-import type { IFileManager, CanonicalPathParams } from '../_shared/types/file_manager.types.ts';
+import type { IFileManager, CanonicalPathParams, FileType } from '../_shared/types/file_manager.types.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import type { DeleteStorageResult, DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import type {
@@ -353,13 +353,78 @@ export interface SystemMaterials {
   validation_checkpoint?: string[]; // This is how the agent self-evaluates whether it's generated what it's been asked to generate. 
 }
 
+export enum BranchKey {
+
+  // Thesis
+  business_case = 'business_case',
+  feature_spec = 'feature_spec',
+  technical_approach = 'technical_approach',
+  success_metrics = 'success_metrics',
+
+  // Antithesis
+  business_case_critique = 'business_case_critique',
+  technical_feasibility_assessment = 'technical_feasibility_assessment',
+  risk_register = 'risk_register',
+  non_functional_requirements = 'non_functional_requirements',
+  dependency_map = 'dependency_map',
+  comparison_vector = 'comparison_vector',
+
+  // Synthesis
+  synthesis_pairwise_business_case = 'synthesis_pairwise_business_case',
+  synthesis_pairwise_feature_spec = 'synthesis_pairwise_feature_spec',
+  synthesis_pairwise_technical_approach = 'synthesis_pairwise_technical_approach',
+  synthesis_pairwise_success_metrics = 'synthesis_pairwise_success_metrics',
+  synthesis_document_business_case = 'synthesis_document_business_case',
+  synthesis_document_feature_spec = 'synthesis_document_feature_spec',
+  synthesis_document_technical_approach = 'synthesis_document_technical_approach',
+  synthesis_document_success_metrics = 'synthesis_document_success_metrics',
+  prd = 'prd',
+  system_architecture_overview = 'system_architecture_overview',
+  tech_stack_recommendations = 'tech_stack_recommendations',
+
+  // Parenthesis
+  trd = 'trd',
+  master_plan = 'master_plan',
+  milestone_schema = 'milestone_schema',
+
+  // Paralysis
+  actionable_checklist = 'actionable_checklist',
+  updated_master_plan = 'updated_master_plan',
+  advisor_recommendations = 'advisor_recommendations',
+}
+
+export enum OutputType {
+  RenderedDocument = 'RenderedDocument',
+  HeaderContext = 'HeaderContext',
+  AssembledDocumentJson = 'AssembledDocumentJson',
+}
 
 /**
  * Tracks the progress of a multi-step job.
  */
+export interface DialecticStepPlannerMetadata {
+    recipe_template_id?: string;
+    recipe_step_id?: string;
+    stage_slug?: string;
+    description?: string;
+    dependencies?: readonly string[];
+    parallel_successors?: readonly string[];
+    [key: string]: unknown;
+}
+
 export interface DialecticStepInfo {
     current_step: number;
     total_steps: number;
+    step_key?: string;
+    step_slug?: string;
+    name?: string;
+    prompt_template_name?: string;
+    output_type?: OutputType;
+    document_key?: FileType;
+    branch_key?: BranchKey;
+    parallel_group?: number;
+    granularity_strategy?: DialecticRecipeStep['granularity_strategy'];
+    planner_metadata?: DialecticStepPlannerMetadata;
 }
 
 /**
@@ -411,6 +476,10 @@ export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
         // Key-value store for resource_ids needed by the prompt
         [key: string]: string | string[];
     };
+    document_key?: string | null;
+    branch_key?: string | null;
+    parallel_group?: number | null;
+    planner_metadata?: DialecticStepPlannerMetadata | null;
     document_relationships?: DocumentRelationships | null;
     isIntermediate?: boolean;
     user_jwt?: string;

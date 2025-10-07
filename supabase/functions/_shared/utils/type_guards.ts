@@ -16,10 +16,10 @@ import type {
     DocumentRelationships,
     JobInsert,
     PlanJobInsert,
+    FailedAttemptError,
 } from '../../dialectic-service/dialectic.interface.ts';
 import { FileType, CanonicalPathParams } from "../types/file_manager.types.ts";
 import { ProjectContext, StageContext } from "../prompt-assembler/prompt-assembler.interface.ts";
-import { FailedAttemptError } from "../../dialectic-service/dialectic.interface.ts";
 import { AiModelExtendedConfig, TokenUsage, ChatMessageRole, ChatInsert, ContinueReason, FinishReason, ChatApiRequest, Messages } from "../types.ts";
 import type { PostgrestError } from "npm:@supabase/supabase-js@2";
 
@@ -507,7 +507,7 @@ export function isDialecticJobRow(record: unknown): record is DialecticJobRow {
     return true;
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
     if (!isRecord(value)) {
         return false;
     }

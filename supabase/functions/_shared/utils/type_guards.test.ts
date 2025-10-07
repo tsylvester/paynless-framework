@@ -47,8 +47,8 @@ import {
 } from './type_guards.ts';
 import type { DialecticContributionRow, DialecticJobRow, FailedAttemptError } from '../../dialectic-service/dialectic.interface.ts';
 import type { AiModelExtendedConfig, TokenUsage, ChatInsert, ChatApiRequest, FinishReason } from '../types.ts';
-import { ProjectContext, StageContext } from '../prompt-assembler.interface.ts';
-import { CanonicalPathParams } from '../types/file_manager.types.ts';
+import { ProjectContext, StageContext } from '../prompt-assembler/prompt-assembler.interface.ts';
+import { CanonicalPathParams, FileType } from '../types/file_manager.types.ts';
 
 Deno.test('Type Guard: isChatInsert', async (t) => {
     await t.step('should return true for a valid minimal ChatInsert object', () => {
@@ -496,7 +496,6 @@ Deno.test('Type Guard: isCitationsArray', async (t) => {
         assert(!isCitationsArray('a string'));
     });
 });
-
 
 Deno.test('Type Guard: isDialecticContribution', async (t) => {
     await t.step('should return true for a valid contribution object', () => {
@@ -1068,7 +1067,6 @@ Deno.test('Type Guard: isSuccessPayload', async (t) => {
     });
 });
 
-
 Deno.test('Type Guard: isUserRole', async (t) => {
     await t.step('should return true for valid user roles', () => {
         assert(isUserRole('user'));
@@ -1355,7 +1353,6 @@ Deno.test('Type Guard: isJson', async (t) => {
         assert(!isJson(instance));
     });
 });
-
 
 Deno.test('Type Guard: isFailedAttemptError', async (t) => {
     await t.step('should return true for a valid FailedAttemptError object', () => {
@@ -1935,8 +1932,6 @@ Deno.test('Type Guard: isDialecticChunkMetadata', async (t) => {
     });
 });
 
-import { FileType } from '../types/file_manager.types.ts';
-
 Deno.test('Type Guard: isFileType', async (t) => {
     for (const type of Object.values(FileType)) {
         await t.step(`should return true for valid file type: ${type}`, () => {
@@ -2054,7 +2049,6 @@ Deno.test('Type Guard: hasModelResultWithContributionId', async (t) => {
         assert(!hasModelResultWithContributionId([]));
     });
 });
-
 
 Deno.test('Type Guard: isKnownTiktokenEncoding', async (t) => {
     await t.step('should return true for supported encoding names', () => {
