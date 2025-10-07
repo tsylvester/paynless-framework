@@ -232,7 +232,7 @@
   "context_for_documents": [
     {
       "document_key": "synthesis_pairwise_business_case",
-      "context_to_include": {
+      "content_to_include": {
         "thesis_document": "business_case",
         "critique_document": "business_case_critique",
         "comparison_signal": "comparison_vector"
@@ -240,7 +240,7 @@
     },
     {
       "document_key": "synthesis_pairwise_feature_spec",
-      "context_to_include": {
+      "content_to_include": {
         "thesis_document": "feature_spec",
         "feasibility_document": "technical_feasibility_assessment",
         "nfr_document": "non_functional_requirements",
@@ -249,7 +249,7 @@
     },
     {
       "document_key": "synthesis_pairwise_technical_approach",
-      "context_to_include": {
+      "content_to_include": {
         "thesis_document": "technical_approach",
         "risk_document": "risk_register",
         "dependency_document": "dependency_map"
@@ -257,7 +257,7 @@
     },
     {
       "document_key": "synthesis_pairwise_success_metrics",
-      "context_to_include": {
+      "content_to_include": {
         "thesis_document": "success_metrics",
         "critique_document": "business_case_critique",
         "comparison_signal": "comparison_vector"
@@ -874,7 +874,7 @@
   "context_for_documents": [
     {
       "document_key": "prd",
-      "context_to_include": {
+      "content_to_include": {
         "mvp_description": "",
         "user_stories": [],
         "feature_specifications": []
@@ -882,7 +882,7 @@
     },
     {
       "document_key": "system_architecture_overview",
-      "context_to_include": {
+      "content_to_include": {
         "architecture_summary": "",
         "services": [],
         "data_flows": [],
@@ -892,7 +892,7 @@
     },
     {
       "document_key": "tech_stack_recommendations",
-      "context_to_include": {
+      "content_to_include": {
         "components": [],
         "recommended_options": [],
         "alternatives": [],

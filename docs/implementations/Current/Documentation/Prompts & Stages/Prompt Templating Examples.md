@@ -225,7 +225,7 @@ Use these templates as the base for each stage. Provide `role` and `stage_instru
   "context_for_documents": [
     {
       "document_key": "business_case",
-      "context_to_include": {
+      "content_to_include": {
         "market_opportunity": "placeholder",
         "user_problem_validation": "placeholder",
         "competitive_analysis": "placeholder"
@@ -233,7 +233,7 @@ Use these templates as the base for each stage. Provide `role` and `stage_instru
     },
     {
       "document_key": "feature_spec",
-      "context_to_include": [
+      "content_to_include": [
         {
           "feature_name": "placeholder",
           "user_stories": [
@@ -244,11 +244,11 @@ Use these templates as the base for each stage. Provide `role` and `stage_instru
     },
     {
       "document_key": "technical_approach",
-      "context_to_include": "architecture, components, data, deployment, sequencing"
+      "content_to_include": "architecture, components, data, deployment, sequencing"
     },
     {
       "document_key": "success_metrics",
-      "context_to_include": [
+      "content_to_include": [
         "placeholder metric 1",
         "placeholder metric 2"
       ]

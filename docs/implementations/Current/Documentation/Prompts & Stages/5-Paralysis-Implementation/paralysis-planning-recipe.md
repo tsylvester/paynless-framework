@@ -159,7 +159,7 @@
 - **Steps Count:** 4 sequential steps (1 planner, 2 turn executions, 1 advisor evaluation).
 
 ### Step 1: Build Implementation Header
-- **Objective:** Emit `header_context_paralysis.json` describing the milestones to detail, checklist sizing rules, status preservation policy, and continuation metadata for the checklist and master plan turns.
+- **Objective:** Emit `header_context.json` describing the milestones to detail, checklist sizing rules, status preservation policy, and continuation metadata for the checklist and master plan turns.
 - **Prompt Type:** `Planner`
 - **Prompt Template Name:** `paralysis_planner_header_v1`
 - **Input Source References:**
@@ -259,14 +259,14 @@
   },
   "header_context_artifact": {
     "type": "header_context",
-    "document_key": "header_context_paralysis",
+    "document_key": "header_context",
     "artifact_class": "header_context",
     "file_type": "json"
   },
   "context_for_documents": [
     {
       "document_key": "actionable_checklist",
-      "context_to_include": {
+      "content_to_include": {
         "milestone_ids": [],
         "inputs_required": ["trd", "master_plan"],
         "tdd_sequence": ["RED", "GREEN", "REFACTOR"],
@@ -280,7 +280,7 @@
     },
     {
       "document_key": "updated_master_plan",
-      "context_to_include": {
+      "content_to_include": {
         "preserve_completed": true,
         "set_in_progress": "[🚧]",
         "future_status": "[ ]",
@@ -289,7 +289,7 @@
     },
     {
       "document_key": "advisor_recommendations",
-      "context_to_include": {
+      "content_to_include": {
         "require_comparison_matrix": true,
         "summarize_tradeoffs": true,
         "capture_final_recommendation": true,
@@ -305,7 +305,7 @@
 - **Prompt Type:** `Turn`
 - **Prompt Template Name:** `paralysis_actionable_checklist_turn_v1`
 - **Input Source References:**
-  - `header_context_paralysis` (type `header_context`, stage `paralysis`, required)
+  - `header_context` (type `header_context`, stage `paralysis`, required)
   - `trd` (type `document`, stage `parenthesis`, required)
   - `master_plan` (type `document`, stage `parenthesis`, required)
   - `milestone_schema` (type `document`, stage `parenthesis`, required)
@@ -327,7 +327,7 @@
   "prompt_template_id": "<system_prompts.id for paralysis_actionable_checklist_turn_v1>",
   "prompt_type": "Turn",
   "inputs_required": [
-    { "type": "header_context", "stage_slug": "paralysis", "document_key": "header_context_paralysis", "required": true },
+    { "type": "header_context", "stage_slug": "paralysis", "document_key": "header_context", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "trd", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "master_plan", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": true },
@@ -338,7 +338,7 @@
     { "type": "feedback", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": false }
   ],
   "inputs_relevance": [
-    { "document_key": "header_context_paralysis", "stage_slug": "paralysis", "relevance": 1.0 },
+    { "document_key": "header_context", "stage_slug": "paralysis", "relevance": 1.0 },
     { "document_key": "trd", "stage_slug": "parenthesis", "relevance": 0.95 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.93 },
     { "document_key": "milestone_schema", "stage_slug": "parenthesis", "relevance": 0.9 },
@@ -430,7 +430,7 @@
 - **Prompt Type:** `Turn`
 - **Prompt Template Name:** `paralysis_updated_master_plan_turn_v1`
 - **Input Source References:**
-  - `header_context_paralysis` (type `header_context`, stage `paralysis`, required)
+  - `header_context` (type `header_context`, stage `paralysis`, required)
   - `master_plan` (type `document`, stage `parenthesis`, required)
   - `milestone_schema` (type `document`, stage `parenthesis`, required)
   - `actionable_checklist` (type `document`, stage `paralysis`, required)
@@ -450,7 +450,7 @@
   "prompt_template_id": "<system_prompts.id for paralysis_updated_master_plan_turn_v1>",
   "prompt_type": "Turn",
   "inputs_required": [
-    { "type": "header_context", "stage_slug": "paralysis", "document_key": "header_context_paralysis", "required": true },
+    { "type": "header_context", "stage_slug": "paralysis", "document_key": "header_context", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "master_plan", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": true },
     { "type": "document", "stage_slug": "paralysis", "document_key": "actionable_checklist", "required": true },
@@ -459,7 +459,7 @@
     { "type": "feedback", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false }
   ],
   "inputs_relevance": [
-    { "document_key": "header_context_paralysis", "stage_slug": "paralysis", "relevance": 1.0 },
+    { "document_key": "header_context", "stage_slug": "paralysis", "relevance": 1.0 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.95 },
     { "document_key": "milestone_schema", "stage_slug": "parenthesis", "relevance": 0.9 },
     { "document_key": "actionable_checklist", "stage_slug": "paralysis", "relevance": 0.92 },
@@ -551,7 +551,7 @@
   - `initial_user_prompt` (type `initial_user_prompt`, stage `project`, required)
   - `prd` (type `document`, stage `synthesis`, required, multiple)
   - `updated_master_plan` (type `document`, stage `paralysis`, required, multiple)
-  - `header_context_paralysis` (type `header_context`, stage `paralysis`, required=false)
+  - `header_context` (type `header_context`, stage `paralysis`, required=false)
   - `advisor_recommendations` (type `document`, stage `paralysis`, required=false)
   - `advisor_recommendations` (type `feedback`, stage `paralysis`, required=false)
 - **Output Artifact Description:** A single markdown + JSON artifact (`advisor_recommendations`) containing the weighted comparison matrix, comparative analysis, ranked options, final recommendation, and tie-breaker notes.
@@ -566,18 +566,18 @@
   "prompt_template_id": "<system_prompts.id for paralysis_advisor_recommendations_turn_v1>",
   "prompt_type": "Turn",
   "inputs_required": [
-    { "type": "project_resource", "stage_slug": "project", "document_key": "original_user_request", "required": true },
+    { "type": "project_resource", "stage_slug": "project", "document_key": "initial_user_prompt", "required": true },
     { "type": "document", "stage_slug": "synthesis", "document_key": "prd", "required": true, "multiple": true },
     { "type": "document", "stage_slug": "paralysis", "document_key": "updated_master_plan", "required": true, "multiple": true },
-    { "type": "header_context", "stage_slug": "paralysis", "document_key": "header_context_paralysis", "required": false },
+    { "type": "header_context", "stage_slug": "paralysis", "document_key": "header_context", "required": false },
     { "type": "document", "stage_slug": "paralysis", "document_key": "advisor_recommendations", "required": false },
     { "type": "feedback", "stage_slug": "paralysis", "document_key": "advisor_recommendations", "required": false }
   ],
   "inputs_relevance": [
-    { "document_key": "original_user_request", "stage_slug": "project", "relevance": 1.0 },
+    { "document_key": "initial_user_prompt", "stage_slug": "project", "relevance": 1.0 },
     { "document_key": "prd", "stage_slug": "synthesis", "relevance": 0.95 },
     { "document_key": "updated_master_plan", "stage_slug": "paralysis", "relevance": 0.95 },
-    { "document_key": "header_context_paralysis", "stage_slug": "paralysis", "relevance": 0.7 },
+    { "document_key": "header_context", "stage_slug": "paralysis", "relevance": 0.7 },
     { "document_key": "advisor_recommendations", "stage_slug": "paralysis", "relevance": 0.5 },
     { "document_key": "advisor_recommendations", "stage_slug": "paralysis", "type": "feedback", "relevance": 0.4 }
   ],
@@ -697,7 +697,7 @@
     *   `[ ]` 4.c. Expand resource/contribution type guards and tests so they accept `advisor_recommendations` artifacts with the markdown/JSON schema defined here.
 
 *   `[ ]` 5. `[BE]` Wire the PromptAssembler and add coverage.
-    *   `[ ]` 5.a. Route paralysis planner jobs to `paralysis_planner_header_v1`, upload `header_context_paralysis.json`, and return the `source_prompt_resource_id`.
+    *   `[ ]` 5.a. Route paralysis planner jobs to `paralysis_planner_header_v1`, upload `header_context.json`, and return the `source_prompt_resource_id`.
     *   `[ ]` 5.b. Extend `assembleTurnPrompt` so the checklist, master plan, and advisor branches gather required inputs (including optional prior artifacts/feedback) and persist markdown + assembled JSON outputs at the expected paths.
     *   `[ ]` 5.c. Add unit tests verifying each branch assembles prompts with the correct input ordering, obeys continuation policy, and stores artifacts via the file manager.
 

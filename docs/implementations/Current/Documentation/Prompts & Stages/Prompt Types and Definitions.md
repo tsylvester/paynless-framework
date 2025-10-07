@@ -151,7 +151,7 @@ The JSON stubs mirror the shape expected by the database so we can directly tran
   "context_for_documents": [
     {
       "document_key": "<TBD>",
-      "context_to_include": "<TBD>"
+      "content_to_include": "<TBD>"
     }
   ]
 }

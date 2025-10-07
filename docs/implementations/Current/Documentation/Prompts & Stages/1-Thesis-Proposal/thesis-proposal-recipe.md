@@ -222,15 +222,22 @@
   "context_for_documents": [
     {
       "document_key": "business_case",
-      "context_to_include": {
+      "content_to_include": {
         "market_opportunity": "",
         "user_problem_validation": "",
-        "competitive_analysis": ""
+        "competitive_analysis": "",
+        "differentiation_&_value_proposition": "",
+        "risks_&_mitigation": "",
+        "strengths": "",
+        "weaknesses": "",
+        "opportunities": "",
+        "threats": "",
+        "next_steps": ""
       }
     },
     {
       "document_key": "feature_spec",
-      "context_to_include": [
+      "content_to_include": [
         {
           "feature_name": "",
           "user_stories": []
@@ -239,11 +246,11 @@
     },
     {
       "document_key": "technical_approach",
-      "context_to_include": "architecture, components, data, deployment, sequencing"
+      "content_to_include": "architecture, components, data, deployment, sequencing"
     },
     {
       "document_key": "success_metrics",
-      "context_to_include": [
+      "content_to_include": [
         "placeholder metric 1",
         "placeholder metric 2"
       ]
@@ -414,7 +421,13 @@
       "template_filename": "thesis_technical_approach.md",
       "artifact_class": "rendered_document",
       "file_type": "markdown",
-      "content_to_include": "architecture, components, data, deployment, sequencing"
+      "content_to_include": {
+        "architecture": "", 
+        "components": "", 
+        "data": "", 
+        "deployment": "", 
+        "sequencing": ""
+      }
     }
   ],
   "files_to_generate": [
@@ -471,10 +484,17 @@
       "template_filename": "thesis_success_metrics.md",
       "artifact_class": "rendered_document",
       "file_type": "markdown",
-      "content_to_include": [
-        "placeholder metric 1",
-        "placeholder metric 2"
-      ]
+      "content_to_include": {
+        "outcome_alignment": "",
+        "north_star_metric": "",
+        "primary_kpis": "",
+        "leading_indicators": "",
+        "lagging_indicators": "",
+        "guardrails": "",
+        "measurement_plan": "",
+        "risk_signals": "",
+        "next_steps": ""
+      }
     }
   ]
 }
@@ -482,57 +502,56 @@
 
 # Transform Requirements
 
-*   `[ ]` 1. [PROMPT] Create planner prompt template `thesis_planner_header_v1`
-    *   `[ ]` 1.a. Author template file `docs/prompts/thesis/thesis_planner_header_v1.md` matching the HeaderContext schema above.
-    *   `[ ]` 1.b. Add `system_prompts` row for `thesis_planner_header_v1` (include id, name, version, file path in migration).
-    *   `[ ]` 1.c. Insert the Step 1 `dialectic_stage_recipes` row with `step_number = 1`, `step_slug = 'build-stage-header'`, `job_type = 'PLAN'`, `name = 'Build Stage Header'`, `prompt_template_id = system_prompts.id('thesis_planner_header_v1')`, `prompt_type = 'Planner'`, `output_type = 'HeaderContext'`, `granularity_strategy = 'all_to_one'`, and an `inputs_required` array that consumes the Thesis `seed_prompt`. Store the HeaderContext JSON (documents enumerated in the nested array) in `outputs_required` exactly as defined above.
-    *   `[ ]` 1.d. Populate `dialectic_stage_recipe_edges` so the Step 1 planner row is the parent for every Step 2 branch row, mirroring the PLAN job that waits for its child EXECUTE jobs described in `Document-Centric Generation.md`.
+*   `[✅]` 1. [PROMPT] Create planner prompt template `thesis_planner_header_v1`
+    *   `[✅]` 1.a. Author template file `docs/prompts/thesis/thesis_planner_header_v1.md` matching the HeaderContext schema above.
+    *   `[✅]` 1.b. Add `system_prompts` row for `thesis_planner_header_v1` (include id, name, version, file path in migration).
+    *   `[✅]` 1.c. Insert the Step 1 `dialectic_stage_recipes` row with `step_number = 1`, `step_slug = 'build-stage-header'`, `job_type = 'PLAN'`, `name = 'Build Stage Header'`, `prompt_template_id = system_prompts.id('thesis_planner_header_v1')`, `prompt_type = 'Planner'`, `output_type = 'HeaderContext'`, `granularity_strategy = 'all_to_one'`, and an `inputs_required` array that consumes the Thesis `seed_prompt`. Store the HeaderContext JSON (documents enumerated in the nested array) in `outputs_required` exactly as defined above.
 
-*   `[ ]` 2. [PROMPT] Create turn prompt template `thesis_business_case_turn_v1`
-    *   `[ ]` 2.a. Author template file `docs/prompts/thesis/thesis_business_case_turn_v1.md`.
-    *   `[ ]` 2.b. Add `system_prompts` row for `thesis_business_case_turn_v1`.
-    *   `[ ]` 2.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'business_case'` with `step_number = 2`, `step_slug = 'generate-business-case'`, `job_type = 'EXECUTE'`, `name = 'Generate Business Case'`, `prompt_template_id = system_prompts.id('thesis_business_case_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'one_to_one'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` using the schema shown above.
-    *   `[ ]` 2.d. Add the `dialectic_stage_recipe_edges` entry linking the Step 1 planner row to the `business_case` branch row so the parent PLAN job enqueues this EXECUTE job.
+*   `[✅]` 2. [PROMPT] Create turn prompt template `thesis_business_case_turn_v1`
+    *   `[✅]` 2.a. Author template file `docs/prompts/thesis/thesis_business_case_turn_v1.md`.
+    *   `[✅]` 2.b. Add `system_prompts` row for `thesis_business_case_turn_v1`.
+    *   `[✅]` 2.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'business_case'` with `step_number = 2`, `step_slug = 'generate-business-case'`, `job_type = 'EXECUTE'`, `name = 'Generate Business Case'`, `prompt_template_id = system_prompts.id('thesis_business_case_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'one_to_one'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` using the schema shown above.
 
-*   `[ ]` 3. [PROMPT] Create turn prompt template `thesis_feature_spec_turn_v1`
-    *   `[ ]` 3.a. Author template file `docs/prompts/thesis/thesis_feature_spec_turn_v1.md`.
-    *   `[ ]` 3.b. Add `system_prompts` row for `thesis_feature_spec_turn_v1`.
-    *   `[ ]` 3.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'feature_spec'` with `step_number = 2`, `step_slug = 'generate-feature-spec'`, `job_type = 'EXECUTE'`, `name = 'Generate Feature Spec'`, `prompt_template_id = system_prompts.id('thesis_feature_spec_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'one_to_one'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` for the `feature_spec` document key.
-    *   `[ ]` 3.d. Add the `dialectic_stage_recipe_edges` entry linking the Step 1 planner row to the `feature_spec` branch row so the parent PLAN job enqueues this EXECUTE job.
+*   `[✅]` 3. [PROMPT] Create turn prompt template `thesis_feature_spec_turn_v1`
+    *   `[✅]` 3.a. Author template file `docs/prompts/thesis/thesis_feature_spec_turn_v1.md`.
+    *   `[✅]` 3.b. Add `system_prompts` row for `thesis_feature_spec_turn_v1`.
+    *   `[✅]` 3.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'feature_spec'` with `step_number = 2`, `step_slug = 'generate-feature-spec'`, `job_type = 'EXECUTE'`, `name = 'Generate Feature Spec'`, `prompt_template_id = system_prompts.id('thesis_feature_spec_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'one_to_one'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` for the `feature_spec` document key.
 
-*   `[ ]` 4. [PROMPT] Create turn prompt template `thesis_technical_approach_turn_v1`
-    *   `[ ]` 4.a. Author template file `docs/prompts/thesis/thesis_technical_approach_turn_v1.md`.
-    *   `[ ]` 4.b. Add `system_prompts` row for `thesis_technical_approach_turn_v1`.
-    *   `[ ]` 4.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'technical_approach'` with `step_number = 2`, `step_slug = 'generate-technical-approach'`, `job_type = 'EXECUTE'`, `name = 'Generate Technical Approach'`, `prompt_template_id = system_prompts.id('thesis_technical_approach_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'one_to_one'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` for the `technical_approach` document key.
-    *   `[ ]` 4.d. Add the `dialectic_stage_recipe_edges` entry linking the Step 1 planner row to the `technical_approach` branch row so the parent PLAN job enqueues this EXECUTE job.
+*   `[✅]` 4. [PROMPT] Create turn prompt template `thesis_technical_approach_turn_v1`
+    *   `[✅]` 4.a. Author template file `docs/prompts/thesis/thesis_technical_approach_turn_v1.md`, using the standardized turn prompt structure (role + style excerpt, HeaderContext injection, shared JSON-return instructions) with the `technical_approach` `content_to_include` contract injected into the content block.
+    *   `[✅]` 4.b. Add `system_prompts` row for `thesis_technical_approach_turn_v1`.
+    *   `[✅]` 4.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'technical_approach'` with `step_number = 2`, `step_slug = 'generate-technical-approach'`, `job_type = 'EXECUTE'`, `name = 'Generate Technical Approach'`, `prompt_template_id = system_prompts.id('thesis_technical_approach_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'one_to_one'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` for the `technical_approach` document key.
 
-*   `[ ]` 5. [PROMPT] Create turn prompt template `thesis_success_metrics_turn_v1`
-    *   `[ ]` 5.a. Author template file `docs/prompts/thesis/thesis_success_metrics_turn_v1.md`.
-    *   `[ ]` 5.b. Add `system_prompts` row for `thesis_success_metrics_turn_v1`.
-    *   `[ ]` 5.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'success_metrics'` with `step_number = 2`, `step_slug = 'generate-success-metrics'`, `job_type = 'EXECUTE'`, `name = 'Generate Success Metrics'`, `prompt_template_id = system_prompts.id('thesis_success_metrics_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'one_to_one'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` for the `success_metrics` document key.
-    *   `[ ]` 5.d. Add the `dialectic_stage_recipe_edges` entry linking the Step 1 planner row to the `success_metrics` branch row so the parent PLAN job enqueues this EXECUTE job.
+*   `[✅]` 5. [PROMPT] Create turn prompt template `thesis_success_metrics_turn_v1`
+    *   `[✅]` 5.a. Author template file `docs/prompts/thesis/thesis_success_metrics_turn_v1.md`, following the standardized turn prompt format (role + style excerpt, HeaderContext injection, shared JSON-return instructions) with the `success_metrics` `content_to_include` contract injected into the content block.
+    *   `[✅]` 5.b. Add `system_prompts` row for `thesis_success_metrics_turn_v1`.
+    *   `[✅]` 5.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'success_metrics'` with `step_number = 2`, `step_slug = 'generate-success-metrics'`, `job_type = 'EXECUTE'`, `name = 'Generate Success Metrics'`, `prompt_template_id = system_prompts.id('thesis_success_metrics_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'one_to_one'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` for the `success_metrics` document key.
 
-*   `[ ]` 6. [DB] Stage configuration updates
-    *   `[ ]` 6.a. Move Thesis to `recipe_name = thesis_v1`; remove legacy `input_artifact_rules` / `expected_output_artifacts` columns from the stage row.
-    *   `[ ]` 6.b. Keep Thesis overlay values for `role` and `stage_instructions`; drop redundant `expected_output_artifacts_json` once the planner template provides the structure.
-*   `[ ]` 6.c. Update file-manager enums/path constructors to ensure document keys (`business_case`, `feature_spec`, `technical_approach`, `success_metrics`) are covered.
-    *   `[ ]` 6.d. Update `supabase/seed.sql` (or add a migration) to persist the new system prompts, recipe rows, branch edges, and `parallel_group`/`branch_key` values so fresh environments match the desired recipe.
+*  `[✅]` 6. [DB] Populate the dialectic_stage_recipe_edges for each document edge. 
+    *   `[✅]` 6.a. Populate `dialectic_stage_recipe_edges` so the Step 1 planner row is the parent for every Step 2 branch row, mirroring the PLAN job that waits for its child EXECUTE jobs described in `Document-Centric Generation.md`.
+    *   `[✅]` 6.b. Add the `dialectic_stage_recipe_edges` entry linking the Step 1 planner row to the `business_case` branch row so the parent PLAN job enqueues this EXECUTE job.
+    *   `[✅]` 6.c. Add the `dialectic_stage_recipe_edges` entry linking the Step 1 planner row to the `feature_spec` branch row so the parent PLAN job enqueues this EXECUTE job.
+    *   `[✅]` 6.d. Add the `dialectic_stage_recipe_edges` entry linking the Step 1 planner row to the `technical_approach` branch row so the parent PLAN job enqueues this EXECUTE job.
+    *   `[✅]` 6.e. Add the `dialectic_stage_recipe_edges` entry linking the Step 1 planner row to the `success_metrics` branch row so the parent PLAN job enqueues this EXECUTE job.
 
-*   `[ ]` 6.e. Add a provenance note capturing the current seed prompt and overlay source (migration `20250613190311_domains_and_processes_improvement.sql`) so the new data references have traceability.
+*   `[✅]` 7. [DB] Stage configuration updates
+  *   `[✅]` 7.a. Move Thesis to `recipe_name = thesis_v1`; remove legacy `input_artifact_rules` / `expected_output_artifacts` columns from the stage row.
+  *   `[✅]` 7.b. Keep Thesis overlay values for `role` and `stage_instructions`; drop redundant `expected_output_artifacts_json` once the planner template provides the structure.
+  *   `[✅]` 7.c. Update `supabase/seed.sql` (or add a migration) to persist the new system prompts, recipe rows, branch edges, and `parallel_group`/`branch_key` values so fresh environments match the desired recipe.
+  *   `[✅]` 7.d. Add a provenance note capturing the current seed prompt and overlay source (migration `20250613190311_domains_and_processes_improvement.sql`) so the new data references have traceability.
 
-*   `[ ]` 7. [BE] TypeScript and type-guard adjustments
-    *   `[ ]` 7.a. Extend `DialecticJobPayload.step_info` and related type guards to support `prompt_template_name`, document keys, `parallel_group`, `branch_key`, and planner metadata.
-    *   `[ ]` 7.b. Update payload validators for the new `inputs_required` / `outputs_required` structures, including validation of branch metadata.
-    *   `[ ]` 7.c. Model the full `HeaderContext` payload and generated-file metadata (e.g., `files_to_generate.from_document_key`) in shared types and companion guards so the new planner output passes validation.
-    *   `[ ]` 7.d. Ensure any services that resolve the next step can interpret `parallel_group` and `branch_key` when scheduling work.
+*   `[ ]` 8. [BE] TypeScript and type-guard adjustments
+  *   `[ ]` 8.a. Extend `DialecticJobPayload.step_info` and related type guards to support `prompt_template_name`, document keys, `parallel_group`, `branch_key`, and planner metadata.
+  *   `[ ]` 8.b. Update payload validators for the new `inputs_required` / `outputs_required` structures, including validation of branch metadata.
+  *   `[ ]` 8.c. Model the full `HeaderContext` payload and generated-file metadata (e.g., `files_to_generate.from_document_key`) in shared types and companion guards so the new planner output passes validation.
+  *   `[ ]` 8.d. Ensure any services that resolve the next step can interpret `parallel_group` and `branch_key` when scheduling work.
+  *   `[ ]` 8.e. Document TypeScript/type-guard gaps for Thesis (e.g., `DialecticJobPayload` definitions in `supabase/functions/_shared/dialectic-service/types.ts`, `type_guards.ts`) to ensure `parallel_group`, `branch_key`, and header context schemas are captured before implementation.
 
-*   `[ ]` 7.e. Document TypeScript/type-guard gaps for Thesis (e.g., `DialecticJobPayload` definitions in `supabase/functions/_shared/dialectic-service/types.ts`, `type_guards.ts`) to ensure `parallel_group`, `branch_key`, and header context schemas are captured before implementation.
+*   `[ ]` 9. [TEST-UNIT] / [TEST-INT] Test and fixture updates
+  *   `[ ]` 9.a. Add fixtures for the new planner and turn templates, including branch metadata in step fixtures.
+  *   `[ ]` 9.b. Update `assembleSeedPrompt`, `assemblePlannerPrompt`, and `assembleTurnPrompt` tests to assert new artifact keys, file paths, and `parallel_group` / `branch_key` handling.
+  *   `[ ]` 9.c. Update worker integration tests to expect multi-step Thesis outputs instead of the legacy monolithic response, verifying parallel branch execution order when applicable.
 
-*   `[ ]` 8. [TEST-UNIT] / [TEST-INT] Test and fixture updates
-    *   `[ ]` 8.a. Add fixtures for the new planner and turn templates, including branch metadata in step fixtures.
-    *   `[ ]` 8.b. Update `assembleSeedPrompt`, `assemblePlannerPrompt`, and `assembleTurnPrompt` tests to assert new artifact keys, file paths, and `parallel_group` / `branch_key` handling.
-    *   `[ ]` 8.c. Update worker integration tests to expect multi-step Thesis outputs instead of the legacy monolithic response, verifying parallel branch execution order when applicable.
-
-*   `[ ]` 9. [BE] / [PROMPT] Update path constructors and file-type enums
-*   `[ ]` 9.a. Add `business_case`, `feature_spec`, `technical_approach`, and `success_metrics` to `FileType` / path constructor helpers so new artifacts resolve correctly.
-    *   `[ ]` 9.b. Ensure prompt assembler storage helpers create `context/header_context.json` for step 1 and document files under `documents/` following the Stage File Structure.
+*   `[ ]` 10. [BE] / [PROMPT] Update path constructors and file-type enums
+  *   `[ ]` 10.a. Add `business_case`, `feature_spec`, `technical_approach`, and `success_metrics` to `FileType` / path constructor helpers so new artifacts resolve correctly.
+  *   `[ ]` 10.b. Ensure prompt assembler storage helpers create `context/header_context.json` for step 1 and document files under `documents/` following the Stage File Structure.

@@ -93,6 +93,10 @@ file_size_limit = "50MiB"
 [storage.buckets.dialectic-contributions]
 public = false
 
+[storage.buckets.prompt-templates]
+public = false
+objects_path = "./storage/prompt-templates"
+
 # Image transformation API is available to Supabase Pro plan.
 # [storage.image_transformation]
 # enabled = true

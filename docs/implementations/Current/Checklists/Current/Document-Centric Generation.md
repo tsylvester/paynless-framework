@@ -538,9 +538,9 @@ graph LR
         *   `[✅]` X.e.viii. Capture provenance, document TypeScript/type-guard changes, and list any new prompt template file paths needed for integration tests.
 
 *   `[ ]` Y. `[DB]` Author Data Migrations and Seed Updates for Stage Contracts
-    *   `[ ]` Y.0. Create the `dialectic_stage_recipes` table and update codepaths to reference it
-        *   `[ ]` Y.0.i. Define the table schema (primary key, `stage_slug` FK, step array JSON) and add the migration to create it.
-        *   `[ ]` Y.0.ii. Update any queries or helper functions that currently read recipe data from `dialectic_stages` to pull from the new table.
+    *   `[✅]` Y.0. Create the `dialectic_stage_recipes` table and update codepaths to reference it
+        *   `[✅]` Y.0.i. Define the table schema (primary key, `stage_slug` FK, step array JSON) and add the migration to create it.
+        *   `[✅]` Y.0.ii. Update any queries or helper functions that currently read recipe data from `dialectic_stages` to pull from the new table.
     *   `[ ]` Y.a. **Thesis Data Spec** – from the Thesis worksheet, capture the exact updates required:
         *   `[ ]` Y.a.i. Stage recipe table: new JSON blob for `dialectic_stage_recipes` (include step array) once the table exists.
         *   `[ ]` Y.a.ii. Stage config table: new `input_artifact_rules` and `expected_output_artifacts` JSON for `dialectic_stages`.
@@ -638,6 +638,7 @@ graph LR
 
 *   `[ ]` 6. `[REFACTOR]` Migrate All Consumers to the Refactored `PromptAssembler` Service
     *   **Objective:** To systematically refactor all services that generate prompts to use the new, centralized `PromptAssembler`. This is the "Use the Tool" phase, ensuring all parts of the system align with the new architecture.
+    *   `[ ]` Update file_manager with all the new file types we need. path_constructor and path_deconstructor to generate the new paths. 
     *   `[ ]` 6.a. **Phase 1: Update the Final Data Consumer (`executeModelCallAndSave`)**
         *   `[ ]` 6.a.i. `[BE]` In `dialectic.interface.ts`, update the `PromptConstructionPayload` interface to include the optional `source_prompt_resource_id: string` property.
         *   `[ ]` 6.a.ii. `[TEST-UNIT]` In `executeModelCallAndSave.test.ts`, write a failing unit test that passes a `source_prompt_resource_id` via the `promptConstructionPayload` and asserts that this ID is correctly used on the `source_prompt_resource_id` field of the created `dialectic_contributions` record.

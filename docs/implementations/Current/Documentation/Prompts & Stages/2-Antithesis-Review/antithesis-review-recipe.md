@@ -331,7 +331,7 @@
   "context_for_documents": [
     {
       "document_key": "business_case_critique",
-      "context_to_include": {
+      "content_to_include": {
         "strengths": [],
         "weaknesses": [],
         "opportunities":[],
@@ -342,7 +342,7 @@
     },
     {
       "document_key": "technical_feasibility_assessment",
-      "context_to_include": {
+      "content_to_include": {
         "constraint_checklist": [
           "team",
           "timeline",
@@ -355,7 +355,7 @@
     },
     {
       "document_key": "risk_register",
-      "context_to_include": {
+      "content_to_include": {
         "required_fields": [
           "risk",
           "impact",
@@ -367,7 +367,7 @@
     },
     {
       "document_key": "non_functional_requirements",
-      "context_to_include": [
+      "content_to_include": [
         "security",
         "performance",
         "reliability",
@@ -378,7 +378,7 @@
     },
     {
       "document_key": "dependency_map",
-      "context_to_include": {
+      "content_to_include": {
         "components": [],
         "integration_points": [],
         "conflict_flags": []
@@ -386,7 +386,7 @@
     },
     {
       "document_key": "comparison_vector",
-      "context_to_include": {
+      "content_to_include": {
         "dimensions": {
           "feasibility": { "score": 0, "rationale": "" },
           "complexity": { "score": 0, "rationale": "" },

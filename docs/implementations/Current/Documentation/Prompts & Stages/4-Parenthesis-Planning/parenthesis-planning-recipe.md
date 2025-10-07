@@ -238,7 +238,7 @@
     }
   },
   "header_context_artifact": {
-    "document_key": "header_context_parenthesis",
+    "document_key": "header_context",
     "artifact_class": "header_context",
     "file_type": "json"
   },
@@ -246,7 +246,7 @@
     {
       "document_key": "trd",
       "template_filename": "parenthesis_trd.md",
-      "context_to_include": {
+      "content_to_include": {
         "subsystems": [],
         "apis": [],
         "schemas": [],
@@ -257,7 +257,7 @@
     {
       "document_key": "master_plan",
       "template_filename": "parenthesis_master_plan.md",
-      "context_to_include": {
+      "content_to_include": {
         "phases": [],
         "status_markers": {
           "unstarted": "[ ]",
@@ -275,7 +275,7 @@
     {
       "document_key": "milestone_schema",
       "template_filename": "parenthesis_milestone_schema.md",
-      "context_to_include": {
+      "content_to_include": {
         "fields": [
           "id",
           "title",
@@ -323,7 +323,7 @@ When this step is executed for subsequent iterations, provide the most recent `t
   "prompt_template_id": "<system_prompts.id for parenthesis_trd_turn_v1>",
   "prompt_type": "Turn",
   "inputs_required": [
-    { "type": "header_context", "stage_slug": "parenthesis", "document_key": "header_context_parenthesis", "required": true },
+    { "type": "header_context", "stage_slug": "parenthesis", "document_key": "header_context", "required": true },
     { "type": "document", "stage_slug": "synthesis", "document_key": "system_architecture_overview", "required": true },
     { "type": "document", "stage_slug": "synthesis", "document_key": "tech_stack_recommendations", "required": true },
     { "type": "document", "stage_slug": "synthesis", "document_key": "prd", "required": true },
@@ -334,7 +334,7 @@ When this step is executed for subsequent iterations, provide the most recent `t
     { "type": "feedback", "stage_slug": "parenthesis", "document_key": "trd", "required": false }
   ],
   "inputs_relevance": [
-    { "document_key": "header_context_parenthesis", "stage_slug": "parenthesis", "relevance": 1.0 },
+    { "document_key": "header_context", "stage_slug": "parenthesis", "relevance": 1.0 },
     { "document_key": "system_architecture_overview", "stage_slug": "synthesis", "relevance": 0.95 },
     { "document_key": "tech_stack_recommendations", "stage_slug": "synthesis", "relevance": 0.9 },
     { "document_key": "prd", "stage_slug": "synthesis", "relevance": 0.85 },
@@ -423,7 +423,7 @@ Present the previously generated Master Plan and feedback during iterative runs 
   "prompt_template_id": "<system_prompts.id for parenthesis_master_plan_turn_v1>",
   "prompt_type": "Turn",
   "inputs_required": [
-    { "type": "header_context", "stage_slug": "parenthesis", "document_key": "header_context_parenthesis", "required": true },
+    { "type": "header_context", "stage_slug": "parenthesis", "document_key": "header_context", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "trd", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false },
     { "type": "document", "stage_slug": "synthesis", "document_key": "prd", "required": true },
@@ -432,7 +432,7 @@ Present the previously generated Master Plan and feedback during iterative runs 
     { "type": "feedback", "stage_slug": "synthesis", "document_key": "prd", "required": false }
   ],
   "inputs_relevance": [
-    { "document_key": "header_context_parenthesis", "stage_slug": "parenthesis", "relevance": 1.0 },
+    { "document_key": "header_context", "stage_slug": "parenthesis", "relevance": 1.0 },
     { "document_key": "trd", "stage_slug": "parenthesis", "relevance": 0.95 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.99 },
     { "document_key": "prd", "stage_slug": "synthesis", "relevance": 0.75 },
@@ -536,14 +536,14 @@ Provide the previous milestone schema and related feedback on subsequent executi
   "prompt_template_id": "<system_prompts.id for parenthesis_milestone_schema_turn_v1>",
   "prompt_type": "Turn",
   "inputs_required": [
-    { "type": "header_context", "stage_slug": "parenthesis", "document_key": "header_context_parenthesis", "required": true },
+    { "type": "header_context", "stage_slug": "parenthesis", "document_key": "header_context", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "master_plan", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": false },
     { "type": "feedback", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false },
     { "type": "feedback", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": false }
   ],
   "inputs_relevance": [
-    { "document_key": "header_context_parenthesis", "stage_slug": "parenthesis", "relevance": 1.0 },
+    { "document_key": "header_context", "stage_slug": "parenthesis", "relevance": 1.0 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.90 },
     { "document_key": "milestone_schema", "stage_slug": "parenthesis", "relevance": 0.95 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.80 },
