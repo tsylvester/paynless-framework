@@ -332,10 +332,18 @@
     {
       "document_key": "business_case_critique",
       "content_to_include": {
+        "executive_summary": "",
+        "user_problem_validation": "",
+        "market_opportunity": "",
+        "competitive_analysis": "",
+        "differentiation_&_value_proposition": "",
+        "risks_&_mitigation": "",
         "strengths": [],
         "weaknesses": [],
-        "opportunities":[],
-        "threats":[],
+        "opportunities": [],
+        "threats": [],
+        "next_steps": "",
+        "proposal_references": [],
         "recommendations": [],
         "notes": []
       }
@@ -350,54 +358,100 @@
           "integration",
           "compliance"
         ],
-        "findings": []
+        "findings": [
+          {
+            "feature_name": "",
+            "feature_objective": "",
+            "user_stories": [],
+            "acceptance_criteria": [],
+            "dependencies": [],
+            "success_metrics": [],
+            "risk_mitigation": "",
+            "open_questions": ""
+          }
+        ],
+        "architecture": "",
+        "components": "",
+        "data": "",
+        "deployment": "",
+        "sequencing": "",
+        "risk_mitigation": "",
+        "open_questions": ""
       }
     },
     {
       "document_key": "risk_register",
-      "content_to_include": {
-        "required_fields": [
-          "risk",
-          "impact",
-          "likelihood",
-          "mitigation"
-        ],
-        "seed_examples": []
-      }
+      "content_to_include": [
+        {
+          "risk": "",
+          "impact": "",
+          "likelihood": "",
+          "mitigation": "",
+          "components": "",
+          "dependencies": [],
+          "sequencing": "",
+          "risk_mitigation": "",
+          "open_questions": "",
+          "guardrails": "",
+          "risk_signals": "",
+          "next_steps": ""
+        }
+      ]
     },
     {
       "document_key": "non_functional_requirements",
-      "content_to_include": [
-        "security",
-        "performance",
-        "reliability",
-        "scalability",
-        "maintainability",
-        "compliance"
-      ]
+      "content_to_include": {
+        "security": "",
+        "performance": "",
+        "reliability": "",
+        "scalability": "",
+        "maintainability": "",
+        "compliance": "",
+        "outcome_alignment": "",
+        "primary_kpis": "",
+        "leading_indicators": "",
+        "lagging_indicators": "",
+        "guardrails": "",
+        "measurement_plan": "",
+        "risk_signals": "",
+        "next_steps": ""
+      }
     },
     {
       "document_key": "dependency_map",
       "content_to_include": {
         "components": [],
         "integration_points": [],
-        "conflict_flags": []
+        "conflict_flags": [],
+        "dependencies": [],
+        "sequencing": "",
+        "risk_mitigation": "",
+        "open_questions": ""
       }
     },
     {
       "document_key": "comparison_vector",
       "content_to_include": {
+        "outcome_alignment": "",
+        "north_star_metric": "",
+        "primary_kpis": "",
+        "leading_indicators": "",
+        "lagging_indicators": "",
+        "guardrails": "",
+        "measurement_plan": "",
+        "risk_signals": "",
+        "next_steps": "",
         "dimensions": {
-          "feasibility": { "score": 0, "rationale": "" },
-          "complexity": { "score": 0, "rationale": "" },
-          "security": { "score": 0, "rationale": "" },
-          "performance": { "score": 0, "rationale": "" },
-          "maintainability": { "score": 0, "rationale": "" },
-          "scalability": { "score": 0, "rationale": "" },
-          "cost": { "score": 0, "rationale": "" },
-          "time_to_market": { "score": 0, "rationale": "" },
-          "compliance_risk": { "score": 0, "rationale": "" },
-          "alignment_with_constraints": { "score": 0, "rationale": "" }
+          "feasibility": { "score": 3, "rationale": "placeholder" },
+          "complexity": { "score": 3, "rationale": "placeholder" },
+          "security": { "score": 3, "rationale": "placeholder" },
+          "performance": { "score": 3, "rationale": "placeholder" },
+          "maintainability": { "score": 3, "rationale": "placeholder" },
+          "scalability": { "score": 3, "rationale": "placeholder" },
+          "cost": { "score": 3, "rationale": "placeholder" },
+          "time_to_market": { "score": 3, "rationale": "placeholder" },
+          "compliance_risk": { "score": 3, "rationale": "placeholder" },
+          "alignment_with_constraints": { "score": 3, "rationale": "placeholder" }
         }
       }
     }
@@ -652,7 +706,25 @@
           "integration",
           "compliance"
         ],
-        "findings": []
+        "findings": [
+          {
+            "feature_name": "",
+            "feature_objective": "",
+            "user_stories": [],
+            "acceptance_criteria": [],
+            "dependencies": [],
+            "success_metrics": [],
+            "risk_mitigation": "",
+            "open_questions": ""
+          }
+        ],
+        "architecture": "",
+        "components": "",
+        "data": "",
+        "deployment": "",
+        "sequencing": "",
+        "risk_mitigation": "",
+        "open_questions": ""
       }
     }
   ],
@@ -780,7 +852,11 @@
           "risk": "",
           "impact": "",
           "likelihood": "",
-          "mitigation": ""
+          "mitigation": "",
+          "open_questions": "",
+          "guardrails": "",
+          "risk_signals": "",
+          "next_steps": ""
         }
       ]
     }
@@ -904,14 +980,18 @@
       "file_type": "markdown",
       "lineage_key": "<from the filename of the file being critiqued>",
       "source_model_slug": "<from the filename of the file being critiqued>",
-      "content_to_include": [
-        "security",
-        "performance",
-        "reliability",
-        "scalability",
-        "maintainability",
-        "compliance"
-      ]
+      "content_to_include": {
+        "security": "",
+        "performance": "",
+        "reliability": "",
+        "scalability": "",
+        "maintainability": "",
+        "compliance": "",
+        "outcome_alignment": "",
+        "primary_kpis": "",
+        "leading_indicators": "",
+        "lagging_indicators": "",
+      }
     }
   ],
   "files_to_generate": [
@@ -1036,7 +1116,10 @@
       "content_to_include": {
         "components": [],
         "integration_points": [],
-        "conflict_flags": []
+        "conflict_flags": [],
+        "dependencies": [],
+        "sequencing": "",
+        "open_questions": ""
       }
     }
   ],
