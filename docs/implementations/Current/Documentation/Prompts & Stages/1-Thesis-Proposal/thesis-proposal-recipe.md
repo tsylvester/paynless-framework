@@ -246,14 +246,29 @@
     },
     {
       "document_key": "technical_approach",
-      "content_to_include": "architecture, components, data, deployment, sequencing"
+      "content_to_include": {
+        "architecture": "",
+        "components": "",
+        "data": "",
+        "deployment": "",
+        "sequencing": ""
+      }
     },
     {
       "document_key": "success_metrics",
-      "content_to_include": [
-        "placeholder metric 1",
-        "placeholder metric 2"
-      ]
+      "content_to_include": {
+        "outcome_alignment": "",
+        "north_star_metric": "",
+        "primary_kpis": "",
+        "leading_indicators": "",
+        "lagging_indicators": "",
+        "guardrails": "",
+        "measurement_plan": "",
+        "risk_signals": "",
+        "next_steps": "",
+        "data_sources": [],
+        "reporting_cadence": ""
+      }
     }
   ]
 }
@@ -305,9 +320,18 @@
       "artifact_class": "rendered_document",
       "file_type": "markdown",
       "content_to_include": {
-        "market_opportunity": "",
+        "executive_summary": "",
         "user_problem_validation": "",
-        "competitive_analysis": ""
+        "market_opportunity": "",
+        "competitive_analysis": "",
+        "differentiation_&_value_proposition": "",
+        "risks_&_mitigation": "",
+        "strengths": "",
+        "weaknesses": "",
+        "opportunities": "",
+        "threats": "",
+        "next_steps": "",
+        "proposal_references": []
       }
     }
   ]
@@ -362,7 +386,11 @@
       "content_to_include": [
         {
           "feature_name": "",
-          "user_stories": []
+          "user_stories": [],
+          "feature_objective": "",
+          "acceptance_criteria": [],
+          "dependencies": [],
+          "success_metrics": []
         }
       ]
     }
@@ -426,7 +454,9 @@
         "components": "", 
         "data": "", 
         "deployment": "", 
-        "sequencing": ""
+        "sequencing": "",
+        "risk_mitigation": "",
+        "open_questions": ""
       }
     }
   ],
@@ -493,7 +523,11 @@
         "guardrails": "",
         "measurement_plan": "",
         "risk_signals": "",
-        "next_steps": ""
+        "next_steps": "",
+        "data_sources": [],
+        "reporting_cadence": "",
+        "ownership": "",
+        "escalation_plan": ""
       }
     }
   ]

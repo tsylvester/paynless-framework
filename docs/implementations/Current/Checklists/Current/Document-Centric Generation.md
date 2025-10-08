@@ -541,18 +541,18 @@ graph LR
     *   `[✅]` Y.0. Create the `dialectic_stage_recipes` table and update codepaths to reference it
         *   `[✅]` Y.0.i. Define the table schema (primary key, `stage_slug` FK, step array JSON) and add the migration to create it.
         *   `[✅]` Y.0.ii. Update any queries or helper functions that currently read recipe data from `dialectic_stages` to pull from the new table.
-    *   `[ ]` Y.a. **Thesis Data Spec** – from the Thesis worksheet, capture the exact updates required:
-        *   `[ ]` Y.a.i. Stage recipe table: new JSON blob for `dialectic_stage_recipes` (include step array) once the table exists.
-        *   `[ ]` Y.a.ii. Stage config table: new `input_artifact_rules` and `expected_output_artifacts` JSON for `dialectic_stages`.
-        *   `[ ]` Y.a.iii. Prompt table: list of `system_prompts` rows to insert/update (ids, names, prompt text files). For existing prompts that currently live only in migrations, capture the migration file path so we can extract the template into a repository file before insertion.
-    *   `[ ]` Y.b. **Antithesis Data Spec**.
-        *   `[ ]` Y.b.i. Stage recipe table: new JSON blob for `dialectic_stage_recipes` (include step array).
-        *   `[ ]` Y.b.ii. Stage config table: new `input_artifact_rules` and `expected_output_artifacts` JSON for `dialectic_stages`.
-        *   `[ ]` Y.b.ii.a. For each Antithesis step, seed `inputs_relevance` defaults (normalized float weights) matching the documentation matrix; allow overrides via future user-configurable metadata.
-        *   `[ ]` Y.b.iii. Prompt table: list of `system_prompts` rows to insert/update (ids, names, prompt text files) with repository paths.
-        *   `[ ]` Y.b.iv. Overlay table updates (if any).
-        *   `[ ]` Y.b.v. Test scaffolding impact.
-        *   `[ ]` Y.b.vi. Source references from documentation worksheets.
+    *   `[✅]` Y.a. **Thesis Data Spec** – from the Thesis worksheet, capture the exact updates required:
+        *   `[✅]` Y.a.i. Stage recipe table: new JSON blob for `dialectic_stage_recipes` (include step array) once the table exists.
+        *   `[✅]` Y.a.ii. Stage config table: new `input_artifact_rules` and `expected_output_artifacts` JSON for `dialectic_stages`.
+        *   `[✅]` Y.a.iii. Prompt table: list of `system_prompts` rows to insert/update (ids, names, prompt text files). For existing prompts that currently live only in migrations, capture the migration file path so we can extract the template into a repository file before insertion.
+    *   `[✅]` Y.b. **Antithesis Data Spec**.
+        *   `[✅]` Y.b.i. Stage recipe table: new JSON blob for `dialectic_stage_recipes` (include step array).
+        *   `[✅]` Y.b.ii. Stage config table: new `input_artifact_rules` and `expected_output_artifacts` JSON for `dialectic_stages`.
+        *   `[✅]` Y.b.ii.a. For each Antithesis step, seed `inputs_relevance` defaults (normalized float weights) matching the documentation matrix; allow overrides via future user-configurable metadata.
+        *   `[✅]` Y.b.iii. Prompt table: list of `system_prompts` rows to insert/update (ids, names, prompt text files) with repository paths.
+        *   `[✅]` Y.b.iv. Overlay table updates (if any).
+        *   `[✅]` Y.b.v. Test scaffolding impact.
+        *   `[✅]` Y.b.vi. Source references from documentation worksheets.
     *   `[ ]` Y.c. **Synthesis Data Spec** – (include intermediate artifacts such as pairwise/root/manifest prompts).
         *   `[ ]` Y.c.i. Stage recipe table: new JSON blob for `dialectic_stage_recipes` (include step array).
         *   `[ ]` Y.c.ii. Stage config table: new `input_artifact_rules` and `expected_output_artifacts` JSON for `dialectic_stages`.
@@ -678,7 +678,9 @@ graph LR
     *   `[ ]` 12.a. Add Antithesis document keys (`business_case_critique`, `technical_feasibility_assessment`, `risk_register`, `non_functional_requirements`, `dependency_map`, `comparison_vector`) to the file-type enums and path constructor/deconstructor utilities.
     *   `[ ]` 12.b. Update storage helpers so planner outputs land in `context/header_context.json`, per-document feedback paths (`user_feedback/{model_slug}_{n}_{document_key}_feedback.md`) are recognized, and each branch artifact is saved under the documented stage file structure.
 
-
+*   `[ ]` Ensure the last step of prompt construction is to always run the constructed prompt through a json minifier to compress token usage without losing content. 
+*   `[ ]` Write a test for each stage that generates a fully assembled prompt for each step and conditional (continuations, etc) that prints the finished fully assembled prompt exactly as it would be sent to the model, except de-minified so that it can be read easier. 
+*   `[ ]` Review each stage and step assembled prompt to ensure that the content is exactly as desired, and resolve any problems before proceeding. 
 
 *   `[ ]` 6. `[REFACTOR]` Migrate All Consumers to the Refactored `PromptAssembler` Service
     *   **Objective:** To systematically refactor all services that generate prompts to use the new, centralized `PromptAssembler`. This is the "Use the Tool" phase, ensuring all parts of the system align with the new architecture.
