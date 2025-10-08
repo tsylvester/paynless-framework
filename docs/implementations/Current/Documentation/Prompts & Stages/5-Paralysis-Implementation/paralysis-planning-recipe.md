@@ -691,21 +691,5 @@
     *   `[ ]` 3.c. Update the Software Development overlay so `style_guide_markdown`, `generation_limits`, `document_order`, and iteration notes reference the new single advisor artifact and rely on the recipe’s `outputs_required` data instead of the deprecated `expected_output_artifacts_json` field. Review and remove obsolete keys from the domain_specific_prompt_overlays.overlay_values object. 
     *   `[ ]` 3.d. Refresh `Prompt Templating Examples.md`, stage worksheets, and related docs to document the four templates and the consolidated advisor artifact structure.
 
-*   `[ ]` 4. `[CONFIG]` Extend storage utilities, enums, and type guards.
-    *   `[ ]` 4.a. Add `advisor_recommendations` (and any missing paralysis keys) to `FileType`, storage context types, and associated enums.
-    *   `[ ]` 4.b. Update `constructStoragePath` / `deconstructStoragePath` (plus tests) so prompts, header contexts, assembled JSON, rendered markdown, and continuation files follow the paralysis Stage File Structure.
-    *   `[ ]` 4.c. Expand resource/contribution type guards and tests so they accept `advisor_recommendations` artifacts with the markdown/JSON schema defined here.
-
-*   `[ ]` 5. `[BE]` Wire the PromptAssembler and add coverage.
-    *   `[ ]` 5.a. Route paralysis planner jobs to `paralysis_planner_header_v1`, upload `header_context.json`, and return the `source_prompt_resource_id`.
-    *   `[ ]` 5.b. Extend `assembleTurnPrompt` so the checklist, master plan, and advisor branches gather required inputs (including optional prior artifacts/feedback) and persist markdown + assembled JSON outputs at the expected paths.
-    *   `[ ]` 5.c. Add unit tests verifying each branch assembles prompts with the correct input ordering, obeys continuation policy, and stores artifacts via the file manager.
-
-*   `[ ]` 6. `[BE]` Enforce advisor fan-in during orchestration.
-    *   `[ ]` 6.a. Modify worker scheduling so Step 4 enqueues only after *all* Step 2 and Step 3 jobs for the same recipe/model complete successfully.
-    *   `[ ]` 6.b. Add unit/integration tests covering the full paralysis run (planner → checklist → master plan → advisor) to verify the fan-in guard and the single `advisor_recommendations` artifact.
-
 *   `[ ]` 7. `[DOCS]` Update downstream consumers and regression coverage.
-    *   `[ ]` 7.a. Refactor services, exporters, and UI components to consume the consolidated `advisor_recommendations` artifact instead of the old advisor documents.
     *   `[ ]` 7.b. Remove references to the deprecated `expected_output_artifacts_json` field, replacing them with recipe-table lookups or new artifact metadata.
-    *   `[ ]` 7.c. Record migration ids, prompt/template paths, and overlay updates in this worksheet once implementation completes so future contributors have full provenance.

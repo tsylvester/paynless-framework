@@ -664,33 +664,3 @@ Provide the previous milestone schema and related feedback on subsequent executi
 *   `[ ]` 4. `[PROMPT]` Verify and seed Parenthesis document templates.
     *   `[ ]` 4.a. Confirm the markdown templates referenced by the target state exist (update them if necessary to include status markers, iteration/delta sections, dependency summaries, validation bullets).
     *   `[ ]` 4.b. If any template is missing, create it under `docs/templates/parenthesis/` (or the repository’s template location) and seed a matching `dialectic_document_templates` row with the correct bucket/path/document_key so `files_to_generate` pointers resolve.
-
-*   `[ ]` 5. `[BE]` Extend `PromptAssembler` to handle Parenthesis.
-    *   `[ ]` 5.a. Update `assemblePlannerPrompt` to route Parenthesis PLAN jobs to `parenthesis_planner_header_v1`, supply all required inputs, upload `header_context_parenthesis.json`, and return `source_prompt_resource_id` to downstream consumers.
-    *   `[ ]` 5.b. Enhance `assembleTurnPrompt` to support the Parenthesis branch keys (`trd`, `master_plan`, `milestone_schema`), wiring optional prior artifacts, Synthesis outputs, and appropriate storage paths for markdown + assembled JSON artifacts.
-    *   `[ ]` 5.c. Implement continuation handling that queues `continueJob` with the reason strings defined in each step when markdown/JSON outputs truncate or fail validation, ensuring partial artifacts are never persisted.
-
-*   `[ ]` 6. `[CONFIG]` Update storage enums and helpers.
-    *   `[ ]` 6.a. Add Parenthesis-specific entries to `FileType` (header context, TRD, master plan, milestone schema) and reference them inside storage helpers.
-    *   `[ ]` 6.b. Extend `constructStoragePath` / `deconstructStoragePath` so Parenthesis prompts, header contexts, assembled JSON, rendered markdown, and continuation files follow the documented Stage File Structure and naming conventions.
-
-*   `[ ]` 7. `[BE]` Update shared types and guards.
-    *   `[ ]` 7.a. Extend shared interfaces to model the new header context fields (status preservation rules, iteration guidance), TRD schema arrays, master plan milestone structures, and milestone schema attributes.
-    *   `[ ]` 7.b. Update type guards (`isDialecticRecipeStep`, `isDialecticJobPayload`, `isHeaderContextParenthesis`, assembled JSON validators) so they enforce the new schema contracts and optional inputs before runtime execution.
-
-*   `[ ]` 8. `[TEST-UNIT]` Cover Parenthesis planner/turn logic.
-    *   `[ ]` 8.a. Add unit tests for `assemblePlannerPrompt` validating that Parenthesis planner jobs save header context artifacts and register the prompt resource id.
-    *   `[ ]` 8.b. Add unit tests for `assembleTurnPrompt` covering each branch key, asserting correct template selection, storage path, optional prior-iteration handling, and continuation scheduling.
-    *   `[ ]` 8.c. Assert relevance ordering is honored by checking the generated prompt payload includes inputs in the expected priority sequence (header context, prior artifacts, Synthesis outputs).
-
-*   `[ ]` 9. `[TEST-INT]` Update worker/integration coverage.
-    *   `[ ]` 9.a. Build an integration test (or extend existing worker tests) that executes the full Parenthesis workflow (planner → TRD → Master Plan → Milestone Schema), validating persisted artifacts and continuation behavior.
-    *   `[ ]` 9.b. Add scenarios feeding prior `master_plan`, `trd`, or `milestone_schema` to confirm reruns operate without regressions.
-
-*   `[ ]` 10. `[DB]` Package migration bundle.
-    *   `[ ]` 10.a. Compose migrations in a deterministic order (prompts → overlays → templates → recipe rows → edges → stage config) so deployments never hit half-applied states.
-    *   `[ ]` 10.b. Provide rollback statements for each migration segment to remove inserted prompts/recipes/templates/stage changes if deployment fails.
-
-*   `[ ]` 11. `[DOCS]` Capture provenance and cross-references.
-    *   `[ ]` 11.a. Update this worksheet after implementation with migration ids, prompt/template paths, overlay updates, and checklist references so future workers can trace changes quickly.
-    *   `[ ]` 11.b. Update `Prompt Types and Definitions.md` to document the new Parenthesis prompts (planner + turns), iteration behavior, and continuity requirements, citing relevant repositories/style-guide sections.

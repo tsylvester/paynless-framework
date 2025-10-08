@@ -432,3 +432,41 @@ graph LR
     *   `[ ]` 11.a. Extend shared types (`DialecticRecipeStep`, `DialecticJobPayload.step_info`, etc.) to represent new prompt types, branch keys, header contexts, and assembled JSON schemas.
     *   `[ ]` 11.b. Update runtime guards (`isDialecticRecipeStep`, `isDialecticJobPayload`, `isHeaderContext`) to validate the new structures, including the optional `match_keys` array in pairwise outputs.
     *   `[ ]` 11.c. Document any new manifest/header interfaces so downstream services (Parenthesis, Paralysis) can rely on typed inputs.
+
+*   `[ ]` 5. `[BE]` Extend `PromptAssembler` to handle Parenthesis.
+    *   `[ ]` 5.a. Update `assemblePlannerPrompt` to route Parenthesis PLAN jobs to `parenthesis_planner_header_v1`, supply all required inputs, upload `header_context_parenthesis.json`, and return `source_prompt_resource_id` to downstream consumers.
+    *   `[ ]` 5.b. Enhance `assembleTurnPrompt` to support the Parenthesis branch keys (`trd`, `master_plan`, `milestone_schema`), wiring optional prior artifacts, Synthesis outputs, and appropriate storage paths for markdown + assembled JSON artifacts.
+    *   `[ ]` 5.c. Implement continuation handling that queues `continueJob` with the reason strings defined in each step when markdown/JSON outputs truncate or fail validation, ensuring partial artifacts are never persisted.
+
+*   `[ ]` 6. `[CONFIG]` Update storage enums and helpers.
+    *   `[ ]` 6.a. Add Parenthesis-specific entries to `FileType` (header context, TRD, master plan, milestone schema) and reference them inside storage helpers.
+    *   `[ ]` 6.b. Extend `constructStoragePath` / `deconstructStoragePath` so Parenthesis prompts, header contexts, assembled JSON, rendered markdown, and continuation files follow the documented Stage File Structure and naming conventions.
+
+*   `[ ]` 7. `[BE]` Update shared types and guards.
+    *   `[ ]` 7.a. Extend shared interfaces to model the new header context fields (status preservation rules, iteration guidance), TRD schema arrays, master plan milestone structures, and milestone schema attributes.
+    *   `[ ]` 7.b. Update type guards (`isDialecticRecipeStep`, `isDialecticJobPayload`, `isHeaderContextParenthesis`, assembled JSON validators) so they enforce the new schema contracts and optional inputs before runtime execution.
+
+*   `[ ]` 8. `[TEST-UNIT]` Cover Parenthesis planner/turn logic.
+    *   `[ ]` 8.a. Add unit tests for `assemblePlannerPrompt` validating that Parenthesis planner jobs save header context artifacts and register the prompt resource id.
+    *   `[ ]` 8.b. Add unit tests for `assembleTurnPrompt` covering each branch key, asserting correct template selection, storage path, optional prior-iteration handling, and continuation scheduling.
+    *   `[ ]` 8.c. Assert relevance ordering is honored by checking the generated prompt payload includes inputs in the expected priority sequence (header context, prior artifacts, Synthesis outputs).
+
+*   `[ ]` 9. `[TEST-INT]` Update worker/integration coverage.
+    *   `[ ]` 9.a. Build an integration test (or extend existing worker tests) that executes the full Parenthesis workflow (planner → TRD → Master Plan → Milestone Schema), validating persisted artifacts and continuation behavior.
+    *   `[ ]` 9.b. Add scenarios feeding prior `master_plan`, `trd`, or `milestone_schema` to confirm reruns operate without regressions.
+
+*   `[ ]` 4. `[CONFIG]` Extend storage utilities, enums, and type guards.
+    *   `[ ]` 4.a. Add `advisor_recommendations` (and any missing paralysis keys) to `FileType`, storage context types, and associated enums.
+    *   `[ ]` 4.b. Update `constructStoragePath` / `deconstructStoragePath` (plus tests) so prompts, header contexts, assembled JSON, rendered markdown, and continuation files follow the paralysis Stage File Structure.
+    *   `[ ]` 4.c. Expand resource/contribution type guards and tests so they accept `advisor_recommendations` artifacts with the markdown/JSON schema defined here.
+
+*   `[ ]` 5. `[BE]` Wire the PromptAssembler and add coverage.
+    *   `[ ]` 5.a. Route paralysis planner jobs to `paralysis_planner_header_v1`, upload `header_context.json`, and return the `source_prompt_resource_id`.
+    *   `[ ]` 5.b. Extend `assembleTurnPrompt` so the checklist, master plan, and advisor branches gather required inputs (including optional prior artifacts/feedback) and persist markdown + assembled JSON outputs at the expected paths.
+    *   `[ ]` 5.c. Add unit tests verifying each branch assembles prompts with the correct input ordering, obeys continuation policy, and stores artifacts via the file manager.
+
+*   `[ ]` 6. `[BE]` Enforce advisor fan-in during orchestration.
+    *   `[ ]` 6.a. Modify worker scheduling so Step 4 enqueues only after *all* Step 2 and Step 3 jobs for the same recipe/model complete successfully.
+    *   `[ ]` 6.b. Add unit/integration tests covering the full paralysis run (planner → checklist → master plan → advisor) to verify the fan-in guard and the single `advisor_recommendations` artifact.
+
+    *   `[ ]` 7.a. Refactor services, exporters, and UI components to consume the consolidated `advisor_recommendations` artifact instead of the old advisor documents.
