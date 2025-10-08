@@ -235,7 +235,21 @@
       "content_to_include": {
         "thesis_document": "business_case",
         "critique_document": "business_case_critique",
-        "comparison_signal": "comparison_vector"
+        "comparison_signal": "comparison_vector",
+        "executive_summary": "",
+        "user_problem_validation": "",
+        "market_opportunity": "",
+        "competitive_analysis": "",
+        "differentiation_&_value_proposition": "",
+        "risks_&_mitigation": "",
+        "strengths": [],
+        "weaknesses": [],
+        "opportunities": [],
+        "threats": [],
+        "next_steps": "",
+        "proposal_references": [],
+        "resolved_positions": [],
+        "open_questions": []
       }
     },
     {
@@ -244,7 +258,22 @@
         "thesis_document": "feature_spec",
         "feasibility_document": "technical_feasibility_assessment",
         "nfr_document": "non_functional_requirements",
-        "comparison_signal": "comparison_vector"
+        "comparison_signal": "comparison_vector",
+        "features": [
+          {
+            "feature_name": "",
+            "feature_objective": "",
+            "user_stories": [],
+            "acceptance_criteria": [],
+            "dependencies": [],
+            "success_metrics": [],
+            "feasibility_insights": [],
+            "non_functional_alignment": [],
+            "score_adjustments": []
+          }
+        ],
+        "feature_scope": [],
+        "tradeoffs": []
       }
     },
     {
@@ -252,7 +281,15 @@
       "content_to_include": {
         "thesis_document": "technical_approach",
         "risk_document": "risk_register",
-        "dependency_document": "dependency_map"
+        "dependency_document": "dependency_map",
+        "architecture": "",
+        "components": [],
+        "data": "",
+        "deployment": "",
+        "sequencing": "",
+        "risk_mitigations": [],
+        "dependency_resolution": [],
+        "open_questions": []
       }
     },
     {
@@ -260,7 +297,19 @@
       "content_to_include": {
         "thesis_document": "success_metrics",
         "critique_document": "business_case_critique",
-        "comparison_signal": "comparison_vector"
+        "comparison_signal": "comparison_vector",
+        "outcome_alignment": "",
+        "north_star_metric": "",
+        "primary_kpis": [],
+        "leading_indicators": [],
+        "lagging_indicators": [],
+        "guardrails": [],
+        "measurement_plan": "",
+        "risk_signals": [],
+        "next_steps": "",
+        "metric_alignment": [],
+        "tradeoffs": [],
+        "validation_checks": []
       }
     }
   ],
@@ -330,10 +379,20 @@
         "<derived from antithesis reviewer or reviewer combination>"
       ],
       "content_to_include": {
-        "thesis_summary": "",
-        "critique_alignment": "",
+        "executive_summary": "",
+        "user_problem_validation": "",
+        "market_opportunity": "",
+        "competitive_analysis": "",
+        "differentiation_&_value_proposition": "",
+        "risks_&_mitigation": "",
+        "strengths": [],
+        "weaknesses": [],
+        "opportunities": [],
+        "threats": [],
         "resolved_positions": [],
-        "open_questions": []
+        "open_questions": [],
+        "next_steps": "",
+        "proposal_references": []
       }
     }
   ],
@@ -410,7 +469,20 @@
         "feature_scope": [],
         "feasibility_insights": [],
         "non_functional_alignment": [],
-        "score_adjustments": []
+        "score_adjustments": [],
+        "features": [
+          {
+            "feature_name": "",
+            "feature_objective": "",
+            "user_stories": [],
+            "acceptance_criteria": [],
+            "dependencies": [],
+            "success_metrics": [],
+            "risk_mitigation": "",
+            "open_questions": ""
+          }
+        ],
+        "tradeoffs": []
       }
     }
   ],
@@ -480,7 +552,13 @@
       "content_to_include": {
         "architecture_alignment": [],
         "risk_mitigations": [],
-        "dependency_resolution": []
+        "dependency_resolution": [],
+        "architecture": "",
+        "components": [],
+        "data": "",
+        "deployment": "",
+        "sequencing": "",
+        "open_questions": []
       }
     }
   ],
@@ -548,6 +626,18 @@
         "<derived from antithesis reviewer or reviewer combination>"
       ],
       "content_to_include": {
+        "thesis_document": "success_metrics",
+        "critique_document": "business_case_critique",
+        "comparison_signal": "comparison_vector",
+        "outcome_alignment": "",
+        "north_star_metric": "",
+        "primary_kpis": [],
+        "leading_indicators": [],
+        "lagging_indicators": [],
+        "guardrails": [],
+        "measurement_plan": "",
+        "risk_signals": [],
+        "next_steps": "",
         "metric_alignment": [],
         "tradeoffs": [],
         "validation_checks": []
@@ -600,8 +690,20 @@
       "lineage_key": "<>",
       "source_model_slug": "<>",
       "content_to_include": {
+        "executive_summary": "",
+        "user_problem_validation": "",
+        "market_opportunity": "",
+        "competitive_analysis": "",
+        "differentiation_&_value_proposition": "",
+        "risks_&_mitigation": "",
+        "strengths": [],
+        "weaknesses": [],
+        "opportunities": [],
+        "threats": [],
         "resolved_positions": [],
-        "open_questions": []
+        "open_questions": [],
+        "next_steps": "",
+        "proposal_references": []
       }
     }
   ],
@@ -660,7 +762,20 @@
         "feature_scope": [],
         "feasibility_insights": [],
         "non_functional_alignment": [],
-        "score_adjustments": []
+        "score_adjustments": [],
+        "features": [
+          {
+            "feature_name": "",
+            "feature_objective": "",
+            "user_stories": [],
+            "acceptance_criteria": [],
+            "dependencies": [],
+            "success_metrics": [],
+            "risk_mitigation": "",
+            "open_questions": ""
+          }
+        ],
+        "tradeoffs": []
       }
     }
   ],
@@ -776,7 +891,16 @@
       "content_to_include": {
         "metric_alignment": [],
         "tradeoffs": [],
-        "validation_checks": []
+        "validation_checks": [],
+        "outcome_alignment": "",
+        "north_star_metric": "",
+        "primary_kpis": [],
+        "leading_indicators": [],
+        "lagging_indicators": [],
+        "guardrails": [],
+        "measurement_plan": "",
+        "risk_signals": [],
+        "next_steps": ""
       }
     }
   ],
@@ -875,28 +999,102 @@
     {
       "document_key": "prd",
       "content_to_include": {
+        "executive_summary": "",
         "mvp_description": "",
-        "user_stories": [],
-        "feature_specifications": []
+        "user_problem_validation": "",
+        "market_opportunity": "",
+        "competitive_analysis": "",
+        "differentiation_&_value_proposition": "",
+        "risks_&_mitigation": "",
+        "strengths": [],
+        "weaknesses": [],
+        "opportunities": [],
+        "threats": [],
+        "feature_scope": [],
+        "features": [
+          {
+            "feature_name": "",
+            "feature_objective": "",
+            "user_stories": [],
+            "acceptance_criteria": [],
+            "dependencies": [],
+            "success_metrics": [],
+            "risk_mitigation": "",
+            "open_questions": "",
+            "tradeoffs": []
+          }
+        ],
+        "feasibility_insights": [],
+        "non_functional_alignment": [],
+        "score_adjustments": [],
+        "outcome_alignment": "",
+        "north_star_metric": "",
+        "primary_kpis": [],
+        "leading_indicators": [],
+        "lagging_indicators": [],
+        "guardrails": [],
+        "measurement_plan": "",
+        "risk_signals": [],
+        "resolved_positions": [],
+        "open_questions": [],
+        "next_steps": "",
+        "proposal_references": [],
+        "release_plan": [],
+        "assumptions": [],
+        "open_decisions": [],
+        "implementation_risks": [],
+        "stakeholder_communications": []
       }
     },
     {
       "document_key": "system_architecture_overview",
       "content_to_include": {
         "architecture_summary": "",
+        "architecture": "",
         "services": [],
+        "components": [],
         "data_flows": [],
+        "interfaces": [],
+        "integration_points": [],
+        "dependency_resolution": [],
+        "conflict_flags": [],
+        "sequencing": "",
+        "risk_mitigations": [],
+        "risk_signals": [],
         "security_measures": [],
-        "integration_points": []
+        "infra_diagram_outline": [],
+        "observability_strategy": [],
+        "scalability_plan": [],
+        "resilience_strategy": [],
+        "compliance_controls": [],
+        "open_questions": []
       }
     },
     {
       "document_key": "tech_stack_recommendations",
       "content_to_include": {
-        "components": [],
-        "recommended_options": [],
-        "alternatives": [],
-        "tradeoffs": []
+        "frontend_stack": {},
+        "backend_stack": {},
+        "data_platform": {},
+        "devops_tooling": {},
+        "security_tooling": {},
+        "shared_libraries": [],
+        "third_party_services": [],
+        "components": [
+          {
+            "component_name": "",
+            "recommended_option": "",
+            "rationale": "",
+            "alternatives": [],
+            "tradeoffs": [],
+            "risk_signals": [],
+            "integration_requirements": [],
+            "operational_owners": [],
+            "migration_plan": []
+          }
+        ],
+        "open_questions": [],
+        "next_steps": []
       }
     }
   ],
@@ -962,9 +1160,51 @@
       "lineage_key": "<>",
       "source_model_slug": "<>",
       "content_to_include": {
+        "executive_summary": "",
         "mvp_description": "",
-        "user_stories": [],
-        "feature_specifications": []
+        "user_problem_validation": "",
+        "market_opportunity": "",
+        "competitive_analysis": "",
+        "differentiation_&_value_proposition": "",
+        "risks_&_mitigation": "",
+        "strengths": [],
+        "weaknesses": [],
+        "opportunities": [],
+        "threats": [],
+        "feature_scope": [],
+        "features": [
+          {
+            "feature_name": "",
+            "feature_objective": "",
+            "user_stories": [],
+            "acceptance_criteria": [],
+            "dependencies": [],
+            "success_metrics": [],
+            "risk_mitigation": "",
+            "open_questions": "",
+            "tradeoffs": []
+          }
+        ],
+        "feasibility_insights": [],
+        "non_functional_alignment": [],
+        "score_adjustments": [],
+        "outcome_alignment": "",
+        "north_star_metric": "",
+        "primary_kpis": [],
+        "leading_indicators": [],
+        "lagging_indicators": [],
+        "guardrails": [],
+        "measurement_plan": "",
+        "risk_signals": [],
+        "resolved_positions": [],
+        "open_questions": [],
+        "next_steps": "",
+        "proposal_references": [],
+        "release_plan": [],
+        "assumptions": [],
+        "open_decisions": [],
+        "implementation_risks": [],
+        "stakeholder_communications": []
       }
     }
   ],
@@ -1027,11 +1267,23 @@
       "source_model_slug": "<>",
       "content_to_include": {
         "architecture_summary": "",
+        "architecture": "",
         "services": [],
+        "components": [],
         "data_flows": [],
-        "security_measures": [],
+        "interfaces": [],
         "integration_points": [],
-        "rationale": ""
+        "dependency_resolution": [],
+        "conflict_flags": [],
+        "sequencing": "",
+        "risk_mitigations": [],
+        "risk_signals": [],
+        "security_measures": [],
+        "observability_strategy": [],
+        "scalability_plan": [],
+        "resilience_strategy": [],
+        "compliance_controls": [],
+        "open_questions": []
       }
     }
   ],
@@ -1094,12 +1346,26 @@
       "source_model_slug": "<>",
       "content_to_include": [
         {
-          "component": "",
-          "recommended": "",
+          "component_name": "",
+          "recommended_option": "",
+          "rationale": "",
           "alternatives": [],
-          "tradeoffs": ""
+          "tradeoffs": [],
+          "risk_signals": [],
+          "integration_requirements": [],
+          "operational_owners": [],
+          "migration_plan": []
         }
-      ]
+      ],
+      "frontend_stack": {},
+      "backend_stack": {},
+      "data_platform": {},
+      "devops_tooling": {},
+      "security_tooling": {},
+      "shared_libraries": [],
+      "third_party_services": [],
+      "open_questions": [],
+      "next_steps": []
     }
   ],
   "continuation_policy": "If the tech stack output is truncated, continue with reason 'length' and resume documenting the remaining components."
@@ -1117,81 +1383,52 @@
 
 # Transform Requirements
 
-*   `[ ]` 1. [PROMPT] Create planner template `synthesis_pairwise_header_planner_v1` for Step 1.
-    *   `[ ]` 1.a. Author `docs/prompts/synthesis/synthesis_pairwise_header_planner_v1.md` implementing the Step 1 HeaderContext schema (system_materials, context_for_documents, files_to_generate).
-    *   `[ ]` 1.b. Insert a `system_prompts` row for this template (id, name, version, storage path) in a new migration.
-    *   `[ ]` 1.c. Add the Step 1 `dialectic_stage_recipes` row (`step_number=1`, `step_slug='prepare-pairwise-synthesis-header'`, `job_type='PLAN'`, `prompt_type='Planner'`, `granularity_strategy='all_to_one'`, `output_type='HeaderContext'`) with the `inputs_required` / `inputs_relevance` arrays and HeaderContext outputs exactly as defined above.
-    *   `[ ]` 1.d. Create `dialectic_stage_recipe_edges` entries linking the Step 1 planner row to every Step 2 pairwise branch so the worker fans out EXECUTE jobs after the planner completes.
+*   `[✅]` 1. [PROMPT] Create planner template `synthesis_pairwise_header_planner_v1` for Step 1.
+    *   `[✅]` 1.a. Author `docs/prompts/synthesis/synthesis_pairwise_header_planner_v1.md` implementing the Step 1 HeaderContext schema (system_materials, context_for_documents, files_to_generate).
+    *   `[✅]` 1.b. Insert a `system_prompts` row for this template (id, name, version, storage path) in a new migration.
+    *   `[✅]` 1.c. Add the Step 1 `dialectic_stage_recipes` row (`step_number=1`, `step_slug='prepare-pairwise-synthesis-header'`, `job_type='PLAN'`, `prompt_type='Planner'`, `granularity_strategy='all_to_one'`, `output_type='HeaderContext'`) with the `inputs_required` / `inputs_relevance` arrays and HeaderContext outputs exactly as defined above.
+    *   `[✅]` 1.d. Create `dialectic_stage_recipe_edges` entries linking the Step 1 planner row to every Step 2 pairwise branch so the worker fans out EXECUTE jobs after the planner completes.
 
-*   `[ ]` 2. [PROMPT] Create pairwise turn templates for Step 2 branches.
-    *   `[ ]` 2.a. Author turn templates `synthesis_pairwise_business_case_turn_v1.md`, `synthesis_pairwise_feature_spec_turn_v1.md`, `synthesis_pairwise_technical_approach_turn_v1.md`, and `synthesis_pairwise_success_metrics_turn_v1.md` under `docs/prompts/synthesis/` using the JSON schemas provided in Step 2a–2d.
-    *   `[ ]` 2.b. Seed corresponding `system_prompts` rows for each turn template.
-    *   `[ ]` 2.c. Insert the Step 2 `dialectic_stage_recipes` rows (`step_number=2`, `parallel_group=2`, `branch_key` per document) by copying the full `inputs_required` and `inputs_relevance` arrays from the Target definitions—include every Thesis document, all Antithesis documents referenced (e.g., critiques, feasibility assessments, NFRs, risk registers, dependency maps, comparison vectors), and the matching Antithesis feedback entries—so the runtime dependencies match the header context contracts while still emitting `output_type='AssembledDocumentJson'`, `granularity_strategy='one_to_one'`, and the documented `outputs_required` payloads (including the `match_keys` array that captures reviewer lineage or reviewer combinations).
-    *   `[ ]` 2.d. Register `dialectic_stage_recipe_edges` from Step 1 planner to each Step 2 branch.
-    *   `[ ]` 2.e. `[PROMPT]` For each pairwise document key (`synthesis_pairwise_business_case`, `synthesis_pairwise_feature_spec`, `synthesis_pairwise_technical_approach`, `synthesis_pairwise_success_metrics`), author the corresponding `.json` template file in `docs/templates/synthesis/` (naming matches the filenames in the target schema) and seed `dialectic_document_templates` rows pointing to those files, ensuring the template schema exposes the `match_keys` array alongside `lineage_key` / `source_model_slug`. Call out in code review that runtime persistence must store and carry `match_keys` forward so downstream consolidations keep reviewer lineage intact.
+*   `[✅]` 2. [PROMPT] Create pairwise turn templates for Step 2 branches.
+    *   `[✅]` 2.a. Author turn templates `synthesis_pairwise_business_case_turn_v1.md`, `synthesis_pairwise_feature_spec_turn_v1.md`, `synthesis_pairwise_technical_approach_turn_v1.md`, and `synthesis_pairwise_success_metrics_turn_v1.md` under `docs/prompts/synthesis/` using the JSON schemas provided in Step 2a–2d.
+    *   `[✅]` 2.b. Seed corresponding `system_prompts` rows for each turn template.
+    *   `[✅]` 2.c. Insert the Step 2 `dialectic_stage_recipes` rows (`step_number=2`, `parallel_group=2`, `branch_key` per document) by copying the full `inputs_required` and `inputs_relevance` arrays from the Target definitions—include every Thesis document, all Antithesis documents referenced (e.g., critiques, feasibility assessments, NFRs, risk registers, dependency maps, comparison vectors), and the matching Antithesis feedback entries—so the runtime dependencies match the header context contracts while still emitting `output_type='AssembledDocumentJson'`, `granularity_strategy='one_to_one'`, and the documented `outputs_required` payloads (including the `match_keys` array that captures reviewer lineage or reviewer combinations).
+    *   `[✅]` 2.d. Register `dialectic_stage_recipe_edges` from Step 1 planner to each Step 2 branch.
+    *   `[✅]` 2.e. `[PROMPT]` For each pairwise document key (`synthesis_pairwise_business_case`, `synthesis_pairwise_feature_spec`, `synthesis_pairwise_technical_approach`, `synthesis_pairwise_success_metrics`), author the corresponding `.json` template file in `docs/templates/synthesis/` (naming matches the filenames in the target schema) and seed `dialectic_document_templates` rows pointing to those files, ensuring the template schema exposes the `match_keys` array alongside `lineage_key` / `source_model_slug`. Call out in code review that runtime persistence must store and carry `match_keys` forward so downstream consolidations keep reviewer lineage intact.
 
 *   `[ ]` 3. [PROMPT] Create document-level consolidation turn templates for Step 3 branches.
-    *   `[ ]` 3.a. Author templates `synthesis_document_business_case_turn_v1.md`, `synthesis_document_feature_spec_turn_v1.md`, `synthesis_document_technical_approach_turn_v1.md`, and `synthesis_document_success_metrics_turn_v1.md` that ingest the pairwise artifacts and emit the Stage 3 assembled JSON structures.
-    *   `[ ]` 3.b. Add `system_prompts` rows for the Step 3 turn templates.
-    *   `[ ]` 3.c. Insert Step 3 `dialectic_stage_recipes` rows (`step_number=3`, `parallel_group=3`, `branch_key` per document, `job_type='EXECUTE'`, `prompt_type='Turn'`, `granularity_strategy='all_to_one'`, `output_type='AssembledDocumentJson'`) capturing the required inputs, relevance weights, and outputs.
-    *   `[ ]` 3.d. Add `dialectic_stage_recipe_edges` connecting each Step 2 branch to its corresponding Step 3 consolidation row.
-    *   `[ ]` 3.e. `[PROMPT]` Author the consolidated document templates (`synthesis_document_business_case.json`, `synthesis_document_feature_spec.json`, `synthesis_document_technical_approach.json`, `synthesis_document_success_metrics.json`) and seed their `dialectic_document_templates` entries so the storage layer can render assembled JSON outputs for Step 3, including the new `files_to_generate` bindings.
+    *   `[✅]` 3.a. Author templates `synthesis_document_business_case_turn_v1.md`, `synthesis_document_feature_spec_turn_v1.md`, `synthesis_document_technical_approach_turn_v1.md`, and `synthesis_document_success_metrics_turn_v1.md` that ingest the pairwise artifacts and emit the Stage 3 assembled JSON structures.
+    *   `[✅]` 3.b. Add `system_prompts` rows for the Step 3 turn templates.
+    *   `[✅]` 3.c. Insert Step 3 `dialectic_stage_recipes` rows (`step_number=3`, `parallel_group=3`, `branch_key` per document, `job_type='EXECUTE'`, `prompt_type='Turn'`, `granularity_strategy='all_to_one'`, `output_type='AssembledDocumentJson'`) capturing the required inputs, relevance weights, and outputs.
+    *   `[✅]` 3.d. Add `dialectic_stage_recipe_edges` connecting each Step 2 branch to its corresponding Step 3 consolidation row.
+    *   `[✅]` 3.e. `[PROMPT]` Author the consolidated document templates (`synthesis_document_business_case.json`, `synthesis_document_feature_spec.json`, `synthesis_document_technical_approach.json`, `synthesis_document_success_metrics.json`) and seed their `dialectic_document_templates` entries so the storage layer can render assembled JSON outputs for Step 3, including the new `files_to_generate` bindings.
 
 *   `[ ]` 4. [PROMPT] Create planner template `synthesis_final_header_planner_v1` for Step 4.
-    *   `[ ]` 4.a. Author `docs/prompts/synthesis/synthesis_final_header_planner_v1.md` covering the Step 4 HeaderContext schema and continuation policy.
-    *   `[ ]` 4.b. Seed the `system_prompts` row for `synthesis_final_header_planner_v1`.
-    *   `[ ]` 4.c. Insert the Step 4 planner row (`step_number=4`, `job_type='PLAN'`, `prompt_type='Planner'`, `granularity_strategy='all_to_one'`, `output_type='HeaderContext'`) with the listed consolidated-document inputs and relevance ordering.
-    *   `[ ]` 4.d. Create `dialectic_stage_recipe_edges` linking every Step 3 branch to the Step 4 planner so the orchestrator awaits all consolidations before generating the final header.
+    *   `[✅]` 4.a. Author `docs/prompts/synthesis/synthesis_final_header_planner_v1.md` covering the Step 4 HeaderContext schema and continuation policy.
+    *   `[✅]` 4.b. Seed the `system_prompts` row for `synthesis_final_header_planner_v1`.
+    *   `[✅]` 4.c. Insert the Step 4 planner row (`step_number=4`, `job_type='PLAN'`, `prompt_type='Planner'`, `granularity_strategy='all_to_one'`, `output_type='HeaderContext'`) with the listed consolidated-document inputs and relevance ordering.
+    *   `[✅]` 4.d. Create `dialectic_stage_recipe_edges` linking every Step 3 branch to the Step 4 planner so the orchestrator awaits all consolidations before generating the final header.
 
 *   `[ ]` 5. [PROMPT] Create final turn templates for Step 5 deliverables.
-    *   `[ ]` 5.a. Author `synthesis_prd_turn_v1.md`, `synthesis_system_architecture_turn_v1.md`, and `synthesis_tech_stack_turn_v1.md` using the Step 5 schemas (PRD, system architecture overview, tech stack recommendations).
-    *   `[ ]` 5.b. Seed `system_prompts` rows for the three Step 5 turn templates.
-    *   `[ ]` 5.c. Insert Step 5 `dialectic_stage_recipes` rows (`step_number=5`, `parallel_group=5`, `branch_key` per deliverable, `job_type='EXECUTE'`, `prompt_type='Turn'`, `granularity_strategy='all_to_one'`, `output_type='RenderedDocument'`) including all consolidated-document inputs and the header context.
-    *   `[ ]` 5.d. Add recipe edges from the Step 4 planner to each Step 5 branch.
-    *   `[ ]` 5.e. `[PROMPT]` Create and seed the final rendered markdown templates (`synthesis_product_requirements_document.md`, `synthesis_system_architecture_overview.md`, `synthesis_tech_stack_recommendations.md`) in the repository and `dialectic_document_templates` so rendering jobs have canonical outputs. Ensure the system-architecture template exposes discrete sections for `architecture_summary`, `services`, `data_flows`, `security_measures`, `integration_points`, and `rationale` to match the updated schema.
+    *   `[✅]` 5.a. Author `synthesis_prd_turn_v1.md`, `synthesis_system_architecture_turn_v1.md`, and `synthesis_tech_stack_turn_v1.md` using the Step 5 schemas (PRD, system architecture overview, tech stack recommendations).
+    *   `[✅]` 5.b. Seed `system_prompts` rows for the three Step 5 turn templates.
+    *   `[✅]` 5.c. Insert Step 5 `dialectic_stage_recipes` rows (`step_number=5`, `parallel_group=5`, `branch_key` per deliverable, `job_type='EXECUTE'`, `prompt_type='Turn'`, `granularity_strategy='all_to_one'`, `output_type='RenderedDocument'`) including all consolidated-document inputs and the header context.
+    *   `[✅]` 5.d. Add recipe edges from the Step 4 planner to each Step 5 branch.
+    *   `[✅]` 5.e. `[PROMPT]` Create and seed the final rendered markdown templates (`synthesis_product_requirements_document.md`, `synthesis_system_architecture_overview.md`, `synthesis_tech_stack_recommendations.md`) in the repository and `dialectic_document_templates` so rendering jobs have canonical outputs. Ensure the system-architecture template exposes discrete sections for `architecture_summary`, `services`, `data_flows`, `security_measures`, `integration_points`, and `rationale` to match the updated schema.
 
 *   `[ ]` 6. [DB] Update stage configuration and recipe metadata.
-    *   `[ ]` 6.a. Set `dialectic_stages.recipe_name = 'synthesis_v1'` and remove the legacy monolithic `input_artifact_rules` / `expected_output_artifacts` payloads from the stage row; those contracts are now expressed through `dialectic_stage_recipes` and `dialectic_document_templates`.
-    *   `[ ]` 6.b. Audit migrations/seeds and runtime lookups to ensure no code path reintroduces or depends on the removed columns; confirm every consumer now reads inputs/outputs from the recipe-driven tables.
-    *   `[ ]` 6.c. Author and seed a new non-monolithic `synthesis_seed_prompt_v1` template, point `dialectic_stages.default_system_prompt_id` (and any seed-loading callers) to the new template, then remove the legacy `dialectic_synthesis_base_v1` entry once the cut-over is complete.
-    *   `[ ]` 6.d. Populate `dialectic_stages.expected_output_template_ids` with the final deliverable template ids (`prd`, `system_architecture_overview`, `tech_stack_recommendations`) so downstream stages can reference the canonical files.
+    *   `[✅]` 6.a. Set `dialectic_stages.recipe_name = 'synthesis_v1'` and remove the legacy monolithic `input_artifact_rules` / `expected_output_artifacts` payloads from the stage row; those contracts are now expressed through `dialectic_stage_recipes` and `dialectic_document_templates`.
+    *   `[✅]` 6.b. Audit migrations/seeds and runtime lookups to ensure no code path reintroduces or depends on the removed columns; confirm every consumer now reads inputs/outputs from the recipe-driven tables.
+    *   `[✅]` 6.c. Author and seed a new non-monolithic `synthesis_seed_prompt_v1` template, point `dialectic_stages.default_system_prompt_id` (and any seed-loading callers) to the new template, then remove the legacy `dialectic_synthesis_base_v1` entry once the cut-over is complete.
+    *   `[✅]` 6.d. Populate `dialectic_stages.expected_output_template_ids` with the final deliverable template ids (`prd`, `system_architecture_overview`, `tech_stack_recommendations`) so downstream stages can reference the canonical files.
 
-*   `[ ]` 7. [PROMPT] Extend overlay data for multi-step synthesis.
-    *   `[ ]` 7.a. Add planner-specific overlay values (e.g., header context directives, manifest guidance) for `synthesis_pairwise_header_planner_v1` and `synthesis_final_header_planner_v1` and remove the legacy monolithic `output_format` payload so new templates are the only source of deliverable contracts. Double-check for any leftover monolithic directives or style-guide fragments that could reintroduce conflicting guidance after the new overlays land.
-    *   `[ ]` 7.b. Add turn-level overlay fields for pairwise/document/final turns (stage instructions, quality checks, continuation guidance) and reference them in the new templates. Strip any obsolete directives (e.g., `implementation_plan_expansion`) that conflict with per-document outputs.
-    *   `[ ]` 7.c. Ensure all overlays are stored in repository files or migrations with provenance IDs for future updates, documenting both the additions and removals.
-    *   `[ ]` 7.d. Baseline removal of `output_format` and other monolithic overlay keys in the migration bundle so downstream consumers no longer receive conflicting guidance.
+*   `[✅]` 7. [PROMPT] Extend overlay data for multi-step synthesis.
+    *   `[✅]` 7.a. Add planner-specific overlay values (e.g., header context directives, manifest guidance) for `synthesis_pairwise_header_planner_v1` and `synthesis_final_header_planner_v1` and remove the legacy monolithic `output_format` payload so new templates are the only source of deliverable contracts. Double-check for any leftover monolithic directives or style-guide fragments that could reintroduce conflicting guidance after the new overlays land.
+    *   `[✅]` 7.b. Add turn-level overlay fields for pairwise/document/final turns (stage instructions, quality checks, continuation guidance) and reference them in the new templates. Strip any obsolete directives (e.g., `implementation_plan_expansion`) that conflict with per-document outputs.
+    *   `[✅]` 7.c. Ensure all overlays are stored in repository files or migrations with provenance IDs for future updates, documenting both the additions and removals.
+    *   `[✅]` 7.d. Baseline removal of `output_format` and other monolithic overlay keys in the migration bundle so downstream consumers no longer receive conflicting guidance.
 
-*   `[ ]` 8. [CONFIG] Update storage enums and helpers for new artifacts.
-    *   `[ ]` 8.a. Extend `FileType` (and related enums) to include `SynthesisPairwise*`, `SynthesisDocument*`, `SynthesisHeaderContext`, `SynthesisPrd`, `SynthesisArchitecture`, `SynthesisTechStack` as needed.
-    *   `[ ]` 8.b. Update `constructStoragePath` / `deconstructStoragePath` to support the new branch keys, `_continuation_{c}` segments, and header context filenames (`header_context_pairwise.json`, `header_context.json`).
-    *   `[ ]` 8.c. Confirm path helpers align with the Stage File Structure (e.g., `_work/prompts/`, `assembled_json/`, `documents/`).
-
-*   `[ ]` 9. [BE] PromptAssembler and service updates.
-    *   `[ ]` 9.a. Enhance `assemblePlannerPrompt` to handle both Planner A (pairwise) and Planner B (final) options, including saving header contexts and registering `source_prompt_resource_id`.
-    *   `[ ]` 9.b. Teach `assembleTurnPrompt` to map each branch key to the proper template, context files, and storage locations (pairwise, document-level, final deliverables).
-    *   `[ ]` 9.c. Ensure continuation handling covers synthesized JSON chunks and rendered markdown outputs using the continuation policies defined per step; explicitly validate that JSON and markdown continuations resume cleanly so partial artifacts never leak into storage.
-
-*   `[ ]` 10. [DB] Seed recipe graph edges, branch metadata, and file exports.
-    *   `[ ]` 10.a. Populate `dialectic_stage_recipe_edges` for every parent/child relationship (Step 1 → Step 2; Step 2 → Step 3; Step 3 → Step 4; Step 4 → Step 5).
-    *   `[ ]` 10.b. Include `parallel_group` and `branch_key` values in the seed data so worker orchestration can parallelize pairwise/document/final turns predictably.
-    *   `[ ]` 10.c. Seed `files_to_generate` records for each Stage 3 consolidated document so storage lookups resolve the new template filenames.
-
-*   `[ ]` 11. [BE] TypeScript and type-guard changes.
-    *   `[ ]` 11.a. Extend shared types (`DialecticRecipeStep`, `DialecticJobPayload.step_info`, etc.) to represent new prompt types, branch keys, header contexts, and assembled JSON schemas.
-    *   `[ ]` 11.b. Update runtime guards (`isDialecticRecipeStep`, `isDialecticJobPayload`, `isHeaderContext`) to validate the new structures, including the optional `match_keys` array in pairwise outputs.
-    *   `[ ]` 11.c. Document any new manifest/header interfaces so downstream services (Parenthesis, Paralysis) can rely on typed inputs.
-
-*   `[ ]` 12. [TEST-UNIT] / [TEST-INT] Add coverage for new flows.
-    *   `[ ]` 12.a. Create unit tests for each planner/turn assembler verifying template selection, storage paths, and registered artifacts.
-    *   `[ ]` 12.b. Update worker pipeline tests to exercise the full synthesis fan-out/fan-in route (planner → pairwise turns → document consolidations → final planner → final turns) with mocked Supabase inserts, asserting that `match_keys` are persisted on pairwise outputs and remain available when document-level consolidations execute.
-    *   `[ ]` 12.c. Add integration tests ensuring the new document keys feed into Parenthesis once that worksheet is completed.
-
-*   `[ ]` 13. [DOCS] Record provenance and migration references.
-    *   `[ ]` 13.a. Cite the migrations and prompt files added for Synthesis (ids, file paths) within this worksheet.
-    *   `[ ]` 13.b. Cross-reference the updated overlays, recipe rows, and PromptAssembler changes in `Prompt Types and Definitions.md` once implemented.
-
-*   `[ ]` 14. [DEPLOY] Prepare migration bundle.
-    *   `[ ]` 14.a. Bundle new prompt templates, overlay updates, recipe rows, and stage config adjustments into a migration sequence with rollback instructions.
-    *   `[ ]` 14.b. Document deployment order (prompts → recipe rows → edges → overlays → stage config) so environments transition cleanly from the monolithic workflow to `synthesis_v1`, noting the removal of monolithic overlay keys.
-    *   `[ ]` 14.c. Capture additional migration work for seeding Stage 3 `files_to_generate` records and ensuring pairwise outputs include `match_key` during backfill if historical data must be migrated.
+*   `[✅]` 10. [DB] Seed recipe graph edges, branch metadata, and file exports.
+    *   `[✅]` 10.a. Populate `dialectic_stage_recipe_edges` for every parent/child relationship (Step 1 → Step 2; Step 2 → Step 3; Step 3 → Step 4; Step 4 → Step 5).
+    *   `[✅]` 10.b. Include `parallel_group` and `branch_key` values in the seed data so worker orchestration can parallelize pairwise/document/final turns predictably.
+    *   `[✅]` 10.c. Seed `files_to_generate` records for each Stage 3 consolidated document so storage lookups resolve the new template filenames.

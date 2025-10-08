@@ -329,6 +329,12 @@ BEGIN
                  "next_steps": ""
                }
              }
+           ],
+           "files_to_generate": [
+             {
+               "template_filename": "thesis_business_case.md",
+               "from_document_key": "business_case"
+             }
            ]
         }'::jsonb
     )
@@ -760,6 +766,12 @@ BEGIN
                  "next_steps": ""
                }
              }
+           ],
+           "files_to_generate": [
+             {
+               "template_filename": "thesis_success_metrics.md",
+               "from_document_key": "success_metrics"
+             }
            ]
         }'::jsonb
     )
@@ -1045,6 +1057,16 @@ BEGIN
         (gen_random_uuid(), v_instance_id, v_instance_planner_step_id, v_instance_technical_step_id),
         (gen_random_uuid(), v_instance_id, v_instance_planner_step_id, v_instance_success_step_id)
     ON CONFLICT (instance_id, from_step_id, to_step_id) DO NOTHING;
+
+    -- Populate expected_output_template_ids for Thesis stage
+    UPDATE public.dialectic_stages
+    SET expected_output_template_ids = ARRAY[
+        v_business_doc_template_id,
+        v_feature_doc_template_id,
+        v_technical_doc_template_id,
+        v_success_doc_template_id
+    ]
+    WHERE id = v_stage_id;
 
     -- Remove legacy expected_output_artifacts_json payload from Thesis overlay
     UPDATE public.domain_specific_prompt_overlays

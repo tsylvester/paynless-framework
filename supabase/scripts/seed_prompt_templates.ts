@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { readFile, readdir, stat } from 'fs/promises'
-import { resolve, join, relative } from 'path'
+import { resolve, join, relative, extname } from 'path'
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -17,6 +17,7 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 type UploadItem = {
   filePath: string
   storagePath: string
+  contentType: string
 }
 
 async function collectFiles(dir: string, prefix = ''): Promise<UploadItem[]> {
@@ -31,7 +32,13 @@ async function collectFiles(dir: string, prefix = ''): Promise<UploadItem[]> {
     if (stats.isDirectory()) {
       uploads.push(...(await collectFiles(fullPath, relPath)))
     } else {
-      uploads.push({ filePath: fullPath, storagePath: relPath })
+      const extension = extname(entry).toLowerCase()
+      const contentType = extension === '.json'
+        ? 'application/json'
+        : extension === '.md'
+          ? 'text/markdown'
+          : 'application/octet-stream'
+      uploads.push({ filePath: fullPath, storagePath: relPath, contentType })
     }
   }
 
@@ -40,14 +47,20 @@ async function collectFiles(dir: string, prefix = ''): Promise<UploadItem[]> {
 
 async function main() {
   console.log(`Collecting prompt templates from ${PROMPTS_ROOT}`)
-  const files = await collectFiles(PROMPTS_ROOT)
+  const promptFiles = await collectFiles(PROMPTS_ROOT)
+
+  const templatesRoot = resolve(process.cwd(), 'docs', 'templates')
+  console.log(`Collecting document templates from ${templatesRoot}`)
+  const templateFiles = await collectFiles(templatesRoot, 'templates')
+
+  const files = [...promptFiles, ...templateFiles]
 
   if (files.length === 0) {
     console.warn('No files found to upload.')
     return
   }
 
-  for (const { filePath, storagePath } of files) {
+  for (const { filePath, storagePath, contentType } of files) {
     const data = await readFile(filePath)
     const uploadPath = storagePath.replace(/\\/g, '/')
     console.log(`Uploading ${relative(process.cwd(), filePath)} -> ${uploadPath}`)
@@ -56,7 +69,7 @@ async function main() {
       .from(BUCKET)
       .upload(uploadPath, data, {
         upsert: true,
-        contentType: 'text/markdown',
+        contentType,
       })
 
     if (error) {

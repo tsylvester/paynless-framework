@@ -24,6 +24,12 @@ DECLARE
     v_instance_nfr_step_id UUID;
     v_instance_dependency_step_id UUID;
     v_instance_comparison_step_id UUID;
+    v_business_doc_template_id UUID;
+    v_feasibility_doc_template_id UUID;
+    v_risk_doc_template_id UUID;
+    v_nfr_doc_template_id UUID;
+    v_dependency_doc_template_id UUID;
+    v_comparison_doc_template_id UUID;
 BEGIN
     INSERT INTO public.system_prompts (
         id,
@@ -231,6 +237,54 @@ BEGIN
     SELECT id INTO v_stage_id FROM public.dialectic_stages WHERE stage_slug = 'antithesis';
     IF v_stage_id IS NULL THEN
         RAISE EXCEPTION 'Antithesis stage not found; ensure base seeds are applied before running this migration.';
+    END IF;
+
+    SELECT id
+    INTO v_business_doc_template_id
+    FROM public.dialectic_document_templates
+    WHERE name = 'antithesis_business_case_critique' AND is_active;
+    IF v_business_doc_template_id IS NULL THEN
+        RAISE EXCEPTION 'Missing document template: antithesis_business_case_critique';
+    END IF;
+
+    SELECT id
+    INTO v_feasibility_doc_template_id
+    FROM public.dialectic_document_templates
+    WHERE name = 'antithesis_feasibility_assessment' AND is_active;
+    IF v_feasibility_doc_template_id IS NULL THEN
+        RAISE EXCEPTION 'Missing document template: antithesis_feasibility_assessment';
+    END IF;
+
+    SELECT id
+    INTO v_risk_doc_template_id
+    FROM public.dialectic_document_templates
+    WHERE name = 'antithesis_risk_register' AND is_active;
+    IF v_risk_doc_template_id IS NULL THEN
+        RAISE EXCEPTION 'Missing document template: antithesis_risk_register';
+    END IF;
+
+    SELECT id
+    INTO v_nfr_doc_template_id
+    FROM public.dialectic_document_templates
+    WHERE name = 'antithesis_non_functional_requirements' AND is_active;
+    IF v_nfr_doc_template_id IS NULL THEN
+        RAISE EXCEPTION 'Missing document template: antithesis_non_functional_requirements';
+    END IF;
+
+    SELECT id
+    INTO v_dependency_doc_template_id
+    FROM public.dialectic_document_templates
+    WHERE name = 'antithesis_dependency_map' AND is_active;
+    IF v_dependency_doc_template_id IS NULL THEN
+        RAISE EXCEPTION 'Missing document template: antithesis_dependency_map';
+    END IF;
+
+    SELECT id
+    INTO v_comparison_doc_template_id
+    FROM public.dialectic_document_templates
+    WHERE name = 'antithesis_comparison_vector' AND is_active;
+    IF v_comparison_doc_template_id IS NULL THEN
+        RAISE EXCEPTION 'Missing document template: antithesis_comparison_vector';
     END IF;
 
     INSERT INTO public.dialectic_recipe_templates (
@@ -680,6 +734,12 @@ BEGIN
                  "notes": []
                }
              }
+           ],
+           "files_to_generate": [
+             {
+               "template_filename": "antithesis_business_case_critique.md",
+               "from_document_key": "business_case_critique"
+             }
            ]
         }'::jsonb
     )
@@ -802,6 +862,12 @@ BEGIN
                  "findings": []
                }
              }
+           ],
+           "files_to_generate": [
+             {
+               "template_filename": "antithesis_feasibility_assessment.md",
+               "from_document_key": "technical_feasibility_assessment"
+             }
            ]
         }'::jsonb
     )
@@ -921,6 +987,12 @@ BEGIN
                    "mitigation": ""
                  }
                ]
+             }
+           ],
+           "files_to_generate": [
+             {
+               "template_filename": "antithesis_risk_register.md",
+               "from_document_key": "risk_register"
              }
            ]
         }'::jsonb
@@ -1042,6 +1114,12 @@ BEGIN
                  "compliance"
                ]
              }
+           ],
+           "files_to_generate": [
+             {
+               "template_filename": "antithesis_non_functional_requirements.md",
+               "from_document_key": "non_functional_requirements"
+             }
            ]
         }'::jsonb
     )
@@ -1159,6 +1237,12 @@ BEGIN
                  "conflict_flags": []
                }
              }
+           ],
+           "files_to_generate": [
+             {
+               "template_filename": "antithesis_dependency_map.md",
+               "from_document_key": "dependency_map"
+             }
            ]
         }'::jsonb
     )
@@ -1264,32 +1348,38 @@ BEGIN
         '{
            "documents": [
              {
-               "document_key": "comparison_vector",
-               "template_filename": "antithesis_comparison_vector.json",
-               "artifact_class": "assembled_document_json",
-               "lineage_key": "<from the filename of the file being critiqued>",
-               "source_model_slug": "<from the filename of the file being critiqued>",
-               "file_type": "json",
-               "content_to_include": {
-                 "proposal": {
-                   "lineage_key": "",
-                   "source_model_slug": ""
-                 },
-                 "dimensions": {
-                   "feasibility": { "score": 0, "rationale": "" },
-                   "complexity": { "score": 0, "rationale": "" },
-                   "security": { "score": 0, "rationale": "" },
-                   "performance": { "score": 0, "rationale": "" },
-                   "maintainability": { "score": 0, "rationale": "" },
-                   "scalability": { "score": 0, "rationale": "" },
-                   "cost": { "score": 0, "rationale": "" },
-                   "time_to_market": { "score": 0, "rationale": "" },
-                   "compliance_risk": { "score": 0, "rationale": "" },
-                   "alignment_with_constraints": { "score": 0, "rationale": "" }
-                 }
-               }
-             }
-           ]
+              "document_key": "comparison_vector",
+              "template_filename": "antithesis_comparison_vector.json",
+              "artifact_class": "assembled_document_json",
+              "lineage_key": "<from the filename of the file being critiqued>",
+              "source_model_slug": "<from the filename of the file being critiqued>",
+              "file_type": "json",
+              "content_to_include": {
+                "proposal": {
+                  "lineage_key": "",
+                  "source_model_slug": ""
+                },
+                "dimensions": {
+                  "feasibility": { "score": 0, "rationale": "" },
+                  "complexity": { "score": 0, "rationale": "" },
+                  "security": { "score": 0, "rationale": "" },
+                  "performance": { "score": 0, "rationale": "" },
+                  "maintainability": { "score": 0, "rationale": "" },
+                  "scalability": { "score": 0, "rationale": "" },
+                  "cost": { "score": 0, "rationale": "" },
+                  "time_to_market": { "score": 0, "rationale": "" },
+                  "compliance_risk": { "score": 0, "rationale": "" },
+                  "alignment_with_constraints": { "score": 0, "rationale": "" }
+                }
+              }
+            }
+          ],
+          "files_to_generate": [
+            {
+              "template_filename": "antithesis_comparison_vector.json",
+              "from_document_key": "comparison_vector"
+            }
+          ]
         }'::jsonb
     )
     ON CONFLICT (template_id, step_key) DO UPDATE
@@ -1586,12 +1676,24 @@ BEGIN
         END IF;
     END IF;
 
+    -- Populate expected_output_template_ids for Antithesis stage
+    UPDATE public.dialectic_stages
+    SET expected_output_template_ids = ARRAY[
+        v_business_doc_template_id,
+        v_feasibility_doc_template_id,
+        v_risk_doc_template_id,
+        v_nfr_doc_template_id,
+        v_dependency_doc_template_id,
+        v_comparison_doc_template_id
+    ]
+    WHERE id = v_stage_id;
+
     UPDATE public.domain_specific_prompt_overlays
-    SET overlay_values = overlay_values - 'expected_output_artifacts_json',
+    SET overlay_values = overlay_values - 'expected_output_artifacts_json' - 'output_format',
         updated_at = now()
     WHERE system_prompt_id = (
             SELECT id FROM public.system_prompts WHERE name = 'dialectic_antithesis_base_v1'
         )
-      AND overlay_values ? 'expected_output_artifacts_json';
+      AND (overlay_values ? 'expected_output_artifacts_json' OR overlay_values ? 'output_format');
 END $$;
 

@@ -136,7 +136,8 @@ CREATE INDEX idx_stage_recipe_edges_instance_from
 -- Update dialectic_stages to reference recipes and instances
 ALTER TABLE public.dialectic_stages
     ADD COLUMN recipe_template_id UUID REFERENCES public.dialectic_recipe_templates (id) ON DELETE SET NULL,
-    ADD COLUMN active_recipe_instance_id UUID;
+    ADD COLUMN active_recipe_instance_id UUID,
+    ADD COLUMN expected_output_template_ids UUID[] NOT NULL DEFAULT '{}'::uuid[];
 
 -- Ensure active instance references the same stage
 ALTER TABLE public.dialectic_stage_recipe_instances
@@ -160,3 +161,5 @@ COMMENT ON COLUMN public.dialectic_stage_recipe_steps.granularity_strategy IS 'G
 ALTER TABLE public.dialectic_stages
     DROP COLUMN IF EXISTS input_artifact_rules,
     DROP COLUMN IF EXISTS expected_output_artifacts;
+
+COMMENT ON COLUMN public.dialectic_stages.expected_output_template_ids IS 'UUID list of rendered document templates expected for the stage.';

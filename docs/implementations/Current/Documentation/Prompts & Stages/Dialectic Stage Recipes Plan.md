@@ -78,6 +78,26 @@ Constraints / indexes:
   UNIQUE (stage_id)
 ------------------------------------------------------------------------------------
 
+Table: dialectic_stages (current)
+------------------------------------------------------------------------------------
+  id                      uuid PRIMARY KEY DEFAULT gen_random_uuid()
+  slug                    text NOT NULL UNIQUE
+  display_name            text NOT NULL
+  description             text
+  default_system_prompt_id uuid REFERENCES system_prompts (id) ON DELETE SET NULL
+  recipe_template_id      uuid REFERENCES dialectic_recipe_templates (id) ON DELETE SET NULL
+  active_recipe_instance_id uuid
+  expected_output_template_ids uuid[] NOT NULL DEFAULT '{}'::uuid[]
+  created_at              timestamptz NOT NULL DEFAULT now()
+  updated_at              timestamptz NOT NULL DEFAULT now()
+
+Constraints / indexes:
+------------------------------------------------------------------------------------
+  FOREIGN KEY (id, active_recipe_instance_id)
+    REFERENCES dialectic_stage_recipe_instances (stage_id, id)
+    ON DELETE SET NULL
+------------------------------------------------------------------------------------
+
 Table: dialectic_stage_recipe_steps
 ------------------------------------------------------------------------------------
   id                      uuid PRIMARY KEY DEFAULT gen_random_uuid()
@@ -202,11 +222,11 @@ Outputs schema (migrated from expected_output_artifacts_json): // this is an exa
 Notes:
 - Every seed prompt consumption must appear explicitly in `inputs_required` (type `seed_prompt`, document key `seed_prompt`). No extra boolean flag is stored.
 - Every header_context production must appear explicitly in `outputs_required` (type `header_context`, document key `header_context`). No extra boolean flag is stored.
-- During migration, values from `dialectic_stages.input_artifact_rules` move into `recipe_template_steps.inputs_required` with document keys from the stage worksheets; `expected_output_artifacts_jsonb` migrates into `outputs_required`.
+- During migration, values from `dialectic_stages.input_artifact_rules` move into `recipe_template_steps.inputs_required` with document keys from the stage worksheets; `expected_output_artifacts_jsonb` migrates into `outputs_required`. Stage rows now capture the canonical rendered deliverables through `expected_output_template_ids (uuid[])`.
 - `inputs_relevance` drives prompt-assembly ordering: store each referenced document once with a normalized float so the RAG layer can prioritize what to include, compress, or drop when token windows are tight. Stages without overrides can fall back to defaults (empty array).
 - Prompt templates remain referenced via `system_prompts.prompt_template_id`.
 - Template identifiers (`recipe_name`, `recipe_version`) are immutable once published; new iterations insert new rows so historic stages retain their original template reference.
-- `dialectic_stages` gains `recipe_template_id` (FK to `dialectic_recipe_templates`) and no longer stores `input_artifact_rules` or `expected_output_artifacts`; those columns can be dropped after migration.
+- `dialectic_stages` gains `recipe_template_id` (FK to `dialectic_recipe_templates`), `active_recipe_instance_id` (FK to `dialectic_stage_recipe_instances`), and `expected_output_template_ids` while dropping the legacy `input_artifact_rules` and `expected_output_artifacts` payloads.
 - Stage fan-out/fan-in continues to rely on DAG edges; multiple edges model parallel execution instead of scalar next/previous columns.
 - Worker orchestration determines readiness by checking that every `from_step_id` in the relevant edges table has completed for a given `to_step_id`.
 - The rest of the plan (inputs/outputs schema, versioning rules, seed prompt linkage) remains unchanged.

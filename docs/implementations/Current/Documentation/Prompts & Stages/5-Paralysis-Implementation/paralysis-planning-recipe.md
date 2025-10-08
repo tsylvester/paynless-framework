@@ -688,7 +688,7 @@
 *   `[ ]` 3. `[PROMPT]` Author and register planner/turn templates and overlays.
     *   `[ ]` 3.a. Add repository prompt files for `paralysis_planner_header_v1`, `paralysis_actionable_checklist_turn_v1`, `paralysis_updated_master_plan_turn_v1`, and `paralysis_advisor_recommendations_turn_v1`, matching the schemas in this document.
     *   `[ ]` 3.b. Insert the templates into `system_prompts` via migration, recording ids, names, versions, prompt types, and file paths for prompt assembler retrieval.
-    *   `[ ]` 3.c. Update the Software Development overlay so `style_guide_markdown`, `generation_limits`, `document_order`, and iteration notes reference the new single advisor artifact and rely on the recipe’s `outputs_required` data instead of the deprecated `expected_output_artifacts_json` field.
+    *   `[ ]` 3.c. Update the Software Development overlay so `style_guide_markdown`, `generation_limits`, `document_order`, and iteration notes reference the new single advisor artifact and rely on the recipe’s `outputs_required` data instead of the deprecated `expected_output_artifacts_json` field. Review and remove obsolete keys from the domain_specific_prompt_overlays.overlay_values object. 
     *   `[ ]` 3.d. Refresh `Prompt Templating Examples.md`, stage worksheets, and related docs to document the four templates and the consolidated advisor artifact structure.
 
 *   `[ ]` 4. `[CONFIG]` Extend storage utilities, enums, and type guards.
