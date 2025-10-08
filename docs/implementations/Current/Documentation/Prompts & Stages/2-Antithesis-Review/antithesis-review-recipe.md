@@ -518,6 +518,8 @@
       "content_to_include": {
         "strengths": [],
         "weaknesses": [],
+        "opportunities": [],
+        "threats": [],
         "recommendations": [],
         "notes": []
       }
@@ -1184,75 +1186,52 @@
 
 # Transform Requirements
 
-*   `[ ]` 1. [PROMPT] Create planner prompt template `antithesis_planner_review_v1`
-    *   `[ ]` 1.a. Author template file `docs/prompts/antithesis/antithesis_planner_review_v1.md` that emits the HeaderContext schema defined above (including `proposal_identifier.lineage_key` and `proposal_identifier.source_model_slug`, review focus, normalization guidance, document contexts).
-    *   `[ ]` 1.b. Add the `system_prompts` row for `antithesis_planner_review_v1`, recording id/name/version/file path in the migration bundle.
-    *   `[ ]` 1.c. Insert the Step 1 `dialectic_stage_recipes` row with `step_number = 1`, `step_slug = 'prepare-proposal-review-plan'`, `job_type = 'PLAN'`, `prompt_type = 'Planner'`, the full `inputs_required` / `inputs_relevance` arrays, and the `outputs_required` payload matching the HeaderContext JSON.
-    *   `[ ]` 1.d. Populate `dialectic_stage_recipe_edges` to make the Step 1 planner the parent for each Step 2 branch (`business_case_critique`, `technical_feasibility_assessment`, `risk_register`, `non_functional_requirements`, `dependency_map`, `comparison_vector`).
-    *   `[ ]` 1.e. Update the planner template migration to emit the canonical `system_materials` keys while adding the `review_metadata` block exactly as documented—specifically ensure `proposal_identifier.lineage_key` and `proposal_identifier.source_model_slug` are populated for worker metadata.
+*   `[✅]` 1. [PROMPT] Create planner prompt template `antithesis_planner_review_v1`
+    *   `[✅]` 1.a. Author template file `docs/prompts/antithesis/antithesis_planner_review_v1.md` that emits the HeaderContext schema defined above (including `proposal_identifier.lineage_key` and `proposal_identifier.source_model_slug`, review focus, normalization guidance, document contexts).
+    *   `[✅]` 1.b. Add the `system_prompts` row for `antithesis_planner_review_v1`, recording id/name/version/file path in the migration bundle.
+    *   `[✅]` 1.c. Insert the Step 1 `dialectic_stage_recipes` row with `step_number = 1`, `step_slug = 'prepare-proposal-review-plan'`, `job_type = 'PLAN'`, `prompt_type = 'Planner'`, the full `inputs_required` / `inputs_relevance` arrays, and the `outputs_required` payload matching the HeaderContext JSON.
+    *   `[✅]` 1.d. Populate `dialectic_stage_recipe_edges` to make the Step 1 planner the parent for each Step 2 branch (`business_case_critique`, `technical_feasibility_assessment`, `risk_register`, `non_functional_requirements`, `dependency_map`, `comparison_vector`).
+    *   `[✅]` 1.e. Update the planner template migration to emit the canonical `system_materials` keys while adding the `review_metadata` block exactly as documented—specifically ensure `proposal_identifier.lineage_key` and `proposal_identifier.source_model_slug` are populated for worker metadata.
 
-*   `[ ]` 2. [PROMPT] Create turn prompt template `antithesis_business_case_critique_turn_v1`
-    *   `[ ]` 2.a. Author template file `docs/prompts/antithesis/antithesis_business_case_critique_turn_v1.md` aligned to the critique schema (strengths, weaknesses, recommendations, notes).
-    *   `[ ]` 2.b. Add the corresponding `system_prompts` row.
-    *   `[ ]` 2.c. Insert the Step 2 recipe row with `branch_key = 'business_case_critique'`, `parallel_group = 2`, the documented `inputs_required` / `inputs_relevance`, and the rendered document contract in `outputs_required`.
-    *   `[ ]` 2.d. Add the edge linking the planner step to this branch.
+*   `[✅]` 2. [PROMPT] Create turn prompt template `antithesis_business_case_critique_turn_v1`
+    *   `[✅]` 2.a. Author template file `docs/prompts/antithesis/antithesis_business_case_critique_turn_v1.md` aligned to the critique schema (strengths, weaknesses, recommendations, notes).
+    *   `[✅]` 2.b. Add the corresponding `system_prompts` row.
+    *   `[✅]` 2.c. Insert the Step 2 recipe row with `branch_key = 'business_case_critique'`, `parallel_group = 2`, the documented `inputs_required` / `inputs_relevance`, and the rendered document contract in `outputs_required`.
+    *   `[✅]` 2.d. Add the edge linking the planner step to this branch.
 
-*   `[ ]` 3. [PROMPT] Create turn prompt template `antithesis_feasibility_assessment_turn_v1`
-    *   `[ ]` 3.a. Author template file `docs/prompts/antithesis/antithesis_feasibility_assessment_turn_v1.md` that walks feasibility across team, timeline, cost, integration, compliance.
-    *   `[ ]` 3.b. Add the `system_prompts` row and ensure the migration ties it to the recipe row.
-    *   `[ ]` 3.c. Insert the Step 2 recipe row for `branch_key = 'technical_feasibility_assessment'` with the full `inputs_required`, `inputs_relevance`, and Markdown output contract.
-    *   `[ ]` 3.d. Add the dependency edge from the planner to this branch.
+*   `[✅]` 3. [PROMPT] Create turn prompt template `antithesis_feasibility_assessment_turn_v1`
+    *   `[✅]` 3.a. Author template file `docs/prompts/antithesis/antithesis_feasibility_assessment_turn_v1.md` that walks feasibility across team, timeline, cost, integration, compliance.
+    *   `[✅]` 3.b. Add the `system_prompts` row and ensure the migration ties it to the recipe row.
+    *   `[✅]` 3.c. Insert the Step 2 recipe row for `branch_key = 'technical_feasibility_assessment'` with the full `inputs_required`, `inputs_relevance`, and Markdown output contract.
+    *   `[✅]` 3.d. Add the dependency edge from the planner to this branch.
 
-*   `[ ]` 4. [PROMPT] Create turn prompt template `antithesis_risk_register_turn_v1`
-    *   `[ ]` 4.a. Author template file `docs/prompts/antithesis/antithesis_risk_register_turn_v1.md` capturing risk, impact, likelihood, mitigation fields.
-    *   `[ ]` 4.b. Add the `system_prompts` row.
-    *   `[ ]` 4.c. Insert the Step 2 recipe row for `branch_key = 'risk_register'`, including `inputs_required`, `inputs_relevance`, and the structured risk list in `outputs_required`.
-    *   `[ ]` 4.d. Add the edge from the planner step to this branch.
+*   `[✅]` 4. [PROMPT] Create turn prompt template `antithesis_risk_register_turn_v1`
+    *   `[✅]` 4.a. Author template file `docs/prompts/antithesis/antithesis_risk_register_turn_v1.md` capturing risk, impact, likelihood, mitigation fields.
+    *   `[✅]` 4.b. Add the `system_prompts` row.
+    *   `[✅]` 4.c. Insert the Step 2 recipe row for `branch_key = 'risk_register'`, including `inputs_required`, `inputs_relevance`, and the structured risk list in `outputs_required`.
+    *   `[✅]` 4.d. Add the edge from the planner step to this branch.
 
-*   `[ ]` 5. [PROMPT] Create turn prompt template `antithesis_non_functional_requirements_turn_v1`
-    *   `[ ]` 5.a. Author template file `docs/prompts/antithesis/antithesis_non_functional_requirements_turn_v1.md` that evaluates the six NFR dimensions.
-    *   `[ ]` 5.b. Add the matching `system_prompts` row.
-    *   `[ ]` 5.c. Insert the Step 2 recipe row for `branch_key = 'non_functional_requirements'` with its `inputs_required`, `inputs_relevance`, and Markdown schema.
-    *   `[ ]` 5.d. Add the planner→branch edge.
+*   `[✅]` 5. [PROMPT] Create turn prompt template `antithesis_non_functional_requirements_turn_v1`
+    *   `[✅]` 5.a. Author template file `docs/prompts/antithesis/antithesis_non_functional_requirements_turn_v1.md` that evaluates the six NFR dimensions.
+    *   `[✅]` 5.b. Add the matching `system_prompts` row.
+    *   `[✅]` 5.c. Insert the Step 2 recipe row for `branch_key = 'non_functional_requirements'` with its `inputs_required`, `inputs_relevance`, and Markdown schema.
+    *   `[✅]` 5.d. Add the planner→branch edge.
 
-*   `[ ]` 6. [PROMPT] Create turn prompt template `antithesis_dependency_map_turn_v1`
-    *   `[ ]` 6.a. Author template file `docs/prompts/antithesis/antithesis_dependency_map_turn_v1.md` to generate the dependency map narrative.
-    *   `[ ]` 6.b. Register the `system_prompts` row.
-    *   `[ ]` 6.c. Insert the Step 2 recipe row for `branch_key = 'dependency_map'` with documented `inputs_required`, `inputs_relevance`, and the rendered document payload.
-    *   `[ ]` 6.d. Add the planner→branch edge.
+*   `[✅]` 6. [PROMPT] Create turn prompt template `antithesis_dependency_map_turn_v1`
+    *   `[✅]` 6.a. Author template file `docs/prompts/antithesis/antithesis_dependency_map_turn_v1.md` to generate the dependency map narrative.
+    *   `[✅]` 6.b. Register the `system_prompts` row.
+    *   `[✅]` 6.c. Insert the Step 2 recipe row for `branch_key = 'dependency_map'` with documented `inputs_required`, `inputs_relevance`, and the rendered document payload.
+    *   `[✅]` 6.d. Add the planner→branch edge.
 
-*   `[ ]` 7. [PROMPT] Create turn prompt template `antithesis_comparison_vector_turn_v1`
-    *   `[ ]` 7.a. Author template file `docs/prompts/antithesis/antithesis_comparison_vector_turn_v1.md` that emits the JSON vector with normalized scores/rationales.
-    *   `[ ]` 7.b. Add the `system_prompts` row.
-    *   `[ ]` 7.c. Insert the Step 2 recipe row for `branch_key = 'comparison_vector'` with `output_type = 'AssembledDocumentJson'`, the `inputs_required`, `inputs_relevance`, and JSON schema in `outputs_required`.
-    *   `[ ]` 7.d. Add the edge from the planner step to this branch.
+*   `[✅]` 7. [PROMPT] Create turn prompt template `antithesis_comparison_vector_turn_v1`
+    *   `[✅]` 7.a. Author template file `docs/prompts/antithesis/antithesis_comparison_vector_turn_v1.md` that emits the JSON vector with normalized scores/rationales.
+    *   `[✅]` 7.b. Add the `system_prompts` row.
+    *   `[✅]` 7.c. Insert the Step 2 recipe row for `branch_key = 'comparison_vector'` with `output_type = 'AssembledDocumentJson'`, the `inputs_required`, `inputs_relevance`, and JSON schema in `outputs_required`.
+    *   `[✅]` 7.d. Add the edge from the planner step to this branch.
 
 *   `[ ]` 8. [DB] Stage configuration updates
-    *   `[ ]` 8.a. Update the `dialectic_stages` row for `antithesis` to reference `recipe_name = antithesis_v1`, removing legacy `input_artifact_rules` / `expected_output_artifacts` JSON once the recipe data is authoritative.
-    *   `[ ]` 8.b. Trim `domain_specific_prompt_overlays.overlay_values` for Antithesis to drop redundant `expected_output_artifacts_json` once the planner template supplies the structure, and replace legacy placeholders (e.g., `model_id`) with the metadata required by the target header context (`proposal_identifier.lineage_key`, `proposal_identifier.source_model_slug`, etc.).
-    *   `[ ]` 8.c. Extend the migration so each Step 2 recipe row persists the `inputs_required` and `inputs_relevance` arrays documented above (including thesis document and feedback artifacts per branch) and ensures feedback sources use the base document keys with `type = 'feedback'`.
-    *   `[ ]` 8.d. Verify the Stage File Structure enumerates storage locations for per-document feedback artifacts and reference those paths when populating `inputs_required` so migrations and runtime logic stay aligned.
-    *   `[ ]` 8.e. `[DB]` Author a migration and seed update that rewrites the Antithesis `dialectic_stages.input_artifact_rules` to use the document-centric sources (`type: "document" / "feedback"`) with the target `document_key` names and removes the legacy contribution-based entries.
-    *   `[ ]` 8.f. `[BE]` Update `parseInputArtifactRules`, related types, and type guards so the application accepts the new `type: "document"` / `"header_context"` rules before persisting the revised recipe data.
-
-*   `[ ]` 9. [BE] TypeScript and type-guard adjustments
-    *   `[ ]` 9.a. Model the Antithesis HeaderContext schema (`proposal_identifier.lineage_key`, `proposal_identifier.source_model_slug`, review focus, normalization guidance, document contexts) in shared types and update `type_guards.ts` accordingly.
-    *   `[ ]` 9.b. Extend job payload / recipe step guards to validate the new `inputs_relevance` arrays and ensure every Antithesis step declares the required Thesis document keys.
-    *   `[ ]` 9.c. Capture the comparison vector JSON structure (scores + rationales) in shared types to support downstream validation.
-
-*   `[ ]` 10. [BE] PromptAssembler & worker updates
-    *   `[ ]` 10.a. Ensure `PromptAssembler` persists the planner HeaderContext to storage and injects the `inputs_relevance` ordering when assembling turn prompts for Antithesis.
-    *   `[ ]` 10.b. Update any worker logic that schedules Antithesis jobs so that the new recipe rows, branch keys, and `parallel_group` values are honored.
-    *   `[ ]` 10.c. When building execute job payloads, include the planner-supplied `lineage_key` and `source_model_slug`, and ensure `executeModelCallAndSave` writes `document_relationships.source_group` from that lineage key before saving contributions.
-
-*   `[ ]` 11. [TEST-UNIT] / [TEST-INT] Test and fixture updates
-    *   `[ ]` 11.a. Add fixtures for all new Antithesis prompt templates and HeaderContext outputs.
-    *   `[ ]` 11.b. Update unit tests for `assemblePlannerPrompt`, `assembleTurnPrompt`, and related helpers to assert the new artifact ids, storage paths, relevance ordering, and presence of `lineage_key` / `source_model_slug` metadata.
-    *   `[ ]` 11.c. Refresh worker integration tests to expect the per-proposal fan-out (six artifacts) instead of the legacy monolithic review response and assert that `document_relationships.source_group` matches the planner-supplied lineage key.
-
-*   `[ ]` 12. [BE] / [PROMPT] File manager & path constructor updates
-    *   `[ ]` 12.a. Add Antithesis document keys (`business_case_critique`, `technical_feasibility_assessment`, `risk_register`, `non_functional_requirements`, `dependency_map`, `comparison_vector`) to the file-type enums and path constructor/deconstructor utilities.
-    *   `[ ]` 12.b. Update storage helpers so planner outputs land in `context/header_context.json`, per-document feedback paths (`user_feedback/{model_slug}_{n}_{document_key}_feedback.md`) are recognized, and each branch artifact is saved under the documented stage file structure.
-
-*   `[ ]` 13. [DB] Seed/migration provenance
-    *   `[ ]` 13.a. Record the source migration/files (e.g., `20250613190311_domains_and_processes_improvement.sql`) for the existing Antithesis overlays so the data transform tracks provenance alongside the new prompts and recipe rows.
+    *   `[✅]` 8.a. Update the `dialectic_stages` row for `antithesis` to reference `recipe_name = antithesis_v1`, removing legacy `input_artifact_rules` / `expected_output_artifacts` JSON once the recipe data is authoritative.
+    *   `[✅]` 8.b. Trim `domain_specific_prompt_overlays.overlay_values` for Antithesis to drop redundant `expected_output_artifacts_json` once the planner template supplies the structure, and replace legacy placeholders (e.g., `model_id`) with the metadata required by the target header context (`proposal_identifier.lineage_key`, `proposal_identifier.source_model_slug`, etc.).
+    *   `[✅]` 8.c. Extend the migration so each Step 2 recipe row persists the `inputs_required` and `inputs_relevance` arrays documented above (including thesis document and feedback artifacts per branch) and ensures feedback sources use the base document keys with `type = 'feedback'`.
+    *   `[✅]` 8.d. Verify the Stage File Structure enumerates storage locations for per-document feedback artifacts and reference those paths when populating `inputs_required` so migrations and runtime logic stay aligned.
+    *   `[✅]` 8.e. `[DB]` Author a migration and seed update that rewrites the Antithesis `dialectic_stages.input_artifact_rules` to use the document-centric sources (`type: "document" / "feedback"`) with the target `document_key` names and removes the legacy contribution-based entries.

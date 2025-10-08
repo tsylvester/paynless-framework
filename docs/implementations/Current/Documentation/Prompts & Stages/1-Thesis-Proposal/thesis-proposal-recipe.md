@@ -540,18 +540,7 @@
   *   `[✅]` 7.c. Update `supabase/seed.sql` (or add a migration) to persist the new system prompts, recipe rows, branch edges, and `parallel_group`/`branch_key` values so fresh environments match the desired recipe.
   *   `[✅]` 7.d. Add a provenance note capturing the current seed prompt and overlay source (migration `20250613190311_domains_and_processes_improvement.sql`) so the new data references have traceability.
 
-*   `[ ]` 8. [BE] TypeScript and type-guard adjustments
-  *   `[ ]` 8.a. Extend `DialecticJobPayload.step_info` and related type guards to support `prompt_template_name`, document keys, `parallel_group`, `branch_key`, and planner metadata.
-  *   `[ ]` 8.b. Update payload validators for the new `inputs_required` / `outputs_required` structures, including validation of branch metadata.
-  *   `[ ]` 8.c. Model the full `HeaderContext` payload and generated-file metadata (e.g., `files_to_generate.from_document_key`) in shared types and companion guards so the new planner output passes validation.
-  *   `[ ]` 8.d. Ensure any services that resolve the next step can interpret `parallel_group` and `branch_key` when scheduling work.
-  *   `[ ]` 8.e. Document TypeScript/type-guard gaps for Thesis (e.g., `DialecticJobPayload` definitions in `supabase/functions/_shared/dialectic-service/types.ts`, `type_guards.ts`) to ensure `parallel_group`, `branch_key`, and header context schemas are captured before implementation.
-
-*   `[ ]` 9. [TEST-UNIT] / [TEST-INT] Test and fixture updates
-  *   `[ ]` 9.a. Add fixtures for the new planner and turn templates, including branch metadata in step fixtures.
-  *   `[ ]` 9.b. Update `assembleSeedPrompt`, `assemblePlannerPrompt`, and `assembleTurnPrompt` tests to assert new artifact keys, file paths, and `parallel_group` / `branch_key` handling.
-  *   `[ ]` 9.c. Update worker integration tests to expect multi-step Thesis outputs instead of the legacy monolithic response, verifying parallel branch execution order when applicable.
-
-*   `[ ]` 10. [BE] / [PROMPT] Update path constructors and file-type enums
-  *   `[ ]` 10.a. Add `business_case`, `feature_spec`, `technical_approach`, and `success_metrics` to `FileType` / path constructor helpers so new artifacts resolve correctly.
-  *   `[ ]` 10.b. Ensure prompt assembler storage helpers create `context/header_context.json` for step 1 and document files under `documents/` following the Stage File Structure.
+*   `[✅]` 8. [BE] TypeScript and type-guard adjustments
+  *   `[✅]` 8.a. Extend `DialecticJobPayload.step_info` and related type guards to support `prompt_template_name`, document keys, `parallel_group`, `branch_key`, and planner metadata.
+  *   `[✅]` 8.b. Update payload validators for the new `inputs_required` / `outputs_required` structures, including validation of branch metadata.
+  *   `[✅]` 8.c. Model the full `HeaderContext` payload and generated-file metadata (e.g., `files_to_generate.from_document_key`) in shared types and companion guards so the new planner output passes validation.

@@ -24,8 +24,16 @@ import {
     hasModelResultWithContributionId,
     isJobInsert,
     isPlanJobInsert,
+    isHeaderContext    
 } from './type_guards.dialectic.ts';
-import type { DialecticContributionRow, DialecticJobRow, FailedAttemptError } from '../../../dialectic-service/dialectic.interface.ts';
+import { 
+    BranchKey, 
+    OutputType, 
+    DialecticContributionRow, 
+    DialecticJobRow, 
+    FailedAttemptError 
+} from '../../../dialectic-service/dialectic.interface.ts';
+import { FileType } from '../../types/file_manager.types.ts';
 
 Deno.test('Type Guard: hasModelResultWithContributionId', async (t) => {
     await t.step('should return true for a valid object', () => {
@@ -529,6 +537,14 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
                 sourceModelSlugs: ['model-1', 'model-2'],
                 sourceContributionIdShort: 'abcdef',
             },
+            document_key: FileType.business_case,
+            branch_key: BranchKey.business_case,
+            parallel_group: 2,
+            planner_metadata: {
+                recipe_template_id: 'template-1',
+                recipe_step_id: 'step-2',
+                stage_slug: 'thesis',
+            },
         };
         assert(isDialecticExecuteJobPayload(payload));
     });
@@ -564,6 +580,65 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
         assert(!isDialecticExecuteJobPayload(payload));
     });
 
+    await t.step('should return false if branch_key is not a known enum value', () => {
+        const payload = {
+            ...basePayload,
+            canonicalPathParams: { contributionType: 'thesis' },
+            branch_key: 'unknown-branch',
+        };
+        assert(!isDialecticExecuteJobPayload(payload));
+    });
+
+    await t.step('should return false if document_key is not a known file type', () => {
+        const payload = {
+            ...basePayload,
+            canonicalPathParams: { contributionType: 'thesis' },
+            document_key: 'not-a-file-type',
+        };
+        assert(!isDialecticExecuteJobPayload(payload));
+    });
+
+    await t.step('should return false if parallel_group is not a number', () => {
+        const payload = {
+            ...basePayload,
+            canonicalPathParams: { contributionType: 'thesis' },
+            parallel_group: 'two',
+        };
+        assert(!isDialecticExecuteJobPayload(payload));
+    });
+
+    await t.step('should return false if planner_metadata is not a record', () => {
+        const payload = {
+            ...basePayload,
+            canonicalPathParams: { contributionType: 'thesis' },
+            planner_metadata: 'not-an-object',
+        };
+        assert(!isDialecticExecuteJobPayload(payload));
+    });
+
+    await t.step('should return false if planner_metadata contains invalid dependency arrays', () => {
+        const payload = {
+            ...basePayload,
+            canonicalPathParams: { contributionType: 'thesis' },
+            planner_metadata: {
+                dependencies: 'not-an-array',
+            },
+        };
+        assert(!isDialecticExecuteJobPayload(payload));
+    });
+
+    await t.step('should return false if planner_metadata contains invalid successor arrays', () => {
+        const payload = {
+            ...basePayload,
+            canonicalPathParams: { contributionType: 'thesis' },
+            planner_metadata: {
+                dependencies: ['root'],
+                parallel_successors: [1, 2, 3],
+            },
+        };
+        assert(!isDialecticExecuteJobPayload(payload));
+    });
+
     await t.step('should return false if it contains the legacy originalFileName property', () => {
         const payload = {
             ...basePayload,
@@ -587,6 +662,16 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
             job_type: 'execute',
             prompt_template_name: 123,
             inputs: {},
+            canonicalPathParams: { contributionType: 'thesis' },
+        };
+        assert(!isDialecticExecuteJobPayload(payload));
+    });
+
+    await t.step('should return false if output_type is not a known OutputType', () => {
+        const payload = {
+            job_type: 'execute',
+            inputs: {},
+            output_type: 'invalid-output-type',
             canonicalPathParams: { contributionType: 'thesis' },
         };
         assert(!isDialecticExecuteJobPayload(payload));
@@ -1023,7 +1108,78 @@ Deno.test('Type Guard: isDialecticStageRecipe', async (t) => {
         const recipe = {
             processing_strategy: { type: 'task_isolation' },
             steps: [
-                { step: 1, prompt_template_name: 'p1', granularity_strategy: 'g1', output_type: 'o1', inputs_required: [] }
+                {
+                    step: 1,
+                    name: 'Build Stage Header',
+                    prompt_template_name: 'thesis_planner_header_v1',
+                    granularity_strategy: 'all_to_one',
+                    output_type: OutputType.HeaderContext,
+                    step_slug: 'build-stage-header',
+                    inputs_required: [
+                        { type: 'seed_prompt', stage_slug: 'thesis', document_key: FileType.SeedPrompt }
+                    ],
+                    outputs_required: {
+                        system_materials: {
+                            stage_rationale: 'why',
+                            executive_summary: 'summary',
+                            input_artifacts_summary: 'inputs',
+                            validation_checkpoint: ['a'],
+                            quality_standards: ['b'],
+                            diversity_rubric: { rule: 'value' }
+                        },
+                        header_context_artifact: {
+                            type: 'header_context',
+                            document_key: 'header_context',
+                            artifact_class: 'header_context',
+                            file_type: 'json'
+                        },
+                        context_for_documents: [
+                            {
+                                document_key: FileType.business_case,
+                                content_to_include: { section: '' }
+                            }
+                        ],
+                        files_to_generate: [
+                            {
+                                template_filename: 'thesis_planner_header.json',
+                                from_document_key: FileType.HeaderContext
+                            }
+                        ]
+                    }
+                },
+                {
+                    step: 2,
+                    name: 'Generate Business Case',
+                    prompt_template_name: 'thesis_business_case_turn_v1',
+                    granularity_strategy: 'one_to_one',
+                    output_type: OutputType.RenderedDocument,
+                    branch_key: BranchKey.business_case,
+                    parallel_group: 2,
+                    inputs_required: [
+                        {
+                            type: 'header_context',
+                            document_key: FileType.HeaderContext,
+                            stage_slug: 'thesis'
+                        }
+                    ],
+                    outputs_required: {
+                        documents: [
+                            {
+                                document_key: FileType.business_case,
+                                template_filename: 'thesis_business_case.md',
+                                artifact_class: 'rendered_document',
+                                file_type: 'markdown',
+                                content_to_include: { section: '' }
+                            }
+                        ],
+                        files_to_generate: [
+                            {
+                                template_filename: 'thesis_business_case.md',
+                                from_document_key: FileType.business_case
+                            }
+                        ]
+                    }
+                }
             ]
         };
         assert(isDialecticStageRecipe(recipe));
@@ -1037,21 +1193,122 @@ Deno.test('Type Guard: isDialecticStageRecipe', async (t) => {
         assert(!isDialecticStageRecipe(recipe));
     });
 
-    await t.step('should return false if a step is malformed', () => {
+    await t.step('should return false if inputs_required is missing document_key for context-bound types', () => {
         const recipe = {
             processing_strategy: { type: 'task_isolation' },
             steps: [
-                { prompt_template_name: 'p1' }
+                {
+                    step: 2,
+                    name: 'Generate Business Case',
+                    prompt_template_name: 'thesis_business_case_turn_v1',
+                    granularity_strategy: 'one_to_one',
+                    output_type: OutputType.RenderedDocument,
+                    branch_key: BranchKey.business_case,
+                    parallel_group: 2,
+                    inputs_required: [
+                        { type: 'header_context', stage_slug: 'thesis' }
+                    ],
+                    outputs_required: {
+                        documents: [
+                            {
+                                document_key: FileType.business_case,
+                                template_filename: 'thesis_business_case.md',
+                                artifact_class: 'rendered_document',
+                                file_type: 'markdown',
+                                content_to_include: { section: '' }
+                            }
+                        ],
+                        files_to_generate: [
+                            {
+                                template_filename: 'thesis_business_case.md',
+                                from_document_key: FileType.business_case
+                            }
+                        ]
+                    }
+                }
             ]
         };
         assert(!isDialecticStageRecipe(recipe));
     });
 
-    await t.step('should return false if inputs_required is not an array', () => {
+    await t.step('should return false if outputs_required.files_to_generate is malformed', () => {
         const recipe = {
             processing_strategy: { type: 'task_isolation' },
             steps: [
-                { step: 1, prompt_template_name: 'p1', granularity_strategy: 'g1', output_type: 'o1', inputs_required: 'not-an-array' }
+                {
+                    step: 2,
+                    name: 'Generate Business Case',
+                    prompt_template_name: 'thesis_business_case_turn_v1',
+                    granularity_strategy: 'one_to_one',
+                    output_type: OutputType.RenderedDocument,
+                    branch_key: BranchKey.business_case,
+                    parallel_group: 2,
+                    inputs_required: [
+                        {
+                            type: 'header_context',
+                            document_key: FileType.HeaderContext,
+                            stage_slug: 'thesis'
+                        }
+                    ],
+                    outputs_required: {
+                        documents: [
+                            {
+                                document_key: FileType.business_case,
+                                template_filename: 'thesis_business_case.md',
+                                artifact_class: 'rendered_document',
+                                file_type: 'markdown',
+                                content_to_include: { section: '' }
+                            }
+                        ],
+                        files_to_generate: [
+                            {
+                                template_filename: 'thesis_business_case.md'
+                            }
+                        ]
+                    }
+                }
+            ]
+        };
+        assert(!isDialecticStageRecipe(recipe));
+    });
+
+    await t.step('should return false if branch metadata is invalid', () => {
+        const recipe = {
+            processing_strategy: { type: 'task_isolation' },
+            steps: [
+                {
+                    step: 2,
+                    name: 'Generate Business Case',
+                    prompt_template_name: 'thesis_business_case_turn_v1',
+                    granularity_strategy: 'one_to_one',
+                    output_type: OutputType.RenderedDocument,
+                    branch_key: 'unknown-branch',
+                    parallel_group: 'two',
+                    inputs_required: [
+                        {
+                            type: 'header_context',
+                            document_key: FileType.HeaderContext,
+                            stage_slug: 'thesis'
+                        }
+                    ],
+                    outputs_required: {
+                        documents: [
+                            {
+                                document_key: FileType.business_case,
+                                template_filename: 'thesis_business_case.md',
+                                artifact_class: 'rendered_document',
+                                file_type: 'markdown',
+                                content_to_include: { section: '' }
+                            }
+                        ],
+                        files_to_generate: [
+                            {
+                                template_filename: 'thesis_business_case.md',
+                                from_document_key: FileType.business_case
+                            }
+                        ]
+                    }
+                }
             ]
         };
         assert(!isDialecticStageRecipe(recipe));
@@ -1060,12 +1317,41 @@ Deno.test('Type Guard: isDialecticStageRecipe', async (t) => {
 
 Deno.test('Type Guard: isDialecticStepInfo', async (t) => {
     await t.step('should return true for a valid step info object', () => {
-        const stepInfo = { current_step: 1, total_steps: 5 };
+        const stepInfo = {
+            current_step: 1,
+            total_steps: 5,
+            step_key: 'planner-step-1',
+            step_slug: 'planner.header',
+            name: 'Generate Header Context',
+            prompt_template_name: 'thesis_planner_header_v1',
+            output_type: OutputType.HeaderContext,
+            document_key: FileType.HeaderContext,
+            branch_key: BranchKey.business_case,
+            parallel_group: 1,
+            granularity_strategy: 'one_to_one',
+            planner_metadata: {
+                recipe_template_id: 'template-1',
+                recipe_step_id: 'step-1',
+                stage_slug: 'thesis',
+                description: 'Planner step to produce header context',
+                dependencies: ['root'],
+                parallel_successors: ['branch-business-case'],
+            },
+        };
         assert(isDialecticStepInfo(stepInfo));
     });
 
     await t.step('should return false if current_step is missing', () => {
         const stepInfo = { total_steps: 5 };
+        assert(!isDialecticStepInfo(stepInfo));
+    });
+
+    await t.step('should return false if optional fields have wrong types', () => {
+        const stepInfo = {
+            current_step: 1,
+            total_steps: 5,
+            branch_key: 'not-a-branch',
+        };
         assert(!isDialecticStepInfo(stepInfo));
     });
 
@@ -1529,5 +1815,57 @@ Deno.test('Type Guard: validatePayload', async (t) => {
             walletId: 'test-wallet',
         };
         assertThrows(() => validatePayload(payload), Error, 'Payload must have model_id (string)');
+    });
+});
+
+Deno.test('Type Guard: isHeaderContext', async (t) => {
+    const baseContext = {
+        system_materials: {
+            stage_rationale: 'why',
+            executive_summary: 'summary',
+            input_artifacts_summary: 'inputs',
+            validation_checkpoint: ['a'],
+            quality_standards: ['b'],
+            diversity_rubric: { rule: 'value' }
+        },
+        header_context_artifact: {
+            type: 'header_context',
+            document_key: 'header_context',
+            artifact_class: 'header_context',
+            file_type: 'json'
+        },
+        context_for_documents: [
+            {
+                document_key: FileType.business_case,
+                content_to_include: { section: '' }
+            }
+        ]
+    };
+
+    await t.step('should return true for a valid header context payload', () => {
+        assert(isHeaderContext(baseContext));
+    });
+
+    await t.step('should return false when system_materials is missing required keys', () => {
+        const invalid = {
+            ...baseContext,
+            system_materials: {
+                executive_summary: 'summary'
+            }
+        };
+        assert(!isHeaderContext(invalid));
+    });
+
+    await t.step('should return false when context_for_documents contains invalid items', () => {
+        const invalid = {
+            ...baseContext,
+            context_for_documents: [
+                {
+                    document_key: 'not-a-file-type',
+                    content_to_include: { section: '' }
+                }
+            ]
+        };
+        assert(!isHeaderContext(invalid));
     });
 });

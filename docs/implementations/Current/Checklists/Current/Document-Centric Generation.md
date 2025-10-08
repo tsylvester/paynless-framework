@@ -633,8 +633,52 @@ graph LR
         *   `[ ]` 5.b.iv. `[TEST-UNIT]` Update `prompt-assembler.test.ts` to reflect the new methods, functions, signatures, and return values. 
         *   `[ ]` 5.b.v. `[BE]` Replace the mock stubs in the router file with the calls for each specific method. 
         *   `[ ]` 5.b.vi. `[MOCK]` Update the `prompt-assembler.mock.ts` to support the new methods, functions, signatures, and return values. 
+    *   `[ ]` 5.c. `[TDD]` Align shared dependencies before consumer migrations
+        *   `[ ]` 5.c.i. `[TEST-UNIT]` Add failing tests for `path_constructor` covering the new document-centric storage patterns and document keys for all stages.
+        *   `[ ]` 5.c.ii. `[BE]` Update `path_constructor` until the new tests pass.
+        *   `[ ]` 5.c.iii. `[TEST-UNIT]` Add failing tests for `path_deconstructor` to prove it parses the new document-centric paths and keys.
+        *   `[ ]` 5.c.iv. `[BE]` Update `path_deconstructor` to satisfy those tests.
+        *   `[ ]` 5.c.v. `[TEST-UNIT]` Add failing tests for `file_manager` that exercise the new document-centric file types and generated paths.
+        *   `[ ]` 5.c.vi. `[BE]` Update `file_manager` so the tests in 5.c.v succeed.
+        *   `[ ]` 5.c.vii. `[TEST-UNIT]` Add failing tests for `PromptAssembler` that assert `branch_key`, `parallel_group`, `document_key`, and the new storage paths are handed off correctly.
+        *   `[ ]` 5.c.viii. `[BE]` Update `PromptAssembler` (and its mocks) so the tests in 5.c.vii pass.
     *   `[ ]` 5.d. `[TEST-INT]` Write an integration test that consumes `testing_prompt.md` to generate and print an actual `SeedPrompt`, `PlannerPrompt`, `AssembledPrompt`, and `ContinuationPrompt` for the `testing_prompt` content for each stage so that the user can manually review the outputs for confirmation or correction of their content.. 
     *   `[ ]` 5.e. `[COMMIT]` feat(prompt-assembler): Architect PromptAssembler as a centralized, persistence-aware service.
+
+*   `[ ]` 9. [TEST-UNIT] / [TEST-INT] Test and fixture updates
+  *   `[ ]` 9.a. Add fixtures for the new planner and turn templates, including branch metadata in step fixtures.
+  *   `[ ]` 9.b. Update `assembleSeedPrompt`, `assemblePlannerPrompt`, and `assembleTurnPrompt` tests to assert new artifact keys, file paths, and `parallel_group` / `branch_key` handling.
+  *   `[ ]` 9.c. Update worker integration tests to expect multi-step Thesis outputs instead of the legacy monolithic response, verifying parallel branch execution order when applicable.
+
+*   `[ ]` 10. [BE] / [PROMPT] Update path constructors and file-type enums
+  *   `[ ]` 10.a. Add `business_case`, `feature_spec`, `technical_approach`, and `success_metrics` to `FileType` / path constructor helpers so new artifacts resolve correctly.
+  *   `[ ]` 10.b. Ensure prompt assembler storage helpers create `context/header_context.json` for step 1 and document files under `documents/` following the Stage File Structure.
+
+  *   `[ ]` 8.d. Ensure any services that resolve the next step can interpret `parallel_group` and `branch_key` when scheduling work.
+  *   `[ ]` 8.e. Document TypeScript/type-guard gaps for Thesis (e.g., `DialecticJobPayload` definitions in `supabase/functions/_shared/dialectic-service/types.ts`, `type_guards.ts`) to ensure `parallel_group`, `branch_key`, and header context schemas are captured before implementation.
+
+      *   `[ ]` 8.f. `[BE]` Update `parseInputArtifactRules`, related types, and type guards so the application accepts the new `type: "document"` / `"header_context"` rules before persisting the revised recipe data.
+
+*   `[ ]` 9. [BE] TypeScript and type-guard adjustments
+    *   `[ ]` 9.a. Model the Antithesis HeaderContext schema (`proposal_identifier.lineage_key`, `proposal_identifier.source_model_slug`, review focus, normalization guidance, document contexts) in shared types and update `type_guards.ts` accordingly.
+    *   `[ ]` 9.b. Extend job payload / recipe step guards to validate the new `inputs_relevance` arrays and ensure every Antithesis step declares the required Thesis document keys.
+    *   `[ ]` 9.c. Capture the comparison vector JSON structure (scores + rationales) in shared types to support downstream validation.
+
+*   `[ ]` 10. [BE] PromptAssembler & worker updates
+    *   `[ ]` 10.a. Ensure `PromptAssembler` persists the planner HeaderContext to storage and injects the `inputs_relevance` ordering when assembling turn prompts for Antithesis.
+    *   `[ ]` 10.b. Update any worker logic that schedules Antithesis jobs so that the new recipe rows, branch keys, and `parallel_group` values are honored.
+    *   `[ ]` 10.c. When building execute job payloads, include the planner-supplied `lineage_key` and `source_model_slug`, and ensure `executeModelCallAndSave` writes `document_relationships.source_group` from that lineage key before saving contributions.
+
+*   `[ ]` 11. [TEST-UNIT] / [TEST-INT] Test and fixture updates
+    *   `[ ]` 11.a. Add fixtures for all new Antithesis prompt templates and HeaderContext outputs.
+    *   `[ ]` 11.b. Update unit tests for `assemblePlannerPrompt`, `assembleTurnPrompt`, and related helpers to assert the new artifact ids, storage paths, relevance ordering, and presence of `lineage_key` / `source_model_slug` metadata.
+    *   `[ ]` 11.c. Refresh worker integration tests to expect the per-proposal fan-out (six artifacts) instead of the legacy monolithic review response and assert that `document_relationships.source_group` matches the planner-supplied lineage key.
+
+*   `[ ]` 12. [BE] / [PROMPT] File manager & path constructor updates
+    *   `[ ]` 12.a. Add Antithesis document keys (`business_case_critique`, `technical_feasibility_assessment`, `risk_register`, `non_functional_requirements`, `dependency_map`, `comparison_vector`) to the file-type enums and path constructor/deconstructor utilities.
+    *   `[ ]` 12.b. Update storage helpers so planner outputs land in `context/header_context.json`, per-document feedback paths (`user_feedback/{model_slug}_{n}_{document_key}_feedback.md`) are recognized, and each branch artifact is saved under the documented stage file structure.
+
+
 
 *   `[ ]` 6. `[REFACTOR]` Migrate All Consumers to the Refactored `PromptAssembler` Service
     *   **Objective:** To systematically refactor all services that generate prompts to use the new, centralized `PromptAssembler`. This is the "Use the Tool" phase, ensuring all parts of the system align with the new architecture.

@@ -1,6 +1,6 @@
 // supabase/functions/_shared/utils/type_guards.ts
 import type { Tables, Json } from "../../../types_db.ts";
-import type { 
+import { 
     ProcessingStrategy, 
     DialecticContributionRow, 
     DialecticJobPayload,
@@ -10,15 +10,19 @@ import type {
     DialecticStageRecipe,
     DialecticPlanJobPayload,
     DialecticExecuteJobPayload,
-    DialecticRecipeStep,
     DialecticStepInfo,
     ContributionType,
     DocumentRelationships,
     JobInsert,
     PlanJobInsert,
     FailedAttemptError,
+    DialecticStepPlannerMetadata,
+    BranchKey,
+    OutputType,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { isPlainObject, isRecord } from './type_guards.common.ts';
+import { FileType } from '../../types/file_manager.types.ts';
+import { isFileType } from './type_guards.file_manager.ts';
 
 // Helper type for the citations array
 export type Citation = {
@@ -37,6 +41,162 @@ const validContributionTypes: ContributionType[] = [
     'final_synthesis',
     'rag_context_summary'
 ];
+
+const validBranchKeys = new Set<string>(Object.values(BranchKey));
+const validOutputTypes = new Set<string>([...Object.values(OutputType), ...validContributionTypes]);
+
+function isPlannerMetadata(value: unknown): value is DialecticStepPlannerMetadata {
+    if (!isRecord(value)) return false;
+
+    const { dependencies, parallel_successors, ...rest } = value;
+
+    if (dependencies !== undefined) {
+        if (!Array.isArray(dependencies) || !dependencies.every(item => typeof item === 'string')) {
+            return false;
+        }
+    }
+
+    if (parallel_successors !== undefined) {
+        if (!Array.isArray(parallel_successors) || !parallel_successors.every(item => typeof item === 'string')) {
+            return false;
+        }
+    }
+
+    for (const key in rest) {
+        const prop = rest[key];
+        if (prop === undefined) continue;
+        const type = typeof prop;
+        if (type !== 'string' && type !== 'number' && type !== 'boolean' && type !== 'object') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function isHeaderContextDocuments(value: unknown): value is Array<{
+    document_key: FileType;
+    content_to_include: unknown;
+}> {
+    if (!Array.isArray(value)) {
+        return false;
+    }
+
+    for (const entry of value) {
+        if (!isRecord(entry)) {
+            return false;
+        }
+
+        if (!('document_key' in entry) || typeof entry.document_key !== 'string' || !isFileType(entry.document_key)) {
+            return false;
+        }
+
+        if (!('content_to_include' in entry)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function isHeaderContextArtifact(value: unknown): value is {
+    type: string;
+    document_key: string;
+    artifact_class: string;
+    file_type: string;
+} {
+    if (!isRecord(value)) return false;
+
+    const requiredKeys: Array<{ key: string; typeCheck: (v: unknown) => boolean }> = [
+        { key: 'type', typeCheck: (v) => v === 'header_context' },
+        { key: 'document_key', typeCheck: (v) => v === 'header_context' },
+        { key: 'artifact_class', typeCheck: (v) => typeof v === 'string' && v.length > 0 },
+        { key: 'file_type', typeCheck: (v) => typeof v === 'string' && v.length > 0 },
+    ];
+
+    for (const { key, typeCheck } of requiredKeys) {
+        if (!(key in value) || !typeCheck(value[key])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function isHeaderContextSystemMaterials(value: unknown): value is {
+    stage_rationale: string;
+    executive_summary: string;
+    input_artifacts_summary: string;
+    validation_checkpoint?: string[];
+    quality_standards?: string[];
+    diversity_rubric?: Record<string, string>;
+    progress_update?: string;
+} {
+    if (!isRecord(value)) return false;
+
+    const requiredKeys: Array<[string, (v: unknown) => boolean]> = [
+        ['stage_rationale', (v) => typeof v === 'string'],
+        ['executive_summary', (v) => typeof v === 'string'],
+        ['input_artifacts_summary', (v) => typeof v === 'string'],
+    ];
+
+    for (const [key, check] of requiredKeys) {
+        if (!(key in value) || !check(value[key])) {
+            return false;
+        }
+    }
+
+    if ('validation_checkpoint' in value && (!Array.isArray(value.validation_checkpoint) || !value.validation_checkpoint.every(item => typeof item === 'string'))) {
+        return false;
+    }
+
+    if ('quality_standards' in value && (!Array.isArray(value.quality_standards) || !value.quality_standards.every(item => typeof item === 'string'))) {
+        return false;
+    }
+
+    if ('diversity_rubric' in value) {
+        const rubric = value.diversity_rubric;
+        if (!isRecord(rubric)) {
+            return false;
+        }
+        for (const rubricKey in rubric) {
+            if (typeof rubric[rubricKey] !== 'string') {
+                return false;
+            }
+        }
+    }
+
+    if ('progress_update' in value && typeof value.progress_update !== 'string') {
+        return false;
+    }
+
+    return true;
+}
+
+export function isHeaderContext(value: unknown): value is ReturnType<typeof JSON.parse> {
+    if (!isRecord(value)) return false;
+
+    if (!('system_materials' in value) || !isHeaderContextSystemMaterials(value.system_materials)) {
+        return false;
+    }
+
+    if (!('header_context_artifact' in value) || !isHeaderContextArtifact(value.header_context_artifact)) {
+        return false;
+    }
+
+    if (!('context_for_documents' in value) || !isHeaderContextDocuments(value.context_for_documents)) {
+        return false;
+    }
+
+    if ('files_to_generate' in value) {
+        const files = value.files_to_generate;
+        if (!Array.isArray(files) || !files.every(file => isRecord(file) && typeof file.template_filename === 'string' && typeof file.from_document_key === 'string' && isFileType(file.from_document_key))) {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 // Helper type to represent the structure we're checking for.
 type StageWithProcessingStrategy = Tables<'dialectic_stages'> & {
@@ -255,12 +415,16 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
     return (
         payload.job_type === 'execute' &&
         (!('prompt_template_name' in payload) || payload.prompt_template_name === undefined || typeof payload.prompt_template_name === 'string') &&
-        typeof payload.output_type === 'string' &&
+        typeof payload.output_type === 'string' && validOutputTypes.has(payload.output_type) &&
         (!('step_info' in payload) || isDialecticStepInfo(payload.step_info)) &&
         isRecord(payload.inputs) &&
         hasCanonicalParams &&
         !hasLegacyFileName &&
-        hasValidRelationships
+        hasValidRelationships &&
+        (!('document_key' in payload) || payload.document_key === undefined || (typeof payload.document_key === 'string' && isFileType(payload.document_key))) &&
+        (!('branch_key' in payload) || payload.branch_key === undefined || (typeof payload.branch_key === 'string' && validBranchKeys.has(payload.branch_key))) &&
+        (!('parallel_group' in payload) || payload.parallel_group === undefined || typeof payload.parallel_group === 'number') &&
+        (!('planner_metadata' in payload) || payload.planner_metadata === undefined || payload.planner_metadata === null || isPlannerMetadata(payload.planner_metadata))
     );
 }
 
@@ -376,27 +540,168 @@ export function isDialecticPlanJobPayload(payload: unknown): payload is Dialecti
 export function isDialecticStageRecipe(value: unknown): value is DialecticStageRecipe {
     if (!isRecord(value)) return false;
 
-    return (
-        isRecord(value.processing_strategy) &&
-        value.processing_strategy.type === 'task_isolation' &&
-        Array.isArray(value.steps) &&
-        value.steps.every(
-            (step: DialecticRecipeStep) =>
-                typeof step.step === 'number' &&
-                typeof step.prompt_template_name === 'string' &&
-                typeof step.granularity_strategy === 'string' &&
-                typeof step.output_type === 'string' &&
-                Array.isArray(step.inputs_required)
-        )
-    );
+    if (!isRecord(value.processing_strategy) || value.processing_strategy.type !== 'task_isolation') {
+        return false;
+    }
+
+    if (!Array.isArray(value.steps) || value.steps.length === 0) {
+        return false;
+    }
+
+    for (const step of value.steps) {
+        if (!isRecord(step)) {
+            return false;
+        }
+
+        if (typeof step.step !== 'number') {
+            return false;
+        }
+
+        if (typeof step.name !== 'string' || step.name.length === 0) {
+            return false;
+        }
+
+        if (typeof step.prompt_template_name !== 'string' || step.prompt_template_name.length === 0) {
+            return false;
+        }
+
+        if (typeof step.granularity_strategy !== 'string') {
+            return false;
+        }
+
+        if (typeof step.output_type !== 'string' || !validOutputTypes.has(step.output_type)) {
+            return false;
+        }
+
+        if (!Array.isArray(step.inputs_required)) {
+            return false;
+        }
+
+        for (const rule of step.inputs_required) {
+            if (!isRecord(rule)) {
+                return false;
+            }
+
+            if (typeof rule.type !== 'string') {
+                return false;
+            }
+
+            if (rule.stage_slug !== undefined && typeof rule.stage_slug !== 'string') {
+                return false;
+            }
+
+            if (rule.required !== undefined && typeof rule.required !== 'boolean') {
+                return false;
+            }
+
+            const requiresDocumentKey = rule.type === 'header_context';
+
+            if (requiresDocumentKey) {
+                if (typeof rule.document_key !== 'string' || !isFileType(rule.document_key)) {
+                    return false;
+                }
+            } else if (rule.document_key !== undefined && (typeof rule.document_key !== 'string' || !isFileType(rule.document_key))) {
+                return false;
+            }
+        }
+
+        if ('branch_key' in step && step.branch_key !== undefined) {
+            if (typeof step.branch_key !== 'string' || !validBranchKeys.has(step.branch_key)) {
+                return false;
+            }
+        }
+
+        if ('parallel_group' in step && step.parallel_group !== undefined) {
+            if (typeof step.parallel_group !== 'number' || step.parallel_group < 0) {
+                return false;
+            }
+        }
+
+        if ('outputs_required' in step) {
+            const outputs = step.outputs_required;
+            if (!isRecord(outputs)) {
+                return false;
+            }
+
+            if ('system_materials' in outputs && !isHeaderContextSystemMaterials(outputs.system_materials)) {
+                return false;
+            }
+
+            if ('header_context_artifact' in outputs && !isHeaderContextArtifact(outputs.header_context_artifact)) {
+                return false;
+            }
+
+            if ('context_for_documents' in outputs && !isHeaderContextDocuments(outputs.context_for_documents)) {
+                return false;
+            }
+
+            if ('documents' in outputs) {
+                const documents = outputs.documents;
+                if (!Array.isArray(documents)) {
+                    return false;
+                }
+                for (const doc of documents) {
+                    if (!isRecord(doc) || typeof doc.document_key !== 'string' || !isFileType(doc.document_key) || typeof doc.template_filename !== 'string') {
+                        return false;
+                    }
+                }
+            }
+
+            if ('files_to_generate' in outputs) {
+                const files = outputs.files_to_generate;
+                if (!Array.isArray(files) || !files.every(file => isRecord(file) && typeof file.template_filename === 'string' && typeof file.from_document_key === 'string' && isFileType(file.from_document_key))) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    return true;
 }
 
 export function isDialecticStepInfo(obj: unknown): obj is DialecticStepInfo {
     if (!isRecord(obj)) return false;
-    return (
-        typeof obj.current_step === 'number' &&
-        typeof obj.total_steps === 'number'
-    );
+    if (typeof obj.current_step !== 'number' || typeof obj.total_steps !== 'number') {
+        return false;
+    }
+
+    if ('step_key' in obj && obj.step_key !== undefined && typeof obj.step_key !== 'string') {
+        return false;
+    }
+
+    if ('step_slug' in obj && obj.step_slug !== undefined && typeof obj.step_slug !== 'string') {
+        return false;
+    }
+
+    if ('name' in obj && obj.name !== undefined && typeof obj.name !== 'string') {
+        return false;
+    }
+
+    if ('prompt_template_name' in obj && obj.prompt_template_name !== undefined && typeof obj.prompt_template_name !== 'string') {
+        return false;
+    }
+
+    if ('output_type' in obj && obj.output_type !== undefined && (typeof obj.output_type !== 'string' || !validOutputTypes.has(obj.output_type))) {
+        return false;
+    }
+
+    if ('document_key' in obj && obj.document_key !== undefined && (typeof obj.document_key !== 'string' || !isFileType(obj.document_key))) {
+        return false;
+    }
+
+    if ('branch_key' in obj && obj.branch_key !== undefined && (typeof obj.branch_key !== 'string' || !validBranchKeys.has(obj.branch_key))) {
+        return false;
+    }
+
+    if ('parallel_group' in obj && obj.parallel_group !== undefined && typeof obj.parallel_group !== 'number') {
+        return false;
+    }
+
+    if ('planner_metadata' in obj && obj.planner_metadata !== undefined && obj.planner_metadata !== null && !isPlannerMetadata(obj.planner_metadata)) {
+        return false;
+    }
+
+    return true;
 }
 
 export function isDocumentRelationships(obj: unknown): obj is DocumentRelationships {
