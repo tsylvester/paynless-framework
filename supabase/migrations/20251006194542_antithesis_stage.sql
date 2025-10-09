@@ -1695,5 +1695,10 @@ BEGIN
             SELECT id FROM public.system_prompts WHERE name = 'dialectic_antithesis_base_v1'
         )
       AND (overlay_values ? 'expected_output_artifacts_json' OR overlay_values ? 'output_format');
+
+    -- Set recipe_template_id for antithesis stage
+    UPDATE public.dialectic_stages
+    SET recipe_template_id = v_template_id
+    WHERE id = v_stage_id;
 END $$;
 

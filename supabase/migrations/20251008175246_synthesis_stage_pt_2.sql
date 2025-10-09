@@ -9,7 +9,7 @@ BEGIN
     END IF;
 
     UPDATE public.dialectic_stages
-    SET recipe_name = 'synthesis_v1',
+    SET recipe_template_id = v_template_id,
         updated_at = now()
     WHERE id = v_stage_id;
 END $$;

@@ -553,14 +553,14 @@ graph LR
         *   `[✅]` Y.b.iv. Overlay table updates (if any).
         *   `[✅]` Y.b.v. Test scaffolding impact.
         *   `[✅]` Y.b.vi. Source references from documentation worksheets.
-    *   `[ ]` Y.c. **Synthesis Data Spec** – (include intermediate artifacts such as pairwise/root/manifest prompts).
-        *   `[ ]` Y.c.i. Stage recipe table: new JSON blob for `dialectic_stage_recipes` (include step array).
-        *   `[ ]` Y.c.ii. Stage config table: new `input_artifact_rules` and `expected_output_artifacts` JSON for `dialectic_stages`.
-        *   `[ ]` Y.c.ii.a. Persist default Synthesis `inputs_relevance` arrays aligned with the worksheet rankings so the planner/turn steps have baseline priorities.
-        *   `[ ]` Y.c.iii. Prompt table: list of `system_prompts` rows to insert/update (ids, names, prompt text files) and where each template lives.
-        *   `[ ]` Y.c.iv. Overlay table updates (global header, manifest guidance, etc.).
-        *   `[ ]` Y.c.v. Test scaffolding impact (prompt mocks, path utils, etc.).
-        *   `[ ]` Y.c.vi. Source references with provenance markers.
+    *   `[✅]` Y.c. **Synthesis Data Spec** – (include intermediate artifacts such as pairwise/root/manifest prompts).
+        *   `[✅]` Y.c.i. Stage recipe table: new JSON blob for `dialectic_stage_recipes` (include step array).
+        *   `[✅]` Y.c.ii. Stage config table: new `input_artifact_rules` and `expected_output_artifacts` JSON for `dialectic_stages`.
+        *   `[✅]` Y.c.ii.a. Persist default Synthesis `inputs_relevance` arrays aligned with the worksheet rankings so the planner/turn steps have baseline priorities.
+        *   `[✅]` Y.c.iii. Prompt table: list of `system_prompts` rows to insert/update (ids, names, prompt text files) and where each template lives.
+        *   `[✅]` Y.c.iv. Overlay table updates (global header, manifest guidance, etc.).
+        *   `[✅]` Y.c.v. Test scaffolding impact (prompt mocks, path utils, etc.).
+        *   `[✅]` Y.c.vi. Source references with provenance markers.
     *   `[ ]` Y.d. **Parenthesis Data Spec**.
         *   `[ ]` Y.d.i. Stage recipe table: new JSON blob for `dialectic_stage_recipes` (include step array).
         *   `[ ]` Y.d.ii. Stage config table: new `input_artifact_rules` and `expected_output_artifacts` JSON for `dialectic_stages`.

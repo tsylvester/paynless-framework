@@ -251,7 +251,35 @@
         "apis": [],
         "schemas": [],
         "proposed_file_tree": "",
-        "architecture_overview": ""
+        "architecture_overview": "",
+        "feature_scope": [],
+        "features": [],
+        "feasibility_insights": [],
+        "non_functional_alignment": [],
+        "outcome_alignment": "",
+        "north_star_metric": "",
+        "primary_kpis": [],
+        "guardrails": [],
+        "measurement_plan": "",
+        "architecture_summary": "",
+        "architecture": "",
+        "services": [],
+        "components": [],
+        "data_flows": [],
+        "interfaces": [],
+        "integration_points": [],
+        "dependency_resolution": [],
+        "security_measures": [],
+        "observability_strategy": [],
+        "scalability_plan": [],
+        "resilience_strategy": [],
+        "frontend_stack": {},
+        "backend_stack": {},
+        "data_platform": {},
+        "devops_tooling": {},
+        "security_tooling": {},
+        "shared_libraries": [],
+        "third_party_services": []
       }
     },
     {
@@ -269,7 +297,26 @@
           "max_steps": 200,
           "target_steps": "120-180",
           "max_output_lines": "600-800"
-        }
+        },
+        "feature_scope": [],
+        "features": [],
+        "executive_summary": "",
+        "mvp_description": "",
+        "market_opportunity": "",
+        "competitive_analysis": "",
+        "architecture_summary": "",
+        "architecture": "",
+        "services": [],
+        "components": [],
+        "integration_points": [],
+        "dependency_resolution": [],
+        "frontend_stack": {},
+        "backend_stack": {},
+        "data_platform": {},
+        "devops_tooling": {},
+        "security_tooling": {},
+        "shared_libraries": [],
+        "third_party_services": []
       }
     },
     {
@@ -284,7 +331,18 @@
           "acceptance_criteria",
           "status"
         ],
-        "style_guide_notes": "Use standardized checklist markers, component labels when relevant, and keep scope at milestone granularity; detailed steps will be generated in the next stage."
+        "style_guide_notes": "Use standardized checklist markers, component labels when relevant, and keep scope at milestone granularity; detailed steps will be generated in the next stage.",
+        "features": [],
+        "feasibility_insights": [],
+        "non_functional_alignment": [],
+        "success_metrics": [],
+        "architecture_summary": "",
+        "services": [],
+        "components": [],
+        "dependency_resolution": [],
+        "components": [],
+        "integration_requirements": [],
+        "migration_context": []
       }
     }
   ],
@@ -387,7 +445,34 @@ When this step is executed for subsequent iterations, provide the most recent `t
           "proposed_file_tree",
           "architecture_overview",
           "delta_summary",
-          "iteration_notes"
+          "iteration_notes",
+          "feature_scope[]",
+          "feasibility_insights[]",
+          "non_functional_alignment[]",
+          "outcome_alignment",
+          "north_star_metric",
+          "primary_kpis[]",
+          "guardrails[]",
+          "measurement_plan",
+          "architecture_summary",
+          "architecture",
+          "services[]",
+          "components[]",
+          "data_flows[]",
+          "interfaces[]",
+          "integration_points[]",
+          "dependency_resolution[]",
+          "security_measures[]",
+          "observability_strategy[]",
+          "scalability_plan[]",
+          "resilience_strategy[]",
+          "frontend_stack",
+          "backend_stack",
+          "data_platform",
+          "devops_tooling",
+          "security_tooling",
+          "shared_libraries[]",
+          "third_party_services[]"
         ]
       }
     ],
@@ -502,7 +587,26 @@ Present the previously generated Master Plan and feedback during iterative runs 
           "phases[].milestones[].iteration_delta",
           "status_summary.completed[]",
           "status_summary.in_progress[]",
-          "status_summary.up_next[]"
+          "status_summary.up_next[]",
+          "feature_scope[]",
+          "features[]",
+          "executive_summary",
+          "mvp_description",
+          "market_opportunity",
+          "competitive_analysis",
+          "architecture_summary",
+          "architecture",
+          "services[]",
+          "components[]",
+          "integration_points[]",
+          "dependency_resolution[]",
+          "frontend_stack",
+          "backend_stack",
+          "data_platform",
+          "devops_tooling",
+          "security_tooling",
+          "shared_libraries[]",
+          "third_party_services[]"
         ]
       }
     ],
@@ -632,7 +736,17 @@ Provide the previous milestone schema and related feedback on subsequent executi
           "style_guide_notes",
           "validation_rules[]",
           "iteration_guidance.reuse_policy",
-          "iteration_guidance.versioning"
+          "iteration_guidance.versioning",
+          "features[]",
+          "feasibility_insights[]",
+          "non_functional_alignment[]",
+          "architecture_summary",
+          "services[]",
+          "components[]",
+          "dependency_resolution[]",
+          "component_details[]",
+          "integration_requirements[]",
+          "migration_context[]"
         ]
       }
     ],
@@ -646,21 +760,21 @@ Provide the previous milestone schema and related feedback on subsequent executi
 # Transform Requirements
 
 *   `[ ]` 1. `[PROMPT]` Author and register Parenthesis planner/turn templates.
-    *   `[ ]` 1.a. Create `docs/prompts/parenthesis/parenthesis_planner_header_v1.md` implementing the Step 1 header context schema (system_materials milestone rules, context_for_documents entries, continuation policy) using the overlay guidance for Parenthesis.
-    *   `[ ]` 1.b. Author `docs/prompts/parenthesis/parenthesis_trd_turn_v1.md`, `parenthesis_master_plan_turn_v1.md`, and `parenthesis_milestone_schema_turn_v1.md`, each matching the markdown + assembled JSON structures defined in Steps 2–4 (including delta summaries, status markers, iteration notes, validation rules).
-    *   `[ ]` 1.c. Insert new `system_prompts` rows for all four templates in a migration, documenting id/name/version/prompt_type/stage associations and storing file paths so they can be retrieved by the PromptAssembler.
-    *   `[ ]` 1.d. Update the Parenthesis entry in `domain_specific_prompt_overlays` (Software Development domain) to add per-template overlay values (role, stage instructions, style-guide snippets, continuation wording). Remove the obsolete `expected_output_artifacts_json` payload and any other obsolete keys once the planner template supplies the contract to avoid duplicate definitions.
+    *   `[✅]` 1.a. Create `docs/prompts/parenthesis/parenthesis_planner_header_v1.md` implementing the Step 1 header context schema (system_materials milestone rules, context_for_documents entries, continuation policy) using the overlay guidance for Parenthesis.
+    *   `[✅]` 1.b. Author `docs/prompts/parenthesis/parenthesis_trd_turn_v1.md`, `parenthesis_master_plan_turn_v1.md`, and `parenthesis_milestone_schema_turn_v1.md`, each matching the markdown + assembled JSON structures defined in Steps 2–4 (including delta summaries, status markers, iteration notes, validation rules).
+    *   `[✅]` 1.c. Insert new `system_prompts` rows for all four templates in a migration, documenting id/name/version/prompt_type/stage associations and storing file paths so they can be retrieved by the PromptAssembler.
+    *   `[✅]` 1.d. Update the Parenthesis entry in `domain_specific_prompt_overlays` (Software Development domain) to add per-template overlay values (role, stage instructions, style-guide snippets, continuation wording). Remove the obsolete `expected_output_artifacts_json` payload and any other obsolete keys once the planner template supplies the contract to avoid duplicate definitions.
 
 *   `[ ]` 2. `[DB]` Seed `dialectic_stage_recipes` rows and execution graph.
-    *   `[ ]` 2.a. Insert the Step 1 planner row (`step_number=1`, `step_slug='build-planning-header'`, `job_type='PLAN'`, `prompt_type='Planner'`, `granularity_strategy='all_to_one'`) along with the exact `inputs_required` and `inputs_relevance` values from the target state (seed prompt, Synthesis deliverables/feedback, optional prior master plan + feedback, header context schema).
-    *   `[ ]` 2.b. Insert Step 2, Step 3, and Step 4 turn rows for `trd`, `master_plan`, and `milestone_schema` (`job_type='EXECUTE'`, `prompt_type='Turn'`, `granularity_strategy='one_to_one'`, `branch_key` set to the document key) capturing all required inputs (header context, Synthesis artifacts, optional prior Parenthesis documents + feedback), relevance weights, markdown/JSON outputs, and continuation policies.
-    *   `[ ]` 2.c. Populate `dialectic_stage_recipe_edges` so Step 1 → Step 2 → Step 3 → Step 4, ensuring orchestration waits for each dependency before scheduling the next step.
+    *   `[✅]` 2.a. Insert the Step 1 planner row (`step_number=1`, `step_slug='build-planning-header'`, `job_type='PLAN'`, `prompt_type='Planner'`, `granularity_strategy='all_to_one'`) along with the exact `inputs_required` and `inputs_relevance` values from the target state (seed prompt, Synthesis deliverables/feedback, optional prior master plan + feedback, header context schema).
+    *   `[✅]` 2.b. Insert Step 2, Step 3, and Step 4 turn rows for `trd`, `master_plan`, and `milestone_schema` (`job_type='EXECUTE'`, `prompt_type='Turn'`, `granularity_strategy='one_to_one'`, `branch_key` set to the document key) capturing all required inputs (header context, Synthesis artifacts, optional prior Parenthesis documents + feedback), relevance weights, markdown/JSON outputs, and continuation policies.
+    *   `[✅]` 2.c. Populate `dialectic_stage_recipe_edges` so Step 1 → Step 2 → Step 3 → Step 4, ensuring orchestration waits for each dependency before scheduling the next step.
 
-*   `[ ]` 3. `[DB]` Update Parenthesis stage configuration.
-    *   `[ ]` 3.a. Set `dialectic_stages.recipe_name = 'parenthesis_v1'` and remove the legacy `input_artifact_rules` / `expected_output_artifacts` JSON once downstream code reads from the recipe tables.
-    *   `[ ]` 3.b. Populate `expected_output_template_ids` with the template IDs for `parenthesis_trd.md`, `parenthesis_master_plan.md`, and `parenthesis_milestone_schema.md` so downstream stages can fetch canonical files by id.
-    *   `[ ]` 3.c. Record migration ids/commit hashes that modify the stage row for future provenance.
+*   `[✅]` 3. `[DB]` Update Parenthesis stage configuration.
+    *   `[✅]` 3.a. Set `dialectic_stages.recipe_template_id = v_template_id` to link the stage to the `parenthesis_v1` recipe template.
+    *   `[✅]` 3.b. Populate `expected_output_template_ids` with the template IDs for `parenthesis_trd.md`, `parenthesis_master_plan.md`, and `parenthesis_milestone_schema.md` so downstream stages can fetch canonical files by id.
+    *   `[✅]` 3.c. Record migration provenance for the stage configuration changes.
 
-*   `[ ]` 4. `[PROMPT]` Verify and seed Parenthesis document templates.
-    *   `[ ]` 4.a. Confirm the markdown templates referenced by the target state exist (update them if necessary to include status markers, iteration/delta sections, dependency summaries, validation bullets).
-    *   `[ ]` 4.b. If any template is missing, create it under `docs/templates/parenthesis/` (or the repository’s template location) and seed a matching `dialectic_document_templates` row with the correct bucket/path/document_key so `files_to_generate` pointers resolve.
+*   `[✅]` 4. `[PROMPT]` Verify and seed Parenthesis document templates.
+    *   `[✅]` 4.a. Confirm the markdown templates referenced by the target state exist (update them if necessary to include status markers, iteration/delta sections, dependency summaries, validation bullets).
+    *   `[✅]` 4.b. If any template is missing, create it under `docs/templates/parenthesis/` (or the repository's template location) and seed a matching `dialectic_document_templates` row with the correct bucket/path/document_key so `files_to_generate` pointers resolve.

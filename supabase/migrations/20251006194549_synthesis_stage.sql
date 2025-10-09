@@ -2134,6 +2134,11 @@ BEGIN
             ON CONFLICT (instance_id, from_step_id, to_step_id) DO NOTHING;
         END IF;
     END IF;
+
+    -- Set recipe_template_id for synthesis stage
+    UPDATE public.dialectic_stages
+    SET recipe_template_id = v_template_id
+    WHERE id = v_stage_id;
 END $$;
 
 
