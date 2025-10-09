@@ -93,18 +93,6 @@ export function DashboardPage() {
 											Start Chat
 										</Link>
 										<Link
-											to="/organizations"
-											className="font-medium text-primary hover:text-primary/90"
-										>
-											Create Organization
-										</Link>
-										<Link
-											to="/organizations"
-											className="font-medium text-primary hover:text-primary/90"
-										>
-											Invite Teammates
-										</Link>
-										<Link
 											to="/subscription"
 											className="font-medium text-primary hover:text-primary/90"
 										>

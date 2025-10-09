@@ -131,14 +131,6 @@ export function NavUser({
 					<Button
 						variant="ghost"
 						className="w-full justify-start hover:underline"
-						onClick={() => navigate("/organizations")}
-					>
-						<BadgeCheck />
-						Account
-					</Button>
-					<Button
-						variant="ghost"
-						className="w-full justify-start hover:underline"
 						onClick={() => navigate("/subscription")}
 					>
 						<CreditCard />

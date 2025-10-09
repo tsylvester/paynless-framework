@@ -143,22 +143,6 @@ const routes: RouteObject[] = [
         ),
       },
       {
-        path: 'organizations',
-        element: (
-          <ProtectedRoute>  
-            <OrganizationHubPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'organizations/:orgId',
-        element: (
-          <ProtectedRoute>
-            <OrganizationFocusedViewPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
         path: 'dialectic',
         element: (
           <ProtectedRoute>
