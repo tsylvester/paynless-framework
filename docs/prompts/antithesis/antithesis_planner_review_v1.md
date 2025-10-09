@@ -16,11 +16,13 @@
   - Feature Specification: {{thesis_documents.feature_spec}}
   - Technical Approach: {{thesis_documents.technical_approach}}
   - Success Metrics: {{thesis_documents.success_metrics}}
-- **Thesis Feedback (optional)**:
+{{#section:thesis_feedback}}
+- **Thesis Feedback**:
   - Business Case Feedback: {{thesis_feedback.business_case}}
   - Feature Specification Feedback: {{thesis_feedback.feature_spec}}
   - Technical Approach Feedback: {{thesis_feedback.technical_approach}}
   - Success Metrics Feedback: {{thesis_feedback.success_metrics}}
+{{/#section:thesis_feedback}}
 
 ## HeaderContext Schema
 ```json

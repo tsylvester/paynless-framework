@@ -305,7 +305,6 @@
       "comparison_signals"
     ],
     "user_constraints": [],
-    "continuation_policy": "single-proposal review; continue until all artifacts for this proposal are complete",
     "normalization_guidance": {
       "scoring_scale": "1-5",
       "required_dimensions": [

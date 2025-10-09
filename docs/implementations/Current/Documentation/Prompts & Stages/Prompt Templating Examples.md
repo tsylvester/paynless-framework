@@ -260,392 +260,164 @@ Use these templates as the base for each stage. Provide `role` and `stage_instru
 
 # Review / Antithesis Templates
 
-## Review/Antithesis Prompt Inserts (stage-specific)
+The Antithesis stage now uses a recipe-based system with seven sequential steps executed once per proposal. For complete recipe specifications including detailed schemas, input requirements, and output structures, see [`antithesis-review-recipe.md`](2-Antithesis-Review/antithesis-review-recipe.md).
+
+## Antithesis Recipe Overview
+
+The `antithesis_v1` recipe consists of seven steps:
+
+1. **Prepare Proposal Review Plan** (`antithesis_planner_review_v1`) - Planner template that creates per-proposal header context
+2. **Generate Review Documents** (6 parallel turns):
+   - `antithesis_business_case_critique_turn_v1` - Business case critique with SWOT analysis
+   - `antithesis_feasibility_assessment_turn_v1` - Technical feasibility assessment
+   - `antithesis_risk_register_turn_v1` - Risk register with impact/likelihood/mitigation
+   - `antithesis_non_functional_requirements_turn_v1` - Non-functional requirements evaluation
+   - `antithesis_dependency_map_turn_v1` - Dependency mapping and conflict analysis
+   - `antithesis_comparison_vector_turn_v1` - Normalized comparison vector for synthesis
+
+## Antithesis Artifacts
+
+The recipe produces six main artifacts per proposal:
+- `business_case_critique` - Business case analysis with strengths, weaknesses, opportunities, threats
+- `technical_feasibility_assessment` - Technical feasibility across team, timeline, cost, integration, compliance
+- `risk_register` - Structured risk register with impact, likelihood, and mitigation strategies
+- `non_functional_requirements` - Non-functional requirements evaluation (security, performance, reliability, etc.)
+- `dependency_map` - Component dependencies, integration points, and conflict analysis
+- `comparison_vector` - Normalized comparison signals across 10 dimensions for synthesis
+
+## Overlay Configuration
+
+The Antithesis stage overlay now references the recipe's `outputs_required` data instead of the deprecated `expected_output_artifacts_json` field. Key overlay values include:
+
 ```json
 {
   "role": "senior reviewer and feasibility analyst",
-  "stage_instructions": "for the provided proposal only, critically analyze against constraints, standards, and references; identify gaps, risks, inconsistencies, and integration issues; produce clear, actionable recommendations and normalized comparison signals for downstream synthesis;",
-  "expected_output_artifacts_json": [
-    "Per-proposal critique with strengths/weaknesses and actionable recommendations",
-    "Technical feasibility assessment with identified risks and mitigation strategies",
-    "Risk register and non-functional requirements",
-    "Dependency map",
-    "Comparison vector (normalized signals)"
-  ]
+  "stage_instructions": "for the provided proposal only, critically analyze against constraints, standards, and references; identify gaps, risks, inconsistencies, and integration issues; produce clear, actionable recommendations and normalized comparison signals for downstream synthesis",
+  "continuation_policy": "single-proposal review; continue until all artifacts for this proposal are complete",
+  "style_guide_markdown": "<see StyleGuide.md for style guide specifications>",
+  "exhaustiveness_requirement": "extreme detail; no summaries; each step includes inputs, outputs, validation; follow the style guide exactly"
 }
 ```
 
-## Review/Antithesis Expected Output Artifacts (System Instructions Inserts)
-```json
-{
-  "system_materials": {
-    "executive_summary": "concise overview of key findings across all proposals",
-    "input_artifacts_summary": "summary of proposals and any user feedback included for review",
-    "stage_rationale": "explain the review approach and criteria used",
-    "progress_update": "for continuation turns, summarize completed vs pending review areas; omit on first turn",
-    "validation_checkpoint": [
-      "major technical concerns identified",
-      "risk mitigation strategies proposed",
-      "alternatives considered where applicable",
-      "references and standards checked"
-    ],
-    "quality_standards": [
-      "evidence-based",
-      "actionable",
-      "balanced",
-      "complete"
-    ]
-  },
-  "documents": [
-    {
-      "key": "per_proposal_critique",
-      "template_filename": "antithesis_per_proposal_critique.md",
-      "content_to_include": {
-        "proposal_id": "placeholder",
-        "model_id": "placeholder",
-        "strengths": ["placeholder"],
-        "weaknesses": ["placeholder"],
-        "recommendations": ["placeholder"],
-        "notes": ["placeholder"]
-      }
-    },
-    {
-      "key": "technical_feasibility_assessment",
-      "template_filename": "antithesis_feasibility_assessment.md",
-      "content_to_include": "feasibility across constraints (team, timeline, cost), integration with existing systems, and compliance"
-    },
-    {
-      "key": "risk_register",
-      "template_filename": "antithesis_risk_register.md",
-      "content_to_include": [
-        { "risk": "placeholder", "impact": "placeholder", "likelihood": "placeholder", "mitigation": "placeholder" }
-      ]
-    },
-    {
-      "key": "non_functional_requirements",
-      "template_filename": "antithesis_non_functional_requirements.md",
-      "content_to_include": ["security", "performance", "reliability", "scalability", "maintainability", "compliance"]
-    },
-    {
-      "key": "dependency_map",
-      "template_filename": "antithesis_dependency_map.md",
-      "content_to_include": "mapping of major components and their inter-dependencies; highlight conflicts and sequencing concerns"
-    },
-    {
-      "key": "comparison_vector",
-      "template_filename": "antithesis_comparison_vector.json",
-      "content_to_include": {
-        "proposal_id": "placeholder",
-        "dimensions": {
-          "feasibility": { "score": 3, "rationale": "placeholder" },
-          "complexity": { "score": 3, "rationale": "placeholder" },
-          "security": { "score": 3, "rationale": "placeholder" },
-          "performance": { "score": 3, "rationale": "placeholder" },
-          "maintainability": { "score": 3, "rationale": "placeholder" },
-          "scalability": { "score": 3, "rationale": "placeholder" },
-          "cost": { "score": 3, "rationale": "placeholder" },
-          "time_to_market": { "score": 3, "rationale": "placeholder" },
-          "compliance_risk": { "score": 3, "rationale": "placeholder" },
-          "alignment_with_constraints": { "score": 3, "rationale": "placeholder" }
-        }
-      }
-    }
-  ],
-  "files_to_generate": [
-    { "template_filename": "antithesis_per_proposal_critique.md", "from_document_key": "per_proposal_critique" },
-    { "template_filename": "antithesis_feasibility_assessment.md", "from_document_key": "technical_feasibility_assessment" },
-    { "template_filename": "antithesis_risk_register.md", "from_document_key": "risk_register" },
-    { "template_filename": "antithesis_non_functional_requirements.md", "from_document_key": "non_functional_requirements" },
-    { "template_filename": "antithesis_dependency_map.md", "from_document_key": "dependency_map" },
-    { "template_filename": "antithesis_comparison_vector.json", "from_document_key": "comparison_vector" }
-  ]
-}
-```
+For complete recipe specifications, input requirements, output schemas, and continuation policies, refer to [`antithesis-review-recipe.md`](2-Antithesis-Review/antithesis-review-recipe.md).
 ---
 
 # Synthesis / Refinement Templates
 
-## Synthesis/Refinement Prompt Inserts (stage-specific)
+The Synthesis stage now uses a complex recipe-based system with five sequential phases and multiple parallel processing steps. For complete recipe specifications including detailed schemas, input requirements, and output structures, see [`synthesis-refinement-recipe.md`](3-Synthesis-Refinement/synthesis-refinement-recipe.md).
+
+## Synthesis Recipe Overview
+
+The `synthesis_v1` recipe consists of five phases:
+
+1. **Prepare Pairwise Synthesis Header** (`synthesis_pairwise_header_planner_v1`) - Planner template that creates header context for pairwise processing
+2. **Pairwise Synthesis** (4 parallel turns):
+   - `synthesis_pairwise_business_case_turn_v1` - Business case synthesis
+   - `synthesis_pairwise_feature_spec_turn_v1` - Feature specification synthesis
+   - `synthesis_pairwise_technical_approach_turn_v1` - Technical approach synthesis
+   - `synthesis_pairwise_success_metrics_turn_v1` - Success metrics synthesis
+3. **Document-Level Consolidation** (4 parallel turns):
+   - `synthesis_document_business_case_turn_v1` - Consolidate business cases
+   - `synthesis_document_feature_spec_turn_v1` - Consolidate feature specs
+   - `synthesis_document_technical_approach_turn_v1` - Consolidate technical approaches
+   - `synthesis_document_success_metrics_turn_v1` - Consolidate success metrics
+4. **Generate Final Synthesis Header** (`synthesis_final_header_planner_v1`) - Planner template for final deliverables
+5. **Final Deliverable Rendering** (3 parallel turns):
+   - `synthesis_prd_turn_v1` - Product Requirements Document
+   - `synthesis_system_architecture_turn_v1` - System Architecture Overview
+   - `synthesis_tech_stack_turn_v1` - Tech Stack Recommendations
+
+## Synthesis Artifacts
+
+The recipe produces three main final artifacts:
+- `prd` - Product Requirements Document with MVP, user stories, and features
+- `system_architecture_overview` - System architecture with services, data flows, and integrations
+- `tech_stack_recommendations` - Technology stack recommendations with component analysis
+
+## Overlay Configuration
+
+The Synthesis stage overlay now references the recipe's `outputs_required` data instead of the deprecated `expected_output_artifacts_json` field. Key overlay values include:
+
 ```json
 {
   "role": "senior systems architect and product planner",
   "stage_instructions": "synthesize multiple prior proposals with their per-proposal critiques and comparison vectors plus user feedback into a single, unified and optimized plan; use the normalized signals (feasibility, complexity, security, performance, maintainability, scalability, cost, time_to_market, compliance_risk, alignment_with_constraints) to drive comparative assessment and selection; resolve conflicts, integrate complementary strengths, fill gaps identified by reviews, and document key decisions and trade-offs; recommend standard approaches when they best meet constraints, and propose alternates only when they materially improve critical dimensions under current constraints;",
-  "expected_output_artifacts_json": [
-    "Revised PRD with MVP description, user stories, and feature specifications",
-    "System architecture overview",
-    "Tech stack recommendations"
-  ]
+  "style_guide_markdown": "<see StyleGuide.md for style guide specifications>",
+  "exhaustiveness_requirement": "extreme detail; no summaries; each step includes inputs, outputs, validation; follow the style guide exactly"
 }
 ```
 
-## Synthesis/Refinement Expected Output Artifacts (System Instructions Inserts)
-```json
-{
-  "system_materials": {
-    "executive_summary": "outline/index of all outputs in this response and how they connect to the objective",
-    "input_artifacts_summary": "succinct summary of prior proposals, critiques, and user feedback included in this synthesis",
-    "stage_rationale": "decision record explaining how signals and critiques informed selections, how conflicts were resolved, gaps were filled, and why chosen approaches best meet constraints",
-    "progress_update": "for continuation turns, summarize what is complete vs remaining; omit on first turn",
-    "signal_sources": ["per_proposal_critique", "comparison_vector"],
-    "decision_criteria": [
-      "feasibility",
-      "complexity",
-      "security",
-      "performance",
-      "maintainability",
-      "scalability",
-      "cost",
-      "time_to_market",
-      "compliance_risk",
-      "alignment_with_constraints"
-    ],
-    "validation_checkpoint": [
-      "requirements addressed",
-      "best practices applied",
-      "feasible & compliant",
-      "references integrated"
-    ],
-    "quality_standards": [
-      "security-first",
-      "maintainable",
-      "scalable",
-      "performance-aware"
-    ],
-    "diversity_rubric": {
-      "prefer_standards_when": "meet constraints, well-understood by team, minimize risk/time-to-market",
-      "propose_alternates_when": "materially improve performance, security, maintainability, or total cost under constraints",
-      "if_comparable": "present 1-2 viable options with concise trade-offs and a clear recommendation"
-    }
-  },
-  "documents": [
-    {
-      "key": "prd",
-      "template_filename": "synthesis_product_requirements_document.md",
-      "content_to_include": {
-        "mvp_description": "placeholder",
-        "user_stories": ["As a <role>, I want <goal> so that <reason>."],
-        "feature_specifications": ["placeholder feature spec 1", "placeholder feature spec 2"]
-      }
-    },
-    {
-      "key": "system_architecture_overview",
-      "template_filename": "synthesis_system_architecture_overview.md",
-      "content_to_include": "diagrams/description of services, data flows, storage, auth, and integrations; include rationale for chosen patterns"
-    },
-    {
-      "key": "tech_stack_recommendations",
-      "template_filename": "synthesis_tech_stack_recommendations.md",
-      "content_to_include": [
-        {
-          "component": "placeholder (e.g., database)",
-          "recommended": "placeholder (e.g., Postgres)",
-          "alternatives": ["alt1", "alt2"],
-          "tradeoffs": "brief pros/cons with selection rationale"
-        }
-      ]
-    }
-  ],
-  "files_to_generate": [
-    { "template_filename": "synthesis_product_requirements_document.md", "from_document_key": "prd" },
-    { "template_filename": "synthesis_system_architecture_overview.md", "from_document_key": "system_architecture_overview" },
-    { "template_filename": "synthesis_tech_stack_recommendations.md", "from_document_key": "tech_stack_recommendations" }
-  ]
-}
-```
+For complete recipe specifications, input requirements, output schemas, and continuation policies, refer to [`synthesis-refinement-recipe.md`](3-Synthesis-Refinement/synthesis-refinement-recipe.md).
 ---
 # Planning / Parenthesis Templates
 
-## Parenthesis/Planning Prompt Inserts (stage-specific)
+The Parenthesis stage now uses a recipe-based system with four sequential steps. For complete recipe specifications including detailed schemas, input requirements, and output structures, see [`parenthesis-planning-recipe.md`](4-Parenthesis-Planning/parenthesis-planning-recipe.md).
+
+## Parenthesis Recipe Overview
+
+The `parenthesis_v1` recipe consists of four steps:
+
+1. **Build Planning Header** (`parenthesis_planner_header_v1`) - Planner template that creates header context
+2. **Generate Technical Requirements Document** (`parenthesis_trd_turn_v1`) - Turn template for TRD generation
+3. **Generate Master Plan** (`parenthesis_master_plan_turn_v1`) - Turn template for dependency-ordered master plan
+4. **Generate Milestone Schema** (`parenthesis_milestone_schema_turn_v1`) - Turn template for milestone field definitions
+
+## Parenthesis Artifacts
+
+The recipe produces three main artifacts:
+- `trd` - Technical Requirements Document with subsystems, APIs, schemas, and architecture
+- `master_plan` - Dependency-ordered master plan with phases and milestones
+- `milestone_schema` - Reusable milestone field schema for the next stage
+
+## Overlay Configuration
+
+The Parenthesis stage overlay now references the recipe's `outputs_required` data instead of the deprecated `expected_output_artifacts_json` field. Key overlay values include:
+
 ```json
 {
   "role": "principal technical planner and delivery architect",
   "stage_instructions": "formalize the synthesized solution into an executable plan centered on a persistent Master Plan. Create a high-level, dependency-ordered roadmap of milestones (Master Plan) and define a milestone schema that will be expanded in the next stage. Do not deeply detail implementation steps here; instead, ensure ordering, scope, and acceptance criteria are unambiguous, and align with the style guide for standardized structure.",
-  "expected_output_artifacts_json": [
-    "Tech Requirements Document (TRD): subsystem design, API surfaces, schema outlines, proposed file tree, and detailed technical architecture",
-    "Project roadmap with milestones and interdependencies (Master Plan)",
-    "Milestone schema definition and example instances (to be expanded next stage)"
-  ]
+  "generation_limits": { "max_steps": 200, "target_steps": "120-180", "max_output_lines": "600-800" },
+  "style_guide_markdown": "<see StyleGuide.md for style guide specifications>",
+  "exhaustiveness_requirement": "extreme detail; no summaries; each step includes inputs, outputs, validation; follow the style guide exactly"
 }
 ```
 
-## Parenthesis/Planning Expected Output Artifacts (System Instructions Inserts)
-```json
-{
-  "system_materials": {
-    "executive_summary": "overview of formalization scope and how the Master Plan will drive iterative execution",
-    "input_artifacts_summary": "succinct recap of synthesis outputs informing this plan",
-    "stage_rationale": "why the chosen milestone breakdown, ordering, and architecture structure best fit constraints and objectives",
-    "progress_update": "for continuation turns, summarize Master Plan changes since last iteration; omit on first turn",
-    "validation_checkpoint": [
-      "complete coverage of synthesized scope",
-      "dependency ordering validated",
-      "milestone acceptance criteria present",
-      "style guide structure applied"
-    ],
-    "quality_standards": [
-      "consistent formatting",
-      "explicit ordering",
-      "clear acceptance criteria",
-      "testability of milestones"
-    ]
-  },
-  "documents": [
-    {
-      "key": "trd",
-      "template_filename": "parenthesis_trd.md",
-      "content_to_include": {
-        "subsystems": ["placeholder"],
-        "apis": ["placeholder"],
-        "schemas": ["placeholder"],
-        "proposed_file_tree": "placeholder",
-        "architecture_overview": "placeholder"
-      }
-    },
-    {
-      "key": "master_plan",
-      "template_filename": "parenthesis_master_plan.md",
-      "content_to_include": {
-        "phases": [
-          {
-            "name": "placeholder",
-            "milestones": [
-              {
-                "id": "M1",
-                "title": "placeholder",
-                "objective": "placeholder",
-                "dependencies": ["none"],
-                "acceptance_criteria": ["placeholder"],
-                "status": "[ ]"
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "key": "milestone_schema",
-      "template_filename": "parenthesis_milestone_schema.md",
-      "content_to_include": {
-        "fields": [
-          "id",
-          "title",
-          "objective",
-          "dependencies",
-          "acceptance_criteria",
-          "status"
-        ],
-        "style_guide_notes": "Use standardized checklist markers, component labels when relevant, and keep scope at milestone granularity; detailed steps belong to next stage."
-      }
-    }
-  ],
-  "files_to_generate": [
-    { "template_filename": "parenthesis_trd.md", "from_document_key": "trd" },
-    { "template_filename": "parenthesis_master_plan.md", "from_document_key": "master_plan" },
-    { "template_filename": "parenthesis_milestone_schema.md", "from_document_key": "milestone_schema" }
-  ]
-}
-```
+For complete recipe specifications, input requirements, output schemas, and continuation policies, refer to [`parenthesis-planning-recipe.md`](4-Parenthesis-Planning/parenthesis-planning-recipe.md).
 ---
 
 # Implementation / Paralysis Templates
 
-## Paralysis/Implementation Prompt Inserts (stage-specific)
+The Paralysis stage now uses a recipe-based system with four sequential steps. For complete recipe specifications including detailed schemas, input requirements, and output structures, see [`paralysis-planning-recipe.md`](5-Paralysis-Implementation/paralysis-planning-recipe.md).
+
+## Paralysis Recipe Overview
+
+The `paralysis_v1` recipe consists of four steps:
+
+1. **Build Implementation Header** (`paralysis_planner_header_v1`) - Planner template that creates header context
+2. **Generate Actionable Checklist** (`paralysis_actionable_checklist_turn_v1`) - Turn template for detailed implementation checklist
+3. **Generate Updated Master Plan** (`paralysis_updated_master_plan_turn_v1`) - Turn template for updated master plan
+4. **Generate Advisor Recommendations** (`paralysis_advisor_recommendations_turn_v1`) - Turn template for consolidated advisor analysis
+
+## Paralysis Artifacts
+
+The recipe produces three main artifacts:
+- `actionable_checklist` - Detailed implementation checklist with TDD sequences
+- `updated_master_plan` - Updated master plan with milestone status changes
+- `advisor_recommendations` - Consolidated advisor analysis (replaces previous multiple advisor artifacts)
+
+## Overlay Configuration
+
+The Paralysis stage overlay now references the recipe's `outputs_required` data instead of the deprecated `expected_output_artifacts_json` field. Key overlay values include:
+
 ```json
 {
   "role": "implementation planner and TDD workflow author",
   "stage_instructions": "using the TRD, Master Plan, and selected milestones, generate a dependency-ordered, fine-grained, high-detail checklist of implementation prompts that follow the style guide (status markers, numbering 1/a/i, component labels). Process documents sequentially: generate one document per turn. If the current document would exceed limits, stop at the boundary and return continuation flags; do not start the next document until the current one is complete. For this iteration, fully detail only the next uncompleted milestone(s) and return an updated Master Plan marking those milestones as [🚧].",
-  "expected_output_artifacts_json": [
-    "Actionable implementation checklist (low-level prompts)",
-    "Updated Master Plan (milestones just detailed set to [🚧])"
-  ]
+  "generation_limits": { "max_steps": 200, "target_steps": "120-180", "max_output_lines": "600-800" },
+  "style_guide_markdown": "<see StyleGuide.md for style guide specifications>",
+  "exhaustiveness_requirement": "extreme detail; no summaries; each step includes inputs, outputs, validation; follow the style guide exactly"
 }
 ```
 
-## Paralysis/Implementation Expected Output Artifacts (System Instructions Inserts)
-```json
-{
-  "system_materials": {
-    "executive_summary": "summary of which milestones are detailed in this iteration and why",
-    "input_artifacts_summary": "TRD sections used, Master Plan phase/milestone references",
-    "stage_rationale": "explain ordering, TDD emphasis, and how checklist conforms to style guide",
-    "progress_update": "summarize completed vs remaining milestones; denote updated statuses in Master Plan",
-    "generation_limits": { "max_steps": 200, "target_steps": "120-180", "max_output_lines": "600-800" },
-    "document_order": ["actionable_checklist","updated_master_plan"],
-    "current_document": "actionable_checklist",
-    "continuation_policy": "stop-at-boundary; one-document-per-turn; resume where left off",
-    "exhaustiveness_requirement": "extreme detail; no summaries; each step includes inputs, outputs, validation; 1/a/i numbering; component labels",
-    "validation_checkpoint": [
-      "checklist uses style guide (status, numbering, labels)",
-      "steps are atomic and testable",
-      "dependency ordering enforced",
-      "coverage aligns to milestone acceptance criteria"
-    ],
-    "quality_standards": [
-      "TDD sequence present",
-      "no missing dependencies",
-      "no speculative steps beyond selected milestones",
-      "clear file-by-file prompts"
-    ]
-  },
-  "documents": [
-    {
-      "key": "actionable_checklist",
-      "template_filename": "paralysis_actionable_checklist.md",
-      "content_to_include": "full low-level checklist using style guide: status markers, 1/a/i numbering, component labels; each step contains inputs, outputs, validation; one-file-per-step prompts"
-    },
-    {
-      "key": "updated_master_plan",
-      "template_filename": "paralysis_updated_master_plan.md",
-      "content_to_include": "copy of Master Plan with the detailed milestones set to [🚧], others unchanged"
-    }
-  ],
-  "files_to_generate": [
-    { "template_filename": "paralysis_actionable_checklist.md", "from_document_key": "actionable_checklist" },
-    { "template_filename": "paralysis_updated_master_plan.md", "from_document_key": "updated_master_plan" }
-  ]
-}
-```
-
----
-
-# Stage Agnostic "Advisor" Process
-
-{
-  "system_materials": {
-    "executive_summary": "",
-    "decision_criteria": ["feasibility","complexity","security","performance","maintainability","scalability","cost","time_to_market","compliance_risk","alignment_with_constraints"],
-    "validation_checkpoint": ["criteria applied","constraints respected","references integrated","feasible & compliant"]
-  },
-  "documents": [
-    {
-      "key": "comparison_matrix",
-      "template_filename": "advisor_comparison_matrix.md",
-      "content_to_include": [
-        {"option_id": "placeholder","scores": {"feasibility": 4,"cost": 3}, "rationales": {"feasibility": "…","cost": "…"}}
-      ]
-    },
-    {
-      "key": "comparative_analysis",
-      "template_filename": "advisor_comparative_analysis.md",
-      "content_to_include": "brief synthesis of key differences and trade-offs"
-    },
-    {
-      "key": "recommendations",
-      "template_filename": "advisor_recommendations.md",
-      "content_to_include": [
-        {"rank": 1,"option_id": "placeholder","why": "…","when_to_choose": "…"}
-      ]
-    },
-    {
-      "key": "selection_rationale",
-      "template_filename": "advisor_selection_rationale.md",
-      "content_to_include": "tie-breakers, risk posture, sensitivity to constraints"
-    }
-  ],
-  "files_to_generate": [
-    {"template_filename": "advisor_comparison_matrix.md", "from_document_key": "comparison_matrix"},
-    {"template_filename": "advisor_comparative_analysis.md", "from_document_key": "comparative_analysis"},
-    {"template_filename": "advisor_recommendations.md", "from_document_key": "recommendations"},
-    {"template_filename": "advisor_selection_rationale.md", "from_document_key": "selection_rationale"}
-  ]
-}
+For complete recipe specifications, input requirements, output schemas, and continuation policies, refer to [`paralysis-planning-recipe.md`](5-Paralysis-Implementation/paralysis-planning-recipe.md).

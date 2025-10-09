@@ -15,22 +15,22 @@
   - PRD: {{synthesis_documents.prd}}
   - System Architecture Overview: {{synthesis_documents.system_architecture_overview}}
   - Tech Stack Recommendations: {{synthesis_documents.tech_stack_recommendations}}
-{{synthesis_feedback}}
+{{#section:synthesis_feedback}}
 - **Synthesis Feedback**:
   - PRD Feedback: {{synthesis_feedback.prd}}
   - System Architecture Feedback: {{synthesis_feedback.system_architecture_overview}}
   - Tech Stack Feedback: {{synthesis_feedback.tech_stack_recommendations}}
-{{/synthesis_feedback}}
-{{parenthesis_iteration}}
+{{/#section:synthesis_feedback}}
+{{#section:parenthesis_iteration}}
 - **Prior Parenthesis Documents (for iterative refinement)**:
   - Master Plan: {{parenthesis_documents.master_plan}}
   - TRD: {{parenthesis_documents.trd}}
-{{/parenthesis_iteration}}
-{{parenthesis_feedback}}
+{{/#section:parenthesis_iteration}}
+{{#section:parenthesis_feedback}}
 - **Prior Parenthesis Feedback**:
   - Master Plan Feedback: {{parenthesis_feedback.master_plan}}
   - TRD Feedback: {{parenthesis_feedback.trd}}
-{{/parenthesis_feedback}}
+{{/#section:parenthesis_feedback}}
 
 ## HeaderContext Schema
 ```json

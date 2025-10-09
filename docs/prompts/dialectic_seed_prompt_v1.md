@@ -1,4 +1,4 @@
-Your task is to {stage_instructions} produce the required outputs using the provided inputs and references.
+Your task is to {{stage_instructions}} produce the required outputs using the provided inputs and references.
 
 {{#section:context_description}}
 # User Objective

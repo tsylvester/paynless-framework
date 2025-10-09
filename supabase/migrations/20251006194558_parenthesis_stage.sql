@@ -222,10 +222,6 @@ BEGIN
               "in_progress_status": "[🚧]",
               "unstarted_status": "[ ]"
             },
-            "continuation_policy": {
-              "iteration": "resume-from-last-open-milestone",
-              "corrective": "restate-delta"
-            },
             "trd_outline_inputs": {
               "subsystems": [],
               "apis": [],
@@ -540,8 +536,7 @@ BEGIN
                 "third_party_services[]"
               ]
             }
-          ],
-          "continuation_policy": "If the TRD output truncates, continue with reason ''length'' and resume at the next unfinished section."
+          ]
         }'::jsonb
     )
     ON CONFLICT (template_id, step_key) DO UPDATE
@@ -753,8 +748,7 @@ BEGIN
                 "third_party_services[]"
               ]
             }
-          ],
-          "continuation_policy": "If the master plan output truncates, continue with reason ''length'' and resume from the next unfinished milestone section."
+          ]
         }'::jsonb
     )
     ON CONFLICT (template_id, step_key) DO UPDATE
@@ -970,8 +964,7 @@ BEGIN
                 "migration_context[]"
               ]
             }
-          ],
-          "continuation_policy": "If the milestone schema output truncates, continue with reason ''length'' and resume documenting the remaining field definitions."
+          ]
         }'::jsonb
     )
     ON CONFLICT (template_id, step_key) DO UPDATE

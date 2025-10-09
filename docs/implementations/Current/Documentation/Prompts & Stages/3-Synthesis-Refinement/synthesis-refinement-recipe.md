@@ -221,7 +221,6 @@
       "dependency_alignment",
       "stakeholder_objectives"
     ],
-    "continuation_policy": "If a pairwise synthesis turn truncates, resume at the last unresolved section using the continuation prompt pattern."
   },
   "header_context_artifact": {
     "type": "header_context",
@@ -395,8 +394,7 @@
         "proposal_references": []
       }
     }
-  ],
-  "continuation_policy": "If the pairwise synthesis exceeds model limits or produces partial JSON, enqueue a continuation job with reason 'length' and resume at the last unresolved section."
+  ]
 }
 ```
 
@@ -485,8 +483,7 @@
         "tradeoffs": []
       }
     }
-  ],
-  "continuation_policy": "If the JSON output truncates, emit a continuation job with reason 'length' and resume from the last incomplete feature section."
+  ]
 }
 ```
 
@@ -561,8 +558,7 @@
         "open_questions": []
       }
     }
-  ],
-  "continuation_policy": "If architecture synthesis is incomplete, continue with reason 'length' and resume from the pending component block."
+  ]
 }
 ```
 
@@ -643,8 +639,7 @@
         "validation_checks": []
       }
     }
-  ],
-  "continuation_policy": "If the metric synthesis is truncated, continue with reason 'length' and resume listing outstanding metrics."
+  ]
 }
 ```
 
@@ -712,8 +707,7 @@
       "template_filename": "synthesis_document_business_case.json",
       "from_document_key": "synthesis_document_business_case"
     }
-  ],
-  "continuation_policy": "If the consolidated business case cannot complete in one response, continue with reason 'length' and resume documenting remaining positions."
+  ]
 }
 ```
 
@@ -784,8 +778,7 @@
       "template_filename": "synthesis_document_feature_spec.json",
       "from_document_key": "synthesis_document_feature_spec"
     }
-  ],
-  "continuation_policy": "If the feature synthesis is truncated, continue with reason 'length' and resume listing the remaining features."
+  ]
 }
 ```
 
@@ -842,8 +835,7 @@
       "template_filename": "synthesis_document_technical_approach.json",
       "from_document_key": "synthesis_document_technical_approach"
     }
-  ],
-  "continuation_policy": "If the technical approach synthesis truncates, continue with reason 'length' and resume documenting outstanding architecture sections."
+  ]
 }
 ```
 
@@ -909,8 +901,7 @@
       "template_filename": "synthesis_document_success_metrics.json",
       "from_document_key": "synthesis_document_success_metrics"
     }
-  ],
-  "continuation_policy": "If the consolidated success metrics cannot complete in one response, continue with reason 'length' and resume documenting the remaining metrics."
+  ]
 }
 ```
 
@@ -986,8 +977,7 @@
       "maintainable",
       "scalable",
       "performance-aware"
-    ],
-    "continuation_policy": "If the header context cannot list every deliverable directive in one response, continue with reason 'length' and resume detailing the remaining deliverable instructions."
+    ]
   },
   "header_context_artifact": {
     "type": "header_context",
@@ -1207,8 +1197,7 @@
         "stakeholder_communications": []
       }
     }
-  ],
-  "continuation_policy": "If the PRD output truncates, enqueue continuation jobs with reason 'length' and resume at the next unfinished section."
+  ]
 }
 ```
 
@@ -1286,8 +1275,7 @@
         "open_questions": []
       }
     }
-  ],
-  "continuation_policy": "If the architecture overview exceeds the turn, continue with reason 'length' and resume at the next subsystem section."
+  ]
 }
 ```
 
@@ -1367,8 +1355,7 @@
       "open_questions": [],
       "next_steps": []
     }
-  ],
-  "continuation_policy": "If the tech stack output is truncated, continue with reason 'length' and resume documenting the remaining components."
+  ]
 }
 ```
 

@@ -82,7 +82,6 @@
       "advisor_recommendations"
     ],
     "current_document": "actionable_checklist",
-    "continuation_policy": "stop-at-boundary; one-document-per-turn; resume where left off",
     "exhaustiveness_requirement": "extreme detail; no summaries; each step includes inputs, outputs, validation; 1/a/i numbering; component labels",
     "validation_checkpoint": [
       "checklist uses style guide (status, numbering, labels)",
@@ -154,11 +153,11 @@
   - `dialectic_stage_transitions` advance from Parenthesis to Paralysis on user submission of Parenthesis feedback (seeded in `20250613190311_domains_and_processes_improvement.sql`).
   - Existing integration tests (`dialectic_pipeline.integration.test.ts`, `dialectic_pipeline_user_like.integration.test.ts`) assume a monolithic paralysis job; they will require updates when the document-centric recipe is introduced.
 
-###### Recipe: `paralysis_v1`
+# Target State: `paralysis_v1`
 - **Recipe Description:** Iterative implementation workflow that converts the Parenthesis master plan and TRD into a high-detail checklist, updates the master plan for the next sprint cycle, and concludes with an advisor-style comparison of the resulting plans against the original request. Although earlier documentation depicts the Advisor flow as a separate stage, this target recipe intentionally embeds the advisor evaluation as Step 4 so that Paralysis remains the final iterative stage before hand-off.
 - **Steps Count:** 4 sequential steps (1 planner, 2 turn executions, 1 advisor evaluation).
 
-### Step 1: Build Implementation Header
+## Step 1: Build Implementation Header
 - **Objective:** Emit `header_context.json` describing the milestones to detail, checklist sizing rules, status preservation policy, and continuation metadata for the checklist and master plan turns.
 - **Prompt Type:** `Planner`
 - **Prompt Template Name:** `paralysis_planner_header_v1`
@@ -231,7 +230,6 @@
       "advisor_recommendations"
     ],
     "current_document": "actionable_checklist",
-    "continuation_policy": "stop-at-boundary; one-document-per-turn-sequence; resume where left off",
     "exhaustiveness_requirement": "extreme detail; no summaries; each step includes inputs, outputs, validation; follow the style guide exactly",
     "validation_checkpoint": [
       "checklist uses style guide (status, numbering, labels)",
@@ -267,15 +265,7 @@
     {
       "document_key": "actionable_checklist",
       "content_to_include": {
-        "milestone_ids": [],
-        "inputs_required": ["trd", "master_plan"],
-        "tdd_sequence": ["RED", "GREEN", "REFACTOR"],
-        "status_markers": ["[ ]", "[🚧]", "[✅]"],
-        "generation_limits": {
-          "max_steps": 200,
-          "target_steps": "120-180",
-          "max_output_lines": "600-800"
-        }
+        "milestone_ids": [<list the next milestone(s) to detail from the master_plan and milestone_schema>],
       }
     },
     {
@@ -377,8 +367,7 @@
     ],
     "files_to_generate": [
       { "template_filename": "paralysis_actionable_checklist.md", "from_document_key": "actionable_checklist" }
-    ],
-    "continuation_policy": "stop_at_boundary"
+    ]
   }
 }
 ```
@@ -391,23 +380,35 @@
       "document_key": "actionable_checklist",
       "template_filename": "paralysis_actionable_checklist.md",
       "content_to_include": {
-        "index": [],
-        "executive_summary": "",
+        "index": [<list the milestone(s) resolved in this section>],
+        "milestone_summary": "<explain the desired outcome of this milestone>",
         "milestone_reference": {
-          "id": "",
-          "phase": ""
+          "id": "<extracted_from_header_context.milestones_to_detail>",
+          "phase": "<extracted_from_master_plan>",
+          "dependencies": "<extracted_from_milestone_schema>"
         },
         "steps": [
           {
-            "status": "[ ]",
-            "component_label": "[BE]",
-            "numbering": "1",
-            "inputs": [],
-            "outputs": [],
-            "validation": [],
-            "tdd_sequence": ["RED", "GREEN", "REFACTOR"]
+            "status": "[<derived from the style guide legend>]",
+            "component_label": "<derived_from_trd.components[]_context>",
+            "numbering": "<derived_from_milestone_position>",
+            "title": "<extracted_from_master_plan.milestone.title>",
+            "description": "<extracted_from_trd.technical_requirements>",
+            "inputs": "<extracted_from_milestone.acceptance_criteria>",
+            "outputs": "<derived_from_step_purpose>",
+            "validation": "<extracted_from_milestone_schema>",
+            "red_test": "<stateless test that proves the flaw or gap>",
+            "implementation": "<description of code required for red test to pass>",
+            "green_test": "<rerun red_test to prove it passes>",
+            "refactor": "<analyse against SRP, DRY, consider if the produced code can be simplified or extracted to a separate function>",
+            "commit_message": "<derive a rational message using the examples in style_guide>"
           }
-        ]
+        ],
+        "generation_limits": {
+          "max_steps": 200,
+          "target_steps": "120-180",
+          "max_output_lines": "600-800"
+        }
       }
     }
   ],
@@ -417,11 +418,7 @@
       "artifact_class": "assembled_document_json",
       "file_type": "json"
     }
-  ],
-  "continuation_policy": {
-    "strategy": "stop_at_boundary",
-    "resume_cursor_required": true
-  }
+  ]
 }
 ```
 
@@ -495,8 +492,7 @@
     ],
     "files_to_generate": [
       { "template_filename": "paralysis_updated_master_plan.md", "from_document_key": "updated_master_plan" }
-    ],
-    "continuation_policy": "stop_at_boundary"
+    ]
   }
 }
 ```
@@ -508,37 +504,104 @@
     {
       "document_key": "updated_master_plan",
       "template_filename": "paralysis_updated_master_plan.md",
-      "content_to_include": {
-        "phases": [
-          {
-            "name": "",
-            "milestones": [
-              {
-                "id": "",
-                "title": "",
-                "status": "[ ]",
-                "objective": "",
-                "dependencies": [],
-                "acceptance_criteria": [],
-                "iteration_delta": ""
-              }
-            ]
-          }
-        ]
-      }
+        "content_to_include": {
+          "index": [<list the milestone(s) included in this section>],
+          "executive_summary": "<extract from header_context>",
+          "phases": [
+            {
+              "name": "<extract_from_synthesis_documents>",
+              "objective": "<derive_from_technical_requirements>",
+              "technical_context": "<extract_from_architecture_overview>",
+              "implementation_strategy": "<derive_from_tech_stack>",
+              "milestones": [
+                {
+                  "id": "<derive_from_header_context>",
+                  "title": "<extract_from_master_plan>",
+                  "status": "[<derive_from_iteration_state>]",
+                  "objective": "<extract_from_technical_requirements>",
+                  "description": "<derive_from_architecture_and_features>",
+                  "technical_complexity": "<assess_from_architecture>",
+                  "effort_estimate": "<derive_from_scope_and_complexity>",
+                  "implementation_approach": "<derive_from_tech_stack>",
+                  "test_strategy": "<derive_from_validation_requirements>",
+                  "component_labels": ["<derive_from_architecture>"],
+                  "inputs": ["<extract_from_dependencies>"],
+                  "outputs": ["<derive_from_deliverables>"],
+                  "validation": ["<extract_from_acceptance_criteria>"],
+                  "dependencies": ["<extract_from_master_plan>"],
+                  "iteration_delta": "<derive_from_change_tracking>"
+                }
+              ]
+            }
+          ],
+          "status_summary": {
+            "completed": [],
+            "in_progress": [],
+            "up_next": []
+          },
+          "technical_context": "<extract_from_synthesis_architecture>",
+          "implementation_context": "<derive_from_tech_stack_analysis>",
+          "test_framework": "<derive_from_validation_requirements>",
+          "component_mapping": "<derive_from_architecture_components>"
+        }
     }
   ],
   "assembled_json": [
     {
       "document_key": "updated_master_plan",
       "artifact_class": "assembled_document_json",
-      "file_type": "json"
+        "fields": [
+          "index[]",
+          "executive_summary",
+          "phases[].name",
+          "phases[].objective",
+          "phases[].technical_context",
+          "phases[].implementation_strategy",
+          "phases[].milestones[].id",
+          "phases[].milestones[].title",
+          "phases[].milestones[].status",
+          "phases[].milestones[].objective",
+          "phases[].milestones[].description",
+          "phases[].milestones[].technical_complexity",
+          "phases[].milestones[].effort_estimate",
+          "phases[].milestones[].implementation_approach",
+          "phases[].milestones[].test_strategy",
+          "phases[].milestones[].component_labels[]",
+          "phases[].milestones[].inputs[]",
+          "phases[].milestones[].outputs[]",
+          "phases[].milestones[].validation[]",
+          "phases[].milestones[].dependencies[]",
+          "phases[].milestones[].acceptance_criteria[]",
+          "phases[].milestones[].iteration_delta",
+          "status_summary.completed[]",
+          "status_summary.in_progress[]",
+          "status_summary.up_next[]",
+          "dependency_rules[]",
+          "feature_scope[]",
+          "features[]",
+          "mvp_description",
+          "market_opportunity",
+          "competitive_analysis",
+          "technical_context",
+          "implementation_context",
+          "test_framework",
+          "component_mapping",
+          "architecture_summary",
+          "architecture",
+          "services[]",
+          "components[]",
+          "integration_points[]",
+          "dependency_resolution[]",
+          "frontend_stack",
+          "backend_stack",
+          "data_platform",
+          "devops_tooling",
+          "security_tooling",
+          "shared_libraries[]",
+          "third_party_services[]"
+        ]
     }
-  ],
-  "continuation_policy": {
-    "strategy": "stop_at_boundary",
-    "resume_cursor_required": true
-  }
+  ]
 }
 ```
 
@@ -613,8 +676,7 @@
     ],
     "files_to_generate": [
       { "template_filename": "paralysis_advisor_recommendations.md", "from_document_key": "advisor_recommendations" }
-    ],
-    "continuation_policy": "stop_at_boundary"
+    ]
   }
 }
 ```
@@ -665,31 +727,27 @@
       "artifact_class": "assembled_document_json",
       "file_type": "json"
     }
-  ],
-  "continuation_policy": {
-    "strategy": "stop_at_boundary",
-    "resume_cursor_required": true
-  }
+  ]
 }
 ```
 
 ## Transform Requirements
 
-*   `[ ]` 1. `[DB]` Migrate the stage configuration to the recipe contract.
-    *   `[ ]` 1.a. Insert the Step 1–4 rows for `paralysis_v1` into `dialectic_stage_recipes`, copying every field from the target state (branch keys, `inputs_required`, `inputs_relevance`, `outputs_required`, continuation rules).
-    *   `[ ]` 1.b. Populate `dialectic_stage_recipe_edges` so Steps 2/3 depend on Step 1 and Step 4 depends on each checklist/master-plan branch row.
-    *   `[ ]` 1.c. Update `dialectic_stages` to set `recipe_name = 'paralysis_v1'` and delete the legacy `input_artifact_rules` / `expected_output_artifacts` JSON so orchestration reads solely from the recipe table.
+*   `[✅]` 1. `[DB]` Migrate the stage configuration to the recipe contract.
+    *   `[✅]` 1.a. Insert the Step 1–4 rows for `paralysis_v1` into `dialectic_stage_recipes`, copying every field from the target state (branch keys, `inputs_required`, `inputs_relevance`, `outputs_required`, continuation rules).
+    *   `[✅]` 1.b. Populate `dialectic_stage_recipe_edges` so Steps 2/3 depend on Step 1 and Step 4 depends on each checklist/master-plan branch row.
+    *   `[✅]` 1.c. Update `dialectic_stages` to set `recipe_name = 'paralysis_v1'` and delete the legacy `input_artifact_rules` / `expected_output_artifacts` JSON so orchestration reads solely from the recipe table.
 
-*   `[ ]` 2. `[DB]` Normalize Parenthesis → Paralysis inputs and backfill artifacts.
-    *   `[ ]` 2.a. Confirm the Parenthesis stage writes documents using the exact keys consumed here (`trd`, `master_plan`, `milestone_schema`) and adjust prior migrations if any names deviate.
-    *   `[ ]` 2.b. Seed lookups/backfill scripts so existing paralysis artifacts map to `actionable_checklist`, `updated_master_plan`, and `advisor_recommendations`, copying files to the new storage paths when reruns depend on them.
-    *   `[ ]` 2.c. Ensure optional feedback artifacts keep the `{document_key}_feedback.md` naming convention so recipe inputs resolve without code changes.
+*   `[✅]` 2. `[DB]` Normalize Parenthesis → Paralysis inputs and backfill artifacts.
+    *   `[✅]` 2.a. Confirm the Parenthesis stage writes documents using the exact keys consumed here (`trd`, `master_plan`, `milestone_schema`) and adjust prior migrations if any names deviate.
+    *   `[✅]` 2.b. Seed lookups/backfill scripts so existing paralysis artifacts map to `actionable_checklist`, `updated_master_plan`, and `advisor_recommendations`, copying files to the new storage paths when reruns depend on them.
+    *   `[✅]` 2.c. Ensure optional feedback artifacts keep the `{document_key}_feedback.md` naming convention so recipe inputs resolve without code changes.
 
 *   `[ ]` 3. `[PROMPT]` Author and register planner/turn templates and overlays.
-    *   `[ ]` 3.a. Add repository prompt files for `paralysis_planner_header_v1`, `paralysis_actionable_checklist_turn_v1`, `paralysis_updated_master_plan_turn_v1`, and `paralysis_advisor_recommendations_turn_v1`, matching the schemas in this document.
-    *   `[ ]` 3.b. Insert the templates into `system_prompts` via migration, recording ids, names, versions, prompt types, and file paths for prompt assembler retrieval.
-    *   `[ ]` 3.c. Update the Software Development overlay so `style_guide_markdown`, `generation_limits`, `document_order`, and iteration notes reference the new single advisor artifact and rely on the recipe’s `outputs_required` data instead of the deprecated `expected_output_artifacts_json` field. Review and remove obsolete keys from the domain_specific_prompt_overlays.overlay_values object. 
-    *   `[ ]` 3.d. Refresh `Prompt Templating Examples.md`, stage worksheets, and related docs to document the four templates and the consolidated advisor artifact structure.
+    *   `[✅]` 3.a. Add repository prompt files for `paralysis_planner_header_v1`, `paralysis_actionable_checklist_turn_v1`, `paralysis_updated_master_plan_turn_v1`, and `paralysis_advisor_recommendations_turn_v1`, matching the schemas in this document.
+    *   `[✅]` 3.b. Insert the templates into `system_prompts` via migration, recording ids, names, versions, prompt types, and file paths for prompt assembler retrieval.
+    *   `[✅]` 3.c. Update the Software Development overlay so `style_guide_markdown`, `generation_limits`, `document_order`, and iteration notes reference the new single advisor artifact and rely on the recipe’s `outputs_required` data instead of the deprecated `expected_output_artifacts_json` field. Review and remove obsolete keys from the domain_specific_prompt_overlays.overlay_values object. 
+    *   `[✅]` 3.d. Refresh `Prompt Templating Examples.md`, stage worksheets, and related docs to document the four templates and the consolidated advisor artifact structure.
 
-*   `[ ]` 7. `[DOCS]` Update downstream consumers and regression coverage.
-    *   `[ ]` 7.b. Remove references to the deprecated `expected_output_artifacts_json` field, replacing them with recipe-table lookups or new artifact metadata.
+*   `[✅]` 7. `[DOCS]` Update downstream consumers and regression coverage.
+    *   `[✅]` 7.b. Remove references to the deprecated `expected_output_artifacts_json` field, replacing them with recipe-table lookups or new artifact metadata.

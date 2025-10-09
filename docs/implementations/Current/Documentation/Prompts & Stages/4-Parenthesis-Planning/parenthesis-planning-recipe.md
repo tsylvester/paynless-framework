@@ -225,10 +225,6 @@
       "in_progress_status": "[🚧]",
       "unstarted_status": "[ ]"
     },
-    "continuation_policy": {
-      "iteration": "resume-from-last-open-milestone",
-      "corrective": "restate-delta"
-    },
     "trd_outline_inputs": {
       "subsystems": [],
       "apis": [],
@@ -345,8 +341,7 @@
         "migration_context": []
       }
     }
-  ],
-  "continuation_policy": "If the planning header cannot enumerate all milestone directives in one response, continue with reason 'length' and resume detailing the remaining directives."
+  ]
 }
 ```
 
@@ -475,8 +470,7 @@ When this step is executed for subsequent iterations, provide the most recent `t
           "third_party_services[]"
         ]
       }
-    ],
-    "continuation_policy": "If the TRD output truncates, continue with reason 'length' and resume at the next unfinished section."
+    ]
   }
 }
 ```
@@ -535,24 +529,31 @@ Present the previously generated Master Plan and feedback during iterative runs 
         "artifact_class": "rendered_document",
         "file_type": "markdown",
         "content_to_include": {
-          "index": [],
-          "executive_summary": "",
+          "index": [<list the milestone(s) included in this section>],
+          "executive_summary": "<extract from header_context>",
           "phases": [
             {
-              "name": "",
-              "objective": "",
+              "name": "<extract_from_synthesis_documents>",
+              "objective": "<derive_from_technical_requirements>",
+              "technical_context": "<extract_from_architecture_overview>",
+              "implementation_strategy": "<derive_from_tech_stack>",
               "milestones": [
                 {
-                  "id": "",
-                  "title": "",
-                  "objective": "",
-                  "inputs": [],
-                  "outputs": [],
-                  "dependencies": [],
-                  "acceptance_criteria": [],
-                  "status": "[ ]",
-                  "coverage_notes": "",
-                  "iteration_delta": ""
+                  "id": "<derive_from_header_context>",
+                  "title": "<extract_from_master_plan>",
+                  "status": "[<derive_from_iteration_state>]",
+                  "objective": "<extract_from_technical_requirements>",
+                  "description": "<derive_from_architecture_and_features>",
+                  "technical_complexity": "<assess_from_architecture>",
+                  "effort_estimate": "<derive_from_scope_and_complexity>",
+                  "implementation_approach": "<derive_from_tech_stack>",
+                  "test_strategy": "<derive_from_validation_requirements>",
+                  "component_labels": ["<derive_from_architecture>"],
+                  "inputs": ["<extract_from_dependencies>"],
+                  "outputs": ["<derive_from_deliverables>"],
+                  "validation": ["<extract_from_acceptance_criteria>"],
+                  "dependencies": ["<extract_from_master_plan>"],
+                  "iteration_delta": "<derive_from_change_tracking>"
                 }
               ]
             }
@@ -561,9 +562,12 @@ Present the previously generated Master Plan and feedback during iterative runs 
             "completed": [],
             "in_progress": [],
             "up_next": []
-          }
+          },
+          "technical_context": "<extract_from_synthesis_architecture>",
+          "implementation_context": "<derive_from_tech_stack_analysis>",
+          "test_framework": "<derive_from_validation_requirements>",
+          "component_mapping": "<derive_from_architecture_components>"
         }
-      }
     ],
     "files_to_generate": [
       { "template_filename": "parenthesis_master_plan.md", "from_document_key": "master_plan" }
@@ -573,27 +577,41 @@ Present the previously generated Master Plan and feedback during iterative runs 
         "document_key": "master_plan",
         "artifact_class": "assembled_document_json",
         "fields": [
+          "index[]",
+          "executive_summary",
           "phases[].name",
           "phases[].objective",
+          "phases[].technical_context",
+          "phases[].implementation_strategy",
           "phases[].milestones[].id",
           "phases[].milestones[].title",
+          "phases[].milestones[].status",
           "phases[].milestones[].objective",
+          "phases[].milestones[].description",
+          "phases[].milestones[].technical_complexity",
+          "phases[].milestones[].effort_estimate",
+          "phases[].milestones[].implementation_approach",
+          "phases[].milestones[].test_strategy",
+          "phases[].milestones[].component_labels[]",
           "phases[].milestones[].inputs[]",
           "phases[].milestones[].outputs[]",
+          "phases[].milestones[].validation[]",
           "phases[].milestones[].dependencies[]",
           "phases[].milestones[].acceptance_criteria[]",
-          "phases[].milestones[].status",
-          "phases[].milestones[].coverage_notes",
           "phases[].milestones[].iteration_delta",
           "status_summary.completed[]",
           "status_summary.in_progress[]",
           "status_summary.up_next[]",
+          "dependency_rules[]",
           "feature_scope[]",
           "features[]",
-          "executive_summary",
           "mvp_description",
           "market_opportunity",
           "competitive_analysis",
+          "technical_context",
+          "implementation_context",
+          "test_framework",
+          "component_mapping",
           "architecture_summary",
           "architecture",
           "services[]",
@@ -609,8 +627,7 @@ Present the previously generated Master Plan and feedback during iterative runs 
           "third_party_services[]"
         ]
       }
-    ],
-    "continuation_policy": "If the master plan output truncates, continue with reason 'length' and resume from the next unfinished milestone section."
+    ]
   }
 }
 ```
@@ -749,8 +766,7 @@ Provide the previous milestone schema and related feedback on subsequent executi
           "migration_context[]"
         ]
       }
-    ],
-    "continuation_policy": "If the milestone schema output truncates, continue with reason 'length' and resume documenting the remaining field definitions."
+    ]
   }
 }
 ```
