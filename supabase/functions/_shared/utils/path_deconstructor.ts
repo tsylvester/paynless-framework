@@ -44,7 +44,10 @@ export function deconstructStoragePath(
   const projectReadmePatternString = "^([^/]+)/project_readme\\.md$";
   const projectSettingsFilePatternString = "^([^/]+)/project_settings\\.json$";
   const generalResourcePatternString = "^([^/]+)/general_resource/([^/]+)$";
-  const initialUserPromptPatternString = "^([^/]+)/((?!session_|general_resource/|project_readme\\.md$|project_settings\\.json$)(?!.*\\.(zip|tar|tgz|gz|rar|7z)$)[^/]+)$";
+  const pendingFilePatternString = "^([^/]+)/Pending/([^/]+)$";
+  const currentFilePatternString = "^([^/]+)/Current/([^/]+)$";
+  const completeFilePatternString = "^([^/]+)/Complete/([^/]+)$";
+  const initialUserPromptPatternString = "^([^/]+)/((?!session_|general_resource/|Pending/|Current/|Complete/|project_readme\\.md$|project_settings\\.json$)(?!.*\\.(zip|tar|tgz|gz|rar|7z)$)[^/]+)$";
   const projectExportZipPatternString = "^([^/]+)/([^/]+\\.(zip|tar|tgz|gz|rar|7z))$";
   // New specific patterns for intermediate files
   const pairwiseSynthesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(?:raw_responses/)?([^_]+_synthesizing_[^_]+_with_[^_]+_on_[^_]+_\\d+_pairwise_synthesis_chunk(?:_raw\\.json|\\.md))$";
@@ -54,11 +57,14 @@ export function deconstructStoragePath(
   // Document-centric artifact patterns
   const plannerPromptPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/prompts/(.+)_(\\d+)_?(.*?)_planner_prompt\\.md$";
   const turnPromptPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/prompts/(.+)_(\\d+)_(.+?)(_continuation_(\\d+))?_prompt\\.md$";
+  const synthesisHeaderContextPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+)_(\\d+)_synthesis_header_context\\.json$";
   const headerContextPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+)_(\\d+)_header_context\\.json$";
   const assembledJsonPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/assembled_json/(.+)_(\\d+)_(.+?)_assembled\\.json$";
   const renderedDocumentPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/documents/(.+)_(\\d+)_(.+?)\\.md$";
   const docCentricRawJsonPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/raw_responses/(.+)_(\\d+)_(.+?)(_continuation_(\\d+))?_raw\\.json$";
   
+  const intermediateSynthesisDocPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(.+)_(\\d+)_(synthesis_(?:pairwise|document)_.+)\\.md$";
+
   const genericIntermediateFilePatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/([^/]+)$";
 
   // Path: .../raw_responses/{modelSlug}_critiquing_({sourceModelSlug}'s_{sourceContribType}_{sourceAttemptCount})_{attemptCount}_antithesis_raw.json
@@ -154,6 +160,20 @@ export function deconstructStoragePath(
     return info;
   }
 
+  // Path: .../_work/context/{modelSlug}_{attemptCount}_synthesis_header_context.json
+  matches = fullPath.match(new RegExp(synthesisHeaderContextPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.attemptCount = parseInt(matches[6], 10);
+    info.fileTypeGuess = FileType.SynthesisHeaderContext;
+    return info;
+  }
+
   // Path: .../_work/context/{modelSlug}_{attemptCount}_header_context.json
   matches = fullPath.match(new RegExp(headerContextPatternString));
   if (matches) {
@@ -195,6 +215,24 @@ export function deconstructStoragePath(
     info.attemptCount = parseInt(matches[6], 10);
     info.documentKey = matches[7];
     info.fileTypeGuess = FileType.RenderedDocument;
+
+    // After generic match, refine guess based on documentKey
+    // Handle special cases FIRST where documentKey doesn't map directly to a FileType enum
+    if (info.stageSlug === 'synthesis') {
+      if (info.documentKey === 'prd') {
+        info.fileTypeGuess = FileType.SynthesisPrd;
+      } else if (info.documentKey === 'architecture') {
+        info.fileTypeGuess = FileType.SynthesisArchitecture;
+      } else if (info.documentKey === 'tech_stack') {
+        info.fileTypeGuess = FileType.SynthesisTechStack;
+      }
+    } else {
+      const specificFileType = Object.values(FileType).find(ft => ft === info.documentKey);
+      if (specificFileType) {
+        info.fileTypeGuess = specificFileType;
+      }
+    }
+
     return info;
   }
   
@@ -224,6 +262,25 @@ export function deconstructStoragePath(
 
   // --- Intermediate _work files ---
   // Must be checked AFTER continuation and BEFORE general model contribution patterns
+
+  // Path: .../_work/{modelSlug}_{attemptCount}_synthesis_..._business_case.md
+  matches = fullPath.match(new RegExp(intermediateSynthesisDocPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.attemptCount = parseInt(matches[6], 10);
+    const fileTypePart = matches[7];
+    info.documentKey = fileTypePart;
+    const specificFileType = Object.values(FileType).find(ft => ft === fileTypePart);
+    if (specificFileType) {
+      info.fileTypeGuess = specificFileType;
+    }
+    return info;
+  }
 
   // Path: .../_work/{modelSlug}_synthesizing_{sourceAnchorModelSlug}_with_{pairedModelSlug}_on_{sourceAnchorType}_{n}_pairwise_synthesis_chunk(.md/_raw.json)
   matches = fullPath.match(new RegExp(pairwiseSynthesisPatternString));
@@ -264,6 +321,33 @@ export function deconstructStoragePath(
     info.parsedFileNameFromPath = matches[5]; // Capture the full file name
     info.modelSlug = info.parsedFileNameFromPath.split('_')[0]; // Best guess for model slug
     info.fileTypeGuess = FileType.RagContextSummary;
+    return info;
+  }
+
+  // Path: {projectId}/Pending/{fileName}
+  matches = fullPath.match(new RegExp(pendingFilePatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.parsedFileNameFromPath = matches[2];
+    info.fileTypeGuess = FileType.PendingFile;
+    return info;
+  }
+
+  // Path: {projectId}/Current/{fileName}
+  matches = fullPath.match(new RegExp(currentFilePatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.parsedFileNameFromPath = matches[2];
+    info.fileTypeGuess = FileType.CurrentFile;
+    return info;
+  }
+
+  // Path: {projectId}/Complete/{fileName}
+  matches = fullPath.match(new RegExp(completeFilePatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.parsedFileNameFromPath = matches[2];
+    info.fileTypeGuess = FileType.CompleteFile;
     return info;
   }
 

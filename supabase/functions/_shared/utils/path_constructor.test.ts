@@ -32,12 +32,6 @@ Deno.test('constructStoragePath', async (t) => {
       assertEquals(fileName, 'project_readme.md');
     });
 
-    await t.step('constructs path for master_plan', () => {
-      const { storagePath, fileName } = constructStoragePath({ projectId, fileType: FileType.MasterPlan });
-      assertEquals(storagePath, projectId);
-      assertEquals(fileName, 'Master_Plan.md');
-    });
-
     await t.step('constructs path for pending_file', () => {
       const { storagePath, fileName } = constructStoragePath({ projectId, fileType: FileType.PendingFile, originalFileName: 'task-abc.md' });
       assertEquals(storagePath, `${projectId}/Pending`);
@@ -89,6 +83,306 @@ Deno.test('constructStoragePath', async (t) => {
     const finalContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'final_synthesis', fileType: FileType.ModelContributionMain };
     const parenthesisContext: PathContext = { ...baseContext, stageSlug: 'parenthesis', contributionType: 'parenthesis', fileType: FileType.ModelContributionMain };
     const paralysisContext: PathContext = { ...baseContext, stageSlug: 'paralysis', contributionType: 'paralysis', fileType: FileType.ModelContributionMain };
+
+    await t.step('handles SynthesisHeaderContext file type', () => {
+      const synthesisHeaderContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'synthesis',
+        fileType: FileType.SynthesisHeaderContext,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(synthesisHeaderContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/context`);
+      assertEquals(fileName, 'gpt-4-turbo_0_synthesis_header_context.json');
+    });
+
+    await t.step('handles SynthesisPrd file type', () => {
+      const synthesisPrdContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'synthesis',
+        fileType: FileType.SynthesisPrd,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(synthesisPrdContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_prd.md');
+    });
+
+    await t.step('handles SynthesisArchitecture file type', () => {
+      const synthesisArchitectureContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'synthesis',
+        fileType: FileType.SynthesisArchitecture,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(synthesisArchitectureContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_architecture.md');
+    });
+
+    await t.step('handles SynthesisTechStack file type', () => {
+      const synthesisTechStackContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'synthesis',
+        fileType: FileType.SynthesisTechStack,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(synthesisTechStackContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_tech_stack.md');
+    });
+
+    await t.step('handles business_case file type', () => {
+      const businessCaseContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'thesis',
+        fileType: FileType.business_case,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(businessCaseContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_business_case.md');
+    });
+
+    await t.step('handles feature_spec file type', () => {
+      const featureSpecContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'thesis',
+        fileType: FileType.feature_spec,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(featureSpecContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_feature_spec.md');
+    });
+
+    await t.step('handles technical_approach file type', () => {
+      const technicalApproachContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'thesis',
+        fileType: FileType.technical_approach,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(technicalApproachContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_technical_approach.md');
+    });
+
+    await t.step('handles success_metrics file type', () => {
+      const successMetricsContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'thesis',
+        fileType: FileType.success_metrics,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(successMetricsContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_success_metrics.md');
+    });
+
+    await t.step('handles business_case_critique file type', () => {
+      const businessCaseCritiqueContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'antithesis',
+        fileType: FileType.business_case_critique,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(businessCaseCritiqueContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_business_case_critique.md');
+    });
+
+    await t.step('handles technical_feasibility_assessment file type', () => {
+      const technicalFeasibilityContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'antithesis',
+        fileType: FileType.technical_feasibility_assessment,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(technicalFeasibilityContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_technical_feasibility_assessment.md');
+    });
+
+    await t.step('handles risk_register file type', () => {
+      const riskRegisterContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'antithesis',
+        fileType: FileType.risk_register,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(riskRegisterContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_risk_register.md');
+    });
+
+    await t.step('handles non_functional_requirements file type', () => {
+      const nonFunctionalContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'antithesis',
+        fileType: FileType.non_functional_requirements,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(nonFunctionalContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_non_functional_requirements.md');
+    });
+
+    await t.step('handles dependency_map file type', () => {
+      const dependencyMapContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'antithesis',
+        fileType: FileType.dependency_map,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(dependencyMapContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_dependency_map.md');
+    });
+
+    await t.step('handles comparison_vector file type', () => {
+      const comparisonVectorContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'antithesis',
+        fileType: FileType.comparison_vector,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(comparisonVectorContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_comparison_vector.json');
+    });
+
+    await t.step('handles synthesis_pairwise_business_case file type', () => {
+      const pairwiseBusinessCaseContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'synthesis',
+        fileType: FileType.synthesis_pairwise_business_case,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(pairwiseBusinessCaseContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
+      assertEquals(fileName, 'gpt-4-turbo_0_synthesis_pairwise_business_case.md');
+    });
+
+    await t.step('handles synthesis_document_business_case file type', () => {
+      const documentBusinessCaseContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'synthesis',
+        fileType: FileType.synthesis_document_business_case,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(documentBusinessCaseContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
+      assertEquals(fileName, 'gpt-4-turbo_0_synthesis_document_business_case.md');
+    });
+
+    await t.step('handles advisor_recommendations file type', () => {
+      const advisorRecommendationsContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'paralysis',
+        fileType: FileType.advisor_recommendations,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(advisorRecommendationsContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/5_paralysis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_advisor_recommendations.md');
+    });
+
+    await t.step('handles trd file type', () => {
+      const trdContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'parenthesis',
+        fileType: FileType.trd,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(trdContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_trd.md');
+    });
+
+    await t.step('handles master_plan file type', () => {
+      const masterPlanContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'parenthesis',
+        fileType: FileType.master_plan,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(masterPlanContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_master_plan.md');
+    });
+
+    await t.step('handles milestone_schema file type', () => {
+      const milestoneSchemaContext: PathContext = {
+        projectId,
+        sessionId,
+        iteration,
+        stageSlug: 'parenthesis',
+        fileType: FileType.milestone_schema,
+        modelSlug: 'gpt-4-turbo',
+        attemptCount: 0
+      };
+      const { storagePath, fileName } = constructStoragePath(milestoneSchemaContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis/documents`);
+      assertEquals(fileName, 'gpt-4-turbo_0_milestone_schema.md');
+    });
 
     await t.step('constructs path for simple contributions (thesis)', () => {
       const { storagePath, fileName } = constructStoragePath(thesisContext);

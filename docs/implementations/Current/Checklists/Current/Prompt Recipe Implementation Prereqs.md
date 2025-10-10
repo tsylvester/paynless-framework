@@ -10,7 +10,7 @@
 - Prepare the core handlers to support the rest of the app's migration to document centric generation. 
 
 ## Expected Outcome
-- 
+- All preliminary work is completed and the app is prepared to migrate to a document centric generation method. 
 
 # Instructions for Agent
 *   You MUST read the file every time you need to touch it. YOU CAN NOT RELY ON YOUR "MEMORY" of having read a file at some point previously. YOU MUST READ THE FILE FROM DISK EVERY TIME! 
@@ -28,7 +28,7 @@
 *   When the Agent is instructed to edit the checklist they only edit the EXACT steps they're instructed to edit and NEVER touch ANY step that is outside the scope of their instruction.  
 *   The Agent NEVER updates the status of any work step without explicit instruction. 
 *   If we cannot perform the step as described or make a discovery, we explain the problem or discovery and HALT! We DO NOT CONTINUE after we encounter a problem or a discovery.
-*   We DO NOT CONTINUE if we encounter a problem or make a discovery. We explain the problem or discovery then halt for user input. 
+*   We DO NOT CONTINUE if we encounter a problem or a discovery. We explain the problem or discovery then halt for user input. 
 *   If our discovery is that more files need to be edited, instead of editing a file, we generate a proposal for a checklist of instructions to insert into the work plan that explains everything required to update the codebase so that the invalid step can be resolved. 
 *   DO NOT RUMINATE ON HOW TO SOLVE A PROBLEM OR DISCOVERY WHILE ONLY EDITING ONE FILE! That is a DISCOVERY that requires that you EXPLAIN your discovery, PROPOSE a solution, and HALT! 
 *   We always use test-driven-development. 
@@ -56,6 +56,19 @@
 *   The agent NEVER runs tests. 
 *   The agent uses ITS OWN TOOLS. 
 *   The agent DOES NOT USE THE USER'S TERMINAL. 
+
+# Checklist-Specific Editing Rules
+
+*   THE AGENT NEVER TOUCHES THE CHECKLIST UNLESS THEY ARE EXPLICITLY INSTRUCTED TO! 
+*   When editing checklists, each numbered step (1, 2, 3, etc.) represents editing ONE FILE with a complete TDD cycle.
+*   Sub-steps within each numbered step use legal-style numbering (1.a, 1.b, 1.a.i, 1.a.ii, etc.) for the complete TDD cycle for that file.
+*   All changes to a single file are described and performed within that file's numbered step.
+*   Types files (interfaces, enums) are exempt from RED/GREEN testing requirements.
+*   Each file edit includes: RED test → implementation → GREEN test → optional refactor.
+*   Steps are ordered by dependency (lowest dependencies first).
+*   Preserve all existing detail and work while adding new requirements.
+*   Use proper legal-style nesting for sub-steps within each file edit.
+*   NEVER create multiple top-level steps for the same file edit operation.
 
 # Legend - You must use this EXACT format. Do not modify it, adapt it, or "improve" it. The bullets, square braces, ticks, nesting, and numbering are ABSOLUTELY MANDATORY and UNALTERABLE. 
 
@@ -165,7 +178,7 @@
             │   │   │   ├── {model_slug}_{n}_{document_key}[_continuation_{c}]_prompt.md
             │   │   │   └── ... (other document prompts for this model)
             │   │   ├── context/
-            │   │   │   └── {model_slug}_{n}_header_context.json
+            │   │   │   └── {model_slug}_{n}[_{stage}]_header_context.json
             │   │   └── assembled_json/
             │   │       ├── {model_slug}_{n}_{document_key}_assembled.json
             │   │       └── ... (other assembled documents for this model)
@@ -376,97 +389,54 @@ graph LR
     end
 ```
 
-*   `[ ]` 9. [TEST-UNIT] / [TEST-INT] Test and fixture updates
-  *   `[ ]` 9.a. Add fixtures for the new planner and turn templates, including branch metadata in step fixtures.
-  *   `[ ]` 9.b. Update `assembleSeedPrompt`, `assemblePlannerPrompt`, and `assembleTurnPrompt` tests to assert new artifact keys, file paths, and `parallel_group` / `branch_key` handling.
-  *   `[ ]` 9.c. Update worker integration tests to expect multi-step Thesis outputs instead of the legacy monolithic response, verifying parallel branch execution order when applicable.
+# Prompt Recipe Implementation Prereqs Checklist
 
-*   `[ ]` 10. [BE] / [PROMPT] Update path constructors and file-type enums
-  *   `[ ]` 10.a. Add `business_case`, `feature_spec`, `technical_approach`, and `success_metrics` to `FileType` / path constructor helpers so new artifacts resolve correctly.
-  *   `[ ]` 10.b. Ensure prompt assembler storage helpers create `context/header_context.json` for step 1 and document files under `documents/` following the Stage File Structure.
+*   `[ ]` 1. [CONFIG] Update storage enums and helpers for all new artifacts
+    *   `[✅]` 1.a. Extend `FileType` (and related enums) to include all new document keys across stages: `business_case`, `feature_spec`, `technical_approach`, `success_metrics`, `business_case_critique`, `technical_feasibility_assessment`, `risk_register`, `non_functional_requirements`, `dependency_map`, `comparison_vector`, `SynthesisPairwise*`, `SynthesisDocument*`, `SynthesisHeaderContext`, `SynthesisPrd`, `SynthesisArchitecture`, `SynthesisTechStack`, `advisor_recommendations`, `trd`, `master_plan`, `milestone_schema`, and header context types.
+        *   `[✅]` 1.a.i. [IMPLEMENTATION] Add missing Synthesis-specific FileType entries to `file_manager.types.ts`: `SynthesisHeaderContext = 'synthesis_header_context'`, `SynthesisPrd = 'synthesis_prd'`, `SynthesisArchitecture = 'synthesis_architecture'`, `SynthesisTechStack = 'synthesis_tech_stack'`.
+        *   `[✅]` 1.a.ii. [REFACTOR] Review enum organization and consider grouping related FileTypes if beneficial.
+    *   `[ ]` 1.b. Update `constructStoragePath` / `deconstructStoragePath` to support all new branch keys, `_continuation_{c}` segments, and header context filenames (`header_context.json`, `header_context_pairwise.json`).
+        *   `[✅]` 1.b.i. [RED TEST] Write test in `path_constructor.test.ts` for `constructStoragePath` with new FileType entries expecting appropriate path structure and fail.
+        *   `[✅]` 1.b.ii. [IMPLEMENTATION] Add `FileType.SynthesisHeaderContext`, `FileType.SynthesisPrd`, `FileType.SynthesisArchitecture`, `FileType.SynthesisTechStack` cases to `constructStoragePath` function in `path_constructor.ts`.
+        *   `[✅]` 1.b.iii. [GREEN TEST] Verify `constructStoragePath` test passes with correct path generation for all new FileTypes.
+        *   `[✅]` 1.b.iv. [REFACTOR] Review switch statement organization and consider grouping related FileType cases.
+        *   `[✅]` 1.b.v. [RED TEST] Write test in `path_deconstructor.test.ts` for `deconstructStoragePath` with paths for new FileType entries expecting correct parsing and fail.
+        *   `[✅]` 1.b.vi. [IMPLEMENTATION] Add pattern matching for `SynthesisHeaderContext`, `SynthesisPrd`, `SynthesisArchitecture`, `SynthesisTechStack` paths in `deconstructStoragePath` function in `path_deconstructor.ts`.
+        *   `[✅]` 1.b.vii. [GREEN TEST] Verify `deconstructStoragePath` test passes with correct path parsing for all new FileTypes.
+        *   `[✅]` 1.b.viii. [REFACTOR] Review pattern matching organization and consider grouping related patterns.
+    *   `[ ]` 1.c. Confirm path helpers align with the Stage File Structure (e.g., `_work/prompts/`, `assembled_json/`, `documents/`, `context/`, `user_feedback/`).
+        *   `[ ]` 1.c.i. [RED TEST] Write test to verify path helpers create correct directory structures and fail.
+        *   `[ ]` 1.c.ii. [IMPLEMENTATION] Update path helper functions if needed to ensure proper Stage File Structure alignment.
+        *   `[ ]` 1.c.iii. [GREEN TEST] Verify path helpers create correct directory structures.
+        *   `[ ]` 1.c.iv. [REFACTOR] Review path helper organization and consider consolidating related functionality.
 
-  *   `[ ]` 8.d. Ensure any services that resolve the next step can interpret `parallel_group` and `branch_key` when scheduling work.
-  *   `[ ]` 8.e. Document TypeScript/type-guard gaps for Thesis (e.g., `DialecticJobPayload` definitions in `supabase/functions/_shared/dialectic-service/types.ts`, `type_guards.ts`) to ensure `parallel_group`, `branch_key`, and header context schemas are captured before implementation.
+*   `[ ]` 2. [BE] Update shared types and type guards
+    *   `[ ]` 2.a. Extend shared types (`DialecticRecipeStep`, `DialecticJobPayload.step_info`, etc.) to represent new prompt types, branch keys, header contexts, and assembled JSON schemas.
+    *   `[ ]` 2.b. Update runtime guards (`isDialecticRecipeStep`, `isDialecticJobPayload`, `isHeaderContext`, `isHeaderContextAntithesis`, `isHeaderContextSynthesis`, `isHeaderContextParenthesis`, assembled JSON validators) to validate the new structures, including `match_keys` arrays in pairwise outputs.
+    *   `[ ]` 2.c. Document new manifest/header interfaces so downstream services can rely on typed inputs.
 
-      *   `[ ]` 8.f. `[BE]` Update `parseInputArtifactRules`, related types, and type guards so the application accepts the new `type: "document"` / `"header_context"` rules before persisting the revised recipe data.
+*   `[ ]` 3. [BE] Update `parseInputArtifactRules` and related types
+    *   `[ ]` 3.a. Update the application to accept the new `type: "document"` / `"header_context"` rules before persisting revised recipe data.
+    *   `[ ]` 3.b. Ensure services that resolve the next step can interpret `parallel_group` and `branch_key` when scheduling work.
 
-*   `[ ]` 9. [BE] TypeScript and type-guard adjustments
-    *   `[ ]` 9.a. Model the Antithesis HeaderContext schema (`proposal_identifier.lineage_key`, `proposal_identifier.source_model_slug`, review focus, normalization guidance, document contexts) in shared types and update `type_guards.ts` accordingly.
-    *   `[ ]` 9.b. Extend job payload / recipe step guards to validate the new `inputs_relevance` arrays and ensure every Antithesis step declares the required Thesis document keys.
-    *   `[ ]` 9.c. Capture the comparison vector JSON structure (scores + rationales) in shared types to support downstream validation.
+*   `[ ]` 4. [BE] PromptAssembler updates
+    *   `[ ]` 4.a. Enhance `assemblePlannerPrompt` to handle both pairwise and final planners, including saving header contexts and registering `source_prompt_resource_id`.
+    *   `[ ]` 4.b. Teach `assembleTurnPrompt` to map each branch key to proper template, context files, and storage locations (pairwise, document-level, final deliverables).
+    *   `[ ]` 4.c. Ensure continuation handling covers synthesized JSON chunks and rendered markdown outputs using defined policies; validate that continuations resume cleanly without partial artifacts.
 
-*   `[ ]` 10. [BE] PromptAssembler & worker updates
-    *   `[ ]` 10.a. Ensure `PromptAssembler` persists the planner HeaderContext to storage and injects the `inputs_relevance` ordering when assembling turn prompts for Antithesis.
-    *   `[ ]` 10.b. Update any worker logic that schedules Antithesis jobs so that the new recipe rows, branch keys, and `parallel_group` values are honored.
-    *   `[ ]` 10.c. When building execute job payloads, include the planner-supplied `lineage_key` and `source_model_slug`, and ensure `executeModelCallAndSave` writes `document_relationships.source_group` from that lineage key before saving contributions.
+*   `[ ]` 5. [TEST-UNIT] Add comprehensive test coverage
+    *   `[ ]` 5.a. Create additional unit tests for `assemblePlannerPrompt` and `assembleTurnPrompt` verifying template selection, storage paths, artifact registration, and input relevance ordering.
+    *   `[ ]` 5.b. Add fixtures for all new prompt templates, header contexts, and branch metadata.
+    *   `[ ]` 5.c. Create tests that generate fully assembled prompts for each step/conditional and print de-minified versions for review.
 
-*   `[ ]` 11. [TEST-UNIT] / [TEST-INT] Test and fixture updates
-    *   `[ ]` 11.a. Add fixtures for all new Antithesis prompt templates and HeaderContext outputs.
-    *   `[ ]` 11.b. Update unit tests for `assemblePlannerPrompt`, `assembleTurnPrompt`, and related helpers to assert the new artifact ids, storage paths, relevance ordering, and presence of `lineage_key` / `source_model_slug` metadata.
-    *   `[ ]` 11.c. Refresh worker integration tests to expect the per-proposal fan-out (six artifacts) instead of the legacy monolithic review response and assert that `document_relationships.source_group` matches the planner-supplied lineage key.
+*   `[ ]` 6. [TEST-INT] Update integration coverage
+    *   `[ ]` 6.a. Update worker integration tests to expect multi-step outputs instead of legacy monolithic responses, verifying parallel branch execution.
+    *   `[ ]` 6.b. Add integration tests for full workflows: Thesis → Antithesis → Synthesis → Parenthesis → Paralysis, ensuring document keys feed correctly between stages.
+    *   `[ ]` 6.c. Add tests confirming reruns with prior artifacts operate without regressions.
 
-*   `[ ]` 12. [BE] / [PROMPT] File manager & path constructor updates
-    *   `[ ]` 12.a. Add Antithesis document keys (`business_case_critique`, `technical_feasibility_assessment`, `risk_register`, `non_functional_requirements`, `dependency_map`, `comparison_vector`) to the file-type enums and path constructor/deconstructor utilities.
-    *   `[ ]` 12.b. Update storage helpers so planner outputs land in `context/header_context.json`, per-document feedback paths (`user_feedback/{model_slug}_{n}_{document_key}_feedback.md`) are recognized, and each branch artifact is saved under the documented stage file structure.
+*   `[ ]` 7. [BE] Enforce fan-in orchestration
+    *   `[ ]` 7.a. Modify worker scheduling so final steps (advisor recommendations, synthesis deliverables) enqueue only after all prerequisite steps complete.
+    *   `[ ]` 7.b. Add tests covering full runs to verify fan-in guards and consolidated artifacts.
 
-*   `[ ]` Ensure the last step of prompt construction is to always run the constructed prompt through a json minifier to compress token usage without losing content. 
-*   `[ ]` Write a test for each stage that generates a fully assembled prompt for each step and conditional (continuations, etc) that prints the finished fully assembled prompt exactly as it would be sent to the model, except de-minified so that it can be read easier. 
-*   `[ ]` Review each stage and step assembled prompt to ensure that the content is exactly as desired, and resolve any problems before proceeding. 
-
-*   `[ ]` 8. [CONFIG] Update storage enums and helpers for new artifacts.
-    *   `[ ]` 8.a. Extend `FileType` (and related enums) to include `SynthesisPairwise*`, `SynthesisDocument*`, `SynthesisHeaderContext`, `SynthesisPrd`, `SynthesisArchitecture`, `SynthesisTechStack` as needed.
-    *   `[ ]` 8.b. Update `constructStoragePath` / `deconstructStoragePath` to support the new branch keys, `_continuation_{c}` segments, and header context filenames (`header_context_pairwise.json`, `header_context.json`).
-    *   `[ ]` 8.c. Confirm path helpers align with the Stage File Structure (e.g., `_work/prompts/`, `assembled_json/`, `documents/`).
-
-*   `[ ]` 9. [BE] PromptAssembler and service updates.
-    *   `[ ]` 9.a. Enhance `assemblePlannerPrompt` to handle both Planner A (pairwise) and Planner B (final) options, including saving header contexts and registering `source_prompt_resource_id`.
-    *   `[ ]` 9.b. Teach `assembleTurnPrompt` to map each branch key to the proper template, context files, and storage locations (pairwise, document-level, final deliverables).
-    *   `[ ]` 9.c. Ensure continuation handling covers synthesized JSON chunks and rendered markdown outputs using the continuation policies defined per step; explicitly validate that JSON and markdown continuations resume cleanly so partial artifacts never leak into storage.
-
-*   `[ ]` 12. [TEST-UNIT] / [TEST-INT] Add coverage for new flows.
-    *   `[ ]` 12.a. Create unit tests for each planner/turn assembler verifying template selection, storage paths, and registered artifacts.
-    *   `[ ]` 12.b. Update worker pipeline tests to exercise the full synthesis fan-out/fan-in route (planner → pairwise turns → document consolidations → final planner → final turns) with mocked Supabase inserts, asserting that `match_keys` are persisted on pairwise outputs and remain available when document-level consolidations execute.
-    *   `[ ]` 12.c. Add integration tests ensuring the new document keys feed into Parenthesis once that worksheet is completed.
-
-*   `[ ]` 11. [BE] TypeScript and type-guard changes.
-    *   `[ ]` 11.a. Extend shared types (`DialecticRecipeStep`, `DialecticJobPayload.step_info`, etc.) to represent new prompt types, branch keys, header contexts, and assembled JSON schemas.
-    *   `[ ]` 11.b. Update runtime guards (`isDialecticRecipeStep`, `isDialecticJobPayload`, `isHeaderContext`) to validate the new structures, including the optional `match_keys` array in pairwise outputs.
-    *   `[ ]` 11.c. Document any new manifest/header interfaces so downstream services (Parenthesis, Paralysis) can rely on typed inputs.
-
-*   `[ ]` 5. `[BE]` Extend `PromptAssembler` to handle Parenthesis.
-    *   `[ ]` 5.a. Update `assemblePlannerPrompt` to route Parenthesis PLAN jobs to `parenthesis_planner_header_v1`, supply all required inputs, upload `header_context_parenthesis.json`, and return `source_prompt_resource_id` to downstream consumers.
-    *   `[ ]` 5.b. Enhance `assembleTurnPrompt` to support the Parenthesis branch keys (`trd`, `master_plan`, `milestone_schema`), wiring optional prior artifacts, Synthesis outputs, and appropriate storage paths for markdown + assembled JSON artifacts.
-    *   `[ ]` 5.c. Implement continuation handling that queues `continueJob` with the reason strings defined in each step when markdown/JSON outputs truncate or fail validation, ensuring partial artifacts are never persisted.
-
-*   `[ ]` 6. `[CONFIG]` Update storage enums and helpers.
-    *   `[ ]` 6.a. Add Parenthesis-specific entries to `FileType` (header context, TRD, master plan, milestone schema) and reference them inside storage helpers.
-    *   `[ ]` 6.b. Extend `constructStoragePath` / `deconstructStoragePath` so Parenthesis prompts, header contexts, assembled JSON, rendered markdown, and continuation files follow the documented Stage File Structure and naming conventions.
-
-*   `[ ]` 7. `[BE]` Update shared types and guards.
-    *   `[ ]` 7.a. Extend shared interfaces to model the new header context fields (status preservation rules, iteration guidance), TRD schema arrays, master plan milestone structures, and milestone schema attributes.
-    *   `[ ]` 7.b. Update type guards (`isDialecticRecipeStep`, `isDialecticJobPayload`, `isHeaderContextParenthesis`, assembled JSON validators) so they enforce the new schema contracts and optional inputs before runtime execution.
-
-*   `[ ]` 8. `[TEST-UNIT]` Cover Parenthesis planner/turn logic.
-    *   `[ ]` 8.a. Add unit tests for `assemblePlannerPrompt` validating that Parenthesis planner jobs save header context artifacts and register the prompt resource id.
-    *   `[ ]` 8.b. Add unit tests for `assembleTurnPrompt` covering each branch key, asserting correct template selection, storage path, optional prior-iteration handling, and continuation scheduling.
-    *   `[ ]` 8.c. Assert relevance ordering is honored by checking the generated prompt payload includes inputs in the expected priority sequence (header context, prior artifacts, Synthesis outputs).
-
-*   `[ ]` 9. `[TEST-INT]` Update worker/integration coverage.
-    *   `[ ]` 9.a. Build an integration test (or extend existing worker tests) that executes the full Parenthesis workflow (planner → TRD → Master Plan → Milestone Schema), validating persisted artifacts and continuation behavior.
-    *   `[ ]` 9.b. Add scenarios feeding prior `master_plan`, `trd`, or `milestone_schema` to confirm reruns operate without regressions.
-
-*   `[ ]` 4. `[CONFIG]` Extend storage utilities, enums, and type guards.
-    *   `[ ]` 4.a. Add `advisor_recommendations` (and any missing paralysis keys) to `FileType`, storage context types, and associated enums.
-    *   `[ ]` 4.b. Update `constructStoragePath` / `deconstructStoragePath` (plus tests) so prompts, header contexts, assembled JSON, rendered markdown, and continuation files follow the paralysis Stage File Structure.
-    *   `[ ]` 4.c. Expand resource/contribution type guards and tests so they accept `advisor_recommendations` artifacts with the markdown/JSON schema defined here.
-
-*   `[ ]` 5. `[BE]` Wire the PromptAssembler and add coverage.
-    *   `[ ]` 5.a. Route paralysis planner jobs to `paralysis_planner_header_v1`, upload `header_context.json`, and return the `source_prompt_resource_id`.
-    *   `[ ]` 5.b. Extend `assembleTurnPrompt` so the checklist, master plan, and advisor branches gather required inputs (including optional prior artifacts/feedback) and persist markdown + assembled JSON outputs at the expected paths.
-    *   `[ ]` 5.c. Add unit tests verifying each branch assembles prompts with the correct input ordering, obeys continuation policy, and stores artifacts via the file manager.
-
-*   `[ ]` 6. `[BE]` Enforce advisor fan-in during orchestration.
-    *   `[ ]` 6.a. Modify worker scheduling so Step 4 enqueues only after *all* Step 2 and Step 3 jobs for the same recipe/model complete successfully.
-    *   `[ ]` 6.b. Add unit/integration tests covering the full paralysis run (planner → checklist → master plan → advisor) to verify the fan-in guard and the single `advisor_recommendations` artifact.
-
-    *   `[ ]` 7.a. Refactor services, exporters, and UI components to consume the consolidated `advisor_recommendations` artifact instead of the old advisor documents.
+*   `[ ]` 8. [BE] Refactor downstream consumers
+    *   `[ ]` 8.a. Update services, exporters, and UI components to consume consolidated artifacts (`advisor_recommendations`, synthesis deliverables) instead of legacy multi-document structures.

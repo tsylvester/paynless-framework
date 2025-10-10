@@ -9,7 +9,7 @@
       [{model_slug}_{n}_continuation_{c}_]{stage}_{document_key}_prompt.md 
             // Only continuation prompts are unique to a model, so if it needs to continue, it needs the model_slug too.And because the same model can be called more than once within the same stage, they need the iterator {n} to uniquely determine which iteration of the model the prompt is for.
     context/
-      header_context[_{step_name}].json
+      {model_slug}_{n}[_{stage}]_header_context.json
     assembled_json/
       {model_slug}_{n}_{step_name}_{lineage_key}[_{match_key}].json 
             // The optional match_key value is for when model_slug is looking at a document that began with lineage_key and was touched by match_key. 

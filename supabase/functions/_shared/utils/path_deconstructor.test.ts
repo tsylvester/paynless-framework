@@ -537,6 +537,84 @@ const constructDeconstructTestCases: Array<{
     checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug'],
     expectedFixedFileNameInPath: 'text-embedder_compressing_model-a_and_model-b_rag_summary.txt'
   },
+  {
+    name: 'PendingFile',
+    context: { projectId: 'yy-pf', fileType: FileType.PendingFile, originalFileName: 'task-1.md' },
+    checkFields: [],
+    expectedSanitizedFileName: 'task-1.md',
+  },
+  {
+    name: 'CurrentFile',
+    context: { projectId: 'yy-cf', fileType: FileType.CurrentFile, originalFileName: 'task-2.md' },
+    checkFields: [],
+    expectedSanitizedFileName: 'task-2.md',
+  },
+  {
+    name: 'CompleteFile',
+    context: { projectId: 'yy-cpf', fileType: FileType.CompleteFile, originalFileName: 'task-3.md' },
+    checkFields: [],
+    expectedSanitizedFileName: 'task-3.md',
+  },
+  {
+    name: 'SynthesisHeaderContext',
+    context: { projectId: 'yy-shc', fileType: FileType.SynthesisHeaderContext, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
+    checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
+    expectedFixedFileNameInPath: 'm_0_synthesis_header_context.json',
+  },
+  {
+    name: 'SynthesisPrd',
+    context: { projectId: 'yy-prd', fileType: FileType.SynthesisPrd, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
+    checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
+    expectedFixedFileNameInPath: 'm_0_prd.md',
+  },
+  {
+    name: 'SynthesisArchitecture',
+    context: { projectId: 'yy-sa', fileType: FileType.SynthesisArchitecture, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
+    checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
+    expectedFixedFileNameInPath: 'm_0_architecture.md',
+  },
+  {
+    name: 'SynthesisTechStack',
+    context: { projectId: 'yy-sts', fileType: FileType.SynthesisTechStack, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
+    checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
+    expectedFixedFileNameInPath: 'm_0_tech_stack.md',
+  },
+  {
+    name: 'synthesis_pairwise_business_case',
+    context: { projectId: 'yy-spbc', fileType: FileType.synthesis_pairwise_business_case, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
+    checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
+    expectedFixedFileNameInPath: 'm_0_synthesis_pairwise_business_case.md',
+  },
+  {
+    name: 'synthesis_document_business_case',
+    context: { projectId: 'yy-sdbc', fileType: FileType.synthesis_document_business_case, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
+    checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
+    expectedFixedFileNameInPath: 'm_0_synthesis_document_business_case.md',
+  },
+  {
+    name: 'trd',
+    context: { projectId: 'yy-trd', fileType: FileType.trd, sessionId: 's', iteration: 1, stageSlug: 'parenthesis', modelSlug: 'm', attemptCount: 0 },
+    checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
+    expectedFixedFileNameInPath: 'm_0_trd.md',
+  },
+  {
+    name: 'milestone_schema',
+    context: { projectId: 'yy-ms', fileType: FileType.milestone_schema, sessionId: 's', iteration: 1, stageSlug: 'parenthesis', modelSlug: 'm', attemptCount: 0 },
+    checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
+    expectedFixedFileNameInPath: 'm_0_milestone_schema.md',
+  },
+  {
+    name: 'master_plan (stage-level)',
+    context: { projectId: 'yy-mp', fileType: FileType.master_plan, sessionId: 's', iteration: 1, stageSlug: 'parenthesis', modelSlug: 'm', attemptCount: 0 },
+    checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
+    expectedFixedFileNameInPath: 'm_0_master_plan.md',
+  },
+  {
+    name: 'advisor_recommendations',
+    context: { projectId: 'yy-ar', fileType: FileType.advisor_recommendations, sessionId: 's', iteration: 1, stageSlug: 'paralysis', modelSlug: 'm', attemptCount: 0 },
+    checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
+    expectedFixedFileNameInPath: 'm_0_advisor_recommendations.md',
+  },
 ];
 
 constructDeconstructTestCases.forEach((tc) => {
