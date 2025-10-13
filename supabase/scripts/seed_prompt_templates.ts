@@ -1,11 +1,13 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from 'jsr:@supabase/supabase-js'
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { resolve, join, relative, extname } from 'node:path'
+
+// This file must be run from supabase/functions in order to access the .env keys and the correct root path
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const BUCKET = process.env.PROMPT_TEMPLATE_BUCKET ?? 'prompt-templates'
-const PROMPTS_ROOT = resolve(process.cwd(), 'docs', 'prompts')
+const PROMPTS_ROOT = resolve(process.cwd(), '../../docs', 'prompts')
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables.')
@@ -49,7 +51,7 @@ async function main() {
   console.log(`Collecting prompt templates from ${PROMPTS_ROOT}`)
   const promptFiles = await collectFiles(PROMPTS_ROOT)
 
-  const templatesRoot = resolve(process.cwd(), 'docs', 'templates')
+  const templatesRoot = resolve(process.cwd(), '../../docs', 'templates')
   console.log(`Collecting document templates from ${templatesRoot}`)
   const templateFiles = await collectFiles(templatesRoot, 'templates')
 
