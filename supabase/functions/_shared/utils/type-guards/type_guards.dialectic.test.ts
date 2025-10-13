@@ -1363,6 +1363,21 @@ Deno.test('Type Guard: isDialecticStepInfo', async (t) => {
     await t.step('should return false for a non-object', () => {
         assert(!isDialecticStepInfo(null));
     });
+
+    await t.step('should return false if step_key has wrong type', () => {
+        const stepInfo = { current_step: 1, total_steps: 5, step_key: 123 };
+        assert(!isDialecticStepInfo(stepInfo));
+    });
+
+    await t.step('should return false if branch_key is not a valid BranchKey enum', () => {
+        const stepInfo = { current_step: 1, total_steps: 5, branch_key: 'not_a_real_branch_key' };
+        assert(!isDialecticStepInfo(stepInfo));
+    });
+
+    await t.step('should return false if parallel_group has wrong type', () => {
+        const stepInfo = { current_step: 1, total_steps: 5, parallel_group: 'a' };
+        assert(!isDialecticStepInfo(stepInfo));
+    });
 });
 
 Deno.test('Type Guard: isDocumentRelationships', async (t) => {

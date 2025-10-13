@@ -404,20 +404,54 @@ graph LR
         *   `[✅]` 1.b.vi. [IMPLEMENTATION] Add pattern matching for `SynthesisHeaderContext`, `SynthesisPrd`, `SynthesisArchitecture`, `SynthesisTechStack` paths in `deconstructStoragePath` function in `path_deconstructor.ts`.
         *   `[✅]` 1.b.vii. [GREEN TEST] Verify `deconstructStoragePath` test passes with correct path parsing for all new FileTypes.
         *   `[✅]` 1.b.viii. [REFACTOR] Review pattern matching organization and consider grouping related patterns.
-    *   `[ ]` 1.c. Confirm path helpers align with the Stage File Structure (e.g., `_work/prompts/`, `assembled_json/`, `documents/`, `context/`, `user_feedback/`).
-        *   `[ ]` 1.c.i. [RED TEST] Write test to verify path helpers create correct directory structures and fail.
-        *   `[ ]` 1.c.ii. [IMPLEMENTATION] Update path helper functions if needed to ensure proper Stage File Structure alignment.
-        *   `[ ]` 1.c.iii. [GREEN TEST] Verify path helpers create correct directory structures.
-        *   `[ ]` 1.c.iv. [REFACTOR] Review path helper organization and consider consolidating related functionality.
+    *   `[✅]` 1.c. Confirm path helpers align with the Stage File Structure (e.g., `_work/prompts/`, `assembled_json/`, `documents/`, `context/`, `user_feedback/`).
+        *   `[✅]` 1.c.i. [RED TEST] Write test to verify path helpers create correct directory structures and fail.
+        *   `[✅]` 1.c.ii. [IMPLEMENTATION] Update path helper functions if needed to ensure proper Stage File Structure alignment.
+        *   `[✅]` 1.c.iii. [GREEN TEST] Verify path helpers create correct directory structures.
+        *   `[✅]` 1.c.iv. [REFACTOR] Review path helper organization and consider consolidating related functionality.
 
 *   `[ ]` 2. [BE] Update shared types and type guards
-    *   `[ ]` 2.a. Extend shared types (`DialecticRecipeStep`, `DialecticJobPayload.step_info`, etc.) to represent new prompt types, branch keys, header contexts, and assembled JSON schemas.
-    *   `[ ]` 2.b. Update runtime guards (`isDialecticRecipeStep`, `isDialecticJobPayload`, `isHeaderContext`, `isHeaderContextAntithesis`, `isHeaderContextSynthesis`, `isHeaderContextParenthesis`, assembled JSON validators) to validate the new structures, including `match_keys` arrays in pairwise outputs.
-    *   `[ ]` 2.c. Document new manifest/header interfaces so downstream services can rely on typed inputs.
+    *   `[✅]` 2.a. [BE] Extend shared types in `dialectic.interface.ts` to align with the new recipe-based schema.
+        *   `[✅]` 2.a.i. [IMPLEMENTATION] Update the `DialecticRecipeStep` interface to include `step_key`, `step_slug`, `job_type`, `prompt_type`, `inputs_relevance`, `outputs_required`, `parallel_group`, and `branch_key`.
+        *   `[✅]` 2.a.ii. [IMPLEMENTATION] Define new interfaces for `InputRule`, `RelevanceRule`, and `OutputRule` to strongly type the contents of the `inputs_required`, `inputs_relevance`, and `outputs_required` JSONB arrays.
+        *   `[✅]` 2.a.iii. [IMPLEMENTATION] Update the `DialecticStepInfo` interface within `DialecticJobPayload` to include `step_key`, `branch_key`, `parallel_group`, and other new fields from the recipe step schema.
+        *   `[✅]` 2.a.iv. [REFACTOR] Review all related interfaces in `dialectic.interface.ts` and ensure consistency with the database schema documented in `Dialectic Stage Recipes Plan.md`.
+    *   `[✅]` 2.b. [TEST-UNIT] Create a new test file `type_guards.dialectic.recipe.test.ts` for recipe-specific type guards.
+        *   `[✅]` 2.b.i. [RED TEST] Write failing tests for `isDialecticRecipeStep`, `isInputRule`, `isRelevanceRule`, and `isOutputRule` that assert against both valid and invalid object shapes.
+    *   `[✅]` 2.c. [BE] Create a new implementation file `type_guards.dialectic.recipe.ts` and implement recipe-specific type guards.
+        *   `[✅]` 2.c.i. [IMPLEMENTATION] Implement the `isDialecticRecipeStep` type guard to validate the full structure of a recipe step object.
+        *   `[✅]` 2.c.ii. [IMPLEMENTATION] Implement the `isInputRule`, `isRelevanceRule`, and `isOutputRule` type guards.
+        *   `[✅]` 2.c.iii. [GREEN TEST] Run the tests in `type_guards.dialectic.recipe.test.ts` to confirm that all new type guards correctly identify valid and invalid objects.
+        *   `[✅]` 2.c.iv. [REFACTOR] Review the new type guards for clarity and efficiency.
+    *   `[✅]` 2.d. [TEST-UNIT] Update tests in `type_guards.dialectic.test.ts` for `DialecticJobPayload`.
+        *   `[✅]` 2.d.i. [RED TEST] Add new failing tests to `isDialecticJobPayload` that specifically check for the new recipe-related fields (`step_key`, `branch_key`, etc.) within the `step_info` object.
+    *   `[✅]` 2.e. [BE] Update the `isDialecticJobPayload` type guard in `type_guards.dialectic.ts`.
+        *   `[✅]` 2.e.i. [IMPLEMENTATION] Modify the `isDialecticJobPayload` guard to validate the extended `step_info` object, ensuring it correctly checks for the new required and optional properties.
+        *   `[✅]` 2.e.ii. [GREEN TEST] Run the tests in `type_guards.dialectic.test.ts` to verify the updated `isDialecticJobPayload` guard passes all tests.
+        *   `[✅]` 2.e.iii. [REFACTOR] Review the updated `isDialecticJobPayload` guard for clarity.
+    *   `[✅]` 2.f. [DOCS] Add JSDoc comments to `dialectic.interface.ts` to document new recipe-related interfaces.
+        *   `[✅]` 2.f.i. [IMPLEMENTATION] Add comprehensive JSDoc comments to the `DialecticRecipeStep`, `InputRule`, `RelevanceRule`, and `OutputRule` interfaces and their properties to clarify their purpose and usage.
 
-*   `[ ]` 3. [BE] Update `parseInputArtifactRules` and related types
-    *   `[ ]` 3.a. Update the application to accept the new `type: "document"` / `"header_context"` rules before persisting revised recipe data.
-    *   `[ ]` 3.b. Ensure services that resolve the next step can interpret `parallel_group` and `branch_key` when scheduling work.
+*   `[ ]` 3. [BE] Adapt `input-artifact-parser` and `gatherInputsForStage` for recipe-based inputs.
+    *   `[ ]` 3.a. [BE] Adapt `input-artifact-parser` to consume a recipe `InputRule` array.
+        *   `[✅]` 3.a.i. [TEST-UNIT] Update tests in `input-artifact-parser.test.ts`.
+            *   `[✅]` 3.a.i.1. [RED TEST] Refactor existing tests to pass an `InputRule[]` array directly to `parseInputArtifactRules`, removing the obsolete `{ "sources": [...] }` wrapper.
+            *   `[✅]` 3.a.i.2. [RED TEST] Add new, complete, and stateless failing tests to validate rules with `type: 'document'` and `type: 'header_context'`, ensuring all assertions for the final success state are included.
+        *   `[✅]` 3.a.ii. [BE] Update the implementation in `input-artifact-parser.ts`.
+            *   `[✅]` 3.a.ii.1. [IMPLEMENTATION] Modify the `parseInputArtifactRules` function signature to accept an array of `InputRule` objects.
+            *   `[✅]` 3.a.ii.2. [IMPLEMENTATION] Remove the logic that unwraps the `{ "sources": [...] }` object.
+            *   `[✅]` 3.a.ii.3. [IMPLEMENTATION] Expand the validation logic to accept `'document'` and `'header_context'` as valid rule types.
+            *   `[✅]` 3.a.ii.4. [GREEN TEST] Run the tests in `input-artifact-parser.test.ts` to confirm the refactored function works as expected.
+    *   `[ ]` 3.b. [BE] Refactor `gatherInputsForStage` to use the updated `StageContext` and parser.
+        *   `[✅]` 3.b.i. [REFACTOR] Update the `StageContext` interface in `prompt-assembler.interface.ts`.
+            *   `[✅]` 3.b.i.1. [IMPLEMENTATION] Remove the deprecated `input_artifact_rules` property.
+            *   `[✅]` 3.b.i.2. [IMPLEMENTATION] Add a new `recipe_step` property of type `DialecticRecipeStep`. This ensures the function's contract is updated without causing a cascade of signature changes in callers.
+        *   `[ ]` 3.b.ii. [TEST-UNIT] Update tests in `gatherInputsForStage.test.ts`.
+            *   `[ ]` 3.b.ii.1. [RED TEST] Refactor existing tests to construct the `StageContext` object with the new `recipe_step` property instead of the old `input_artifact_rules`. This will create a RED state because the implementation of `gatherInputsForStage` will fail.
+        *   `[ ]` 3.b.iii. [BE] Update the implementation in `gatherInputsForStage.ts`.
+            *   `[ ]` 3.b.iii.1. [IMPLEMENTATION] Modify the function's logic to read input rules from `stage.recipe_step.inputs_required`.
+            *   `[ ]` 3.b.iii.2. [IMPLEMENTATION] Pass the `inputs_required` array to the newly refactored `parseInputArtifactRules` function.
+            *   `[ ]` 3.b.iii.3. [GREEN TEST] Run the tests in `gatherInputsForStage.test.ts` to confirm the function passes.
 
 *   `[ ]` 4. [BE] PromptAssembler updates
     *   `[ ]` 4.a. Enhance `assemblePlannerPrompt` to handle both pairwise and final planners, including saving header contexts and registering `source_prompt_resource_id`.

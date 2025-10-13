@@ -30,7 +30,18 @@ DECLARE
     v_nfr_doc_template_id UUID;
     v_dependency_doc_template_id UUID;
     v_comparison_doc_template_id UUID;
+    v_doc_template_id UUID;
+    v_domain_id UUID;
 BEGIN
+    -- Get the domain_id for 'Software Development'
+    SELECT id INTO v_domain_id FROM public.dialectic_domains WHERE name = 'Software Development' LIMIT 1;
+    
+    -- Upsert the document template for the planner prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('antithesis_planner_review_v1 prompt', v_domain_id, 'Source document for antithesis_planner_review_v1 prompt', 'prompts', 'docs/prompts/antithesis/', 'antithesis_planner_review_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
+
     INSERT INTO public.system_prompts (
         id,
         name,
@@ -39,7 +50,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'antithesis_planner_review_v1',
@@ -48,7 +59,7 @@ BEGIN
         1,
         'Planner template that assembles the Antithesis per-proposal HeaderContext artifact',
         false,
-        'docs/prompts/antithesis/antithesis_planner_review_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -56,9 +67,50 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_plan_prompt_id;
+
+    -- Upsert the document template for the business case critique prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, is_active)
+    VALUES ('antithesis_business_case_critique', v_domain_id, 'Critique of the business case for a given proposal.', TRUE)
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_business_doc_template_id;
+
+    -- Upsert the document template for the feasibility assessment
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, is_active)
+    VALUES ('antithesis_feasibility_assessment', v_domain_id, 'Feasibility assessment for a given proposal.', TRUE)
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_feasibility_doc_template_id;
+
+    -- Upsert the document template for the risk register
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, is_active)
+    VALUES ('antithesis_risk_register', v_domain_id, 'Risk register for a given proposal.', TRUE)
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_risk_doc_template_id;
+
+    -- Upsert the document template for non-functional requirements
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, is_active)
+    VALUES ('antithesis_non_functional_requirements', v_domain_id, 'Non-functional requirements for a given proposal.', TRUE)
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_nfr_doc_template_id;
+
+    -- Upsert the document template for the dependency map
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, is_active)
+    VALUES ('antithesis_dependency_map', v_domain_id, 'Dependency map for a given proposal.', TRUE)
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_dependency_doc_template_id;
+
+    -- Upsert the document template for the comparison vector
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, is_active)
+    VALUES ('antithesis_comparison_vector', v_domain_id, 'Comparison vector for a given proposal.', TRUE)
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_comparison_doc_template_id;
+
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('antithesis_business_case_critique_turn_v1 prompt', v_domain_id, 'Source document for antithesis_business_case_critique_turn_v1 prompt', 'prompts', 'docs/prompts/antithesis/', 'antithesis_business_case_critique_turn_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (
         id,
@@ -68,7 +120,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'antithesis_business_case_critique_turn_v1',
@@ -77,7 +129,7 @@ BEGIN
         1,
         'Antithesis stage per-proposal critique turn template',
         false,
-        'docs/prompts/antithesis/antithesis_business_case_critique_turn_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -85,9 +137,15 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_business_prompt_id;
+
+    -- Upsert the document template for the feasibility assessment prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('antithesis_feasibility_assessment_turn_v1 prompt', v_domain_id, 'Source document for antithesis_feasibility_assessment_turn_v1 prompt', 'prompts', 'docs/prompts/antithesis/', 'antithesis_feasibility_assessment_turn_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (
         id,
@@ -97,7 +155,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'antithesis_feasibility_assessment_turn_v1',
@@ -106,7 +164,7 @@ BEGIN
         1,
         'Antithesis stage technical feasibility assessment turn template',
         false,
-        'docs/prompts/antithesis/antithesis_feasibility_assessment_turn_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -114,9 +172,15 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_feasibility_prompt_id;
+
+    -- Upsert the document template for the risk register prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('antithesis_risk_register_turn_v1 prompt', v_domain_id, 'Source document for antithesis_risk_register_turn_v1 prompt', 'prompts', 'docs/prompts/antithesis/', 'antithesis_risk_register_turn_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (
         id,
@@ -126,7 +190,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'antithesis_risk_register_turn_v1',
@@ -135,7 +199,7 @@ BEGIN
         1,
         'Antithesis stage risk register turn template',
         false,
-        'docs/prompts/antithesis/antithesis_risk_register_turn_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -143,9 +207,15 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_risk_prompt_id;
+
+    -- Upsert the document template for the non-functional requirements prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('antithesis_non_functional_requirements_turn_v1 prompt', v_domain_id, 'Source document for antithesis_non_functional_requirements_turn_v1 prompt', 'prompts', 'docs/prompts/antithesis/', 'antithesis_non_functional_requirements_turn_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (
         id,
@@ -155,7 +225,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'antithesis_non_functional_requirements_turn_v1',
@@ -164,7 +234,7 @@ BEGIN
         1,
         'Antithesis stage non-functional requirements review turn template',
         false,
-        'docs/prompts/antithesis/antithesis_non_functional_requirements_turn_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -172,9 +242,15 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_nfr_prompt_id;
+
+    -- Upsert the document template for the dependency map prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('antithesis_dependency_map_turn_v1 prompt', v_domain_id, 'Source document for antithesis_dependency_map_turn_v1 prompt', 'prompts', 'docs/prompts/antithesis/', 'antithesis_dependency_map_turn_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (
         id,
@@ -184,7 +260,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'antithesis_dependency_map_turn_v1',
@@ -193,7 +269,7 @@ BEGIN
         1,
         'Antithesis stage dependency map turn template',
         false,
-        'docs/prompts/antithesis/antithesis_dependency_map_turn_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -201,9 +277,15 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_dependency_prompt_id;
+
+    -- Upsert the document template for the comparison vector prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('antithesis_comparison_vector_turn_v1 prompt', v_domain_id, 'Source document for antithesis_comparison_vector_turn_v1 prompt', 'prompts', 'docs/prompts/antithesis/', 'antithesis_comparison_vector_turn_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (
         id,
@@ -213,7 +295,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'antithesis_comparison_vector_turn_v1',
@@ -222,7 +304,7 @@ BEGIN
         1,
         'Antithesis stage comparison vector turn template',
         false,
-        'docs/prompts/antithesis/antithesis_comparison_vector_turn_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -230,11 +312,11 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_comparison_prompt_id;
 
-    SELECT id INTO v_stage_id FROM public.dialectic_stages WHERE stage_slug = 'antithesis';
+    SELECT id INTO v_stage_id FROM public.dialectic_stages WHERE slug = 'antithesis';
     IF v_stage_id IS NULL THEN
         RAISE EXCEPTION 'Antithesis stage not found; ensure base seeds are applied before running this migration.';
     END IF;
@@ -357,7 +439,7 @@ BEGIN
         v_plan_prompt_id,
         'HeaderContext',
         'per_source_document_by_lineage',
-        '[{"type":"seed_prompt","stage_slug":"antithesis","document_key":"seed_prompt","required":true},{"type":"document","stage_slug":"thesis","document_key":"business_case","required":true},{"type":"document","stage_slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","stage_slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","stage_slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","stage_slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
+        '[{"type":"seed_prompt","slug":"antithesis","document_key":"seed_prompt","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"seed_prompt","relevance":1.0},{"document_key":"business_case","relevance":1.0},{"document_key":"feature_spec","relevance":0.9},{"document_key":"technical_approach","relevance":0.9},{"document_key":"success_metrics","relevance":0.8},{"document_key":"business_case","type":"feedback","relevance":0.6},{"document_key":"feature_spec","type":"feedback","relevance":0.6},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"success_metrics","type":"feedback","relevance":0.6}]'::jsonb,
         '{
            "system_materials": {
@@ -536,7 +618,7 @@ BEGIN
         v_plan_prompt_id,
         'HeaderContext',
         'per_source_document_by_lineage',
-        '[{"type":"seed_prompt","stage_slug":"antithesis","document_key":"seed_prompt","required":true},{"type":"document","stage_slug":"thesis","document_key":"business_case","required":true},{"type":"document","stage_slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","stage_slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","stage_slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","stage_slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
+        '[{"type":"seed_prompt","slug":"antithesis","document_key":"seed_prompt","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"seed_prompt","relevance":1.0},{"document_key":"business_case","relevance":1.0},{"document_key":"feature_spec","relevance":0.9},{"document_key":"technical_approach","relevance":0.9},{"document_key":"success_metrics","relevance":0.8},{"document_key":"business_case","type":"feedback","relevance":0.6},{"document_key":"feature_spec","type":"feedback","relevance":0.6},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"success_metrics","type":"feedback","relevance":0.6}]'::jsonb,
         '{
            "system_materials": {
@@ -714,7 +796,7 @@ BEGIN
         v_business_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"antithesis","document_key":"header_context","required":true},{"type":"document","stage_slug":"thesis","document_key":"business_case","required":true},{"type":"document","stage_slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","stage_slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","stage_slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","stage_slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
+        '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"business_case","relevance":0.95},{"document_key":"feature_spec","relevance":0.85},{"document_key":"technical_approach","relevance":0.75},{"document_key":"success_metrics","relevance":0.65},{"document_key":"business_case","type":"feedback","relevance":0.6},{"document_key":"feature_spec","type":"feedback","relevance":0.6},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"success_metrics","type":"feedback","relevance":0.6}]'::jsonb,
         '{
            "documents": [
@@ -789,9 +871,32 @@ BEGIN
         v_business_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"antithesis","document_key":"header_context","required":true},{"type":"document","stage_slug":"thesis","document_key":"business_case","required":true},{"type":"document","stage_slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","stage_slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","stage_slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","stage_slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
+        '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"business_case","relevance":0.95},{"document_key":"feature_spec","relevance":0.85},{"document_key":"technical_approach","relevance":0.75},{"document_key":"success_metrics","relevance":0.65},{"document_key":"business_case","type":"feedback","relevance":0.6},{"document_key":"feature_spec","type":"feedback","relevance":0.6},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"success_metrics","type":"feedback","relevance":0.6}]'::jsonb,
-        '[]'::jsonb,
+        '{
+          "documents": [
+            {
+              "document_key": "business_case_critique",
+              "template_filename": "antithesis_business_case_critique.md",
+              "artifact_class": "rendered_document",
+              "file_type": "markdown",
+              "content_to_include": {
+                "strengths": [],
+                "weaknesses": [],
+                "opportunities": [],
+                "threats": [],
+                "recommendations": [],
+                "notes": []
+              }
+            }
+          ],
+          "files_to_generate": [
+            {
+              "template_filename": "antithesis_business_case_critique.md",
+              "from_document_key": "business_case_critique"
+            }
+          ]
+        }'::jsonb,
         2,
         'business_case_critique',
         2
@@ -838,7 +943,7 @@ BEGIN
         v_feasibility_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"antithesis","document_key":"header_context","required":true},{"type":"document","stage_slug":"thesis","document_key":"business_case","required":true},{"type":"document","stage_slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","stage_slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","stage_slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","stage_slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
+        '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"feature_spec","relevance":0.9},{"document_key":"technical_approach","relevance":0.85},{"document_key":"business_case","relevance":0.7},{"document_key":"success_metrics","relevance":0.6},{"document_key":"business_case","type":"feedback","relevance":0.45},{"document_key":"feature_spec","type":"feedback","relevance":0.45},{"document_key":"technical_approach","type":"feedback","relevance":0.45},{"document_key":"success_metrics","type":"feedback","relevance":0.45}]'::jsonb,
         '{
            "documents": [
@@ -917,9 +1022,36 @@ BEGIN
         v_feasibility_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"antithesis","document_key":"header_context","required":true},{"type":"document","stage_slug":"thesis","document_key":"business_case","required":true},{"type":"document","stage_slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","stage_slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","stage_slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","stage_slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
+        '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"feature_spec","relevance":0.9},{"document_key":"technical_approach","relevance":0.85},{"document_key":"business_case","relevance":0.7},{"document_key":"success_metrics","relevance":0.6},{"document_key":"business_case","type":"feedback","relevance":0.45},{"document_key":"feature_spec","type":"feedback","relevance":0.45},{"document_key":"technical_approach","type":"feedback","relevance":0.45},{"document_key":"success_metrics","type":"feedback","relevance":0.45}]'::jsonb,
-        '[]'::jsonb,
+        '{
+          "documents": [
+            {
+              "document_key": "technical_feasibility_assessment",
+              "template_filename": "antithesis_feasibility_assessment.md",
+              "artifact_class": "rendered_document",
+              "lineage_key": "<from the filename of the file being critiqued>",
+              "source_model_slug": "<from the filename of the file being critiqued>",
+              "file_type": "markdown",
+              "content_to_include": {
+                "constraint_checklist": [
+                  "team",
+                  "timeline",
+                  "cost",
+                  "integration",
+                  "compliance"
+                ],
+                "findings": []
+              }
+            }
+          ],
+          "files_to_generate": [
+            {
+              "template_filename": "antithesis_feasibility_assessment.md",
+              "from_document_key": "technical_feasibility_assessment"
+            }
+          ]
+        }'::jsonb,
         2,
         'technical_feasibility_assessment',
         2
@@ -966,7 +1098,7 @@ BEGIN
         v_risk_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"antithesis","document_key":"header_context","required":true},{"type":"document","stage_slug":"thesis","document_key":"success_metrics","required":true},{"type":"document","stage_slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","stage_slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","stage_slug":"thesis","document_key":"business_case","required":true},{"type":"feedback","stage_slug":"thesis","document_key":"success_metrics","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"business_case","required":false}]'::jsonb,
+        '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"success_metrics","relevance":0.9},{"document_key":"technical_approach","relevance":0.8},{"document_key":"feature_spec","relevance":0.75},{"document_key":"business_case","relevance":0.65},{"document_key":"success_metrics","type":"feedback","relevance":0.7},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"feature_spec","type":"feedback","relevance":0.55},{"document_key":"business_case","type":"feedback","relevance":0.5}]'::jsonb,
         '{
            "documents": [
@@ -1043,9 +1175,34 @@ BEGIN
         v_risk_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"antithesis","document_key":"header_context","required":true},{"type":"document","stage_slug":"thesis","document_key":"success_metrics","required":true},{"type":"document","stage_slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","stage_slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","stage_slug":"thesis","document_key":"business_case","required":true},{"type":"feedback","stage_slug":"thesis","document_key":"success_metrics","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"business_case","required":false}]'::jsonb,
+        '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"success_metrics","relevance":0.9},{"document_key":"technical_approach","relevance":0.8},{"document_key":"feature_spec","relevance":0.75},{"document_key":"business_case","relevance":0.65},{"document_key":"success_metrics","type":"feedback","relevance":0.7},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"feature_spec","type":"feedback","relevance":0.55},{"document_key":"business_case","type":"feedback","relevance":0.5}]'::jsonb,
-        '[]'::jsonb,
+        '{
+          "documents": [
+            {
+              "document_key": "risk_register",
+              "template_filename": "antithesis_risk_register.md",
+              "artifact_class": "rendered_document",
+              "lineage_key": "<from the filename of the file being critiqued>",
+              "source_model_slug": "<from the filename of the file being critiqued>",
+              "file_type": "markdown",
+              "content_to_include": [
+                {
+                  "risk": "",
+                  "impact": "",
+                  "likelihood": "",
+                  "mitigation": ""
+                }
+              ]
+            }
+          ],
+          "files_to_generate": [
+            {
+              "template_filename": "antithesis_risk_register.md",
+              "from_document_key": "risk_register"
+            }
+          ]
+        }'::jsonb,
         2,
         'risk_register',
         2
@@ -1092,7 +1249,7 @@ BEGIN
         v_nfr_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"antithesis","document_key":"header_context","required":true},{"type":"document","stage_slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","stage_slug":"thesis","document_key":"success_metrics","required":true},{"type":"document","stage_slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","stage_slug":"thesis","document_key":"business_case","required":true},{"type":"feedback","stage_slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"success_metrics","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"business_case","required":false}]'::jsonb,
+        '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"technical_approach","relevance":0.9},{"document_key":"success_metrics","relevance":0.8},{"document_key":"feature_spec","relevance":0.7},{"document_key":"business_case","relevance":0.6},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"success_metrics","type":"feedback","relevance":0.55},{"document_key":"feature_spec","type":"feedback","relevance":0.5},{"document_key":"business_case","type":"feedback","relevance":0.45}]'::jsonb,
         '{
            "documents": [
@@ -1169,9 +1326,34 @@ BEGIN
         v_nfr_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"antithesis","document_key":"header_context","required":true},{"type":"document","stage_slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","stage_slug":"thesis","document_key":"success_metrics","required":true},{"type":"document","stage_slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","stage_slug":"thesis","document_key":"business_case","required":true},{"type":"feedback","stage_slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"success_metrics","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"business_case","required":false}]'::jsonb,
+        '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"technical_approach","relevance":0.9},{"document_key":"success_metrics","relevance":0.8},{"document_key":"feature_spec","relevance":0.7},{"document_key":"business_case","relevance":0.6},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"success_metrics","type":"feedback","relevance":0.55},{"document_key":"feature_spec","type":"feedback","relevance":0.5},{"document_key":"business_case","type":"feedback","relevance":0.45}]'::jsonb,
-        '[]'::jsonb,
+        '{
+          "documents": [
+            {
+              "document_key": "non_functional_requirements",
+              "template_filename": "antithesis_non_functional_requirements.md",
+              "artifact_class": "rendered_document",
+              "lineage_key": "<from the filename of the file being critiqued>",
+              "source_model_slug": "<from the filename of the file being critiqued>",
+              "file_type": "markdown",
+              "content_to_include": [
+                "security",
+                "performance",
+                "reliability",
+                "scalability",
+                "maintainability",
+                "compliance"
+              ]
+            }
+          ],
+          "files_to_generate": [
+            {
+              "template_filename": "antithesis_non_functional_requirements.md",
+              "from_document_key": "non_functional_requirements"
+            }
+          ]
+        }'::jsonb,
         2,
         'non_functional_requirements',
         2
@@ -1218,7 +1400,7 @@ BEGIN
         v_dependency_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"antithesis","document_key":"header_context","required":true},{"type":"document","stage_slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","stage_slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","stage_slug":"thesis","document_key":"business_case","required":true},{"type":"document","stage_slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","stage_slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
+        '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"technical_approach","relevance":0.9},{"document_key":"feature_spec","relevance":0.85},{"document_key":"business_case","relevance":0.75},{"document_key":"success_metrics","relevance":0.65},{"document_key":"technical_approach","type":"feedback","relevance":0.5},{"document_key":"feature_spec","type":"feedback","relevance":0.45},{"document_key":"business_case","type":"feedback","relevance":0.4},{"document_key":"success_metrics","type":"feedback","relevance":0.35}]'::jsonb,
         '{
            "documents": [
@@ -1292,9 +1474,31 @@ BEGIN
         v_dependency_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"antithesis","document_key":"header_context","required":true},{"type":"document","stage_slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","stage_slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","stage_slug":"thesis","document_key":"business_case","required":true},{"type":"document","stage_slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","stage_slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
+        '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"technical_approach","relevance":0.9},{"document_key":"feature_spec","relevance":0.85},{"document_key":"business_case","relevance":0.75},{"document_key":"success_metrics","relevance":0.65},{"document_key":"technical_approach","type":"feedback","relevance":0.5},{"document_key":"feature_spec","type":"feedback","relevance":0.45},{"document_key":"business_case","type":"feedback","relevance":0.4},{"document_key":"success_metrics","type":"feedback","relevance":0.35}]'::jsonb,
-        '[]'::jsonb,
+        '{
+          "documents": [
+            {
+              "document_key": "dependency_map",
+              "template_filename": "antithesis_dependency_map.md",
+              "artifact_class": "rendered_document",
+              "lineage_key": "<from the filename of the file being critiqued>",
+              "source_model_slug": "<from the filename of the file being critiqued>",
+              "file_type": "markdown",
+              "content_to_include": {
+                "components": [],
+                "integration_points": [],
+                "conflict_flags": []
+              }
+            }
+          ],
+          "files_to_generate": [
+            {
+              "template_filename": "antithesis_dependency_map.md",
+              "from_document_key": "dependency_map"
+            }
+          ]
+        }'::jsonb,
         2,
         'dependency_map',
         2
@@ -1341,7 +1545,7 @@ BEGIN
         v_comparison_prompt_id,
         'AssembledDocumentJson',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"antithesis","document_key":"header_context","required":true},{"type":"document","stage_slug":"thesis","document_key":"business_case","required":true},{"type":"document","stage_slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","stage_slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","stage_slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","stage_slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
+        '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"business_case","relevance":0.95},{"document_key":"feature_spec","relevance":0.95},{"document_key":"technical_approach","relevance":0.9},{"document_key":"success_metrics","relevance":0.85},{"document_key":"business_case","type":"feedback","relevance":0.75},{"document_key":"feature_spec","type":"feedback","relevance":0.7},{"document_key":"technical_approach","type":"feedback","relevance":0.7},{"document_key":"success_metrics","type":"feedback","relevance":0.65}]'::jsonb,
         '{
            "documents": [
@@ -1428,9 +1632,44 @@ BEGIN
         v_comparison_prompt_id,
         'AssembledDocumentJson',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"antithesis","document_key":"header_context","required":true},{"type":"document","stage_slug":"thesis","document_key":"business_case","required":true},{"type":"document","stage_slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","stage_slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","stage_slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","stage_slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","stage_slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
+        '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"business_case","relevance":0.95},{"document_key":"feature_spec","relevance":0.95},{"document_key":"technical_approach","relevance":0.9},{"document_key":"success_metrics","relevance":0.85},{"document_key":"business_case","type":"feedback","relevance":0.75},{"document_key":"feature_spec","type":"feedback","relevance":0.7},{"document_key":"technical_approach","type":"feedback","relevance":0.7},{"document_key":"success_metrics","type":"feedback","relevance":0.65}]'::jsonb,
-        '[]'::jsonb,
+        '{
+          "documents": [
+            {
+              "document_key": "comparison_vector",
+              "template_filename": "antithesis_comparison_vector.json",
+              "artifact_class": "assembled_document_json",
+              "lineage_key": "<from the filename of the file being critiqued>",
+              "source_model_slug": "<from the filename of the file being critiqued>",
+              "file_type": "json",
+              "content_to_include": {
+                "proposal": {
+                  "lineage_key": "",
+                  "source_model_slug": ""
+                },
+                "dimensions": {
+                  "feasibility": { "score": 0, "rationale": "" },
+                  "complexity": { "score": 0, "rationale": "" },
+                  "security": { "score": 0, "rationale": "" },
+                  "performance": { "score": 0, "rationale": "" },
+                  "maintainability": { "score": 0, "rationale": "" },
+                  "scalability": { "score": 0, "rationale": "" },
+                  "cost": { "score": 0, "rationale": "" },
+                  "time_to_market": { "score": 0, "rationale": "" },
+                  "compliance_risk": { "score": 0, "rationale": "" },
+                  "alignment_with_constraints": { "score": 0, "rationale": "" }
+                }
+              }
+            }
+          ],
+          "files_to_generate": [
+            {
+              "template_filename": "antithesis_comparison_vector.json",
+              "from_document_key": "comparison_vector"
+            }
+          ]
+        }'::jsonb,
         2,
         'comparison_vector',
         2

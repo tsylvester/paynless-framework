@@ -1,5 +1,5 @@
 -- Create canonical recipe catalog tables
-CREATE TABLE public.dialectic_recipe_templates (
+CREATE TABLE IF NOT EXISTS public.dialectic_recipe_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     recipe_name TEXT NOT NULL,
     recipe_version INTEGER NOT NULL DEFAULT 1,
@@ -9,11 +9,15 @@ CREATE TABLE public.dialectic_recipe_templates (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (recipe_name, recipe_version),
-    UNIQUE (recipe_name) WHERE is_active
+    UNIQUE (recipe_name, recipe_version)
 );
 
-CREATE TABLE public.dialectic_document_templates (
+-- Partial unique index to ensure only one active recipe has a given name.
+CREATE UNIQUE INDEX IF NOT EXISTS dialectic_recipe_templates_unique_active_name
+ON public.dialectic_recipe_templates(recipe_name)
+WHERE is_active;
+
+CREATE TABLE IF NOT EXISTS public.dialectic_document_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain_id UUID NOT NULL REFERENCES public.dialectic_domains (id),
     name TEXT NOT NULL,
@@ -21,12 +25,31 @@ CREATE TABLE public.dialectic_document_templates (
     storage_bucket TEXT,
     storage_path TEXT,
     file_name TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (name, domain_id)
 );
 
-CREATE TABLE public.dialectic_recipe_template_steps (
+ALTER TABLE public.dialectic_document_templates
+    ADD COLUMN IF NOT EXISTS storage_bucket TEXT,
+    ADD COLUMN IF NOT EXISTS storage_path TEXT,
+    ADD COLUMN IF NOT EXISTS file_name TEXT,
+    ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'dialectic_document_templates_name_domain_id_key' AND conrelid = 'public.dialectic_document_templates'::regclass
+    ) THEN
+        ALTER TABLE public.dialectic_document_templates
+            ADD CONSTRAINT dialectic_document_templates_name_domain_id_key UNIQUE (name, domain_id);
+    END IF;
+END;
+$$;
+
+CREATE TABLE IF NOT EXISTS public.dialectic_recipe_template_steps (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     template_id UUID NOT NULL REFERENCES public.dialectic_recipe_templates (id) ON DELETE CASCADE,
     step_number INTEGER NOT NULL,
@@ -49,12 +72,12 @@ CREATE TABLE public.dialectic_recipe_template_steps (
     CHECK (step_number > 0),
     CHECK (jsonb_typeof(inputs_required) = 'array'),
     CHECK (jsonb_typeof(inputs_relevance) = 'array'),
-    CHECK (jsonb_typeof(outputs_required) = 'array'),
+    CHECK (jsonb_typeof(outputs_required) = 'object'),
     UNIQUE (template_id, step_key),
     UNIQUE (template_id, step_number, step_key)
 );
 
-CREATE TABLE public.dialectic_recipe_template_edges (
+CREATE TABLE IF NOT EXISTS public.dialectic_recipe_template_edges (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     template_id UUID NOT NULL REFERENCES public.dialectic_recipe_templates (id) ON DELETE CASCADE,
     from_step_id UUID NOT NULL REFERENCES public.dialectic_recipe_template_steps (id) ON DELETE CASCADE,
@@ -65,7 +88,7 @@ CREATE TABLE public.dialectic_recipe_template_edges (
 );
 
 -- Create stage-scoped recipe instance tables
-CREATE TABLE public.dialectic_stage_recipe_instances (
+CREATE TABLE IF NOT EXISTS public.dialectic_stage_recipe_instances (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     stage_id UUID NOT NULL REFERENCES public.dialectic_stages (id) ON DELETE CASCADE,
     template_id UUID NOT NULL REFERENCES public.dialectic_recipe_templates (id) ON DELETE RESTRICT,
@@ -76,7 +99,7 @@ CREATE TABLE public.dialectic_stage_recipe_instances (
     UNIQUE (stage_id)
 );
 
-CREATE TABLE public.dialectic_stage_recipe_steps (
+CREATE TABLE IF NOT EXISTS public.dialectic_stage_recipe_steps (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     instance_id UUID NOT NULL REFERENCES public.dialectic_stage_recipe_instances (id) ON DELETE CASCADE,
     template_step_id UUID REFERENCES public.dialectic_recipe_template_steps (id) ON DELETE SET NULL,
@@ -102,11 +125,11 @@ CREATE TABLE public.dialectic_stage_recipe_steps (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (jsonb_typeof(inputs_required) = 'array'),
     CHECK (jsonb_typeof(inputs_relevance) = 'array'),
-    CHECK (jsonb_typeof(outputs_required) = 'array'),
+    CHECK (jsonb_typeof(outputs_required) = 'object'),
     UNIQUE (instance_id, step_key)
 );
 
-CREATE TABLE public.dialectic_stage_recipe_edges (
+CREATE TABLE IF NOT EXISTS public.dialectic_stage_recipe_edges (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     instance_id UUID NOT NULL REFERENCES public.dialectic_stage_recipe_instances (id) ON DELETE CASCADE,
     from_step_id UUID NOT NULL REFERENCES public.dialectic_stage_recipe_steps (id) ON DELETE CASCADE,
@@ -117,37 +140,55 @@ CREATE TABLE public.dialectic_stage_recipe_edges (
 );
 
 -- Supporting indexes
-CREATE INDEX idx_recipe_template_steps_template_step_number
+CREATE INDEX IF NOT EXISTS idx_recipe_template_steps_template_step_number
     ON public.dialectic_recipe_template_steps (template_id, step_number);
 
-CREATE INDEX idx_recipe_template_edges_template_from
+CREATE INDEX IF NOT EXISTS idx_recipe_template_edges_template_from
     ON public.dialectic_recipe_template_edges (template_id, from_step_id);
 
-CREATE INDEX idx_stage_recipe_instances_stage
+CREATE INDEX IF NOT EXISTS idx_stage_recipe_instances_stage
     ON public.dialectic_stage_recipe_instances (stage_id, is_cloned);
 
-CREATE INDEX idx_stage_recipe_steps_instance_execution
+CREATE INDEX IF NOT EXISTS idx_stage_recipe_steps_instance_execution
     ON public.dialectic_stage_recipe_steps (instance_id, execution_order)
     WHERE is_skipped = FALSE;
 
-CREATE INDEX idx_stage_recipe_edges_instance_from
+CREATE INDEX IF NOT EXISTS idx_stage_recipe_edges_instance_from
     ON public.dialectic_stage_recipe_edges (instance_id, from_step_id);
 
 -- Update dialectic_stages to reference recipes and instances
 ALTER TABLE public.dialectic_stages
-    ADD COLUMN recipe_template_id UUID REFERENCES public.dialectic_recipe_templates (id) ON DELETE SET NULL,
-    ADD COLUMN active_recipe_instance_id UUID,
-    ADD COLUMN expected_output_template_ids UUID[] NOT NULL DEFAULT '{}'::uuid[];
+    ADD COLUMN IF NOT EXISTS recipe_template_id UUID REFERENCES public.dialectic_recipe_templates (id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS active_recipe_instance_id UUID,
+    ADD COLUMN IF NOT EXISTS expected_output_template_ids UUID[] NOT NULL DEFAULT '{}'::uuid[];
 
 -- Ensure active instance references the same stage
-ALTER TABLE public.dialectic_stage_recipe_instances
-    ADD CONSTRAINT uq_stage_recipe_instance_stage_id UNIQUE (stage_id, id);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'uq_stage_recipe_instance_stage_id' AND conrelid = 'public.dialectic_stage_recipe_instances'::regclass
+    ) THEN
+        ALTER TABLE public.dialectic_stage_recipe_instances
+            ADD CONSTRAINT uq_stage_recipe_instance_stage_id UNIQUE (stage_id, id);
+    END IF;
+END;
+$$;
 
-ALTER TABLE public.dialectic_stages
-    ADD CONSTRAINT fk_active_recipe_instance
-        FOREIGN KEY (id, active_recipe_instance_id)
-        REFERENCES public.dialectic_stage_recipe_instances (stage_id, id)
-        ON DELETE SET NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_active_recipe_instance' AND conrelid = 'public.dialectic_stages'::regclass
+    ) THEN
+        ALTER TABLE public.dialectic_stages
+            ADD CONSTRAINT fk_active_recipe_instance
+                FOREIGN KEY (id, active_recipe_instance_id)
+                REFERENCES public.dialectic_stage_recipe_instances (stage_id, id)
+                ON DELETE SET NULL;
+    END IF;
+END;
+$$;
 
 -- Column documentation
 COMMENT ON COLUMN public.dialectic_recipe_template_steps.job_type IS 'One of PLAN | EXECUTE | RENDER';

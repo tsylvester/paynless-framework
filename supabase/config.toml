@@ -95,7 +95,6 @@ public = false
 
 [storage.buckets.prompt-templates]
 public = false
-objects_path = "./storage/prompt-templates"
 
 # Image transformation API is available to Supabase Pro plan.
 # [storage.image_transformation]

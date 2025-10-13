@@ -1,5 +1,5 @@
 import { Tables } from "../../types_db.ts";
-import { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
+import { DialecticJobRow, DialecticRecipeStep } from "../../dialectic-service/dialectic.interface.ts";
 
 export interface IPromptAssembler {
     assemble(options: AssemblePromptOptions): Promise<AssembledPrompt>;
@@ -69,6 +69,7 @@ export type ProjectContext = Tables<'dialectic_projects'> & {
 export type SessionContext = Tables<'dialectic_sessions'>;
 
 export type StageContext = Tables<'dialectic_stages'> & {
+    recipe_step: DialecticRecipeStep;
     system_prompts: Pick<Tables<'system_prompts'>, 'prompt_text'> | null,
     domain_specific_prompt_overlays: Pick<Tables<'domain_specific_prompt_overlays'>, 'overlay_values'>[]
 };

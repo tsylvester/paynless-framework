@@ -23,7 +23,18 @@ DECLARE
     v_instance_feature_step_id UUID;
     v_instance_technical_step_id UUID;
     v_instance_success_step_id UUID;
+    v_doc_template_id UUID;
+    v_domain_id UUID;
 BEGIN
+    -- Get the domain_id for 'Software Development'
+    SELECT id INTO v_domain_id FROM public.dialectic_domains WHERE name = 'Software Development' LIMIT 1;
+    
+    -- Upsert the document template for the planner prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('thesis_planner_header_v1 prompt', v_domain_id, 'Source document for thesis_planner_header_v1 prompt', 'prompts', 'docs/prompts/thesis/', 'thesis_planner_header_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
+
     -- Planner prompt template
     INSERT INTO public.system_prompts (
         id,
@@ -33,7 +44,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'thesis_planner_header_v1',
@@ -42,7 +53,7 @@ BEGIN
         1,
         'Planner template that assembles the Thesis HeaderContext artifact',
         false,
-        'docs/prompts/thesis/thesis_planner_header_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -50,9 +61,15 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_plan_prompt_id;
+
+    -- Upsert the document template for the business case prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('thesis_business_case_turn_v1 prompt', v_domain_id, 'Source document for thesis_business_case_turn_v1 prompt', 'prompts', 'docs/prompts/thesis/', 'thesis_business_case_turn_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
 
     -- Business case prompt template
     INSERT INTO public.system_prompts (
@@ -63,7 +80,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'thesis_business_case_turn_v1',
@@ -72,7 +89,7 @@ BEGIN
         1,
         'Thesis stage business case turn template',
         false,
-        'docs/prompts/thesis/thesis_business_case_turn_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -80,11 +97,11 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_business_prompt_id;
 
-    SELECT id INTO v_stage_id FROM public.dialectic_stages WHERE stage_slug = 'thesis';
+    SELECT id INTO v_stage_id FROM public.dialectic_stages WHERE slug = 'thesis';
     IF v_stage_id IS NULL THEN
         RAISE EXCEPTION 'Thesis stage not found; ensure base seeds are applied before running this migration.';
     END IF;
@@ -145,7 +162,7 @@ BEGIN
         v_plan_prompt_id,
         'HeaderContext',
         'all_to_one',
-        '[{"type":"seed_prompt","stage_slug":"thesis","document_key":"seed_prompt","required":true}]'::jsonb,
+        '[{"type":"seed_prompt","slug":"thesis","document_key":"seed_prompt","required":true}]'::jsonb,
         '[{"document_key":"seed_prompt","relevance":1.0}]'::jsonb,
         '{
            "system_materials": {
@@ -307,7 +324,7 @@ BEGIN
         v_business_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
+        '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.7}]'::jsonb,
         '{
            "documents": [
@@ -356,6 +373,12 @@ BEGIN
             updated_at = now()
     RETURNING id INTO v_business_step_id;
 
+    -- Upsert the document template for the feature spec prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('thesis_feature_spec_turn_v1 prompt', v_domain_id, 'Source document for thesis_feature_spec_turn_v1 prompt', 'prompts', 'docs/prompts/thesis/', 'thesis_feature_spec_turn_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
+
     -- Feature spec prompt template
     INSERT INTO public.system_prompts (
         id,
@@ -365,7 +388,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'thesis_feature_spec_turn_v1',
@@ -374,7 +397,7 @@ BEGIN
         1,
         'Thesis stage feature spec turn template',
         false,
-        'docs/prompts/thesis/thesis_feature_spec_turn_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -382,7 +405,7 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_feature_prompt_id;
 
@@ -448,7 +471,7 @@ BEGIN
         v_feature_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
+        '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.65}]'::jsonb,
         '{
            "documents": [
@@ -504,6 +527,12 @@ BEGIN
     )
     ON CONFLICT (template_id, from_step_id, to_step_id) DO NOTHING;
 
+    -- Upsert the document template for the technical approach prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('thesis_technical_approach_turn_v1 prompt', v_domain_id, 'Source document for thesis_technical_approach_turn_v1 prompt', 'prompts', 'docs/prompts/thesis/', 'thesis_technical_approach_turn_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
+
     -- Technical approach prompt template
     INSERT INTO public.system_prompts (
         id,
@@ -513,7 +542,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'thesis_technical_approach_turn_v1',
@@ -522,7 +551,7 @@ BEGIN
         1,
         'Thesis stage technical approach turn template',
         false,
-        'docs/prompts/thesis/thesis_technical_approach_turn_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -530,7 +559,7 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_technical_prompt_id;
 
@@ -596,7 +625,7 @@ BEGIN
         v_technical_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
+        '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.6}]'::jsonb,
         '{
            "documents": [
@@ -653,6 +682,12 @@ BEGIN
     )
     ON CONFLICT (template_id, from_step_id, to_step_id) DO NOTHING;
 
+    -- Upsert the document template for the success metrics prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('thesis_success_metrics_turn_v1 prompt', v_domain_id, 'Source document for thesis_success_metrics_turn_v1 prompt', 'prompts', 'docs/prompts/thesis/', 'thesis_success_metrics_turn_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
+
     -- Success metrics prompt template
     INSERT INTO public.system_prompts (
         id,
@@ -662,7 +697,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'thesis_success_metrics_turn_v1',
@@ -671,7 +706,7 @@ BEGIN
         1,
         'Thesis stage success metrics turn template',
         false,
-        'docs/prompts/thesis/thesis_success_metrics_turn_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -679,7 +714,7 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_success_prompt_id;
 
@@ -745,7 +780,7 @@ BEGIN
         v_success_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
+        '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.8}]'::jsonb,
         '{
            "documents": [
@@ -860,9 +895,89 @@ BEGIN
         v_plan_prompt_id,
         'HeaderContext',
         'all_to_one',
-        '[{"type":"seed_prompt","stage_slug":"thesis","document_key":"seed_prompt","required":true}]'::jsonb,
+        '[{"type":"seed_prompt","slug":"thesis","document_key":"seed_prompt","required":true}]'::jsonb,
         '[{"document_key":"seed_prompt","relevance":1.0}]'::jsonb,
-        '[]'::jsonb,
+        '{
+           "system_materials": {
+             "executive_summary": "outline/index of all outputs in this response and how they connect to the objective",
+             "input_artifacts_summary": "brief, faithful summary of user prompt and referenced materials",
+             "stage_rationale": "why these choices align with constraints, standards, and stakeholder needs",
+             "progress_update": "for continuation turns, summarize what is complete vs remaining; omit on first turn",
+             "validation_checkpoint": [
+               "requirements addressed",
+               "best practices applied",
+               "feasible & compliant",
+               "references integrated"
+             ],
+             "quality_standards": [
+               "security-first",
+               "maintainable",
+               "scalable",
+               "performance-aware"
+             ],
+             "diversity_rubric": {
+               "prefer_standards_when": "meet constraints, well-understood by team, minimize risk/time-to-market",
+               "propose_alternates_when": "materially improve performance, security, maintainability, or total cost under constraints",
+               "if_comparable": "present 1-2 viable options with concise trade-offs and a clear recommendation"
+             }
+           },
+           "header_context_artifact": {
+             "type": "header_context",
+             "document_key": "header_context",
+             "artifact_class": "header_context",
+             "file_type": "json"
+           },
+           "context_for_documents": [
+              {
+                "document_key": "business_case",
+                "content_to_include": {
+                  "market_opportunity": "",
+                  "user_problem_validation": "",
+                  "competitive_analysis": "",
+                  "differentiation_&_value_proposition": "",
+                  "risks_&_mitigation": "",
+                  "strengths": "",
+                  "weaknesses": "",
+                  "opportunities": "",
+                  "threats": "",
+                  "next_steps": ""
+                }
+              },
+             {
+               "document_key": "feature_spec",
+               "content_to_include": [
+                 {
+                   "feature_name": "",
+                   "user_stories": []
+                 }
+               ]
+             },
+             {
+               "document_key": "technical_approach",
+              "content_to_include": {
+                "architecture": "",
+                "components": "",
+                "data": "",
+                "deployment": "",
+                "sequencing": ""
+              }
+             },
+             {
+               "document_key": "success_metrics",
+              "content_to_include": {
+                "outcome_alignment": "",
+                "north_star_metric": "",
+                "primary_kpis": "",
+                "leading_indicators": "",
+                "lagging_indicators": "",
+                "guardrails": "",
+                "measurement_plan": "",
+                "risk_signals": "",
+                "next_steps": ""
+              }
+             }
+           ]
+        }'::jsonb,
         NULL,
         NULL,
         1
@@ -903,9 +1018,36 @@ BEGIN
         v_business_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
+        '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.7}]'::jsonb,
-        '[]'::jsonb,
+        '{
+           "documents": [
+             {
+               "document_key": "business_case",
+               "template_filename": "thesis_business_case.md",
+               "artifact_class": "rendered_document",
+               "file_type": "markdown",
+               "content_to_include": {
+                 "market_opportunity": "",
+                 "user_problem_validation": "",
+                 "competitive_analysis": "",
+                 "differentiation_&_value_proposition": "",
+                 "risks_&_mitigation": "",
+                 "strengths": "",
+                 "weaknesses": "",
+                 "opportunities": "",
+                 "threats": "",
+                 "next_steps": ""
+               }
+             }
+           ],
+           "files_to_generate": [
+             {
+               "template_filename": "thesis_business_case.md",
+               "from_document_key": "business_case"
+             }
+           ]
+        }'::jsonb,
         2,
         'business_case',
         2
@@ -946,9 +1088,30 @@ BEGIN
         v_feature_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
+        '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.65}]'::jsonb,
-        '[]'::jsonb,
+        '{
+           "documents": [
+             {
+               "document_key": "feature_spec",
+               "template_filename": "thesis_feature_spec.md",
+               "artifact_class": "rendered_document",
+               "file_type": "markdown",
+               "content_to_include": [
+                 {
+                   "feature_name": "",
+                   "user_stories": []
+                 }
+               ]
+             }
+           ],
+           "files_to_generate": [
+             {
+               "template_filename": "thesis_product_requirements_document.md",
+               "from_document_key": "feature_spec"
+             }
+           ]
+        }'::jsonb,
         2,
         'feature_spec',
         2
@@ -989,9 +1152,31 @@ BEGIN
         v_technical_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
+        '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.6}]'::jsonb,
-        '[]'::jsonb,
+        '{
+           "documents": [
+             {
+               "document_key": "technical_approach",
+               "template_filename": "thesis_technical_approach.md",
+               "artifact_class": "rendered_document",
+               "file_type": "markdown",
+               "content_to_include": {
+                 "architecture": "",
+                 "components": "",
+                 "data": "",
+                 "deployment": "",
+                 "sequencing": ""
+               }
+             }
+           ],
+           "files_to_generate": [
+             {
+               "template_filename": "thesis_implementation_plan_proposal.md",
+               "from_document_key": "technical_approach"
+             }
+           ]
+        }'::jsonb,
         2,
         'technical_approach',
         2
@@ -1032,9 +1217,35 @@ BEGIN
         v_success_prompt_id,
         'RenderedDocument',
         'one_to_one',
-        '[{"type":"header_context","stage_slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
+        '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.8}]'::jsonb,
-        '[]'::jsonb,
+        '{
+           "documents": [
+             {
+               "document_key": "success_metrics",
+               "template_filename": "thesis_success_metrics.md",
+               "artifact_class": "rendered_document",
+               "file_type": "markdown",
+               "content_to_include": {
+                 "outcome_alignment": "",
+                 "north_star_metric": "",
+                 "primary_kpis": "",
+                 "leading_indicators": "",
+                 "lagging_indicators": "",
+                 "guardrails": "",
+                 "measurement_plan": "",
+                 "risk_signals": "",
+                 "next_steps": ""
+               }
+             }
+           ],
+           "files_to_generate": [
+             {
+               "template_filename": "thesis_success_metrics.md",
+               "from_document_key": "success_metrics"
+             }
+           ]
+        }'::jsonb,
         2,
         'success_metrics',
         2

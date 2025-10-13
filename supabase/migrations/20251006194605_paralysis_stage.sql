@@ -5,7 +5,25 @@ DECLARE
     v_actionable_checklist_prompt_id UUID;
     v_updated_master_plan_prompt_id UUID;
     v_advisor_recommendations_prompt_id UUID;
-BEGIN
+    v_doc_template_id UUID;
+    v_domain_id UUID;
+    v_template_id UUID;
+    v_stage_id UUID;
+    v_instance_id UUID;
+    v_planner_step_id UUID;
+    v_actionable_checklist_step_id UUID;
+    v_updated_master_plan_step_id UUID;
+    v_advisor_recommendations_step_id UUID;
+    BEGIN
+    -- Get the domain_id for 'Software Development'
+    SELECT id INTO v_domain_id FROM public.dialectic_domains WHERE name = 'Software Development' LIMIT 1;
+
+    -- Upsert the document template for the planner prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('paralysis_planner_header_v1 prompt', v_domain_id, 'Source document for paralysis_planner_header_v1 prompt', 'prompts', 'docs/prompts/paralysis/', 'paralysis_planner_header_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
+
     -- Paralysis planner header template
     INSERT INTO public.system_prompts (
         id,
@@ -15,7 +33,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'paralysis_planner_header_v1',
@@ -24,7 +42,7 @@ BEGIN
         1,
         'Planner template that assembles the Paralysis implementation HeaderContext artifact',
         false,
-        'docs/prompts/paralysis/paralysis_planner_header_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -32,9 +50,15 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_planner_prompt_id;
+
+    -- Upsert the document template for the actionable checklist prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('paralysis_actionable_checklist_turn_v1 prompt', v_domain_id, 'Source document for paralysis_actionable_checklist_turn_v1 prompt', 'prompts', 'docs/prompts/paralysis/', 'paralysis_actionable_checklist_turn_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
 
     -- Actionable checklist turn template
     INSERT INTO public.system_prompts (
@@ -45,7 +69,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'paralysis_actionable_checklist_turn_v1',
@@ -54,7 +78,7 @@ BEGIN
         1,
         'Paralysis stage actionable checklist generation turn template',
         false,
-        'docs/prompts/paralysis/paralysis_actionable_checklist_turn_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -62,9 +86,15 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_actionable_checklist_prompt_id;
+
+    -- Upsert the document template for the updated master plan prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('paralysis_updated_master_plan_turn_v1 prompt', v_domain_id, 'Source document for paralysis_updated_master_plan_turn_v1 prompt', 'prompts', 'docs/prompts/paralysis/', 'paralysis_updated_master_plan_turn_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
 
     -- Updated master plan turn template
     INSERT INTO public.system_prompts (
@@ -75,7 +105,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'paralysis_updated_master_plan_turn_v1',
@@ -84,7 +114,7 @@ BEGIN
         1,
         'Paralysis stage updated master plan generation turn template',
         false,
-        'docs/prompts/paralysis/paralysis_updated_master_plan_turn_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -92,9 +122,15 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_updated_master_plan_prompt_id;
+
+    -- Upsert the document template for the advisor recommendations prompt
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
+    VALUES ('paralysis_advisor_recommendations_turn_v1 prompt', v_domain_id, 'Source document for paralysis_advisor_recommendations_turn_v1 prompt', 'prompts', 'docs/prompts/paralysis/', 'paralysis_advisor_recommendations_turn_v1.md')
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_doc_template_id;
 
     -- Advisor recommendations turn template
     INSERT INTO public.system_prompts (
@@ -105,7 +141,7 @@ BEGIN
         version,
         description,
         user_selectable,
-        prompt_file_path
+        document_template_id
     ) VALUES (
         gen_random_uuid(),
         'paralysis_advisor_recommendations_turn_v1',
@@ -114,7 +150,7 @@ BEGIN
         1,
         'Paralysis stage advisor recommendations generation turn template',
         false,
-        'docs/prompts/paralysis/paralysis_advisor_recommendations_turn_v1.md'
+        v_doc_template_id
     )
     ON CONFLICT (name) DO UPDATE
         SET prompt_text = EXCLUDED.prompt_text,
@@ -122,11 +158,51 @@ BEGIN
             version = EXCLUDED.version,
             description = EXCLUDED.description,
             user_selectable = EXCLUDED.user_selectable,
-            prompt_file_path = EXCLUDED.prompt_file_path,
+            document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
     RETURNING id INTO v_advisor_recommendations_prompt_id;
 
     -- Step 3.b completed: Paralysis prompt templates inserted into system_prompts
+
+    -- Get the Paralysis stage ID
+    SELECT id INTO v_stage_id FROM public.dialectic_stages WHERE slug = 'paralysis';
+    IF v_stage_id IS NULL THEN
+        RAISE EXCEPTION 'Paralysis stage not found; ensure base seeds are applied before running this migration.';
+    END IF;
+
+    -- Create Paralysis recipe template and instance
+    INSERT INTO public.dialectic_recipe_templates (
+        recipe_name,
+        recipe_version,
+        display_name,
+        domain_key,
+        description
+    ) VALUES (
+        'paralysis_v1',
+        1,
+        'Paralysis Implementation',
+        'software_development',
+        'Stage recipe that produces an actionable checklist, updates the master plan, and provides advisor recommendations.'
+    )
+    ON CONFLICT (recipe_name, recipe_version) DO UPDATE
+        SET display_name = EXCLUDED.display_name,
+            domain_key = EXCLUDED.domain_key,
+            description = EXCLUDED.description,
+            is_active = true,
+            updated_at = now()
+    RETURNING id INTO v_template_id;
+
+    INSERT INTO public.dialectic_stage_recipe_instances (
+        stage_id,
+        template_id
+    ) VALUES (
+        v_stage_id,
+        v_template_id
+    )
+    ON CONFLICT (stage_id) DO UPDATE
+        SET template_id = EXCLUDED.template_id,
+            updated_at = now()
+    RETURNING id INTO v_instance_id;
 
     -- Step 3.c: Update Paralysis domain overlay to remove obsolete keys
     UPDATE public.domain_specific_prompt_overlays
@@ -152,6 +228,7 @@ BEGIN
         id,
         template_id,
         step_number,
+        step_key,
         step_slug,
         step_name,
         step_description,
@@ -168,6 +245,7 @@ BEGIN
         v_template_id,
         1,
         'build-implementation-header',
+        'build-implementation-header',
         'Build Implementation Header',
         'Emit header_context.json describing the milestones to detail, checklist sizing rules, status preservation policy, and continuation metadata.',
         'PLAN',
@@ -176,30 +254,30 @@ BEGIN
         'HeaderContext',
         'all_to_one',
         '[
-          {"type":"seed_prompt","stage_slug":"paralysis","document_key":"seed_prompt","required":true},
-          {"type":"document","stage_slug":"parenthesis","document_key":"trd","required":true},
-          {"type":"document","stage_slug":"parenthesis","document_key":"master_plan","required":true},
-          {"type":"document","stage_slug":"parenthesis","document_key":"milestone_schema","required":true},
-          {"type":"feedback","stage_slug":"parenthesis","document_key":"trd","required":false},
-          {"type":"feedback","stage_slug":"parenthesis","document_key":"master_plan","required":false},
-          {"type":"feedback","stage_slug":"parenthesis","document_key":"milestone_schema","required":false},
-          {"type":"document","stage_slug":"paralysis","document_key":"actionable_checklist","required":false},
-          {"type":"document","stage_slug":"paralysis","document_key":"updated_master_plan","required":false},
-          {"type":"feedback","stage_slug":"paralysis","document_key":"actionable_checklist","required":false},
-          {"type":"feedback","stage_slug":"paralysis","document_key":"updated_master_plan","required":false}
+          {"type":"seed_prompt","slug":"paralysis","document_key":"seed_prompt","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"trd","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"master_plan","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"milestone_schema","required":true},
+          {"type":"feedback","slug":"parenthesis","document_key":"trd","required":false},
+          {"type":"feedback","slug":"parenthesis","document_key":"master_plan","required":false},
+          {"type":"feedback","slug":"parenthesis","document_key":"milestone_schema","required":false},
+          {"type":"document","slug":"paralysis","document_key":"actionable_checklist","required":false},
+          {"type":"document","slug":"paralysis","document_key":"updated_master_plan","required":false},
+          {"type":"feedback","slug":"paralysis","document_key":"actionable_checklist","required":false},
+          {"type":"feedback","slug":"paralysis","document_key":"updated_master_plan","required":false}
         ]'::jsonb,
         '[
-          {"document_key":"seed_prompt","stage_slug":"paralysis","relevance":0.6},
-          {"document_key":"trd","stage_slug":"parenthesis","relevance":1.0},
-          {"document_key":"master_plan","stage_slug":"parenthesis","relevance":0.98},
-          {"document_key":"milestone_schema","stage_slug":"parenthesis","relevance":0.95},
-          {"document_key":"trd","stage_slug":"parenthesis","type":"feedback","relevance":0.7},
-          {"document_key":"master_plan","stage_slug":"parenthesis","type":"feedback","relevance":0.7},
-          {"document_key":"milestone_schema","stage_slug":"parenthesis","type":"feedback","relevance":0.65},
-          {"document_key":"actionable_checklist","stage_slug":"paralysis","relevance":0.85},
-          {"document_key":"updated_master_plan","stage_slug":"paralysis","relevance":0.9},
-          {"document_key":"actionable_checklist","stage_slug":"paralysis","type":"feedback","relevance":0.6},
-          {"document_key":"updated_master_plan","stage_slug":"paralysis","type":"feedback","relevance":0.6}
+          {"document_key":"seed_prompt","slug":"paralysis","relevance":0.6},
+          {"document_key":"trd","slug":"parenthesis","relevance":1.0},
+          {"document_key":"master_plan","slug":"parenthesis","relevance":0.98},
+          {"document_key":"milestone_schema","slug":"parenthesis","relevance":0.95},
+          {"document_key":"trd","slug":"parenthesis","type":"feedback","relevance":0.7},
+          {"document_key":"master_plan","slug":"parenthesis","type":"feedback","relevance":0.7},
+          {"document_key":"milestone_schema","slug":"parenthesis","type":"feedback","relevance":0.65},
+          {"document_key":"actionable_checklist","slug":"paralysis","relevance":0.85},
+          {"document_key":"updated_master_plan","slug":"paralysis","relevance":0.9},
+          {"document_key":"actionable_checklist","slug":"paralysis","type":"feedback","relevance":0.6},
+          {"document_key":"updated_master_plan","slug":"paralysis","type":"feedback","relevance":0.6}
         ]'::jsonb,
         '{
           "system_materials": {
@@ -231,6 +309,7 @@ BEGIN
         id,
         template_id,
         step_number,
+        step_key,
         step_slug,
         step_name,
         step_description,
@@ -247,6 +326,7 @@ BEGIN
         v_template_id,
         2,
         'generate-actionable-checklist',
+        'generate-actionable-checklist',
         'Generate Actionable Checklist',
         'Produce the detailed implementation checklist for the next milestone slice.',
         'EXECUTE',
@@ -255,26 +335,26 @@ BEGIN
         'RenderedDocument',
         'one_to_one',
         '[
-          {"type":"header_context","stage_slug":"paralysis","document_key":"header_context","required":true},
-          {"type":"document","stage_slug":"parenthesis","document_key":"trd","required":true},
-          {"type":"document","stage_slug":"parenthesis","document_key":"master_plan","required":true},
-          {"type":"document","stage_slug":"parenthesis","document_key":"milestone_schema","required":true},
-          {"type":"document","stage_slug":"paralysis","document_key":"actionable_checklist","required":false},
-          {"type":"feedback","stage_slug":"paralysis","document_key":"actionable_checklist","required":false},
-          {"type":"feedback","stage_slug":"parenthesis","document_key":"trd","required":false},
-          {"type":"feedback","stage_slug":"parenthesis","document_key":"master_plan","required":false},
-          {"type":"feedback","stage_slug":"parenthesis","document_key":"milestone_schema","required":false}
+          {"type":"header_context","slug":"paralysis","document_key":"header_context","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"trd","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"master_plan","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"milestone_schema","required":true},
+          {"type":"document","slug":"paralysis","document_key":"actionable_checklist","required":false},
+          {"type":"feedback","slug":"paralysis","document_key":"actionable_checklist","required":false},
+          {"type":"feedback","slug":"parenthesis","document_key":"trd","required":false},
+          {"type":"feedback","slug":"parenthesis","document_key":"master_plan","required":false},
+          {"type":"feedback","slug":"parenthesis","document_key":"milestone_schema","required":false}
         ]'::jsonb,
         '[
-          {"document_key":"header_context","stage_slug":"paralysis","relevance":1.0},
-          {"document_key":"trd","stage_slug":"parenthesis","relevance":0.95},
-          {"document_key":"master_plan","stage_slug":"parenthesis","relevance":0.93},
-          {"document_key":"milestone_schema","stage_slug":"parenthesis","relevance":0.9},
-          {"document_key":"actionable_checklist","stage_slug":"paralysis","relevance":0.8},
-          {"document_key":"actionable_checklist","stage_slug":"paralysis","type":"feedback","relevance":0.65},
-          {"document_key":"trd","stage_slug":"parenthesis","type":"feedback","relevance":0.6},
-          {"document_key":"master_plan","stage_slug":"parenthesis","type":"feedback","relevance":0.6},
-          {"document_key":"milestone_schema","stage_slug":"parenthesis","type":"feedback","relevance":0.55}
+          {"document_key":"header_context","slug":"paralysis","relevance":1.0},
+          {"document_key":"trd","slug":"parenthesis","relevance":0.95},
+          {"document_key":"master_plan","slug":"parenthesis","relevance":0.93},
+          {"document_key":"milestone_schema","slug":"parenthesis","relevance":0.9},
+          {"document_key":"actionable_checklist","slug":"paralysis","relevance":0.8},
+          {"document_key":"actionable_checklist","slug":"paralysis","type":"feedback","relevance":0.65},
+          {"document_key":"trd","slug":"parenthesis","type":"feedback","relevance":0.6},
+          {"document_key":"master_plan","slug":"parenthesis","type":"feedback","relevance":0.6},
+          {"document_key":"milestone_schema","slug":"parenthesis","type":"feedback","relevance":0.55}
         ]'::jsonb,
         '{
           "documents": [
@@ -312,6 +392,7 @@ BEGIN
         id,
         template_id,
         step_number,
+        step_key,
         step_slug,
         step_name,
         step_description,
@@ -328,6 +409,7 @@ BEGIN
         v_template_id,
         3,
         'generate-updated-master-plan',
+        'generate-updated-master-plan',
         'Generate Updated Master Plan',
         'Update the persistent master plan, marking newly detailed milestones.',
         'EXECUTE',
@@ -336,22 +418,22 @@ BEGIN
         'RenderedDocument',
         'one_to_one',
         '[
-          {"type":"header_context","stage_slug":"paralysis","document_key":"header_context","required":true},
-          {"type":"document","stage_slug":"parenthesis","document_key":"master_plan","required":true},
-          {"type":"document","stage_slug":"parenthesis","document_key":"milestone_schema","required":true},
-          {"type":"document","stage_slug":"paralysis","document_key":"actionable_checklist","required":true},
-          {"type":"document","stage_slug":"paralysis","document_key":"updated_master_plan","required":false},
-          {"type":"feedback","stage_slug":"paralysis","document_key":"updated_master_plan","required":false},
-          {"type":"feedback","stage_slug":"parenthesis","document_key":"master_plan","required":false}
+          {"type":"header_context","slug":"paralysis","document_key":"header_context","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"master_plan","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"milestone_schema","required":true},
+          {"type":"document","slug":"paralysis","document_key":"actionable_checklist","required":true},
+          {"type":"document","slug":"paralysis","document_key":"updated_master_plan","required":false},
+          {"type":"feedback","slug":"paralysis","document_key":"updated_master_plan","required":false},
+          {"type":"feedback","slug":"parenthesis","document_key":"master_plan","required":false}
         ]'::jsonb,
         '[
-          {"document_key":"header_context","stage_slug":"paralysis","relevance":1.0},
-          {"document_key":"master_plan","stage_slug":"parenthesis","relevance":0.95},
-          {"document_key":"milestone_schema","stage_slug":"parenthesis","relevance":0.9},
-          {"document_key":"actionable_checklist","stage_slug":"paralysis","relevance":0.92},
-          {"document_key":"updated_master_plan","stage_slug":"paralysis","relevance":0.85},
-          {"document_key":"updated_master_plan","stage_slug":"paralysis","type":"feedback","relevance":0.65},
-          {"document_key":"master_plan","stage_slug":"parenthesis","type":"feedback","relevance":0.6}
+          {"document_key":"header_context","slug":"paralysis","relevance":1.0},
+          {"document_key":"master_plan","slug":"parenthesis","relevance":0.95},
+          {"document_key":"milestone_schema","slug":"parenthesis","relevance":0.9},
+          {"document_key":"actionable_checklist","slug":"paralysis","relevance":0.92},
+          {"document_key":"updated_master_plan","slug":"paralysis","relevance":0.85},
+          {"document_key":"updated_master_plan","slug":"paralysis","type":"feedback","relevance":0.65},
+          {"document_key":"master_plan","slug":"parenthesis","type":"feedback","relevance":0.6}
         ]'::jsonb,
         '{
           "documents": [
@@ -388,6 +470,7 @@ BEGIN
         id,
         template_id,
         step_number,
+        step_key,
         step_slug,
         step_name,
         step_description,
@@ -404,6 +487,7 @@ BEGIN
         v_template_id,
         4,
         'generate-advisor-recommendations',
+        'generate-advisor-recommendations',
         'Generate Advisor Recommendations',
         'Evaluate the updated master plans produced in this iteration against the original user request.',
         'EXECUTE',
@@ -412,20 +496,20 @@ BEGIN
         'RenderedDocument',
         'one_to_one',
         '[
-          {"type":"project_resource","stage_slug":"project","document_key":"initial_user_prompt","required":true},
-          {"type":"document","stage_slug":"synthesis","document_key":"prd","required":true,"multiple":true},
-          {"type":"document","stage_slug":"paralysis","document_key":"updated_master_plan","required":true,"multiple":true},
-          {"type":"header_context","stage_slug":"paralysis","document_key":"header_context","required":false},
-          {"type":"document","stage_slug":"paralysis","document_key":"advisor_recommendations","required":false},
-          {"type":"feedback","stage_slug":"paralysis","document_key":"advisor_recommendations","required":false}
+          {"type":"project_resource","slug":"project","document_key":"initial_user_prompt","required":true},
+          {"type":"document","slug":"synthesis","document_key":"prd","required":true,"multiple":true},
+          {"type":"document","slug":"paralysis","document_key":"updated_master_plan","required":true,"multiple":true},
+          {"type":"header_context","slug":"paralysis","document_key":"header_context","required":false},
+          {"type":"document","slug":"paralysis","document_key":"advisor_recommendations","required":false},
+          {"type":"feedback","slug":"paralysis","document_key":"advisor_recommendations","required":false}
         ]'::jsonb,
         '[
-          {"document_key":"initial_user_prompt","stage_slug":"project","relevance":1.0},
-          {"document_key":"prd","stage_slug":"synthesis","relevance":0.95},
-          {"document_key":"updated_master_plan","stage_slug":"paralysis","relevance":0.95},
-          {"document_key":"header_context","stage_slug":"paralysis","relevance":0.7},
-          {"document_key":"advisor_recommendations","stage_slug":"paralysis","relevance":0.5},
-          {"document_key":"advisor_recommendations","stage_slug":"paralysis","type":"feedback","relevance":0.4}
+          {"document_key":"initial_user_prompt","slug":"project","relevance":1.0},
+          {"document_key":"prd","slug":"synthesis","relevance":0.95},
+          {"document_key":"updated_master_plan","slug":"paralysis","relevance":0.95},
+          {"document_key":"header_context","slug":"paralysis","relevance":0.7},
+          {"document_key":"advisor_recommendations","slug":"paralysis","relevance":0.5},
+          {"document_key":"advisor_recommendations","slug":"paralysis","type":"feedback","relevance":0.4}
         ]'::jsonb,
         '{
           "documents": [
@@ -473,13 +557,4 @@ BEGIN
         (gen_random_uuid(), v_template_id, v_planner_step_id, v_updated_master_plan_step_id),
         (gen_random_uuid(), v_template_id, v_actionable_checklist_step_id, v_advisor_recommendations_step_id),
         (gen_random_uuid(), v_template_id, v_updated_master_plan_step_id, v_advisor_recommendations_step_id);
-
-    -- Step 1.c: Update dialectic_stages to set recipe_template_id
-    UPDATE public.dialectic_stages
-    SET recipe_template_id = v_template_id,
-        updated_at = now()
-    WHERE stage_slug = 'paralysis';
-
-    -- Step 1 completed: Paralysis stage migrated to recipe contract
-    -- Step 3.c completed: Paralysis overlay updated to remove obsolete keys and rely on recipe outputs_required
 END $$;
