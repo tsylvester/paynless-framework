@@ -31,7 +31,7 @@ BEGIN
     
     -- Upsert the document template for the planner prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('thesis_planner_header_v1 prompt', v_domain_id, 'Source document for thesis_planner_header_v1 prompt', 'prompts', 'docs/prompts/thesis/', 'thesis_planner_header_v1.md')
+    VALUES ('thesis_planner_header_v1 prompt', v_domain_id, 'Source document for thesis_planner_header_v1 prompt', 'prompt-templates', 'docs/prompts/thesis/', 'thesis_planner_header_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -67,7 +67,7 @@ BEGIN
 
     -- Upsert the document template for the business case prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('thesis_business_case_turn_v1 prompt', v_domain_id, 'Source document for thesis_business_case_turn_v1 prompt', 'prompts', 'docs/prompts/thesis/', 'thesis_business_case_turn_v1.md')
+    VALUES ('thesis_business_case_turn_v1 prompt', v_domain_id, 'Source document for thesis_business_case_turn_v1 prompt', 'prompt-templates', 'docs/prompts/thesis/', 'thesis_business_case_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -276,8 +276,8 @@ BEGIN
         'thesis_business_case',
         'Markdown template for the Thesis business case document.',
         'prompt-templates',
-        'thesis/thesis_business_case_turn_v1.md',
-        'thesis_business_case_turn_v1.md'
+        'docs/templates/thesis/',
+        'thesis_business_case.md'
     )
     ON CONFLICT (name, domain_id) DO UPDATE
         SET description = EXCLUDED.description,
@@ -334,6 +334,7 @@ BEGIN
                "artifact_class": "rendered_document",
                "file_type": "markdown",
                "content_to_include": {
+                 "executive_summary": "",
                  "market_opportunity": "",
                  "user_problem_validation": "",
                  "competitive_analysis": "",
@@ -375,7 +376,7 @@ BEGIN
 
     -- Upsert the document template for the feature spec prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('thesis_feature_spec_turn_v1 prompt', v_domain_id, 'Source document for thesis_feature_spec_turn_v1 prompt', 'prompts', 'docs/prompts/thesis/', 'thesis_feature_spec_turn_v1.md')
+    VALUES ('thesis_feature_spec_turn_v1 prompt', v_domain_id, 'Source document for thesis_feature_spec_turn_v1 prompt', 'prompt-templates', 'docs/prompts/thesis/', 'thesis_feature_spec_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -423,8 +424,8 @@ BEGIN
         'thesis_feature_spec',
         'Markdown template for the Thesis feature specification document.',
         'prompt-templates',
-        'thesis/thesis_feature_spec_turn_v1.md',
-        'thesis_feature_spec_turn_v1.md'
+        'docs/templates/thesis/',
+        'thesis_feature_spec.md'
     )
     ON CONFLICT (name, domain_id) DO UPDATE
         SET description = EXCLUDED.description,
@@ -483,7 +484,11 @@ BEGIN
                "content_to_include": [
                  {
                    "feature_name": "",
-                   "user_stories": []
+                   "feature_objective": "",
+                   "user_stories": [],
+                   "acceptance_criteria": [],
+                   "dependencies": [],
+                   "success_metrics": []
                  }
                ]
              }
@@ -529,7 +534,7 @@ BEGIN
 
     -- Upsert the document template for the technical approach prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('thesis_technical_approach_turn_v1 prompt', v_domain_id, 'Source document for thesis_technical_approach_turn_v1 prompt', 'prompts', 'docs/prompts/thesis/', 'thesis_technical_approach_turn_v1.md')
+    VALUES ('thesis_technical_approach_turn_v1 prompt', v_domain_id, 'Source document for thesis_technical_approach_turn_v1 prompt', 'prompt-templates', 'docs/prompts/thesis/', 'thesis_technical_approach_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -577,8 +582,8 @@ BEGIN
         'thesis_technical_approach',
         'Markdown template for the Thesis technical approach document.',
         'prompt-templates',
-        'thesis/thesis_technical_approach_turn_v1.md',
-        'thesis_technical_approach_turn_v1.md'
+        'docs/templates/thesis/',
+        'thesis_technical_approach.md'
     )
     ON CONFLICT (name, domain_id) DO UPDATE
         SET description = EXCLUDED.description,
@@ -639,7 +644,9 @@ BEGIN
                  "components": "",
                  "data": "",
                  "deployment": "",
-                 "sequencing": ""
+                 "sequencing": "",
+                 "risk_mitigation": "",
+                 "open_questions": ""
                }
              }
            ],
@@ -684,7 +691,7 @@ BEGIN
 
     -- Upsert the document template for the success metrics prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('thesis_success_metrics_turn_v1 prompt', v_domain_id, 'Source document for thesis_success_metrics_turn_v1 prompt', 'prompts', 'docs/prompts/thesis/', 'thesis_success_metrics_turn_v1.md')
+    VALUES ('thesis_success_metrics_turn_v1 prompt', v_domain_id, 'Source document for thesis_success_metrics_turn_v1 prompt', 'prompt-templates', 'docs/prompts/thesis/', 'thesis_success_metrics_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -732,8 +739,8 @@ BEGIN
         'thesis_success_metrics',
         'Markdown template for the Thesis success metrics document.',
         'prompt-templates',
-        'thesis/thesis_success_metrics_turn_v1.md',
-        'thesis_success_metrics_turn_v1.md'
+        'docs/templates/thesis/',
+        'thesis_success_metrics.md'
     )
     ON CONFLICT (name, domain_id) DO UPDATE
         SET description = EXCLUDED.description,
@@ -798,7 +805,11 @@ BEGIN
                  "guardrails": "",
                  "measurement_plan": "",
                  "risk_signals": "",
-                 "next_steps": ""
+                 "next_steps": "",
+                 "data_sources": [],
+                 "reporting_cadence": "",
+                 "ownership": "",
+                 "escalation_plan": ""
                }
              }
            ],
@@ -841,13 +852,24 @@ BEGIN
     )
     ON CONFLICT (template_id, from_step_id, to_step_id) DO NOTHING;
 
+    -- Populate expected_output_template_ids for Thesis stage
     UPDATE public.dialectic_stages
-    SET recipe_template_id = v_template_id
+    SET expected_output_template_ids = ARRAY[
+        v_business_doc_template_id,
+        v_feature_doc_template_id,
+        v_technical_doc_template_id,
+        v_success_doc_template_id
+    ]
     WHERE id = v_stage_id;
 
-    UPDATE public.dialectic_stage_recipe_instances
-    SET template_id = v_template_id
-    WHERE stage_id = v_stage_id;
+    -- Remove legacy expected_output_artifacts_json payload from Thesis overlay
+    UPDATE public.domain_specific_prompt_overlays
+    SET overlay_values = overlay_values - 'expected_output_artifacts_json',
+        updated_at = now()
+    WHERE system_prompt_id = (
+            SELECT id FROM public.system_prompts WHERE name = 'dialectic_thesis_base_v1'
+        )
+      AND overlay_values ? 'expected_output_artifacts_json';
 
     -- Ensure stage recipe instance exists
     INSERT INTO public.dialectic_stage_recipe_instances (
@@ -863,6 +885,10 @@ BEGIN
         SET template_id = EXCLUDED.template_id,
             updated_at = now()
     RETURNING id INTO v_instance_id;
+
+    UPDATE public.dialectic_stages
+    SET recipe_template_id = v_template_id, active_recipe_instance_id = v_instance_id
+    WHERE id = v_stage_id;
 
     -- Upsert instance steps referencing template steps
     INSERT INTO public.dialectic_stage_recipe_steps (
@@ -973,7 +999,9 @@ BEGIN
                 "guardrails": "",
                 "measurement_plan": "",
                 "risk_signals": "",
-                "next_steps": ""
+                "next_steps": "",
+                "data_sources": [],
+                "reporting_cadence": ""
               }
              }
            ]
@@ -1028,6 +1056,7 @@ BEGIN
                "artifact_class": "rendered_document",
                "file_type": "markdown",
                "content_to_include": {
+                 "executive_summary": "",
                  "market_opportunity": "",
                  "user_problem_validation": "",
                  "competitive_analysis": "",
@@ -1037,7 +1066,8 @@ BEGIN
                  "weaknesses": "",
                  "opportunities": "",
                  "threats": "",
-                 "next_steps": ""
+                 "next_steps": "",
+                 "proposal_references": []
                }
              }
            ],
@@ -1100,7 +1130,11 @@ BEGIN
                "content_to_include": [
                  {
                    "feature_name": "",
-                   "user_stories": []
+                   "feature_objective": "",
+                   "user_stories": [],
+                   "acceptance_criteria": [],
+                   "dependencies": [],
+                   "success_metrics": []
                  }
                ]
              }
@@ -1166,7 +1200,9 @@ BEGIN
                  "components": "",
                  "data": "",
                  "deployment": "",
-                 "sequencing": ""
+                 "sequencing": "",
+                 "risk_mitigation": "",
+                 "open_questions": ""
                }
              }
            ],
@@ -1235,7 +1271,11 @@ BEGIN
                  "guardrails": "",
                  "measurement_plan": "",
                  "risk_signals": "",
-                 "next_steps": ""
+                 "next_steps": "",
+                 "data_sources": [],
+                 "reporting_cadence": "",
+                 "ownership": "",
+                 "escalation_plan": ""
                }
              }
            ],
@@ -1268,23 +1308,4 @@ BEGIN
         (gen_random_uuid(), v_instance_id, v_instance_planner_step_id, v_instance_technical_step_id),
         (gen_random_uuid(), v_instance_id, v_instance_planner_step_id, v_instance_success_step_id)
     ON CONFLICT (instance_id, from_step_id, to_step_id) DO NOTHING;
-
-    -- Populate expected_output_template_ids for Thesis stage
-    UPDATE public.dialectic_stages
-    SET expected_output_template_ids = ARRAY[
-        v_business_doc_template_id,
-        v_feature_doc_template_id,
-        v_technical_doc_template_id,
-        v_success_doc_template_id
-    ]
-    WHERE id = v_stage_id;
-
-    -- Remove legacy expected_output_artifacts_json payload from Thesis overlay
-    UPDATE public.domain_specific_prompt_overlays
-    SET overlay_values = overlay_values - 'expected_output_artifacts_json',
-        updated_at = now()
-    WHERE system_prompt_id = (
-            SELECT id FROM public.system_prompts WHERE name = 'dialectic_thesis_base_v1'
-        )
-      AND overlay_values ? 'expected_output_artifacts_json';
 END $$;

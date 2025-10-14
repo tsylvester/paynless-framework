@@ -38,7 +38,7 @@ BEGIN
     
     -- Upsert the document template for the planner prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('antithesis_planner_review_v1 prompt', v_domain_id, 'Source document for antithesis_planner_review_v1 prompt', 'prompts', 'docs/prompts/antithesis/', 'antithesis_planner_review_v1.md')
+    VALUES ('antithesis_planner_review_v1 prompt', v_domain_id, 'Source document for antithesis_planner_review_v1 prompt', 'prompt-templates', 'docs/prompts/antithesis/', 'antithesis_planner_review_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -72,43 +72,43 @@ BEGIN
     RETURNING id INTO v_plan_prompt_id;
 
     -- Upsert the document template for the business case critique prompt
-    INSERT INTO public.dialectic_document_templates (name, domain_id, description, is_active)
-    VALUES ('antithesis_business_case_critique', v_domain_id, 'Critique of the business case for a given proposal.', TRUE)
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name, is_active)
+    VALUES ('antithesis_business_case_critique', v_domain_id, 'Critique of the business case for a given proposal.', 'prompt-templates', 'docs/templates/antithesis/', 'antithesis_business_case_critique.md', TRUE)
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_business_doc_template_id;
 
     -- Upsert the document template for the feasibility assessment
-    INSERT INTO public.dialectic_document_templates (name, domain_id, description, is_active)
-    VALUES ('antithesis_feasibility_assessment', v_domain_id, 'Feasibility assessment for a given proposal.', TRUE)
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name, is_active)
+    VALUES ('antithesis_feasibility_assessment', v_domain_id, 'Feasibility assessment for a given proposal.', 'prompt-templates', 'docs/templates/antithesis/', 'antithesis_feasibility_assessment.md', TRUE)
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_feasibility_doc_template_id;
 
     -- Upsert the document template for the risk register
-    INSERT INTO public.dialectic_document_templates (name, domain_id, description, is_active)
-    VALUES ('antithesis_risk_register', v_domain_id, 'Risk register for a given proposal.', TRUE)
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name, is_active)
+    VALUES ('antithesis_risk_register', v_domain_id, 'Risk register for a given proposal.', 'prompt-templates', 'docs/templates/antithesis/', 'antithesis_risk_register.md', TRUE)
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_risk_doc_template_id;
 
     -- Upsert the document template for non-functional requirements
-    INSERT INTO public.dialectic_document_templates (name, domain_id, description, is_active)
-    VALUES ('antithesis_non_functional_requirements', v_domain_id, 'Non-functional requirements for a given proposal.', TRUE)
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name, is_active)
+    VALUES ('antithesis_non_functional_requirements', v_domain_id, 'Non-functional requirements for a given proposal.', 'prompt-templates', 'docs/templates/antithesis/', 'antithesis_non_functional_requirements.md', TRUE)
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_nfr_doc_template_id;
 
     -- Upsert the document template for the dependency map
-    INSERT INTO public.dialectic_document_templates (name, domain_id, description, is_active)
-    VALUES ('antithesis_dependency_map', v_domain_id, 'Dependency map for a given proposal.', TRUE)
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name, is_active)
+    VALUES ('antithesis_dependency_map', v_domain_id, 'Dependency map for a given proposal.', 'prompt-templates', 'docs/templates/antithesis/', 'antithesis_dependency_map.md', TRUE)
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_dependency_doc_template_id;
 
     -- Upsert the document template for the comparison vector
-    INSERT INTO public.dialectic_document_templates (name, domain_id, description, is_active)
-    VALUES ('antithesis_comparison_vector', v_domain_id, 'Comparison vector for a given proposal.', TRUE)
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name, is_active)
+    VALUES ('antithesis_comparison_vector', v_domain_id, 'Comparison vector for a given proposal.', 'prompt-templates', 'docs/templates/antithesis/', 'antithesis_comparison_vector.json', TRUE)
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_comparison_doc_template_id;
 
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('antithesis_business_case_critique_turn_v1 prompt', v_domain_id, 'Source document for antithesis_business_case_critique_turn_v1 prompt', 'prompts', 'docs/prompts/antithesis/', 'antithesis_business_case_critique_turn_v1.md')
+    VALUES ('antithesis_business_case_critique_turn_v1 prompt', v_domain_id, 'Source document for antithesis_business_case_critique_turn_v1 prompt', 'prompt-templates', 'docs/prompts/antithesis/', 'antithesis_business_case_critique_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -143,7 +143,7 @@ BEGIN
 
     -- Upsert the document template for the feasibility assessment prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('antithesis_feasibility_assessment_turn_v1 prompt', v_domain_id, 'Source document for antithesis_feasibility_assessment_turn_v1 prompt', 'prompts', 'docs/prompts/antithesis/', 'antithesis_feasibility_assessment_turn_v1.md')
+    VALUES ('antithesis_feasibility_assessment_turn_v1 prompt', v_domain_id, 'Source document for antithesis_feasibility_assessment_turn_v1 prompt', 'prompt-templates', 'docs/prompts/antithesis/', 'antithesis_feasibility_assessment_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -178,7 +178,7 @@ BEGIN
 
     -- Upsert the document template for the risk register prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('antithesis_risk_register_turn_v1 prompt', v_domain_id, 'Source document for antithesis_risk_register_turn_v1 prompt', 'prompts', 'docs/prompts/antithesis/', 'antithesis_risk_register_turn_v1.md')
+    VALUES ('antithesis_risk_register_turn_v1 prompt', v_domain_id, 'Source document for antithesis_risk_register_turn_v1 prompt', 'prompt-templates', 'docs/prompts/antithesis/', 'antithesis_risk_register_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -213,7 +213,7 @@ BEGIN
 
     -- Upsert the document template for the non-functional requirements prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('antithesis_non_functional_requirements_turn_v1 prompt', v_domain_id, 'Source document for antithesis_non_functional_requirements_turn_v1 prompt', 'prompts', 'docs/prompts/antithesis/', 'antithesis_non_functional_requirements_turn_v1.md')
+    VALUES ('antithesis_non_functional_requirements_turn_v1 prompt', v_domain_id, 'Source document for antithesis_non_functional_requirements_turn_v1 prompt', 'prompt-templates', 'docs/prompts/antithesis/', 'antithesis_non_functional_requirements_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -248,7 +248,7 @@ BEGIN
 
     -- Upsert the document template for the dependency map prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('antithesis_dependency_map_turn_v1 prompt', v_domain_id, 'Source document for antithesis_dependency_map_turn_v1 prompt', 'prompts', 'docs/prompts/antithesis/', 'antithesis_dependency_map_turn_v1.md')
+    VALUES ('antithesis_dependency_map_turn_v1 prompt', v_domain_id, 'Source document for antithesis_dependency_map_turn_v1 prompt', 'prompt-templates', 'docs/prompts/antithesis/', 'antithesis_dependency_map_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -283,7 +283,7 @@ BEGIN
 
     -- Upsert the document template for the comparison vector prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('antithesis_comparison_vector_turn_v1 prompt', v_domain_id, 'Source document for antithesis_comparison_vector_turn_v1 prompt', 'prompts', 'docs/prompts/antithesis/', 'antithesis_comparison_vector_turn_v1.md')
+    VALUES ('antithesis_comparison_vector_turn_v1 prompt', v_domain_id, 'Source document for antithesis_comparison_vector_turn_v1 prompt', 'prompt-templates', 'docs/prompts/antithesis/', 'antithesis_comparison_vector_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -1935,7 +1935,7 @@ BEGIN
 
     -- Set recipe_template_id for antithesis stage
     UPDATE public.dialectic_stages
-    SET recipe_template_id = v_template_id
+    SET recipe_template_id = v_template_id, active_recipe_instance_id = v_instance_id
     WHERE id = v_stage_id;
 END $$;
 

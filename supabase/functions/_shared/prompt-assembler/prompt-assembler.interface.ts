@@ -89,7 +89,7 @@ export type ContributionOverride = {
 // Define a granular document type
 export interface AssemblerSourceDocument {
 	id: string;
-	type: 'contribution' | 'feedback';
+	type: 'document' | 'feedback';
 	content: string;
 	metadata: {
 		displayName: string;

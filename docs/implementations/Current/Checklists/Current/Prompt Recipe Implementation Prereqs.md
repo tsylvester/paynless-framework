@@ -446,8 +446,31 @@ graph LR
         *   `[✅]` 3.b.i. [REFACTOR] Update the `StageContext` interface in `prompt-assembler.interface.ts`.
             *   `[✅]` 3.b.i.1. [IMPLEMENTATION] Remove the deprecated `input_artifact_rules` property.
             *   `[✅]` 3.b.i.2. [IMPLEMENTATION] Add a new `recipe_step` property of type `DialecticRecipeStep`. This ensures the function's contract is updated without causing a cascade of signature changes in callers.
-        *   `[ ]` 3.b.ii. [TEST-UNIT] Update tests in `gatherInputsForStage.test.ts`.
+        *   `[✅]` 3.b.ii. [TEST-UNIT] Update tests in `gatherInputsForStage.test.ts`.
             *   `[ ]` 3.b.ii.1. [RED TEST] Refactor existing tests to construct the `StageContext` object with the new `recipe_step` property instead of the old `input_artifact_rules`. This will create a RED state because the implementation of `gatherInputsForStage` will fail.
+
+*   `[ ]` 1. [BE] Update the `isDialecticJobRow` type guard for compliance with the `dialectic_generation_jobs` table schema.
+    *   `[ ]` 1.a. [TEST-UNIT] Update tests in `type_guards.dialectic.test.ts`.
+        *   `[ ]` 1.a.i. [RED TEST] Enhance the existing "valid job row" test case to be fully compliant with the `dialectic_generation_jobs` schema from `types_db.ts`, including all required and nullable fields (`attempt_count`, `created_at`, `max_retries`, etc.). The test will fail because the current type guard does not check for these fields.
+        *   `[ ]` 1.a.ii. [RED TEST] Add a new failing test case for an object that is missing a required field like `created_at` to ensure the guard is exhaustive.
+    *   `[ ]` 1.b. [BE] Update implementation in `type_guards.dialectic.ts`.
+        *   `[ ]` 1.b.i. [IMPLEMENTATION] Modify the `isDialecticJobRow` type guard to validate the presence and correct types of all fields defined in the `dialectic_generation_jobs` Row type in `types_db.ts`.
+    *   `[ ]` 1.c. [GREEN TEST] The tests in `type_guards.dialectic.test.ts` should now pass.
+
+*   `[ ]` 2. [BE] Update the `isDialecticContribution` type guard for compliance with the `dialectic_contributions` table schema.
+    *   `[ ]` 2.a. [TEST-UNIT] Update tests in `type_guards.dialectic.test.ts`.
+        *   `[ ]` 2.a.i. [RED TEST] Enhance the existing "valid contribution" test cases to include the `document_relationships` property (with both `null` and valid `Json` object values). The tests will fail because the guard does not currently check for this property.
+    *   `[ ]` 2.b. [BE] Update implementation in `type_guards.dialectic.ts`.
+        *   `[ ]` 2.b.i. [IMPLEMENTATION] Add a check for the `document_relationships` property (nullable `Json` object) to the `isDialecticContribution` type guard.
+    *   `[ ]` 2.c. [GREEN TEST] The tests for `isDialecticContribution` in `type_guards.dialectic.test.ts` should now pass.
+
+*   `[ ]` 3. [BE] Update the `isDialecticRecipeStep` type guard for full compliance with the `dialectic_recipe_template_steps` table schema.
+    *   `[ ]` 3.a. [TEST-UNIT] Update tests in `type_guards.dialectic.recipe.test.ts`.
+        *   `[ ]` 3.a.i. [RED TEST] Add a new failing test case that validates a mock object fully compliant with the `dialectic_recipe_template_steps` Row type from `types_db.ts`, including `created_at`, `updated_at`, `id`, and `template_id`. The test will fail as the current guard does not check for these DB-specific fields.
+    *   `[ ]` 3.b. [BE] Update implementation in `type_guards.dialectic.recipe.ts`.
+        *   `[ ]` 3.b.i. [IMPLEMENTATION] Expand the `isDialecticRecipeStep` type guard to validate all fields present in the `dialectic_recipe_template_steps` table schema, including `id`, `template_id`, `created_at`, and `updated_at`.
+    *   `[ ]` 3.c. [GREEN TEST] The new test in `type_guards.dialectic.recipe.test.ts` should now pass.
+
         *   `[ ]` 3.b.iii. [BE] Update the implementation in `gatherInputsForStage.ts`.
             *   `[ ]` 3.b.iii.1. [IMPLEMENTATION] Modify the function's logic to read input rules from `stage.recipe_step.inputs_required`.
             *   `[ ]` 3.b.iii.2. [IMPLEMENTATION] Pass the `inputs_required` array to the newly refactored `parseInputArtifactRules` function.

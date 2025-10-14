@@ -18,13 +18,16 @@ DECLARE
     v_instance_trd_step_id UUID;
     v_instance_master_plan_step_id UUID;
     v_instance_milestone_schema_step_id UUID;
+    v_trd_doc_template_id UUID;
+    v_master_plan_doc_template_id UUID;
+    v_milestone_schema_doc_template_id UUID;
     BEGIN
     -- Get the domain_id for 'Software Development'
     SELECT id INTO v_domain_id FROM public.dialectic_domains WHERE name = 'Software Development' LIMIT 1;
 
     -- Upsert the document template for the planner prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('parenthesis_planner_header_v1 prompt', v_domain_id, 'Source document for parenthesis_planner_header_v1 prompt', 'prompts', 'docs/prompts/parenthesis/', 'parenthesis_planner_header_v1.md')
+    VALUES ('parenthesis_planner_header_v1 prompt', v_domain_id, 'Source document for parenthesis_planner_header_v1 prompt', 'prompt-templates', 'docs/prompts/parenthesis/', 'parenthesis_planner_header_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -60,7 +63,7 @@ DECLARE
 
     -- Upsert the document template for the TRD turn prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('parenthesis_trd_turn_v1 prompt', v_domain_id, 'Source document for parenthesis_trd_turn_v1 prompt', 'prompts', 'docs/prompts/parenthesis/', 'parenthesis_trd_turn_v1.md')
+    VALUES ('parenthesis_trd_turn_v1 prompt', v_domain_id, 'Source document for parenthesis_trd_turn_v1 prompt', 'prompt-templates', 'docs/prompts/parenthesis/', 'parenthesis_trd_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -96,7 +99,7 @@ DECLARE
 
     -- Upsert the document template for the master plan prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('parenthesis_master_plan_turn_v1 prompt', v_domain_id, 'Source document for parenthesis_master_plan_turn_v1 prompt', 'prompts', 'docs/prompts/parenthesis/', 'parenthesis_master_plan_turn_v1.md')
+    VALUES ('parenthesis_master_plan_turn_v1 prompt', v_domain_id, 'Source document for parenthesis_master_plan_turn_v1 prompt', 'prompt-templates', 'docs/prompts/parenthesis/', 'parenthesis_master_plan_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -132,7 +135,7 @@ DECLARE
 
     -- Upsert the document template for the milestone schema prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('parenthesis_milestone_schema_turn_v1 prompt', v_domain_id, 'Source document for parenthesis_milestone_schema_turn_v1 prompt', 'prompts', 'docs/prompts/parenthesis/', 'parenthesis_milestone_schema_turn_v1.md')
+    VALUES ('parenthesis_milestone_schema_turn_v1 prompt', v_domain_id, 'Source document for parenthesis_milestone_schema_turn_v1 prompt', 'prompt-templates', 'docs/prompts/parenthesis/', 'parenthesis_milestone_schema_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -1510,15 +1513,91 @@ DECLARE
 
     -- Step 3.a: Update Parenthesis stage configuration
     UPDATE public.dialectic_stages
-    SET recipe_template_id = v_template_id
+    SET recipe_template_id = v_template_id, active_recipe_instance_id = v_instance_id
     WHERE slug = 'parenthesis';
+
+    -- Step 4.a: Seed Parenthesis document templates
+    INSERT INTO public.dialectic_document_templates (
+        id,
+        name,
+        domain_id,
+        description,
+        storage_bucket,
+        storage_path,
+        file_name
+    ) VALUES (
+        gen_random_uuid(),
+        'parenthesis_trd',
+        v_domain_id,
+        'Markdown template for the Parenthesis Technical Requirements Document.',
+        'prompt-templates',
+        'docs/templates/parenthesis/',
+        'parenthesis_trd.md'
+    )
+    ON CONFLICT (name, domain_id) DO UPDATE
+        SET description = EXCLUDED.description,
+            storage_bucket = EXCLUDED.storage_bucket,
+            storage_path = EXCLUDED.storage_path,
+            file_name = EXCLUDED.file_name,
+            updated_at = now()
+    RETURNING id INTO v_trd_doc_template_id;
+
+    INSERT INTO public.dialectic_document_templates (
+        id,
+        name,
+        domain_id,
+        description,
+        storage_bucket,
+        storage_path,
+        file_name
+    ) VALUES (
+        gen_random_uuid(),
+        'parenthesis_master_plan',
+        v_domain_id,
+        'Markdown template for the Parenthesis Master Plan.',
+        'prompt-templates',
+        'docs/templates/parenthesis/',
+        'parenthesis_master_plan.md'
+    )
+    ON CONFLICT (name, domain_id) DO UPDATE
+        SET description = EXCLUDED.description,
+            storage_bucket = EXCLUDED.storage_bucket,
+            storage_path = EXCLUDED.storage_path,
+            file_name = EXCLUDED.file_name,
+            updated_at = now()
+    RETURNING id INTO v_master_plan_doc_template_id;
+
+    INSERT INTO public.dialectic_document_templates (
+        id,
+        name,
+        domain_id,
+        description,
+        storage_bucket,
+        storage_path,
+        file_name
+    ) VALUES (
+        gen_random_uuid(),
+        'parenthesis_milestone_schema',
+        v_domain_id,
+        'Markdown template for the Parenthesis Milestone Schema.',
+        'prompt-templates',
+        'docs/templates/parenthesis/',
+        'parenthesis_milestone_schema.md'
+    )
+    ON CONFLICT (name, domain_id) DO UPDATE
+        SET description = EXCLUDED.description,
+            storage_bucket = EXCLUDED.storage_bucket,
+            storage_path = EXCLUDED.storage_path,
+            file_name = EXCLUDED.file_name,
+            updated_at = now()
+    RETURNING id INTO v_milestone_schema_doc_template_id;
 
     -- Step 3.b: Populate expected_output_template_ids for parenthesis stage
     UPDATE public.dialectic_stages
     SET expected_output_template_ids = ARRAY[
-        (SELECT id FROM public.dialectic_document_templates WHERE name = 'parenthesis_trd' AND is_active = true),
-        (SELECT id FROM public.dialectic_document_templates WHERE name = 'parenthesis_master_plan' AND is_active = true),
-        (SELECT id FROM public.dialectic_document_templates WHERE name = 'parenthesis_milestone_schema' AND is_active = true)
+        v_trd_doc_template_id,
+        v_master_plan_doc_template_id,
+        v_milestone_schema_doc_template_id
     ]
     WHERE slug = 'parenthesis';
 
@@ -1537,7 +1616,7 @@ INSERT INTO public.dialectic_document_templates (
     v_domain_id,
     'Markdown template for the Parenthesis Technical Requirements Document.',
     'prompt-templates',
-    'parenthesis/parenthesis_trd.md',
+    'docs/templates/parenthesis/',
     'parenthesis_trd.md'
 )
 ON CONFLICT (name, domain_id) DO UPDATE
@@ -1561,7 +1640,7 @@ INSERT INTO public.dialectic_document_templates (
     v_domain_id,
     'Markdown template for the Parenthesis Master Plan.',
     'prompt-templates',
-    'parenthesis/parenthesis_master_plan.md',
+    'docs/templates/parenthesis/',
     'parenthesis_master_plan.md'
 )
 ON CONFLICT (name, domain_id) DO UPDATE
@@ -1585,7 +1664,7 @@ INSERT INTO public.dialectic_document_templates (
     v_domain_id,
     'Markdown template for the Parenthesis Milestone Schema.',
     'prompt-templates',
-    'parenthesis/parenthesis_milestone_schema.md',
+    'docs/templates/parenthesis/',
     'parenthesis_milestone_schema.md'
 )
 ON CONFLICT (name, domain_id) DO UPDATE

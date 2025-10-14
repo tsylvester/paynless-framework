@@ -14,13 +14,16 @@ DECLARE
     v_actionable_checklist_step_id UUID;
     v_updated_master_plan_step_id UUID;
     v_advisor_recommendations_step_id UUID;
+    v_actionable_checklist_doc_template_id UUID;
+    v_updated_master_plan_doc_template_id UUID;
+    v_advisor_recommendations_doc_template_id UUID;
     BEGIN
     -- Get the domain_id for 'Software Development'
     SELECT id INTO v_domain_id FROM public.dialectic_domains WHERE name = 'Software Development' LIMIT 1;
 
     -- Upsert the document template for the planner prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('paralysis_planner_header_v1 prompt', v_domain_id, 'Source document for paralysis_planner_header_v1 prompt', 'prompts', 'docs/prompts/paralysis/', 'paralysis_planner_header_v1.md')
+    VALUES ('paralysis_planner_header_v1 prompt', v_domain_id, 'Source document for paralysis_planner_header_v1 prompt', 'prompt-templates', 'docs/prompts/paralysis/', 'paralysis_planner_header_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -56,7 +59,7 @@ DECLARE
 
     -- Upsert the document template for the actionable checklist prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('paralysis_actionable_checklist_turn_v1 prompt', v_domain_id, 'Source document for paralysis_actionable_checklist_turn_v1 prompt', 'prompts', 'docs/prompts/paralysis/', 'paralysis_actionable_checklist_turn_v1.md')
+    VALUES ('paralysis_actionable_checklist_turn_v1 prompt', v_domain_id, 'Source document for paralysis_actionable_checklist_turn_v1 prompt', 'prompt-templates', 'docs/prompts/paralysis/', 'paralysis_actionable_checklist_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -92,7 +95,7 @@ DECLARE
 
     -- Upsert the document template for the updated master plan prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('paralysis_updated_master_plan_turn_v1 prompt', v_domain_id, 'Source document for paralysis_updated_master_plan_turn_v1 prompt', 'prompts', 'docs/prompts/paralysis/', 'paralysis_updated_master_plan_turn_v1.md')
+    VALUES ('paralysis_updated_master_plan_turn_v1 prompt', v_domain_id, 'Source document for paralysis_updated_master_plan_turn_v1 prompt', 'prompt-templates', 'docs/prompts/paralysis/', 'paralysis_updated_master_plan_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -128,7 +131,7 @@ DECLARE
 
     -- Upsert the document template for the advisor recommendations prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('paralysis_advisor_recommendations_turn_v1 prompt', v_domain_id, 'Source document for paralysis_advisor_recommendations_turn_v1 prompt', 'prompts', 'docs/prompts/paralysis/', 'paralysis_advisor_recommendations_turn_v1.md')
+    VALUES ('paralysis_advisor_recommendations_turn_v1 prompt', v_domain_id, 'Source document for paralysis_advisor_recommendations_turn_v1 prompt', 'prompt-templates', 'docs/prompts/paralysis/', 'paralysis_advisor_recommendations_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -557,4 +560,32 @@ DECLARE
         (gen_random_uuid(), v_template_id, v_planner_step_id, v_updated_master_plan_step_id),
         (gen_random_uuid(), v_template_id, v_actionable_checklist_step_id, v_advisor_recommendations_step_id),
         (gen_random_uuid(), v_template_id, v_updated_master_plan_step_id, v_advisor_recommendations_step_id);
+
+    -- Seed document templates for outputs
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name, is_active)
+    VALUES ('paralysis_actionable_checklist', v_domain_id, 'Paralysis stage output for actionable checklist.', 'prompt-templates', 'docs/templates/paralysis/', 'paralysis_actionable_checklist.md', TRUE)
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_actionable_checklist_doc_template_id;
+
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name, is_active)
+    VALUES ('paralysis_updated_master_plan', v_domain_id, 'Paralysis stage output for updated master plan.', 'prompt-templates', 'docs/templates/paralysis/', 'paralysis_updated_master_plan.md', TRUE)
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_updated_master_plan_doc_template_id;
+
+    INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name, is_active)
+    VALUES ('paralysis_advisor_recommendations', v_domain_id, 'Paralysis stage output for advisor recommendations.', 'prompt-templates', 'docs/templates/paralysis/', 'paralysis_advisor_recommendations.md', TRUE)
+    ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+    RETURNING id INTO v_advisor_recommendations_doc_template_id;
+
+    -- Update Paralysis stage with recipe template, active instance, and expected outputs
+    UPDATE public.dialectic_stages
+    SET
+        recipe_template_id = v_template_id,
+        active_recipe_instance_id = v_instance_id,
+        expected_output_template_ids = ARRAY[
+            v_actionable_checklist_doc_template_id,
+            v_updated_master_plan_doc_template_id,
+            v_advisor_recommendations_doc_template_id
+        ]
+    WHERE slug = 'paralysis';
 END $$;
