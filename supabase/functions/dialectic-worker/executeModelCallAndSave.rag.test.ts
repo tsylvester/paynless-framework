@@ -121,6 +121,8 @@ Deno.test('resource documents are used for sizing but not included in ChatApiReq
             tokens_used_input: 0,
             tokens_used_output: 0,
             stage: 'test-stage',
+            is_header: false,
+            source_prompt_resource_id: null,
         },
     ];
 
@@ -329,6 +331,8 @@ Deno.test('should iteratively compress the lowest-value candidate until the prom
             seed_prompt_url: null,
             session_id: 'session-123',
             stage: 'test-stage',
+            is_header: false,
+            source_prompt_resource_id: null,
         },
         { 
             id: 'docB', 
@@ -360,6 +364,8 @@ Deno.test('should iteratively compress the lowest-value candidate until the prom
             seed_prompt_url: null,
             session_id: 'session-123',
             stage: 'test-stage',
+            is_header: false,
+            source_prompt_resource_id: null,
         },
         { 
             id: 'docC', 
@@ -391,6 +397,8 @@ Deno.test('should iteratively compress the lowest-value candidate until the prom
             seed_prompt_url: null,
             session_id: 'session-123',
             stage: 'test-stage',
+            is_header: false,
+            source_prompt_resource_id: null,
         },
     ];
     const currentUserPrompt = "This is the current prompt.";
@@ -1022,7 +1030,7 @@ Deno.test('RAG debits use stable idempotency keys tied to job and candidate', as
   const payload: PromptConstructionPayload = {
     systemInstruction: '',
     conversationHistory: [ { role: 'user', content: 'seed' }, { role: 'assistant', content: 'reply' } ],
-    resourceDocuments: [ { id: 'docX', content: 'very long doc', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), user_id: 'user-789', session_id: 'session-1', iteration_number: 1, target_contribution_id: 'contribution-1', document_relationships: null, mime_type: 'text/plain', citations: [], contribution_type: 'source_document', edit_version: 1, error: null, file_name: 'docX.txt', is_latest_edit: true, model_id: 'model-1', model_name: 'test-model', original_model_contribution_id: 'contribution-1', processing_time_ms: 100, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test/path', tokens_used_input: 10, tokens_used_output: 20, stage: 'test-stage' } ],
+    resourceDocuments: [ { id: 'docX', content: 'very long doc', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), user_id: 'user-789', session_id: 'session-1', iteration_number: 1, target_contribution_id: 'contribution-1', document_relationships: null, mime_type: 'text/plain', citations: [], contribution_type: 'source_document', edit_version: 1, error: null, file_name: 'docX.txt', is_latest_edit: true, model_id: 'model-1', model_name: 'test-model', original_model_contribution_id: 'contribution-1', processing_time_ms: 100, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test/path', tokens_used_input: 10, tokens_used_output: 20, stage: 'test-stage', is_header: false, source_prompt_resource_id: null } ],
     currentUserPrompt: 'current',
   };
 

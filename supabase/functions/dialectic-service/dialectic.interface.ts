@@ -1,5 +1,5 @@
 import { type ChatMessage, type ILogger } from '../_shared/types.ts';
-import type { Database, Json } from '../types_db.ts';
+import type { Database, Json, Tables } from '../types_db.ts';
 import {
   downloadFromStorage,
 } from '../_shared/supabase_storage_utils.ts';
@@ -23,6 +23,50 @@ import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts'
 import type { debitTokens } from '../chat/debitTokens.ts';
 import { ICompressionStrategy } from '../_shared/utils/vector_utils.ts';
 import type { ServiceError } from "../_shared/types.ts";
+
+export type JobType = 'PLAN' | 'EXECUTE' | 'RENDER';
+export type PromptType = 'Seed' | 'Planner' | 'Turn' | 'Continuation';
+export type GranularityStrategy =
+  | 'per_source_document'
+  | 'pairwise_by_origin'
+  | 'per_source_group'
+  | 'all_to_one'
+  | 'per_source_document_by_lineage'
+  | 'per_model';
+
+export type DialecticRecipeTemplateStep =
+  & Omit<
+    Tables<'dialectic_recipe_template_steps'>,
+    'job_type' | 'prompt_type' | 'granularity_strategy' | 'inputs_required' | 'inputs_relevance' | 'outputs_required'
+  >
+  & {
+    job_type: JobType;
+    prompt_type: PromptType;
+    granularity_strategy: GranularityStrategy;
+    inputs_required: InputRule[];
+    inputs_relevance: RelevanceRule[];
+    outputs_required: OutputRule[];
+  };
+
+export type DialecticStageRecipeStep =
+  & Omit<
+    Tables<'dialectic_stage_recipe_steps'>,
+    'job_type' | 'prompt_type' | 'granularity_strategy' | 'inputs_required' | 'inputs_relevance' | 'outputs_required'
+  >
+  & {
+    job_type: JobType;
+    prompt_type: PromptType;
+    granularity_strategy: GranularityStrategy;
+    inputs_required: InputRule[];
+    inputs_relevance: RelevanceRule[];
+    outputs_required: OutputRule[];
+  };
+
+export type DialecticRecipeStep = DialecticRecipeTemplateStep | DialecticStageRecipeStep;
+
+export type StageWithRecipeSteps = Tables<'dialectic_stages'> & {
+  steps: DialecticRecipeStep[];
+};
 
 export type DialecticProjectRow = Database['public']['Tables']['dialectic_projects']['Row'];
 export type DialecticProjectInsert = Database['public']['Tables']['dialectic_projects']['Insert'];
@@ -899,42 +943,6 @@ export type GranularityStrategyMap = Map<string, GranularityPlannerFn>;
  * Describes a single step within a multi-step job recipe, aligning with the
  * `dialectic_recipe_template_steps` and `dialectic_stage_recipe_steps` table schemas.
  */
-export interface DialecticRecipeStep {
-    /** The execution order of the step. Parallel steps can share the same number. */
-    step_number: number;
-    /** A machine-readable, unique identifier for the step within the recipe (e.g., 'generate_header'). */
-    step_key: string;
-    /** A human-readable slug for the step, often used in file naming. */
-    step_slug: string;
-    /** The display name for the step. */
-    step_name: string;
-    /** The type of job the worker should create for this step. */
-    job_type: 'PLAN' | 'EXECUTE' | 'RENDER';
-    /** The category of prompt to be assembled for this step. */
-    prompt_type: 'Seed' | 'Planner' | 'Turn' | 'Continuation';
-    /** The type of artifact this step is expected to produce (e.g., a ContributionType or a specific document key). */
-    output_type: string;
-    /** Defines how the worker should process multiple inputs for this step (e.g., one job per input, or one job for all inputs). */
-    granularity_strategy: 
-        | 'per_source_document' 
-        | 'pairwise_by_origin' 
-        | 'per_source_group' 
-        | 'all_to_one' 
-        | 'per_source_document_by_lineage' 
-        | 'per_model';
-    /** An array of rules defining the artifacts required as input for this step. */
-    inputs_required: InputRule[];
-    /** An array of rules defining the relevance of different inputs, used for RAG ordering. */
-    inputs_relevance: RelevanceRule[];
-    /** An array of rules defining the expected outputs from this step. */
-    outputs_required: OutputRule[];
-    /** An identifier for grouping steps that can be executed in parallel. */
-    parallel_group?: number | null;
-    /** A hint for document lineage, indicating which branch of a generation process this step belongs to. */
-    branch_key?: string | null;
-    /** The foreign key to the specific prompt template to be used for this step. */
-    prompt_template_id?: string | null;
-}
 
 /**
  * Defines the structure for an item in the `inputs_required` JSONB array, specifying one
@@ -1020,8 +1028,6 @@ export type ExportProjectFailure = {
 };
 
 export type ExportProjectResponse = ExportProjectSuccess | ExportProjectFailure;
-
-export type JobType = Database['public']['Enums']['dialectic_job_type_enum'];
 
 export type JobInsert = {
   payload: {

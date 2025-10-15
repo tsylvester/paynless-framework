@@ -697,7 +697,7 @@ export async function executeModelCallAndSave(
     // directly from the job payload. The structural link for continuations is
     // handled by the `target_contribution_id` field on the contribution record,
     // not by adding a non-standard property to this JSON blob.
-    const document_relationships = job.payload.document_relationships;
+    const document_relationships = job.payload.document_relationships ?? null;
 
     const fileType: FileType = isFileType(output_type) 
         ? output_type
@@ -766,7 +766,7 @@ export async function executeModelCallAndSave(
             processingTimeMs: aiResponse.processingTimeMs, 
             seedPromptStoragePath: 'file/location',
             target_contribution_id: targetContributionId,
-            document_relationships: document_relationships,
+            document_relationships,
             isIntermediate: 'isIntermediate' in job.payload && job.payload.isIntermediate,
         },
     };

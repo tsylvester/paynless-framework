@@ -1,10 +1,8 @@
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { Database } from "../../types_db.ts";
-import { parseInputArtifactRules } from "../utils/input-artifact-parser.ts";
 import {
   DialecticContributionRow,
-  InputArtifactRules,
-  ArtifactSourceRule,
+  InputRule,
 } from "../../dialectic-service/dialectic.interface.ts";
 import {
   ProjectContext,
@@ -13,6 +11,7 @@ import {
   AssemblerSourceDocument,
 } from "./prompt-assembler.interface.ts";
 import type { DownloadStorageResult } from "../supabase_storage_utils.ts";
+import { parseInputArtifactRules } from "../utils/input-artifact-parser.ts";
 
 export type GatherInputsForStageFn = (
   dbClient: SupabaseClient<Database>,
@@ -40,38 +39,25 @@ export async function gatherInputsForStage(
   const sourceDocuments: AssemblerSourceDocument[] = [];
   let criticalError: Error | null = null;
 
-  if (!stage.input_artifact_rules) {
+  if (
+    !stage.recipe_step || !stage.recipe_step.inputs_required ||
+    stage.recipe_step.inputs_required.length === 0
+  ) {
     console.info(
-      "[gatherInputsForStage] No input_artifact_rules defined for stage:",
+      "[gatherInputsForStage] No input rules defined for stage:",
       stage.slug,
     );
     return sourceDocuments;
   }
 
-  let parsedRules: InputArtifactRules;
-  try {
-    parsedRules = parseInputArtifactRules(stage.input_artifact_rules);
-  } catch (e) {
-    console.error(
-      "[gatherInputsForStage] Failed to parse input_artifact_rules for stage:",
-      stage.slug,
-      e,
-    );
-    return sourceDocuments;
-  }
+  const rules: InputRule[] = parseInputArtifactRules(
+    stage.recipe_step.inputs_required,
+  );
 
-  if (!parsedRules || parsedRules.sources.length === 0) {
-    console.info(
-      "[gatherInputsForStage] Parsed rules are empty for stage:",
-      stage.slug,
-    );
-    return sourceDocuments;
-  }
-
-  const stageSpecificRules = parsedRules.sources.filter(
-    (rule: ArtifactSourceRule): rule is Extract<ArtifactSourceRule, {
-      type: "contribution" | "feedback";
-    }> => rule.type === "contribution" || rule.type === "feedback",
+  const stageSpecificRules = rules.filter(
+    (rule: InputRule): rule is Extract<InputRule, {
+      type: "document" | "feedback";
+    }> => rule.type === "document" || rule.type === "feedback",
   );
 
   const stageSlugsForDisplayName = stageSpecificRules
@@ -100,14 +86,18 @@ export async function gatherInputsForStage(
     stagesData?.map((s) => [s.slug, s.display_name]) || [],
   );
 
-  for (const rule of parsedRules.sources) {
+  for (const rule of rules) {
     if (criticalError) break;
 
-    if (rule.type === "contribution" || rule.type === "feedback") {
+    if (rule.type === "document" || rule.type === "feedback") {
+      if (!rule.stage_slug) {
+        console.warn("[gatherInputsForStage] Skipping rule due to missing stage_slug:", rule);
+        continue;
+      }
       const displayName = displayNameMap.get(rule.stage_slug) ||
         (rule.stage_slug.charAt(0).toUpperCase() + rule.stage_slug.slice(1));
 
-      if (rule.type === "contribution") {
+      if (rule.type === "document") {
         const { data: aiContributions, error: aiContribError } = await dbClient
           .from("dialectic_contributions")
           .select("*")
@@ -157,7 +147,7 @@ export async function gatherInputsForStage(
               const decodedContent = new TextDecoder("utf-8").decode(content);
               sourceDocuments.push({
                 id: contrib.id,
-                type: "contribution",
+                type: "document",
                 content: decodedContent,
                 metadata: {
                   displayName: displayName,

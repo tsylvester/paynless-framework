@@ -1,5 +1,5 @@
 import { assert, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import type { Tables, Json } from "../../../types_db.ts";
+import type { Tables, Json, Database } from "../../../types_db.ts";
 import { 
     hasProcessingStrategy, 
     isCitationsArray,
@@ -31,7 +31,10 @@ import {
     OutputType, 
     DialecticContributionRow, 
     DialecticJobRow, 
-    FailedAttemptError 
+    FailedAttemptError,
+    StageWithRecipeSteps,
+    DialecticRecipeStep,
+    JobType,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 
@@ -88,159 +91,251 @@ Deno.test('Type Guard: hasModelResultWithContributionId', async (t) => {
 });
 
 Deno.test('Type Guard: hasProcessingStrategy', async (t) => {
-    await t.step('should return true for a stage with a valid processing_strategy', () => {
-        const stage: Tables<'dialectic_stages'> = {
-            id: '1',
+    await t.step('should return true for a stage whose recipe step has a valid job_type', () => {
+        const stage: StageWithRecipeSteps = {
+            id: 'stage-1',
             created_at: new Date().toISOString(),
-            default_system_prompt_id: 'p1',
-            display_name: 'Antithesis',
-            slug: 'antithesis',
-            description: 'Critique the thesis.',
-            input_artifact_rules: {
-                processing_strategy: {
-                    type: "task_isolation",
-                    granularity: "per_thesis_contribution",
-                    description: "Critiques each thesis individually, resulting in n*m calls.",
-                    progress_reporting: {
-                        message_template: "Critiquing thesis {current_item} of {total_items} using {model_name}..."
-                    }
-                }
-            },
-            expected_output_artifacts: []
+            slug: 'stage-slug',
+            display_name: 'Stage Name',
+            recipe_template_id: 'template-1',
+            active_recipe_instance_id: null,
+            default_system_prompt_id: null,
+            description: null,
+            expected_output_template_ids: [],
+            steps: [{
+                id: 'step-1',
+                template_id: 'template-1',
+                job_type: 'PLAN',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                step_number: 1,
+                step_key: 'key',
+                step_slug: 'slug',
+                step_name: 'name',
+                output_type: 'type',
+                granularity_strategy: 'per_source_document',
+                inputs_required: [],
+                inputs_relevance: [],
+                outputs_required: [],
+                branch_key: null,
+                parallel_group: null,
+                prompt_template_id: null,
+                step_description: null,
+                prompt_type: 'Turn',
+            }],
         };
-        assert(hasProcessingStrategy(stage));
+        assert(hasProcessingStrategy(stage.steps[0]));
     });
 
-    await t.step('should return false if processing_strategy is missing', () => {
-        const stage: Tables<'dialectic_stages'> = {
-            id: '2',
+    await t.step('should return false if the recipe step has an invalid job_type', () => {
+        const stage: StageWithRecipeSteps = {
+            id: 'stage-2',
             created_at: new Date().toISOString(),
-            default_system_prompt_id: 'p2',
-            display_name: 'Thesis',
-            slug: 'thesis',
-            description: 'Initial idea.',
-            input_artifact_rules: {},
-            expected_output_artifacts: []
+            slug: 'stage-slug-2',
+            display_name: 'Stage Name 2',
+            recipe_template_id: 'template-2',
+            active_recipe_instance_id: null,
+            default_system_prompt_id: null,
+            description: null,
+            expected_output_template_ids: [],
+            steps: [{
+                id: 'step-2',
+                template_id: 'template-2',
+                job_type: 'INVALID_JOB_TYPE' as JobType,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                step_number: 1,
+                step_key: 'key',
+                step_slug: 'slug',
+                step_name: 'name',
+                output_type: 'type',
+                granularity_strategy: 'per_source_document',
+                inputs_required: [],
+                inputs_relevance: [],
+                outputs_required: [],
+                branch_key: null,
+                parallel_group: null,
+                prompt_template_id: null,
+                step_description: null,
+                prompt_type: 'Turn',
+            }],
         };
-        assert(!hasProcessingStrategy(stage));
+        assert(!hasProcessingStrategy(stage.steps[0]));
     });
 
-    await t.step('should return false if input_artifact_rules is null', () => {
-        const stage: Tables<'dialectic_stages'> = {
-            id: '3',
-            created_at: new Date().toISOString(),
-            default_system_prompt_id: 'p3',
-            display_name: 'Synthesis',
-            slug: 'synthesis',
-            description: 'Combine thesis and antithesis.',
-            input_artifact_rules: null,
-            expected_output_artifacts: []
+    await t.step('should return false if job_type is not a valid enum value', () => {
+        const step = {
+            id: 'step-invalid',
+            job_type: 'INVALID_JOB_TYPE' as JobType,
         };
-        assert(!hasProcessingStrategy(stage));
+        assert(!hasProcessingStrategy(step as unknown as Tables<'dialectic_stages'>));
     });
 
-    await t.step('should return false if processing_strategy is malformed (missing type)', () => {
-        const stage: Tables<'dialectic_stages'> = {
-            id: '4',
-            created_at: new Date().toISOString(),
-            default_system_prompt_id: 'p4',
-            display_name: 'Malformed Stage',
-            slug: 'malformed-stage',
-            description: 'Test stage.',
-            input_artifact_rules: {
-                processing_strategy: {
-                    granularity: "per_thesis_contribution",
-                    progress_reporting: {
-                        message_template: "Processing {current_item}..."
-                    }
-                }
-            },
-            expected_output_artifacts: []
+    await t.step('should return false if job_type is missing', () => {
+        const step = { id: 'step-no-job-type' };
+        assert(!hasProcessingStrategy(step as unknown as Tables<'dialectic_stages'>));
+    });
+
+    await t.step('should return false for a non-object', () => {
+        assert(!hasProcessingStrategy(null as unknown as Tables<'dialectic_stages'>));
+        assert(!hasProcessingStrategy('a string' as unknown as Tables<'dialectic_stages'>));
+    });
+
+    await t.step('should return false if the recipe step is missing job_type', () => {
+        const stage: Partial<StageWithRecipeSteps> = {
+            id: 'stage-3',
+            steps: [{ id: 'step-3' } as DialecticRecipeStep]
         };
-        assert(!hasProcessingStrategy(stage));
+        assert(!hasProcessingStrategy(stage as unknown as Tables<'dialectic_stages'>));
     });
 });
 
 Deno.test('Type Guard: hasStepsRecipe', async (t) => {
-    await t.step('should return true for a stage with a valid steps array', () => {
-        const stage: Tables<'dialectic_stages'> = {
-            id: '1',
+    await t.step('should return true for a stage with a valid recipe from a template', () => {
+        const stage: StageWithRecipeSteps = {
+            id: 'stage-1',
+            recipe_template_id: 'template-1',
+            steps: [
+                {
+                    id: 'step-1',
+                    template_id: 'template-1', // Matches stage recipe_template_id
+                    job_type: 'PLAN',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    step_number: 1,
+                    step_key: 'key',
+                    step_slug: 'slug',
+                    step_name: 'name',
+                    output_type: 'type',
+                    granularity_strategy: 'per_source_document',
+                    inputs_required: [],
+                    inputs_relevance: [],
+                    outputs_required: [],
+                    branch_key: null,
+                    parallel_group: null,
+                    prompt_template_id: null,
+                    step_description: null,
+                    prompt_type: 'Turn',
+                }
+            ],
             created_at: new Date().toISOString(),
-            default_system_prompt_id: 'p1',
-            display_name: 'Synthesis',
-            slug: 'synthesis',
-            description: 'Combine all the things.',
-            input_artifact_rules: {
-                steps: [
-                    { step_number: 1, step_name: 'Step One' },
-                    { step_number: 2, step_name: 'Step Two' },
-                ]
-            },
-            expected_output_artifacts: []
+            slug: 'stage-slug',
+            display_name: 'Stage Name',
+            active_recipe_instance_id: null,
+            default_system_prompt_id: null,
+            description: null,
+            expected_output_template_ids: [],
         };
         assert(hasStepsRecipe(stage));
     });
 
-    await t.step('should return true for a stage with an empty steps array', () => {
-        const stage: Tables<'dialectic_stages'> = {
-            id: '2',
+    await t.step('should return true for a stage with a valid recipe from an instance', () => {
+        const stage: StageWithRecipeSteps = {
+            id: 'stage-2',
+            active_recipe_instance_id: 'instance-1',
+            steps: [
+                {
+                    id: 'step-instance-1',
+                    instance_id: 'instance-1', // Matches stage active_recipe_instance_id
+                    job_type: 'EXECUTE',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    step_key: 'key',
+                    step_slug: 'slug',
+                    step_name: 'name',
+                    output_type: 'type',
+                    granularity_strategy: 'per_source_document',
+                    inputs_required: [],
+                    inputs_relevance: [],
+                    outputs_required: [],
+                    branch_key: null,
+                    parallel_group: null,
+                    prompt_template_id: null,
+                    config_override: {},
+                    execution_order: null,
+                    is_skipped: false,
+                    object_filter: {},
+                    output_overrides: {},
+                    template_step_id: null,
+                    prompt_type: 'Turn',
+                }
+            ],
             created_at: new Date().toISOString(),
-            default_system_prompt_id: 'p2',
-            display_name: 'Empty Stage',
-            slug: 'empty-stage',
-            description: 'A stage with no steps.',
-            input_artifact_rules: {
-                steps: []
-            },
-            expected_output_artifacts: []
+            slug: 'stage-slug-2',
+            display_name: 'Stage Name 2',
+            recipe_template_id: null,
+            default_system_prompt_id: null,
+            description: null,
+            expected_output_template_ids: [],
         };
         assert(hasStepsRecipe(stage));
+    });
+
+    await t.step('should return false if steps array is empty', () => {
+        const stage: Tables<'dialectic_stages'> & { steps: DialecticRecipeStep[] } = {
+            id: 'stage-3',
+            recipe_template_id: 'template-3',
+            steps: [],
+            created_at: new Date().toISOString(),
+            slug: 'stage-slug-3',
+            display_name: 'Stage Name 3',
+            active_recipe_instance_id: null,
+            default_system_prompt_id: null,
+            description: null,
+            expected_output_template_ids: [],
+        };
+        assert(!hasStepsRecipe(stage));
+    });
+
+    await t.step('should return false if steps do not match the stage template_id', () => {
+        const stage: Tables<'dialectic_stages'> & { steps: { template_id: string }[] } = {
+            id: 'stage-4',
+            recipe_template_id: 'template-4',
+            steps: [{ template_id: 'different-template' }],
+            created_at: new Date().toISOString(),
+            slug: 'stage-slug-4',
+            display_name: 'Stage Name 4',
+            active_recipe_instance_id: null,
+            default_system_prompt_id: null,
+            description: null,
+            expected_output_template_ids: [],
+        };
+        assert(!hasStepsRecipe(stage));
+    });
+
+    await t.step('should return false if steps do not match the stage instance_id', () => {
+        const stage: Tables<'dialectic_stages'> & { steps: { instance_id: string }[] } = {
+            id: 'stage-5',
+            active_recipe_instance_id: 'instance-5',
+            steps: [{ instance_id: 'different-instance' }],
+            created_at: new Date().toISOString(),
+            slug: 'stage-slug-5',
+            display_name: 'Stage Name 5',
+            recipe_template_id: null,
+            default_system_prompt_id: null,
+            description: null,
+            expected_output_template_ids: [],
+        };
+        assert(!hasStepsRecipe(stage));
     });
 
     await t.step('should return false if steps property is missing', () => {
         const stage: Tables<'dialectic_stages'> = {
-            id: '3',
+            id: 'stage-6',
             created_at: new Date().toISOString(),
-            default_system_prompt_id: 'p3',
-            display_name: 'Thesis',
-            slug: 'thesis',
-            description: 'Initial idea.',
-            input_artifact_rules: {
-                sources: [{ type: 'prompt' }]
-            },
-            expected_output_artifacts: []
+            slug: 'stage-slug-6',
+            display_name: 'Stage Name 6',
+            recipe_template_id: null,
+            active_recipe_instance_id: null,
+            default_system_prompt_id: null,
+            description: null,
+            expected_output_template_ids: [],
         };
         assert(!hasStepsRecipe(stage));
     });
 
-    await t.step('should return false if steps property is not an array', () => {
-        const stage: Tables<'dialectic_stages'> = {
-            id: '4',
-            created_at: new Date().toISOString(),
-            default_system_prompt_id: 'p4',
-            display_name: 'Malformed Stage',
-            slug: 'malformed-stage',
-            description: 'Test stage.',
-            input_artifact_rules: {
-                steps: { '0': 'not an array' }
-            },
-            expected_output_artifacts: []
-        };
-        assert(!hasStepsRecipe(stage));
-    });
-
-    await t.step('should return false if input_artifact_rules is null', () => {
-        const stage: Tables<'dialectic_stages'> = {
-            id: '5',
-            created_at: new Date().toISOString(),
-            default_system_prompt_id: 'p5',
-            display_name: 'Simple Stage',
-            slug: 'simple-stage',
-            description: 'A simple stage.',
-            input_artifact_rules: null,
-            expected_output_artifacts: []
-        };
-        assert(!hasStepsRecipe(stage));
+    await t.step('should return false for a non-object', () => {
+        assert(!hasStepsRecipe(null as unknown as StageWithRecipeSteps));
     });
 });
 
@@ -422,6 +517,42 @@ Deno.test('Type Guard: isDialecticContribution', async (t) => {
             size_bytes: 123,
             updated_at: new Date().toISOString(),
             document_relationships: null,
+            is_header: false,
+            source_prompt_resource_id: 'prompt-resource-id-1'
+        };
+        assert(isDialecticContribution(contribution));
+    });
+
+    await t.step('should return true for a contribution with valid document_relationships', () => {
+        const contribution: DialecticContributionRow = {
+            id: 'c-with-rels',
+            created_at: new Date().toISOString(),
+            session_id: 's1',
+            stage: 'synthesis',
+            iteration_number: 1,
+            model_id: 'm1',
+            is_latest_edit: true,
+            edit_version: 1,
+            contribution_type: 'model_generated',
+            error: null,
+            citations: null,
+            file_name: 'file.md',
+            mime_type: 'text/markdown',
+            storage_bucket: 'bucket',
+            storage_path: 'path',
+            target_contribution_id: null,
+            user_id: 'u1',
+            model_name: 'Test Model',
+            processing_time_ms: 1000,
+            tokens_used_input: 10,
+            tokens_used_output: 20,
+            original_model_contribution_id: null,
+            prompt_template_id_used: null,
+            raw_response_storage_path: null,
+            seed_prompt_url: null,
+            size_bytes: 123,
+            updated_at: new Date().toISOString(),
+            document_relationships: { thesis: 'thesis-id-123' },
             is_header: false,
             source_prompt_resource_id: 'prompt-resource-id-1'
         };
@@ -851,6 +982,31 @@ Deno.test('Type Guard: isDialecticJobRow', async (t) => {
             job_type: 'PLAN',
         };
         assert(isDialecticJobRow(job));
+    });
+
+    await t.step('should return false if a required field is missing (e.g., created_at)', () => {
+        const job = {
+            id: 'j-missing-created_at',
+            session_id: 's1',
+            user_id: 'u1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            payload: { model_id: 'm1', projectId: 'p1', sessionId: 's1' },
+            status: 'pending',
+            attempt_count: 0,
+            max_retries: 3,
+            // created_at is missing
+            started_at: null,
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: null,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'PLAN' as Database["public"]["Enums"]["dialectic_job_type_enum"],
+        };
+        assert(!isDialecticJobRow(job));
     });
 
     await t.step('should return false if a required field is missing (e.g., status)', () => {

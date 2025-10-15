@@ -65,7 +65,7 @@ export async function gatherContext(
 
       // If under limit, format the documents normally
       for (const doc of sourceDocuments) {
-        if (doc.type === "contribution") {
+        if (doc.type === "document") {
           const blockHeader = doc.metadata.header
             ? `${doc.metadata.header}\n\n`
             : `### Contributions from ${doc.metadata.displayName} Stage\n\n`;
@@ -106,7 +106,7 @@ export async function gatherContext(
     domain: project.dialectic_domains.name,
     agent_count: session.selected_model_ids?.length ?? 1,
     context_description: projectInitialUserPrompt,
-    original_user_request: hasProcessingStrategy(stage)
+    original_user_request: hasProcessingStrategy(stage.recipe_step)
       ? projectInitialUserPrompt
       : null,
     prior_stage_ai_outputs: priorStageContributions,

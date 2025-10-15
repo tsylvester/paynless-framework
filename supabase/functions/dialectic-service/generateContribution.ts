@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import {
     GenerateContributionsPayload,
     GenerateContributionsDeps,
@@ -8,7 +7,7 @@ import type { Database, Json, TablesInsert } from "../types_db.ts";
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { logger } from "../_shared/logger.ts";
 import { User } from "npm:@supabase/supabase-js@2";
-import { hasStepsRecipe } from "../_shared/utils/type_guards.ts";
+import { hasStepsRecipe } from "../_shared/utils/type-guards/type_guards.dialectic.ts";
   
 export async function generateContributions(
     dbClient: SupabaseClient<Database>,
@@ -93,7 +92,7 @@ export async function generateContributions(
         // 1. Fetch the recipe for the stage
         const { data: stageDef, error: recipeError } = await dbClient
             .from('dialectic_stages')
-            .select('*')
+            .select('*, steps:dialectic_stage_recipe_steps(*)')
             .eq('slug', stageSlug)
             .single();
 
@@ -106,7 +105,7 @@ export async function generateContributions(
         console.log('[generateContributions] Result of hasStepsRecipe:', hasStepsRecipe(stageDef));
 
         // 2. Calculate total steps from the recipe
-        const totalSteps = hasStepsRecipe(stageDef) ? stageDef.input_artifact_rules.steps.length : 1;
+        const totalSteps = hasStepsRecipe(stageDef) ? stageDef.steps.length : 1;
         
         const jobIds: string[] = [];
         for (const modelId of selectedModelIds) {

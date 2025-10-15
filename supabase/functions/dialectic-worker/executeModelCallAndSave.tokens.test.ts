@@ -714,6 +714,8 @@ Deno.test('should use source documents for token estimation before prompt assemb
         storage_path: 'test/path',
         tokens_used_input: 10,
         tokens_used_output: 20,
+        is_header: false,
+        source_prompt_resource_id: null,
     };
 
     const params: ExecuteModelCallAndSaveParams = {

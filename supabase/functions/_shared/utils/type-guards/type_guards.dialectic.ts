@@ -1,7 +1,7 @@
 // supabase/functions/_shared/utils/type_guards.ts
-import type { Tables, Json } from "../../../types_db.ts";
+import type { Tables, Json, Database } from "../../../types_db.ts";
+import { Constants } from "../../../types_db.ts";
 import { 
-    ProcessingStrategy, 
     DialecticContributionRow, 
     DialecticJobPayload,
     DialecticJobRow,
@@ -19,6 +19,8 @@ import {
     DialecticStepPlannerMetadata,
     BranchKey,
     OutputType,
+    StageWithRecipeSteps,
+    DialecticRecipeStep,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { isPlainObject, isRecord } from './type_guards.common.ts';
 import { FileType } from '../../types/file_manager.types.ts';
@@ -198,20 +200,6 @@ export function isHeaderContext(value: unknown): value is ReturnType<typeof JSON
     return true;
 }
 
-// Helper type to represent the structure we're checking for.
-type StageWithProcessingStrategy = Tables<'dialectic_stages'> & {
-    input_artifact_rules: {
-        processing_strategy: ProcessingStrategy;
-    };
-};
-
-// Helper type to represent the structure we're checking for.
-type StageWithStepsRecipe = Tables<'dialectic_stages'> & {
-    input_artifact_rules: {
-        steps: unknown[];
-    };
-};
-
 export interface DialecticChunkMetadata {
   source_contribution_id: string;
   [key: string]: unknown; // Allow other properties
@@ -228,41 +216,92 @@ export function hasModelResultWithContributionId(results: unknown): results is {
     return typeof modelResult.contributionId === 'string';
 }
 
-/**
- * A true type guard that checks if a stage's input_artifact_rules contain a valid processing_strategy.
- * This function validates the structure at runtime to ensure type safety.
- * @param stage The dialectic_stages object to check.
- * @returns boolean indicating if the stage has a valid processing strategy.
- */
-export function hasProcessingStrategy(stage: Tables<'dialectic_stages'>): stage is StageWithProcessingStrategy {
-    if (stage.input_artifact_rules &&
-        typeof stage.input_artifact_rules === 'object' &&
-        !Array.isArray(stage.input_artifact_rules) &&
-        stage.input_artifact_rules !== null &&
-        'processing_strategy' in stage.input_artifact_rules) {
-        
-        const strategy = stage.input_artifact_rules.processing_strategy;
-        if (strategy && 
-            typeof strategy === 'object' && 
-            strategy !== null &&
-            'type' in strategy && 
-            typeof strategy.type === 'string' &&
-            strategy.type === 'task_isolation') {
-            return true;
-        }
-    }
-    return false;
+function isDialecticRecipeStep(step: unknown): step is DialecticRecipeStep {
+    if (!isRecord(step)) return false;
+
+    const templateChecks: (keyof Tables<'dialectic_recipe_template_steps'>)[] = [
+        'id', 'template_id', 'job_type', 'created_at', 'updated_at', 'step_number', 
+        'step_key', 'step_slug', 'step_name', 'output_type', 'granularity_strategy', 
+        'inputs_required', 'inputs_relevance', 'outputs_required', 'prompt_type'
+    ];
+    const instanceChecks: (keyof Tables<'dialectic_stage_recipe_steps'>)[] = [
+        'id', 'instance_id', 'job_type', 'created_at', 'updated_at', 'step_key', 
+        'step_slug', 'step_name', 'output_type', 'granularity_strategy', 
+        'inputs_required', 'inputs_relevance', 'outputs_required', 'prompt_type'
+    ];
+
+    const hasTemplateKeys = templateChecks.every(key => key in step);
+    const hasInstanceKeys = instanceChecks.every(key => key in step);
+
+    return hasTemplateKeys || hasInstanceKeys;
 }
 
-export function hasStepsRecipe(stage: Tables<'dialectic_stages'>): stage is StageWithStepsRecipe {
-    if (stage.input_artifact_rules &&
-        isRecord(stage.input_artifact_rules) &&
-        'steps' in stage.input_artifact_rules &&
-        Array.isArray(stage.input_artifact_rules.steps)) {
-        return true;
+/**
+ * A true type guard that checks if a stage has a valid, non-empty array of recipe steps
+ * that are logically linked to the stage itself.
+ * @param data The unknown object to check.
+ * @returns boolean indicating if the object is a valid StageWithRecipeSteps.
+ */
+export function hasStepsRecipe(data: unknown): data is StageWithRecipeSteps {
+    if (!isRecord(data)) return false;
+
+    // 1. Check for base stage properties
+    const stageKeys: (keyof Tables<'dialectic_stages'>)[] = ['id', 'slug', 'display_name', 'created_at'];
+    if (!stageKeys.every(key => key in data && typeof data[key] === 'string')) {
+        return false;
     }
-    return false;
+
+    // 2. Check for the 'steps' property
+    if (!('steps' in data) || !Array.isArray(data.steps) || data.steps.length === 0) {
+        return false;
+    }
+
+    // 3. Check each step and enforce the logical link
+    for (const step of data.steps) {
+        if (!isDialecticRecipeStep(step)) return false;
+
+        // Enforce logical link by safely checking properties
+        const isTemplateStep = 'template_id' in step && typeof step.template_id === 'string';
+        const isInstanceStep = 'instance_id' in step && typeof step.instance_id === 'string';
+        const stageRecipeTemplateId = 'recipe_template_id' in data && typeof data.recipe_template_id === 'string' ? data.recipe_template_id : null;
+        const stageActiveRecipeInstanceId = 'active_recipe_instance_id' in data && typeof data.active_recipe_instance_id === 'string' ? data.active_recipe_instance_id : null;
+
+        if (isTemplateStep && step.template_id !== stageRecipeTemplateId) {
+            return false; // Mismatched template ID
+        }
+        if (isInstanceStep && step.instance_id !== stageActiveRecipeInstanceId) {
+            return false; // Mismatched instance ID
+        }
+    }
+
+    return true;
 }
+
+/**
+ * A type guard to check if a string is a valid DialecticJobTypeEnum value.
+ * @param value The string to check.
+ * @returns boolean indicating if the string is a valid job type enum.
+ */
+function isJobTypeEnum(value: string): value is Database["public"]["Enums"]["dialectic_job_type_enum"] {
+    return Constants.public.Enums.dialectic_job_type_enum.some(enumValue => enumValue === value);
+}
+
+/**
+ * A true type guard that checks if an object is a dialectic recipe step
+ * and has a `job_type` of 'PLAN'.
+ * @param step The unknown object to check.
+ * @returns boolean indicating if the object is a DialecticRecipeStep with a 'PLAN' job type.
+ */
+export function hasProcessingStrategy(step: unknown): step is DialecticRecipeStep {
+    if (!isDialecticRecipeStep(step)) return false;
+
+    if (typeof step.job_type !== 'string' || !isJobTypeEnum(step.job_type)) {
+        return false;
+    }
+    
+    return step.job_type === 'PLAN';
+}
+
 
 /**
  * Type guard to check if a value is a valid array of Citation objects.
@@ -342,6 +381,7 @@ export function isDialecticContribution(record: unknown): record is DialecticCon
     { key: 'storage_path', type: 'string' },
     { key: 'updated_at', type: 'string' },
     { key: 'is_header', type: 'boolean' },
+    { key: 'document_relationships', type: 'object', nullable: true }, // Added check
 
     // Nullable fields
     { key: 'citations', type: 'object', nullable: true }, // Json can be object or null
@@ -485,6 +525,7 @@ export function isDialecticJobRow(record: unknown): record is DialecticJobRow {
   
     const checks: { key: keyof DialecticJobRow, type: string, nullable?: boolean }[] = [
       { key: 'id', type: 'string' },
+      { key: 'created_at', type: 'string' },
       { key: 'session_id', type: 'string' },
       { key: 'stage_slug', type: 'string' },
       { key: 'iteration_number', type: 'number' },
@@ -492,25 +533,35 @@ export function isDialecticJobRow(record: unknown): record is DialecticJobRow {
       { key: 'payload', type: 'object' },
       { key: 'user_id', type: 'string' },
       { key: 'is_test_job', type: 'boolean' },
-      { key: 'job_type', type: 'string' },
+      { key: 'attempt_count', type: 'number' },
+      { key: 'max_retries', type: 'number' },
+      
+      // Nullable fields
+      { key: 'job_type', type: 'string', nullable: true },
+      { key: 'parent_job_id', type: 'string', nullable: true },
+      { key: 'prerequisite_job_id', type: 'string', nullable: true },
+      { key: 'target_contribution_id', type: 'string', nullable: true },
+      { key: 'started_at', type: 'string', nullable: true },
+      { key: 'completed_at', type: 'string', nullable: true },
+      { key: 'results', type: 'object', nullable: true },
+      { key: 'error_details', type: 'object', nullable: true },
     ];
   
+    if (!isRecord(record)) {
+        return false;
+    }
+
     for (const check of checks) {
-      const descriptor = Object.getOwnPropertyDescriptor(record, check.key);
-      if (!descriptor && !check.nullable) {
-          return false;
+      if (!(check.key in record)) {
+        return false;
       }
-  
-      if (descriptor) {
-          const value = descriptor.value;
-          const valueType = typeof value;
-          if (check.nullable && value === null) {
-              continue;
-          }
-          if (valueType !== check.type) {
-              return false;
-          }
-      } else if (!check.nullable) {
+      const value = record[check.key];
+      
+      if (check.nullable && value === null) {
+          continue;
+      }
+
+      if (typeof value !== check.type) {
           return false;
       }
     }

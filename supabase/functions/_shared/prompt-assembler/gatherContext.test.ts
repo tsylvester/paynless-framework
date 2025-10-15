@@ -4,8 +4,52 @@ import { gatherContext } from "./gatherContext.ts";
 import { ProjectContext, SessionContext, StageContext, DynamicContextVariables, AssemblerSourceDocument } from "./prompt-assembler.interface.ts";
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockSupabaseClientSetup } from "../supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Database } from "../../types_db.ts";
+import type { Database, Tables } from "../../types_db.ts";
 import { downloadFromStorage } from '../supabase_storage_utils.ts';
+import { DialecticRecipeStep } from "../../dialectic-service/dialectic.interface.ts";
+
+const mockSimpleRecipeStep: DialecticRecipeStep = {
+    id: 'step-123',
+    instance_id: 'instance-123',
+    job_type: 'EXECUTE',
+    step_key: 'simple-step',
+    step_slug: 'simple-step-slug',
+    step_name: 'Simple Step',
+    step_number: 1,
+    prompt_type: 'Turn',
+    granularity_strategy: 'per_source_document',
+    output_type: 'thesis',
+    inputs_required: [],
+    inputs_relevance: [],
+    outputs_required: [],
+    config_override: {},
+    object_filter: {},
+    output_overrides: {},
+    is_skipped: false,
+    parallel_group: null,
+    prompt_template_id: null,
+    template_step_id: null,
+    branch_key: null,
+    execution_order: 1,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+};
+
+const mockRecipeStepWithInputs: DialecticRecipeStep = {
+    ...mockSimpleRecipeStep,
+    id: 'step-with-inputs',
+    inputs_required: [
+        { type: 'document', stage_slug: 'failing-stage', required: true }
+    ]
+};
+
+const mockComplexRecipeStep: DialecticRecipeStep = {
+    ...mockSimpleRecipeStep,
+    id: 'step-456',
+    job_type: 'PLAN',
+    step_key: 'complex-step',
+};
+
 
 Deno.test("gatherContext", async (t) => {
     let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
@@ -79,8 +123,10 @@ Deno.test("gatherContext", async (t) => {
         description: 'Initial hypothesis stage',
         created_at: new Date().toISOString(),
         default_system_prompt_id: null,
-        expected_output_artifacts: null,
-        input_artifact_rules: null
+        recipe_step: mockSimpleRecipeStep,
+        active_recipe_instance_id: null,
+        expected_output_template_ids: [],
+        recipe_template_id: null,
     };
     
     await t.step("should correctly format a single override contribution", async () => {
@@ -228,9 +274,7 @@ Deno.test("gatherContext", async (t) => {
                 ...defaultStage,
                 id: 'stage-err-prop',
                 slug: 'error-prop-stage',
-                input_artifact_rules: {
-                    sources: [{ type: 'contribution', stage_slug: 'failing-stage', required: true }]
-                }
+                recipe_step: mockRecipeStepWithInputs,
             };
             
             await assertRejects(
@@ -299,17 +343,13 @@ Deno.test("gatherContext", async (t) => {
                 ...defaultStage,
                 id: 'stage-subsequent',
                 slug: 'subsequent-stage',
-                input_artifact_rules: {
-                    sources: [
-                        { type: 'contribution', stage_slug: stageSlug, required: true },
-                    ]
-                }
+                recipe_step: mockRecipeStepWithInputs,
             };
 
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
             const gatherInputsFn = spy(() => Promise.resolve([{
                 id: 'c1',
-                type: 'contribution',
+                type: 'document',
                 content: contribContent,
                 metadata: {
                     displayName: 'Previous Stage',
@@ -341,7 +381,7 @@ Deno.test("gatherContext", async (t) => {
         try {
             const sourceDoc: AssemblerSourceDocument = {
                 id: 'c1',
-                type: 'contribution',
+                type: 'document',
                 content: 'AI-generated content.',
                 metadata: {
                     displayName: 'Previous Stage',
@@ -419,7 +459,7 @@ Deno.test("gatherContext", async (t) => {
             const sourceDocs: AssemblerSourceDocument[] = [
                 {
                     id: 'c1',
-                    type: 'contribution',
+                    type: 'document',
                     content: 'First AI content.',
                     metadata: { displayName: 'Stage A', modelName: 'Model X' }
                 },
@@ -431,7 +471,7 @@ Deno.test("gatherContext", async (t) => {
                 },
                 {
                     id: 'c2',
-                    type: 'contribution',
+                    type: 'document',
                     content: 'Second AI content.',
                     metadata: { displayName: 'Stage B', modelName: 'Model Y' }
                 }
@@ -476,7 +516,7 @@ Deno.test("gatherContext", async (t) => {
         try {
             const sourceDoc: AssemblerSourceDocument = {
                 id: 'c1',
-                type: 'contribution',
+                type: 'document',
                 content: 'AI-generated content.',
                 metadata: {
                     displayName: 'Previous Stage',
@@ -608,9 +648,7 @@ Deno.test("gatherContext", async (t) => {
         try {
             const stageWithStrategy: StageContext = {
                 ...defaultStage,
-                input_artifact_rules: {
-                    processing_strategy: { type: 'task_isolation' }
-                }
+                recipe_step: mockComplexRecipeStep,
             };
 
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);

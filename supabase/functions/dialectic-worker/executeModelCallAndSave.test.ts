@@ -85,6 +85,8 @@ export function createMockJob(payload: DialecticJobPayload, overrides: Partial<D
         started_at: null,
         target_contribution_id: null,
         payload: payload,
+        is_test_job: false,
+        job_type: 'PLAN',
         ...overrides,
     };
   
@@ -179,6 +181,8 @@ export const mockContribution: DialecticContributionRow = {
       updated_at: new Date().toISOString(),
       user_id: 'user-789',
       document_relationships: null,
+      is_header: false,
+      source_prompt_resource_id: null,
   };
   
 export  const mockNotificationService: NotificationServiceType = {
@@ -643,6 +647,8 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
                     storage_path: 'test/path',
                     tokens_used_input: 10,
                     tokens_used_output: 20,
+                    is_header: false,
+                    source_prompt_resource_id: null,
                 }],
                 currentUserPrompt: "This is a test prompt.",
             };
@@ -681,7 +687,7 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
     clearAllStubs?.();
 });
 
-Deno.test('executeModelCallAndSave - Document Relationships', async (t) => {
+Deno.test('executeModelCallAndSave - Document Relationships - should pass document_relationships to the fileManager', async () => {
     const { client: dbClient, spies, clearAllStubs } = setupMockClient({
         'ai_providers': {
             select: { data: [mockFullProviderData], error: null }
@@ -693,43 +699,83 @@ Deno.test('executeModelCallAndSave - Document Relationships', async (t) => {
     const deps = getMockDeps();
     deps.fileManager = fileManager;
 
-    await t.step('should pass document_relationships to the fileManager', async () => {
-        const relationshipsPayload: DialecticExecuteJobPayload = {
-            ...testPayload,
-            output_type: 'pairwise_synthesis_chunk',
-            document_relationships: {
-                source_group: 'thesis-1',
-                thesis: 'thesis-1',
-                antithesis: 'antithesis-A',
-            },
-        };
+    const relationshipsPayload: DialecticExecuteJobPayload = {
+        ...testPayload,
+        output_type: 'pairwise_synthesis_chunk',
+        document_relationships: {
+            source_group: 'thesis-1',
+            thesis: 'thesis-1',
+            antithesis: 'antithesis-A',
+        },
+    };
 
-        const params: ExecuteModelCallAndSaveParams = {
-            dbClient: dbClient as unknown as SupabaseClient<Database>,
-            deps,
-            authToken: 'auth-token',
-            job: createMockJob(relationshipsPayload),
-            projectOwnerUserId: 'user-789',
-            providerDetails: mockProviderData,
-            promptConstructionPayload: {
-                systemInstruction: 'System instruction',
-                conversationHistory: [],
-                resourceDocuments: [],
-                currentUserPrompt: 'User prompt',
-            },
-            sessionData: mockSessionData,
-            compressionStrategy: getSortedCompressionCandidates,
-        };
+    const params: ExecuteModelCallAndSaveParams = {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        deps,
+        authToken: 'auth-token',
+        job: createMockJob(relationshipsPayload),
+        projectOwnerUserId: 'user-789',
+        providerDetails: mockProviderData,
+        promptConstructionPayload: {
+            systemInstruction: 'System instruction',
+            conversationHistory: [],
+            resourceDocuments: [],
+            currentUserPrompt: 'User prompt',
+        },
+        sessionData: mockSessionData,
+        compressionStrategy: getSortedCompressionCandidates,
+    };
 
-        await executeModelCallAndSave(params);
+    await executeModelCallAndSave(params);
 
-        assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
-        
-        const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
-        assertExists(uploadContext.contributionMetadata, "Contribution metadata should exist");
-        
-        assertEquals(uploadContext.contributionMetadata.document_relationships, relationshipsPayload.document_relationships, "document_relationships object was not passed correctly to the file manager");
+    assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
+    
+    const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+    assertExists(uploadContext.contributionMetadata, "Contribution metadata should exist");
+    
+    assertEquals(uploadContext.contributionMetadata.document_relationships, relationshipsPayload.document_relationships, "document_relationships object was not passed correctly to the file manager");
+
+    clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - Document Relationships - should default document_relationships to null if not provided', async () => {
+    const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        }
     });
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    const deps = getMockDeps();
+    deps.fileManager = fileManager;
+
+    const params: ExecuteModelCallAndSaveParams = {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        deps,
+        authToken: 'auth-token',
+        job: createMockJob(testPayload), // testPayload does not have document_relationships
+        projectOwnerUserId: 'user-789',
+        providerDetails: mockProviderData,
+        promptConstructionPayload: {
+            systemInstruction: 'System instruction',
+            conversationHistory: [],
+            resourceDocuments: [],
+            currentUserPrompt: 'User prompt',
+        },
+        sessionData: mockSessionData,
+        compressionStrategy: getSortedCompressionCandidates,
+    };
+
+    await executeModelCallAndSave(params);
+
+    assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
+    
+    const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+    assertExists(uploadContext.contributionMetadata, "Contribution metadata should exist");
+    
+    logger.info('uploadContext.contributionMetadata.document_relationships', { document_relationships: uploadContext.contributionMetadata.document_relationships });
+    assertEquals(uploadContext.contributionMetadata.document_relationships, null, "document_relationships should default to null");
 
     clearAllStubs?.();
 });
@@ -775,6 +821,8 @@ Deno.test('executeModelCallAndSave - should accept PromptConstructionPayload and
         tokens_used_input: 10,
         tokens_used_output: 20,
         stage: 'test-stage',
+        is_header: false,
+        source_prompt_resource_id: null,
     };
 
     const promptConstructionPayload: PromptConstructionPayload = buildPromptPayload({
@@ -969,6 +1017,8 @@ Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are f
     tokens_used_input: 0,
     tokens_used_output: 0,
     stage: 'test-stage',
+    is_header: false,
+    source_prompt_resource_id: null,
   };
 
   const promptConstructionPayload: PromptConstructionPayload = {
@@ -1024,6 +1074,8 @@ Deno.test('executeModelCallAndSave - builds full ChatApiRequest including resour
     citations: [],
     contribution_type: 'source_document',
     edit_version: 1,
+    is_header: false,
+    source_prompt_resource_id: null,
     error: null,
     file_name: 'doc.txt',
     is_latest_edit: true,
@@ -1110,6 +1162,8 @@ Deno.test('executeModelCallAndSave - identity: sized payload equals sent request
     tokens_used_input: 10,
     tokens_used_output: 20,
     stage: 'test-stage',
+    is_header: false,
+    source_prompt_resource_id: null,
   };
 
   const promptConstructionPayload: PromptConstructionPayload = buildPromptPayload({
@@ -1212,6 +1266,8 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
         tokens_used_input: 10,
         tokens_used_output: 20,
         stage: 'test-stage',
+        is_header: false,
+        source_prompt_resource_id: null,
       },
     ],
     currentUserPrompt: 'User for compression identity',

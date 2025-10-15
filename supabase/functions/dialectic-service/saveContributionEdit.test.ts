@@ -77,13 +77,14 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
         size_bytes: 20,
         mime_type: 'text/markdown',
         dialectic_sessions: undefined, // not part of row
+        document_relationships: { "thesis": "thesis-id-123" }, // ADDED for test
       };
 
       const newEditId = 'contr-edit-0002';
       const editedText = 'Edited content goes here';
 
       // Capture update payloads for verification
-      const updatesApplied: Array<{ filters: { column?: string; value?: unknown; type: string }[]; update: object }> = [];
+      const updatesApplied: Array<{ filters: { column?: string; value?: unknown; type: string }[]; update: Partial<Database['public']['Tables']['dialectic_contributions']['Row']> }> = [];
 
       mockSupabaseSetup = createMockSupabaseClient(testUserId, {
         genericMockResults: {
@@ -199,8 +200,9 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       // Original should be marked not latest
       const updateForOriginal = updatesApplied.find(u => u.filters.some(f => f.column === 'id' && f.value === originalContributionId));
       assert(updateForOriginal, 'Original row should be updated');
-      const updated = updateForOriginal!.update as { is_latest_edit?: boolean };
+      const updated = updateForOriginal!.update;
       assertEquals(updated.is_latest_edit, false);
+      assertEquals(updated.document_relationships, undefined, "Update payload must not touch existing document_relationships");
     });
 
     it('returns 404 when original contribution is not found', async () => {

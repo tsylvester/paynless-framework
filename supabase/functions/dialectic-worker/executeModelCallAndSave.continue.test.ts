@@ -84,6 +84,8 @@ Deno.test('executeModelCallAndSave - missing payload.user_jwt causes immediate f
       canonicalPathParams: { contributionType: 'thesis' },
       // intentionally no user_jwt
     },
+    is_test_job: false,
+    job_type: 'PLAN',
   };
 
   let threw = false;
@@ -357,47 +359,35 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
 
     const stageSlug = 'thesis';
     const documentRelationship: DocumentRelationships = { [stageSlug]: 'thesis-id-abc' };
-    const mockContinuationJob: DialecticJobRow = {
-      id: 'job-id-456',
-      payload: {
+
+    const continuationPayload: DialecticExecuteJobPayload = {
         projectId: 'proj-123',
         sessionId: 'sess-123',
-        iteration: 1,
+        iterationNumber: 1,
         stageSlug,
-        modelId: 'model-def',
+        model_id: 'model-def',
         walletId: 'wallet-ghi',
         user_jwt: 'jwt.token.here',
-        // --- Properties to satisfy the type guard ---
         job_type: 'execute',
         prompt_template_name: 'test-prompt',
-        output_type: 'markdown',
+        output_type: 'synthesis',
+        step_info: { current_step: 1, total_steps: 1 },
         inputs: {},
         canonicalPathParams: {
           contributionType: 'synthesis',
         },
-        // --- Properties for continuation logic ---
-        contributionType: 'synthesis',
-        previousContent: 'This was the first chunk.',
         continuation_count: 1,
-        target_contribution_id: 'prev-chunk-id-123', // This is the chunk we are continuing.
+        target_contribution_id: 'prev-chunk-id-123',
         document_relationships: documentRelationship,
-      },
-      status: 'pending',
-      created_at: new Date().toISOString(),
-      user_id: 'user-789',
-      session_id: 'sess-123',
-      attempt_count: 0,
-      completed_at: null,
-      error_details: null,
-      iteration_number: 1,
-      max_retries: 3,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      stage_slug: stageSlug,
-      started_at: null,
-      target_contribution_id: null,
     };
+
+    const mockContinuationJob: DialecticJobRow = createMockJob(
+        continuationPayload,
+        {
+            id: 'job-id-456',
+            stage_slug: stageSlug,
+        }
+    );
 
     // 2. Execute
     await executeModelCallAndSave({
@@ -502,6 +492,8 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
       stage_slug: 'thesis',
       started_at: null,
       target_contribution_id: null,
+      is_test_job: false,
+      job_type: 'PLAN',
     };
 
     // 2. Execute
@@ -901,20 +893,22 @@ Deno.test("executeModelCallAndSave saves final model_contribution_main to stage 
           fileType: ctx.pathContext.fileType,
         });
         return { record: {
-          id: crypto.randomUUID(),
-          session_id: ctx.pathContext.sessionId,
-          storage_bucket: "bucket",
-          storage_path: isContinuation ? `${ctx.pathContext.projectId}/session_${ctx.pathContext.sessionId}/iteration_${ctx.pathContext.iteration}/${ctx.pathContext.stageSlug}/_work` : `${ctx.pathContext.projectId}/session_${ctx.pathContext.sessionId}/iteration_${ctx.pathContext.iteration}/${ctx.pathContext.stageSlug}`,
-          file_name: ctx.pathContext.originalFileName || "file.md",
-          mime_type: ctx.mimeType,
-          size_bytes: ctx.sizeBytes,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          edit_version: 1,
-          is_latest_edit: true,
-          iteration_number: ctx.pathContext.iteration,
-          stage: ctx.pathContext.stageSlug,
-        }, error: null };
+            ...mockContribution,
+            id: crypto.randomUUID(),
+            session_id: ctx.pathContext.sessionId,
+            storage_bucket: "bucket",
+            storage_path: isContinuation ? `${ctx.pathContext.projectId}/session_${ctx.pathContext.sessionId}/iteration_${ctx.pathContext.iteration}/${ctx.pathContext.stageSlug}/_work` : `${ctx.pathContext.projectId}/session_${ctx.pathContext.sessionId}/iteration_${ctx.pathContext.iteration}/${ctx.pathContext.stageSlug}`,
+            file_name: ctx.pathContext.originalFileName || "file.md",
+            mime_type: ctx.mimeType,
+            size_bytes: ctx.sizeBytes,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            edit_version: 1,
+            is_latest_edit: true,
+            iteration_number: ctx.pathContext.iteration,
+            stage: ctx.pathContext.stageSlug,
+            document_relationships: {},
+          }, error: null };
       },
       assembleAndSaveFinalDocument: async () => ({ finalPath: "ok", error: null }),
     },

@@ -432,8 +432,8 @@ graph LR
     *   `[✅]` 2.f. [DOCS] Add JSDoc comments to `dialectic.interface.ts` to document new recipe-related interfaces.
         *   `[✅]` 2.f.i. [IMPLEMENTATION] Add comprehensive JSDoc comments to the `DialecticRecipeStep`, `InputRule`, `RelevanceRule`, and `OutputRule` interfaces and their properties to clarify their purpose and usage.
 
-*   `[ ]` 3. [BE] Adapt `input-artifact-parser` and `gatherInputsForStage` for recipe-based inputs.
-    *   `[ ]` 3.a. [BE] Adapt `input-artifact-parser` to consume a recipe `InputRule` array.
+*   `[✅]` 3. [BE] Adapt `input-artifact-parser` and `gatherInputsForStage` for recipe-based inputs.
+    *   `[✅]` 3.a. [BE] Adapt `input-artifact-parser` to consume a recipe `InputRule` array.
         *   `[✅]` 3.a.i. [TEST-UNIT] Update tests in `input-artifact-parser.test.ts`.
             *   `[✅]` 3.a.i.1. [RED TEST] Refactor existing tests to pass an `InputRule[]` array directly to `parseInputArtifactRules`, removing the obsolete `{ "sources": [...] }` wrapper.
             *   `[✅]` 3.a.i.2. [RED TEST] Add new, complete, and stateless failing tests to validate rules with `type: 'document'` and `type: 'header_context'`, ensuring all assertions for the final success state are included.
@@ -442,58 +442,94 @@ graph LR
             *   `[✅]` 3.a.ii.2. [IMPLEMENTATION] Remove the logic that unwraps the `{ "sources": [...] }` object.
             *   `[✅]` 3.a.ii.3. [IMPLEMENTATION] Expand the validation logic to accept `'document'` and `'header_context'` as valid rule types.
             *   `[✅]` 3.a.ii.4. [GREEN TEST] Run the tests in `input-artifact-parser.test.ts` to confirm the refactored function works as expected.
-    *   `[ ]` 3.b. [BE] Refactor `gatherInputsForStage` to use the updated `StageContext` and parser.
+    *   `[✅]` 3.b. [BE] Refactor `gatherInputsForStage` to use the updated `StageContext` and parser.
         *   `[✅]` 3.b.i. [REFACTOR] Update the `StageContext` interface in `prompt-assembler.interface.ts`.
             *   `[✅]` 3.b.i.1. [IMPLEMENTATION] Remove the deprecated `input_artifact_rules` property.
             *   `[✅]` 3.b.i.2. [IMPLEMENTATION] Add a new `recipe_step` property of type `DialecticRecipeStep`. This ensures the function's contract is updated without causing a cascade of signature changes in callers.
         *   `[✅]` 3.b.ii. [TEST-UNIT] Update tests in `gatherInputsForStage.test.ts`.
-            *   `[ ]` 3.b.ii.1. [RED TEST] Refactor existing tests to construct the `StageContext` object with the new `recipe_step` property instead of the old `input_artifact_rules`. This will create a RED state because the implementation of `gatherInputsForStage` will fail.
+            *   `[✅]` 3.b.ii.1. [RED TEST] Refactor existing tests to construct the `StageContext` object with the new `recipe_step` property instead of the old `input_artifact_rules`. This will create a RED state because the implementation of `gatherInputsForStage` will fail.
 
-*   `[ ]` 1. [BE] Update the `isDialecticJobRow` type guard for compliance with the `dialectic_generation_jobs` table schema.
-    *   `[ ]` 1.a. [TEST-UNIT] Update tests in `type_guards.dialectic.test.ts`.
-        *   `[ ]` 1.a.i. [RED TEST] Enhance the existing "valid job row" test case to be fully compliant with the `dialectic_generation_jobs` schema from `types_db.ts`, including all required and nullable fields (`attempt_count`, `created_at`, `max_retries`, etc.). The test will fail because the current type guard does not check for these fields.
-        *   `[ ]` 1.a.ii. [RED TEST] Add a new failing test case for an object that is missing a required field like `created_at` to ensure the guard is exhaustive.
-    *   `[ ]` 1.b. [BE] Update implementation in `type_guards.dialectic.ts`.
-        *   `[ ]` 1.b.i. [IMPLEMENTATION] Modify the `isDialecticJobRow` type guard to validate the presence and correct types of all fields defined in the `dialectic_generation_jobs` Row type in `types_db.ts`.
-    *   `[ ]` 1.c. [GREEN TEST] The tests in `type_guards.dialectic.test.ts` should now pass.
+*   `[✅]` 1. [BE] [REFACTOR] Perform a comprehensive, TDD-based refactor of the Dialectic type guards and their consumers.
+    *   **Objective**: Update the core type guards (`isDialecticJobRow`, `isDialecticContribution`, `hasStepsRecipe`, `hasProcessingStrategy`) to be fully compliant with the current database schema. This involves defining new data contracts, writing comprehensive failing tests, implementing the guards to make the tests pass, and then refactoring all consumer files to use the new, safer contracts.
+    *   `[✅]` 1.a. **[CONTRACT]** Define the enriched data structures required by the new architecture.
+        *   `[✅]` 1.a.i. **[IMPLEMENTATION]** Edit `supabase/functions/dialectic-service/dialectic.interface.ts`. In this file, define and export two new types. These types will serve as the new data contract for validating stages and steps, ensuring that data passed from consumers to the type guards is already enriched with the necessary database relationships.
+            *   `StageWithRecipeSteps`: This type should combine `Tables<'dialectic_stages'>` with a `steps` property, which will be an array of `Tables<'dialectic_stage_recipe_steps'>`.
+            *   `PerformableRecipeStep`: This type should represent a single `Tables<'dialectic_stage_recipe_steps'>` row and enforce that its `job_type` property conforms to the `Database["public"]["Enums"]["dialectic_job_type_enum"]` from `types_db.ts`.
+    *   `[✅]` 1.b. **[TEST-UNIT]** Update all relevant tests in `type_guards.dialectic.test.ts` to create a comprehensive RED state.
+        *   `[✅]` 1.b.i. **[RED TEST]** Perform a single, comprehensive edit on `supabase/functions/_shared/utils/type-guards/type_guards.dialectic.test.ts`. This edit must touch all relevant tests in one pass.
+            *   Update the tests for `isDialecticJobRow` to be fully compliant with the `dialectic_generation_jobs` schema, including all required and nullable fields as originally specified.
+            *   Update the tests for `isDialecticContribution` to include checks for the `document_relationships` property.
+            *   Completely rewrite the tests for `hasStepsRecipe` and `hasProcessingStrategy`. The new tests must import and use the new `StageWithRecipeSteps` and `PerformableRecipeStep` contracts, asserting that the guards correctly validate these new, enriched structures. Include negative test cases for invalid structures.
+            *   These changes will cause numerous compile-time and runtime failures, establishing the RED state.
+    *   `[✅]` 1.c. **[IMPLEMENTATION]** Update the type guard implementations to satisfy the new tests.
+        *   `[✅]` 1.c.i. **[GREEN TEST]** Perform a single, comprehensive edit on `supabase/functions/_shared/utils/type-guards/type_guards.dialectic.ts`. This edit must fix all guards in one pass.
+            *   Update the `isDialecticJobRow` implementation to correctly validate all fields against the `types_db.ts` schema.
+            *   Update the `isDialecticContribution` implementation to correctly validate the `document_relationships` property.
+            *   Rewrite `hasStepsRecipe`: change its signature to `(data: unknown): data is StageWithRecipeSteps` and implement the logic to validate the enriched structure.
+            *   Rewrite `hasProcessingStrategy`: change its signature to `(step: unknown): step is PerformableRecipeStep` and implement the logic to validate the step's `job_type` against the database enum.
+    *   `[✅]` 1.d. **[ANALYSIS]** Identify all consumers of the refactored type guards.
+        *   `[✅]` 1.d.i. **[ANALYSIS]** Use `grep` to find all call sites for `isDialecticJobRow`, `isDialecticContribution`, `hasStepsRecipe`, and `hasProcessingStrategy` across the codebase. List the identified consumer files in the plan for the subsequent refactoring steps.
+            *   `isDialecticJobRow` Consumers:
+                *   `supabase/functions/dialectic-worker/processJob.ts`
+            *   `isDialecticContribution` Consumers:
+                *   `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`
+                *   `supabase/functions/dialectic-service/saveContributionEdit.ts`
+            *   `hasStepsRecipe` Consumers:
+                *   `supabase/functions/dialectic-worker/processJob.ts`
+                *   `supabase/functions/dialectic-service/generateContribution.ts`
+            *   `hasProcessingStrategy` Consumers:
+                *   `supabase/functions/dialectic-worker/processJob.ts`
+                *   `supabase/functions/_shared/prompt-assembler/gatherContext.ts`
+            *   Order:
+                * `gatherContext.ts`
+                * `executeModelCallAndSave.ts`
+                * `saveContributionEdit.ts`
+                * `generateContribution.ts`
+                * `processJob.ts`
+    *   `[✅]` 1.e. **[REFACTOR]** Refactor `gatherContext.ts` (consumer of `hasProcessingStrategy`).
+        *   **Objective**: Refactor `gatherContext.ts` and its tests to provide a `PerformableRecipeStep` object to the `hasProcessingStrategy` guard, instead of the obsolete `stage` object.
+        *   `[✅]` 1.e.i. **[RED TEST]** Edit `supabase/functions/_shared/prompt-assembler/gatherContext.test.ts`.
+            *   **Task**: Identify all test cases that involve logic paths where `hasProcessingStrategy` is called. Update the function signature mocks for `gatherContext` to reflect that it now requires a `PerformableRecipeStep` object as part of its input context. The existing tests will be passing an incomplete context, causing them to fail and establishing the RED state.
+        *   `[✅]` 1.e.ii. **[GREEN TEST]** Edit `supabase/functions/_shared/prompt-assembler/gatherContext.ts`.
+            *   **Task**: Modify the function signature of `gatherContext` (and any intermediate calling functions) to accept the `PerformableRecipeStep` object it needs. This object will originate from the `StageWithRecipeSteps` object created further up the call stack.
+            *   **Task**: Update the call site of `hasProcessingStrategy` to pass this newly received `step` object directly. This will satisfy the guard's new contract and make the tests pass.
+    *   `[✅]` 1.f. **[REFACTOR]** Refactor `executeModelCallAndSave.ts` (consumer of `isDialecticContribution`).
+        *   **Objective**: Refactor `executeModelCallAndSave.ts` and its tests to ensure all constructed `DialecticContribution` objects include the `document_relationships` property, satisfying the stricter `isDialecticContribution` guard.
+        *   `[✅]` 1.f.i. **[RED TEST]** Edit `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts`.
+            *   **Task**: Find any mocks of database inserts or updates for `dialectic_contributions`. Update the `assert` statements in the tests to check that the object being inserted/updated contains the `document_relationships` property. This will create a RED state because the source file does not yet add this property.
+        *   `[✅]` 1.f.ii. **[GREEN TEST]** Edit `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`.
+            *   **Task**: Find the logic where a new `DialecticContribution` object is created before being inserted into the database. Modify this logic to always include the `document_relationships` property, taking its value from the job payload (`job.payload.document_relationships`) and defaulting to `null` if not provided.
+    *   `[✅]` 1.g. **[REFACTOR]** Refactor `saveContributionEdit.ts` (consumer of `isDialecticContribution`).
+        *   **Objective**: Refactor `saveContributionEdit.ts` to ensure edited `DialecticContribution` objects are compliant with the stricter `isDialecticContribution` guard.
+        *   `[✅]` 1.g.i. **[RED TEST]** Edit `supabase/functions/dialectic-service/saveContributionEdit.test.ts`.
+            *   **Task**: Find the mock for the Supabase client's `from('dialectic_contributions').update()` call. Add an assertion to the test to verify that the object being passed to the `update` call *does not* modify or strip the `document_relationships` property from the existing contribution.
+        *   `[✅]` 1.g.ii. **[GREEN TEST]** Edit `supabase/functions/dialectic-service/saveContributionEdit.ts`.
+            *   **Task**: Review the logic that constructs the update payload for the `dialectic_contributions` table. Ensure that this logic does not inadvertently remove or alter the existing `document_relationships` field. This is likely a no-op change, but the RED test will prove correctness.
+    *   `[✅]` 1.h. **[REFACTOR]** Refactor `generateContribution.ts` (consumer of `hasStepsRecipe`).
+        *   **Objective**: Refactor `generateContribution.ts` and its tests to use the enriched `StageWithRecipeSteps` contract required by `hasStepsRecipe`.
+        *   `[✅]` 1.h.i. **[RED TEST]** Edit `supabase/functions/dialectic-service/generateContribution.test.ts`.
+            *   **Task**: Locate the test setup where a `stage` definition is mocked. The mock for the `hasStepsRecipe` guard should be updated to *expect* a `StageWithRecipeSteps` object. This will create a mismatch and cause the test to fail when the source code, in its current state, calls the guard with the old, simple `Tables<'dialectic_stages'>` object. This establishes the RED state.
+        *   `[✅]` 1.h.ii. **[GREEN TEST]** Edit `supabase/functions/dialectic-service/generateContribution.ts`.
+            *   **Task**: Find the database query that fetches the `stageDef`. Update this query to also fetch the associated recipe steps, creating the enriched `StageWithRecipeSteps` object.
+            *   **Task**: Pass this new, enriched object to the `hasStepsRecipe` call.
+            *   **Task**: The code currently accesses `stageDef.input_artifact_rules.steps.length`. This must be refactored to access `stageDef.steps.length`. This will fix the logic and make the tests pass.
 
-*   `[ ]` 2. [BE] Update the `isDialecticContribution` type guard for compliance with the `dialectic_contributions` table schema.
-    *   `[ ]` 2.a. [TEST-UNIT] Update tests in `type_guards.dialectic.test.ts`.
-        *   `[ ]` 2.a.i. [RED TEST] Enhance the existing "valid contribution" test cases to include the `document_relationships` property (with both `null` and valid `Json` object values). The tests will fail because the guard does not currently check for this property.
-    *   `[ ]` 2.b. [BE] Update implementation in `type_guards.dialectic.ts`.
-        *   `[ ]` 2.b.i. [IMPLEMENTATION] Add a check for the `document_relationships` property (nullable `Json` object) to the `isDialecticContribution` type guard.
-    *   `[ ]` 2.c. [GREEN TEST] The tests for `isDialecticContribution` in `type_guards.dialectic.test.ts` should now pass.
+*   `[✅]` 3. [BE] [REFACTOR] Create distinct, compliant type guards for recipe step types.
+    *   **Objective**: The `isDialecticRecipeStep` guard is architecturally flawed because it attempts to validate a union type, failing to distinguish between a recipe template step and an instantiated stage step. The objective is to follow a strict, single-pass TDD cycle to create two new, specific type guards—`isDialecticRecipeTemplateStep` and `isDialecticStageRecipeStep`—and then correctly re-implement `isDialecticRecipeStep` as a union of the two, ensuring full type safety and schema compliance.
+    *   `[✅]` 3.a. **[TEST-UNIT]** Establish the comprehensive RED state for all recipe step type guards.
+        *   **Objective**: Perform a single, comprehensive edit on the test file to create all the failing tests required for the new type guard architecture. This single edit will establish the complete RED state.
+        *   `[✅]` 3.a.i. **[RED TEST]** Edit `supabase/functions/_shared/utils/type-guards/type_guards.dialectic.recipe.test.ts`.
+            *   **Task 1**: Rename the existing test suite and all calls from `isDialecticRecipeStep` to `isDialecticRecipeTemplateStep`. This task is already complete and correctly establishes the first failing test.
+            *   **Task 2**: Add a new `Deno.test` suite for the `isDialecticStageRecipeStep` guard. Inside, create a valid mock object for `DialecticStageRecipeStep` (including properties like `instance_id`, `template_step_id`, etc.) and add tests that call the (not-yet-existing) `isDialecticStageRecipeStep` function, asserting both passing and failing cases.
+            *   **Task 3**: Add a final `Deno.test` suite for the `isDialecticRecipeStep` (union) guard. Inside, add two test cases: one that asserts `isDialecticRecipeStep` returns `true` for a valid template step, and another that asserts it returns `true` for a valid stage step.
+    *   `[✅]` 3.b. **[IMPLEMENTATION]** Implement all recipe step type guards to achieve the GREEN state.
+        *   **Objective**: Perform a single, comprehensive edit on the implementation file to create and export all three required type guards, satisfying all the new tests and achieving the GREEN state.
+        *   `[✅]` 3.b.i. **[GREEN TEST]** Edit `supabase/functions/_shared/utils/type-guards/type_guards.dialectic.recipe.ts`.
+            *   **Task 1**: Rename the existing `isDialecticRecipeStep` function to `isDialecticRecipeTemplateStep`, update its signature to `(step: unknown): step is DialecticRecipeTemplateStep`, and expand its logic to validate the database-specific fields (`id`, `template_id`, `created_at`, `updated_at`).
+            *   **Task 2**: Create and export a new function, `isDialecticStageRecipeStep`, with the signature `(step: unknown): step is DialecticStageRecipeStep`. Implement the logic to validate all properties of this interface.
+            *   **Task 3**: Create and export the final `isDialecticRecipeStep` function with the signature `(step: unknown): step is DialecticRecipeStep`. Its implementation will be a single line: `return isDialecticRecipeTemplateStep(step) || isDialecticStageRecipeStep(step);`.
 
-*   `[ ]` 3. [BE] Update the `isDialecticRecipeStep` type guard for full compliance with the `dialectic_recipe_template_steps` table schema.
-    *   `[ ]` 3.a. [TEST-UNIT] Update tests in `type_guards.dialectic.recipe.test.ts`.
-        *   `[ ]` 3.a.i. [RED TEST] Add a new failing test case that validates a mock object fully compliant with the `dialectic_recipe_template_steps` Row type from `types_db.ts`, including `created_at`, `updated_at`, `id`, and `template_id`. The test will fail as the current guard does not check for these DB-specific fields.
-    *   `[ ]` 3.b. [BE] Update implementation in `type_guards.dialectic.recipe.ts`.
-        *   `[ ]` 3.b.i. [IMPLEMENTATION] Expand the `isDialecticRecipeStep` type guard to validate all fields present in the `dialectic_recipe_template_steps` table schema, including `id`, `template_id`, `created_at`, and `updated_at`.
-    *   `[ ]` 3.c. [GREEN TEST] The new test in `type_guards.dialectic.recipe.test.ts` should now pass.
-
-        *   `[ ]` 3.b.iii. [BE] Update the implementation in `gatherInputsForStage.ts`.
-            *   `[ ]` 3.b.iii.1. [IMPLEMENTATION] Modify the function's logic to read input rules from `stage.recipe_step.inputs_required`.
-            *   `[ ]` 3.b.iii.2. [IMPLEMENTATION] Pass the `inputs_required` array to the newly refactored `parseInputArtifactRules` function.
-            *   `[ ]` 3.b.iii.3. [GREEN TEST] Run the tests in `gatherInputsForStage.test.ts` to confirm the function passes.
-
-*   `[ ]` 4. [BE] PromptAssembler updates
-    *   `[ ]` 4.a. Enhance `assemblePlannerPrompt` to handle both pairwise and final planners, including saving header contexts and registering `source_prompt_resource_id`.
-    *   `[ ]` 4.b. Teach `assembleTurnPrompt` to map each branch key to proper template, context files, and storage locations (pairwise, document-level, final deliverables).
-    *   `[ ]` 4.c. Ensure continuation handling covers synthesized JSON chunks and rendered markdown outputs using defined policies; validate that continuations resume cleanly without partial artifacts.
-
-*   `[ ]` 5. [TEST-UNIT] Add comprehensive test coverage
-    *   `[ ]` 5.a. Create additional unit tests for `assemblePlannerPrompt` and `assembleTurnPrompt` verifying template selection, storage paths, artifact registration, and input relevance ordering.
-    *   `[ ]` 5.b. Add fixtures for all new prompt templates, header contexts, and branch metadata.
-    *   `[ ]` 5.c. Create tests that generate fully assembled prompts for each step/conditional and print de-minified versions for review.
-
-*   `[ ]` 6. [TEST-INT] Update integration coverage
-    *   `[ ]` 6.a. Update worker integration tests to expect multi-step outputs instead of legacy monolithic responses, verifying parallel branch execution.
-    *   `[ ]` 6.b. Add integration tests for full workflows: Thesis → Antithesis → Synthesis → Parenthesis → Paralysis, ensuring document keys feed correctly between stages.
-    *   `[ ]` 6.c. Add tests confirming reruns with prior artifacts operate without regressions.
-
-*   `[ ]` 7. [BE] Enforce fan-in orchestration
-    *   `[ ]` 7.a. Modify worker scheduling so final steps (advisor recommendations, synthesis deliverables) enqueue only after all prerequisite steps complete.
-    *   `[ ]` 7.b. Add tests covering full runs to verify fan-in guards and consolidated artifacts.
-
-*   `[ ]` 8. [BE] Refactor downstream consumers
-    *   `[ ]` 8.a. Update services, exporters, and UI components to consume consolidated artifacts (`advisor_recommendations`, synthesis deliverables) instead of legacy multi-document structures.
+        *   `[✅]` 3.b.iii. [BE] Update the implementation in `gatherInputsForStage.ts`.
+            *   `[✅]` 3.b.iii.1. [IMPLEMENTATION] Modify the function's logic to read input rules from `stage.recipe_step.inputs_required`.
+            *   `[✅]` 3.b.iii.2. [IMPLEMENTATION] Pass the `inputs_required` array to the newly refactored `parseInputArtifactRules` function.
+            *   `[✅]` 3.b.iii.3. [GREEN TEST] Run the tests in `gatherInputsForStage.test.ts` to confirm the function passes.

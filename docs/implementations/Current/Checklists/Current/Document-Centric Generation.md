@@ -49,7 +49,7 @@
 *   When the Agent is instructed to edit the checklist they only edit the EXACT steps they're instructed to edit and NEVER touch ANY step that is outside the scope of their instruction.  
 *   The Agent NEVER updates the status of any work step without explicit instruction. 
 *   If we cannot perform the step as described or make a discovery, we explain the problem or discovery and HALT! We DO NOT CONTINUE after we encounter a problem or a discovery.
-*   We DO NOT CONTINUE if we encounter a problem or make a discovery. We explain the problem or discovery then halt for user input. 
+*   We DO NOT CONTINUE if we encounter a problem or a discovery. We explain the problem or discovery then halt for user input. 
 *   If our discovery is that more files need to be edited, instead of editing a file, we generate a proposal for a checklist of instructions to insert into the work plan that explains everything required to update the codebase so that the invalid step can be resolved. 
 *   DO NOT RUMINATE ON HOW TO SOLVE A PROBLEM OR DISCOVERY WHILE ONLY EDITING ONE FILE! That is a DISCOVERY that requires that you EXPLAIN your discovery, PROPOSE a solution, and HALT! 
 *   We always use test-driven-development. 
@@ -78,7 +78,20 @@
 *   The agent uses ITS OWN TOOLS. 
 *   The agent DOES NOT USE THE USER'S TERMINAL. 
 
-## Legend - You must use this EXACT format. Do not modify it, adapt it, or "improve" it. The bullets, square braces, ticks, nesting, and numbering are ABSOLUTELY MANDATORY and UNALTERABLE. 
+# Checklist-Specific Editing Rules
+
+*   THE AGENT NEVER TOUCHES THE CHECKLIST UNLESS THEY ARE EXPLICITLY INSTRUCTED TO! 
+*   When editing checklists, each numbered step (1, 2, 3, etc.) represents editing ONE FILE with a complete TDD cycle.
+*   Sub-steps within each numbered step use legal-style numbering (1.a, 1.b, 1.a.i, 1.a.ii, etc.) for the complete TDD cycle for that file.
+*   All changes to a single file are described and performed within that file's numbered step.
+*   Types files (interfaces, enums) are exempt from RED/GREEN testing requirements.
+*   Each file edit includes: RED test → implementation → GREEN test → optional refactor.
+*   Steps are ordered by dependency (lowest dependencies first).
+*   Preserve all existing detail and work while adding new requirements.
+*   Use proper legal-style nesting for sub-steps within each file edit.
+*   NEVER create multiple top-level steps for the same file edit operation.
+
+# Legend - You must use this EXACT format. Do not modify it, adapt it, or "improve" it. The bullets, square braces, ticks, nesting, and numbering are ABSOLUTELY MANDATORY and UNALTERABLE. 
 
 *   `[ ]` 1. Unstarted work step. Each work step will be uniquely named for easy reference. We begin with 1.
     *   `[ ]` 1.a. Work steps will be nested as shown. Substeps use characters, as is typical with legal documents.
@@ -89,7 +102,7 @@
 *   `[❓]` Represents an uncertainty that must be resolved before continuing.
 *   `[🚫]` Represents a blocked, halted, or stopped step or has an unresolved problem or prior dependency to resolve before continuing.
 
-## Component Types and Labels
+# Component Types and Labels
 
 *   `[DB]` Database Schema Change (Migration)
 *   `[RLS]` Row-Level Security Policy
@@ -109,7 +122,7 @@
 *   `[COMMIT]` Checkpoint for Git Commit (aligns with "feat:", "test:", "fix:", "docs:", "refactor:" conventions)
 *   `[DEPLOY]` Checkpoint for Deployment consideration after a major phase or feature set is complete and tested.
 
-## File Structure for Supabase Storage and Export Tools
+# File Structure for Supabase Storage and Export Tools
 
 {repo_root}/  (Root of the user's GitHub repository)
 └── {project_name_slug}/
@@ -253,7 +266,7 @@
 ---
 *Note: This structure represents the artifact layout for a single generation cycle. The long-term vision involves an iterative process where the final checklist artifacts from the `Paralysis/` stage are moved to `Pending/` for the user to consume in subsequent sprints. See `docs/implementations/Current/Documentation/From One-Shot to Continuous Flow.md` for more details.*
 
-## Mermaid Diagram
+# Mermaid Diagram
 
 ```mermaid
 graph LR
@@ -466,7 +479,7 @@ graph LR
         *   `[✅]` 4.c.i. Now that the sub function unit tests are removed to their sub-function test files, review `prompt-assembler.test.ts` for coverage requirements.
     *   `[✅]` 4.d. `[COMMIT]` refactor(prompt-assembler): Deconstruct monolithic PromptAssembler into modular, testable functions.
 
-*   `[ ]` X. `[DOCS]` Capture Stage Contract Requirements and Data Sources
+*   `[✅]` X. `[DOCS]` Capture Stage Contract Requirements and Data Sources
     *   `[✅]` X.a. `[DOCS]` **Thesis Stage** – populate `docs/implementations/Current/Documentation/Prompts & Stages/1-Thesis-Proposal/thesis-proposal-recipe.md`
         *   `[✅]` X.a.i. Paste the current Thesis recipe definition from `dialectic_stages` (or latest migration/seed snapshot) under "Current State" and note that the dedicated `dialectic_stage_recipes` table is not yet present.
         *   `[✅]` X.a.ii. Copy the current `dialectic_stages.input_artifact_rules`, `expected_output_artifacts`, and the stage metadata fields (`stage_slug`, `display_name`, `default_system_prompt_id`) into the worksheet.
@@ -537,7 +550,7 @@ graph LR
         *   `[✅]` X.e.vii. Note any Seed Prompt reuse patterns and ensure planner steps are documented as consumers of those seed artifacts.
         *   `[✅]` X.e.viii. Capture provenance, document TypeScript/type-guard changes, and list any new prompt template file paths needed for integration tests.
 
-*   `[ ]` Y. `[DB]` Author Data Migrations and Seed Updates for Stage Contracts
+*   `[✅]` Y. `[DB]` Author Data Migrations and Seed Updates for Stage Contracts
     *   `[✅]` Y.0. Create the `dialectic_stage_recipes` table and update codepaths to reference it
         *   `[✅]` Y.0.i. Define the table schema (primary key, `stage_slug` FK, step array JSON) and add the migration to create it.
         *   `[✅]` Y.0.ii. Update any queries or helper functions that currently read recipe data from `dialectic_stages` to pull from the new table.
@@ -561,38 +574,27 @@ graph LR
         *   `[✅]` Y.c.iv. Overlay table updates (global header, manifest guidance, etc.).
         *   `[✅]` Y.c.v. Test scaffolding impact (prompt mocks, path utils, etc.).
         *   `[✅]` Y.c.vi. Source references with provenance markers.
-    *   `[ ]` Y.d. **Parenthesis Data Spec**.
-        *   `[ ]` Y.d.i. Stage recipe table: new JSON blob for `dialectic_stage_recipes` (include step array).
-        *   `[ ]` Y.d.ii. Stage config table: new `input_artifact_rules` and `expected_output_artifacts` JSON for `dialectic_stages`.
-        *   `[ ]` Y.d.ii.a. Store Parenthesis `inputs_relevance` defaults to weight Synthesis documents and feedback per step.
-        *   `[ ]` Y.d.iii. Prompt table updates (ids, names, template files).
-        *   `[ ]` Y.d.iv. Overlay updates.
-        *   `[ ]` Y.d.v. Test scaffolding impact.
-        *   `[ ]` Y.d.vi. Source references (worksheet lines).
-    *   `[ ]` Y.e. **Paralysis Data Spec**.
-        *   `[ ]` Y.e.i. Stage recipe table: new JSON blob for `dialectic_stage_recipes` (include step array).
-        *   `[ ]` Y.e.ii. Stage config table: new `input_artifact_rules` and `expected_output_artifacts` JSON for `dialectic_stages`.
-        *   `[ ]` Y.e.ii.a. Seed Paralysis `inputs_relevance` defaults covering TRD excerpts, Master Plan segments, and prior user feedback.
-        *   `[ ]` Y.e.iii. Prompt table updates (ids, names, template files).
-        *   `[ ]` Y.e.iv. Overlay updates.
-        *   `[ ]` Y.e.v. Test scaffolding impact.
-        *   `[ ]` Y.e.vi. Source references.
-    *   `[ ]` Y.f. Assemble the migration bundle:
-        *   `[ ]` Y.f.i. Compile all stage recipe JSON payloads into migration-ready snippets.
-        *   `[ ]` Y.f.ii. Draft the SQL/seed update statements that modify `dialectic_stage_recipes`, `dialectic_stages`, and `system_prompts` using the specs above; include overlay modifications.
-        *   `[ ]` Y.f.iii. Document the file paths for any prompt text that must be added to the repository (planner/turn templates) and note commit hashes for new content.
-        *   `[ ]` Y.f.iv. List the unit/integration tests that will verify the new data bindings once migrations are applied.
-    *   `[ ]` Y.g. Validate locally:
-        *   `[ ]` Y.g.i. Apply the migration scripts to a development database and verify the inserted/updated rows match the documented target state (including overlay tables).
-        *   `[ ]` Y.g.ii. Run schema/data validation scripts or custom checks to ensure JSON structures match expectations (document key alignment, prompt template existence).
-        *   `[ ]` Y.g.iii. Execute prompt assembler unit tests (`assembleSeedPrompt`, `assemblePlannerPrompt`, `assembleTurnPrompt`) and worker integration tests to confirm data bindings succeed.
-        *   `[ ]` Y.g.iv. Adjust specs and scripts if discrepancies are found.
-        *   `[ ]` Y.g.v. Document a clear manual rollback plan (e.g., snapshot instructions or reverse migrations) before promoting to production.
-    *   `[ ]` Y.h. Record final deployment notes:
-        *   `[ ]` Y.h.i. Summarize the tables/rows affected, the data sources used, stage ordering dependencies, and any ordering constraints for applying the migrations in production.
-        *   `[ ]` Y.h.ii. Confirm that once these migrations are applied, all stage contracts are in sync and implementation work can resume.
-        *   `[ ]` Y.h.iii. Capture provenance (commit hashes/files) for the final migration artifacts and prompt template files.
-        *   `[ ]` Y.h.iv. Note the automated test suite (including the planned integration prompt run) that must pass before production rollout.
+    *   `[✅]` Y.d. **Parenthesis Data Spec**.
+        *   `[✅]` Y.d.i. Stage recipe table: new JSON blob for `dialectic_stage_recipes` (include step array).
+        *   `[✅]` Y.d.ii. Stage config table: new `input_artifact_rules` and `expected_output_artifacts` JSON for `dialectic_stages`.
+        *   `[✅]` Y.d.ii.a. Store Parenthesis `inputs_relevance` defaults to weight Synthesis documents and feedback per step.
+        *   `[✅]` Y.d.iii. Prompt table updates (ids, names, template files).
+        *   `[✅]` Y.d.iv. Overlay updates.
+        *   `[✅]` Y.d.v. Test scaffolding impact.
+        *   `[✅]` Y.d.vi. Source references (worksheet lines).
+    *   `[✅]` Y.e. **Paralysis Data Spec**.
+        *   `[✅]` Y.e.i. Stage recipe table: new JSON blob for `dialectic_stage_recipes` (include step array).
+        *   `[✅]` Y.e.ii. Stage config table: new `input_artifact_rules` and `expected_output_artifacts` JSON for `dialectic_stages`.
+        *   `[✅]` Y.e.ii.a. Seed Paralysis `inputs_relevance` defaults covering TRD excerpts, Master Plan segments, and prior user feedback.
+        *   `[✅]` Y.e.iii. Prompt table updates (ids, names, template files).
+        *   `[✅]` Y.e.iv. Overlay updates.
+        *   `[✅]` Y.e.v. Test scaffolding impact.
+        *   `[✅]` Y.e.vi. Source references.
+    *   `[✅]` Y.f. Assemble the migration bundle:
+        *   `[✅]` Y.f.i. Compile all stage recipe JSON payloads into migration-ready snippets.
+        *   `[✅]` Y.f.ii. Draft the SQL/seed update statements that modify `dialectic_stage_recipes`, `dialectic_stages`, and `system_prompts` using the specs above; include overlay modifications.
+        *   `[✅]` Y.f.iii. Document the file paths for any prompt text that must be added to the repository (planner/turn templates) and note commit hashes for new content.
+        *   `[✅]` Y.f.iv. List the unit/integration tests that will verify the new data bindings once migrations are applied.
 
 *   `[🚧]` 5. `[BE]` Architect `PromptAssembler` as a Centralized, Persistence-Aware Service
     *   **DISCOVERY:** 5.b.iii. onward cannot be performed because the system currently does not have fully aligned stage definitions, step recipes, prompts, or artifact file trees that are capable of producing and consuming everything required against a specific, fully-aligned end-to-end contract. 
@@ -702,7 +704,11 @@ graph LR
         *   **Justification:** With the recipes and `PromptAssembler` now being explicit, the `task_isolator` no longer needs complex special-case logic. It simply needs to pass the `HeaderContext` along with other inputs.
         *   `[ ]` 7.d.i. `[TEST-UNIT]` In `task_isolator.test.ts`, update and expand the tests for `planComplexStage` to reflect the new recipes. The tests must prove that the planner correctly handles cases where `HeaderContext` is required but missing, correctly finds and provide it when available, and correctly passes all other required inputs alongside it as `SourceDocument` objects.
         *   `[ ]` 7.d.ii. `[BE]` In `task_isolator.ts`, validate that the existing implementation correctly handles the new recipes and the `HeaderContext` input type. While no major logic change is anticipated, this step focuses on proving correctness through the newly expanded test suite. Adjust the implementation if any gaps are revealed by the tests.
-    *   `[ ]` 7.e. `[COMMIT]` refactor(worker): Implement job_type router and adapt services for document-centric workflow.
+    *   `[ ]` 7.e. `[BE]` Enforce fan-in orchestration.
+        *   `[ ]` 7.e.i. `[TEST-INT]` Write failing integration tests that prove final "fan-in" steps (e.g., Synthesis's final deliverable) do not start until all parallel prerequisite jobs are complete.
+        *   `[ ]` 7.e.ii. `[BE]` Modify worker scheduling logic to check for sibling job completion within a `parallel_group` before enqueueing a dependent fan-in step.
+        *   `[ ]` 7.e.iii. `[TEST-INT]` Ensure tests pass and verify that consolidated artifacts are correctly generated only after the fan-in guard is satisfied.
+    *   `[ ]` 7.f. `[COMMIT]` refactor(worker): Implement job_type router and adapt services for document-centric workflow.
 
 *   `[ ]` 8. `[BE]` Improve Continue Logic to handle explicit and implicit continuations.
     *   **Objective**: Enhance `continueJob` to handle both explicit, provider-signaled continuations (e.g., `finish_reason: 'length'`) and implicit continuations caused by malformed or incomplete JSON responses. The specific reason for continuation must be passed to the next job's payload to enable context-aware prompt generation.
