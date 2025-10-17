@@ -1,7 +1,13 @@
 import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
 import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
 import { gatherInputsForStage } from "./gatherInputsForStage.ts";
-import { ProjectContext, SessionContext, StageContext, AssemblerSourceDocument } from "./prompt-assembler.interface.ts";
+import {
+  ProjectContext,
+  SessionContext,
+  StageContext,
+  AssemblerSourceDocument,
+  GatheredRecipeContext,
+} from "./prompt-assembler.interface.ts";
 import { FileManagerService } from "../services/file_manager.ts";
 import { type DialecticRecipeStep, type DialecticContribution } from '../../dialectic-service/dialectic.interface.ts';
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type IMockSupabaseClient, type IMockClientSpies, type MockSupabaseClientSetup, type MockQueryBuilderState } from "../supabase.mock.ts";
@@ -136,8 +142,10 @@ Deno.test("gatherInputsForStage", async (t) => {
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
-                assertEquals(Array.isArray(result), true);
-                assertEquals(result.length, 0);
+                assert(typeof result === 'object' && result !== null && 'sourceDocuments' in result && 'recipeStep' in result, "Result should be a GatheredRecipeContext object");
+                assertEquals(Array.isArray(result.sourceDocuments), true);
+                assertEquals(result.sourceDocuments.length, 0);
+                assertEquals(result.recipeStep, stage.recipe_step);
             } finally {
                 teardown();
             }
@@ -197,8 +205,10 @@ Deno.test("gatherInputsForStage", async (t) => {
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
-                assertEquals(Array.isArray(result), true);
-                assertEquals(result.length, 0);
+                assert(typeof result === 'object' && result !== null && 'sourceDocuments' in result && 'recipeStep' in result, "Result should be a GatheredRecipeContext object");
+                assertEquals(Array.isArray(result.sourceDocuments), true);
+                assertEquals(result.sourceDocuments.length, 0);
+                assertEquals(result.recipeStep, stage.recipe_step);
 
                 const stagesTableSpies = spies.getHistoricQueryBuilderSpies('dialectic_stages', 'in');
                 assertEquals(stagesTableSpies?.callCount, 0, "Expected dbClient.from('dialectic_stages')...in() not to be called");
@@ -322,8 +332,8 @@ Deno.test("gatherInputsForStage", async (t) => {
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
-                assertEquals(result.length, 1);
-                const doc = result[0];
+                assertEquals(result.sourceDocuments.length, 1);
+                const doc = result.sourceDocuments[0];
                 assertEquals(doc.id, "doc1");
                 assertEquals(doc.type, "document"); // The underlying fetch is still for contributions
                 assertEquals(doc.content, docContent);
@@ -459,8 +469,8 @@ Deno.test("gatherInputsForStage", async (t) => {
                 console.log("ACTUAL:", JSON.stringify(result));
                 console.log("--- END TEST LOG ---");
 
-                assertEquals(result.length, 1);
-                const doc = result[0];
+                assertEquals(result.sourceDocuments.length, 1);
+                const doc = result.sourceDocuments[0];
                 assertEquals(doc.id, 'fb-1');
                 assertEquals(doc.type, "feedback");
                 assertEquals(doc.content, feedbackContent);
@@ -635,10 +645,10 @@ Deno.test("gatherInputsForStage", async (t) => {
                 console.log("ACTUAL:", JSON.stringify(result));
                 console.log("--- END TEST LOG ---");
 
-                assertEquals(result.length, 2);
+                assertEquals(result.sourceDocuments.length, 2);
                 
-                const contribDoc = result.find(d => d.type === 'document');
-                const feedbackDoc = result.find(d => d.type === 'feedback');
+                const contribDoc = result.sourceDocuments.find(d => d.type === 'document');
+                const feedbackDoc = result.sourceDocuments.find(d => d.type === 'feedback');
 
                 assertEquals(!!contribDoc, true, "Contribution document not found in result");
                 assertEquals(contribDoc?.id, "contrib-both");
@@ -815,10 +825,10 @@ Deno.test("gatherInputsForStage", async (t) => {
                 console.log("ACTUAL:", JSON.stringify(result));
                 console.log("--- END TEST LOG ---");
 
-                assertEquals(result.length, 2);
+                assertEquals(result.sourceDocuments.length, 2);
 
-                const contribDoc = result.find(d => d.type === 'document');
-                const feedbackDoc = result.find(d => d.type === 'feedback');
+                const contribDoc = result.sourceDocuments.find(d => d.type === 'document');
+                const feedbackDoc = result.sourceDocuments.find(d => d.type === 'feedback');
 
                 assertEquals(!!contribDoc, true, "Custom header contribution document not found");
                 assertEquals(contribDoc?.content, contribContent);
@@ -927,7 +937,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                 };
 
                 let errorThrown = false;
-                let result: AssemblerSourceDocument[] | null = null;
+                let result: GatheredRecipeContext | null = null;
                 try {
                      const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
                      result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
@@ -937,7 +947,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                 }
                 
                 assertEquals(errorThrown, false, "Error was unexpectedly thrown for missing optional feedback.");
-                assertEquals(result?.length, 0, "Result should be empty");
+                assertEquals(result?.sourceDocuments.length, 0, "Result should be empty");
                 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 0);
@@ -1147,7 +1157,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, 1);
 
-                assertEquals(result.length, 0, "Result should be empty");
+                assertEquals(result.sourceDocuments.length, 0, "Result should be empty");
                 assertEquals(currentConsoleErrorSpy!.calls.some(call => call.args[0].includes("Failed to retrieve AI contributions")), true, "Expected console.error for DB failure");
             } finally {
                 teardown();
@@ -1292,7 +1302,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, 1);
 
-                assertEquals(result.length, 0, "Result should be empty");
+                assertEquals(result.sourceDocuments.length, 0, "Result should be empty");
                 assertEquals(currentConsoleErrorSpy!.calls.some(call => 
                     call.args.length > 0 &&
                     typeof call.args[0] === 'string' &&
@@ -1427,7 +1437,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, 1);
 
-                assertEquals(result.length, 0, "Result should be empty");
+                assertEquals(result.sourceDocuments.length, 0, "Result should be empty");
                 assertEquals(currentConsoleWarnSpy!.calls.some(call => 
                     call.args.length > 0 &&
                     typeof call.args[0] === 'string' &&

@@ -1,33 +1,87 @@
-import { Tables } from "../../types_db.ts";
-import { DialecticJobRow, DialecticRecipeStep } from "../../dialectic-service/dialectic.interface.ts";
+import { Tables, Database } from "../../types_db.ts";
+import {
+  DialecticJobRow,
+  DialecticRecipeStep,
+} from "../../dialectic-service/dialectic.interface.ts";
+import { GatherContextFn } from "./gatherContext.ts";
+import { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { IFileManager } from "../types/file_manager.types.ts";
+import { DownloadStorageResult } from "../supabase_storage_utils.ts";
+import { GatherInputsForStageFn } from "./gatherInputsForStage.ts";
+import { Json } from "../../types_db.ts";
 
+export type RenderFn = (
+  renderPromptFn: RenderPromptFunctionType,
+  stage: StageContext,
+  context: DynamicContextVariables,
+  userProjectOverlayValues: Json | null,
+) => string;
+
+export interface AssembleTurnPromptDeps {
+  dbClient: SupabaseClient<Database>;
+  fileManager: IFileManager;
+  job: DialecticJobRow;
+  project: ProjectContext;
+  session: SessionContext;
+  stage: StageContext;
+  gatherContext: GatherContextFn;
+  render: RenderFn;
+}
+
+export interface AssembleContinuationPromptDeps {
+  dbClient: SupabaseClient<Database>;
+  fileManager: IFileManager;
+  job: DialecticJobRow;
+  project: ProjectContext;
+  session: SessionContext;
+  stage: StageContext;
+  continuationContent: string;
+  gatherContext: GatherContextFn;
+}
+export interface AssemblePlannerPromptDeps {
+  dbClient: SupabaseClient<Database>;
+  fileManager: IFileManager;
+  job: DialecticJobRow;
+  project: ProjectContext;
+  session: SessionContext;
+  stage: StageContext;
+  gatherContext: GatherContextFn;
+  render: RenderFn;
+}
+
+export interface AssembleSeedPromptDeps {
+    dbClient: SupabaseClient<Database>;
+    downloadFromStorageFn: (
+      bucket: string,
+      path: string,
+    ) => Promise<DownloadStorageResult>;
+    gatherInputsForStageFn: GatherInputsForStageFn;
+    renderPromptFn: RenderPromptFunctionType;
+    fileManager: IFileManager;
+    project: ProjectContext;
+    session: SessionContext;
+    stage: StageContext;
+    projectInitialUserPrompt: string;
+    iterationNumber: number;
+  }
+  
+  export type AssembleSeedPromptFn = (
+    deps: AssembleSeedPromptDeps,
+  ) => Promise<AssembledPrompt>;
+  
 export interface IPromptAssembler {
     assemble(options: AssemblePromptOptions): Promise<AssembledPrompt>;
     assembleSeedPrompt(
-        project: ProjectContext, 
-        session: SessionContext,
-        stage: StageContext,
-        projectInitialUserPrompt: string,
-        iterationNumber: number
+        deps: AssembleSeedPromptDeps,
     ): Promise<AssembledPrompt>;
     assemblePlannerPrompt(
-        job: DialecticJobRow, 
-        project: ProjectContext, 
-        session: SessionContext, 
-        stage: StageContext
+        deps: AssemblePlannerPromptDeps,
     ): Promise<AssembledPrompt>;
     assembleTurnPrompt(
-        job: DialecticJobRow, 
-        project: ProjectContext, 
-        session: SessionContext, 
-        stage: StageContext
+        deps: AssembleTurnPromptDeps,
     ): Promise<AssembledPrompt>;
     assembleContinuationPrompt(
-        job: DialecticJobRow, 
-        project: ProjectContext, 
-        session: SessionContext, 
-        stage: StageContext, 
-        continuationContent: string
+        deps: AssembleContinuationPromptDeps,
     ): Promise<AssembledPrompt>;
 }
 
@@ -58,8 +112,14 @@ export type DynamicContextVariables = {
     reference_documents: string | null,
     constraint_boundaries: string | null,
     stakeholder_considerations: string | null,
-    deliverable_format: string | null
+    deliverable_format: string | null,
+    recipeStep?: DialecticRecipeStep;
 }
+
+export type GatheredRecipeContext = {
+    sourceDocuments: AssemblerSourceDocument[];
+    recipeStep: DialecticRecipeStep;
+};
 
 export type ProjectContext = Tables<'dialectic_projects'> & {
     dialectic_domains: Pick<Tables<'dialectic_domains'>, 'name'>,

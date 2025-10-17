@@ -6,6 +6,7 @@ import {
   SessionContext,
   StageContext,
   ContributionOverride,
+  GatheredRecipeContext,
 } from "./prompt-assembler.interface.ts";
 import { hasProcessingStrategy } from "../utils/type_guards.ts";
 import { DownloadStorageResult } from "../supabase_storage_utils.ts";
@@ -46,6 +47,7 @@ export async function gatherContext(
 
   let priorStageContributions = "";
   let priorStageFeedback = "";
+  let recipeStep = stage.recipe_step;
 
   if (overrideContributions) {
     for (const contrib of overrideContributions) {
@@ -54,7 +56,7 @@ export async function gatherContext(
     }
   } else {
     try {
-      const sourceDocuments = await gatherInputsForStageFn(
+      const gatheredContext: GatheredRecipeContext = await gatherInputsForStageFn(
         dbClient,
         downloadFromStorageFn,
         stage,
@@ -62,9 +64,10 @@ export async function gatherContext(
         session,
         iterationNumber,
       );
+      recipeStep = gatheredContext.recipeStep;
 
       // If under limit, format the documents normally
-      for (const doc of sourceDocuments) {
+      for (const doc of gatheredContext.sourceDocuments) {
         if (doc.type === "document") {
           const blockHeader = doc.metadata.header
             ? `${doc.metadata.header}\n\n`
@@ -116,6 +119,7 @@ export async function gatherContext(
     constraint_boundaries: null,
     stakeholder_considerations: null,
     deliverable_format: "Standard markdown format.",
+    recipeStep: recipeStep,
   };
 
   return dynamicContextVariables;

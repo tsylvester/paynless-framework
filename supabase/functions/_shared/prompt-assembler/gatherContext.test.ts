@@ -1,7 +1,13 @@
 import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
 import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
 import { gatherContext } from "./gatherContext.ts";
-import { ProjectContext, SessionContext, StageContext, DynamicContextVariables, AssemblerSourceDocument } from "./prompt-assembler.interface.ts";
+import {
+  ProjectContext,
+  SessionContext,
+  StageContext,
+  AssemblerSourceDocument,
+  GatheredRecipeContext,
+} from "./prompt-assembler.interface.ts";
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockSupabaseClientSetup } from "../supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database, Tables } from "../../types_db.ts";
@@ -140,7 +146,13 @@ Deno.test("gatherContext", async (t) => {
             ];
 
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
-            const gatherInputsFn = () => Promise.resolve([]);
+            
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: [],
+                recipeStep: mockSimpleRecipeStep
+            };
+            const gatherInputsFn = () => Promise.resolve(mockGatheredContext);
+            
             const context = await gatherContext(
                 mockSupabaseClient as unknown as SupabaseClient<Database>,
                 downloadFn,
@@ -156,6 +168,7 @@ Deno.test("gatherContext", async (t) => {
             const expectedOutput = `#### Contribution from AI Model\n${overrideContributions[0].content}\n\n`;
             assertEquals(context.prior_stage_ai_outputs, expectedOutput);
             assertEquals(context.prior_stage_user_feedback, "");
+            assertEquals(context.recipeStep, mockSimpleRecipeStep);
 
         } finally {
             teardown();
@@ -172,7 +185,13 @@ Deno.test("gatherContext", async (t) => {
             ];
 
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
-            const gatherInputsFn = () => Promise.resolve([]);
+
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: [],
+                recipeStep: mockSimpleRecipeStep
+            };
+            const gatherInputsFn = () => Promise.resolve(mockGatheredContext);
+
             const context = await gatherContext(
                 mockSupabaseClient as unknown as SupabaseClient<Database>,
                 downloadFn,
@@ -189,6 +208,7 @@ Deno.test("gatherContext", async (t) => {
                                  `#### Contribution from AI Model\n${overrideContributions[1].content}\n\n`;
             assertEquals(context.prior_stage_ai_outputs, expectedOutput);
             assertEquals(context.prior_stage_user_feedback, "");
+            assertEquals(context.recipeStep, mockSimpleRecipeStep);
 
         } finally {
             teardown();
@@ -202,7 +222,13 @@ Deno.test("gatherContext", async (t) => {
             const overrideContributions: [] = [];
 
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
-            const gatherInputsFn = () => Promise.resolve([]);
+            
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: [],
+                recipeStep: mockSimpleRecipeStep
+            };
+            const gatherInputsFn = () => Promise.resolve(mockGatheredContext);
+
             const context = await gatherContext(
                 mockSupabaseClient as unknown as SupabaseClient<Database>,
                 downloadFn,
@@ -217,6 +243,7 @@ Deno.test("gatherContext", async (t) => {
 
             assertEquals(context.prior_stage_ai_outputs, "");
             assertEquals(context.prior_stage_user_feedback, "");
+            assertEquals(context.recipeStep, mockSimpleRecipeStep);
 
         } finally {
             teardown();
@@ -228,7 +255,12 @@ Deno.test("gatherContext", async (t) => {
 
         try {
             const overrideContributions = [{ content: 'An override.' }];
-            const gatherInputsFn = spy(() => Promise.resolve([]));
+
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: [],
+                recipeStep: mockSimpleRecipeStep
+            };
+            const gatherInputsFn = spy(() => Promise.resolve(mockGatheredContext));
 
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
             await gatherContext(
@@ -243,6 +275,7 @@ Deno.test("gatherContext", async (t) => {
                 overrideContributions
             );
 
+            assertEquals(gatherInputsFn.calls.length, 0);
             assertEquals(gatherInputsFn.calls.length, 0);
 
         } finally {
@@ -312,7 +345,13 @@ Deno.test("gatherContext", async (t) => {
             ];
 
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
-            const gatherInputsFn = () => Promise.resolve([]);
+            
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: [],
+                recipeStep: mockSimpleRecipeStep
+            };
+            const gatherInputsFn = () => Promise.resolve(mockGatheredContext);
+
             const context = await gatherContext(
                 mockSupabaseClient as unknown as SupabaseClient<Database>,
                 downloadFn,
@@ -327,6 +366,7 @@ Deno.test("gatherContext", async (t) => {
 
             assert(context.prior_stage_ai_outputs.includes("This is the override content."));
             assertEquals(spies.fromSpy.calls.length, 0, "Database should not be queried when overrides are provided");
+            assertEquals(context.recipeStep, mockSimpleRecipeStep);
 
         } finally {
             teardown();
@@ -347,7 +387,8 @@ Deno.test("gatherContext", async (t) => {
             };
 
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
-            const gatherInputsFn = spy(() => Promise.resolve([{
+            
+            const sourceDocuments: AssemblerSourceDocument[] = [{
                 id: 'c1',
                 type: 'document',
                 content: contribContent,
@@ -355,7 +396,14 @@ Deno.test("gatherContext", async (t) => {
                     displayName: 'Previous Stage',
                     modelName: 'Test Model'
                 }
-            }] as AssemblerSourceDocument[]));
+            }];
+
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: sourceDocuments,
+                recipeStep: mockRecipeStepWithInputs
+            };
+            const gatherInputsFn = spy(() => Promise.resolve(mockGatheredContext));
+
             const context = await gatherContext(
                 mockSupabaseClient as unknown as SupabaseClient<Database>,
                 downloadFn,
@@ -369,6 +417,7 @@ Deno.test("gatherContext", async (t) => {
 
             assert(context.prior_stage_ai_outputs.includes(contribContent));
             assertEquals(gatherInputsFn.calls.length, 1, "gatherInputsForStage should be called when no overrides are provided");
+            assertEquals(context.recipeStep, mockRecipeStepWithInputs);
 
         } finally {
             teardown();
@@ -390,7 +439,12 @@ Deno.test("gatherContext", async (t) => {
             };
 
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
-            const gatherInputsFn = spy(() => Promise.resolve([sourceDoc]));
+            
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: [sourceDoc],
+                recipeStep: mockSimpleRecipeStep
+            };
+            const gatherInputsFn = spy(() => Promise.resolve(mockGatheredContext));
 
             const context = await gatherContext(
                 mockSupabaseClient as unknown as SupabaseClient<Database>,
@@ -408,6 +462,7 @@ Deno.test("gatherContext", async (t) => {
             assertEquals(context.prior_stage_ai_outputs, expectedHeader + expectedContent);
             assertEquals(context.prior_stage_user_feedback, "");
             assertEquals(gatherInputsFn.calls.length, 1);
+            assertEquals(context.recipeStep, mockSimpleRecipeStep);
 
         } finally {
             teardown();
@@ -428,7 +483,12 @@ Deno.test("gatherContext", async (t) => {
             };
 
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
-            const gatherInputsFn = spy(() => Promise.resolve([sourceDoc]));
+            
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: [sourceDoc],
+                recipeStep: mockSimpleRecipeStep
+            };
+            const gatherInputsFn = spy(() => Promise.resolve(mockGatheredContext));
 
             const context = await gatherContext(
                 mockSupabaseClient as unknown as SupabaseClient<Database>,
@@ -446,6 +506,7 @@ Deno.test("gatherContext", async (t) => {
             assertEquals(context.prior_stage_user_feedback, expectedHeader + expectedContent);
             assertEquals(context.prior_stage_ai_outputs, "");
             assertEquals(gatherInputsFn.calls.length, 1);
+            assertEquals(context.recipeStep, mockSimpleRecipeStep);
 
         } finally {
             teardown();
@@ -478,7 +539,12 @@ Deno.test("gatherContext", async (t) => {
             ];
 
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
-            const gatherInputsFn = spy(() => Promise.resolve(sourceDocs));
+            
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: sourceDocs,
+                recipeStep: mockSimpleRecipeStep
+            };
+            const gatherInputsFn = spy(() => Promise.resolve(mockGatheredContext));
 
             const context = await gatherContext(
                 mockSupabaseClient as unknown as SupabaseClient<Database>,
@@ -504,6 +570,7 @@ Deno.test("gatherContext", async (t) => {
             assertEquals(context.prior_stage_ai_outputs, expectedContribOutput);
             assertEquals(context.prior_stage_user_feedback, expectedFeedbackOutput);
             assertEquals(gatherInputsFn.calls.length, 1);
+            assertEquals(context.recipeStep, mockSimpleRecipeStep);
 
         } finally {
             teardown();
@@ -526,7 +593,12 @@ Deno.test("gatherContext", async (t) => {
             };
 
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
-            const gatherInputsFn = spy(() => Promise.resolve([sourceDoc]));
+            
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: [sourceDoc],
+                recipeStep: mockSimpleRecipeStep
+            };
+            const gatherInputsFn = spy(() => Promise.resolve(mockGatheredContext));
 
             const context = await gatherContext(
                 mockSupabaseClient as unknown as SupabaseClient<Database>,
@@ -543,6 +615,7 @@ Deno.test("gatherContext", async (t) => {
             const expectedContent = `#### Contribution from ${sourceDoc.metadata.modelName}\n${sourceDoc.content}\n\n`;
             assertEquals(context.prior_stage_ai_outputs, expectedHeader + expectedContent);
             assertEquals(gatherInputsFn.calls.length, 1);
+            assertEquals(context.recipeStep, mockSimpleRecipeStep);
 
         } finally {
             teardown();
@@ -564,7 +637,12 @@ Deno.test("gatherContext", async (t) => {
             };
 
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
-            const gatherInputsFn = spy(() => Promise.resolve([sourceDoc]));
+            
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: [sourceDoc],
+                recipeStep: mockSimpleRecipeStep
+            };
+            const gatherInputsFn = spy(() => Promise.resolve(mockGatheredContext));
 
             const context = await gatherContext(
                 mockSupabaseClient as unknown as SupabaseClient<Database>,
@@ -581,6 +659,7 @@ Deno.test("gatherContext", async (t) => {
             const expectedContent = `${sourceDoc.content}\n\n---\n`;
             assertEquals(context.prior_stage_user_feedback, expectedHeader + expectedContent);
             assertEquals(gatherInputsFn.calls.length, 1);
+            assertEquals(context.recipeStep, mockSimpleRecipeStep);
 
         } finally {
             teardown();
@@ -592,7 +671,12 @@ Deno.test("gatherContext", async (t) => {
 
         try {
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
-            const gatherInputsFn = spy(() => Promise.resolve([]));
+            
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: [],
+                recipeStep: mockSimpleRecipeStep
+            };
+            const gatherInputsFn = spy(() => Promise.resolve(mockGatheredContext));
 
             const context = await gatherContext(
                 mockSupabaseClient as unknown as SupabaseClient<Database>,
@@ -608,6 +692,7 @@ Deno.test("gatherContext", async (t) => {
             assertEquals(context.prior_stage_ai_outputs, "");
             assertEquals(context.prior_stage_user_feedback, "");
             assertEquals(gatherInputsFn.calls.length, 1);
+            assertEquals(context.recipeStep, mockSimpleRecipeStep);
 
         } finally {
             teardown();
@@ -619,7 +704,12 @@ Deno.test("gatherContext", async (t) => {
 
         try {
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
-            const gatherInputsFn = spy(() => Promise.resolve([]));
+            
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: [],
+                recipeStep: mockSimpleRecipeStep
+            };
+            const gatherInputsFn = spy(() => Promise.resolve(mockGatheredContext));
 
             const context = await gatherContext(
                 mockSupabaseClient as unknown as SupabaseClient<Database>,
@@ -636,6 +726,7 @@ Deno.test("gatherContext", async (t) => {
             assertEquals(context.domain, defaultProject.dialectic_domains.name);
             assertEquals(context.agent_count, defaultSession.selected_model_ids!.length);
             assertEquals(context.context_description, defaultProject.initial_user_prompt);
+            assertEquals(context.recipeStep, mockSimpleRecipeStep);
 
         } finally {
             teardown();
@@ -652,7 +743,12 @@ Deno.test("gatherContext", async (t) => {
             };
 
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
-            const gatherInputsFn = spy(() => Promise.resolve([]));
+            
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: [],
+                recipeStep: mockComplexRecipeStep
+            };
+            const gatherInputsFn = spy(() => Promise.resolve(mockGatheredContext));
 
             const context = await gatherContext(
                 mockSupabaseClient as unknown as SupabaseClient<Database>,
@@ -666,6 +762,7 @@ Deno.test("gatherContext", async (t) => {
             );
 
             assertEquals(context.original_user_request, defaultProject.initial_user_prompt);
+            assertEquals(context.recipeStep, mockComplexRecipeStep);
 
         } finally {
             teardown();
@@ -677,7 +774,12 @@ Deno.test("gatherContext", async (t) => {
 
         try {
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
-            const gatherInputsFn = spy(() => Promise.resolve([]));
+            
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: [],
+                recipeStep: mockSimpleRecipeStep
+            };
+            const gatherInputsFn = spy(() => Promise.resolve(mockGatheredContext));
 
             const context = await gatherContext(
                 mockSupabaseClient as unknown as SupabaseClient<Database>,
@@ -691,6 +793,7 @@ Deno.test("gatherContext", async (t) => {
             );
 
             assertEquals(context.original_user_request, null);
+            assertEquals(context.recipeStep, mockSimpleRecipeStep);
 
         } finally {
             teardown();
@@ -701,7 +804,11 @@ Deno.test("gatherContext", async (t) => {
         const { mockSupabaseClient } = setup();
 
         try {
-            const gatherInputsFn = spy(() => Promise.resolve([]));
+            const mockGatheredContext: GatheredRecipeContext = {
+                sourceDocuments: [],
+                recipeStep: mockSimpleRecipeStep
+            };
+            const gatherInputsFn = spy(() => Promise.resolve(mockGatheredContext));
             const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
 
             // Case 1: selected_model_ids is an empty array

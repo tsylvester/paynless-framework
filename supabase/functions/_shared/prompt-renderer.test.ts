@@ -116,6 +116,16 @@ Deno.test("Prompt Rendering Utility", async (t) => {
       systemDefaultOverlayValues: null,
       userProjectOverlayValues: {},
       expectedOutput: "",
+    },
+    {
+      name: "Correctly renders an array of strings as a simple comma-separated list",
+      basePromptText: "Cover these points: {points_to_cover}",
+      dynamicContextVariables: {
+        points_to_cover: ["Problem", "Solution", "Market"],
+      },
+      systemDefaultOverlayValues: null,
+      userProjectOverlayValues: null,
+      expectedOutput: "Cover these points: Problem, Solution, Market",
     }
     // Future tests:
     // - Nested variables in overlays (e.g. system_overlay: { details: { title: "SysTitle" } }, prompt: {{details.title}} - current simple replace won't handle this)

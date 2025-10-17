@@ -8,7 +8,7 @@ import {
   ProjectContext,
   SessionContext,
   StageContext,
-  AssemblerSourceDocument,
+  GatheredRecipeContext,
 } from "./prompt-assembler.interface.ts";
 import type { DownloadStorageResult } from "../supabase_storage_utils.ts";
 import { parseInputArtifactRules } from "../utils/input-artifact-parser.ts";
@@ -23,7 +23,7 @@ export type GatherInputsForStageFn = (
   project: ProjectContext,
   session: SessionContext,
   iterationNumber: number,
-) => Promise<AssemblerSourceDocument[]>;
+) => Promise<GatheredRecipeContext>;
 
 export async function gatherInputsForStage(
   dbClient: SupabaseClient<Database>,
@@ -35,8 +35,11 @@ export async function gatherInputsForStage(
   project: ProjectContext,
   session: SessionContext,
   iterationNumber: number,
-): Promise<AssemblerSourceDocument[]> {
-  const sourceDocuments: AssemblerSourceDocument[] = [];
+): Promise<GatheredRecipeContext> {
+  const gatheredContext: GatheredRecipeContext = {
+    sourceDocuments: [],
+    recipeStep: stage.recipe_step,
+  };
   let criticalError: Error | null = null;
 
   if (
@@ -47,7 +50,7 @@ export async function gatherInputsForStage(
       "[gatherInputsForStage] No input rules defined for stage:",
       stage.slug,
     );
-    return sourceDocuments;
+    return gatheredContext;
   }
 
   const rules: InputRule[] = parseInputArtifactRules(
@@ -145,7 +148,7 @@ export async function gatherInputsForStage(
 
             if (content && !downloadError) {
               const decodedContent = new TextDecoder("utf-8").decode(content);
-              sourceDocuments.push({
+              gatheredContext.sourceDocuments.push({
                 id: contrib.id,
                 type: "document",
                 content: decodedContent,
@@ -212,7 +215,7 @@ export async function gatherInputsForStage(
 
         if (feedbackContent && !feedbackDownloadError) {
           const content = new TextDecoder().decode(feedbackContent);
-          sourceDocuments.push({
+          gatheredContext.sourceDocuments.push({
             id: feedbackRecord.id,
             type: "feedback",
             content: content,
@@ -237,5 +240,5 @@ export async function gatherInputsForStage(
     throw criticalError;
   }
 
-  return sourceDocuments;
+  return gatheredContext;
 }

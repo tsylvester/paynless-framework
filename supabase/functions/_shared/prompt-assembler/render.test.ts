@@ -7,6 +7,7 @@ import {
 } from "./prompt-assembler.interface.ts";
 import { isRecord } from "../utils/type_guards.ts";
 import type { Json } from "../../types_db.ts";
+import { DialecticRecipeStep } from "../../dialectic-service/dialectic.interface.ts";
 
 // Define a type for the mock implementation of renderPrompt
 type RenderPromptMock = (
@@ -20,6 +21,32 @@ Deno.test("render", async (t) => {
   const stageSystemPromptText =
     "System prompt for {user_objective} in {domain}.";
   const stageOverlayValues: Json = { "style": "formal" };
+  const mockSimpleRecipeStep: DialecticRecipeStep = {
+    id: 'step-123',
+    instance_id: 'instance-123',
+    job_type: 'EXECUTE',
+    step_key: 'simple-step',
+    step_slug: 'simple-step-slug',
+    step_name: 'Simple Step',
+    step_number: 1,
+    prompt_type: 'Turn',
+    granularity_strategy: 'per_source_document',
+    output_type: 'thesis',
+    inputs_required: [],
+    inputs_relevance: [],
+    outputs_required: [],
+    config_override: {},
+    object_filter: {},
+    output_overrides: {},
+    is_skipped: false,
+    parallel_group: null,
+    prompt_template_id: null,
+    template_step_id: null,
+    branch_key: null,
+    execution_order: 1,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+};
 
   const defaultStage: StageContext = {
     id: "stage-123",
@@ -30,8 +57,10 @@ Deno.test("render", async (t) => {
     description: "Initial hypothesis stage",
     created_at: new Date().toISOString(),
     default_system_prompt_id: null,
-    expected_output_artifacts: null,
-    input_artifact_rules: null,
+    recipe_step: mockSimpleRecipeStep,
+    active_recipe_instance_id: null,
+    expected_output_template_ids: [],
+    recipe_template_id: null,
   };
 
   const defaultContext: DynamicContextVariables = {
@@ -138,9 +167,9 @@ Deno.test("render", async (t) => {
         "{{/section:style_guide_markdown}}",
         "",
         "EXPECTED JSON OUTPUT",
-        "{{#section:expected_output_artifacts_json}}",
-        "Artifacts:\n{expected_output_artifacts_json}",
-        "{{/section:expected_output_artifacts_json}}",
+        "{{#section:outputs_required_json}}",
+        "Artifacts:\n{outputs_required_json}",
+        "{{/section:outputs_required_json}}",
       ].join("\n");
 
       const stageMissingValues: StageContext = {
@@ -149,7 +178,6 @@ Deno.test("render", async (t) => {
         domain_specific_prompt_overlays: [{
           overlay_values: { role: "architect" },
         }],
-        expected_output_artifacts: null,
       };
 
       let rendererCalled = false;
@@ -185,7 +213,6 @@ Deno.test("render", async (t) => {
         domain_specific_prompt_overlays: [{
           overlay_values: { role: "architect" },
         }],
-        expected_output_artifacts: null,
       };
 
       let rendererCalled = false;
@@ -217,12 +244,10 @@ Deno.test("render", async (t) => {
         "Style Guide:\n{style_guide_markdown}",
         "{{/section:style_guide_markdown}}",
         "",
-        "{{#section:expected_output_artifacts_json}}",
-        "Artifacts:\n{expected_output_artifacts_json}",
-        "{{/section:expected_output_artifacts_json}}",
+        "Artifacts:\n{{outputs_required}}",
       ].join("\n");
 
-      const artifacts = { shape: "object", ok: true };
+      const artifacts = [{ type: "document", document_key: "test_doc" }];
       const stageOk: StageContext = {
         ...defaultStage,
         system_prompts: { prompt_text: basePrompt },
@@ -232,7 +257,6 @@ Deno.test("render", async (t) => {
             style_guide_markdown: "# Guide",
           },
         }],
-        expected_output_artifacts: artifacts,
       };
 
       let rendererCalled = false;
@@ -244,23 +268,32 @@ Deno.test("render", async (t) => {
       ) => {
         rendererCalled = true;
         capturedOverlay = sysOverlays;
+
+        if (!isRecord(sysOverlays)) {
+          throw new Error("system overlays must be a record");
+        }
+        if (typeof sysOverlays["outputs_required_json"] === 'string') {
+          throw new Error("Test failed: Incorrectly received stringified JSON property.")
+        }
+        if (sysOverlays["outputs_required"] !== artifacts) {
+          throw new Error("Test failed: Did not receive raw outputs_required object.")
+        }
+
         return "ok";
       };
 
-      const result = render(renderPromptMockFn, stageOk, defaultContext, null);
+      const contextWithRecipeStep: DynamicContextVariables = {
+        ...defaultContext,
+        recipeStep: { ...mockSimpleRecipeStep, outputs_required: artifacts },
+      };
+
+      const result = render(renderPromptMockFn, stageOk, contextWithRecipeStep, null);
       assertEquals(result, "ok");
       assertEquals(rendererCalled, true);
       if (capturedOverlay && isRecord(capturedOverlay)) {
         const sg = capturedOverlay["style_guide_markdown"];
-        const artifactsVal = capturedOverlay["expected_output_artifacts_json"];
         assertEquals(typeof sg === "string" && sg.length > 0, true);
-        if (isRecord(artifactsVal)) {
-          assertEquals(artifactsVal, artifacts);
-        } else {
-          throw new Error(
-            "expected_output_artifacts_json must be a JSON object",
-          );
-        }
+        assertEquals(capturedOverlay["outputs_required"], artifacts);
       } else {
         throw new Error("system overlays missing in renderer call");
       }
@@ -268,7 +301,131 @@ Deno.test("render", async (t) => {
   );
 
   await t.step(
-    "does not include expected_output_artifacts_json when stage.expected_output_artifacts is null",
+    "fails because it incorrectly provides stringified JSON for a section helper",
+    async () => {
+      const basePrompt =
+        "Artifacts: {{#section:outputs_required_json}}{{outputs_required_json}}{{/section:outputs_required_json}}";
+      const artifacts = [{ type: "document", document_key: "test_doc" }];
+      const stageOk: StageContext = {
+        ...defaultStage,
+        system_prompts: { prompt_text: basePrompt },
+      };
+
+      const contextWithRecipeStep: DynamicContextVariables = {
+        ...defaultContext,
+        recipeStep: { ...mockSimpleRecipeStep, outputs_required: artifacts },
+      };
+
+      const renderPromptMockFn: RenderPromptMock = (
+        _base,
+        _vars,
+        sysOverlays,
+      ) => {
+        if (isRecord(sysOverlays)) {
+          if (typeof sysOverlays["outputs_required_json"] !== 'string') {
+            throw new Error(
+              "Test failed: expected stringified JSON property was not found.",
+            );
+          }
+        }
+        return "ok";
+      };
+      
+      await assertRejects(
+          async () => {
+              render(renderPromptMockFn, stageOk, contextWithRecipeStep, null);
+          },
+          Error,
+          "Test failed: expected stringified JSON property was not found.",
+      )
+    },
+  );
+
+  await t.step(
+    "succeeds because template requires a raw object and implementation provides it",
+    () => {
+      const basePrompt = "Artifacts: {{outputs_required}}";
+      const artifacts = [{ type: "document", document_key: "test_doc" }];
+      const stageOk: StageContext = {
+        ...defaultStage,
+        system_prompts: { prompt_text: basePrompt },
+      };
+
+      const contextWithRecipeStep: DynamicContextVariables = {
+        ...defaultContext,
+        recipeStep: { ...mockSimpleRecipeStep, outputs_required: artifacts },
+      };
+
+      let rendererCalled = false;
+      const renderPromptMockFn: RenderPromptMock = (
+        _base,
+        _vars,
+        sysOverlays,
+      ) => {
+        rendererCalled = true;
+        if (isRecord(sysOverlays)) {
+          if (sysOverlays["outputs_required"] !== artifacts) {
+            throw new Error(
+              "Test failed: did not receive raw outputs_required object.",
+            );
+          }
+        } else {
+            throw new Error("Test failed: sysOverlays is not a record.")
+        }
+        return "ok";
+      };
+
+      const result = render(renderPromptMockFn, stageOk, contextWithRecipeStep, null);
+      assertEquals(result, "ok");
+      assertEquals(rendererCalled, true);
+    },
+  );
+
+  await t.step(
+    "succeeds because implementation provides a raw object, not a string",
+    () => {
+      const basePrompt = "Artifacts: {{outputs_required}}";
+      const artifacts = [{ type: "document", document_key: "test_doc" }];
+      const stageOk: StageContext = {
+        ...defaultStage,
+        system_prompts: { prompt_text: basePrompt },
+      };
+
+      const contextWithRecipeStep: DynamicContextVariables = {
+        ...defaultContext,
+        recipeStep: { ...mockSimpleRecipeStep, outputs_required: artifacts },
+      };
+
+      let rendererCalled = false;
+      const renderPromptMockFn: RenderPromptMock = (
+        _base,
+        _vars,
+        sysOverlays,
+      ) => {
+        rendererCalled = true;
+        if (isRecord(sysOverlays)) {
+          if (typeof sysOverlays["outputs_required"] === "string") {
+            throw new Error(
+              "Smart mock failed: outputs_required should be a raw object, not a string.",
+            );
+          }
+        }
+        return "ok";
+      };
+
+      const result = render(
+        renderPromptMockFn,
+        stageOk,
+        contextWithRecipeStep,
+        null,
+      );
+      assertEquals(result, "ok");
+      assertEquals(rendererCalled, true);
+    },
+  );
+
+  await t.step(
+    "does not include outputs_required when context.recipeStep is null or has empty outputs_required",
     () => {
       const renderPromptMockFn: RenderPromptMock = (
         _base,
@@ -277,14 +434,14 @@ Deno.test("render", async (t) => {
         userOverlays,
       ) => {
         const sysVal = isRecord(sysOverlays)
-          ? sysOverlays["expected_output_artifacts_json"]
+          ? sysOverlays["outputs_required"]
           : undefined;
         const usrVal = isRecord(userOverlays)
-          ? userOverlays["expected_output_artifacts_json"]
+          ? userOverlays["outputs_required"]
           : undefined;
-        if (typeof sysVal === "string" || typeof usrVal === "string") {
+        if (sysVal !== undefined || usrVal !== undefined) {
           throw new Error(
-            "expected_output_artifacts_json should not be present when stage.expected_output_artifacts is null",
+            "outputs_required should not be present when context.recipeStep is null or has empty outputs_required",
           );
         }
         return "ok";
@@ -292,21 +449,34 @@ Deno.test("render", async (t) => {
 
       const stageWithoutArtifacts: StageContext = {
         ...defaultStage,
-        expected_output_artifacts: null,
       };
 
-      const result = render(
+      // Test with no recipeStep in context
+      const result1 = render(
         renderPromptMockFn,
         stageWithoutArtifacts,
         defaultContext,
         null,
       );
-      assertEquals(result, "ok");
+      assertEquals(result1, "ok");
+
+      // Test with recipeStep but empty outputs_required
+      const contextWithEmptyOutputs: DynamicContextVariables = {
+        ...defaultContext,
+        recipeStep: { ...mockSimpleRecipeStep, outputs_required: [] },
+      };
+      const result2 = render(
+        renderPromptMockFn,
+        stageWithoutArtifacts,
+        contextWithEmptyOutputs,
+        null,
+      );
+      assertEquals(result2, "ok");
     },
   );
 
   await t.step(
-    "includes expected_output_artifacts_json when stage.expected_output_artifacts is provided",
+    "includes outputs_required when context.recipeStep.outputs_required is provided",
     () => {
       let capturedSysOverlay: Json | undefined;
       const renderPromptMockFn: RenderPromptMock = (
@@ -318,29 +488,28 @@ Deno.test("render", async (t) => {
         return "ok";
       };
 
-      const artifacts = { a: 1, b: { c: "x" } };
-      const stageWithArtifacts: StageContext = {
-        ...defaultStage,
-        expected_output_artifacts: artifacts,
+      const mockOutputsRequired = [{ type: "document", document_key: "test_output" }];
+      const mockRecipeStepWithOutputs: DialecticRecipeStep = {
+        ...mockSimpleRecipeStep,
+        outputs_required: mockOutputsRequired,
+      };
+
+      const contextWithRecipeStep: DynamicContextVariables = {
+          ...defaultContext,
+          recipeStep: mockRecipeStepWithOutputs,
       };
 
       const result = render(
         renderPromptMockFn,
-        stageWithArtifacts,
-        defaultContext,
+        defaultStage,
+        contextWithRecipeStep,
         null,
       );
       assertEquals(result, "ok");
 
       if (capturedSysOverlay && isRecord(capturedSysOverlay)) {
-        const val = capturedSysOverlay["expected_output_artifacts_json"];
-        if (isRecord(val)) {
-          assertEquals(val, artifacts);
-        } else {
-          throw new Error(
-            "expected_output_artifacts_json must be a JSON object",
-          );
-        }
+        const val = capturedSysOverlay["outputs_required"];
+        assertEquals(val, mockOutputsRequired);
       } else {
         throw new Error("System overlays were not provided to renderer");
       }
@@ -360,19 +529,23 @@ Deno.test("render", async (t) => {
         return "ok";
       };
 
-      const artifacts = { a: 1 };
+      const artifacts = [{ type: "document", document_key: "test_doc" }];
       const stageWithOverlaysAndArtifacts: StageContext = {
         ...defaultStage,
         domain_specific_prompt_overlays: [{
           overlay_values: { role: "tester" },
         }],
-        expected_output_artifacts: artifacts,
+      };
+
+      const contextWithRecipeStep: DynamicContextVariables = {
+        ...defaultContext,
+        recipeStep: { ...mockSimpleRecipeStep, outputs_required: artifacts },
       };
 
       render(
         renderPromptMockFn,
         stageWithOverlaysAndArtifacts,
-        defaultContext,
+        contextWithRecipeStep,
         null,
       );
 
@@ -380,14 +553,8 @@ Deno.test("render", async (t) => {
         // Prove original overlay value is preserved
         assertEquals(capturedSysOverlay["role"], "tester");
         // Prove artifact value is injected
-        assertEquals(
-          isRecord(capturedSysOverlay["expected_output_artifacts_json"]),
-          true,
-        );
-        assertEquals(
-          capturedSysOverlay["expected_output_artifacts_json"],
-          artifacts,
-        );
+        const artifactsVal = capturedSysOverlay["outputs_required"];
+        assertEquals(artifactsVal, artifacts);
       } else {
         throw new Error("System overlays were not provided to renderer");
       }
@@ -395,15 +562,17 @@ Deno.test("render", async (t) => {
   );
 
   await t.step(
-    "throws an error for non-JSON-compatible artifacts",
+    "throws an error for non-JSON-compatible outputs_required",
     async () => {
-      const stageWithInvalidArtifacts: StageContext = {
-        ...defaultStage,
+      const invalidOutputs = {
+        a: 1,
+        b: () => "invalid", // Functions are not valid in JSON
+      };
+
+      const contextWithInvalidArtifacts: DynamicContextVariables = {
+        ...defaultContext,
         // @ts-expect-error - Intentionally passing invalid type for testing
-        expected_output_artifacts: {
-          a: 1,
-          b: () => "invalid", // Functions are not valid in JSON
-        },
+        recipeStep: { ...mockSimpleRecipeStep, outputs_required: invalidOutputs },
       };
 
       const renderPromptFn = () => "should not be called";
@@ -412,13 +581,13 @@ Deno.test("render", async (t) => {
         async () => {
           render(
             renderPromptFn,
-            stageWithInvalidArtifacts,
-            defaultContext,
+            defaultStage,
+            contextWithInvalidArtifacts,
             null,
           );
         },
         Error,
-        "expected_output_artifacts must be JSON-compatible",
+        "context.recipeStep.outputs_required must be JSON-compatible",
       );
     },
   );
@@ -558,25 +727,27 @@ Deno.test("render", async (t) => {
         return "ok";
       };
 
-      const artifacts = { a: 1 };
+      const artifacts = [{ type: "document", document_key: "test_doc" }];
       const stageWithNoOverlays: StageContext = {
         ...defaultStage,
         domain_specific_prompt_overlays: [], // No overlays
-        expected_output_artifacts: artifacts,
+      };
+
+      const contextWithRecipeStep: DynamicContextVariables = {
+        ...defaultContext,
+        recipeStep: { ...mockSimpleRecipeStep, outputs_required: artifacts },
       };
 
       render(
         renderPromptMockFn,
         stageWithNoOverlays,
-        defaultContext,
+        contextWithRecipeStep,
         null,
       );
 
       if (capturedSysOverlay && isRecord(capturedSysOverlay)) {
-        assertEquals(
-          capturedSysOverlay["expected_output_artifacts_json"],
-          artifacts,
-        );
+        const artifactsVal = capturedSysOverlay["outputs_required"];
+        assertEquals(artifactsVal, artifacts);
         // Ensure no other keys were added
         assertEquals(Object.keys(capturedSysOverlay).length, 1);
       } else {

@@ -16,13 +16,13 @@ import {
 import { isRecord } from "../utils/type_guards.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Json, Database } from "../../types_db.ts";
-import { DownloadStorageResult } from "../supabase_storage_utils.ts";
 import { downloadFromStorage } from "../supabase_storage_utils.ts";
 import { renderPrompt } from "../prompt-renderer.ts";
 import { gatherInputsForStage } from "./gatherInputsForStage.ts";
 import { createMockFileManagerService } from "../services/file_manager.mock.ts";
 import { FileType, UploadContext } from "../types/file_manager.types.ts";
 import { FileRecord } from "../types/file_manager.types.ts";
+import { DialecticRecipeStep } from "../../dialectic-service/dialectic.interface.ts";
 
 // Define a type for the mock implementation of renderPrompt
 type RenderPromptMock = (
@@ -102,6 +102,32 @@ Deno.test("assembleSeedPrompt", async (t) => {
 
   const stageSystemPromptText = "System prompt for {user_objective} in {domain}.";
   const stageOverlayValues: Json = { style: "formal" };
+  const mockSimpleRecipeStep: DialecticRecipeStep = {
+    id: "step-123",
+    instance_id: "instance-123",
+    job_type: "EXECUTE",
+    step_key: "simple-step",
+    step_slug: "simple-step-slug",
+    step_name: "Simple Step",
+    step_number: 1,
+    prompt_type: "Turn",
+    granularity_strategy: "per_source_document",
+    output_type: "thesis",
+    inputs_required: [],
+    inputs_relevance: [],
+    outputs_required: [],
+    config_override: {},
+    object_filter: {},
+    output_overrides: {},
+    is_skipped: false,
+    parallel_group: null,
+    prompt_template_id: null,
+    template_step_id: null,
+    branch_key: null,
+    execution_order: 1,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
 
   const defaultStage: StageContext = {
     id: "stage-123",
@@ -112,8 +138,10 @@ Deno.test("assembleSeedPrompt", async (t) => {
     description: "Initial hypothesis stage",
     created_at: new Date().toISOString(),
     default_system_prompt_id: null,
-    expected_output_artifacts: null,
-    input_artifact_rules: null,
+    recipe_step: mockSimpleRecipeStep,
+    active_recipe_instance_id: null,
+    expected_output_template_ids: [],
+    recipe_template_id: null,
   };
 
   await t.step("should correctly assemble, persist, and render a prompt for the initial stage", async () => {
@@ -121,8 +149,21 @@ Deno.test("assembleSeedPrompt", async (t) => {
       const mockFileRecord: FileRecord = {
         id: "mock-resource-id-123",
         storage_path: "path/to/mock/prompt.md",
-        // ... other properties as needed
-      } as FileRecord;
+        storage_bucket: "test-bucket",
+        file_name: "mock-file.md",
+        iteration_number: 1,
+        mime_type: "text/markdown",
+        created_at: new Date().toISOString(),
+        project_id: "mock-project-id",
+        resource_description: { test: "test" },
+        resource_type: "test",
+        size_bytes: 100,
+        user_id: "mock-user-id",
+        session_id: "mock-session-id",
+        source_contribution_id: "mock-source-contribution-id",
+        stage_slug: "mock-stage-slug",
+        updated_at: new Date().toISOString(),
+      };
 
       let renderPromptCallCount = 0;
       let lastRenderPromptArgs: [
@@ -171,25 +212,25 @@ Deno.test("assembleSeedPrompt", async (t) => {
         downloadFromStorage(client, bucket, path);
 
       try {
-        const result: AssembledPrompt = await assembleSeedPrompt(
-          client,
-          downloadFn,
-          gatherInputsForStage,
-          renderPromptMockFn,
+        const result: AssembledPrompt = await assembleSeedPrompt({
+          dbClient: client,
+          downloadFromStorageFn: downloadFn,
+          gatherInputsForStageFn: gatherInputsForStage,
+          renderPromptFn: renderPromptMockFn,
           fileManager,
-          defaultProject,
-          defaultSession,
-          defaultStage,
-          defaultProject.initial_user_prompt,
-          1,
-        );
+          project: defaultProject,
+          session: defaultSession,
+          stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          iterationNumber: 1,
+        });
 
         assertEquals(result.promptContent, expectedRenderedPrompt);
         assertEquals(result.source_prompt_resource_id, mockFileRecord.id);
         assertEquals(renderPromptCallCount, 1);
         
         assert(fileManager.uploadAndRegisterFile.calls.length === 1, "uploadAndRegisterFile should be called once");
-        const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0] as UploadContext;
+        const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
         assertEquals(uploadContext.pathContext.fileType, FileType.SeedPrompt);
         assertEquals(uploadContext.fileContent, expectedRenderedPrompt);
 
@@ -210,6 +251,7 @@ Deno.test("assembleSeedPrompt", async (t) => {
           constraint_boundaries: null,
           stakeholder_considerations: null,
           deliverable_format: "Standard markdown format.",
+          recipeStep: defaultStage.recipe_step,
         };
         assertEquals(renderArgs?.[1], expectedDynamicVars);
         assertEquals(renderArgs?.[2], stageOverlayValues);
@@ -220,7 +262,7 @@ Deno.test("assembleSeedPrompt", async (t) => {
     },
   );
 
-  await t.step("does not include expected_output_artifacts_json when stage.expected_output_artifacts is null", async () => {
+  await t.step("does not include outputs_required when recipe_step is empty", async () => {
       const renderPromptMockFn: RenderPromptMock = (
         _base,
         _vars,
@@ -228,21 +270,38 @@ Deno.test("assembleSeedPrompt", async (t) => {
         userOverlays,
       ) => {
         const sysVal = isRecord(sysOverlays)
-          ? sysOverlays["expected_output_artifacts_json"]
+          ? sysOverlays["outputs_required"]
           : undefined;
         const usrVal = isRecord(userOverlays)
-          ? userOverlays["expected_output_artifacts_json"]
+          ? userOverlays["outputs_required"]
           : undefined;
-        if (typeof sysVal === "string" || typeof usrVal === "string") {
+        if (sysVal !== undefined || usrVal !== undefined) {
           throw new Error(
-            "expected_output_artifacts_json should not be present when stage.expected_output_artifacts is null",
+            "outputs_required should not be present when recipe_step is empty",
           );
         }
         return "ok";
       };
 
       const { client, fileManager } = setup({});
-      fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+      fileManager.setUploadAndRegisterFileResponse({ 
+        id: "mock-id",
+        created_at: new Date().toISOString(),
+        file_name: "mock-file.md",
+        iteration_number: 1,
+        mime_type: "text/markdown",
+        project_id: "mock-project-id",
+        resource_description: { test: "test" },
+        resource_type: "test",
+        size_bytes: 100,
+        storage_bucket: "test-bucket",
+        storage_path: "path/to/mock/file.md",
+        user_id: "mock-user-id",
+        session_id: "mock-session-id",
+        source_contribution_id: "mock-source-contribution-id",
+        stage_slug: "mock-stage-slug",
+        updated_at: new Date().toISOString(),
+      }, null);
 
       const downloadFn = (bucket: string, path: string) =>
         downloadFromStorage(client, bucket, path);
@@ -250,21 +309,21 @@ Deno.test("assembleSeedPrompt", async (t) => {
       try {
         const stageWithoutArtifacts: StageContext = {
           ...defaultStage,
-          expected_output_artifacts: null,
+          recipe_step: { ...mockSimpleRecipeStep, outputs_required: [] },
         };
 
-        const result = await assembleSeedPrompt(
-          client,
-          downloadFn,
-          gatherInputsForStage,
-          renderPromptMockFn,
+        const result = await assembleSeedPrompt({
+          dbClient: client,
+          downloadFromStorageFn: downloadFn,
+          gatherInputsForStageFn: gatherInputsForStage,
+          renderPromptFn: renderPromptMockFn,
           fileManager,
-          defaultProject,
-          defaultSession,
-          stageWithoutArtifacts,
-          defaultProject.initial_user_prompt,
-          1,
-        );
+          project: defaultProject,
+          session: defaultSession,
+          stage: stageWithoutArtifacts,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          iterationNumber: 1,
+        });
         assertEquals(result.promptContent, "ok");
       } finally {
         teardown();
@@ -272,7 +331,7 @@ Deno.test("assembleSeedPrompt", async (t) => {
     },
   );
 
-  await t.step("includes expected_output_artifacts_json when stage.expected_output_artifacts is provided", async () => {
+  await t.step("includes outputs_required when recipe_step is provided", async () => {
       let capturedSysOverlay: Json | undefined;
       const renderPromptMockFn: RenderPromptMock = (
         _base,
@@ -283,42 +342,53 @@ Deno.test("assembleSeedPrompt", async (t) => {
         return "ok";
       };
 
-      const artifacts = { a: 1, b: { c: "x" } };
+      const artifacts = [{ type: "document", document_key: "test_doc" }];
       const stageWithArtifacts: StageContext = {
         ...defaultStage,
-        expected_output_artifacts: artifacts,
+        recipe_step: { ...mockSimpleRecipeStep, outputs_required: artifacts },
       };
 
       const { client, fileManager } = setup({});
-      fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+      fileManager.setUploadAndRegisterFileResponse({ 
+        id: "mock-id",
+        created_at: new Date().toISOString(),
+        file_name: "mock-file.md",
+        iteration_number: 1,
+        mime_type: "text/markdown",
+        project_id: "mock-project-id",
+        resource_description: { test: "test" },
+        resource_type: "test",
+        size_bytes: 100,
+        storage_bucket: "test-bucket",
+        storage_path: "path/to/mock/file.md",
+        user_id: "mock-user-id",
+        session_id: "mock-session-id",
+        source_contribution_id: "mock-source-contribution-id",
+        stage_slug: "mock-stage-slug",
+        updated_at: new Date().toISOString(),
+      }, null);
 
       const downloadFn = (bucket: string, path: string) =>
         downloadFromStorage(client, bucket, path);
 
       try {
-        const result = await assembleSeedPrompt(
-          client,
-          downloadFn,
-          gatherInputsForStage,
-          renderPromptMockFn,
+        const result = await assembleSeedPrompt({
+          dbClient: client,
+          downloadFromStorageFn: downloadFn,
+          gatherInputsForStageFn: gatherInputsForStage,
+          renderPromptFn: renderPromptMockFn,
           fileManager,
-          defaultProject,
-          defaultSession,
-          stageWithArtifacts,
-          defaultProject.initial_user_prompt,
-          1,
-        );
+          project: defaultProject,
+          session: defaultSession,
+          stage: stageWithArtifacts,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          iterationNumber: 1,
+        });
         assertEquals(result.promptContent, "ok");
 
         if (capturedSysOverlay && isRecord(capturedSysOverlay)) {
-          const val = capturedSysOverlay["expected_output_artifacts_json"];
-          if (isRecord(val)) {
-            assertEquals(val, artifacts);
-          } else {
-            throw new Error(
-              "expected_output_artifacts_json must be a JSON object",
-            );
-          }
+          const val = capturedSysOverlay["outputs_required"];
+          assertEquals(val, artifacts);
         } else {
           throw new Error("System overlays were not provided to renderer");
         }
@@ -392,7 +462,24 @@ Deno.test("assembleSeedPrompt", async (t) => {
       const renderPromptMockFn: RenderPromptMock = () => expectedRenderedPrompt;
 
       const { client, spies, fileManager } = setup(config);
-      fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+      fileManager.setUploadAndRegisterFileResponse({ 
+        id: "mock-id",
+        created_at: new Date().toISOString(),
+        file_name: "mock-file.md",
+        iteration_number: 1,
+        mime_type: "text/markdown",
+        project_id: "mock-project-id",
+        resource_description: { test: "test" },
+        resource_type: "test",
+        size_bytes: 100,
+        storage_bucket: "test-bucket",
+        storage_path: "path/to/mock/file.md",
+        user_id: "mock-user-id",
+        session_id: "mock-session-id",
+        source_contribution_id: "mock-source-contribution-id",
+        stage_slug: "mock-stage-slug",
+        updated_at: new Date().toISOString(),
+      }, null);
 
       const downloadFn = (bucket: string, path: string) =>
         downloadFromStorage(client, bucket, path);
@@ -402,26 +489,27 @@ Deno.test("assembleSeedPrompt", async (t) => {
           ...defaultStage,
           id: "stage-subsequent",
           slug: "subsequent-stage",
-          input_artifact_rules: {
-            sources: [
-              { type: "contribution", stage_slug: stageSlug, required: true },
+          recipe_step: {
+            ...mockSimpleRecipeStep,
+            inputs_required: [
+              { type: "document", stage_slug: stageSlug, required: true },
               { type: "feedback", stage_slug: stageSlug, required: true },
             ],
-          },
+          }
         };
 
-        const result = await assembleSeedPrompt(
-          client,
-          downloadFn,
-          gatherInputsForStage,
-          renderPromptMockFn,
+        const result = await assembleSeedPrompt({
+          dbClient: client,
+          downloadFromStorageFn: downloadFn,
+          gatherInputsForStageFn: gatherInputsForStage,
+          renderPromptFn: renderPromptMockFn,
           fileManager,
-          defaultProject,
-          defaultSession,
-          subsequentStage,
-          defaultProject.initial_user_prompt,
-          1,
-        );
+          project: defaultProject,
+          session: defaultSession,
+          stage: subsequentStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          iterationNumber: 1,
+        });
 
         assertEquals(result.promptContent, expectedRenderedPrompt);
 
@@ -459,7 +547,24 @@ Deno.test("assembleSeedPrompt", async (t) => {
     };
 
     const { client, fileManager } = setup(config);
-    fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+    fileManager.setUploadAndRegisterFileResponse({ 
+      id: "mock-id", 
+      created_at: new Date().toISOString(), 
+      file_name: "mock-file.md", 
+      iteration_number: 1, 
+      mime_type: "text/markdown", 
+      project_id: "mock-project-id", 
+      resource_description: { test: "test" }, 
+      resource_type: "test", 
+      size_bytes: 100, 
+      storage_bucket: "mock-bucket", 
+      storage_path: "mock-path", 
+      user_id: "mock-user-id",
+      session_id: "mock-session-id",
+      source_contribution_id: "mock-source-contribution-id",
+      stage_slug: "mock-stage-slug",
+      updated_at: new Date().toISOString(),
+    }, null);
 
     const downloadFn = (bucket: string, path: string) =>
       downloadFromStorage(client, bucket, path);
@@ -467,27 +572,28 @@ Deno.test("assembleSeedPrompt", async (t) => {
     try {
       const subsequentStage: StageContext = {
         ...defaultStage,
-        input_artifact_rules: {
-          sources: [
-            { type: "contribution", stage_slug: stageSlug, required: true },
+        recipe_step: {
+          ...mockSimpleRecipeStep,
+          inputs_required: [
+            { type: "document", stage_slug: stageSlug, required: true },
           ],
-        },
+        }
       };
 
       await assertRejects(
         async () => {
-          await assembleSeedPrompt(
-            client,
-            downloadFn,
-            gatherInputsForStage,
-            renderPrompt,
+          await assembleSeedPrompt({
+            dbClient: client,
+            downloadFromStorageFn: downloadFn,
+            gatherInputsForStageFn: gatherInputsForStage,
+            renderPromptFn: renderPrompt,
             fileManager,
-            defaultProject,
-            defaultSession,
-            subsequentStage,
-            defaultProject.initial_user_prompt,
-            1,
-          );
+            project: defaultProject,
+            session: defaultSession,
+            stage: subsequentStage,
+            projectInitialUserPrompt: defaultProject.initial_user_prompt,
+            iterationNumber: 1,
+          });
         },
         Error,
         `Failed to gather inputs for prompt assembly: Failed to retrieve REQUIRED AI contributions for stage 'Previous Stage'.`,
@@ -516,24 +622,41 @@ Deno.test("assembleSeedPrompt", async (t) => {
     };
 
     const { client, fileManager } = setup({});
-    fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+    fileManager.setUploadAndRegisterFileResponse({ 
+      id: "mock-id", 
+      created_at: new Date().toISOString(), 
+      file_name: "mock-file.md", 
+      iteration_number: 1, 
+      mime_type: "text/markdown", 
+      project_id: "mock-project-id", 
+      resource_description: { test: "test" }, 
+      resource_type: "test", 
+      size_bytes: 100, 
+      storage_bucket: "mock-bucket", 
+      storage_path: "mock-path", 
+      user_id: "mock-user-id",
+      session_id: "mock-session-id",
+      source_contribution_id: "mock-source-contribution-id",
+      stage_slug: "mock-stage-slug",
+      updated_at: new Date().toISOString(),
+    }, null);
 
     const downloadFn = (bucket: string, path: string) =>
       downloadFromStorage(client, bucket, path);
 
     try {
-      await assembleSeedPrompt(
-        client,
-        downloadFn,
-        gatherInputsForStage,
-        renderPromptMockFn,
+      await assembleSeedPrompt({
+        dbClient: client,
+        downloadFromStorageFn: downloadFn,
+        gatherInputsForStageFn: gatherInputsForStage,
+        renderPromptFn: renderPromptMockFn,
         fileManager,
-        projectWithUserOverlay,
-        defaultSession,
-        defaultStage,
-        projectWithUserOverlay.initial_user_prompt,
-        1,
-      );
+        project: projectWithUserOverlay,
+        session: defaultSession,
+        stage: defaultStage,
+        projectInitialUserPrompt: projectWithUserOverlay.initial_user_prompt,
+        iterationNumber: 1,
+      });
       assertEquals(capturedUserOverlay, userOverlay);
     } finally {
       teardown();
@@ -542,8 +665,24 @@ Deno.test("assembleSeedPrompt", async (t) => {
 
   await t.step("should throw an error if stage is missing system prompt", async () => {
     const { client, fileManager } = setup();
-    fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
-
+    fileManager.setUploadAndRegisterFileResponse({ 
+      id: "mock-id", 
+      created_at: new Date().toISOString(), 
+      file_name: "mock-file.md", 
+      iteration_number: 1, 
+      mime_type: "text/markdown", 
+      project_id: "mock-project-id", 
+      resource_description: { test: "test" }, 
+      resource_type: "test", 
+      size_bytes: 100, 
+      storage_bucket: "mock-bucket", 
+      storage_path: "mock-path", 
+      user_id: "mock-user-id",
+      session_id: "mock-session-id",
+      source_contribution_id: "mock-source-contribution-id",
+      stage_slug: "mock-stage-slug",
+      updated_at: new Date().toISOString(),
+    }, null);
     const downloadFn = (bucket: string, path: string) =>
       downloadFromStorage(client, bucket, path);
 
@@ -555,18 +694,18 @@ Deno.test("assembleSeedPrompt", async (t) => {
 
       await assertRejects(
         async () => {
-          await assembleSeedPrompt(
-            client,
-            downloadFn,
-            gatherInputsForStage,
-            renderPrompt,
+          await assembleSeedPrompt({
+            dbClient: client,
+            downloadFromStorageFn: downloadFn,
+            gatherInputsForStageFn: gatherInputsForStage,
+            renderPromptFn: renderPrompt,
             fileManager,
-            defaultProject,
-            defaultSession,
-            stageWithMissingPrompt,
-            defaultProject.initial_user_prompt,
-            1,
-          );
+            project: defaultProject,
+            session: defaultSession,
+            stage: stageWithMissingPrompt,
+            projectInitialUserPrompt: defaultProject.initial_user_prompt,
+            iterationNumber: 1,
+          });
         },
         Error,
         `RENDER_PRECONDITION_FAILED: missing system prompt text for stage ${stageWithMissingPrompt.slug}`,
@@ -578,7 +717,24 @@ Deno.test("assembleSeedPrompt", async (t) => {
 
   await t.step("should throw if prompt requires 'style_guide_markdown' but it is not provided", async () => {
     const { client, fileManager } = setup();
-    fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+    fileManager.setUploadAndRegisterFileResponse({ 
+      id: "mock-id",
+      created_at: new Date().toISOString(),
+      file_name: "mock-file.md",
+      iteration_number: 1,
+      mime_type: "text/markdown",
+      project_id: "mock-project-id",
+      resource_description: { test: "test" },
+      resource_type: "test",  
+      size_bytes: 100,
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/file.md",
+      user_id: "mock-user-id",
+      session_id: "mock-session-id",
+      source_contribution_id: "mock-source-contribution-id",
+      stage_slug: "mock-stage-slug",
+      updated_at: new Date().toISOString(),
+    }, null);
 
     const downloadFn = (bucket: string, path: string) =>
       downloadFromStorage(client, bucket, path);
@@ -594,18 +750,18 @@ Deno.test("assembleSeedPrompt", async (t) => {
 
       await assertRejects(
         async () => {
-          await assembleSeedPrompt(
-            client,
-            downloadFn,
-            gatherInputsForStage,
-            renderPrompt,
+          await assembleSeedPrompt({
+            dbClient: client,
+            downloadFromStorageFn: downloadFn,
+            gatherInputsForStageFn: gatherInputsForStage,
+            renderPromptFn: renderPrompt,
             fileManager,
-            defaultProject,
-            defaultSession,
-            stageWithStyleGuidePrompt,
-            defaultProject.initial_user_prompt,
-            1,
-          );
+            project: defaultProject,
+            session: defaultSession,
+            stage: stageWithStyleGuidePrompt,
+            projectInitialUserPrompt: defaultProject.initial_user_prompt,
+            iterationNumber: 1,
+          });
         },
         Error,
         `RENDER_PRECONDITION_FAILED: missing style_guide_markdown for stage ${stageWithStyleGuidePrompt.slug}`,
@@ -615,9 +771,26 @@ Deno.test("assembleSeedPrompt", async (t) => {
     }
   });
 
-  await t.step("should throw if prompt requires 'expected_output_artifacts_json' but it is not provided", async () => {
+  await t.step("should throw if prompt requires 'outputs_required' but it is not provided", async () => {
     const { client, fileManager } = setup();
-    fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+    fileManager.setUploadAndRegisterFileResponse({ 
+      id: "mock-id",
+      created_at: new Date().toISOString(),
+      file_name: "mock-file.md",
+      iteration_number: 1,
+      mime_type: "text/markdown",
+      project_id: "mock-project-id",
+      resource_description: { test: "test" },
+      resource_type: "test",
+      size_bytes: 100,
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/file.md",
+      user_id: "mock-user-id",
+      session_id: "mock-session-id",
+      source_contribution_id: "mock-source-contribution-id",
+      stage_slug: "mock-stage-slug",
+      updated_at: new Date().toISOString(),
+    }, null);
 
     const downloadFn = (bucket: string, path: string) =>
       downloadFromStorage(client, bucket, path);
@@ -627,28 +800,28 @@ Deno.test("assembleSeedPrompt", async (t) => {
         ...defaultStage,
         system_prompts: {
           prompt_text:
-            "This prompt requires a {{#section:expected_output_artifacts_json}}.",
+            "This prompt requires a {{outputs_required}}.",
         },
-        expected_output_artifacts: null,
+        recipe_step: { ...mockSimpleRecipeStep, outputs_required: [] },
       };
 
       await assertRejects(
         async () => {
-          await assembleSeedPrompt(
-            client,
-            downloadFn,
-            gatherInputsForStage,
-            renderPrompt,
+          await assembleSeedPrompt({
+            dbClient: client,
+            downloadFromStorageFn: downloadFn,
+            gatherInputsForStageFn: gatherInputsForStage,
+            renderPromptFn: renderPrompt,
             fileManager,
-            defaultProject,
-            defaultSession,
-            stageWithArtifactsPrompt,
-            defaultProject.initial_user_prompt,
-            1,
-          );
+            project: defaultProject,
+            session: defaultSession,
+            stage: stageWithArtifactsPrompt,
+            projectInitialUserPrompt: defaultProject.initial_user_prompt,
+            iterationNumber: 1,
+          });
         },
         Error,
-        `RENDER_PRECONDITION_FAILED: missing expected_output_artifacts_json for stage ${stageWithArtifactsPrompt.slug}`,
+        `RENDER_PRECONDITION_FAILED: missing outputs_required for stage ${stageWithArtifactsPrompt.slug}`,
       );
     } finally {
       teardown();
@@ -657,7 +830,24 @@ Deno.test("assembleSeedPrompt", async (t) => {
 
   await t.step("should throw an error if session has no selected models", async () => {
       const { client, fileManager } = setup();
-      fileManager.setUploadAndRegisterFileResponse({ id: "mock-id" } as FileRecord, null);
+      fileManager.setUploadAndRegisterFileResponse({ 
+        id: "mock-id", 
+        created_at: new Date().toISOString(),
+        file_name: "mock-file.md",
+        iteration_number: 1,
+        mime_type: "text/markdown",
+        project_id: "mock-project-id",
+        resource_description: { test: "test" },
+        resource_type: "test",
+        size_bytes: 100,
+        storage_bucket: "test-bucket",
+        storage_path: "path/to/mock/file.md",
+        user_id: "mock-user-id",
+        session_id: "mock-session-id",
+        source_contribution_id: "mock-source-contribution-id",
+        stage_slug: "mock-stage-slug",
+        updated_at: new Date().toISOString(),
+      }, null);
 
       const downloadFn = (bucket: string, path: string) =>
         downloadFromStorage(client, bucket, path);
@@ -669,18 +859,18 @@ Deno.test("assembleSeedPrompt", async (t) => {
       try {
         await assertRejects(
           async () => {
-            await assembleSeedPrompt(
-              client,
-              downloadFn,
-              gatherInputsForStage,
-              renderPrompt,
+            await assembleSeedPrompt({
+              dbClient: client,
+              downloadFromStorageFn: downloadFn,
+              gatherInputsForStageFn: gatherInputsForStage,
+              renderPromptFn: renderPrompt,
               fileManager,
-              defaultProject,
-              sessionWithNoModels,
-              defaultStage,
-              defaultProject.initial_user_prompt,
-              1,
-            );
+              project: defaultProject,
+              session: sessionWithNoModels,
+              stage: defaultStage,
+              projectInitialUserPrompt: defaultProject.initial_user_prompt,
+              iterationNumber: 1,
+            });
           },
           Error,
           "PRECONDITION_FAILED: Session must have at least one selected model.",

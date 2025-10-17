@@ -582,9 +582,7 @@ export function isDialecticJobRowArray(arr: unknown): arr is DialecticJobRow[] {
 export function isDialecticPlanJobPayload(payload: unknown): payload is DialecticPlanJobPayload {
     if (!isRecord(payload)) return false;
     return (
-        payload.job_type === 'plan' &&
-        isRecord(payload.step_info) &&
-        typeof payload.step_info.current_step === 'number'
+        payload.job_type === 'PLAN'
     );
 }
 

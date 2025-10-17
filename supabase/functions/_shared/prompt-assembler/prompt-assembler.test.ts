@@ -1,351 +1,531 @@
 import { assertThrows, assertEquals, assert } from "jsr:@std/assert@0.225.3";
-import { spy, stub, Spy, assertSpyCalls, assertSpyCall } from "jsr:@std/testing@0.225.1/mock";
+import {
+  spy,
+  stub,
+  assertSpyCalls,
+  assertSpyCall,
+} from "jsr:@std/testing@0.225.1/mock";
 import { PromptAssembler } from "./prompt-assembler.ts";
-import { createMockSupabaseClient, type MockSupabaseClientSetup } from "../supabase.mock.ts";
+import {
+  createMockSupabaseClient,
+  type MockSupabaseClientSetup,
+} from "../supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Database } from "../../types_db.ts";
-import { AssembleFn } from "./assemble.ts";
-import { GatherContextFn } from "./gatherContext.ts";
-import { RenderFn } from "./render.ts";
-import { GatherInputsForStageFn } from "./gatherInputsForStage.ts";
-import { GatherContinuationInputsFn } from "./gatherContinuationInputs.ts";
-import { DynamicContextVariables, AssemblerSourceDocument, ProjectContext, SessionContext, StageContext, ContributionOverride } from "./prompt-assembler.interface.ts";
-import { Messages } from "../types.ts";
+import type { Database, Json } from "../../types_db.ts";
+import {
+  type AssembledPrompt,
+  type AssemblePlannerPromptDeps,
+  type AssembleSeedPromptDeps,
+  type AssembleTurnPromptDeps,
+  type AssembleContinuationPromptDeps,
+  type ProjectContext,
+  type SessionContext,
+  type StageContext,
+  type AssemblePromptOptions,
+  type RenderFn,
+  type RenderPromptFunctionType,
+  type DynamicContextVariables,
+} from "./prompt-assembler.interface.ts";
+import { IFileManager } from "../types/file_manager.types.ts";
+import { FileManagerService } from "../services/file_manager.ts";
+import {
+  DialecticJobRow,
+  DialecticRecipeStep,
+} from "../../dialectic-service/dialectic.interface.ts";
+
+// --- START: Mocks ---
+
+// Mock implementations for standalone functions
+const mockAssembleSeedPrompt = (
+  _deps: AssembleSeedPromptDeps,
+): Promise<AssembledPrompt> =>
+  Promise.resolve({
+    promptContent: "seed",
+    source_prompt_resource_id: "seed-id",
+  });
+const mockAssemblePlannerPrompt = (
+  _deps: AssemblePlannerPromptDeps,
+): Promise<AssembledPrompt> =>
+  Promise.resolve({
+    promptContent: "planner",
+    source_prompt_resource_id: "planner-id",
+  });
+const mockAssembleTurnPrompt = (
+  _deps: AssembleTurnPromptDeps,
+): Promise<AssembledPrompt> =>
+  Promise.resolve({
+    promptContent: "turn",
+    source_prompt_resource_id: "turn-id",
+  });
+const mockAssembleContinuationPrompt = (
+  _deps: AssembleContinuationPromptDeps,
+): Promise<AssembledPrompt> =>
+  Promise.resolve({
+    promptContent: "continuation",
+    source_prompt_resource_id: "continuation-id",
+  });
+
+const mockRenderFn: RenderFn = (
+  _renderPromptFn: RenderPromptFunctionType,
+  _stage: StageContext,
+  _context: DynamicContextVariables,
+  _userProjectOverlayValues: Json | null,
+) => "rendered_prompt";
+
+const mockProject: ProjectContext = {
+  id: "project-id",
+  created_at: new Date().toISOString(),
+  initial_user_prompt: "Test prompt",
+  project_name: "Test Project",
+  selected_domain_id: "domain-id",
+  status: "active",
+  updated_at: new Date().toISOString(),
+  user_id: "user-id",
+  dialectic_domains: { name: "Test Domain" },
+  initial_prompt_resource_id: null,
+  process_template_id: null,
+  repo_url: null,
+  selected_domain_overlay_id: null,
+  user_domain_overlay_values: null,
+};
+
+const mockSession: SessionContext = {
+  id: "session-id",
+  created_at: new Date().toISOString(),
+  current_stage_id: "stage-id",
+  iteration_count: 1,
+  project_id: "project-id",
+  status: "active",
+  updated_at: new Date().toISOString(),
+  associated_chat_id: null,
+  selected_model_ids: ["model-1"],
+  session_description: null,
+  user_input_reference_url: null,
+};
+
+const mockRecipeStep: DialecticRecipeStep = {
+  id: "recipe-step-id",
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  step_name: "test-step",
+  job_type: "PLAN",
+  prompt_type: "Planner",
+  granularity_strategy: "all_to_one",
+  inputs_required: [],
+  inputs_relevance: [],
+  outputs_required: [],
+  prompt_template_id: "prompt-template-id",
+  template_step_id: "template-step-id",
+  branch_key: "main",
+  config_override: {},
+  execution_order: 1,
+  output_type: "text",
+  parallel_group: null,
+  step_key: "step-key",
+  step_slug: "test-step",
+  instance_id: "instance-id",
+  is_skipped: false,
+  object_filter: {},
+  output_overrides: {},
+};
+
+const mockStage: StageContext = {
+  id: "stage-id",
+  created_at: new Date().toISOString(),
+  display_name: "Test Stage",
+  slug: "test-stage",
+  recipe_step: mockRecipeStep,
+  default_system_prompt_id: null,
+  description: null,
+  system_prompts: null,
+  domain_specific_prompt_overlays: [],
+  active_recipe_instance_id: null,
+  expected_output_template_ids: [],
+  recipe_template_id: null,
+};
+
+const mockJob: DialecticJobRow = {
+  id: "job-id",
+  created_at: new Date().toISOString(),
+  session_id: "session-id",
+  user_id: "user-id",
+  status: "pending",
+  payload: { model_id: "model-1" },
+  parent_job_id: null,
+  error_details: null,
+  completed_at: null,
+  attempt_count: 0,
+  iteration_number: 1,
+  is_test_job: false,
+  job_type: "EXECUTE",
+  stage_slug: "test-stage",
+  target_contribution_id: null,
+  max_retries: 3,
+  prerequisite_job_id: null,
+  results: null,
+  started_at: null,
+};
+
+// --- END: Mocks ---
 
 Deno.test("PromptAssembler", async (t) => {
-    let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
-    let denoEnvStub: any = null;
+  let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
+  let denoEnvStub: any = null;
+
+  const setup = (envVars: Record<string, string> = {}) => {
+    denoEnvStub = stub(Deno.env, "get", (key: string) => envVars[key]);
+    mockSupabaseSetup = createMockSupabaseClient();
+    const client = mockSupabaseSetup.client as unknown as SupabaseClient<
+      Database
+    >;
     
-    // Shared mock data
-    const mockProject: ProjectContext = {
-        id: "project-id",
-        created_at: new Date().toISOString(),
-        initial_user_prompt: "Test prompt",
-        project_name: "Test Project",
-        selected_domain_id: "domain-id",
-        status: "active",
-        updated_at: new Date().toISOString(),
-        user_id: "user-id",
-        dialectic_domains: { name: "Test Domain" },
-        initial_prompt_resource_id: null,
-        process_template_id: null,
-        repo_url: null,
-        selected_domain_overlay_id: null,
-        user_domain_overlay_values: null,
-    };
-    
-    const mockSession: SessionContext = {
-        id: "session-id",
-        created_at: new Date().toISOString(),
-        current_stage_id: "stage-id",
-        iteration_count: 1,
-        project_id: "project-id",
-        status: "active",
-        updated_at: new Date().toISOString(),
-        associated_chat_id: null,
-        selected_model_ids: [],
-        session_description: null,
-        user_input_reference_url: null,
-    };
+    let fileManager: IFileManager | null = null;
+    try {
+      fileManager = new FileManagerService(client, { constructStoragePath: () => ({ storagePath: '', fileName: '' }) });
+    } catch (e) {
+      // Allow setup to proceed without a file manager if the env var is not set, 
+      // so that the constructor test can fail gracefully.
+      if (e instanceof Error && e.message !== "SB_CONTENT_STORAGE_BUCKET environment variable is not set.") {
+        throw e; // re-throw unexpected errors
+      }
+    }
 
-    const mockStage: StageContext = {
-        id: "stage-id",
-        created_at: new Date().toISOString(),
-        display_name: "Test Stage",
-        slug: "test-stage",
-        default_system_prompt_id: null,
-        description: null,
-        expected_output_artifacts: null,
-        input_artifact_rules: null,
-        system_prompts: null,
-        domain_specific_prompt_overlays: [],
-    };
+    return { client, fileManager };
+  };
 
-    const mockDynamicContext: DynamicContextVariables = {
-        user_objective: 'mock user objective',
-        domain: 'mock domain',
-        agent_count: 1,
-        context_description: 'mock context description',
-        original_user_request: 'mock original user request',
-        prior_stage_ai_outputs: 'mock prior stage ai outputs',
-        prior_stage_user_feedback: 'mock prior stage user feedback',
-        deployment_context: null,
-        reference_documents: null,
-        constraint_boundaries: null,
-        stakeholder_considerations: null,
-        deliverable_format: 'Standard markdown format.',
-    };
+  const teardown = () => {
+    denoEnvStub?.restore();
+    mockSupabaseSetup?.clearAllStubs?.();
+  };
 
-    const setup = (envVars: Record<string, string> = {}) => {
-        denoEnvStub = stub(Deno.env, "get", (key: string) => envVars[key]);
-        mockSupabaseSetup = createMockSupabaseClient();
-        
-        return {
-            client: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+  await t.step(
+    "constructor should throw an error if SB_CONTENT_STORAGE_BUCKET is not set",
+    () => {
+      try {
+        const { client } = setup(); // No env vars
+        assertThrows(
+          () =>
+            new FileManagerService(client, {
+              constructStoragePath: () => ({ storagePath: "", fileName: "" }),
+            }),
+          Error,
+          "SB_CONTENT_STORAGE_BUCKET environment variable is not set.",
+        );
+      } finally {
+        teardown();
+      }
+    },
+  );
+
+  await t.step("assembleSeedPrompt should call the injected function", async () => {
+    try {
+      const { client, fileManager } = setup({
+        "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+      });
+      const assembleSeedSpy = spy(mockAssembleSeedPrompt);
+      const assembler = new PromptAssembler(
+        client,
+        fileManager!,
+        undefined,
+        undefined,
+        assembleSeedSpy,
+      );
+
+      const deps: AssembleSeedPromptDeps = {
+        dbClient: client,
+        fileManager: fileManager!,
+        project: mockProject,
+        session: mockSession,
+        stage: mockStage,
+        projectInitialUserPrompt: "init prompt",
+        iterationNumber: 1,
+        downloadFromStorageFn: assembler["downloadFromStorageFn"],
+        gatherInputsForStageFn: assembler["gatherInputsForStageFn"],
+        renderPromptFn: assembler["renderPromptFn"],
+      };
+
+      await assembler.assembleSeedPrompt(deps);
+
+      assertSpyCalls(assembleSeedSpy, 1);
+      assertEquals(assembleSeedSpy.calls[0].args[0], deps);
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("assemblePlannerPrompt should call the injected function", async () => {
+    try {
+      const { client, fileManager } = setup({
+        "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+      });
+      const assemblePlannerSpy = spy(mockAssemblePlannerPrompt);
+      const assembler = new PromptAssembler(
+        client,
+        fileManager!,
+        undefined,
+        undefined,
+        undefined,
+        assemblePlannerSpy,
+      );
+
+      const deps: AssemblePlannerPromptDeps = {
+        dbClient: client,
+        fileManager: fileManager!,
+        job: { ...mockJob, job_type: "PLAN" },
+        project: mockProject,
+        session: mockSession,
+        stage: mockStage,
+        gatherContext: assembler["gatherContextFn"],
+        render: mockRenderFn,
+      };
+
+      await assembler.assemblePlannerPrompt(deps);
+
+      assertSpyCalls(assemblePlannerSpy, 1);
+      assertEquals(assemblePlannerSpy.calls[0].args[0], deps);
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("assembleTurnPrompt should call the injected function", async () => {
+    try {
+      const { client, fileManager } = setup({
+        "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+      });
+      const assembleTurnSpy = spy(mockAssembleTurnPrompt);
+      const assembler = new PromptAssembler(
+        client,
+        fileManager!,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        assembleTurnSpy,
+      );
+
+      const deps: AssembleTurnPromptDeps = {
+        dbClient: client,
+        fileManager: fileManager!,
+        job: { ...mockJob, job_type: "EXECUTE" },
+        project: mockProject,
+        session: mockSession,
+        stage: mockStage,
+        gatherContext: assembler["gatherContextFn"],
+        render: mockRenderFn,
+      };
+
+      await assembler.assembleTurnPrompt(deps);
+
+      assertSpyCalls(assembleTurnSpy, 1);
+      assertEquals(assembleTurnSpy.calls[0].args[0], deps);
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step(
+    "assembleContinuationPrompt should call the injected function",
+    async () => {
+      try {
+        const { client, fileManager } = setup({
+          "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+        });
+        const assembleContinuationSpy = spy(mockAssembleContinuationPrompt);
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          assembleContinuationSpy,
+        );
+
+        const deps: AssembleContinuationPromptDeps = {
+          dbClient: client,
+          fileManager: fileManager!,
+          job: mockJob,
+          project: mockProject,
+          session: mockSession,
+          stage: mockStage,
+          continuationContent: "continue this...",
+          gatherContext: assembler["gatherContextFn"],
         };
-    };
 
-    const teardown = () => {
-        denoEnvStub?.restore();
-        if (mockSupabaseSetup) {
-            mockSupabaseSetup.clearAllStubs?.();
-        }
-    };
+        await assembler.assembleContinuationPrompt(deps);
 
-    await t.step("constructor should throw an error if SB_CONTENT_STORAGE_BUCKET is not set", () => {
-        try {
-            const { client } = setup(); // No env vars provided
-            assertThrows(
-                () => {
-                    new PromptAssembler(client);
-                },
-                Error,
-                "SB_CONTENT_STORAGE_BUCKET environment variable is not set."
-            );
-        } finally {
-            teardown();
-        }
-    });
+        assertSpyCalls(assembleContinuationSpy, 1);
+        assertEquals(assembleContinuationSpy.calls[0].args[0], deps);
+      } finally {
+        teardown();
+      }
+    },
+  );
 
-    await t.step("constructor should use default functions when none are provided", () => {
-        try {
-            const { client } = setup({ "SB_CONTENT_STORAGE_BUCKET": "test-bucket" });
-            const assembler = new PromptAssembler(client);
-            
-            // Assert that internal function properties are assigned the default imports.
-            // This is a "white box" test, but necessary to ensure DI fallback.
-            assert(assembler['assembleFn'], "assembleFn should be set");
-            assert(assembler['gatherContextFn'], "gatherContextFn should be set");
-            assert(assembler['renderFn'], "renderFn should be set");
-            assert(assembler['gatherInputsForStageFn'], "gatherInputsForStageFn should be set");
-            assert(assembler['gatherContinuationInputsFn'], "gatherContinuationInputsFn should be set");
-        } finally {
-            teardown();
-        }
-    });
+  await t.step(
+    "assemble router should delegate to assembleSeedPrompt",
+    async () => {
+      try {
+        const { client, fileManager } = setup({
+          "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+        });
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          mockAssembleSeedPrompt,
+        );
+        const seedSpy = spy(assembler, "assembleSeedPrompt");
 
-    await t.step("assemble should call the injected assembleFn with the correct arguments", async () => {
-        try {
-            const { client } = setup({ "SB_CONTENT_STORAGE_BUCKET": "test-bucket" });
-            const mockAssembleFn: AssembleFn = () => Promise.resolve("");
-            const assembleSpy = spy(mockAssembleFn);
+        const options: AssemblePromptOptions = {
+          project: mockProject,
+          session: mockSession,
+          stage: mockStage,
+          projectInitialUserPrompt: "init prompt",
+          iterationNumber: 1,
+        };
 
-            const assembler = new PromptAssembler(
-                client,
-                undefined,
-                undefined,
-                assembleSpy
-            );
-            
-            const projectInitialUserPrompt = "prompt";
-            const iterationNumber = 1;
-            const continuationContent = "continue";
+        await assembler.assemble(options);
 
-            await assembler.assemble(mockProject, mockSession, mockStage, projectInitialUserPrompt, iterationNumber, continuationContent);
+        assertSpyCalls(seedSpy, 1);
+      } finally {
+        teardown();
+      }
+    },
+  );
 
-            assertSpyCalls(assembleSpy, 1);
-            assertSpyCall(assembleSpy, 0, {
-                args: [client, assembler['downloadFromStorageFn'], assembler['gatherInputsForStageFn'], assembler['renderPromptFn'], mockProject, mockSession, mockStage, projectInitialUserPrompt, iterationNumber, continuationContent],
-            });
-        } finally {
-            teardown();
-        }
-    });
+  await t.step(
+    "assemble router should delegate to assemblePlannerPrompt",
+    async () => {
+      try {
+        const { client, fileManager } = setup({
+          "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+        });
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          undefined,
+          mockAssemblePlannerPrompt,
+        );
+        const plannerSpy = spy(assembler, "assemblePlannerPrompt");
 
-    await t.step("assemble should call the injected assembleFn correctly when continuationContent is omitted", async () => {
-        try {
-            const { client } = setup({ "SB_CONTENT_STORAGE_BUCKET": "test-bucket" });
-            const mockAssembleFn: AssembleFn = () => Promise.resolve("");
-            const assembleSpy = spy(mockAssembleFn);
+        const options: AssemblePromptOptions = {
+          project: mockProject,
+          session: mockSession,
+          stage: mockStage,
+          projectInitialUserPrompt: "init prompt",
+          iterationNumber: 1,
+          job: {
+            id: "job-id-planner",
+            created_at: new Date().toISOString(),
+            session_id: "session-id",
+            user_id: "user-id",
+            status: "pending",
+            parent_job_id: null,
+            error_details: null,
+            completed_at: null,
+            attempt_count: 0,
+            iteration_number: 1,
+            is_test_job: false,
+            stage_slug: "test-stage",
+            target_contribution_id: null,
+            max_retries: 3,
+            prerequisite_job_id: null,
+            results: null,
+            started_at: null,
+            job_type: "PLAN",
+            payload: {
+              job_type: "PLAN",
+              header_context_resource_id: "mock-header-id",
+            },
+          },
+        };
 
-            const assembler = new PromptAssembler(
-                client,
-                undefined,
-                undefined,
-                assembleSpy
-            );
-            
-            const projectInitialUserPrompt = "prompt";
-            const iterationNumber = 1;
+        await assembler.assemble(options);
 
-            await assembler.assemble(mockProject, mockSession, mockStage, projectInitialUserPrompt, iterationNumber);
+        assertSpyCalls(plannerSpy, 1);
+      } finally {
+        teardown();
+      }
+    },
+  );
 
-            assertSpyCalls(assembleSpy, 1);
-            assertSpyCall(assembleSpy, 0, {
-                args: [client, assembler['downloadFromStorageFn'], assembler['gatherInputsForStageFn'], assembler['renderPromptFn'], mockProject, mockSession, mockStage, projectInitialUserPrompt, iterationNumber, undefined],
-            });
-        } finally {
-            teardown();
-        }
-    });
+  await t.step(
+    "assemble router should delegate to assembleTurnPrompt",
+    async () => {
+      try {
+        const { client, fileManager } = setup({
+          "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+        });
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          mockAssembleTurnPrompt,
+        );
+        const turnSpy = spy(assembler, "assembleTurnPrompt");
 
-    await t.step("gatherContext should call the injected gatherContextFn with the correct arguments", async () => {
-        try {
-            const { client } = setup({ "SB_CONTENT_STORAGE_BUCKET": "test-bucket" });
-            const mockGatherContextFn: GatherContextFn = () => Promise.resolve(mockDynamicContext);
-            const gatherContextSpy = spy(mockGatherContextFn);
+        const options: AssemblePromptOptions = {
+          project: mockProject,
+          session: mockSession,
+          stage: mockStage,
+          projectInitialUserPrompt: "init prompt",
+          iterationNumber: 1,
+          job: { ...mockJob, job_type: "EXECUTE" },
+        };
 
-            const assembler = new PromptAssembler(
-                client,
-                undefined,
-                undefined,
-                undefined,
-                gatherContextSpy
-            );
+        await assembler.assemble(options);
 
-            const projectInitialUserPrompt = "prompt";
-            const iterationNumber = 1;
-            const overrideContributions: ContributionOverride[] = [{ content: "override" }];
+        assertSpyCalls(turnSpy, 1);
+      } finally {
+        teardown();
+      }
+    },
+  );
 
-            await assembler.gatherContext(mockProject, mockSession, mockStage, projectInitialUserPrompt, iterationNumber, overrideContributions);
+  await t.step(
+    "assemble router should delegate to assembleContinuationPrompt",
+    async () => {
+      try {
+        const { client, fileManager } = setup({
+          "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+        });
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          mockAssembleContinuationPrompt,
+        );
+        const continuationSpy = spy(assembler, "assembleContinuationPrompt");
 
-            assertSpyCalls(gatherContextSpy, 1);
-            assertSpyCall(gatherContextSpy, 0, {
-                args: [client, assembler['downloadFromStorageFn'], assembler['gatherInputsForStageFn'], mockProject, mockSession, mockStage, projectInitialUserPrompt, iterationNumber, overrideContributions],
-            });
-        } finally {
-            teardown();
-        }
-    });
+        const options: AssemblePromptOptions = {
+          project: mockProject,
+          session: mockSession,
+          stage: mockStage,
+          projectInitialUserPrompt: "init prompt",
+          iterationNumber: 1,
+          job: mockJob,
+          continuationContent: "continue this...",
+        };
 
-    await t.step("gatherContext should call the injected gatherContextFn correctly when overrideContributions is omitted", async () => {
-        try {
-            const { client } = setup({ "SB_CONTENT_STORAGE_BUCKET": "test-bucket" });
-            const mockGatherContextFn: GatherContextFn = () => Promise.resolve(mockDynamicContext);
-            const gatherContextSpy = spy(mockGatherContextFn);
+        await assembler.assemble(options);
 
-            const assembler = new PromptAssembler(
-                client,
-                undefined,
-                undefined,
-                undefined,
-                gatherContextSpy
-            );
-
-            const projectInitialUserPrompt = "prompt";
-            const iterationNumber = 1;
-
-            await assembler.gatherContext(mockProject, mockSession, mockStage, projectInitialUserPrompt, iterationNumber);
-
-            assertSpyCalls(gatherContextSpy, 1);
-            assertSpyCall(gatherContextSpy, 0, {
-                args: [client, assembler['downloadFromStorageFn'], assembler['gatherInputsForStageFn'], mockProject, mockSession, mockStage, projectInitialUserPrompt, iterationNumber, undefined],
-            });
-        } finally {
-            teardown();
-        }
-    });
-
-    await t.step("render should call the injected renderFn with the correct arguments", () => {
-        try {
-            const { client } = setup({ "SB_CONTENT_STORAGE_BUCKET": "test-bucket" });
-            const mockRenderFn: RenderFn = () => "";
-            const renderSpy = spy(mockRenderFn);
-
-            const assembler = new PromptAssembler(
-                client,
-                undefined,
-                undefined,
-                undefined,
-                undefined,
-                renderSpy
-            );
-
-            const userProjectOverlayValues = { key: "value" };
-
-            assembler.render(mockStage, mockDynamicContext, userProjectOverlayValues);
-
-            assertSpyCalls(renderSpy, 1);
-            assertSpyCall(renderSpy, 0, {
-                args: [assembler['renderPromptFn'], mockStage, mockDynamicContext, userProjectOverlayValues],
-            });
-        } finally {
-            teardown();
-        }
-    });
-
-    await t.step("render should call the injected renderFn correctly when userProjectOverlayValues is omitted", () => {
-        try {
-            const { client } = setup({ "SB_CONTENT_STORAGE_BUCKET": "test-bucket" });
-            const mockRenderFn: RenderFn = () => "";
-            const renderSpy = spy(mockRenderFn);
-
-            const assembler = new PromptAssembler(
-                client,
-                undefined,
-                undefined,
-                undefined,
-                undefined,
-                renderSpy
-            );
-
-            assembler.render(mockStage, mockDynamicContext);
-
-            assertSpyCalls(renderSpy, 1);
-            assertSpyCall(renderSpy, 0, {
-                args: [assembler['renderPromptFn'], mockStage, mockDynamicContext, null],
-            });
-        } finally {
-            teardown();
-        }
-    });
-
-    await t.step("gatherInputsForStage should call the injected gatherInputsForStageFn with the correct arguments", async () => {
-        try {
-            const { client } = setup({ "SB_CONTENT_STORAGE_BUCKET": "test-bucket" });
-            const mockGatherInputsFn: GatherInputsForStageFn = () => Promise.resolve([]);
-            const gatherInputsSpy = spy(mockGatherInputsFn);
-
-            const assembler = new PromptAssembler(
-                client,
-                undefined,
-                undefined,
-                undefined,
-                undefined,
-                undefined,
-                gatherInputsSpy
-            );
-            
-            const iterationNumber = 1;
-
-            await assembler.gatherInputsForStage(mockStage, mockProject, mockSession, iterationNumber);
-
-            assertSpyCalls(gatherInputsSpy, 1);
-            assertSpyCall(gatherInputsSpy, 0, {
-                args: [client, assembler['downloadFromStorageFn'], mockStage, mockProject, mockSession, iterationNumber],
-            });
-        } finally {
-            teardown();
-        }
-    });
-
-    await t.step("gatherContinuationInputs should call the injected gatherContinuationInputsFn with the correct arguments", async () => {
-        try {
-            const { client } = setup({ "SB_CONTENT_STORAGE_BUCKET": "test-bucket" });
-            const mockGatherContinuationInputsFn: GatherContinuationInputsFn = () => Promise.resolve([]);
-            const gatherContinuationInputsSpy = spy(mockGatherContinuationInputsFn);
-
-            const assembler = new PromptAssembler(
-                client,
-                undefined,
-                undefined,
-                undefined,
-                undefined,
-                undefined,
-                undefined,
-                gatherContinuationInputsSpy
-            );
-            
-            const chunkId = "chunk-id";
-
-            await assembler.gatherContinuationInputs(chunkId);
-
-            assertSpyCalls(gatherContinuationInputsSpy, 1);
-            assertSpyCall(gatherContinuationInputsSpy, 0, {
-                args: [client, assembler['downloadFromStorageFn'], chunkId],
-            });
-        } finally {
-            teardown();
-        }
-    });
+        assertSpyCalls(continuationSpy, 1);
+      } finally {
+        teardown();
+      }
+    },
+  );
 });

@@ -75,9 +75,14 @@ export function renderPrompt(
         const lineRemovalRegex = new RegExp(`^.*${placeholderRegex.source}.*$\\n?`, "gm");
         renderedText = renderedText.replace(lineRemovalRegex, '');
       } else {
-        const stringValue = (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
-          ? String(value)
-          : JSON.stringify(value);
+        let stringValue;
+        if (Array.isArray(value) && value.every(item => typeof item === 'string')) {
+          stringValue = value.join(", ");
+        } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          stringValue = String(value);
+        } else {
+          stringValue = JSON.stringify(value);
+        }
         renderedText = renderedText.replace(placeholderRegex, stringValue);
       }
     }

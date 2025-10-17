@@ -6,13 +6,6 @@ import {
 } from "./prompt-assembler.interface.ts";
 import { isJson, isRecord } from "../utils/type_guards.ts";
 
-export type RenderFn = (
-  renderPromptFn: RenderPromptFunctionType,
-  stage: StageContext,
-  context: DynamicContextVariables,
-  userProjectOverlayValues: Json | null,
-) => string;
-
 export function render(
   renderPromptFn: RenderPromptFunctionType,
   stage: StageContext,
@@ -38,7 +31,7 @@ export function render(
     "{{#section:style_guide_markdown}}",
   );
   const requiresArtifacts = basePromptText.includes(
-    "{{#section:expected_output_artifacts_json}}",
+    "{{outputs_required}}",
   );
 
   if (requiresStyleGuide) {
@@ -54,37 +47,39 @@ export function render(
     }
   }
 
-  // Inject artifacts JSON when provided on stage
-  if (
-    stage.expected_output_artifacts !== null &&
-    isRecord(stage.expected_output_artifacts)
-  ) {
-    if (!isJson(stage.expected_output_artifacts)) {
-      throw new Error("expected_output_artifacts must be JSON-compatible");
-    }
-    const injected: Record<string, Json> = {};
-    if (isRecord(systemDefaultOverlayValues)) {
-      for (const [key, value] of Object.entries(systemDefaultOverlayValues)) {
-        if (isJson(value)) {
-          injected[key] = value;
+  // Inject outputs_required JSON when provided on the context's recipeStep
+  const outputs = context.recipeStep?.outputs_required;
+  if (outputs) {
+    const isNonEmpty = Array.isArray(outputs)
+      ? outputs.length > 0
+      : Object.keys(outputs).length > 0;
+
+    if (isNonEmpty) {
+      if (!isJson(outputs)) {
+        throw new Error(
+          "context.recipeStep.outputs_required must be JSON-compatible",
+        );
+      }
+      const injected: Record<string, Json> = {};
+      if (isRecord(systemDefaultOverlayValues)) {
+        for (const [key, value] of Object.entries(systemDefaultOverlayValues)) {
+          if (isJson(value)) {
+            injected[key] = value;
+          }
         }
       }
+      injected["outputs_required"] = outputs;
+      systemDefaultOverlayValues = injected;
     }
-    injected["expected_output_artifacts_json"] =
-      stage.expected_output_artifacts;
-    systemDefaultOverlayValues = injected;
   }
 
   if (requiresArtifacts) {
     const artifactsVal = isRecord(systemDefaultOverlayValues)
-      ? systemDefaultOverlayValues["expected_output_artifacts_json"]
+      ? systemDefaultOverlayValues["outputs_required"]
       : undefined;
-    const artifactsOk = isRecord(artifactsVal) || Array.isArray(artifactsVal) ||
-      typeof artifactsVal === "string" || typeof artifactsVal === "number" ||
-      typeof artifactsVal === "boolean";
-    if (!artifactsOk) {
+    if (!artifactsVal) {
       throw new Error(
-        `RENDER_PRECONDITION_FAILED: missing expected_output_artifacts_json for stage ${stage.slug}`,
+        `RENDER_PRECONDITION_FAILED: missing outputs_required for stage ${stage.slug}`,
       );
     }
   }

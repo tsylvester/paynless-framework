@@ -1229,33 +1229,36 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
 Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
     await t.step('should return true for a valid plan job payload', () => {
         const payload = {
-            job_type: 'plan',
-            step_info: { current_step: 1 }
+            job_type: 'PLAN',
         };
         assert(isDialecticPlanJobPayload(payload));
     });
 
-    await t.step('should return false if job_type is wrong', () => {
+    await t.step('should return false if job_type is the wrong case', () => {
         const payload = {
-            job_type: 'execute',
-            step_info: { current_step: 1 }
-        };
-        assert(!isDialecticPlanJobPayload(payload));
-    });
-    
-    await t.step('should return false if step_info is missing', () => {
-        const payload = {
-            job_type: 'plan'
+            job_type: 'plan',
         };
         assert(!isDialecticPlanJobPayload(payload));
     });
 
-    await t.step('should return false if current_step is not a number', () => {
+    await t.step('should return false if job_type is not PLAN', () => {
         const payload = {
-            job_type: 'plan',
-            step_info: { current_step: '1' }
+            job_type: 'EXECUTE',
         };
         assert(!isDialecticPlanJobPayload(payload));
+    });
+    
+    await t.step('should return false if job_type is missing', () => {
+        const payload = {
+            some_other_prop: 'value'
+        };
+        assert(!isDialecticPlanJobPayload(payload));
+    });
+
+    await t.step('should return false for non-object payloads', () => {
+        assert(!isDialecticPlanJobPayload(null));
+        assert(!isDialecticPlanJobPayload("a string"));
+        assert(!isDialecticPlanJobPayload(123));
     });
 });
 
