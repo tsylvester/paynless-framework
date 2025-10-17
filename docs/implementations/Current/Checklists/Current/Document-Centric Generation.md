@@ -596,7 +596,7 @@ graph LR
         *   `[✅]` Y.f.iii. Document the file paths for any prompt text that must be added to the repository (planner/turn templates) and note commit hashes for new content.
         *   `[✅]` Y.f.iv. List the unit/integration tests that will verify the new data bindings once migrations are applied.
 
-*   `[🚧]` 5. `[BE]` Architect `PromptAssembler` as a Centralized, Persistence-Aware Service
+*   `[✅]` 5. `[BE]` Architect `PromptAssembler` as a Centralized, Persistence-Aware Service
     *   **DISCOVERY:** 5.b.iii. onward cannot be performed because the system currently does not have fully aligned stage definitions, step recipes, prompts, or artifact file trees that are capable of producing and consuming everything required against a specific, fully-aligned end-to-end contract. 
     *   **SOLUTION:** We have hit a backoff point where we need to build a full definition of all prompts, recipes, and artifacts for all stages, and implement the data objects, so that the contract-compliant data objects can be fetched and consumed by the `PromptAssembler` and other services that are dependent on the prompts. 
     *   **Objective:** To perform a complete architectural refactoring of the `PromptAssembler` service, making it the single source of truth for both assembling and persisting all prompt artifacts. This is the "Build the Tool" phase and focuses exclusively on the service's internal implementation. All consumer refactoring will be handled in a subsequent step.
@@ -620,7 +620,7 @@ graph LR
             *   `[✅]` 5.a.iii.5. Comment out, but do not delete, the old public `assemble` method.
             *   `[✅]` 5.a.iii.6. Implement the new public `assemble` router method. Its logic will inspect the `options` argument and contain a `switch` or `if/else` block to delegate the call to the appropriate specific method. This centralizes prompt selection logic.
             *   `[✅]` 5.a.iii.7. Implement stubs for the new public methods (`assembleSeedPrompt`, `assemblePlannerPrompt`, `assembleTurnPrompt`, `assembleContinuationPrompt`) that throw a `NotImplementedError`.
-    *   `[ ]` 5.b. **Phase 2: Implement Full Persistence and Business Logic in `PromptAssembler`**
+    *   `[✅]` 5.b. **Phase 2: Implement Full Persistence and Business Logic in `PromptAssembler`**
         *   `[✅]` 5.b.i. `[DOCS]` Read and analyze `Prompt Types and Definitions.md` to fully understand the distinct business logic requirements for each prompt type before beginning implementation.
         *   `[ ]` 5.b.ii. `[TEST-UNIT]` Create new test files for each new prompt assembly method. 
             *   `[✅]` 5.b.ii.1 `[TEST-UNIT]` Convert the existing `assemble.test.ts` file into `assembleSeedPrompt.test.ts`. Update the tests to mock the `FileManagerService` dependency and assert that it is called with a correctly structured `UploadContext` for each specific prompt type. They must also assert that the `source_prompt_resource_id` in the returned `AssembledPrompt` matches the ID from the file manager's mocked response.
@@ -628,7 +628,7 @@ graph LR
             *   `[✅]` 5.b.ii.3 `[TEST-UNIT]` Write specific, targeted unit tests for the public `assembleTurnPrompt`method based on the test coverage in `assembleSeedPrompt.test.ts`. These tests must mock the `FileManagerService` dependency and assert that it is called with a correctly structured `UploadContext` for each specific prompt type. They must also assert that the `source_prompt_resource_id` in the returned `AssembledPrompt` matches the ID from the file manager's mocked response.
             *   `[✅]` 5.b.ii.4 `[TEST-UNIT]` Write specific, targeted unit tests for the public `assembleContinuationPrompt`method based on the test coverage in `assembleSeedPrompt.test.ts`. These tests must mock the `FileManagerService` dependency and assert that it is called with a correctly structured `UploadContext` for each specific prompt type. They must also assert that the `source_prompt_resource_id` in the returned `AssembledPrompt` matches the ID from the file manager's mocked response.       
 
-*   `[ ]` X. `[BE] [REFACTOR]` Perform a TDD-based refactor of the `PromptAssembler` service to correctly pass and consume the `recipe_step` object.
+*   `[✅]` X. `[BE] [REFACTOR]` Perform a TDD-based refactor of the `PromptAssembler` service to correctly pass and consume the `recipe_step` object.
     *   **Objective**: To refactor the internal data pipeline of the `PromptAssembler` service, ensuring the complete `recipe_step` object is the single source of truth for all recipe-driven logic. This will be accomplished in a dependency-ordered, single-file-per-step process, using an explicit type instantiation pattern to guarantee future maintainability.
     *   `[✅]` X.a. `[BE]` Update the `PromptAssembler` service contract to support recipe-based context gathering.
         *   `[✅]` X.a.i. **Task**: In `supabase/functions/_shared/prompt-assembler/prompt-assembler.interface.ts`, perform the following changes:
@@ -653,18 +653,36 @@ graph LR
             *   `[✅]` 5.b.iii.3 `[BE]` Using `Prompt Types and Definitions.md` and the pattern from `assembleSeedPrompt.ts`, write the implementation for `assembleTurnPrompt.ts`. This includes calling the private helper methods to build the prompt string, constructing the correct `UploadContext`, calling `this.fileManager.uploadAndRegisterFile`, and returning the final `AssembledPrompt` object. Ensure all new tests pass.
             *   `[✅]` 5.b.iii.4 `[BE]` Using `Prompt Types and Definitions.md` and the pattern from `assembleSeedPrompt.ts`, write the implementation for `assembleContinuationPrompt.ts`. This includes calling the private helper methods to build the prompt string, constructing the correct `UploadContext`, calling `this.fileManager.uploadAndRegisterFile`, and returning the final `AssembledPrompt` object. Ensure all new tests pass.       
         *   `[✅]` 5.b.iv. `[TEST-UNIT]` Update `prompt-assembler.test.ts` to reflect the new methods, functions, signatures, and return values. 
-        *   `[ ]` 5.b.v. `[BE]` Replace the mock stubs in the router file with the calls for each specific method. 
-        *   `[ ]` 5.b.vi. `[MOCK]` Update the `prompt-assembler.mock.ts` to support the new methods, functions, signatures, and return values. 
+        *   `[✅]` 5.b.v. `[BE]` Replace the mock stubs in the router file with the calls for each specific method. 
+        *   `[✅]` 5.b.vi. `[MOCK]` Update the `prompt-assembler.mock.ts` to support the new methods, functions, signatures, and return values. 
     *   `[ ]` 5.c. `[TDD]` Align shared dependencies before consumer migrations
-        *   `[ ]` 5.c.i. `[TEST-UNIT]` Add failing tests for `path_constructor` covering the new document-centric storage patterns and document keys for all stages.
-        *   `[ ]` 5.c.ii. `[BE]` Update `path_constructor` until the new tests pass.
-        *   `[ ]` 5.c.iii. `[TEST-UNIT]` Add failing tests for `path_deconstructor` to prove it parses the new document-centric paths and keys.
-        *   `[ ]` 5.c.iv. `[BE]` Update `path_deconstructor` to satisfy those tests.
-        *   `[ ]` 5.c.v. `[TEST-UNIT]` Add failing tests for `file_manager` that exercise the new document-centric file types and generated paths.
-        *   `[ ]` 5.c.vi. `[BE]` Update `file_manager` so the tests in 5.c.v succeed.
-        *   `[ ]` 5.c.vii. `[TEST-UNIT]` Add failing tests for `PromptAssembler` that assert `branch_key`, `parallel_group`, `document_key`, and the new storage paths are handed off correctly.
-        *   `[ ]` 5.c.viii. `[BE]` Update `PromptAssembler` (and its mocks) so the tests in 5.c.vii pass.
-    *   `[ ]` 5.d. `[TEST-INT]` Write an integration test that consumes `testing_prompt.md` to generate and print an actual `SeedPrompt`, `PlannerPrompt`, `AssembledPrompt`, and `ContinuationPrompt` for the `testing_prompt` content for each stage so that the user can manually review the outputs for confirmation or correction of their content.. 
+        *   `[✅]` 5.c.i. `[TEST-UNIT]` In `path_constructor.test.ts`, write a comprehensive "construct-then-deconstruct" (Yin/Yang) test suite that iterates through every `FileType` enum member. For each `FileType`, it must:
+            *   `[✅]` 5.c.i.1. Construct a valid `PathContext` object.
+            *   `[✅]` 5.c.i.2. Call `constructStoragePath` to generate the path and filename.
+            *   `[✅]` 5.c.i.3. Call `deconstructStoragePath` with the generated parts.
+            *   `[✅]` 5.c.i.4. Assert that the deconstructed information (`fileTypeGuess`, `documentKey`, `stageSlug`, etc.) perfectly matches the original `PathContext`, proving the functions are perfect inverses for all known artifact types.
+        *   `[✅]` 5.c.ii. `[BE]` In `path_constructor.ts`, add any missing case statements or logic required to handle `FileType` members that were not covered by the existing implementation, ensuring all new tests from the previous step pass.
+        *   `[✅]` 5.c.iii. `[TEST-UNIT]` In `path_deconstructor.test.ts`, add any new regular expressions or update existing ones to correctly parse all storage paths generated by the completed `path_constructor`. This includes adding specific tests for any new `document_key`s or path structures introduced by the fully-defined stage recipes. 
+            **Note:** Our "Yin/Yang" test in `path_constructor.test.ts` has revealed a bug where paths ending in `.json` are not being parsed correctly, causing assertion failures for `FileType.comparison_vector` and `FileType.synthesis_header_context`. These tests must be prioritized. **Additional Note:** The `header_context_pairwise` failure also reveals that paths containing a `/_work/` directory are not parsed correctly, often prepending `_work/` to the `modelSlug`. This must be addressed.
+        *   `[✅]` 5.c.iv. `[BE]` In `path_deconstructor.ts`, implement the logic corresponding to the new regular expressions, ensuring that all context properties (`documentKey`, `stepName`, `isContinuation`, etc.) are correctly extracted and that all tests now pass. 
+            **Note:** The bug discovered in the Yin/Yang test appears to be in the regex logic here. It fails differently for the two failing `.json` file types, indicating a subtle parsing issue. `comparison_vector` fails to parse `modelSlug`, `attemptCount`, and `documentKey`, while `synthesis_header_context` fails only on `documentKey`. This must be corrected. **Additional Note:** The `header_context_pairwise` failure also reveals that paths containing a `/_work/` directory are not parsed correctly, often prepending `_work/` to the `modelSlug`. This must be addressed.
+        *   `[✅]` 5.c.v. `[TEST-UNIT]` In `file_manager.upload.test.ts`, add a new test suite that specifically exercises the `uploadAndRegisterFile` method for each of the new document-centric `FileType` enums (`PlannerPrompt`, `TurnPrompt`, `HeaderContext`, `AssembledDocumentJson`, `RenderedDocument`). Each test must:
+            *   `[✅]` 5.c.v.1. Provide a `PathContext` with the specific `FileType`.
+            *   `[✅]` 5.c.v.2. Mock the `constructStoragePath` dependency to verify it is called with the correct context.
+            *   `[✅]` 5.c.v.3. Assert that the correct database table (e.g., `dialectic_project_resources`) is targeted for the metadata record insertion.
+        *   `[✅]` 5.c.vi. `[BE]` In `file_manager.ts`, update the `getTableForFileType` function and any related logic to correctly handle all new `FileType` enums, ensuring that they are routed to the correct database table and that all new tests from the previous step pass.
+        *   `[✅]` 5.c.vii. `[TYPES]` Update the `PathContext` interface to support orchestration metadata.
+            *   `[✅]` 5.c.vii.a. In `supabase/functions/_shared/types/file_manager.types.ts`, add the properties `branchKey: string;` and `parallelGroup: number;` to the `PathContext` interface. This step is exempt from TDD as it is a type definition.
+        *   `[✅]` 5.c.viii. Implement and test orchestration metadata handoff for `assembleTurnPrompt`.
+            *   `[✅]` 5.c.viii.a. `[TEST-UNIT]` In `supabase/functions/_shared/prompt-assembler/assembleTurnPrompt.test.ts`, add a failing test that asserts that the `branch_key` and `parallel_group` from the mock `recipe_step` are correctly passed to the `pathContext` argument of the mocked `fileManager.uploadAndRegisterFile` function.
+            *   `[✅]` 5.c.viii.b. `[BE]` In `supabase/functions/_shared/prompt-assembler/assembleTurnPrompt.ts`, modify the call to `fileManager.uploadAndRegisterFile` to pass `branchKey: stage.recipe_step.branch_key` and `parallelGroup: stage.recipe_step.parallel_group` into the `pathContext` object.
+        *   `[✅]` 5.c.ix. Implement and test orchestration metadata handoff for `assemblePlannerPrompt`.
+            *   `[✅]` 5.c.ix.a. `[TEST-UNIT]` In `supabase/functions/_shared/prompt-assembler/assemblePlannerPrompt.test.ts`, add a failing test that asserts that the `branch_key` and `parallel_group` from the mock `recipe_step` are correctly passed to the `pathContext`.
+            *   `[✅]` 5.c.ix.b. `[BE]` In `supabase/functions/_shared/prompt-assembler/assemblePlannerPrompt.ts`, modify the call to `fileManager.uploadAndRegisterFile` to pass the `branchKey` and `parallelGroup` from `stage.recipe_step`.
+        *   `[✅]` 5.c.x. Implement and test orchestration metadata handoff for `assembleContinuationPrompt`.
+            *   `[✅]` 5.c.x.a. `[TEST-UNIT]` In `supabase/functions/_shared/prompt-assembler/assembleContinuationPrompt.test.ts`, add a failing test that asserts that the `branch_key` and `parallel_group` from the mock `recipe_step` are correctly passed to the `pathContext`.
+            *   `[✅]` 5.c.x.b. `[BE]` In `supabase/functions/_shared/prompt-assembler/assembleContinuationPrompt.ts`, modify the call to `fileManager.uploadAndRegisterFile` to pass the `branchKey` and `parallelGroup` from `stage.recipe_step`.
+        *   `[ ]` 5.d. `[TEST-INT]` Write an integration test that consumes `testing_prompt.md` to generate and print an actual `SeedPrompt`, `PlannerPrompt`, `AssembledPrompt`, and `ContinuationPrompt` for the `testing_prompt` content for each stage so that the user can manually review the outputs for confirmation or correction of their content.. 
     *   `[ ]` 5.e. `[COMMIT]` feat(prompt-assembler): Architect PromptAssembler as a centralized, persistence-aware service.
 
 *   `[ ]` 6. `[REFACTOR]` Migrate All Consumers to the Refactored `PromptAssembler` Service

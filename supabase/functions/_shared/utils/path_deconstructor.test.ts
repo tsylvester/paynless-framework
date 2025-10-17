@@ -562,20 +562,20 @@ const constructDeconstructTestCases: Array<{
     expectedFixedFileNameInPath: 'm_0_synthesis_header_context.json',
   },
   {
-    name: 'SynthesisPrd',
-    context: { projectId: 'yy-prd', fileType: FileType.SynthesisPrd, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
+    name: 'prd',
+    context: { projectId: 'yy-prd', fileType: FileType.prd, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
     checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
     expectedFixedFileNameInPath: 'm_0_prd.md',
   },
   {
-    name: 'SynthesisArchitecture',
-    context: { projectId: 'yy-sa', fileType: FileType.SynthesisArchitecture, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
+    name: 'system_architecture_overview',
+    context: { projectId: 'yy-sa', fileType: FileType.system_architecture_overview, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
     checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
-    expectedFixedFileNameInPath: 'm_0_architecture.md',
+    expectedFixedFileNameInPath: 'm_0_system_architecture.md',
   },
   {
-    name: 'SynthesisTechStack',
-    context: { projectId: 'yy-sts', fileType: FileType.SynthesisTechStack, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
+    name: 'tech_stack_recommendations',
+    context: { projectId: 'yy-sts', fileType: FileType.tech_stack_recommendations, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
     checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
     expectedFixedFileNameInPath: 'm_0_tech_stack.md',
   },
@@ -920,18 +920,98 @@ Deno.test('[path_deconstructor] inverse C->D - document-centric artifacts', asyn
       for (const field of tc.checkFields) {
         let expectedValue: unknown;
         switch (field) {
-            case 'fileTypeGuess':
-                expectedValue = tc.context.fileType;
-                break;
-            case 'modelSlug':
-                expectedValue = sanitizeForPath(tc.context.modelSlug!);
-                break;
-            default:
-                expectedValue = tc.context[field as keyof PathContext];
+          case 'fileTypeGuess':
+            expectedValue = tc.context.fileType;
+            break;
+          case 'modelSlug':
+            expectedValue = sanitizeForPath(tc.context.modelSlug!);
+            break;
+          // Fields with matching names and values on both PathContext and DeconstructedPathInfo
+          case 'attemptCount':
+          case 'documentKey':
+          case 'stepName':
+          case 'isContinuation':
+          case 'turnIndex':
+            expectedValue = tc.context[field];
+            break;
+          default:
+            // This will catch if a new, unhandled field is added to checkFields
+            throw new Error(`Unhandled field '${String(field)}' in test case '${tc.name}'. Please add a case for it.`);
         }
         assertEquals(info[field], expectedValue, `Field '${field}' mismatch`);
       }
     });
   }
 });
+
+
+// --- Failing Tests from Yin/Yang exercise to be fixed in deconstructor ---
+Deno.test("[path_deconstructor] failing cases - bugs discovered from inverse tests", async (t) => {
+  await t.step("should correctly deconstruct 'comparison_vector' (.json in documents)", () => {
+    const dirPart = "project-uuid-123/session_sessionu/iteration_1/2_antithesis/documents";
+    const filePart = "gpt-4-turbo_0_comparison_vector.json";
+    const info = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
+
+    assertEquals(info.error, undefined);
+    assertEquals(info.fileTypeGuess, FileType.comparison_vector);
+    assertEquals(info.modelSlug, 'gpt-4-turbo');
+    assertEquals(info.attemptCount, 0);
+    assertEquals(info.documentKey, 'comparison_vector');
+    assertEquals(info.stageSlug, 'antithesis');
+  });
+
+  await t.step("should correctly deconstruct 'header_context_pairwise' (.md in _work)", () => {
+    const dirPart = "project-uuid-123/session_sessionu/iteration_1/3_synthesis/_work";
+    const filePart = "gpt-4-turbo_0_header_context_pairwise.md";
+    const info = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
+
+    assertEquals(info.error, undefined);
+    assertEquals(info.fileTypeGuess, FileType.header_context_pairwise);
+    assertEquals(info.modelSlug, 'gpt-4-turbo'); // Should not include '_work/'
+    assertEquals(info.attemptCount, 0);
+    assertEquals(info.documentKey, 'header_context_pairwise');
+    assertEquals(info.stageSlug, 'synthesis');
+  });
+
+  await t.step("should correctly deconstruct 'synthesis_header_context' (.json in _work/context)", () => {
+    const dirPart = "project-uuid-123/session_sessionu/iteration_1/3_synthesis/_work/context";
+    const filePart = "gpt-4-turbo_0_synthesis_header_context.json";
+    const info = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
+
+    assertEquals(info.error, undefined);
+    assertEquals(info.fileTypeGuess, FileType.SynthesisHeaderContext);
+    assertEquals(info.modelSlug, 'gpt-4-turbo');
+    assertEquals(info.attemptCount, 0);
+    // This file type doesn't have a documentKey in the name, it's implicit.
+    assertEquals(info.documentKey, undefined);
+    assertEquals(info.stageSlug, 'synthesis');
+  });
+
+  await t.step("should correctly deconstruct long documentKey 'system_architecture'", () => {
+    const dirPart = "project-uuid-123/session_sessionu/iteration_1/3_synthesis/documents";
+    const filePart = "gpt-4-turbo_0_system_architecture.md";
+    const info = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
+
+    assertEquals(info.error, undefined);
+    assertEquals(info.fileTypeGuess, FileType.system_architecture_overview);
+    assertEquals(info.modelSlug, 'gpt-4-turbo');
+    assertEquals(info.attemptCount, 0);
+    assertEquals(info.documentKey, 'system_architecture');
+    assertEquals(info.stageSlug, 'synthesis');
+  });
+
+  await t.step("should correctly deconstruct long documentKey 'tech_stack'", () => {
+    const dirPart = "project-uuid-123/session_sessionu/iteration_1/3_synthesis/documents";
+    const filePart = "gpt-4-turbo_0_tech_stack.md";
+    const info = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
+
+    assertEquals(info.error, undefined);
+    assertEquals(info.fileTypeGuess, FileType.tech_stack_recommendations);
+    assertEquals(info.modelSlug, 'gpt-4-turbo');
+    assertEquals(info.attemptCount, 0);
+    assertEquals(info.documentKey, 'tech_stack');
+    assertEquals(info.stageSlug, 'synthesis');
+  });
+});
+
 

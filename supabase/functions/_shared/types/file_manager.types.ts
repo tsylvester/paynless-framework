@@ -63,12 +63,9 @@ export enum FileType {
   synthesis_document_technical_approach = 'synthesis_document_technical_approach',
   synthesis_document_success_metrics = 'synthesis_document_success_metrics',
   SynthesisHeaderContext = 'synthesis_header_context',
-  SynthesisPrd = 'synthesis_prd',
-  SynthesisArchitecture = 'synthesis_architecture',
-  SynthesisTechStack = 'synthesis_tech_stack',
   prd = 'prd',
-  system_architecture_overview = 'system_architecture_overview',
-  tech_stack_recommendations = 'tech_stack_recommendations',
+  system_architecture_overview = 'system_architecture',
+  tech_stack_recommendations = 'tech_stack',
 
   // Parenthesis document_keys
   trd = 'trd',
@@ -97,6 +94,8 @@ export interface CanonicalPathParams {
  * The context required to construct a unique, deterministic storage path for a file.
  */
 export interface PathContext {
+  branchKey?: string | null;
+  parallelGroup?: number | null;
   projectId: string
   fileType: FileType
   sessionId?: string

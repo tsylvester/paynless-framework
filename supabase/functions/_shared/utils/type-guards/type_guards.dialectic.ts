@@ -41,7 +41,6 @@ const validContributionTypes: ContributionType[] = [
     'pairwise_synthesis_chunk',
     'reduced_synthesis',
     'final_synthesis',
-    'rag_context_summary'
 ];
 
 const validBranchKeys = new Set<string>(Object.values(BranchKey));

@@ -119,6 +119,8 @@ export async function assemblePlannerPrompt(
       fileType: FileType.PlannerPrompt,
       modelSlug: job.payload.model_slug,
       stepName: stage.recipe_step.step_name,
+      branchKey: stage.recipe_step.branch_key,
+      parallelGroup: stage.recipe_step.parallel_group,
     },
     fileContent: renderedPrompt,
     mimeType: "text/markdown",

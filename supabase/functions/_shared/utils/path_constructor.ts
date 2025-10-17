@@ -174,21 +174,21 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       const fileName = `${modelSlugSanitized}_${attemptCount}_synthesis_header_context.json`;
       return { storagePath: `${stageRootPath}/_work/context`, fileName };
     }
-    case FileType.SynthesisPrd: {
+    case FileType.prd: {
       if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
         throw new Error('Required context missing for synthesis_prd.');
       }
       const fileName = `${modelSlugSanitized}_${attemptCount}_prd.md`;
       return { storagePath: `${stageRootPath}/documents`, fileName };
     }
-    case FileType.SynthesisArchitecture: {
+    case FileType.system_architecture_overview: {
       if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for synthesis_architecture.');
+        throw new Error('Required context missing for system_architecture_overview.');
       }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_architecture.md`;
+      const fileName = `${modelSlugSanitized}_${attemptCount}_system_architecture.md`;
       return { storagePath: `${stageRootPath}/documents`, fileName };
     }
-    case FileType.SynthesisTechStack: {
+    case FileType.tech_stack_recommendations: {
       if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
         throw new Error('Required context missing for synthesis_tech_stack.');
       }
@@ -287,12 +287,35 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     }
 
     // --- Paralysis document FileTypes ---
+    case FileType.updated_master_plan: {
+      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
+        throw new Error('Required context missing for updated_master_plan.');
+      }
+      const fileName = `${modelSlugSanitized}_${attemptCount}_updated_master_plan.md`;
+      return { storagePath: `${stageRootPath}/documents`, fileName };
+    }
+    case FileType.actionable_checklist: {
+      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
+        throw new Error('Required context missing for actionable_checklist.');
+      }
+      const fileName = `${modelSlugSanitized}_${attemptCount}_actionable_checklist.md`;
+      return { storagePath: `${stageRootPath}/documents`, fileName };
+    }
     case FileType.advisor_recommendations: {
       if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
         throw new Error('Required context missing for advisor_recommendations.');
       }
       const fileName = `${modelSlugSanitized}_${attemptCount}_advisor_recommendations.md`;
       return { storagePath: `${stageRootPath}/documents`, fileName };
+    }
+
+    case FileType.RagContextSummary: {
+      if (!stageRootPath || !modelSlugSanitized || !sourceModelSlugs || sourceModelSlugs.length === 0) {
+        throw new Error('Required context missing for rag_context_summary.');
+      }
+      const sourceModelSlugsSanitized = [...sourceModelSlugs].sort().map(sanitizeForPath).join('_and_');
+      const fileName = `${modelSlugSanitized}_compressing_${sourceModelSlugsSanitized}_rag_summary.txt`;
+      return { storagePath: `${stageRootPath}/_work`, fileName };
     }
 
     // --- All Model Contributions (Main, Raw, and Intermediate Types) ---
@@ -302,7 +325,14 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     case FileType.ReducedSynthesis:
     case FileType.Synthesis:
     case FileType.synthesis_pairwise_business_case:
-    case FileType.synthesis_document_business_case: {
+    case FileType.synthesis_document_business_case:
+    case FileType.header_context_pairwise:
+    case FileType.synthesis_pairwise_feature_spec:
+    case FileType.synthesis_pairwise_technical_approach:
+    case FileType.synthesis_pairwise_success_metrics:
+    case FileType.synthesis_document_feature_spec:
+    case FileType.synthesis_document_technical_approach:
+    case FileType.synthesis_document_success_metrics: {
       // For fileType calls, infer contributionType.
       const effectiveContributionType = contributionType ?? fileType;
       const contributionTypeSanitized = sanitizeForPath(effectiveContributionType);
@@ -355,7 +385,14 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       const isIntermediate = effectiveContributionType === FileType.PairwiseSynthesisChunk ||
         effectiveContributionType === FileType.ReducedSynthesis ||
         effectiveContributionType === FileType.synthesis_pairwise_business_case ||
-        effectiveContributionType === FileType.synthesis_document_business_case;
+        effectiveContributionType === FileType.synthesis_document_business_case ||
+        effectiveContributionType === FileType.header_context_pairwise ||
+        effectiveContributionType === FileType.synthesis_pairwise_feature_spec ||
+        effectiveContributionType === FileType.synthesis_pairwise_technical_approach ||
+        effectiveContributionType === FileType.synthesis_pairwise_success_metrics ||
+        effectiveContributionType === FileType.synthesis_document_feature_spec ||
+        effectiveContributionType === FileType.synthesis_document_technical_approach ||
+        effectiveContributionType === FileType.synthesis_document_success_metrics;
 
       if (isIntermediate || isContinuation) {
         storagePath = (fileType === FileType.ModelContributionRawJson)
@@ -368,15 +405,6 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       }
 
       return { storagePath, fileName };
-    }
-
-    case FileType.RagContextSummary: {
-      if (!stageRootPath || !modelSlugSanitized || !sourceModelSlugs || sourceModelSlugs.length === 0) {
-        throw new Error('Required context missing for rag_context_summary.');
-      }
-      const sourceModelSlugsSanitized = [...sourceModelSlugs].sort().map(sanitizeForPath).join('_and_');
-      const fileName = `${modelSlugSanitized}_compressing_${sourceModelSlugsSanitized}_rag_summary.txt`;
-      return { storagePath: `${stageRootPath}/_work`, fileName };
     }
 
     default: {

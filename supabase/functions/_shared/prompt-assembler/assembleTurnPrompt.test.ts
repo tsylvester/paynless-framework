@@ -1170,4 +1170,79 @@ Deno.test("assembleTurnPrompt", async (t) => {
       teardown();
     }
   });
+
+  await t.step("should pass branch_key and parallel_group to the file manager", async () => {
+    const mockFileRecord: FileRecord = {
+      id: "mock-turn-resource-id-bh-pg",
+      project_id: defaultProject.id,
+      file_name: "turn_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/turn_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock turn prompt for branching",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "turn_prompt",
+      source_contribution_id: null,
+      feedback_type: "test",
+      target_contribution_id: null,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      storageMock: {
+          downloadResult: (bucket, path) => {
+              if (path.includes("header-context-id")) {
+                  return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
+              }
+              if (path.includes("summary_template.md")) {
+                  return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
+              }
+              return Promise.resolve({ data: null, error: new Error("File not found in mock") });
+          },
+      }
+    };
+
+    const { client } = setup(config);
+    mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    const branchKey = "feature_branch_a";
+    const parallelGroup = 1;
+
+    const stageWithBranchingInfo: StageContext = {
+      ...defaultStage,
+      recipe_step: {
+        ...defaultRecipeStep,
+        branch_key: branchKey,
+        parallel_group: parallelGroup,
+      },
+    };
+
+    try {
+      const deps: AssembleTurnPromptDeps = {
+        dbClient: client,
+        job: mockTurnJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: stageWithBranchingInfo,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+      };
+      await assembleTurnPrompt(deps);
+
+      assert(mockFileManager.uploadAndRegisterFile.calls.length === 1, "uploadAndRegisterFile should have been called once.");
+      const uploadContext = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
+      
+      assertEquals(uploadContext.pathContext.branchKey, branchKey, "branchKey was not passed correctly to the file manager.");
+      assertEquals(uploadContext.pathContext.parallelGroup, parallelGroup, "parallelGroup was not passed correctly to the file manager.");
+
+    } finally {
+      teardown();
+    }
+  });
 });

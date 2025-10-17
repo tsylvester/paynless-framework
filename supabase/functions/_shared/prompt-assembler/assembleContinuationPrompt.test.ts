@@ -226,9 +226,8 @@ Deno.test("assembleContinuationPrompt", async (t) => {
         //    - Verify the storage download was called for the `header_context_resource_id`.
             const downloadSpy =
               mockSupabaseSetup!.spies.storage.from("dialectic_project_resources").downloadSpy;
-            assertSpyCall(downloadSpy, 0, {
-              args: ["header-res-123"],
-            });
+            assertSpyCall(downloadSpy, 0);
+            assertEquals(downloadSpy.calls[0].args[0], "header-res-123");
 
             //    - Verify the final prompt includes the `system_materials`, a generic "please continue" instruction, and the exact partial markdown.
             assert(
@@ -413,6 +412,94 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             assertEquals(uploadContext.pathContext.fileType, FileType.TurnPrompt);
             assertEquals(uploadContext.pathContext.isContinuation, true);
             assertEquals(uploadContext.pathContext.turnIndex, 4);
+          } finally {
+            teardown();
+          }
+        },
+      );
+
+      await t.step(
+        "A.4: should pass branch_key and parallel_group to FileManager if present in recipe",
+        async () => {
+        // 1. Setup:
+          const stageWithOrchestrationKeys: StageContext = {
+            ...defaultStage,
+            recipe_step: {
+              ...defaultStage.recipe_step!,
+              branch_key: "branch-abc",
+              parallel_group: 1,
+            },
+          };
+          const mockTurnJob: DialecticJobRow = {
+            id: "job-turn-orchestration",
+            job_type: "EXECUTE",
+            payload: {
+              header_context_resource_id: "header-res-123",
+              continuation_reason: "length",
+              model_slug: "test-model",
+            },
+            session_id: defaultSession.id,
+            stage_slug: stageWithOrchestrationKeys.slug,
+            iteration_number: 1,
+            status: "pending",
+            user_id: defaultProject.user_id,
+            is_test_job: false,
+            created_at: new Date().toISOString(),
+            attempt_count: 1,
+            completed_at: null,
+            error_details: null,
+            max_retries: 3,
+            parent_job_id: null,
+            prerequisite_job_id: null,
+            results: null,
+            started_at: null,
+            target_contribution_id: null,
+          };
+
+          const config: MockSupabaseDataConfig = {
+            storageMock: {
+              downloadResult: () =>
+                Promise.resolve({
+                  data: new Blob([JSON.stringify(headerContextContent)]),
+                  error: null,
+                }),
+            },
+          };
+          const { client, fileManager } = setup(config);
+          fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+          try {
+        // 2. Execute:
+            await assembleContinuationPrompt({
+              dbClient: client,
+              fileManager,
+              job: mockTurnJob,
+              project: defaultProject,
+              session: defaultSession,
+              stage: stageWithOrchestrationKeys,
+              continuationContent: "partial content",
+              gatherContext: spy(async () => ({
+                user_objective: "",
+                domain: "",
+                agent_count: 0,
+                context_description: "",
+                original_user_request: null,
+                prior_stage_ai_outputs: "",
+                prior_stage_user_feedback: "",
+                deployment_context: null,
+                reference_documents: null,
+                constraint_boundaries: null,
+                stakeholder_considerations: null,
+                deliverable_format: null,
+              })),
+            });
+
+        // 3. Assert:
+            assertSpyCall(fileManager.uploadAndRegisterFile, 0);
+            const uploadContext =
+              fileManager.uploadAndRegisterFile.calls[0].args[0];
+            assertEquals(uploadContext.pathContext.branchKey, "branch-abc");
+            assertEquals(uploadContext.pathContext.parallelGroup, 1);
           } finally {
             teardown();
           }

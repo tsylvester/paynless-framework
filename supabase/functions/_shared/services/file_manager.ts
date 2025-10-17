@@ -24,15 +24,20 @@ function getTableForFileType(
   fileType: UploadContext['pathContext']['fileType'],
 ): 'dialectic_project_resources' | 'dialectic_contributions' | 'dialectic_feedback' {
   switch (fileType) {
-    case 'model_contribution_main':
-    case 'contribution_document':
-    case 'pairwise_synthesis_chunk':
-    case 'reduced_synthesis':
-    case 'synthesis':
+    case FileType.ModelContributionMain:
+    case FileType.ContributionDocument:
+    case FileType.PairwiseSynthesisChunk:
+    case FileType.ReducedSynthesis:
+    case FileType.Synthesis:
       return 'dialectic_contributions'
-    case 'user_feedback':
+    case FileType.UserFeedback:
       return 'dialectic_feedback'
-    case 'project_export_zip':
+    case FileType.ProjectExportZip:
+    case FileType.PlannerPrompt:
+    case FileType.TurnPrompt:
+    case FileType.HeaderContext:
+    case FileType.AssembledDocumentJson:
+    case FileType.RenderedDocument:
       return 'dialectic_project_resources'
     default:
       return 'dialectic_project_resources'

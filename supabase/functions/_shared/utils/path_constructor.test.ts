@@ -1,9 +1,332 @@
-import { assertEquals, assertThrows, assert } from 'https://deno.land/std@0.177.0/testing/asserts.ts'
+import {
+  assertEquals,
+  assertThrows,
+  assert,
+  assertObjectMatch,
+} from 'https://deno.land/std@0.177.0/testing/asserts.ts'
 import {
   constructStoragePath,
   generateShortId,
+  sanitizeForPath,
 } from './path_constructor.ts'
+import { deconstructStoragePath } from '../utils/path_deconstructor.ts'
 import { FileType, type PathContext } from '../types/file_manager.types.ts'
+import type { DeconstructedPathInfo } from './path_deconstructor.types.ts'
+import { isContributionType } from './type_guards.ts'
+
+Deno.test('constructStoragePath and deconstructStoragePath should be perfect inverses', async (t) => {
+  const projectId = 'project-uuid-123';
+  const sessionId = 'session-uuid-4567890';
+  const iteration = 1;
+  const modelSlug = 'gpt-4-turbo';
+  const sourceModelSlugs = ['claude-3-opus', 'gemini-1.5-pro'].sort();
+  const attemptCount = 0;
+  const shortSessionId = generateShortId(sessionId);
+  const documentKey = 'executive_summary';
+  const stepName = 'critique_and_improve';
+
+  // Create a comprehensive mapping of FileType to its required context and expected deconstruction.
+  // This allows us to iterate and test every single file type.
+  const fileTypeTestCases: Array<{
+    fileType: FileType;
+    context: PathContext;
+    expectedDeconstructed: Partial<DeconstructedPathInfo>;
+    skip?: boolean;
+  }> = Object.values(FileType).map((fileType) => {
+    // Base contexts that can be specialized
+    const baseProjectContext = { projectId, fileType };
+    const baseStageContext: PathContext = {
+      ...baseProjectContext,
+      sessionId,
+      iteration,
+      stageSlug: 'thesis', // Default, can be overridden
+    };
+    const baseModelContext: PathContext = {
+      ...baseStageContext,
+      modelSlug,
+      attemptCount,
+    };
+    const baseDocumentContext: PathContext = {
+      ...baseModelContext,
+      documentKey,
+    }
+
+    // Default expected info for most session-based files
+    const expectedBaseStageInfo = {
+      originalProjectId: projectId,
+      shortSessionId: shortSessionId,
+      iteration: iteration,
+    };
+
+    const fileTypeStr = fileType.toString();
+    if (isContributionType(fileTypeStr)) {
+      const context: PathContext = {
+        ...baseModelContext,
+        contributionType: fileTypeStr,
+      };
+
+      if (fileType === FileType.PairwiseSynthesisChunk) {
+        context.stageSlug = 'synthesis';
+        context.sourceAnchorType = 'thesis';
+        context.sourceAnchorModelSlug = 'model-a';
+        context.pairedModelSlug = 'model-b';
+      } else if (fileType === FileType.ReducedSynthesis) {
+        context.stageSlug = 'synthesis';
+        context.sourceAnchorType = 'thesis';
+        context.sourceAnchorModelSlug = 'model-a';
+      }
+
+      return {
+        fileType,
+        context,
+        expectedDeconstructed: {
+          ...expectedBaseStageInfo,
+          stageSlug: context.stageSlug,
+          contributionType: fileTypeStr,
+          fileTypeGuess: fileType,
+        },
+      };
+    } else {
+      // Handle all other cases that are not contribution types
+      switch (fileType) {
+        // --- Project Level ---
+        case FileType.ProjectReadme:
+          return {
+            fileType,
+            context: baseProjectContext,
+            expectedDeconstructed: { originalProjectId: projectId, parsedFileNameFromPath: 'project_readme.md' },
+          };
+        case FileType.PendingFile:
+          if (projectId) {
+            return {
+              fileType,
+              context: { projectId, fileType, originalFileName: 'task-abc.md' },
+              expectedDeconstructed: { originalProjectId: projectId, parsedFileNameFromPath: 'task-abc.md' },
+            };
+          }
+          break;
+        case FileType.CurrentFile:
+          if (projectId) {
+            return {
+              fileType,
+              context: { projectId, fileType, originalFileName: 'in-progress.md' },
+              expectedDeconstructed: { originalProjectId: projectId, parsedFileNameFromPath: 'in-progress.md' },
+            };
+          }
+          break;
+        case FileType.CompleteFile:
+          if (projectId) {
+            return {
+              fileType,
+              context: { projectId, fileType, originalFileName: 'done.md' },
+              expectedDeconstructed: { originalProjectId: projectId, parsedFileNameFromPath: 'done.md' },
+            };
+          }
+          break;
+        case FileType.InitialUserPrompt:
+          if (projectId) {
+            return {
+              fileType,
+              context: { projectId, fileType, originalFileName: 'My Great Idea.txt' },
+              expectedDeconstructed: { originalProjectId: projectId, parsedFileNameFromPath: 'my_great_idea.txt' },
+            };
+          }
+          break;
+        case FileType.ProjectSettingsFile:
+          return {
+            fileType,
+            context: baseProjectContext,
+            expectedDeconstructed: { originalProjectId: projectId, parsedFileNameFromPath: 'project_settings.json' },
+          };
+        case FileType.GeneralResource:
+          if (projectId) {
+            return {
+              fileType,
+              context: { projectId, fileType, originalFileName: 'API Docs.pdf' },
+              expectedDeconstructed: { originalProjectId: projectId, parsedFileNameFromPath: 'api_docs.pdf' },
+            };
+          }
+          break;
+        case FileType.ProjectExportZip:
+          if (projectId) {
+            return {
+                fileType,
+                context: { projectId, fileType, originalFileName: 'My Export.zip' },
+                expectedDeconstructed: { originalProjectId: projectId, parsedFileNameFromPath: 'my_export.zip' },
+            };
+          }
+          break;
+        
+        // --- Stage Level (No Model) ---
+        case FileType.SeedPrompt:
+          return {
+            fileType,
+            context: baseStageContext,
+            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', parsedFileNameFromPath: 'seed_prompt.md' },
+          };
+        case FileType.UserFeedback:
+          return {
+            fileType,
+            context: { ...baseStageContext, stageSlug: 'antithesis' },
+            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'antithesis', parsedFileNameFromPath: 'user_feedback_antithesis.md' },
+          };
+        case FileType.ContributionDocument:
+           return {
+            fileType,
+            context: { ...baseStageContext, originalFileName: 'Product Spec.docx' },
+            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', parsedFileNameFromPath: 'product_spec.docx' },
+          };
+
+        // --- Document-Centric ---
+        case FileType.PlannerPrompt:
+          return {
+            fileType,
+            context: { ...baseModelContext, stepName },
+            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', modelSlug, attemptCount, stepName },
+          };
+        case FileType.TurnPrompt:
+           return {
+            fileType,
+            context: baseDocumentContext,
+            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', modelSlug, attemptCount, documentKey },
+          };
+        case FileType.HeaderContext:
+        case FileType.comparison_vector:
+        case FileType.SynthesisHeaderContext:
+          return {
+            fileType,
+            context: baseModelContext,
+            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', modelSlug, attemptCount },
+          };
+        case FileType.AssembledDocumentJson:
+          return {
+            fileType,
+            context: baseDocumentContext,
+            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', modelSlug, attemptCount, documentKey },
+          };
+        case FileType.RenderedDocument:
+          return {
+            fileType,
+            context: baseDocumentContext,
+            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', modelSlug, attemptCount, documentKey },
+          };
+        case FileType.RagContextSummary:
+          return {
+            fileType,
+            context: {
+              ...baseModelContext,
+              stageSlug: 'synthesis',
+              sourceModelSlugs,
+            },
+            expectedDeconstructed: {
+              ...expectedBaseStageInfo,
+              stageSlug: 'synthesis',
+              modelSlug,
+              sourceModelSlugs,
+            },
+          };
+        
+        // --- Document Keys Treated as FileTypes that are NOT contribution types ---
+        case FileType.business_case:
+        case FileType.feature_spec:
+        case FileType.technical_approach:
+        case FileType.success_metrics:
+        case FileType.business_case_critique:
+        case FileType.technical_feasibility_assessment:
+        case FileType.risk_register:
+        case FileType.non_functional_requirements:
+        case FileType.dependency_map:
+        case FileType.synthesis_pairwise_business_case:
+        case FileType.synthesis_pairwise_feature_spec:
+        case FileType.synthesis_pairwise_technical_approach:
+        case FileType.synthesis_pairwise_success_metrics:
+        case FileType.synthesis_document_business_case:
+        case FileType.synthesis_document_feature_spec:
+        case FileType.synthesis_document_technical_approach:
+        case FileType.synthesis_document_success_metrics:
+        case FileType.prd:
+        case FileType.system_architecture_overview:
+        case FileType.tech_stack_recommendations:
+        case FileType.trd:
+        case FileType.master_plan:
+        case FileType.milestone_schema:
+        case FileType.updated_master_plan:
+        case FileType.actionable_checklist:
+        case FileType.advisor_recommendations:
+        case FileType.header_context_pairwise: {
+          const specificDocContext: PathContext = {
+            ...baseModelContext,
+            stageSlug: fileType.toString().includes('critique') || fileType.toString().includes('assessment') ? 'antithesis'
+              : fileType.toString().includes('synthesis') ? 'synthesis'
+              : fileType.toString().includes('trd') || fileType.toString().includes('master_plan') ? 'parenthesis'
+              : fileType.toString().includes('advisor') ? 'paralysis'
+              : 'thesis',
+            documentKey: fileType.toString(),
+          };
+          return {
+            fileType,
+            context: specificDocContext,
+            expectedDeconstructed: {
+              ...expectedBaseStageInfo,
+              stageSlug: specificDocContext.stageSlug,
+              modelSlug,
+              attemptCount,
+              documentKey: fileType.toString(),
+            },
+          };
+        }
+      }
+    }
+    return // Should be unreachable, but satisfies linter
+  }).filter((tc): tc is NonNullable<typeof tc> => !!tc);
+
+  for (const { fileType, context, expectedDeconstructed, skip } of fileTypeTestCases) {
+    if (skip) continue;
+    await t.step(`should correctly construct and deconstruct path for FileType: ${fileType}`, () => {
+      // 1. Construct
+      const { storagePath, fileName } = constructStoragePath(context);
+      
+      // 2. Deconstruct
+      const deconstructed = deconstructStoragePath({ storageDir: storagePath, fileName });
+
+      // 3. Assert
+      // We remove properties that are not expected to match perfectly or are implementation details.
+      const cleanedDeconstructed: Partial<DeconstructedPathInfo> = { ...deconstructed };
+      delete cleanedDeconstructed.error;
+      delete cleanedDeconstructed.stageDirName;
+      // The fileTypeGuess can be less specific than the input fileType (e.g., RenderedDocument is a valid guess for 'business_case'),
+      // so we don't assert it for document-key-based file types.
+      if (context.documentKey && context.documentKey === context.fileType) {
+        // fileTypeGuess may be a more generic type like RenderedDocument, which is acceptable.
+      } else if (isContributionType(context.fileType.toString())) {
+        // For contribution types, the guess might be a generic one. This is acceptable.
+      } else {
+        assertEquals(cleanedDeconstructed.fileTypeGuess, fileType, "fileTypeGuess did not match");
+      }
+      
+      // For some legacy contribution types, the filename is parsed and stored.
+      if ((fileType === FileType.ModelContributionMain || fileType === FileType.ModelContributionRawJson) && context.contributionType) {
+         const sanitizedContribType = sanitizeForPath(context.contributionType);
+         const extension = fileType === FileType.ModelContributionRawJson ? '_raw.json' : '.md';
+         expectedDeconstructed.parsedFileNameFromPath = `${modelSlug}_${attemptCount}_${sanitizedContribType}${extension}`;
+      }
+      // For intermediate files, the full filename is complex, so we just check for its presence.
+      if(fileType === FileType.PairwiseSynthesisChunk || fileType === FileType.ReducedSynthesis) {
+        assert(cleanedDeconstructed.parsedFileNameFromPath);
+        delete cleanedDeconstructed.parsedFileNameFromPath;
+      } else if (expectedDeconstructed.documentKey) {
+         const isJson = fileType === FileType.comparison_vector || fileType === FileType.SynthesisHeaderContext;
+         const expectedFileName = `${modelSlug}_${attemptCount}_${expectedDeconstructed.documentKey}${isJson ? '.json' : '.md'}`;
+         if (!fileName.endsWith('prompt.md') && !fileName.endsWith('assembled.json') && !fileName.endsWith('context.json')) {
+          assertEquals(cleanedDeconstructed.parsedFileNameFromPath, expectedFileName);
+         }
+      }
+
+
+      assertObjectMatch(cleanedDeconstructed, expectedDeconstructed);
+    });
+  }
+});
 
 Deno.test('constructStoragePath', async (t) => {
   const projectId = 'project-uuid-123';
@@ -97,51 +420,6 @@ Deno.test('constructStoragePath', async (t) => {
       const { storagePath, fileName } = constructStoragePath(synthesisHeaderContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/context`);
       assertEquals(fileName, 'gpt-4-turbo_0_synthesis_header_context.json');
-    });
-
-    await t.step('handles SynthesisPrd file type', () => {
-      const synthesisPrdContext: PathContext = {
-        projectId,
-        sessionId,
-        iteration,
-        stageSlug: 'synthesis',
-        fileType: FileType.SynthesisPrd,
-        modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
-      };
-      const { storagePath, fileName } = constructStoragePath(synthesisPrdContext);
-      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/documents`);
-      assertEquals(fileName, 'gpt-4-turbo_0_prd.md');
-    });
-
-    await t.step('handles SynthesisArchitecture file type', () => {
-      const synthesisArchitectureContext: PathContext = {
-        projectId,
-        sessionId,
-        iteration,
-        stageSlug: 'synthesis',
-        fileType: FileType.SynthesisArchitecture,
-        modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
-      };
-      const { storagePath, fileName } = constructStoragePath(synthesisArchitectureContext);
-      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/documents`);
-      assertEquals(fileName, 'gpt-4-turbo_0_architecture.md');
-    });
-
-    await t.step('handles SynthesisTechStack file type', () => {
-      const synthesisTechStackContext: PathContext = {
-        projectId,
-        sessionId,
-        iteration,
-        stageSlug: 'synthesis',
-        fileType: FileType.SynthesisTechStack,
-        modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
-      };
-      const { storagePath, fileName } = constructStoragePath(synthesisTechStackContext);
-      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/documents`);
-      assertEquals(fileName, 'gpt-4-turbo_0_tech_stack.md');
     });
 
     await t.step('handles business_case file type', () => {

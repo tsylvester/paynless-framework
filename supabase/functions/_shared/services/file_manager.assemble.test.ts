@@ -82,6 +82,8 @@ Deno.test('FileManagerService', async (t) => {
         stage: 'synthesis',
         target_contribution_id: null,
         updated_at: '2025-01-01T12:00:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
       };
       const continuationChunk1: DialecticContributionRow = {
         id: 'continuation-chunk-1',
@@ -112,6 +114,8 @@ Deno.test('FileManagerService', async (t) => {
         stage: 'synthesis',
         target_contribution_id: rootContributionId,
         updated_at: '2025-01-01T12:01:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
       };
       const continuationChunk2: DialecticContributionRow = {
         id: 'continuation-chunk-2',
@@ -142,6 +146,8 @@ Deno.test('FileManagerService', async (t) => {
         stage: 'synthesis',
         target_contribution_id: 'continuation-chunk-1',
         updated_at: '2025-01-01T12:02:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
       };
 
       const config: MockSupabaseDataConfig = {
@@ -315,6 +321,8 @@ Deno.test('FileManagerService', async (t) => {
         stage: stageSlug,
         target_contribution_id: null,
         updated_at: '2025-01-01T10:00:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
       };
 
       const continuationChunk1: DialecticContributionRow = {
@@ -346,6 +354,8 @@ Deno.test('FileManagerService', async (t) => {
         stage: stageSlug,
         target_contribution_id: rootContributionId,
         updated_at: '2025-01-01T10:01:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
       };
 
       const continuationChunk2: DialecticContributionRow = {
@@ -377,6 +387,8 @@ Deno.test('FileManagerService', async (t) => {
         stage: stageSlug,
         target_contribution_id: 'parenthesis-cont-1',
         updated_at: '2025-01-01T10:02:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
       };
 
       const config: MockSupabaseDataConfig = {
@@ -485,6 +497,8 @@ Deno.test('FileManagerService', async (t) => {
         stage: stageSlug,
         target_contribution_id: null,
         updated_at: '2025-01-01T12:00:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
       };
 
       const contA1Chunk: DialecticContributionRow = {
@@ -516,6 +530,8 @@ Deno.test('FileManagerService', async (t) => {
         stage: stageSlug,
         target_contribution_id: rootA,
         updated_at: '2025-01-01T12:01:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
       };
 
       const rootBChunk: DialecticContributionRow = {
@@ -547,6 +563,8 @@ Deno.test('FileManagerService', async (t) => {
         stage: stageSlug,
         target_contribution_id: null,
         updated_at: '2025-01-01T12:05:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
       };
 
       const config: MockSupabaseDataConfig = {
@@ -652,6 +670,8 @@ Deno.test('FileManagerService', async (t) => {
         stage: stageSlug,
         target_contribution_id: null,
         updated_at: '2025-01-01T12:00:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
       };
   
       const contA1Chunk: DialecticContributionRow = {
@@ -683,6 +703,8 @@ Deno.test('FileManagerService', async (t) => {
         stage: stageSlug,
         target_contribution_id: root,
         updated_at: '2025-01-01T12:01:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
       };
   
       const contA2Chunk: DialecticContributionRow = {
@@ -714,6 +736,8 @@ Deno.test('FileManagerService', async (t) => {
         stage: stageSlug,
         target_contribution_id: contA1,
         updated_at: '2025-01-01T12:02:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
       };
   
       const contB1Chunk: DialecticContributionRow = {
@@ -745,6 +769,8 @@ Deno.test('FileManagerService', async (t) => {
         stage: stageSlug,
         target_contribution_id: root, // sibling branch diverging from the same root
         updated_at: '2025-01-01T12:03:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
       };
   
       const config: MockSupabaseDataConfig = {

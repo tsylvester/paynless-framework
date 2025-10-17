@@ -2,7 +2,7 @@ import {
   AssembledPrompt,
   AssembleTurnPromptDeps,
 } from "./prompt-assembler.interface.ts";
-import { isRecord, isJson } from "../utils/type_guards.ts";
+import { isRecord } from "../utils/type_guards.ts";
 import { FileType } from "../types/file_manager.types.ts";
 import { downloadFromStorage } from "../supabase_storage_utils.ts";
 import { renderPrompt } from "../prompt-renderer.ts";
@@ -149,6 +149,8 @@ export async function assembleTurnPrompt(
       modelSlug: job.payload.model_id,
       documentKey: documentKey,
       stepName: stage.recipe_step.step_name,
+      branchKey: stage.recipe_step.branch_key,
+      parallelGroup: stage.recipe_step.parallel_group,
     },
     fileContent: renderedPrompt,
     mimeType: "text/markdown",

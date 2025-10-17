@@ -127,6 +127,8 @@ export async function assembleContinuationPrompt(
       stepName: stage.recipe_step?.step_name,
       isContinuation: true,
       turnIndex: (job.attempt_count || 0) + 1,
+      branchKey: stage.recipe_step?.branch_key,
+      parallelGroup: stage.recipe_step?.parallel_group,
     },
     fileContent: finalPrompt,
     mimeType: "text/markdown",

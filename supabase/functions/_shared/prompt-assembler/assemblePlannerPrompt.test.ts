@@ -305,6 +305,8 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             fileType: FileType.PlannerPrompt,
             modelSlug: "claude-3-opus",
             stepName: "GeneratePlan",
+            branchKey: null,
+            parallelGroup: null,
           },
           fileContent: "rendered planner prompt",
           mimeType: "text/markdown",
@@ -961,4 +963,77 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       teardown();
     },
   );
+
+  await t.step("should pass branch_key and parallel_group from recipe_step to fileManager", async () => {
+    const recipeWithKeys: DialecticRecipeStep = {
+      ...mockRecipeStep,
+      branch_key: "test-branch-key",
+      parallel_group: 1,
+    };
+
+    const stageWithKeys: StageContext = {
+      ...defaultStage,
+      recipe_step: recipeWithKeys,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: { data: [{ prompt_text: plannerPromptText }], error: null },
+        },
+      },
+    };
+
+    const {
+      client,
+      fileManager,
+      gatherContextFn,
+      renderFn,
+    } = setup(config);
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-planner-resource-id-456",
+      project_id: defaultProject.id,
+      file_name: "claude-3-opus_1_GeneratePlan_planner_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/planner_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock planner prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "planner_prompt",
+      source_contribution_id: null,
+    };
+
+    fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+    const uploadSpy = fileManager.uploadAndRegisterFile;
+
+    try {
+      await assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: stageWithKeys,
+        gatherContext: gatherContextFn,
+        render: renderFn,
+      });
+
+      assertSpyCalls(uploadSpy, 1);
+      const uploadContext = uploadSpy.calls[0].args[0];
+      assertEquals(uploadContext.pathContext.branchKey, recipeWithKeys.branch_key);
+      assertEquals(
+        uploadContext.pathContext.parallelGroup,
+        recipeWithKeys.parallel_group,
+      );
+    } finally {
+      teardown();
+    }
+  });
 });
