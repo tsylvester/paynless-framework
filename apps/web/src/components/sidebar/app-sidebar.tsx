@@ -13,7 +13,6 @@ import {
 	SidebarMenuButton,
 } from "@/components/ui/sidebar";
 import { useDialecticStore, useAiStore, useAuthStore } from "@paynless/store";
-import { OrganizationSwitcher } from "../organizations/OrganizationSwitcher";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -161,9 +160,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 				</>
 			) : (
 				<>
-					<SidebarHeader>
-						<OrganizationSwitcher />
-					</SidebarHeader>
 					<SidebarContent>
 						<NavMain items={data.navMain} />
 						<NavMain items={data.navSecondary} subtitle="History" hideLogo />
