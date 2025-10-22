@@ -119,23 +119,99 @@ export interface PathContext {
 /**
  * The context required to upload a file to storage and register its metadata in the database.
  */
-export interface UploadContext {
-  pathContext: PathContext
-  fileContent: Buffer | ArrayBuffer | string
-  mimeType: string
-  sizeBytes: number
-  userId: string | null; // Allow null for system-generated contributions
-  description: string
-  resourceTypeForDb?: string; // To directly populate dialectic_project_resources.resource_type
-
-  // Specific for 'model_contribution_main' fileType
-  contributionMetadata?: ContributionMetadata;
-
-  // Specific for 'user_feedback' fileType
-  feedbackTypeForDb?: string; // To directly populate dialectic_feedback.feedback_type
-  resourceDescriptionForDb?: Json | null; // To directly populate dialectic_feedback.resource_description (jsonb)
-  
+interface UploadContextBase {
+  fileContent: Buffer | ArrayBuffer | string;
+  mimeType: string;
+  sizeBytes: number;
+  userId: string | null;
+  description: string;
 }
+
+export type ModelContributionFileTypes =
+  | FileType.ModelContributionMain
+  | FileType.ModelContributionRawJson
+  | FileType.PlannerPrompt
+  | FileType.TurnPrompt
+  | FileType.HeaderContext
+  | FileType.AssembledDocumentJson
+  | FileType.RenderedDocument
+  | FileType.ContributionDocument
+  | FileType.PairwiseSynthesisChunk
+  | FileType.ReducedSynthesis
+  | FileType.Synthesis
+  | FileType.RagContextSummary
+  | FileType.business_case
+  | FileType.feature_spec
+  | FileType.technical_approach
+  | FileType.success_metrics
+  | FileType.business_case_critique
+  | FileType.technical_feasibility_assessment
+  | FileType.risk_register
+  | FileType.non_functional_requirements
+  | FileType.dependency_map
+  | FileType.comparison_vector
+  | FileType.header_context_pairwise
+  | FileType.synthesis_pairwise_business_case
+  | FileType.synthesis_pairwise_feature_spec
+  | FileType.synthesis_pairwise_technical_approach
+  | FileType.synthesis_pairwise_success_metrics
+  | FileType.synthesis_document_business_case
+  | FileType.synthesis_document_feature_spec
+  | FileType.synthesis_document_technical_approach
+  | FileType.synthesis_document_success_metrics
+  | FileType.SynthesisHeaderContext
+  | FileType.prd
+  | FileType.system_architecture_overview
+  | FileType.tech_stack_recommendations
+  | FileType.trd
+  | FileType.master_plan
+  | FileType.milestone_schema
+  | FileType.updated_master_plan
+  | FileType.actionable_checklist
+  | FileType.advisor_recommendations
+
+export type UserFeedbackFileTypes = FileType.UserFeedback;
+
+export type ResourceFileTypes = 
+  | FileType.ProjectReadme
+  | FileType.PendingFile
+  | FileType.CurrentFile
+  | FileType.CompleteFile
+  | FileType.InitialUserPrompt
+  | FileType.ProjectSettingsFile
+  | FileType.GeneralResource
+  | FileType.SeedPrompt
+  | FileType.ProjectExportZip
+
+// Context for model contributions, requiring contributionMetadata
+export type ModelContributionUploadContext = UploadContextBase & {
+  pathContext: PathContext & {
+    fileType: ModelContributionFileTypes;
+  };
+  contributionMetadata: ContributionMetadata;
+};
+
+// Context for user feedback, requiring feedback properties
+export type UserFeedbackUploadContext = UploadContextBase & {
+  pathContext: PathContext & {
+    fileType: UserFeedbackFileTypes;
+  };
+  feedbackTypeForDb: string;
+  resourceDescriptionForDb?: Json | null;
+};
+
+// Context for generic resources that don't need special metadata
+export type ResourceUploadContext = UploadContextBase & {
+  pathContext: PathContext & {
+    fileType: ResourceFileTypes;
+  };
+  resourceTypeForDb?: string; // To directly populate dialectic_project_resources.resource_type
+  contributionMetadata?: never;
+  feedbackTypeForDb?: never;
+  resourceDescriptionForDb?: never;
+};
+
+export type UploadContext = ModelContributionUploadContext | UserFeedbackUploadContext | ResourceUploadContext;
 
 export interface ContributionMetadata {
   sessionId: string;
@@ -148,7 +224,7 @@ export interface ContributionMetadata {
   // The path for this will be derived by FileManagerService using path_constructor
   // with fileType 'model_contribution_raw_json' and an originalFileName derived
   // from the main contribution's originalFileName (e.g., if main is foo.md, raw is foo_raw.json).
-  rawJsonResponseContent: string; // The actual JSON string content for the raw AI response.
+  rawJsonResponseContent: Json; // The actual JSON string content for the raw AI response.
 
   // ADDED: For continuation jobs, this signals to update an existing record.
   target_contribution_id?: string;
@@ -159,7 +235,6 @@ export interface ContributionMetadata {
   tokensUsedInput?: number;
   tokensUsedOutput?: number;
   processingTimeMs?: number;
-  seedPromptStoragePath: string; // Path to the seed prompt that generated this contribution
   citations?: Json | null;
   contributionType?: ContributionType | null; // e.g., 'hypothesis', 'critique', 'synthesis' (align with stage or be more specific)
   errorDetails?: string | null; // If AI model itself reported an error in its generation process
@@ -174,6 +249,7 @@ export interface ContributionMetadata {
   // For identifying the chunk ordering of a continuation job
   isContinuation?: boolean;
   turnIndex?: number;
+  source_prompt_resource_id?: string;
 }
 
 export interface IDownloadContentResult {

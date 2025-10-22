@@ -17,7 +17,11 @@ import {
 import { type SupabaseClient, type User } from 'npm:@supabase/supabase-js@2';
 import { FileManagerService } from '../functions/_shared/services/file_manager.ts';
 import { PromptAssembler } from '../functions/_shared/prompt-assembler/prompt-assembler.ts';
-import { IFileManager } from '../functions/_shared/types/file_manager.types.ts';
+import {
+  FileType,
+  type IFileManager,
+  type PathContext,
+} from '../functions/_shared/types/file_manager.types.ts';
 import {
   type AssembleContinuationPromptDeps,
   type AssemblePlannerPromptDeps,
@@ -47,6 +51,7 @@ import { createProject } from '../functions/dialectic-service/createProject.ts';
 import { startSession } from '../functions/dialectic-service/startSession.ts';
 import { getSeedPromptForStage } from '../functions/_shared/utils/dialectic_utils.ts';
 import { NotificationService } from '../functions/_shared/utils/notification.service.ts';
+import { isRecord } from '../functions/_shared/utils/type_guards.ts';
 
 describe('PromptAssembler Integration Test Suite', () => {
   let adminClient: SupabaseClient<Database>;
@@ -155,6 +160,181 @@ describe('PromptAssembler Integration Test Suite', () => {
   afterEach(async () => {
     await coreCleanupTestResources('local');
   });
+
+  const saveAndRegisterManualResponse = async (
+    content: any,
+    job: DialecticJobRow,
+    stage: StageContext,
+    project: ProjectContext,
+    session: SessionContext,
+    sourcePromptResourceId: string,
+    fileManager: IFileManager,
+    adminClient: SupabaseClient<Database>,
+    testUser: User,
+  ) => {
+    const isPlanner = stage.recipe_step.prompt_type === 'Planner';
+    const fileType = isPlanner
+      ? FileType.HeaderContext
+      : FileType.AssembledDocumentJson;
+
+    let documentKey: string | undefined = undefined;
+    if (isRecord(job.payload) && job.payload.document_key && typeof job.payload.document_key === 'string') {
+      documentKey = job.payload.document_key;
+    }
+
+    const pathContext: PathContext = {
+      fileType: fileType,
+      projectId: project.id,
+      sessionId: session.id,
+      iteration: job.iteration_number || 1,
+      stageSlug: stage.slug,
+      modelSlug: 'manual-tester', // Hardcoded for this test
+      attemptCount: 1,
+      documentKey: documentKey,
+      stepName: stage.recipe_step.step_slug,
+      branchKey: stage.recipe_step.branch_key,
+      parallelGroup: stage.recipe_step.parallel_group,
+    };
+
+    // Upload the response as an artifact
+    const { record: resource, error: uploadError } = await fileManager
+      .uploadAndRegisterFile({
+        fileContent: JSON.stringify(content, null, 2),
+        pathContext: pathContext,
+        mimeType: 'application/json',
+        sizeBytes: JSON.stringify(content, null, 2).length,
+        userId: testUser.id,
+        description:
+          `Manual response for stage ${stage.slug}, step ${stage.recipe_step.step_slug}`,
+      });
+
+    if (uploadError || !resource) {
+      throw new Error(
+        `Failed to upload manual response artifact: ${uploadError?.message}`,
+      );
+    }
+
+    // Create the contribution record
+    const { error: contributionError } = await adminClient
+      .from('dialectic_contributions')
+      .insert({
+        project_id: project.id,
+        session_id: session.id,
+        stage_id: stage.id,
+        user_id: testUser.id,
+        source_job_id: job.id,
+        source_prompt_resource_id: sourcePromptResourceId,
+        is_header: isPlanner,
+        raw_response: content,
+        parsed_content: content,
+        model_slug: 'manual-tester',
+        storage_path: resource.storage_path,
+      });
+
+    if (contributionError) {
+      throw new Error(
+        `Failed to insert contribution for manual response: ${contributionError.message}`,
+      );
+    }
+
+    console.log(
+      `\n--- [ARTIFACT SAVED] for step: ${stage.recipe_step.step_slug} ---\n`,
+    );
+  };
+
+  const manualResponses: Record<string, Record<string, any>> = {
+    'thesis-proposal': {
+      'generate-stage-plan': {
+        'system_materials': 'PASTE PLANNER RESPONSE FOR THESIS HERE',
+      },
+      'business-case': {
+        'business_case_document':
+          'PASTE TURN RESPONSE FOR THESIS - BUSINESS CASE HERE',
+      },
+      'mvp-feature-spec-with-user-stories': {
+        'mvp_feature_spec_with_user_stories_document':
+          'PASTE TURN RESPONSE FOR THESIS - MVP FEATURE SPEC HERE',
+      },
+      'high-level-technical-approach-overview': {
+        'high_level_technical_approach_overview_document':
+          'PASTE TURN RESPONSE FOR THESIS - TECHNICAL APPROACH HERE',
+      },
+      'success-metrics': {
+        'success_metrics_document':
+          'PASTE TURN RESPONSE FOR THESIS - SUCCESS METRICS HERE',
+      },
+    },
+    'antithesis-review': {
+      'generate-stage-plan': {
+        'system_materials': 'PASTE PLANNER RESPONSE FOR ANTITHESIS HERE',
+      },
+      'review-business-case': {
+        'review_business_case_document':
+          'PASTE TURN RESPONSE FOR ANTITHESIS - REVIEW BUSINESS CASE HERE',
+      },
+      'review-mvp-feature-spec': {
+        'review_mvp_feature_spec_document':
+          'PASTE TURN RESPONSE FOR ANTITHESIS - REVIEW MVP SPEC HERE',
+      },
+      'review-technical-approach': {
+        'review_technical_approach_document':
+          'PASTE TURN RESPONSE FOR ANTITHESIS - REVIEW TECH APPROACH HERE',
+      },
+      'review-success-metrics': {
+        'review_success_metrics_document':
+          'PASTE TURN RESPONSE FOR ANTITHESIS - REVIEW SUCCESS METRICS HERE',
+      },
+    },
+    'synthesis-refinement': {
+      'generate-stage-plan-a': {
+        'system_materials': 'PASTE PLANNER A RESPONSE FOR SYNTHESIS HERE',
+      },
+      'pairwise-synthesis': {
+        'pairwise_synthesis_document':
+          'PASTE TURN RESPONSE FOR SYNTHESIS - PAIRWISE HERE',
+      },
+      'root-synthesis': {
+        'root_synthesis_document':
+          'PASTE TURN RESPONSE FOR SYNTHESIS - ROOT HERE',
+      },
+      'generate-stage-plan-b': {
+        'system_materials': 'PASTE PLANNER B RESPONSE FOR SYNTHESIS HERE',
+      },
+      'final-synthesis': {
+        'final_synthesis_document':
+          'PASTE TURN RESPONSE FOR SYNTHESIS - FINAL HERE',
+      },
+      'generate-manifest': {
+        'manifest_document': 'PASTE TURN RESPONSE FOR SYNTHESIS - MANIFEST HERE',
+      },
+    },
+    'parenthesis-planning': {
+      'generate-stage-plan': {
+        'system_materials': 'PASTE PLANNER RESPONSE FOR PARENTHESIS HERE',
+      },
+      'technical-requirements-document': {
+        'technical_requirements_document':
+          'PASTE TURN RESPONSE FOR PARENTHESIS - TRD HERE',
+      },
+      'master-plan': {
+        'master_plan_document':
+          'PASTE TURN RESPONSE FOR PARENTHESIS - MASTER PLAN HERE',
+      },
+    },
+    'paralysis-implementation': {
+      'generate-stage-plan': {
+        'system_materials': 'PASTE PLANNER RESPONSE FOR PARALYSIS HERE',
+      },
+      'implementation-plan': {
+        'implementation_plan_document':
+          'PASTE TURN RESPONSE FOR PARALYSIS - IMPLEMENTATION PLAN HERE',
+      },
+      'tdd-checklist': {
+        'tdd_checklist_document':
+          'PASTE TURN RESPONSE FOR PARALYSIS - TDD CHECKLIST HERE',
+      },
+    },
+  };
 
   it('should generate all prompt types for all stages', async () => {
     /*
@@ -333,6 +513,25 @@ describe('PromptAssembler Integration Test Suite', () => {
                 .assemblePlannerPrompt(plannerDeps);
               console.log('\n--- [PLANNER PROMPT] ---\n');
               console.log(assembledPlanner.promptContent);
+
+              const manualResponse =
+                manualResponses[stageData.slug]?.[step.step_slug];
+              if (
+                manualResponse &&
+                !JSON.stringify(manualResponse).includes('PASTE')
+              ) {
+                await saveAndRegisterManualResponse(
+                  manualResponse,
+                  mockJob,
+                  stageWithRecipe,
+                  projectContext,
+                  sessionContext,
+                  assembledPlanner.source_prompt_resource_id,
+                  fileManager,
+                  adminClient,
+                  testUser,
+                );
+              }
             } catch (e: any) {
               console.log(`\n--- [PLANNER PROMPT] - FAILED ---\n`);
               console.error(e.message);
@@ -355,6 +554,25 @@ describe('PromptAssembler Integration Test Suite', () => {
               );
               console.log('\n--- [TURN PROMPT (Assembled)] ---\n');
               console.log(assembledTurn.promptContent);
+
+              const manualResponse =
+                manualResponses[stageData.slug]?.[step.step_slug];
+              if (
+                manualResponse &&
+                !JSON.stringify(manualResponse).includes('PASTE')
+              ) {
+                await saveAndRegisterManualResponse(
+                  manualResponse,
+                  mockJob,
+                  stageWithRecipe,
+                  projectContext,
+                  sessionContext,
+                  assembledTurn.source_prompt_resource_id,
+                  fileManager,
+                  adminClient,
+                  testUser,
+                );
+              }
             } catch (e: any) {
               console.log(`\n--- [TURN PROMPT (Assembled)] - FAILED ---\n`);
               console.error(e.message);

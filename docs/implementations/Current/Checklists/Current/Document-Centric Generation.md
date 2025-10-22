@@ -682,21 +682,36 @@ graph LR
         *   `[✅]` 5.c.x. Implement and test orchestration metadata handoff for `assembleContinuationPrompt`.
             *   `[✅]` 5.c.x.a. `[TEST-UNIT]` In `supabase/functions/_shared/prompt-assembler/assembleContinuationPrompt.test.ts`, add a failing test that asserts that the `branch_key` and `parallel_group` from the mock `recipe_step` are correctly passed to the `pathContext`.
             *   `[✅]` 5.c.x.b. `[BE]` In `supabase/functions/_shared/prompt-assembler/assembleContinuationPrompt.ts`, modify the call to `fileManager.uploadAndRegisterFile` to pass the `branchKey` and `parallelGroup` from `stage.recipe_step`.
-        *   `[ ]` 5.d. `[TEST-INT]` Write an integration test that consumes `testing_prompt.md` to generate and print an actual `SeedPrompt`, `PlannerPrompt`, `AssembledPrompt`, and `ContinuationPrompt` for the `testing_prompt` content for each stage so that the user can manually review the outputs for confirmation or correction of their content.. 
-    *   `[ ]` 5.e. `[COMMIT]` feat(prompt-assembler): Architect PromptAssembler as a centralized, persistence-aware service.
+        *   `[🚧 ]` 5.d. `[TEST-INT]` Write an integration test that consumes `testing_prompt.md` to generate and print an actual `SeedPrompt`, `PlannerPrompt`, `AssembledPrompt`, and `ContinuationPrompt` for the `testing_prompt` content for each stage so that the user can manually review the outputs for confirmation or correction of their content.
+            *   **Discovery:** This integration test has dependencies that have not been updated for the new prompt assembler and cannot be run yet. 
+                *   Step 6 to migrate consumers must be performed before the test can run.  
+    *   `[✅]` 5.e. `[COMMIT]` feat(prompt-assembler): Architect PromptAssembler as a centralized, persistence-aware service.
 
 *   `[ ]` 6. `[REFACTOR]` Migrate All Consumers to the Refactored `PromptAssembler` Service
     *   **Objective:** To systematically refactor all services that generate prompts to use the new, centralized `PromptAssembler`. This is the "Use the Tool" phase, ensuring all parts of the system align with the new architecture.
-    *   `[ ]` Update file_manager with all the new file types we need. path_constructor and path_deconstructor to generate the new paths. 
     *   `[ ]` 6.a. **Phase 1: Update the Final Data Consumer (`executeModelCallAndSave`)**
-        *   `[ ]` 6.a.i. `[BE]` In `dialectic.interface.ts`, update the `PromptConstructionPayload` interface to include the optional `source_prompt_resource_id: string` property.
-        *   `[ ]` 6.a.ii. `[TEST-UNIT]` In `executeModelCallAndSave.test.ts`, write a failing unit test that passes a `source_prompt_resource_id` via the `promptConstructionPayload` and asserts that this ID is correctly used on the `source_prompt_resource_id` field of the created `dialectic_contributions` record.
-        *   `[ ]` 6.a.iii. `[BE]` In `executeModelCallAndSave.ts`, modify the logic that creates the `contributionMetadata` to use the `source_prompt_resource_id` from the payload, ensuring the test passes.
-        *   `[ ]` 6.a.iv. `[BE]` In `executeModelCallAndSave.ts`, **delete** the obsolete `seedPromptStoragePath` property from the `contributionMetadata` object.
-        *   `[ ]` 6.a.v. `[REFACTOR]` `grep` the codebase for any other consumers of the now-deleted `seedPromptStoragePath` property and extend this checklist to ensure they are updated to use the new `source_prompt_resource_id` property.
-        *   `[ ]` 6.a.vi. `[BE]` Implement upstream validation within `executeModelCallAndSave` to ensure all JSON-based artifacts are valid before persistence.
-            *   `[ ]` 6.a.vi.1. `[TEST-UNIT]` In `executeModelCallAndSave.test.ts`, write a new suite of failing unit tests. The tests must prove that when a job with a JSON-based `output_type` (e.g., `'HeaderContext'`) produces a malformed JSON string, `executeModelCallAndSave` does not save the artifact and instead calls the `continueJob` dependency with a corrective continuation payload.
-            *   `[ ]` 6.a.vi.2. `[BE]` In `executeModelCallAndSave.ts`, implement the validation logic. After receiving the aiResponse, check if the job's `output_type` requires JSON. If so, attempt to parse the content. If parsing fails, halt processing and call `deps.continueJob` with the corrective context. Ensure the new tests pass.
+        *   `[✅]` 6.a.i. `[BE]` In `dialectic.interface.ts`, update the `PromptConstructionPayload` interface to include the optional `source_prompt_resource_id: string` property.
+        *   `[✅]` 6.a.ii. `[BE]` In `file_manager.types.ts`, update the `ContributionMetadata` interface to include the optional `source_prompt_resource_id: string` property and remove the deprecated `seedPromptStoragePath`. 
+        *   `[✅]` 6.a.iii. `[TEST-UNIT]` In `executeModelCallAndSave.test.ts`, write a failing unit test that passes a `source_prompt_resource_id` via the `promptConstructionPayload` and asserts that this ID is correctly used on the `source_prompt_resource_id` field of the created `dialectic_contributions` record.
+        *   `[✅]` 6.a.iv. `[BE]` In `executeModelCallAndSave.ts`, modify the logic that creates the `contributionMetadata` to use the `source_prompt_resource_id` from the payload, ensuring the test passes.
+        *   `[✅]` 6.a.v. `[BE]` In `executeModelCallAndSave.ts`, **delete** the obsolete `seedPromptStoragePath` property from the `contributionMetadata` object.
+        *   `[ ]` 6.a.vi. `[REFACTOR]` Refactor all consumers of the deprecated `seedPromptStoragePath` property.
+            *   `[✅]` 6.a.vi.1. `[DOCS]` In `supabase/functions/_shared/services/file_manager.md`, remove the `seedPromptStoragePath` from the `UploadContext` documentation.
+            *   `[✅]` 6.a.vi.2. `[REFACTOR]` Refactor `file_manager.ts` to use `source_prompt_resource_id`.
+                *   `[✅]` 6.a.vi.2.a. `[TEST-UNIT]` In `file_manager.upload.test.ts`, write a failing unit test that proves the `uploadAndRegisterFile` function incorrectly attempts to use the non-existent `seedPromptStoragePath` property from the `contributionMetadata` object. The test should assert that the `seed_prompt_url` on the created database record is `null` or `undefined`.
+                *   `[✅]` 6.a.vi.2.b. `[BE]` In `file_manager.ts`, remove the line that sets `seed_prompt_url: meta.seedPromptStoragePath` from the database insertion logic within `uploadAndRegisterFile`.
+                *   `[✅]` 6.a.vi.2.c. `[TEST-UNIT]` In `file_manager.upload.test.ts`, ensure all tests now pass, and remove any remaining mock data related to `seedPromptStoragePath`.
+            *   `[✅]` 6.a.vi.3. `[REFACTOR]` Refactor `saveContributionEdit.ts` to remove `seedPromptStoragePath`.
+                *   `[✅]` 6.a.vi.3.a. `[TEST-UNIT]` In `saveContributionEdit.test.ts`, write a failing test that asserts the `contributionMetadata` object passed to `fileManager.uploadAndRegisterFile` no longer contains `seedPromptStoragePath`.
+                *   `[✅]` 6.a.vi.3.b. `[BE]` In `saveContributionEdit.ts`, remove the `seedPromptStoragePath` property from the `contributionMetadata` object.
+                *   `[✅]` 6.a.vi.3.c. `[TEST-UNIT]` In `saveContributionEdit.test.ts`, ensure all tests pass.
+            *   `[ ]` 6.a.vi.4. `[REFACTOR]` Refactor `cloneProject.ts` to remove `seedPromptStoragePath` and rely on `source_prompt_resource_id`.
+                *   `[✅]` 6.a.vi.4.a. `[TEST-UNIT]` In `cloneProject.test.ts`, rewrite the tests to remove any assertions related to `seedPromptStoragePath`. The tests should now assert that the `source_prompt_resource_id` from the original contribution is correctly copied to the cloned contribution's metadata.
+                *   `[✅]` 6.a.vi.4.b. `[BE]` In `cloneProject.ts`, remove all logic related to reconstructing or copying `seedPromptStoragePath`. The `source_prompt_resource_id` should be copied directly from the original contribution.
+                *   `[✅]` 6.a.vi.4.c. `[TEST-UNIT]` In `cloneProject.test.ts`, ensure all tests pass.
+        *   `[✅]` 6.a.vii. `[BE]` Implement upstream validation within `executeModelCallAndSave` to ensure all model responses are valid before persistence.
+            *   `[✅]` 6.a.vii.1. `[TEST-UNIT]` In `executeModelCallAndSave.test.ts`, write a new suite of failing unit tests. The tests must prove that when a model produces a malformed JSON string, `executeModelCallAndSave` does not save the artifact and instead calls the `continueJob` dependency with a corrective continuation payload.
+            *   `[✅]` 6.a.vii.2. `[BE]` In `executeModelCallAndSave.ts`, implement the validation logic. After receiving the aiResponse, parse the content. If parsing fails, halt processing and call `deps.continueJob` with the corrective context. Ensure the new tests pass.
     *   `[ ]` 6.b. **Phase 2: Migrate Legacy Seed Prompt Consumer (`startSession`)**
         *   `[ ]` 6.b.i. `[TEST-UNIT]` In `startSession.test.ts`, write a failing test that proves the instantiation of `PromptAssembler` is broken due to the new `FileManagerService` dependency, and that it must now call `assembleSeedPrompt`.
         *   `[ ]` 6.b.ii. `[BE]` In `startSession.ts`, update the instantiation of `PromptAssembler`, injecting a new `FileManagerService` instance.
@@ -714,7 +729,8 @@ graph LR
         *   `[ ]` 6.d.ii. `[BE]` In `processSimpleJob.ts`, perform the major refactoring:
             *   `[ ]` 6.d.ii.1. First, **analyze** the existing manual prompt assembly logic to ensure that the replacement call to the `assemble` facade will be logically equivalent and can fully replace the manual construction without loss of functionality.
             *   `[ ]` 6.d.ii.2. Then, **delete** the entire block of manual prompt assembly logic and replace it with a single call to the `deps.promptAssembler.assemble` facade, passing in the required `AssemblePromptOptions`. Use the returned `AssembledPrompt` object to build the `PromptConstructionPayload`.
-    *   `[ ]` 6.e. `[COMMIT]` refactor(worker): Migrate all consumers to the refactore `PromptAssembler` service.
+    *   `[ ]` 6.e. `[TEST-INT]` Write an integration test that consumes `testing_prompt.md` to generate and print an actual `SeedPrompt`, `PlannerPrompt`, `AssembledPrompt`, and `ContinuationPrompt` for the `testing_prompt` content for each stage so that the user can manually review the outputs for confirmation or correction of their content.        
+    *   `[ ]` 6.f. `[COMMIT]` refactor(worker): Migrate all consumers to the refactore `PromptAssembler` service.
 
 *   `[ ]` 7. `[REFACTOR]` Transform Core Worker Services for Document-Centric Flow.
     *   **Objective:** To adapt the existing worker services to orchestrate the new two-step planning and execution flow, making targeted changes to the router, orchestrator, planner, and executor.

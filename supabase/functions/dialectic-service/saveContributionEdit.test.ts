@@ -171,6 +171,12 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       const calls = fm.uploadAndRegisterFile.calls;
       assertEquals(calls.length, 1, 'uploadAndRegisterFile must be called once to save user edit canonically');
       const ctx = calls[0].args[0];
+
+      if (!('contributionMetadata' in ctx)) {
+        assert(false, 'Expected contributionMetadata to be in the upload context');
+        return;
+      }
+
       assertEquals(ctx.pathContext.projectId, projectId);
       assertEquals(ctx.pathContext.sessionId, sessionId);
       assertEquals(ctx.pathContext.iteration, iterationNumber);
@@ -190,7 +196,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       assertEquals(ctx.contributionMetadata!.rawJsonResponseContent, '');
       // seed prompt path
       const seedPromptPath = constructStoragePath({ projectId, fileType: FileType.SeedPrompt, sessionId, iteration: iterationNumber, stageSlug: 'thesis' });
-      assertEquals(ctx.contributionMetadata!.seedPromptStoragePath, `${seedPromptPath.storagePath}/${seedPromptPath.fileName}`);
+      assertEquals('seedPromptStoragePath' in ctx.contributionMetadata, false, 'seedPromptStoragePath should be removed');
       // Versioning
       assertEquals(ctx.contributionMetadata!.editVersion, 2);
       assertEquals(ctx.contributionMetadata!.isLatestEdit, true);

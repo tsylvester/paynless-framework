@@ -185,15 +185,6 @@ export async function saveContributionEdit(
         return { error: { message: 'Data integrity error: original contribution missing model metadata.', status: 500, code: 'INTERNAL_SERVER_ERROR' }, status: 500 };
     }
 
-    // Construct seed prompt path
-    const seedPrompt = deps.pathConstructor({
-        projectId: deconstructed.originalProjectId,
-        fileType: FileType.SeedPrompt,
-        sessionId: typedOriginalContribution.session_id,
-        iteration: deconstructed.iteration,
-        stageSlug: deconstructed.stageSlug,
-    });
-
     // Determine contribution type for path/metadata
     const pathContributionType: ReturnType<typeof isContributionType> extends true ? never : import('./dialectic.interface.ts').ContributionType | null =
         (deconstructed.contributionType && isContributionType(deconstructed.contributionType))
@@ -229,7 +220,6 @@ export async function saveContributionEdit(
             stageSlug: deconstructed.stageSlug,
             iterationNumber: deconstructed.iteration,
             rawJsonResponseContent: '',
-            seedPromptStoragePath: `${seedPrompt.storagePath}/${seedPrompt.fileName}`,
             editVersion: newEditVersion,
             isLatestEdit: true,
             originalModelContributionId,

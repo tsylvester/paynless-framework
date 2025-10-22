@@ -1,5 +1,4 @@
 import { SupabaseClient } from 'npm:@supabase/supabase-js@^2.43.4'
-import { constructStoragePath } from '../utils/path_constructor.ts'
 import type {
   Database,
   TablesInsert,
@@ -8,41 +7,17 @@ import type {
 import { isJson, isPostgrestError, isRecord } from '../utils/type_guards.ts'
 import type { FileManagerResponse, UploadContext, PathContext } from '../types/file_manager.types.ts'
 import { FileType } from '../types/file_manager.types.ts'
+import {
+  isModelContributionContext,
+  isUserFeedbackContext,
+  isResourceContext,
+} from '../utils/type-guards/type_guards.file_manager.ts'
 
 export interface FileManagerDependencies {
-  constructStoragePath: typeof constructStoragePath
+  constructStoragePath: (context: PathContext) => { storagePath: string; fileName: string; }
 }
 
 const MAX_UPLOAD_ATTEMPTS = 5; // Max attempts for filename collision resolution
-
-/**
- * Determines the target database table based on the file type.
- * @param fileType The type of the file.
- * @returns The name of the table to use.
- */
-function getTableForFileType(
-  fileType: UploadContext['pathContext']['fileType'],
-): 'dialectic_project_resources' | 'dialectic_contributions' | 'dialectic_feedback' {
-  switch (fileType) {
-    case FileType.ModelContributionMain:
-    case FileType.ContributionDocument:
-    case FileType.PairwiseSynthesisChunk:
-    case FileType.ReducedSynthesis:
-    case FileType.Synthesis:
-      return 'dialectic_contributions'
-    case FileType.UserFeedback:
-      return 'dialectic_feedback'
-    case FileType.ProjectExportZip:
-    case FileType.PlannerPrompt:
-    case FileType.TurnPrompt:
-    case FileType.HeaderContext:
-    case FileType.AssembledDocumentJson:
-    case FileType.RenderedDocument:
-      return 'dialectic_project_resources'
-    default:
-      return 'dialectic_project_resources'
-  }
-}
 
 /**
  * The FileManagerService provides a unified API for all file operations
@@ -76,27 +51,28 @@ export class FileManagerService {
   async uploadAndRegisterFile(
     context: UploadContext,
   ): Promise<FileManagerResponse> {
-    const isContinuation = context.contributionMetadata?.isContinuation ?? false;
-
     // --- Path Construction ---
-    // Decide which PathContext to use based on whether this is a continuation chunk.
-    let pathContextForStorage: PathContext = context.pathContext;
-    if (isContinuation) {
+    // The path context can be modified for special cases like continuations.
+    let pathContextForStorage: PathContext = context.pathContext
+    if (isModelContributionContext(context) && context.contributionMetadata.isContinuation) {
       pathContextForStorage = {
         ...context.pathContext,
         isContinuation: true,
-        turnIndex: context.contributionMetadata?.turnIndex,
-      };
+        turnIndex: context.contributionMetadata.turnIndex,
+      }
     }
 
-    // --- Standard Upload Logic (Now handles both cases) ---
-    let finalMainContentFilePath = ""; 
-    let finalFileName = "";
-    let mainUploadError: { message: string; status?: number } | Error | null = null;
-    let currentAttemptCount = 0;
+    // --- Standard Upload Logic ---
+    let finalMainContentFilePath = ''
+    let finalFileName = ''
+    let mainUploadError: { message: string; status?: number } | Error | null = null
+    let currentAttemptCount = 0
 
     // This logic is restored from the original function to handle filename collisions for contributions
-    if (pathContextForStorage.fileType === 'model_contribution_main' || pathContextForStorage.fileType === 'model_contribution_raw_json') {
+    if (
+      pathContextForStorage.fileType === 'model_contribution_main' ||
+      pathContextForStorage.fileType === 'model_contribution_raw_json'
+    ) {
       for (currentAttemptCount = 0; currentAttemptCount < MAX_UPLOAD_ATTEMPTS; currentAttemptCount++) {
         const attemptPathContext: PathContext = {
           ...pathContextForStorage,
@@ -158,10 +134,9 @@ export class FileManagerService {
       }
     }
     
-    let rawJsonResponseFullStoragePath: string | null = null; // Stores full path for DB
-          const isModelContribution = getTableForFileType(pathContextForStorage.fileType) === 'dialectic_contributions' && pathContextForStorage.fileType !== 'contribution_document';
+    let rawJsonResponseFullStoragePath: string | null = null // Stores full path for DB
 
-    if (isModelContribution && context.contributionMetadata?.rawJsonResponseContent) {
+    if (isModelContributionContext(context) && context.contributionMetadata.rawJsonResponseContent) {
       try {
         const rawJsonPathContext: PathContext = {
           ...pathContextForStorage,
@@ -174,10 +149,10 @@ export class FileManagerService {
 
         const { error: rawJsonUploadError } = await this.supabase.storage
           .from(this.storageBucket)
-          .upload(fullPathForRawJsonUpload, context.contributionMetadata.rawJsonResponseContent, {
+          .upload(fullPathForRawJsonUpload, JSON.stringify(context.contributionMetadata.rawJsonResponseContent), {
             contentType: 'application/json',
-            upsert: true, 
-          });
+            upsert: true,
+          })
 
         if (rawJsonUploadError) {
           console.warn(`Raw JSON response upload failed for ${finalFileName}: ${rawJsonUploadError.message}.`);
@@ -189,12 +164,11 @@ export class FileManagerService {
       }
     }
 
-    const targetTable = getTableForFileType(pathContextForStorage.fileType)
-
     try {
-      if (targetTable === 'dialectic_project_resources') {
+      if (isResourceContext(context)) {
+        const targetTable = 'dialectic_project_resources'
         // Build resource_description. For project_export_zip we persist JSON; otherwise keep existing behavior.
-        let resourceDescriptionForDb: Json | null = null;
+        let resourceDescriptionForDb: Json | null = null
         if (pathContextForStorage.fileType === 'project_export_zip') {
           let descriptionJson: Record<string, unknown> = { type: pathContextForStorage.fileType };
           if (typeof context.description === 'string') {
@@ -268,29 +242,36 @@ export class FileManagerService {
         }
         return { record: newRecord, error: null };
 
-      } else if (targetTable === 'dialectic_contributions') {
-        if (!context.contributionMetadata || !pathContextForStorage.sessionId || context.contributionMetadata.iterationNumber === undefined || !pathContextForStorage.stageSlug) {
-          const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
-          if (!mainUploadError) { 
-              await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]);
-              if (rawJsonResponseFullStoragePath) { await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath]); }
+      } else if (isModelContributionContext(context)) {
+        const targetTable = 'dialectic_contributions'
+        if (
+          !pathContextForStorage.sessionId ||
+          context.contributionMetadata.iterationNumber === undefined ||
+          !pathContextForStorage.stageSlug
+        ) {
+          const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`
+          if (!mainUploadError) {
+            await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove])
+            if (rawJsonResponseFullStoragePath) {
+              await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath])
+            }
           }
-          return { record: null, error: { message: 'Missing required metadata for contribution.' }};
+          return { record: null, error: { message: 'Missing required metadata for contribution.' } }
         }
-        const meta = context.contributionMetadata;
+        const meta = context.contributionMetadata
 
         // Enforce strict lineage: continuations must provide target_contribution_id
         if (meta.isContinuation === true) {
-          const hasValidLink = typeof meta.target_contribution_id === 'string' && meta.target_contribution_id.length > 0;
+          const hasValidLink = typeof meta.target_contribution_id === 'string' && meta.target_contribution_id.length > 0
           if (!hasValidLink) {
-            const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
+            const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`
             if (!mainUploadError) {
-              await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]);
+              await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove])
               if (rawJsonResponseFullStoragePath) {
-                await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath]);
+                await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath])
               }
             }
-            return { record: null, error: { message: 'Missing target_contribution_id for continuation.' } };
+            return { record: null, error: { message: 'Missing target_contribution_id for continuation.' } }
           }
         }
         const recordData: TablesInsert<'dialectic_contributions'> = {
@@ -298,18 +279,17 @@ export class FileManagerService {
           model_id: meta.modelIdUsed,
           model_name: meta.modelNameDisplay,
           user_id: context.userId,
-          stage: pathContextForStorage.stageSlug, 
+          stage: pathContextForStorage.stageSlug,
           iteration_number: meta.iterationNumber,
           storage_bucket: this.storageBucket,
           storage_path: finalMainContentFilePath,
           mime_type: context.mimeType,
           size_bytes: context.sizeBytes,
-          file_name: finalFileName, 
+          file_name: finalFileName,
           raw_response_storage_path: rawJsonResponseFullStoragePath,
           tokens_used_input: meta.tokensUsedInput,
           tokens_used_output: meta.tokensUsedOutput,
           processing_time_ms: meta.processingTimeMs,
-          seed_prompt_url: meta.seedPromptStoragePath,
           prompt_template_id_used: meta.promptTemplateIdUsed,
           citations: meta.citations,
           contribution_type: meta.contributionType,
@@ -319,7 +299,7 @@ export class FileManagerService {
           edit_version: meta.editVersion ?? 1,
           is_latest_edit: meta.isLatestEdit ?? true,
           original_model_contribution_id: meta.originalModelContributionId,
-        };
+        }
         const { data: newRecord, error: insertError } = await this.supabase
           .from(targetTable)
           .insert(recordData)
@@ -342,36 +322,47 @@ export class FileManagerService {
         }
         return { record: newRecord, error: null };
 
-      } else { // dialectic_feedback
-        if (!pathContextForStorage.projectId || !context.userId || !pathContextForStorage.stageSlug || pathContextForStorage.iteration === undefined || !pathContextForStorage.sessionId ) {
-          const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
-          if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]); }
-          return { record: null, error: { message: 'Missing required fields for feedback record.' } };
+      } else if (isUserFeedbackContext(context)) {
+        const targetTable = 'dialectic_feedback'
+        if (
+          !pathContextForStorage.projectId ||
+          !context.userId ||
+          !pathContextForStorage.stageSlug ||
+          pathContextForStorage.iteration === undefined ||
+          !pathContextForStorage.sessionId
+        ) {
+          const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`
+          if (!mainUploadError) {
+            await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove])
+          }
+          return { record: null, error: { message: 'Missing required fields for feedback record.' } }
         }
-  
+
         if (typeof context.feedbackTypeForDb !== 'string' || !context.feedbackTypeForDb) {
-          const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
-          if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]); }
-          return { record: null, error: { message: "'feedbackTypeForDb' is missing in UploadContext for user_feedback."}};
+          const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`
+          if (!mainUploadError) {
+            await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove])
+          }
+          return { record: null, error: { message: "'feedbackTypeForDb' is missing in UploadContext for user_feedback." } }
         }
-  
+
         const recordData: TablesInsert<'dialectic_feedback'> = {
-          project_id: pathContextForStorage.projectId, 
+          project_id: pathContextForStorage.projectId,
           session_id: pathContextForStorage.sessionId,
-          user_id: context.userId, 
+          user_id: context.userId,
           stage_slug: pathContextForStorage.stageSlug,
           iteration_number: pathContextForStorage.iteration,
           storage_bucket: this.storageBucket,
-          storage_path: finalMainContentFilePath, 
-          file_name: finalFileName, 
+          storage_path: finalMainContentFilePath,
+          file_name: finalFileName,
           mime_type: context.mimeType,
           size_bytes: context.sizeBytes,
-          feedback_type: context.feedbackTypeForDb, 
-          resource_description: (context.resourceDescriptionForDb) || null,
-        };
+          feedback_type: context.feedbackTypeForDb,
+          resource_description: context.resourceDescriptionForDb || null,
+        }
         const { data: newRecord, error: insertError } = await this.supabase
           .from(targetTable)
-          .insert(recordData) 
+          .insert(recordData)
           .select()
           .single();
         
@@ -379,6 +370,9 @@ export class FileManagerService {
           throw insertError;
         }
         return { record: newRecord, error: null };
+      } else {
+        // This case should be unreachable if the discriminated union is exhaustive
+        throw new Error(`Unhandled context type in uploadAndRegisterFile: ${JSON.stringify(context)}`)
       }
     } catch(e) {
       if (!mainUploadError) {

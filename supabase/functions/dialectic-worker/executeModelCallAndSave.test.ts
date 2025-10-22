@@ -13,7 +13,9 @@ import {
     isJson,
     isRecord,
     isChatApiRequest,
+    isDialecticJobRow,
 } from '../_shared/utils/type_guards.ts';
+import { isModelContributionContext } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
   import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
   import type { 
     DialecticJobRow, 
@@ -27,7 +29,7 @@ import {
     PromptConstructionPayload,
     SourceDocument
 } from '../dialectic-service/dialectic.interface.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
+import { FileType, UploadContext } from '../_shared/types/file_manager.types.ts';
 import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 import type { LogMetadata, Messages } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
@@ -98,7 +100,7 @@ export const testPayload: DialecticExecuteJobPayload = {
     step_info: { current_step: 1, total_steps: 1 },
     prompt_template_name: 'test-prompt',
     inputs: {},
-    output_type: 'thesis',
+    output_type: FileType.HeaderContext,
     projectId: 'project-abc',
     sessionId: 'session-456',
     stageSlug: 'test-stage',
@@ -214,11 +216,12 @@ export const getMockDeps = (
       
       return {
         callUnifiedAIModel: async () => ({
-          content: 'AI response content',
-          contentType: 'text/plain',
+          content: '{"content": "AI response content"}',
+          contentType: 'application/json',
           inputTokens: 10,
           outputTokens: 20,
           processingTimeMs: 100,
+          rawProviderResponse: { mock: 'response' },
         }),
         getExtensionFromMimeType: () => '.txt',
         logger: logger,
@@ -251,11 +254,12 @@ Deno.test('executeModelCallAndSave - Happy Path', async (t) => {
 
     const deps: IDialecticJobDeps = {
       callUnifiedAIModel: async () => ({
-        content: 'AI response content',
-        contentType: 'text/plain',
+        content: '{"content": "AI response content"}',
+        contentType: 'application/json',
         inputTokens: 10,
         outputTokens: 20,
         processingTimeMs: 100,
+        rawProviderResponse: { mock: 'response' },
       }),
       getExtensionFromMimeType: () => '.txt',
       logger: logger,
@@ -353,11 +357,12 @@ Deno.test('executeModelCallAndSave - Intermediate Flag', async (t) => {
 
     const deps: IDialecticJobDeps = {
       callUnifiedAIModel: async () => ({
-        content: 'AI response content',
-        contentType: 'text/plain',
+        content: '{"content": "AI response content"}',
+        contentType: 'application/json',
         inputTokens: 10,
         outputTokens: 20,
         processingTimeMs: 100,
+        rawProviderResponse: { mock: 'response' },
       }),
       getExtensionFromMimeType: () => '.txt',
       logger: logger,
@@ -397,7 +402,10 @@ Deno.test('executeModelCallAndSave - Intermediate Flag', async (t) => {
         assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
         
         const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
-        assertEquals(uploadContext.contributionMetadata?.isIntermediate, true, "isIntermediate flag was not passed correctly to the file manager");
+        if (!isModelContributionContext(uploadContext)) {
+            throw new Error("Test setup error: uploadContext was not of type ModelContributionUploadContext");
+        }
+        assertEquals(uploadContext.contributionMetadata.isIntermediate, true, "isIntermediate flag was not passed correctly to the file manager");
     });
 
     clearAllStubs?.();
@@ -415,11 +423,12 @@ Deno.test('executeModelCallAndSave - Final Artifact Flag', async (t) => {
 
     const deps: IDialecticJobDeps = {
       callUnifiedAIModel: async () => ({
-        content: 'AI response content',
-        contentType: 'text/plain',
+        content: '{"content": "AI response content"}',
+        contentType: 'application/json',
         inputTokens: 10,
         outputTokens: 20,
         processingTimeMs: 100,
+        rawProviderResponse: { mock: 'response' },
       }),
       getExtensionFromMimeType: () => '.txt',
       logger: logger,
@@ -458,7 +467,10 @@ Deno.test('executeModelCallAndSave - Final Artifact Flag', async (t) => {
   
         assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
         const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
-        assertEquals(uploadContext.contributionMetadata?.isIntermediate, false, "isIntermediate flag should be false");
+        if (!isModelContributionContext(uploadContext)) {
+            throw new Error("Test setup error: uploadContext was not of type ModelContributionUploadContext");
+        }
+        assertEquals(uploadContext.contributionMetadata.isIntermediate, false, "isIntermediate flag should be false");
     });
   
     await t.step('should default isIntermediate to false if not present on payload', async () => {
@@ -485,7 +497,10 @@ Deno.test('executeModelCallAndSave - Final Artifact Flag', async (t) => {
   
         assert(fileManager.uploadAndRegisterFile.calls.length > 1, 'Expected fileManager.uploadAndRegisterFile to be called a second time');
         const uploadContext = fileManager.uploadAndRegisterFile.calls[1].args[0]; // Check the second call
-        assertEquals(uploadContext.contributionMetadata?.isIntermediate, false, "isIntermediate flag should default to false");
+        if (!isModelContributionContext(uploadContext)) {
+            throw new Error("Test setup error: uploadContext was not of type ModelContributionUploadContext");
+        }
+        assertEquals(uploadContext.contributionMetadata.isIntermediate, false, "isIntermediate flag should default to false");
     });
   
     clearAllStubs?.();
@@ -503,36 +518,28 @@ Deno.test('executeModelCallAndSave - Throws on AI Error', async (t) => {
         content: null,
         error: 'AI response was empty.',
     }));
+    const retryJobSpy = spy(deps, 'retryJob');
 
-    await t.step('should throw an error if the model returns an error', async () => {
-        let errorThrown = false;
-        try {
-            const params: ExecuteModelCallAndSaveParams = {
-                dbClient: dbClient as unknown as SupabaseClient<Database>,
-                deps,
-                authToken: 'auth-token',
-                job: createMockJob(testPayload),
-                projectOwnerUserId: 'user-789',
-                providerDetails: mockProviderData,
-                promptConstructionPayload: {
-                    systemInstruction: 'System instruction',
-                    conversationHistory: [],
-                    resourceDocuments: [],
-                    currentUserPrompt: 'User prompt',
-                },
-                sessionData: mockSessionData,
-                compressionStrategy: getSortedCompressionCandidates,
-            };
-            await executeModelCallAndSave(params);
-        } catch (e: unknown) {
-            errorThrown = true;
-            if (e instanceof Error) {
-                assert(e.message.includes('AI response was empty'), "Expected error message to match AI failure.");
-            } else {
-                assert(false, "Threw something that was not an Error");
-            }
-        }
-        assert(errorThrown, "Expected executeModelCallAndSave to throw an error.");
+    await t.step('should trigger a retry if the model returns an error', async () => {
+        const params: ExecuteModelCallAndSaveParams = {
+            dbClient: dbClient as unknown as SupabaseClient<Database>,
+            deps,
+            authToken: 'auth-token',
+            job: createMockJob(testPayload),
+            projectOwnerUserId: 'user-789',
+            providerDetails: mockProviderData,
+            promptConstructionPayload: {
+                systemInstruction: 'System instruction',
+                conversationHistory: [],
+                resourceDocuments: [],
+                currentUserPrompt: 'User prompt',
+            },
+            sessionData: mockSessionData,
+            compressionStrategy: getSortedCompressionCandidates,
+        };
+        await executeModelCallAndSave(params);
+
+        assertEquals(retryJobSpy.calls.length, 1, "Expected retryJob to be called on AI error.");
     });
 
     clearAllStubs?.();
@@ -551,6 +558,16 @@ Deno.test('executeModelCallAndSave - Database Error on Update', async (t) => {
         });
         const deps: IDialecticJobDeps = getMockDeps();
         
+        // Ensure the mock response is valid JSON to prevent premature exit
+        stub(deps, 'callUnifiedAIModel', () => Promise.resolve({
+            content: '{"content": "valid json"}',
+            contentType: 'application/json',
+            inputTokens: 10,
+            outputTokens: 5,
+            processingTimeMs: 50,
+            rawProviderResponse: { finish_reason: 'stop' }, 
+        }));
+
         let criticalErrorLogged = false;
         const originalErrorLogger = deps.logger.error;
         deps.logger.error = (message: string | Error, metadata?: LogMetadata) => {
@@ -701,7 +718,7 @@ Deno.test('executeModelCallAndSave - Document Relationships - should pass docume
 
     const relationshipsPayload: DialecticExecuteJobPayload = {
         ...testPayload,
-        output_type: 'pairwise_synthesis_chunk',
+        output_type: FileType.PairwiseSynthesisChunk,
         document_relationships: {
             source_group: 'thesis-1',
             thesis: 'thesis-1',
@@ -731,6 +748,7 @@ Deno.test('executeModelCallAndSave - Document Relationships - should pass docume
     assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
     
     const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+    assert(isModelContributionContext(uploadContext));
     assertExists(uploadContext.contributionMetadata, "Contribution metadata should exist");
     
     assertEquals(uploadContext.contributionMetadata.document_relationships, relationshipsPayload.document_relationships, "document_relationships object was not passed correctly to the file manager");
@@ -772,6 +790,7 @@ Deno.test('executeModelCallAndSave - Document Relationships - should default doc
     assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
     
     const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+    assert(isModelContributionContext(uploadContext));
     assertExists(uploadContext.contributionMetadata, "Contribution metadata should exist");
     
     logger.info('uploadContext.contributionMetadata.document_relationships', { document_relationships: uploadContext.contributionMetadata.document_relationships });
@@ -1304,6 +1323,45 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
   assertEquals({ systemInstruction: sent.systemInstruction, message: sent.message, messages: sent.messages, resourceDocuments: sent.resourceDocuments }, expectedFour, 'Final sized payload must equal sent request on the four fields');
 });
 
+Deno.test('executeModelCallAndSave - should correctly pass source_prompt_resource_id to fileManager', async () => {
+    // Arrange
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        }
+    });
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    const deps = getMockDeps();
+    deps.fileManager = fileManager;
+
+    const sourcePromptResourceId = 'resource-id-for-prompt-123';
+
+    const promptPayloadWithSourceId: PromptConstructionPayload = buildPromptPayload({
+        source_prompt_resource_id: sourcePromptResourceId,
+    });
+
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        promptConstructionPayload: promptPayloadWithSourceId,
+    });
+
+    // Act
+    await executeModelCallAndSave(params);
+
+    // Assert
+    assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
+    
+    const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+    assert(isModelContributionContext(uploadContext));
+    assertExists(uploadContext.contributionMetadata, "Contribution metadata should exist");
+    
+    assertEquals(uploadContext.contributionMetadata.source_prompt_resource_id, sourcePromptResourceId, "source_prompt_resource_id was not passed correctly to the file manager");
+
+    clearAllStubs?.();
+});
+
+
 Deno.test('executeModelCallAndSave - rendering hygiene: final message has no placeholders; systemInstruction is passthrough only', async () => {
   const { client: dbClient } = setupMockClient({
     'ai_providers': {
@@ -1337,5 +1395,50 @@ Deno.test('executeModelCallAndSave - rendering hygiene: final message has no pla
 
   // Assert systemInstruction is passthrough-only (undefined when not provided)
   assertEquals(firstArg.systemInstruction, undefined, 'systemInstruction should be undefined when not provided (no synthesis)');
+});
+
+Deno.test('when the model produces malformed JSON, it should trigger a retry, not a continuation', async () => {
+    // Arrange
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        }
+    });
+    
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+
+    const deps = getMockDeps();
+    deps.fileManager = fileManager;
+    
+    stub(deps, 'callUnifiedAIModel', () => Promise.resolve({
+        content: '{"key": "value", "incomplete', // Malformed JSON
+        contentType: 'application/json',
+        inputTokens: 10,
+        outputTokens: 5,
+        processingTimeMs: 50,
+        rawProviderResponse: { finish_reason: 'stop' }, 
+    }));
+
+    const continueJobSpy = spy(deps, 'continueJob');
+    const retryJobSpy = spy(deps, 'retryJob');
+
+    const job = createMockJob(testPayload);
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+    // Act
+    await executeModelCallAndSave(params);
+
+    // Assert
+    assertEquals(fileManager.uploadAndRegisterFile.calls.length, 0, "Should not save the malformed artifact.");
+    assertEquals(continueJobSpy.calls.length, 0, "Should NOT call continueJob for a parsing failure.");
+    assertEquals(retryJobSpy.calls.length, 1, "Should call retryJob to recover from the error.");
+
+    const retryArgs = retryJobSpy.calls[0].args;
+    assertEquals(retryArgs[2].id, job.id, "Should retry the correct job.");
+    assertEquals(retryArgs[3], job.attempt_count + 1, "Should increment the attempt count.");
+    assert(retryArgs[4][0].error.includes('Malformed JSON'), "Should include the correct error reason in the retry details.");
+
+    clearAllStubs?.();
 });
 

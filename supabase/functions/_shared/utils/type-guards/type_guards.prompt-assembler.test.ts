@@ -4,6 +4,33 @@ import {
     isStageContext,
 } from './type_guards.prompt-assembler.ts';
 import { ProjectContext, StageContext } from '../../prompt-assembler/prompt-assembler.interface.ts';
+import { DialecticRecipeStep } from '../../../dialectic-service/dialectic.interface.ts';
+
+const mockRecipeStep: DialecticRecipeStep = {
+    id: 'step1',
+    job_type: 'EXECUTE',
+    prompt_type: 'Turn',
+    granularity_strategy: 'all_to_one',
+    inputs_required: [],
+    inputs_relevance: [],
+    outputs_required: [],
+    step_slug: 'test-step',
+    step_name: 'Test Step',
+    execution_order: 1,
+    branch_key: 'main',
+    parallel_group: 1,
+    is_skipped: false,
+    config_override: {},
+    output_overrides: {},
+    object_filter: {},
+    instance_id: 'inst1',
+    step_key: 'testStep',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    prompt_template_id: null,
+    template_step_id: null,
+    output_type: 'RenderedDocument'
+};
 
 Deno.test('Type Guard: isProjectContext', async (t) => {
     await t.step('should return true for a valid project context object', () => {
@@ -57,18 +84,20 @@ Deno.test('Type Guard: isStageContext', async (t) => {
             slug: 'thesis',
             system_prompts: { prompt_text: 'test' },
             domain_specific_prompt_overlays: [],
+            recipe_step: mockRecipeStep,
             created_at: '',
             default_system_prompt_id: null,
             description: null,
             display_name: '',
-            expected_output_artifacts: null,
-            input_artifact_rules: null,
+            active_recipe_instance_id: null,
+            expected_output_template_ids: [],
+            recipe_template_id: null,
         };
         assert(isStageContext(context));
     });
 
-    await t.step('should return true for a stage context with null system_prompts', () => {
-        const context: StageContext = {
+    await t.step('should return false if recipe_step is missing', () => {
+        const invalidContext = {
             id: 's2',
             slug: 'antithesis',
             system_prompts: null,
@@ -77,10 +106,8 @@ Deno.test('Type Guard: isStageContext', async (t) => {
             default_system_prompt_id: null,
             description: null,
             display_name: '',
-            expected_output_artifacts: null,
-            input_artifact_rules: null,
         };
-        assert(isStageContext(context));
+        assert(!isStageContext(invalidContext));
     });
 
     await t.step('should return false if a required field is missing (slug)', () => {
@@ -88,6 +115,7 @@ Deno.test('Type Guard: isStageContext', async (t) => {
             id: 's3',
             system_prompts: null,
             domain_specific_prompt_overlays: [],
+            recipe_step: mockRecipeStep,
         };
         assert(!isStageContext(invalidContext));
     });

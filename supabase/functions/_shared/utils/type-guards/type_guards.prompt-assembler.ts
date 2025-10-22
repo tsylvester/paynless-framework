@@ -1,6 +1,7 @@
 // supabase/functions/_shared/utils/type_guards.ts
 import { ProjectContext, StageContext } from "../../prompt-assembler/prompt-assembler.interface.ts";
 import { isRecord } from './type_guards.common.ts';
+import { isDialecticRecipeStep } from "./type_guards.dialectic.recipe.ts";
 
 /**
  * A true type guard that safely checks if an object is a ProjectContext
@@ -74,6 +75,10 @@ export function isStageContext(obj: unknown): obj is StageContext {
             }
             return false;
         }
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(obj, 'recipe_step') || !isDialecticRecipeStep(obj.recipe_step)) {
+        return false;
     }
 
     return true;

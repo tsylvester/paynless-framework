@@ -94,7 +94,7 @@ Deno.test('should throw if walletId is missing (preflight, non-oversized) before
     let providerCalled = 0;
     deps.callUnifiedAIModel = async () => {
         providerCalled++;
-        return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1 };
+        return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1, rawProviderResponse: { mock: 'response' } };
     };
     // Under limit to ensure non-oversized path
     deps.countTokens = () => 10;
@@ -144,7 +144,7 @@ Deno.test('preflight (non-oversized) fails when tokenWalletService is missing be
   let providerCalled = 0;
   deps.callUnifiedAIModel = async () => {
     providerCalled++;
-    return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1 };
+    return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1, rawProviderResponse: { mock: 'response' } };
   };
   // Ensure non-oversized
   deps.countTokens = () => 10;
@@ -196,7 +196,7 @@ Deno.test('preflight (non-oversized) fails when model cost rates are invalid', a
   let providerCalled = 0;
   deps.callUnifiedAIModel = async () => {
     providerCalled++;
-    return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1 };
+    return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1, rawProviderResponse: { mock: 'response' } };
   };
   deps.countTokens = () => 10; // non-oversized
 
@@ -245,7 +245,7 @@ Deno.test('preflight (non-oversized) fails for NSF when total estimated cost exc
   let providerCalled = 0;
   deps.callUnifiedAIModel = async () => {
     providerCalled++;
-    return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1 };
+    return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1, rawProviderResponse: { mock: 'response' } };
   };
   deps.countTokens = () => 10; // input cost = 10 > balance alone
 
@@ -449,7 +449,7 @@ Deno.test('should throw an error if the estimated cost exceeds the 80% rationali
     let providerCalled = 0;
     deps.callUnifiedAIModel = async () => {
         providerCalled++;
-        return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1 };
+        return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1, rawProviderResponse: { mock: 'response' } };
     };
     const { instance: mockTokenWalletService } = createMockTokenWalletService({
         getBalance: () => Promise.resolve(mockBalance.toString()),
@@ -526,7 +526,7 @@ Deno.test('should throw an error if the estimated cost exceeds the absolute bala
     let providerCalled = 0;
     deps.callUnifiedAIModel = async () => {
         providerCalled++;
-        return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1 };
+        return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1, rawProviderResponse: { mock: 'response' } };
     };
     deps.ragService = mockRagService;
     deps.tokenWalletService = mockTokenWalletService;

@@ -3,18 +3,18 @@ import {
   type ModelProcessingResult,
   type ExecuteModelCallAndSaveParams,
 } from '../dialectic-service/dialectic.interface.ts';
-import { UploadContext, FileType } from '../_shared/types/file_manager.types.ts';
+import { ModelContributionFileTypes, ModelContributionUploadContext } from '../_shared/types/file_manager.types.ts';
 import { 
     isDialecticContribution, 
     isAiModelExtendedConfig, 
     isDialecticExecuteJobPayload, 
     isContributionType, 
-    isFileType, 
     isApiChatMessage, 
-    isContinueReason, 
+    isDialecticContinueReason, 
     isRecord, 
     isFinishReason, 
-    isDocumentRelationships 
+    isDocumentRelationships,
+    isJson,
 } from "../_shared/utils/type_guards.ts";
 import { AiModelExtendedConfig, ChatApiRequest, Messages, FinishReason } from '../_shared/types.ts';
 import { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
@@ -661,12 +661,49 @@ export async function executeModelCallAndSave(
 
     deps.logger.info(`[executeModelCallAndSave] DIAGNOSTIC: Full AI Response for job ${job.id}:`, { aiResponse });
 
-    if (!aiResponse) {
-        throw new Error('No response from AI adapter');
+    if (aiResponse.error || !aiResponse.content) {
+        // This handles cases where the AI provider itself returned an error.
+        // This is a candidate for a retry.
+        await deps.retryJob(
+            { logger: deps.logger, notificationService: deps.notificationService },
+            dbClient,
+            job,
+            job.attempt_count + 1,
+            [{
+                modelId: providerDetails.id,
+                api_identifier: providerDetails.api_identifier,
+                error: aiResponse.error || 'AI response was empty.',
+                processingTimeMs: processingTimeMs,
+            }],
+            projectOwnerUserId
+        );
+        return;
     }
 
-    if (aiResponse.error || !aiResponse.content) {
-        throw new Error(aiResponse.error || 'AI response was empty.');
+    // Unconditionally validate the response is parsable JSON before any other logic.
+    let parsedContent: unknown;
+    try {
+        parsedContent = JSON.parse(aiResponse.content);
+    } catch (e) {
+        // This handles a malformed JSON response, which is a retryable failure.
+        deps.logger.warn(`[executeModelCallAndSave] Malformed JSON response for job ${job.id}. Triggering retry.`, { error: e instanceof Error ? e.message : String(e) });
+        
+        await deps.retryJob(
+            { logger: deps.logger, notificationService: deps.notificationService },
+            dbClient,
+            job,
+            job.attempt_count + 1,
+            [{
+                modelId: providerDetails.id,
+                api_identifier: providerDetails.api_identifier,
+                error: `Malformed JSON response: ${e instanceof Error ? e.message : String(e)}`,
+                processingTimeMs: processingTimeMs,
+            }],
+            projectOwnerUserId
+        );
+        
+        // Halt processing immediately.
+        return;
     }
 
     // Determine finish reason from either top-level or raw provider response
@@ -676,18 +713,34 @@ export async function executeModelCallAndSave(
     } else if (isRecord(aiResponse.rawProviderResponse) && isFinishReason(aiResponse.rawProviderResponse['finish_reason'])) {
         resolvedFinish = aiResponse.rawProviderResponse['finish_reason'];
     }
-    let shouldContinue = isContinueReason(resolvedFinish);
+
+    if (resolvedFinish === 'error') {
+        await deps.retryJob(
+            { logger: deps.logger, notificationService: deps.notificationService },
+            dbClient,
+            job,
+            job.attempt_count + 1,
+            [{
+                modelId: providerDetails.id,
+                api_identifier: providerDetails.api_identifier,
+                error: 'AI provider signaled error via finish_reason.',
+                processingTimeMs: processingTimeMs,
+            }],
+            projectOwnerUserId
+        );
+        return;
+    }
+
+    let shouldContinue = isDialecticContinueReason(resolvedFinish);
 
     // Check the content for a continuation flag if the finish_reason doesn't already indicate it.
-    if (!shouldContinue && aiResponse.content) {
-        try {
-            const contentJson = JSON.parse(aiResponse.content);
-            if (isRecord(contentJson) && contentJson.continuation_needed === true) {
-                shouldContinue = true;
-            }
-        } catch (e) {
-            // Not a JSON response, so we can't check for the flag. Ignore error.
-            deps.logger.debug(`[executeModelCallAndSave] Could not parse AI response content as JSON for continuation check. Content starts with: "${aiResponse.content.slice(0, 100)}"`);
+    if (!shouldContinue && isRecord(parsedContent)) {
+        if (
+            parsedContent.continuation_needed === true ||
+            parsedContent.stop_reason === 'continuation' ||
+            parsedContent.stop_reason === 'token_limit'
+        ) {
+            shouldContinue = true;
         }
     }
 
@@ -699,13 +752,9 @@ export async function executeModelCallAndSave(
     // not by adding a non-standard property to this JSON blob.
     const document_relationships = job.payload.document_relationships ?? null;
 
-    const fileType: FileType = isFileType(output_type) 
-        ? output_type
-        : FileType.ModelContributionMain;
+    const fileType: ModelContributionFileTypes = output_type; 
 
-    const description = fileType === FileType.ModelContributionMain
-        ? `Contribution for stage '${stageSlug}' by model ${providerDetails.name}`
-        : `Intermediate artifact '${output_type}' for stage '${stageSlug}' by model ${providerDetails.name}`;
+    const description = `${output_type} for stage '${stageSlug}' by model ${providerDetails.name}`;
 
     const {
         contributionType: rawContributionType,
@@ -733,7 +782,10 @@ export async function executeModelCallAndSave(
         }
     }
 
-    const uploadContext: UploadContext = {
+    if (!aiResponse.rawProviderResponse || !isJson(aiResponse.rawProviderResponse)) {
+        throw new Error('Raw provider response is required');
+    }
+    const uploadContext: ModelContributionUploadContext = {
         pathContext: {
             projectId: job.payload.projectId,
             fileType: fileType,
@@ -752,7 +804,6 @@ export async function executeModelCallAndSave(
         sizeBytes: contentForStorage.length, 
         userId: projectOwnerUserId,
         description,
-        resourceTypeForDb: job.payload.output_type || stageSlug,
         contributionMetadata: {
             sessionId, 
             modelIdUsed: providerDetails.id, 
@@ -760,11 +811,11 @@ export async function executeModelCallAndSave(
             stageSlug, 
             iterationNumber, 
             contributionType: contributionType,
-            rawJsonResponseContent: JSON.stringify(aiResponse.rawProviderResponse || {}),
+            rawJsonResponseContent: aiResponse.rawProviderResponse,
             tokensUsedInput: aiResponse.inputTokens, 
             tokensUsedOutput: aiResponse.outputTokens,
-            processingTimeMs: aiResponse.processingTimeMs, 
-            seedPromptStoragePath: 'file/location',
+            processingTimeMs: aiResponse.processingTimeMs,
+            source_prompt_resource_id: promptConstructionPayload.source_prompt_resource_id,
             target_contribution_id: targetContributionId,
             document_relationships,
             isIntermediate: 'isIntermediate' in job.payload && job.payload.isIntermediate,

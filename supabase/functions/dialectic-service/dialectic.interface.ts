@@ -5,7 +5,12 @@ import {
 } from '../_shared/supabase_storage_utils.ts';
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
 import type { Logger } from '../_shared/logger.ts';
-import type { IFileManager, CanonicalPathParams, FileType } from '../_shared/types/file_manager.types.ts';
+import type { 
+  IFileManager, 
+  CanonicalPathParams, 
+  FileType, 
+  ModelContributionFileTypes,
+} from '../_shared/types/file_manager.types.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import type { DeleteStorageResult, DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import type {
@@ -514,7 +519,7 @@ export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
     job_type: 'execute';
     step_info: DialecticStepInfo; // Pass down for context
     prompt_template_name?: string;
-    output_type: ContributionType; // The type of artifact this job will produce
+    output_type: ModelContributionFileTypes; // The type of artifact this job will produce
     canonicalPathParams: CanonicalPathParams; // The new formal contract for path context
     inputs: {
         // Key-value store for resource_ids needed by the prompt
@@ -540,6 +545,7 @@ export interface PromptConstructionPayload {
   conversationHistory: Messages[];
   resourceDocuments: SourceDocument[];
   currentUserPrompt: Prompt;
+  source_prompt_resource_id?: string;
 }
 
 export interface GenerateContributionsSuccessResponse {

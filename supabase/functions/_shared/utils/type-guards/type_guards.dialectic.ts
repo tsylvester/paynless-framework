@@ -25,6 +25,8 @@ import {
 import { isPlainObject, isRecord } from './type_guards.common.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 import { isFileType } from './type_guards.file_manager.ts';
+import { ContinueReason, FinishReason } from "../../types.ts";
+import { isContinueReason } from './type_guards.chat.ts';
 
 // Helper type for the citations array
 export type Citation = {
@@ -44,7 +46,7 @@ const validContributionTypes: ContributionType[] = [
 ];
 
 const validBranchKeys = new Set<string>(Object.values(BranchKey));
-const validOutputTypes = new Set<string>([...Object.values(OutputType), ...validContributionTypes]);
+const validOutputTypes = new Set<string>([...Object.values(OutputType), ...Object.values(FileType)]);
 
 function isPlannerMetadata(value: unknown): value is DialecticStepPlannerMetadata {
     if (!isRecord(value)) return false;
@@ -434,37 +436,40 @@ export function isDialecticContribution(record: unknown): record is DialecticCon
 }
 
 export function isDialecticExecuteJobPayload(payload: unknown): payload is DialecticExecuteJobPayload {
-    if (!isRecord(payload)) return false;
+    if (!isRecord(payload)) {
+        throw new Error('Payload must be a non-null object.');
+    }
 
-    // Check for the new contract
-    const hasCanonicalParams = 'canonicalPathParams' in payload &&
-        isRecord(payload.canonicalPathParams) &&
-        'contributionType' in payload.canonicalPathParams &&
-        typeof payload.canonicalPathParams.contributionType === 'string';
+    // Base Payload Checks
+    if (!('sessionId' in payload) || typeof payload.sessionId !== 'string') throw new Error('Missing or invalid sessionId.');
+    if (!('projectId' in payload) || typeof payload.projectId !== 'string') throw new Error('Missing or invalid projectId.');
+    if (!('model_id' in payload) || typeof payload.model_id !== 'string') throw new Error('Missing or invalid model_id.');
+    if (!('walletId' in payload) || typeof payload.walletId !== 'string') throw new Error('Missing or invalid walletId.');
+    if (!('stageSlug' in payload) || typeof payload.stageSlug !== 'string') throw new Error('Invalid stageSlug.');
+    if (!('iterationNumber' in payload) || typeof payload.iterationNumber !== 'number') throw new Error('Invalid iterationNumber.');
 
-    // Check for the legacy property (which should NOT be present)
-    const hasLegacyFileName = 'originalFileName' in payload;
+    // Required ExecuteJobPayload properties
+    if (payload.job_type !== 'execute') throw new Error("Invalid job_type: expected 'execute'");
+    if (!('step_info' in payload) || !isDialecticStepInfo(payload.step_info)) throw new Error('Missing or invalid step_info.');
+    if (!('output_type' in payload) || !isFileType(payload.output_type)) throw new Error('Missing or invalid output_type.');
+    if (!('canonicalPathParams' in payload) || !isRecord(payload.canonicalPathParams) || !('contributionType' in payload.canonicalPathParams)) throw new Error('Missing or invalid canonicalPathParams.');
+    if (!('inputs' in payload) || !isRecord(payload.inputs)) throw new Error('Missing or invalid inputs.');
 
-    // The property is optional. If it exists, it must be valid. If it doesn't, that's OK.
-    const hasValidRelationships = !('document_relationships' in payload) || 
-                                  payload.document_relationships === undefined || 
-                                  payload.document_relationships === null || 
-                                  isDocumentRelationships(payload.document_relationships);
+    // Optional/Nullable properties
+    if (('prompt_template_name' in payload) && typeof payload.prompt_template_name !== 'string') throw new Error('Invalid prompt_template_name.');
+    if (('document_key' in payload) && payload.document_key !== null && typeof payload.document_key !== 'string') throw new Error('Invalid document_key.');
+    if (('branch_key' in payload) && payload.branch_key !== null && (typeof payload.branch_key !== 'string' || !validBranchKeys.has(payload.branch_key))) throw new Error('Invalid branch_key.');
+    if (('parallel_group' in payload) && payload.parallel_group !== null && typeof payload.parallel_group !== 'number') throw new Error('Invalid parallel_group.');
+    if (('planner_metadata' in payload) && payload.planner_metadata !== null && !isPlannerMetadata(payload.planner_metadata)) throw new Error('Invalid planner_metadata.');
+    if (('document_relationships' in payload) && payload.document_relationships !== null && !isDocumentRelationships(payload.document_relationships)) throw new Error('Invalid document_relationships.');
+    if (('isIntermediate' in payload) && typeof payload.isIntermediate !== 'boolean') throw new Error('Invalid isIntermediate flag.');
+    if (('user_jwt' in payload) && typeof payload.user_jwt !== 'string') throw new Error('Invalid user_jwt.');
+    if (('target_contribution_id' in payload) && typeof payload.target_contribution_id !== 'string') throw new Error('Invalid target_contribution_id.');
 
-    return (
-        payload.job_type === 'execute' &&
-        (!('prompt_template_name' in payload) || payload.prompt_template_name === undefined || typeof payload.prompt_template_name === 'string') &&
-        typeof payload.output_type === 'string' && validOutputTypes.has(payload.output_type) &&
-        (!('step_info' in payload) || isDialecticStepInfo(payload.step_info)) &&
-        isRecord(payload.inputs) &&
-        hasCanonicalParams &&
-        !hasLegacyFileName &&
-        hasValidRelationships &&
-        (!('document_key' in payload) || payload.document_key === undefined || (typeof payload.document_key === 'string' && isFileType(payload.document_key))) &&
-        (!('branch_key' in payload) || payload.branch_key === undefined || (typeof payload.branch_key === 'string' && validBranchKeys.has(payload.branch_key))) &&
-        (!('parallel_group' in payload) || payload.parallel_group === undefined || typeof payload.parallel_group === 'number') &&
-        (!('planner_metadata' in payload) || payload.planner_metadata === undefined || payload.planner_metadata === null || isPlannerMetadata(payload.planner_metadata))
-    );
+    // Legacy property check
+    if ('originalFileName' in payload) throw new Error('Legacy property originalFileName is not allowed.');
+
+    return true;
 }
 
 /**
@@ -938,4 +943,20 @@ export function validatePayload(payload: Json): DialecticJobPayload {
   };
   
   return validatedPayload;
+}
+
+export type DialecticContinueReason = ContinueReason | 'next_document' | 'tool_calls' | 'function_call' | 'content_filter';
+
+export function isDialecticContinueReason(reason: FinishReason): reason is DialecticContinueReason {
+    if (isContinueReason(reason)) {
+        return true;
+    }
+
+    const dialecticReasons: readonly string[] = ['next_document', 'tool_calls', 'function_call', 'content_filter'];
+    
+    if (typeof reason === 'string') {
+        return dialecticReasons.includes(reason);
+    }
+
+    return false;
 }

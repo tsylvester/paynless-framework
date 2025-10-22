@@ -1,13 +1,77 @@
-import { assert, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import { 
-    isFileType,
-    isCanonicalPathParams,
-} from './type_guards.file_manager.ts';
-import { CanonicalPathParams, FileType } from '../../types/file_manager.types.ts';
+import { assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
+import {
+  isFileType,
+  isCanonicalPathParams,
+  isModelContributionContext,
+  isUserFeedbackContext,
+  isResourceContext,
+} from './type_guards.file_manager.ts'
+import {
+  CanonicalPathParams,
+  FileType,
+  ModelContributionUploadContext,
+  ResourceUploadContext,
+  UserFeedbackUploadContext,
+} from '../../types/file_manager.types.ts'
+import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts'
+
+// --- Mocks ---
+
+const mockModelContributionContext: ModelContributionUploadContext = {
+  pathContext: {
+    fileType: FileType.ModelContributionMain,
+    projectId: 'project-123',
+    sessionId: 'session-123',
+    iteration: 1,
+    stageSlug: 'test-stage',
+    modelSlug: 'test-model',
+  },
+  contributionMetadata: {
+    iterationNumber: 1,
+    modelIdUsed: 'model-id-123',
+    modelNameDisplay: 'Test Model',
+    sessionId: 'session-123',
+    stageSlug: 'test-stage',
+    rawJsonResponseContent: '{}',
+  },
+  fileContent: Buffer.from('test'),
+  mimeType: 'text/plain',
+  sizeBytes: 4,
+  userId: 'user-123',
+  description: 'A model contribution',
+}
+
+const mockUserFeedbackContext: UserFeedbackUploadContext = {
+  pathContext: {
+    fileType: FileType.UserFeedback,
+    projectId: 'project-123',
+    sessionId: 'session-123',
+    iteration: 1,
+    stageSlug: 'feedback-stage',
+  },
+  feedbackTypeForDb: 'general-feedback',
+  fileContent: Buffer.from('feedback'),
+  mimeType: 'text/plain',
+  sizeBytes: 8,
+  userId: 'user-123',
+  description: 'User feedback',
+}
+
+const mockResourceContext: ResourceUploadContext = {
+  pathContext: {
+    fileType: FileType.ProjectReadme,
+    projectId: 'project-123',
+  },
+  fileContent: Buffer.from('readme'),
+  mimeType: 'text/markdown',
+  sizeBytes: 6,
+  userId: 'user-123',
+  description: 'A project readme',
+}
 
 Deno.test('Type Guard: isCanonicalPathParams', async (t) => {
-    await t.step('should return true for a valid CanonicalPathParams object', () => {
-        const params: CanonicalPathParams = {
+  await t.step('should return true for a valid CanonicalPathParams object', () => {
+    const params: CanonicalPathParams = {
             contributionType: 'thesis',
             sourceModelSlugs: ['model-1', 'model-2'],
         };
@@ -66,3 +130,58 @@ Deno.test('Type Guard: isFileType', async (t) => {
         assert(!isFileType('antithesis'));
     });
 });
+
+Deno.test('Type Guard: isModelContributionContext', async (t) => {
+  await t.step('should return true for a valid ModelContributionUploadContext', () => {
+    assert(isModelContributionContext(mockModelContributionContext))
+  })
+
+  await t.step('should return false for a UserFeedbackUploadContext', () => {
+    assert(!isModelContributionContext(mockUserFeedbackContext))
+  })
+
+  await t.step('should return false for a ResourceUploadContext', () => {
+    assert(!isModelContributionContext(mockResourceContext))
+  })
+
+  await t.step('should return false for an object that looks like a resource', () => {
+    const context = {
+      pathContext: { fileType: FileType.ProjectReadme },
+    }
+    assert(!isModelContributionContext(context))
+  })
+
+  await t.step('should return false for non-object inputs', () => {
+    assert(!isModelContributionContext(null))
+    assert(!isModelContributionContext('a string'))
+  })
+})
+
+Deno.test('Type Guard: isUserFeedbackContext', async (t) => {
+  await t.step('should return true for a valid UserFeedbackUploadContext', () => {
+    assert(isUserFeedbackContext(mockUserFeedbackContext))
+  })
+
+  await t.step('should return false for a ModelContributionUploadContext', () => {
+    assert(!isUserFeedbackContext(mockModelContributionContext))
+  })
+
+  await t.step('should return false for an object without feedbackTypeForDb', () => {
+    const { feedbackTypeForDb, ...rest } = mockUserFeedbackContext
+    assert(!isUserFeedbackContext(rest))
+  })
+})
+
+Deno.test('Type Guard: isResourceContext', async (t) => {
+  await t.step('should return true for a valid ResourceUploadContext', () => {
+    assert(isResourceContext(mockResourceContext))
+  })
+
+  await t.step('should return false for a ModelContributionUploadContext', () => {
+    assert(!isResourceContext(mockModelContributionContext))
+  })
+
+  await t.step('should return false for a UserFeedbackUploadContext', () => {
+    assert(!isResourceContext(mockUserFeedbackContext))
+  })
+})

@@ -29,7 +29,8 @@ export {
     isJobResultsWithModelProcessing, 
     isModelProcessingResult, 
     isPlanJobInsert, 
-    validatePayload 
+    validatePayload,
+    isDialecticContinueReason,
 } from "./type-guards/type_guards.dialectic.ts";
 export { 
     isCanonicalPathParams, 

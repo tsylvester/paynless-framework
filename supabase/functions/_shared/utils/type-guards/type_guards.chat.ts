@@ -155,6 +155,7 @@ export function isFinishReason(value: unknown): value is FinishReason {
         'unknown',
         'max_tokens',
         'content_truncated',
+        'next_document',
     ]);
     return allowed.has(value);
 }

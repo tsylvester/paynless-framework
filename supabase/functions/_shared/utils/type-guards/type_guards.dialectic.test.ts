@@ -1,4 +1,8 @@
-import { assert, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts';
+import {
+    assertEquals,
+    assert,
+    assertThrows,
+} from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import type { Tables, Json, Database } from "../../../types_db.ts";
 import { 
     hasProcessingStrategy, 
@@ -24,7 +28,8 @@ import {
     hasModelResultWithContributionId,
     isJobInsert,
     isPlanJobInsert,
-    isHeaderContext    
+    isHeaderContext,
+    isDialecticContinueReason
 } from './type_guards.dialectic.ts';
 import { 
     BranchKey, 
@@ -35,8 +40,10 @@ import {
     StageWithRecipeSteps,
     DialecticRecipeStep,
     JobType,
+    DialecticExecuteJobPayload,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
+import { ContinueReason, FinishReason } from '../../types.ts';
 
 Deno.test('Type Guard: hasModelResultWithContributionId', async (t) => {
     await t.step('should return true for a valid object', () => {
@@ -631,191 +638,182 @@ Deno.test('Type Guard: isDialecticContribution', async (t) => {
 });
 
 Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
-    const basePayload = {
+    const basePayload: DialecticExecuteJobPayload = {
+        sessionId: 'test-session',
+        projectId: 'test-project',
+        model_id: 'model-123',
+        walletId: 'wallet-abc',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
         job_type: 'execute',
-        prompt_template_name: 'p1',
-        inputs: {},
-        output_type: 'thesis',
+        step_info: { current_step: 1, total_steps: 1 },
+        output_type: FileType.AssembledDocumentJson,
+        canonicalPathParams: {
+            contributionType: 'thesis',
+        },
+        inputs: {
+            seed_prompt: 'resource-id-1',
+        },
     };
 
-    await t.step('should return true for a valid execute job payload with minimal canonical params', () => {
-        const payload = {
-            ...basePayload,
-            canonicalPathParams: {
-                contributionType: 'thesis',
-            },
-        };
-        assert(isDialecticExecuteJobPayload(payload));
+    await t.step('should return true for a valid payload and not throw', () => {
+        assert(isDialecticExecuteJobPayload(basePayload));
     });
 
-    await t.step('should return true for an execute job payload without prompt_template_name (simple flow)', () => {
-        const payload = {
-            job_type: 'execute',
-            inputs: {},
-            output_type: 'thesis',
-            canonicalPathParams: {
-                contributionType: 'thesis',
-            },
-        };
-        assert(isDialecticExecuteJobPayload(payload));
+    // Test each optional property individually for valid cases
+    await t.step('should pass with a valid optional prompt_template_name', () => {
+        const p = { ...basePayload, prompt_template_name: 'test-template' };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with a valid optional document_key', () => {
+        const p = { ...basePayload, document_key: FileType.business_case };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with a null optional document_key', () => {
+        const p = { ...basePayload, document_key: null };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with a valid optional branch_key', () => {
+        const p = { ...basePayload, branch_key: BranchKey.business_case };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with a null optional branch_key', () => {
+        const p = { ...basePayload, branch_key: null };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with a valid optional parallel_group', () => {
+        const p = { ...basePayload, parallel_group: 1 };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with a null optional parallel_group', () => {
+        const p = { ...basePayload, parallel_group: null };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with valid optional planner_metadata', () => {
+        const p = { ...basePayload, planner_metadata: { dependencies: ['root'] } };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with null optional planner_metadata', () => {
+        const p = { ...basePayload, planner_metadata: null };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with valid optional document_relationships', () => {
+        const p = { ...basePayload, document_relationships: { thesis: 'some-id' } };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with null optional document_relationships', () => {
+        const p = { ...basePayload, document_relationships: null };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with a valid optional isIntermediate', () => {
+        const p = { ...basePayload, isIntermediate: true };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with a valid optional user_jwt', () => {
+        const p = { ...basePayload, user_jwt: 'some-jwt' };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with a valid optional target_contribution_id', () => {
+        const p = { ...basePayload, target_contribution_id: 'target-id' };
+        assert(isDialecticExecuteJobPayload(p));
     });
 
-    await t.step('should return true for a valid execute job payload with full canonical params', () => {
-        const payload = {
-            ...basePayload,
-            canonicalPathParams: {
-                contributionType: 'synthesis',
-                sourceModelSlugs: ['model-1', 'model-2'],
-                sourceContributionIdShort: 'abcdef',
-            },
-            document_key: FileType.business_case,
-            branch_key: BranchKey.business_case,
-            parallel_group: 2,
-            planner_metadata: {
-                recipe_template_id: 'template-1',
-                recipe_step_id: 'step-2',
-                stage_slug: 'thesis',
-            },
-        };
-        assert(isDialecticExecuteJobPayload(payload));
+    // Test inherited properties from DialecticBaseJobPayload
+    await t.step('should throw if sessionId is missing', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticExecuteJobPayload>).sessionId;
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid sessionId.');
+    });
+    await t.step('should throw if projectId is missing', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticExecuteJobPayload>).projectId;
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid projectId.');
+    });
+    await t.step('should throw if model_id is missing', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticExecuteJobPayload>).model_id;
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid model_id.');
+    });
+    await t.step('should throw if walletId is missing', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticExecuteJobPayload>).walletId;
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid walletId.');
+    });
+
+    // Test required properties of DialecticExecuteJobPayload
+    await t.step('should throw if job_type is not "execute"', () => {
+        const p = { ...basePayload, job_type: 'plan' };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, "Invalid job_type: expected 'execute'");
+    });
+    await t.step('should throw if step_info is missing or invalid', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticExecuteJobPayload>).step_info;
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid step_info.');
+    });
+    await t.step('should throw if output_type is missing or invalid', () => {
+        const p = { ...basePayload, output_type: 'invalid-type' as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid output_type.');
+    });
+    await t.step('should throw if canonicalPathParams is missing or invalid', () => {
+        const p = { ...basePayload, canonicalPathParams: {} as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid canonicalPathParams.');
+    });
+    await t.step('should throw if inputs is missing or not a record', () => {
+        const p = { ...basePayload, inputs: 'invalid' as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid inputs.');
+    });
+
+    // Test optional/nullable properties of DialecticExecuteJobPayload
+    await t.step('should throw if prompt_template_name is of wrong type', () => {
+        const p = { ...basePayload, prompt_template_name: 123 as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid prompt_template_name.');
+    });
+    await t.step('should throw if document_key is of wrong type', () => {
+        const p = { ...basePayload, document_key: 123 as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid document_key.');
+    });
+    await t.step('should throw if branch_key is of wrong type', () => {
+        const p = { ...basePayload, branch_key: 123 as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid branch_key.');
+    });
+    await t.step('should throw if parallel_group is of wrong type', () => {
+        const p = { ...basePayload, parallel_group: 'invalid' as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid parallel_group.');
+    });
+    await t.step('should throw if planner_metadata is of wrong type', () => {
+        const p = { ...basePayload, planner_metadata: 'invalid' as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid planner_metadata.');
+    });
+    await t.step('should throw if document_relationships is of wrong type', () => {
+        const p = { ...basePayload, document_relationships: 'invalid' as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid document_relationships.');
+    });
+    await t.step('should throw if isIntermediate is of wrong type', () => {
+        const p = { ...basePayload, isIntermediate: 'invalid' as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid isIntermediate flag.');
+    });
+    await t.step('should throw if user_jwt is of wrong type', () => {
+        const p = { ...basePayload, user_jwt: 123 as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid user_jwt.');
     });
     
-    await t.step('should return false if job_type is wrong', () => {
-        const payload = {
-            job_type: 'plan',
-            prompt_template_name: 'p1',
-            inputs: {},
-            canonicalPathParams: { contributionType: 'thesis' },
-        };
-        assert(!isDialecticExecuteJobPayload(payload));
+    // Test optional inherited properties
+    await t.step('should throw if stageSlug is of wrong type', () => {
+        const p = { ...basePayload, stageSlug: 123 as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid stageSlug.');
+    });
+    await t.step('should throw if iterationNumber is of wrong type', () => {
+        const p = { ...basePayload, iterationNumber: '1' as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid iterationNumber.');
+    });
+    await t.step('should throw if target_contribution_id is of wrong type', () => {
+        const p = { ...basePayload, target_contribution_id: 123 as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid target_contribution_id.');
     });
 
-    await t.step('should return false if canonicalPathParams is missing', () => {
-        const payload = { ...basePayload };
-        assert(!isDialecticExecuteJobPayload(payload));
-    });
-
-    await t.step('should return false if canonicalPathParams is not an object', () => {
-        const payload = {
-            ...basePayload,
-            canonicalPathParams: 'invalid',
-        };
-        assert(!isDialecticExecuteJobPayload(payload));
-    });
-
-    await t.step('should return false if canonicalPathParams is missing contributionType', () => {
-        const payload = {
-            ...basePayload,
-            canonicalPathParams: {},
-        };
-        assert(!isDialecticExecuteJobPayload(payload));
-    });
-
-    await t.step('should return false if branch_key is not a known enum value', () => {
-        const payload = {
-            ...basePayload,
-            canonicalPathParams: { contributionType: 'thesis' },
-            branch_key: 'unknown-branch',
-        };
-        assert(!isDialecticExecuteJobPayload(payload));
-    });
-
-    await t.step('should return false if document_key is not a known file type', () => {
-        const payload = {
-            ...basePayload,
-            canonicalPathParams: { contributionType: 'thesis' },
-            document_key: 'not-a-file-type',
-        };
-        assert(!isDialecticExecuteJobPayload(payload));
-    });
-
-    await t.step('should return false if parallel_group is not a number', () => {
-        const payload = {
-            ...basePayload,
-            canonicalPathParams: { contributionType: 'thesis' },
-            parallel_group: 'two',
-        };
-        assert(!isDialecticExecuteJobPayload(payload));
-    });
-
-    await t.step('should return false if planner_metadata is not a record', () => {
-        const payload = {
-            ...basePayload,
-            canonicalPathParams: { contributionType: 'thesis' },
-            planner_metadata: 'not-an-object',
-        };
-        assert(!isDialecticExecuteJobPayload(payload));
-    });
-
-    await t.step('should return false if planner_metadata contains invalid dependency arrays', () => {
-        const payload = {
-            ...basePayload,
-            canonicalPathParams: { contributionType: 'thesis' },
-            planner_metadata: {
-                dependencies: 'not-an-array',
-            },
-        };
-        assert(!isDialecticExecuteJobPayload(payload));
-    });
-
-    await t.step('should return false if planner_metadata contains invalid successor arrays', () => {
-        const payload = {
-            ...basePayload,
-            canonicalPathParams: { contributionType: 'thesis' },
-            planner_metadata: {
-                dependencies: ['root'],
-                parallel_successors: [1, 2, 3],
-            },
-        };
-        assert(!isDialecticExecuteJobPayload(payload));
-    });
-
-    await t.step('should return false if it contains the legacy originalFileName property', () => {
-        const payload = {
-            ...basePayload,
-            canonicalPathParams: { contributionType: 'thesis' },
-            originalFileName: 'legacy-file.txt',
-        };
-        assert(!isDialecticExecuteJobPayload(payload));
-    });
-
-    await t.step('should return false if inputs is missing', () => {
-        const payload = {
-            job_type: 'execute',
-            prompt_template_name: 'p1',
-            canonicalPathParams: { contributionType: 'thesis' },
-        };
-        assert(!isDialecticExecuteJobPayload(payload));
-    });
-
-    await t.step('should return false if prompt_template_name is not a string', () => {
-        const payload = {
-            job_type: 'execute',
-            prompt_template_name: 123,
-            inputs: {},
-            canonicalPathParams: { contributionType: 'thesis' },
-        };
-        assert(!isDialecticExecuteJobPayload(payload));
-    });
-
-    await t.step('should return false if output_type is not a known OutputType', () => {
-        const payload = {
-            job_type: 'execute',
-            inputs: {},
-            output_type: 'invalid-output-type',
-            canonicalPathParams: { contributionType: 'thesis' },
-        };
-        assert(!isDialecticExecuteJobPayload(payload));
-    });
-
-    await t.step('should return false if inputs is not a record', () => {
-        const payload = {
-            job_type: 'execute',
-            prompt_template_name: 'p1',
-            inputs: 'not-a-record',
-            canonicalPathParams: { contributionType: 'thesis' },
-        };
-        assert(!isDialecticExecuteJobPayload(payload));
+    // Test legacy property
+    await t.step('should throw for legacy originalFileName property', () => {
+        const invalidPayload = { ...basePayload, originalFileName: 'legacy.txt' };
+        assertThrows(
+            () => isDialecticExecuteJobPayload(invalidPayload),
+            Error,
+            'Legacy property originalFileName is not allowed.'
+        );
     });
 });
 
@@ -2041,5 +2039,40 @@ Deno.test('Type Guard: isHeaderContext', async (t) => {
             ]
         };
         assert(!isHeaderContext(invalid));
+    });
+});
+
+Deno.test('Type Guard: isDialecticContinueReason', async (t) => {
+    // Standard continuation reasons from the shared type guard
+    const standardContinueReasons: FinishReason[] = [ContinueReason.Length, ContinueReason.MaxTokens, ContinueReason.ContentTruncated, ContinueReason.Unknown];
+    
+    // Dialectic-specific continuation reasons
+    const dialecticContinueReasons: FinishReason[] = ['next_document', 'tool_calls', 'function_call', 'content_filter'];
+
+    // Reasons that should NOT trigger a continuation
+    const nonContinueReasons: FinishReason[] = ['stop', 'error', null];
+
+    await t.step('should return true for all standard continuation reasons', () => {
+        for (const reason of standardContinueReasons) {
+            assert(isDialecticContinueReason(reason), `Failed for standard reason: ${reason}`);
+        }
+    });
+
+    await t.step('should return true for all dialectic-specific continuation reasons', () => {
+        for (const reason of dialecticContinueReasons) {
+            assert(isDialecticContinueReason(reason), `Failed for dialectic-specific reason: ${reason}`);
+        }
+    });
+
+    await t.step('should return false for reasons that are not for continuation', () => {
+        for (const reason of nonContinueReasons) {
+            assert(!isDialecticContinueReason(reason), `Incorrectly passed for non-continuation reason: ${reason}`);
+        }
+    });
+
+    await t.step('should return false for invalid input types', () => {
+        assert(!isDialecticContinueReason(undefined as unknown as FinishReason), 'Should fail for undefined');
+        assert(!isDialecticContinueReason(123 as unknown as FinishReason), 'Should fail for a number');
+        assert(!isDialecticContinueReason({} as unknown as FinishReason), 'Should fail for an object');
     });
 });

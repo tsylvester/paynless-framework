@@ -31,6 +31,7 @@
     "npm:@supabase/supabase-js@*": "2.50.2",
     "npm:@supabase/supabase-js@2": "2.50.2",
     "npm:@supabase/supabase-js@^2.39.7": "2.50.2",
+    "npm:@supabase/supabase-js@^2.4.34": "2.50.2",
     "npm:@supabase/supabase-js@^2.43.4": "2.50.2",
     "npm:@types/chai@4.3.1": "4.3.1",
     "npm:@types/node@*": "22.12.0",

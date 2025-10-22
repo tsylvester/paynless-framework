@@ -1,6 +1,34 @@
 // supabase/functions/_shared/utils/type_guards.ts
-import { FileType, CanonicalPathParams } from "../../types/file_manager.types.ts";
-import { isRecord } from './type_guards.common.ts';
+import {
+  FileType,
+  CanonicalPathParams,
+  ModelContributionUploadContext,
+  UserFeedbackUploadContext,
+  ResourceUploadContext,
+} from '../../types/file_manager.types.ts'
+import { isRecord } from './type_guards.common.ts'
+
+export function isModelContributionContext(
+  context: unknown,
+): context is ModelContributionUploadContext {
+  return isRecord(context) && 'contributionMetadata' in context
+}
+
+export function isUserFeedbackContext(
+  context: unknown,
+): context is UserFeedbackUploadContext {
+  return isRecord(context) && 'feedbackTypeForDb' in context
+}
+
+export function isResourceContext(
+  context: unknown,
+): context is ResourceUploadContext {
+  return (
+    isRecord(context) &&
+    !('contributionMetadata' in context) &&
+    !('feedbackTypeForDb' in context)
+  )
+}
 
 export function isCanonicalPathParams(obj: unknown): obj is CanonicalPathParams {
     if (!isRecord(obj)) return false;
