@@ -30,7 +30,6 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
         stageSlug: 'synthesis',
         iterationNumber: 1,
         model_id: 'model-ghi',
-        step_info: { current_step: 1, total_steps: 3, name: 'Generate Final Synthesis' },
         walletId: 'wallet-default',
     },
     attempt_count: 0, completed_at: null, created_at: '', error_details: null, max_retries: 3, parent_job_id: null, prerequisite_job_id: null, results: null, started_at: null, status: 'pending', target_contribution_id: null, is_test_job: false, job_type: 'PLAN'

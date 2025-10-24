@@ -99,10 +99,6 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
 		stageSlug: 'antithesis',
 		iterationNumber: 1,
 		model_id: 'model-ghi',
-		step_info: {
-			current_step: 1,
-			total_steps: 1,
-		},
 		walletId: 'wallet-default',
 		user_jwt: 'parent-jwt-default',
 	},
@@ -326,10 +322,6 @@ Deno.test('planPerSourceDocument Test Case A: The Failing Case (Proves the bug e
 			stageSlug: 'antithesis',
 			iterationNumber: 1,
 			model_id: 'parent-model-id', // This is the key part
-			step_info: {
-				current_step: 1,
-				total_steps: 1,
-			},
 			walletId: 'wallet-default',
 			user_jwt: 'parent-jwt-default',
 		},
@@ -384,10 +376,6 @@ Deno.test('planPerSourceDocument Test Case B: The Passing Case (Describes the co
 			stageSlug: 'antithesis',
 			iterationNumber: 1,
 			model_id: 'parent-model-id', // This is the key part
-			step_info: {
-				current_step: 1,
-				total_steps: 1,
-			},
 			walletId: 'wallet-default',
 			user_jwt: 'parent-jwt-default',
 		},

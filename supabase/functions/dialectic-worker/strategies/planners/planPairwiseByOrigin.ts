@@ -6,6 +6,7 @@ import type {
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { findRelatedContributions, groupSourceDocumentsByType } from '../helpers.ts';
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
+import { isContributionType } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 
 export const planPairwiseByOrigin: GranularityPlannerFn = (
 	sourceDocs,
@@ -20,6 +21,13 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 	if (!recipeStep.output_type) {
 		throw new TypeError(
 			`Invalid recipe step for planPairwiseByOrigin: output_type is missing.`
+		);
+	}
+
+	const stageSlug = parentJob.payload.stageSlug;
+	if (!stageSlug || !isContributionType(stageSlug)) {
+		throw new Error(
+			`planPairwiseByOrigin requires a valid ContributionType stageSlug, but received: ${stageSlug}`
 		);
 	}
 
@@ -46,7 +54,8 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 			const canonicalPathParams = createCanonicalPathParams(
 				pair,
 				recipeStep.output_type,
-				thesisDoc
+				thesisDoc,
+				stageSlug
 			);
 			console.log(
 				'[planPairwiseByOrigin] Created canonicalPathParams:',

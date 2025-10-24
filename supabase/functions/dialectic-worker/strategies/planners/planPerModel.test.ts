@@ -73,7 +73,6 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
 		stageSlug: 'parenthesis',
 		iterationNumber: 1,
 		model_id: 'model-parent',
-		step_info: { current_step: 1, total_steps: 1 },
 		walletId: 'wallet-default',
 	},
 	attempt_count: 0,

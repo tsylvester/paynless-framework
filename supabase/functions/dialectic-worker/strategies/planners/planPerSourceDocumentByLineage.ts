@@ -2,6 +2,7 @@
 import type { DialecticExecuteJobPayload, GranularityPlannerFn } from '../../../dialectic-service/dialectic.interface.ts';
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
+import { isContributionType } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 
 /**
  * Groups source documents by their `document_relationships.source_group` property.
@@ -17,6 +18,13 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
     }
     if (!recipeStep.prompt_template_id) {
         throw new Error('planPerSourceDocumentByLineage requires a recipe step with a defined prompt_template_id.');
+    }
+
+    const stageSlug = parentJob.payload.stageSlug;
+    if (!stageSlug || !isContributionType(stageSlug)) {
+        throw new Error(
+            `planPerSourceDocumentByLineage requires a valid ContributionType stageSlug, but received: ${stageSlug}`
+        );
     }
 
     const childPayloads: DialecticExecuteJobPayload[] = [];
@@ -48,7 +56,7 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
 
         // Use the first document as the anchor for canonical path generation.
         const anchorDoc = groupDocs[0];
-        const canonicalPathParams = createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorDoc);
+        const canonicalPathParams = createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorDoc, stageSlug);
 
         const newPayload: DialecticExecuteJobPayload = {
             projectId: parentJob.payload.projectId,

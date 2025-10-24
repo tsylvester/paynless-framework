@@ -64,7 +64,6 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
         stageSlug: 'synthesis',
         iterationNumber: 1,
         model_id: 'model-ghi',
-        step_info: { current_step: 2, total_steps: 3 },
         walletId: 'wallet-default',
         is_test_job: false,
     },

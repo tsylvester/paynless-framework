@@ -196,10 +196,6 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
 		stageSlug: 'synthesis',
 		iterationNumber: 1,
 		model_id: 'model-ghi',
-		step_info: {
-			current_step: 1,
-			total_steps: 1,
-		},
 		walletId: 'wallet-default',
 	},
 	attempt_count: 0,
@@ -437,10 +433,6 @@ Deno.test('planPairwiseByOrigin Test Case A: The Failing Case (Proves the bug ex
 			stageSlug: 'synthesis',
 			iterationNumber: 1,
 			model_id: 'parent-model-id', // The parent planner belongs to this model
-			step_info: {
-				current_step: 1,
-				total_steps: 3,
-			},
 			walletId: 'wallet-default',
 		},
 		attempt_count: 0,
@@ -488,10 +480,6 @@ Deno.test('planPairwiseByOrigin Test Case B: The Passing Case (Describes the cor
 			stageSlug: 'synthesis',
 			iterationNumber: 1,
 			model_id: 'parent-model-id', // The parent planner belongs to this model
-			step_info: {
-				current_step: 1,
-				total_steps: 3,
-			},
 			walletId: 'wallet-default',
 		},
 		attempt_count: 0,

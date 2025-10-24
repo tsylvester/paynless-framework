@@ -64,10 +64,6 @@ Deno.test('planPerSourceDocumentByLineage', async (t) => {
             stageSlug: 'synthesis', // Add the missing stageSlug
             job_type: 'PLAN',
             model_id: 'model-a-id',
-            step_info: {
-                current_step: 1,
-                total_steps: 3,
-            },
             walletId: 'wallet-default',
         },
         is_test_job: false,
@@ -272,10 +268,6 @@ Deno.test('planPerSourceDocumentByLineage should treat a doc without a source_gr
             stageSlug: 'antithesis',
             job_type: 'PLAN',
             model_id: 'model-a-id',
-            step_info: {
-                current_step: 0,
-                total_steps: 1,
-            },
             walletId: 'wallet-default',
         },
         is_test_job: false,

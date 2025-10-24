@@ -2,6 +2,7 @@
 import type { DialecticExecuteJobPayload, GranularityPlannerFn } from "../../../dialectic-service/dialectic.interface.ts";
 import { createCanonicalPathParams } from "../canonical_context_builder.ts";
 import { isDialecticStageRecipeStep } from "../../../_shared/utils/type-guards/type_guards.dialectic.recipe.ts";
+import { isContributionType } from "../../../_shared/utils/type-guards/type_guards.dialectic.ts";
 
 export const planAllToOne: GranularityPlannerFn = (
     sourceDocs,
@@ -10,6 +11,11 @@ export const planAllToOne: GranularityPlannerFn = (
 ) => {
     if (sourceDocs.length === 0) {
         return [];
+    }
+
+    const stageSlug = parentJob.payload.stageSlug;
+    if (!stageSlug || !isContributionType(stageSlug)) {
+        throw new Error(`planAllToOne requires a valid ContributionType stageSlug, but received: ${stageSlug}`);
     }
 
     if (!isDialecticStageRecipeStep(recipeStep) || !recipeStep.prompt_template_id) {
@@ -32,7 +38,7 @@ export const planAllToOne: GranularityPlannerFn = (
         iterationNumber: parentJob.payload.iterationNumber,
         model_id: parentJob.payload.model_id,
         output_type: recipeStep.output_type,
-        canonicalPathParams: createCanonicalPathParams(sourceDocs, recipeStep.output_type, sourceDocs[0]),
+        canonicalPathParams: createCanonicalPathParams(sourceDocs, recipeStep.output_type, sourceDocs[0], stageSlug),
         // Set job-specific properties
         job_type: 'execute',
         prompt_template_id: recipeStep.prompt_template_id,

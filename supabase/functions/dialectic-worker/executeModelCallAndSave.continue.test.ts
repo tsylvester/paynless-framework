@@ -119,7 +119,6 @@ Deno.test('executeModelCallAndSave - missing payload.user_jwt causes immediate f
     target_contribution_id: null,
     payload: {
       job_type: 'execute',
-      step_info: { current_step: 1, total_steps: 1 },
       prompt_template_name: 'test-prompt',
       inputs: {},
       output_type: 'thesis',

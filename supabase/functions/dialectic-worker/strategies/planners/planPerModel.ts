@@ -4,6 +4,7 @@ import type {
 	GranularityPlannerFn,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
+import { isContributionType } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 
 export const planPerModel: GranularityPlannerFn = (
 	sourceDocs,
@@ -33,6 +34,13 @@ export const planPerModel: GranularityPlannerFn = (
 		);
 	}
 
+	const stageSlug = parentJob.payload.stageSlug;
+	if (!stageSlug || !isContributionType(stageSlug)) {
+		throw new Error(
+			`planPerModel requires a valid ContributionType stageSlug, but received: ${stageSlug}`
+		);
+	}
+
 	const childPayloads: DialecticExecuteJobPayload[] = [];
 
 	// This planner creates one job for the parent job's specific model.
@@ -42,7 +50,8 @@ export const planPerModel: GranularityPlannerFn = (
 	const canonicalPathParams = createCanonicalPathParams(
 		sourceDocs,
 		recipeStep.output_type,
-		anchorDoc
+		anchorDoc,
+		stageSlug
 	);
 
 	const synthesisDocIds = sourceDocs.map((d) => d.id);

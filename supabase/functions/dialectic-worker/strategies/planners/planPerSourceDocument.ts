@@ -5,6 +5,7 @@ import type {
 	GranularityPlannerFn,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
+import { isContributionType } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 
 export const planPerSourceDocument: GranularityPlannerFn = (
 	sourceDocs,
@@ -40,6 +41,13 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 		);
 	}
 
+	const stageSlug = parentJob.payload.stageSlug;
+	if (!stageSlug || !isContributionType(stageSlug)) {
+		throw new Error(
+			`planPerSourceDocument requires a valid ContributionType stageSlug, but received: ${stageSlug}`
+		);
+	}
+
 	const childPayloads: DialecticExecuteJobPayload[] = [];
 
 	console.log(
@@ -52,7 +60,8 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 		const canonicalPathParams = createCanonicalPathParams(
 			[doc],
 			recipeStep.output_type,
-			doc
+			doc,
+			stageSlug
 		);
 		console.log(
 			`[planPerSourceDocument] Created canonicalPathParams for doc ${doc.id}:`,
