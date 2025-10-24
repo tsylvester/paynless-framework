@@ -7,27 +7,46 @@ import {
   selectSessionById, 
   selectActiveContextSessionId, 
   selectCurrentProjectDetail, 
+  selectIsStageReadyForSessionIteration,
   selectSortedStages,
-  selectActiveStageSlug,
+  selectActiveStageSlug
   selectStageProgressSummary
 } from '@paynless/store';
 
 interface StageCardProps {
-  stage: DialecticStage;
+	stage: DialecticStage;
 }
 
+// UI-only mapping of stage names
+const stageNameMap: Record<string, string> = {
+	thesis: "Explore",
+	antithesis: "Debate",
+	synthesis: "Refine",
+	parenthesis: "Reflect",
+	paralysis: "Reset",
+};
+
+const getDisplayName = (stage: DialecticStage): string => {
+	return stageNameMap[stage.slug] || stage.display_name;
+};
+
 const StageCard: React.FC<StageCardProps> = ({ stage }) => {
-  // --- Data Fetching from Store ---
-  const setActiveStage = useDialecticStore(state => state.setActiveStage);
-  const activeStageSlug = useDialecticStore(selectActiveStageSlug);
-  const activeSessionId = useDialecticStore(selectActiveContextSessionId);
-  const project = useDialecticStore(selectCurrentProjectDetail); 
-  
-  const session = useDialecticStore(state => 
-    activeSessionId ? selectSessionById(state, activeSessionId) : undefined
-  );
-  
-  const isActiveStage = stage.slug === activeStageSlug;
+	const stages = useDialecticStore(selectSortedStages);
+	// --- Data Fetching from Store ---
+	const setActiveStage = useDialecticStore((state) => state.setActiveStage);
+	const activeStageSlug = useDialecticStore(selectActiveStageSlug);
+	const activeSessionId = useDialecticStore(selectActiveContextSessionId);
+	const project = useDialecticStore(selectCurrentProjectDetail);
+
+	const session = useDialecticStore((state) =>
+		activeSessionId ? selectSessionById(state, activeSessionId) : undefined,
+	);
+
+	const initialPromptContentCache = useDialecticStore(
+		(state) => state.initialPromptContentCache,
+	);
+
+	const isActiveStage = stage.slug === activeStageSlug;
 
   const { isComplete, completedDocuments, totalDocuments } = useDialecticStore(state => {
     if (!activeSessionId) {
@@ -57,6 +76,7 @@ const StageCard: React.FC<StageCardProps> = ({ stage }) => {
       </Card>
     );
   }
+
   const handleCardClick = () => {
     if (setActiveStage) {
       setActiveStage(stage.slug);
@@ -81,59 +101,53 @@ const StageCard: React.FC<StageCardProps> = ({ stage }) => {
         <CardTitle className="text-base">
           {stage.display_name}
         </CardTitle>
-        {isComplete && (
-          <div className="text-xs text-green-600">Completed</div>
-        )}
       </div>
       {stage.description && (
         <p className="text-xs text-muted-foreground text-center">{stage.description}</p>
-      )}
-      {totalDocuments > 0 && (
-        <p className="text-xs text-muted-foreground text-center">
-          {`${completedDocuments} / ${totalDocuments} documents`}
-        </p>
       )}
     </Card>
   );
 };
 
 export const StageTabCard: React.FC = () => {
-  const stages = useDialecticStore(selectSortedStages);
-  const activeStageSlug = useDialecticStore(selectActiveStageSlug);
-  const setActiveStage = useDialecticStore(state => state.setActiveStage);
-  const activeSessionId = useDialecticStore(selectActiveContextSessionId);
-  
-  const session = useDialecticStore(state => 
-    activeSessionId ? selectSessionById(state, activeSessionId) : undefined
-  );
+	const stages = useDialecticStore(selectSortedStages);
+	const activeStageSlug = useDialecticStore(selectActiveStageSlug);
+	const setActiveStage = useDialecticStore((state) => state.setActiveStage);
+	const activeSessionId = useDialecticStore(selectActiveContextSessionId);
 
-  useEffect(() => {
-    if (!activeStageSlug && stages && stages.length > 0) {
-      const currentStageFromSession = session?.current_stage_id 
-        ? stages.find(s => s.id === session.current_stage_id)
-        : undefined;
+	const session = useDialecticStore((state) =>
+		activeSessionId ? selectSessionById(state, activeSessionId) : undefined,
+	);
 
-      if (currentStageFromSession) {
-        setActiveStage(currentStageFromSession.slug);
-      } else {
-        setActiveStage(stages[0].slug);
-      }
-    }
-  }, [stages, session, activeStageSlug, setActiveStage]);
+	useEffect(() => {
+		if (!activeStageSlug && stages && stages.length > 0) {
+			const currentStageFromSession = session?.current_stage_id
+				? stages.find((s) => s.id === session.current_stage_id)
+				: undefined;
 
-  if (!stages || stages.length === 0) {
-    return (
-      <div className="flex justify-center items-center p-4">
-        <p className="text-muted-foreground">No stages available for this process.</p>
-      </div>
-    );
-  }
+			if (currentStageFromSession) {
+				setActiveStage(currentStageFromSession.slug);
+			} else {
+				setActiveStage(stages[0].slug);
+			}
+		}
+	}, [stages, session, activeStageSlug, setActiveStage]);
 
-  return (
-    <>
-      {stages.map(stage => (
-        <StageCard key={stage.id} stage={stage} />
-      ))}
-    </>
-  );
-}; 
+	if (!stages || stages.length === 0) {
+		return (
+			<div className="flex justify-center items-center p-4">
+				<p className="text-muted-foreground">
+					No stages available for this process.
+				</p>
+			</div>
+		);
+	}
+
+	return (
+		<div className="space-y-2">
+			{stages.map((stage) => (
+				<StageCard key={stage.id} stage={stage} />
+			))}
+		</div>
+	);
+};

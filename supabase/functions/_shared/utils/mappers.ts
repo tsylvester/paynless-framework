@@ -4,7 +4,7 @@ import {
     isGranularityStrategy,
     isInputRuleArray,
     isJobTypeEnum,
-    isOutputRuleArray,
+    isOutputRule,
     isPromptType,
     isRelevanceRuleArray,
 } from './type-guards/type_guards.dialectic.ts';
@@ -45,7 +45,7 @@ export function mapToStageWithRecipeSteps(
         output_type: step.output_type,
         inputs_required: isInputRuleArray(step.inputs_required) ? step.inputs_required : [],
         inputs_relevance: isRelevanceRuleArray(step.inputs_relevance) ? step.inputs_relevance : [],
-        outputs_required: isOutputRuleArray(step.outputs_required) ? step.outputs_required : [],
+        outputs_required: isOutputRule(step.outputs_required) ? step.outputs_required : [],
     };
 
     if (!isDialecticStageRecipeStep(transformedStep)) {

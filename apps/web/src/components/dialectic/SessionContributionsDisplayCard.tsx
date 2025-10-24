@@ -1,33 +1,43 @@
-import React, { useMemo, useEffect, useState } from 'react';
-import {
-  useDialecticStore,
+import React, { useState, useMemo, useEffect } from 'react';
+import { 
+  useDialecticStore, 
+  selectIsStageReadyForSessionIteration,
   selectIsLoadingProjectDetail,
   selectContributionGenerationStatus,
   selectProjectDetailError,
   selectFeedbackForStageIteration,
   selectCurrentProjectDetail,
   selectActiveStageSlug,
-  selectSortedStages,
-  selectStageProgressSummary,
+  selectSortedStages
+  selectedStageProgressSummary
 } from '@paynless/store';
 import { 
+  DialecticContribution, 
   ApiError, 
   DialecticFeedback, 
   SubmitStageResponsesPayload,
+  AIModelCatalogEntry
 } from '@paynless/types';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { GeneratedContributionCard } from './GeneratedContributionCard';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -37,76 +47,132 @@ import { cn } from '@/lib/utils';
 import { ExportProjectButton } from './ExportProjectButton';
 import { useStageRunProgressHydration } from '../../hooks/useStageRunProgressHydration';
 
+
 const isApiError = (error: unknown): error is ApiError => {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'message' in error &&
-    typeof error.message === 'string'
-  );
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"message" in error &&
+		typeof error.message === "string"
+	);
 };
 
-// Skeleton component for GeneratedContributionCard
+// UI-only mapping of stage names
+const stageNameMap: Record<string, string> = {
+	thesis: "Explore",
+	antithesis: "Debate",
+	synthesis: "Refine",
+	parenthesis: "Reflect",
+	paralysis: "Reset",
+};
+
+const getDisplayName = (stage: {
+	slug: string;
+	display_name: string;
+}): string => {
+	return stageNameMap[stage.slug] || stage.display_name;
+};
+
+// Enhanced skeleton component for GeneratedContributionCard
 const GeneratedContributionCardSkeleton: React.FC = () => (
-  <Card className="mb-4">
-    <CardHeader>
-      <Skeleton className="h-5 w-1/3 mb-2" role="status" /> 
-      <Skeleton className="h-4 w-1/4" role="status" />
-    </CardHeader>
-    <CardContent>
-      <Skeleton className="h-4 w-full mb-2" role="status" />
-      <Skeleton className="h-4 w-full mb-2" role="status" />
-      <Skeleton className="h-4 w-2/3" role="status" />
-    </CardContent>
-    <CardFooter>
-      <Skeleton className="h-8 w-24" role="status" />
-    </CardFooter>
-  </Card>
+	<div className="bg-card rounded-2xl shadow-sm border border-border/50 p-8 animate-pulse">
+		<div className="space-y-6">
+			<div className="space-y-3">
+				<div className="flex items-center gap-3">
+					<Skeleton className="h-8 w-8 rounded-full" role="status" />
+					<Skeleton className="h-5 w-1/3" role="status" />
+				</div>
+				<Skeleton className="h-4 w-1/4" role="status" />
+			</div>
+			<div className="space-y-3">
+				<Skeleton className="h-4 w-full" role="status" />
+				<Skeleton className="h-4 w-full" role="status" />
+				<Skeleton className="h-4 w-3/4" role="status" />
+				<Skeleton className="h-4 w-2/3" role="status" />
+			</div>
+			<div className="flex justify-between items-center">
+				<Skeleton className="h-6 w-20" role="status" />
+				<Skeleton className="h-9 w-24 rounded-lg" role="status" />
+			</div>
+		</div>
+	</div>
 );
 
 export const SessionContributionsDisplayCard: React.FC = () => {
-  // --- Store Data using Reactive Hooks ---
-  const project = useDialecticStore(selectCurrentProjectDetail);
-  const session = useDialecticStore(state => state.activeSessionDetail);
-  const activeStageSlug = useDialecticStore(selectActiveStageSlug);
-  const processTemplate = useDialecticStore(state => state.currentProcessTemplate);
-  const sortedStages = useDialecticStore(selectSortedStages);
-  const setActiveStage = useDialecticStore(state => state.setActiveStage);
-  const selectedModelIds = useDialecticStore(state => state.selectedModelIds) ?? [];
+	// --- Store Data using Reactive Hooks ---
+	const project = useDialecticStore(selectCurrentProjectDetail);
+	const session = useDialecticStore((state) => state.activeSessionDetail);
+	const activeStageSlug = useDialecticStore(selectActiveStageSlug);
+	const processTemplate = useDialecticStore(
+		(state) => state.currentProcessTemplate,
+	);
+	const sortedStages = useDialecticStore(selectSortedStages);
+	const setActiveStage = useDialecticStore((state) => state.setActiveStage);
 
   const activeStage = useMemo(() => {
-    return processTemplate?.stages?.find(s => s.slug === activeStageSlug) || null;
+	return processTemplate?.stages?.find((s) => s.slug === activeStageSlug) || null;
   }, [processTemplate, activeStageSlug]);
   
   useStageRunProgressHydration();
 
-  // Determine if the active stage is the terminal stage in the process template
-  const isFinalStageInProcess = useMemo(() => {
-    if (!processTemplate || !activeStage) return false;
-    const transitions = processTemplate.transitions;
-    if (!Array.isArray(transitions) || transitions.length === 0) return false;
-    // A final stage has no outgoing transition from its stage id
-    return transitions.every(t => t.source_stage_id !== activeStage.id);
-  }, [processTemplate, activeStage]);
-  
-  const submitStageResponses = useDialecticStore(state => state.submitStageResponses);
-  const isSubmitting = useDialecticStore(state => state.isSubmittingStageResponses);
-  const submissionError = useDialecticStore(state => state.submitStageResponsesError);
-  const resetSubmitError = useDialecticStore(state => state.resetSubmitStageResponsesError);
+	// Determine if the active stage is the terminal stage in the process template
+	const isFinalStageInProcess = useMemo(() => {
+		if (!processTemplate || !activeStage) return false;
+		const transitions = (
+			processTemplate as unknown as {
+				transitions?: { source_stage_id: string; target_stage_id: string }[];
+			}
+		).transitions;
+		if (!Array.isArray(transitions) || transitions.length === 0) return false;
+		// A final stage has no outgoing transition from its stage id
+		return transitions.every((t) => t.source_stage_id !== activeStage.id);
+	}, [processTemplate, activeStage]);
 
-  // New store states for loading and error handling
-  const isLoadingCurrentProjectDetail = useDialecticStore(selectIsLoadingProjectDetail);
-  const contributionGenerationStatus = useDialecticStore(selectContributionGenerationStatus);
-  const projectDetailError = useDialecticStore(selectProjectDetailError);
-  const generationError = useDialecticStore(state => state.generateContributionsError);
+	const submitStageResponses = useDialecticStore(
+		(state) => state.submitStageResponses,
+	);
+	const isSubmitting = useDialecticStore(
+		(state) => state.isSubmittingStageResponses,
+	);
+	const submissionError = useDialecticStore(
+		(state) => state.submitStageResponsesError,
+	);
+	const resetSubmitError = useDialecticStore(
+		(state) => state.resetSubmitStageResponsesError,
+	);
 
-  // Store items for feedback content
-  const fetchFeedbackFileContent = useDialecticStore(state => state.fetchFeedbackFileContent);
-  const currentFeedbackFileContent = useDialecticStore(state => state.currentFeedbackFileContent);
-  const isFetchingFeedbackFileContent = useDialecticStore(state => state.isFetchingFeedbackFileContent);
-  const fetchFeedbackFileContentError = useDialecticStore(state => state.fetchFeedbackFileContentError);
-  const clearCurrentFeedbackFileContent = useDialecticStore(state => state.clearCurrentFeedbackFileContent);
-  const resetFetchFeedbackFileContentError = useDialecticStore(state => state.resetFetchFeedbackFileContentError);
+
+	// New store states for loading and error handling
+	const isLoadingCurrentProjectDetail = useDialecticStore(
+		selectIsLoadingProjectDetail,
+	);
+	const contributionGenerationStatus = useDialecticStore(
+		selectContributionGenerationStatus,
+	);
+	const projectDetailError = useDialecticStore(selectProjectDetailError);
+	const generationError = useDialecticStore(
+		(state) => state.generateContributionsError,
+	);
+
+	// Store items for feedback content
+	const fetchFeedbackFileContent = useDialecticStore(
+		(state) => state.fetchFeedbackFileContent,
+	);
+	const currentFeedbackFileContent = useDialecticStore(
+		(state) => state.currentFeedbackFileContent,
+	);
+	const isFetchingFeedbackFileContent = useDialecticStore(
+		(state) => state.isFetchingFeedbackFileContent,
+	);
+	const fetchFeedbackFileContentError = useDialecticStore(
+		(state) => state.fetchFeedbackFileContentError,
+	);
+	const clearCurrentFeedbackFileContent = useDialecticStore(
+		(state) => state.clearCurrentFeedbackFileContent,
+	);
+	const resetFetchFeedbackFileContentError = useDialecticStore(
+		(state) => state.resetFetchFeedbackFileContentError,
+	);
 
   const stageProgressSummary = useDialecticStore((state) => {
     if (!session || !activeStage || typeof session.iteration_count !== 'number') {
@@ -123,18 +189,30 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 
   const canSubmitStageResponses = stageProgressSummary?.isComplete === true;
 
-  // Select feedback metadata for the current stage and iteration
-  const feedbacksForStageIterationArray = useDialecticStore(state => 
-    project && session && activeStage 
-      ? selectFeedbackForStageIteration(state, session.id, activeStage.slug, session.iteration_count)
-      : null
-  );
-  const feedbackForStageIteration: DialecticFeedback | undefined = feedbacksForStageIterationArray?.[0];
+	// Select feedback metadata for the current stage and iteration
+	const feedbacksForStageIterationArray = useDialecticStore((state) =>
+		project && session && activeStage
+			? selectFeedbackForStageIteration(
+					state,
+					session.id,
+					activeStage.slug,
+					session.iteration_count,
+				)
+			: null,
+	);
+	const feedbackForStageIteration: DialecticFeedback | undefined =
+		feedbacksForStageIterationArray?.[0];
 
-  const [submissionSuccessMessage, setSubmissionSuccessMessage] = useState<string | null>(null);
-  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
-  // ADDED: State for controlling feedback content modal
-  const [showFeedbackContentModal, setShowFeedbackContentModal] = useState(false);
+	const [stageResponses, setStageResponses] = useState<Record<string, string>>(
+		{},
+	);
+	const [submissionSuccessMessage, setSubmissionSuccessMessage] = useState<
+		string | null
+	>(null);
+	const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+	// ADDED: State for controlling feedback content modal
+	const [showFeedbackContentModal, setShowFeedbackContentModal] =
+		useState(false);
 
   useEffect(() => {
     setSubmissionSuccessMessage(null);
@@ -155,7 +233,6 @@ export const SessionContributionsDisplayCard: React.FC = () => {
       currentIterationNumber: session.iteration_count,
       projectId: project.id,
       stageSlug: activeStage.slug,
-      responses: [], // This is legacy, the store action will handle drafts
     };
 
     try {
@@ -194,8 +271,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
   };
   
   const handleSubmitResponses = async () => {
-    // The confirmation modal is shown to prevent accidental submission.
-    setShowConfirmationModal(true);
+      setShowConfirmationModal(true);
   };
 
   const renderSubmitButton = () => (
@@ -214,25 +290,26 @@ export const SessionContributionsDisplayCard: React.FC = () => {
     </Button>
   );
 
-  const handleShowFeedbackContent = (feedback?: DialecticFeedback | null) => {
-    if (feedback?.storage_path && project) {
-      fetchFeedbackFileContent({
-        projectId: project.id,
-        storagePath: feedback.storage_path,
-      });
-      setShowFeedbackContentModal(true);
-    } else {
-      toast.warning('No feedback content to display.', {
-        description: 'The selected feedback record does not have an associated file path.',
-      });
-    }
-  };
+	const handleShowFeedbackContent = (feedback?: DialecticFeedback | null) => {
+		if (feedback?.storage_path && project) {
+			fetchFeedbackFileContent({
+				projectId: project.id,
+				storagePath: feedback.storage_path,
+			});
+			setShowFeedbackContentModal(true);
+		} else {
+			toast.warning("No feedback content to display.", {
+				description:
+					"The selected feedback record does not have an associated file path.",
+			});
+		}
+	};
 
-  const closeFeedbackModal = () => {
-    setShowFeedbackContentModal(false);
-    clearCurrentFeedbackFileContent?.(); // Clear content when closing
-    resetFetchFeedbackFileContentError?.(); // Clear any errors
-  }
+	const closeFeedbackModal = () => {
+		setShowFeedbackContentModal(false);
+		clearCurrentFeedbackFileContent?.(); // Clear content when closing
+		resetFetchFeedbackFileContentError?.(); // Clear any errors
+	};
 
   // Loading state for the entire component
   if (isLoadingCurrentProjectDetail) {
@@ -249,25 +326,43 @@ export const SessionContributionsDisplayCard: React.FC = () => {
     );
   }
 
+  // Handle case where there is no active session
+  if (!session) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Session Not Active</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>Please select a session to view its contributions.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Handle case where there is no active stage
+  if (!activeStage) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Stage Not Selected</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>Please select a stage to view its contributions.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+  
   const isGenerating = contributionGenerationStatus === 'generating';
-  const iterationLabel = typeof session?.iteration_count === 'number' ? session.iteration_count : null;
-  const stageDisplayName = activeStage?.display_name ?? 'Stage';
   
   return (
     <Card className="w-full">
-      <CardHeader data-testid="card-header">
+      <CardHeader>
         <div className="flex justify-between items-center">
           <CardTitle>
-            {activeStage ? (
-              <>
-                Contributions for: <span className="font-bold text-primary">{stageDisplayName}</span>
-                {typeof iterationLabel === 'number' && (
-                  <span className="text-sm text-muted-foreground ml-2">(Iteration {iterationLabel})</span>
-                )}
-              </>
-            ) : (
-              'Contributions'
-            )}
+            Contributions for: <span className="font-bold text-primary">{activeStage.display_name}</span>
+            <span className="text-sm text-muted-foreground ml-2">(Iteration {session.iteration_count})</span>
           </CardTitle>
           <div className="flex items-center space-x-2">
             {project && (
@@ -280,7 +375,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
                 Export Project
               </ExportProjectButton>
             )}
-            {selectedModelIds.length > 0 && !isFinalStageInProcess && renderSubmitButton()}
+            {displayedContributions.length > 0 && !isFinalStageInProcess && renderSubmitButton()}
           </div>
         </div>
         {isGenerating && (
@@ -297,138 +392,156 @@ export const SessionContributionsDisplayCard: React.FC = () => {
         )}
       </CardHeader>
       <CardContent>
-        <div className="flex flex-col gap-6 lg:flex-row">
-          <div className="flex-1 space-y-4">
-            {!session ? (
-              <div className="text-sm text-muted-foreground">Please select a session to view its contributions.</div>
-            ) : !activeStage ? (
-              <div className="text-sm text-muted-foreground">Please select a stage to view its contributions.</div>
-            ) : (
-              <>
-                {selectedModelIds.length === 0 && !isGenerating && (
-                  <div className="text-center text-muted-foreground py-8">
-                    <p>No contributions available for this stage yet.</p>
-                    <p className="text-sm">Click "Generate" to create new contributions.</p>
-                  </div>
-                )}
-                {isGenerating && selectedModelIds.length === 0 &&
-                  Array.from({ length: 2 }).map((_, index) => (
-                    <GeneratedContributionCardSkeleton key={`skeleton-${index}`} />
-                  ))}
-                {selectedModelIds.map(modelId => (
-                  <GeneratedContributionCard
-                    key={modelId}
-                    modelId={modelId}
-                  />
-                ))}
-
-                {feedbackForStageIteration && (
-                  <div className="mt-6 border-t pt-4">
-                    <h4 className="text-lg font-semibold mb-2">Past Feedback</h4>
-                    <div className="flex items-center justify-between p-3 bg-muted rounded-md">
-                      <div>
-                        <p className="text-sm font-medium">
-                          Feedback for Iteration {feedbackForStageIteration.iteration_number}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Submitted on: {new Date(feedbackForStageIteration.created_at).toLocaleString()}
-                        </p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleShowFeedbackContent(feedbackForStageIteration)}
-                      >
-                        View Feedback
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
+        {displayedContributions.length === 0 && !isGenerating && (
+          <div className="text-center text-muted-foreground py-8">
+            <p>No contributions available for this stage yet.</p>
+            <p className="text-sm">Click "Generate" to create new contributions.</p>
           </div>
-          {/* The StageRunChecklist is now rendered inside each GeneratedContributionCard */}
-        </div>
-      </CardContent>
-      {selectedModelIds.length > 0 && (
-        <CardFooter className="flex justify-end space-x-2" data-testid="card-footer">
-            {submissionSuccessMessage && (
-                <div className="text-green-600 mr-auto transition-opacity duration-300">
-                    {submissionSuccessMessage}
-                </div>
-            )}
-            {submissionError && (
-                 <Alert variant="destructive" className="mr-auto">
-                    <AlertTitle>Submission Error</AlertTitle>
-                    <AlertDescription>{submissionError.message}</AlertDescription>
-                </Alert>
-            )}
+        )}
+        {isGenerating && displayedContributions.length === 0 && (
+          // Show skeletons when generating for the first time
+          Array.from({ length: 2 }).map((_, index) => <GeneratedContributionCardSkeleton key={index} />)
+        )}
+        {displayedContributions.map(contribution => (
+          <GeneratedContributionCard 
+            key={contribution.id}
+            contributionId={contribution.id}
+            initialResponseText={stageResponses[contribution.original_model_contribution_id || contribution.id] || ''}
+            onResponseChange={handleResponseChange}
+            originalModelContributionIdForResponse={contribution.original_model_contribution_id || contribution.id}
+          />
+        ))}
 
-            {!isFinalStageInProcess && renderSubmitButton()}
-            {isFinalStageInProcess && project && (
-              <ExportProjectButton
-                projectId={project.id}
-                variant="default"
-                size="sm"
-                className={cn({ 'animate-pulse': !isSubmitting && canSubmitStageResponses })}
-              >
-                Export Project
-              </ExportProjectButton>
-            )}
-        </CardFooter>
-      )}
+				{feedbackForStageIteration && (
+					<div className="bg-amber-50 dark:bg-amber-950/20 rounded-xl px-6 py-4 border border-amber-200/50 dark:border-amber-800/50">
+						<div className="flex items-center justify-between">
+							<div className="flex items-center gap-3">
+								<div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg">
+									<div className="w-5 h-5 text-amber-600">📝</div>
+								</div>
+								<div>
+									<p className="font-medium text-amber-900 dark:text-amber-100">Previous Feedback Available</p>
+									<p className="text-sm text-amber-700 dark:text-amber-300">
+										Iteration {feedbackForStageIteration.iteration_number} • {" "}
+										{new Date(feedbackForStageIteration.created_at).toLocaleDateString()}
+									</p>
+								</div>
+							</div>
+							<Button
+								variant="outline"
+								size="sm"
+								className="border-amber-200 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-900/50"
+								onClick={() =>
+									handleShowFeedbackContent(feedbackForStageIteration)
+								}
+							>
+								View Feedback
+							</Button>
+						</div>
+					</div>
+				)}
+			</div>
 
-      {/* Confirmation Modal */}
-      <AlertDialog open={showConfirmationModal} onOpenChange={setShowConfirmationModal}>
-          <AlertDialogContent>
-              <AlertDialogHeader>
-                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                      This will submit your feedback and generate the seed prompt for the next stage. This action cannot be undone.
-                  </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => {
-                      setShowConfirmationModal(false);
-                      proceedWithSubmission();
-                  }}>
-                      Continue
-                  </AlertDialogAction>
-              </AlertDialogFooter>
-          </AlertDialogContent>
-      </AlertDialog>
+			{/* Enhanced Footer */}
+			{(submissionSuccessMessage || submissionError) && (
+				<div className="space-y-4">
+					{submissionSuccessMessage && (
+						<div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-xl px-6 py-4 border border-emerald-200/50 dark:border-emerald-800/50">
+							<div className="flex items-center gap-3">
+								<div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg">
+									<div className="w-5 h-5 text-emerald-600">✅</div>
+								</div>
+								<div>
+									<p className="font-medium text-emerald-900 dark:text-emerald-100">Success!</p>
+									<p className="text-sm text-emerald-700 dark:text-emerald-300">{submissionSuccessMessage}</p>
+								</div>
+							</div>
+						</div>
+					)}
+					{submissionError && (
+						<div className="bg-red-50 dark:bg-red-950/20 rounded-xl px-6 py-4 border border-red-200/50 dark:border-red-800/50">
+							<div className="flex items-center gap-3">
+								<div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
+									<div className="w-5 h-5 text-red-600">❌</div>
+								</div>
+								<div>
+									<p className="font-medium text-red-900 dark:text-red-100">Submission Failed</p>
+									<p className="text-sm text-red-700 dark:text-red-300">{submissionError.message}</p>
+								</div>
+							</div>
+						</div>
+					)}
+				</div>
+			)}
 
-      {/* Feedback Content Modal */}
-      <AlertDialog open={showFeedbackContentModal} onOpenChange={(open) => !open && closeFeedbackModal()}>
-        <AlertDialogContent className="max-w-4xl h-[80vh] flex flex-col">
-            <AlertDialogHeader>
-                <AlertDialogTitle>Feedback for Iteration {feedbackForStageIteration?.iteration_number}</AlertDialogTitle>
-                <AlertDialogDescription>
-                    This is the consolidated feedback that was submitted for this stage.
-                </AlertDialogDescription>
-            </AlertDialogHeader>
-            <div className="flex-grow overflow-y-auto pr-4">
-              {isFetchingFeedbackFileContent ? (
-                  <div className="flex justify-center items-center h-full">
-                    <Loader2 className="h-8 w-8 animate-spin" />
-                  </div>
-              ) : fetchFeedbackFileContentError ? (
-                  <Alert variant="destructive">
-                      <AlertTitle>Error</AlertTitle>
-                      <AlertDescription>{fetchFeedbackFileContentError.message}</AlertDescription>
-                  </Alert>
-              ) : currentFeedbackFileContent ? (
-                  <MarkdownRenderer content={currentFeedbackFileContent.content} />
-              ) : (
-                  <p>No content available.</p>
-              )}
-            </div>
-            <AlertDialogFooter>
-                <Button variant="outline" onClick={closeFeedbackModal}>Close</Button>
-            </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </Card>
-  );
+			{/* Confirmation Modal */}
+			<AlertDialog
+				open={showConfirmationModal}
+				onOpenChange={setShowConfirmationModal}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+						<AlertDialogDescription>
+							This will submit your feedback and generate the seed prompt for
+							the next stage. This action cannot be undone.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={() => {
+								setShowConfirmationModal(false);
+								proceedWithSubmission();
+							}}
+						>
+							Continue
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+
+			{/* Feedback Content Modal */}
+			<AlertDialog
+				open={showFeedbackContentModal}
+				onOpenChange={(open) => !open && closeFeedbackModal()}
+			>
+				<AlertDialogContent className="max-w-4xl h-[80vh] flex flex-col">
+					<AlertDialogHeader>
+						<AlertDialogTitle>
+							Feedback for Iteration{" "}
+							{feedbackForStageIteration?.iteration_number}
+						</AlertDialogTitle>
+						<AlertDialogDescription>
+							This is the consolidated feedback that was submitted for this
+							stage.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<div className="flex-grow overflow-y-auto pr-4">
+						{isFetchingFeedbackFileContent ? (
+							<div className="flex justify-center items-center h-full">
+								<Loader2 className="h-8 w-8 animate-spin" />
+							</div>
+						) : fetchFeedbackFileContentError ? (
+							<Alert variant="destructive">
+								<AlertTitle>Error</AlertTitle>
+								<AlertDescription>
+									{fetchFeedbackFileContentError.message}
+								</AlertDescription>
+							</Alert>
+						) : currentFeedbackFileContent ? (
+							<MarkdownRenderer content={currentFeedbackFileContent.content} />
+						) : (
+							<p>No content available.</p>
+						)}
+					</div>
+					<AlertDialogFooter>
+						<Button variant="outline" onClick={closeFeedbackModal}>
+							Close
+						</Button>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+		</div>
+	);
 };
