@@ -3,7 +3,7 @@ import {
   AssembleTurnPromptDeps,
 } from "./prompt-assembler.interface.ts";
 import { isRecord } from "../utils/type_guards.ts";
-import { FileType } from "../types/file_manager.types.ts";
+import { FileManagerResponse, FileType } from "../types/file_manager.types.ts";
 import { downloadFromStorage } from "../supabase_storage_utils.ts";
 import { renderPrompt } from "../prompt-renderer.ts";
 
@@ -59,7 +59,22 @@ export async function assembleTurnPrompt(
     throw new Error("PRECONDITION_FAILED: Stage context is missing recipe_step.");
   }
 
-  // 2. Fetch Header Context from Storage
+  // 2. Fetch Model Details
+  const { data: model, error: modelError } = await dbClient
+    .from("ai_providers")
+    .select("name")
+    .eq("id", job.payload.model_id)
+    .single();
+
+  if (modelError || !model) {
+    throw new Error(
+      `Failed to fetch model details for id ${job.payload.model_id}: ${
+        modelError?.message
+      }`,
+    );
+  }
+
+  // 3. Fetch Header Context from Storage
   const { data: headerBlob, error: headerError } = await downloadFromStorage(
     dbClient,
     "SB_CONTENT_STORAGE_BUCKET",
@@ -92,7 +107,7 @@ export async function assembleTurnPrompt(
     );
   }
 
-  // 3. Find and Fetch Document Template
+  // 4. Find and Fetch Document Template
   const documentKey = job.payload.document_key;
   const docInfo = headerContext.files_to_generate?.find(
     (f) => f.document_key === documentKey,
@@ -124,7 +139,7 @@ export async function assembleTurnPrompt(
     throw new Error("Invalid format for document template file.");
   }
 
-  // 4. Render the Prompt
+  // 5. Render the Prompt
   const documentSpecificData = isRecord(job.payload.document_specific_data)
     ? job.payload.document_specific_data
     : {};
@@ -138,15 +153,18 @@ export async function assembleTurnPrompt(
 
   const renderedPrompt = renderPrompt(documentTemplateContent, renderContext);
 
-  // 5. Persist the Assembled Prompt
-  const response = await fileManager.uploadAndRegisterFile({
+  if (typeof job.payload.model_slug !== "string") {
+    throw new Error("PRECONDITION_FAILED: Job payload is missing 'model_slug'.");
+  }
+  // 6. Persist the Assembled Prompt
+  const response: FileManagerResponse = await fileManager.uploadAndRegisterFile({
     pathContext: {
       projectId: project.id,
       sessionId: session.id,
       iteration: session.iteration_count,
       stageSlug: stage.slug,
       fileType: FileType.TurnPrompt,
-      modelSlug: job.payload.model_id,
+      modelSlug: job.payload.model_slug,
       documentKey: documentKey,
       stepName: stage.recipe_step.step_name,
       branchKey: stage.recipe_step.branch_key,
@@ -158,6 +176,14 @@ export async function assembleTurnPrompt(
     userId: project.user_id,
     description:
       `Turn prompt for stage: ${stage.slug}, document: ${documentKey}`,
+    contributionMetadata: {
+      sessionId: session.id,
+      modelIdUsed: job.payload.model_id,
+      modelNameDisplay: model.name,
+      stageSlug: stage.slug,
+      iterationNumber: session.iteration_count,
+      rawJsonResponseContent: null,
+    },
   });
 
   if (response.error) {
@@ -166,7 +192,7 @@ export async function assembleTurnPrompt(
     );
   }
 
-  // 6. Return the Final AssembledPrompt
+  // 7. Return the Final AssembledPrompt
   return {
     promptContent: renderedPrompt,
     source_prompt_resource_id: response.record.id,

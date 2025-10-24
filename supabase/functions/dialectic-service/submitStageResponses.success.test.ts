@@ -1,5 +1,5 @@
 import { assertEquals, assertExists, assert, assertStringIncludes } from "https://deno.land/std@0.218.2/testing/asserts.ts";
-import { spy, type Spy } from "https://deno.land/std@0.218.2/testing/mock.ts";
+import { spy, type Spy, stub } from "https://deno.land/std@0.218.2/testing/mock.ts";
 import { User, type SupabaseClient } from 'npm:@supabase/supabase-js@^2';
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts';
 
@@ -8,23 +8,30 @@ import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
   type MockSupabaseClientSetup,
-  IMockStorageDownloadResponse,
 } from '../_shared/supabase.mock.ts';
 import {
   type DialecticStage,
   type SubmitStageResponsesPayload,
-  type DialecticProject,
-  type DialecticProjectResource,
 } from './dialectic.interface.ts';
-import { createMockFileManagerService, MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
-import type { UploadContext, FileManagerResponse, FileRecord } from "../_shared/types/file_manager.types.ts";
-import type { Database, Json } from '../types_db.ts';
-import type { ServiceError } from '../_shared/types.ts';
-import { PromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.ts';
+import {
+  createMockFileManagerService,
+} from '../_shared/services/file_manager.mock.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
+import type {
+  UploadContext,
+  FileManagerResponse,
+  FileRecord,
+  UserFeedbackUploadContext,
+} from '../_shared/types/file_manager.types.ts';
+import type { Database } from '../types_db.ts';
+import { MockPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.mock.ts';
+import {
+  AssembledPrompt,
+} from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
 
 // Import the specific action handler we are testing
 import { submitStageResponses } from './submitStageResponses.ts';
-import { logger } from "../_shared/logger.ts";
+import { logger } from '../_shared/logger.ts';
 
 // Type guard to verify the shape of resourceDescription for tests without casting.
 function isResourceDescriptionWithSummary(
@@ -76,10 +83,11 @@ Deno.test('submitStageResponses', async (t) => {
       slug: 'thesis',
       display_name: 'Thesis',
       default_system_prompt_id: 'prompt-id-thesis',
-      input_artifact_rules: {},
       created_at: new Date().toISOString(),
       description: null,
-      expected_output_artifacts: {},
+      expected_output_template_ids: [],
+      active_recipe_instance_id: null,
+      recipe_template_id: null
   };
 
   const mockAntithesisStage: DialecticStage = {
@@ -87,10 +95,11 @@ Deno.test('submitStageResponses', async (t) => {
       slug: 'antithesis',
       display_name: 'Antithesis',
       default_system_prompt_id: testSystemPromptId, 
-      input_artifact_rules: { sources: [{ type: 'contribution', stage_slug: 'thesis' }, { type: 'feedback', stage_slug: 'thesis'}] },
       created_at: new Date().toISOString(),
       description: null,
-      expected_output_artifacts: {},
+      expected_output_template_ids: [],
+      active_recipe_instance_id: null,
+      recipe_template_id: null
   };
 
   const mockParalysisStage: DialecticStage = {
@@ -98,10 +107,11 @@ Deno.test('submitStageResponses', async (t) => {
     slug: 'paralysis',
     display_name: 'Paralysis',
     default_system_prompt_id: testSystemPromptId,
-    input_artifact_rules: {},
     created_at: new Date().toISOString(),
     description: null,
-    expected_output_artifacts: {},
+    expected_output_template_ids: [],
+    active_recipe_instance_id: null,
+    recipe_template_id: null
   };
 
   // Define mockDownloadFromStorage at a higher scope to be accessible in all t.step blocks
@@ -144,49 +154,35 @@ Deno.test('submitStageResponses', async (t) => {
     // Note: systemSettingsContent, systemSettingsPath, priorStageFeedbackContent, priorStageFeedbackPath are now using *ForScope versions via the global mockDownloadFromStorage
     const userSubmittedStageFeedbackContent = "This is consolidated stage feedback from the new payload structure via userStageFeedback.";
 
-    const mockFileManager = createMockFileManagerService();
-    mockFileManager.uploadAndRegisterFile = spy(
-      async (
-        context: UploadContext,
-      ): Promise<FileManagerResponse> => {
-        const { pathContext, fileContent, mimeType } = context;
-        const path =
-          `projects/${pathContext.projectId}/sessions/${pathContext.sessionId}/iteration_${pathContext.iteration}/${pathContext.stageSlug}/${pathContext.originalFileName}`;
-        
-        let buffer: Buffer;
-        if (typeof fileContent === 'string') {
-            buffer = Buffer.from(fileContent, 'utf-8');
-        } else if (fileContent instanceof Buffer) {
-            buffer = fileContent;
-        } else { // It's an ArrayBuffer
-            buffer = Buffer.from(fileContent);
-        }
+    const fullSeedPromptPath =
+      `projects/${testProjectId}/sessions/${testSessionId}/iteration_1/${mockAntithesisStage.slug}/seed_prompt.md`;
 
-        return await Promise.resolve({
-          record: {
-            id: 'resource-id-from-file-manager',
-            project_id: pathContext.projectId,
-            user_id: testUserId,
-            storage_bucket: 'test-bucket',
-            storage_path: path,
-            file_name: pathContext.originalFileName || 'test.md',
-            mime_type: mimeType || 'text/markdown',
-            size_bytes: buffer.byteLength,
-            resource_description: context.resourceDescriptionForDb ?? null,
-            feedback_type: context.feedbackTypeForDb ?? '',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            iteration_number: pathContext.iteration!,
-            session_id: pathContext.sessionId!,
-            stage_slug: pathContext.stageSlug!,
-            is_header: false,
-            source_prompt_resource_id: null,
-            target_contribution_id: null,
-          },
-          error: null,
-        });
-      },
-    );
+    const mockAssembledPrompt: AssembledPrompt = {
+      promptContent:
+        'Test prompt for Antithesis using AI content from ModelA AI content from ModelB and This is some mock feedback from the prior thesis stage.',
+      source_prompt_resource_id: 'mock-prompt-resource-id',
+    };
+
+    const mockFileManager = createMockFileManagerService();
+    const feedbackFileRecord: FileRecord = {
+      id: 'resource-id-from-file-manager',
+      project_id: testProjectId,
+      user_id: testUserId,
+      storage_bucket: 'test-bucket',
+      storage_path: `projects/${testProjectId}/sessions/${testSessionId}/iteration_1/synthesis/user_feedback_synthesis.md`,
+      file_name: 'user_feedback_synthesis.md',
+      mime_type: 'text/markdown',
+      size_bytes: 123,
+      resource_description: null,
+      feedback_type: 'positive',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      iteration_number: 1,
+      session_id: testSessionId,
+      stage_slug: 'synthesis',
+      target_contribution_id: null,
+    };
+    mockFileManager.setUploadAndRegisterFileResponse(feedbackFileRecord, null);
 
     // 1.1.1 Arrange: Setup payload, mock DB data, and stub return values
     const mockPayload: SubmitStageResponsesPayload = {
@@ -300,10 +296,11 @@ Deno.test('submitStageResponses', async (t) => {
               slug: mockAntithesisStage.slug,
               display_name: mockAntithesisStage.display_name,
               default_system_prompt_id: mockAntithesisStage.default_system_prompt_id,
-              input_artifact_rules: mockAntithesisStage.input_artifact_rules,
-              expected_output_artifacts: mockAntithesisStage.expected_output_artifacts,
               description: mockAntithesisStage.description,
               created_at: mockAntithesisStage.created_at,
+              expected_output_template_ids: [],
+              active_recipe_instance_id: null,
+              recipe_template_id: null,
               system_prompts: {
                 id: testSystemPromptId,
                 prompt_text: 'Test prompt for Antithesis using {{prior_stage_ai_outputs}} and {{prior_stage_user_feedback}}'
@@ -342,9 +339,16 @@ Deno.test('submitStageResponses', async (t) => {
 
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
     
+    const mockPromptAssembler = new MockPromptAssembler();
+    mockPromptAssembler.assemble = spy(() =>
+      Promise.resolve(mockAssembledPrompt)
+    );
+    const assembleSpy = mockPromptAssembler.assemble;
+
     const mockDependencies = {
         logger,
         fileManager: mockFileManager,
+        promptAssembler: mockPromptAssembler,
         downloadFromStorage: async (client: SupabaseClient, bucket: string, path: string): Promise<{ data: ArrayBuffer | null; mimeType?: string; error: Error | null; }> => {
             const { data: blob, error: downloadError } = await client.storage.from(bucket).download(path);
             if (downloadError) {
@@ -361,8 +365,6 @@ Deno.test('submitStageResponses', async (t) => {
         indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) },
         embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) }
     };
-
-    const assembleSpy = spy(PromptAssembler.prototype, "assemble");
 
     try {
       // 1.1.2 Act: Call the function
@@ -384,30 +386,45 @@ Deno.test('submitStageResponses', async (t) => {
       // 1.1.2 & 1.1.3. Creates dialectic_feedback records
       assertEquals(data.feedbackRecords.length, 1, "Expected one feedback record to be created from userStageFeedback");
       
-      // Check that the file manager was used correctly
-      assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 2, "Expected FileManagerService to be called twice");
+      // Check that the file manager was used correctly for feedback, but NOT for the seed prompt
+      assertEquals(
+        mockFileManager.uploadAndRegisterFile.calls.length,
+        1,
+        "Expected FileManagerService to be called once for feedback",
+      );
+      assert(
+        mockFileManager.uploadAndRegisterFile.calls.some((c: { args: [UploadContext] }) =>
+          c.args[0].pathContext.fileType === FileType.UserFeedback
+        ),
+        "Expected FileManagerService to be called for 'user_feedback'",
+      );
+      assert(
+        !mockFileManager.uploadAndRegisterFile.calls.some((c: { args: [UploadContext] }) =>
+          c.args[0].pathContext.fileType === FileType.SeedPrompt
+        ),
+        "Expected FileManagerService NOT to be called for 'seed_prompt' anymore",
+      );
 
-      const feedbackCall = mockFileManager.uploadAndRegisterFile.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === 'user_feedback');
+      const feedbackCall = mockFileManager.uploadAndRegisterFile.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === FileType.UserFeedback);
       assertExists(feedbackCall, "Expected a call to save 'user_feedback'");
       
-      const seedPromptCall = mockFileManager.uploadAndRegisterFile.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === 'seed_prompt');
-      assertExists(seedPromptCall, "Expected a call to save 'seed_prompt'");
-
       // Assertions for the 'user_feedback' call
-      const feedbackUploadContext = feedbackCall.args[0];
-      assertEquals(feedbackUploadContext.pathContext.projectId, testProjectId);
-      assertEquals(feedbackUploadContext.pathContext.sessionId, testSessionId);
-      assertEquals(feedbackUploadContext.pathContext.stageSlug, mockThesisStage.slug);
-      assertEquals(feedbackUploadContext.pathContext.iteration, 1);
-      assertEquals(feedbackUploadContext.pathContext.originalFileName, `user_feedback_${mockThesisStage.slug}.md`);
-      assertEquals(feedbackUploadContext.mimeType, 'text/markdown');
-      assertEquals(feedbackUploadContext.feedbackTypeForDb, "StageReviewSummary_v1_test");
-      
-      const resourceDesc = feedbackUploadContext.resourceDescriptionForDb;
-      assertExists(resourceDesc, "resourceDescriptionForDb should exist in feedbackUploadContext");
-      assert(isResourceDescriptionWithSummary(resourceDesc), "resourceDescriptionForDb should be an object with a summary property");
-      assertEquals(resourceDesc.summary, "Test summary for resourceDescription");
-
+      const feedbackUploadContext: UploadContext = feedbackCall.args[0];
+      assert(feedbackUploadContext.pathContext.fileType === FileType.UserFeedback, "fileType should be UserFeedback");
+      if('feedbackTypeForDb' in feedbackUploadContext) {
+        assertEquals(feedbackUploadContext.pathContext.projectId, testProjectId);
+        assertEquals(feedbackUploadContext.pathContext.sessionId, testSessionId);
+        assertEquals(feedbackUploadContext.pathContext.stageSlug, mockThesisStage.slug);
+        assertEquals(feedbackUploadContext.pathContext.iteration, 1);
+        assertEquals(feedbackUploadContext.pathContext.originalFileName, `user_feedback_${mockThesisStage.slug}.md`);
+        assertEquals(feedbackUploadContext.mimeType, 'text/markdown');
+        assertEquals(feedbackUploadContext.feedbackTypeForDb, "StageReviewSummary_v1_test");
+        
+        const resourceDesc = feedbackUploadContext.resourceDescriptionForDb;
+        assertExists(resourceDesc, "resourceDescriptionForDb should exist in feedbackUploadContext");
+        assert(isResourceDescriptionWithSummary(resourceDesc), "resourceDescriptionForDb should be an object with a summary property");
+        assertEquals(resourceDesc.summary, "Test summary for resourceDescription");
+        }
       // 1.4 Verifies content of the consolidated feedback file
       const feedbackFileContent = feedbackUploadContext.fileContent;
       const feedbackContentString = typeof feedbackFileContent === 'string'
@@ -415,106 +432,53 @@ Deno.test('submitStageResponses', async (t) => {
           : new TextDecoder().decode(feedbackFileContent);
       assertEquals(feedbackContentString, userSubmittedStageFeedbackContent, "Feedback file content should match userStageFeedback.content");
 
-      // 1.5 Verifies content of the rendered next stage seed prompt
-      const seedPromptFileContent = seedPromptCall.args[0].fileContent;
-      const seedPromptContent = typeof seedPromptFileContent === 'string'
-          ? seedPromptFileContent
-          : new TextDecoder().decode(seedPromptFileContent);
-      assertStringIncludes(seedPromptContent, "AI content from ModelA", "Seed prompt content is missing AI output");
-      assertStringIncludes(seedPromptContent, "AI content from ModelB", "Seed prompt content is missing AI output");
-      assertStringIncludes(
-          seedPromptContent,
-          "This is some mock feedback from the prior thesis stage.",
-          "Seed prompt content is missing prior stage user feedback",
-      );
-      assert(
-          !seedPromptContent.includes("Response to first contribution"),
-          "Seed prompt should not contain current stage feedback when template does not explicitly ask for it",
-      );
-
-      assert(data?.nextStageSeedPromptPath, "Next stage seed path should be returned");
-      if(data?.nextStageSeedPromptPath) {
-          assert(data.nextStageSeedPromptPath.includes(mockAntithesisStage.slug), "Next stage seed path should be for antithesis");
-      }
-
       // Assertions for PromptAssembler.assemble
       assertEquals(assembleSpy.calls.length, 1, "PromptAssembler.assemble should be called once");
-      const assembleArgs = assembleSpy.calls[0].args;
+      const assembleArgs = assembleSpy.calls[0].args[0];
       
-      // projectContext
-      assertExists(assembleArgs[0], "projectContextForAssembler should be provided");
-      assertEquals(assembleArgs[0].id, testProjectId, "Incorrect projectId in projectContext");
-      assertEquals(assembleArgs[0].initial_user_prompt, "Initial prompt for testing.", "Incorrect projectInitialUserPrompt");
-      assertEquals(assembleArgs[0].selected_domain_id, MOCK_SUCCESS_TEST_DOMAIN.id, "Incorrect selectedDomain id");
-      assertEquals(assembleArgs[0].user_domain_overlay_values, null, "user_domain_overlay_values should be null as not provided in this test's project mock");
-
-
-      // sessionContext
-      assertExists(assembleArgs[1], "sessionContextForAssembler should be provided");
-      assertEquals(assembleArgs[1].id, testSessionId, "Incorrect sessionId in sessionContext");
-      assertEquals(assembleArgs[1].iteration_count, 1, "Incorrect currentIterationNumber in sessionContext");
-      assertEquals(assembleArgs[1].current_stage_id, mockThesisStage.id, "Incorrect currentStageId in sessionContext"); // Current stage at the time of assembly for NEXT stage's seed.
-
-      // stageContext (for the NEXT stage)
-      assertExists(assembleArgs[2], "stageContextForAssembler (for next stage) should be provided");
-      assertEquals(assembleArgs[2].slug, mockAntithesisStage.slug, "Incorrect stageSlug for next stage in stageContext");
-      assertEquals(assembleArgs[2].display_name, mockAntithesisStage.display_name, "Incorrect stageDisplayName for next stage");
-      assertExists(assembleArgs[2].input_artifact_rules, "inputArtifactRules for next stage should exist");
+      // The options object should only contain properties relevant for a seed prompt
+      assertExists(assembleArgs.project, "AssemblePromptOptions should contain 'project'");
+      assertExists(assembleArgs.session, "AssemblePromptOptions should contain 'session'");
+      assertExists(assembleArgs.stage, "AssemblePromptOptions should contain 'stage'");
+      assertExists(assembleArgs.projectInitialUserPrompt, "AssemblePromptOptions should contain 'projectInitialUserPrompt'");
+      assertExists(assembleArgs.iterationNumber, "AssemblePromptOptions should contain 'iterationNumber'");
       
-      // seedPromptTemplate (content of the system_prompt for the NEXT stage)
-      assertExists(assembleArgs[3], "seedPromptTemplate for next stage should be provided");
-      assertEquals(assembleArgs[3], 'Initial prompt for testing.', "Incorrect seedPromptTemplate content");
-      
-      // iterationNumber (for the NEXT stage's seed prompt, which is still part of the current iteration's lifecycle)
-      assertEquals(assembleArgs[4], 1, "Incorrect iterationNumber for assemble call");
+      // Ensure no job-specific properties were passed for a seed prompt call
+      assertEquals(assembleArgs.job, undefined, "AssemblePromptOptions should not contain 'job' for a seed prompt");
+      assertEquals(assembleArgs.continuationContent, undefined, "AssemblePromptOptions should not contain 'continuationContent' for a seed prompt");
+
+      // Verify the content of the passed context objects
+      assertEquals(assembleArgs.project.id, testProjectId);
+      assertEquals(assembleArgs.session.id, testSessionId);
+      assertEquals(assembleArgs.stage.slug, mockAntithesisStage.slug);
+      assertEquals(assembleArgs.projectInitialUserPrompt, 'Initial prompt for testing.');
+      assertEquals(assembleArgs.iterationNumber, 1);
     } finally {
-      assembleSpy.restore();
+      // No restore needed for spies on mock instances
     }
   });
 
   await t.step('1.2 Successfully processes responses for the final stage (no next transition)', async () => {
     const mockFileManager = createMockFileManagerService();
-    mockFileManager.uploadAndRegisterFile = spy(
-      async (
-        context: UploadContext,
-      ): Promise<FileManagerResponse> => {
-        const { pathContext, fileContent, mimeType } = context;
-        const path = `projects/${pathContext.projectId}/sessions/${pathContext.sessionId}/iteration_${pathContext.iteration}/${pathContext.stageSlug}/${pathContext.originalFileName}`;
-        
-        let buffer: Buffer;
-        if (typeof fileContent === 'string') {
-            buffer = Buffer.from(fileContent, 'utf-8');
-        } else if (fileContent instanceof Buffer) {
-            buffer = fileContent;
-        } else { // It's an ArrayBuffer
-            buffer = Buffer.from(fileContent);
-        }
-
-        return await Promise.resolve({
-          record: {
-            id: 'resource-id',
-            project_id: pathContext.projectId,
-            user_id: testUserId,
-            storage_bucket: 'test-bucket',
-            storage_path: path,
-            file_name: pathContext.originalFileName || 'test.md',
-            mime_type: mimeType || 'text/markdown',
-            size_bytes: buffer.byteLength,
-            resource_description: context.resourceDescriptionForDb ?? null,
-            feedback_type: context.feedbackTypeForDb ?? '',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            iteration_number: pathContext.iteration!,
-            session_id: pathContext.sessionId!,
-            stage_slug: pathContext.stageSlug!,
-            is_header: false,
-            source_prompt_resource_id: null,
-            target_contribution_id: null,
-          },
-          error: null,
-        });
-      },
-    );
+    const feedbackFileRecord: FileRecord = {
+      id: 'resource-id',
+      project_id: testProjectId,
+      user_id: testUserId,
+      storage_bucket: 'test-bucket',
+      storage_path: `projects/${testProjectId}/sessions/${testSessionId}/iteration_1/paralysis/user_feedback_paralysis.md`,
+      file_name: 'user_feedback_paralysis.md',
+      mime_type: 'text/markdown',
+      size_bytes: 123,
+      resource_description: null,
+      feedback_type: 'iterative',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      iteration_number: 1,
+      session_id: testSessionId,
+      stage_slug: 'paralysis',
+      target_contribution_id: null,
+    };
+    mockFileManager.setUploadAndRegisterFileResponse(feedbackFileRecord, null);
 
     // 1.2.1 Arrange
     const mockPayload: SubmitStageResponsesPayload = {
@@ -587,57 +551,66 @@ Deno.test('submitStageResponses', async (t) => {
     // So uploadAndRegisterResource should NOT have been called.
     assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "FileManagerService should be called once for feedback");
     const feedbackCall = mockFileManager.uploadAndRegisterFile.calls[0];
-    assertEquals(feedbackCall.args[0].pathContext.fileType, 'user_feedback');
+    assertEquals(feedbackCall.args[0].pathContext.fileType, FileType.UserFeedback);
 
-    assert(data.nextStageSeedPromptPath === null || data.nextStageSeedPromptPath === undefined, "Next stage seed path should be null for the final stage");
     assertEquals(data.updatedSession?.status, 'completed_paralysis', "Session status should be updated to reflect completion");
   });
 
   await t.step('6.1 Successfully processes responses when domain overlay is present', async () => {
     const userSubmittedStageFeedbackContent = "Feedback content for domain overlay test.";
     const mockFileManager = createMockFileManagerService();
-    mockFileManager.uploadAndRegisterFile = spy(
-      async (
-        context: UploadContext,
-      ): Promise<FileManagerResponse> => {
-        const { pathContext, fileContent, mimeType } = context;
-        const path =
-          `projects/${pathContext.projectId}/sessions/${pathContext.sessionId}/iteration_${pathContext.iteration}/${pathContext.stageSlug}/${pathContext.originalFileName}`;
-        
-        let buffer: Buffer;
-        if (typeof fileContent === 'string') {
-            buffer = Buffer.from(fileContent, 'utf-8');
-        } else if (fileContent instanceof Buffer) {
-            buffer = fileContent;
-        } else { // It's an ArrayBuffer
-            buffer = Buffer.from(fileContent);
-        }
-
-        return await Promise.resolve({
-          record: {
-            id: 'resource-id-fm-overlay-test',
-            project_id: pathContext.projectId,
-            user_id: testUserId,
-            storage_bucket: 'test-bucket',
-            storage_path: path,
-            file_name: pathContext.originalFileName || 'test.md',
-            mime_type: mimeType || 'text/markdown',
-            size_bytes: buffer.byteLength,
-            resource_description: context.resourceDescriptionForDb ?? null,
-            feedback_type: context.feedbackTypeForDb ?? '',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            iteration_number: pathContext.iteration!,
-            session_id: pathContext.sessionId!,
-            stage_slug: pathContext.stageSlug!,
-            is_header: false,
-            source_prompt_resource_id: null,
-            target_contribution_id: null,
-          },
-          error: null,
-        });
-      },
+    const feedbackFileRecord: FileRecord = {
+      id: 'resource-id-fm-overlay-test',
+      project_id: testProjectId,
+      user_id: testUserId,
+      storage_bucket: 'test-bucket',
+      storage_path: `projects/${testProjectId}/sessions/${testSessionId}/iteration_1/synthesis/user_feedback_synthesis.md`,
+      file_name: 'user_feedback_synthesis.md',
+      mime_type: 'text/markdown',
+      size_bytes: 123,
+      resource_description: null,
+      feedback_type: 'positive',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      iteration_number: 1,
+      session_id: testSessionId,
+      stage_slug: 'synthesis',
+      target_contribution_id: null,
+    };
+    const seedPromptFileRecord: FileRecord = {
+      id: 'resource-id-fm-seed-prompt',
+      project_id: testProjectId,
+      user_id: testUserId,
+      storage_bucket: 'test-bucket',
+      storage_path: `projects/${testProjectId}/sessions/${testSessionId}/iteration_1/paralysis/seed_prompt.md`,
+      file_name: 'seed_prompt.md',
+      mime_type: 'text/markdown',
+      size_bytes: 456,
+      resource_description: '{"type":"seed_prompt"}',
+      feedback_type: '',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      iteration_number: 1,
+      session_id: testSessionId,
+      stage_slug: 'paralysis',
+      target_contribution_id: null,
+      source_prompt_resource_id: 'initial-prompt-resource-id',
+    };
+    const mockPromptAssembler = new MockPromptAssembler();
+    mockPromptAssembler.assemble = spy(() =>
+      Promise.resolve({
+        promptContent: 'Overlay test prompt content',
+        source_prompt_resource_id: seedPromptFileRecord.id,
+      })
     );
+
+    // Use a stub to handle different return values based on the fileType
+    mockFileManager.uploadAndRegisterFile = spy((context: UploadContext) => {
+      if (context.pathContext.fileType === FileType.UserFeedback) {
+        return Promise.resolve({ record: feedbackFileRecord, error: null });
+      }
+      return Promise.resolve({ record: null, error: { message: 'Unexpected file type in mock' } });
+    });
 
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
@@ -750,10 +723,11 @@ Deno.test('submitStageResponses', async (t) => {
               slug: mockAntithesisStage.slug,
               display_name: mockAntithesisStage.display_name,
               default_system_prompt_id: mockAntithesisStage.default_system_prompt_id,
-              input_artifact_rules: mockAntithesisStage.input_artifact_rules,
-              expected_output_artifacts: mockAntithesisStage.expected_output_artifacts,
               description: mockAntithesisStage.description,
               created_at: mockAntithesisStage.created_at,
+              expected_output_template_ids: [],
+              active_recipe_instance_id: null,
+              recipe_template_id: null,
               system_prompts: {
                 id: testSystemPromptId,
                 prompt_text: 'Overlay test prompt for Antithesis. Overlay: {{custom_instruction}} Prior: {{prior_stage_ai_outputs}} Feedback: {{prior_stage_user_feedback}}'
@@ -791,6 +765,7 @@ Deno.test('submitStageResponses', async (t) => {
     const mockDependencies = {
         logger,
         fileManager: mockFileManager,
+        promptAssembler: mockPromptAssembler,
         downloadFromStorage: async (client: SupabaseClient, bucket: string, path: string): Promise<{ data: ArrayBuffer | null; mimeType?: string; error: Error | null; }> => {
             const { data: blob, error: downloadError } = await client.storage.from(bucket).download(path);
             if (downloadError) {
@@ -819,23 +794,18 @@ Deno.test('submitStageResponses', async (t) => {
     assert(typeof data.updatedSession.status === 'string', "[6.1] updatedSession.status should be a string type");
     assert(data.updatedSession.status.includes(`pending_${mockAntithesisStage.slug}`), "[6.1] Session status should be updated");
     assertEquals(data.feedbackRecords.length, 1, "[6.1] Expected one feedback record");
-    assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 2, "[6.1] Expected FileManagerService to be called twice");
+    assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "[6.1] Expected FileManagerService to be called once");
 
-    const seedPromptCall = mockFileManager.uploadAndRegisterFile.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === 'seed_prompt');
-    assertExists(seedPromptCall, "[6.1] Expected a call to save 'seed_prompt'");
-    const seedPromptFileContent = seedPromptCall.args[0].fileContent;
-    const seedPromptContent = typeof seedPromptFileContent === 'string'
-        ? seedPromptFileContent
-        : new TextDecoder().decode(seedPromptFileContent);
-    
-    assertStringIncludes(seedPromptContent, "AI content specific to overlay test", "[6.1] Seed prompt missing AI output for overlay");
-    assertStringIncludes(seedPromptContent, "Apply this overlay specific instruction.", "[6.1] Seed prompt missing overlay custom instruction");
-    assertStringIncludes(seedPromptContent, priorStageFeedbackContentForScope, "[6.1] Seed prompt missing prior stage user feedback");
-    
-    assert(data?.nextStageSeedPromptPath, "[6.1] Next stage seed path should be returned");
-    if(data?.nextStageSeedPromptPath) {
-        assert(data.nextStageSeedPromptPath.includes(mockAntithesisStage.slug), "[6.1] Next stage seed path should be for antithesis");
-    }
+    const seedPromptCall = mockPromptAssembler.assemble.calls[0];
+    assertExists(seedPromptCall, "[6.1] Expected a call to assemble 'seed_prompt'");
+
+    const { project } = seedPromptCall.args[0];
+    assertExists(project.user_domain_overlay_values, "[6.1] user_domain_overlay_values should exist");
+    assertStringIncludes(
+      JSON.stringify(project.user_domain_overlay_values),
+      'Apply this overlay specific instruction.',
+      '[6.1] Seed prompt missing overlay custom instruction',
+    );
   });
 
   await t.step('6.2 Successfully finalizes the session after the last stage (PARALYSIS)', async () => {
@@ -852,14 +822,11 @@ Deno.test('submitStageResponses', async (t) => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       resource_description: null,
-      is_header: false,
-      source_prompt_resource_id: null,
-      target_contribution_id: null,
+      feedback_type: 'StageReviewSummary_v1_test',
       stage_slug: mockParalysisStage.slug,
       iteration_number: 1,
-      resource_type: null,
-      source_contribution_id: null,
       session_id: testSessionId,
+      target_contribution_id: null,
     }, null);
 
     const mockPayload: SubmitStageResponsesPayload = {
@@ -879,7 +846,11 @@ Deno.test('submitStageResponses', async (t) => {
         slug: mockParalysisStage.slug,
         display_name: 'Paralysis',
         default_system_prompt_id: null,
-        input_artifact_rules: {}
+        created_at: new Date().toISOString(),
+        description: null,
+        expected_output_template_ids: [],
+        active_recipe_instance_id: null,
+        recipe_template_id: null,
     };
     const mockDbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
@@ -937,8 +908,7 @@ Deno.test('submitStageResponses', async (t) => {
     assert(data);
     assertEquals(data.updatedSession?.status, 'iteration_complete_pending_review');
     assertEquals(mockDownloadFromStorage.calls.length, 0, "No seed prompt should be generated");
-    assert(data.nextStageSeedPromptPath === null || data.nextStageSeedPromptPath === undefined, "Next stage seed path should be null");
-  });
+    });
 
   await t.step('1.2 Handles session completion (no next stage) successfully', async () => {
     // ... (arrange as needed, similar to database.test.ts for completion path) ...
@@ -966,7 +936,7 @@ Deno.test('submitStageResponses', async (t) => {
       source_contribution_id: null,
     }
     mockFileManager.uploadAndRegisterFile = spy(async (context: UploadContext): Promise<FileManagerResponse> => {
-      if (context.pathContext.fileType === 'user_feedback') return { record: { ...mockRecord, storage_path: 'path/to/feedback.md' }, error: null };
+      if (context.pathContext.fileType === FileType.UserFeedback) return { record: { ...mockRecord, storage_path: 'path/to/feedback.md' }, error: null };
       return { record: { ...mockRecord, storage_path: 'path/to/other.md' }, error: null };
     });
 
@@ -1024,7 +994,6 @@ Deno.test('submitStageResponses', async (t) => {
     assertEquals(error, undefined);
     assert(data);
     assertEquals(data.updatedSession?.status, 'completed');
-    assertEquals(data.nextStageSeedPromptPath, null);
   });
 
   await t.step("1.2 Handles missing project details gracefully", async () => {
@@ -1106,7 +1075,7 @@ Deno.test('submitStageResponses', async (t) => {
     const mockFileManager = createMockFileManagerService();
     // Ensure file manager succeeds for user feedback to test downstream transition error
     mockFileManager.uploadAndRegisterFile = spy(async (context: UploadContext): Promise<FileManagerResponse> => {
-      if (context.pathContext.fileType === 'user_feedback') {
+      if (context.pathContext.fileType === FileType.UserFeedback) {
         return Promise.resolve({ 
           record: { 
             id: 'mock-feedback-file-id',
@@ -1120,14 +1089,11 @@ Deno.test('submitStageResponses', async (t) => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             resource_description: null,
-            is_header: false,
-            source_prompt_resource_id: null,
-            target_contribution_id: null,
+            feedback_type: 'test',
             stage_slug: mockThesisStage.slug,
             iteration_number: 1,
-            resource_type: null,
-            source_contribution_id: null,
             session_id: testSessionId,
+            target_contribution_id: null,
           }, 
           error: null 
         });
@@ -1265,17 +1231,19 @@ Deno.test('submitStageResponses', async (t) => {
     assertEquals(data.message, "Stage responses submitted. Current stage is terminal.", "Message should indicate end of process");
     assertExists(data.updatedSession);
     assertEquals(data.updatedSession.status, 'completed', "Session status should be updated to completed or similar");
-    assertEquals(data.nextStageSeedPromptPath, null, "No seed prompt should be generated if no next stage");
 
     // Verify feedback was saved
-    const feedbackCall = mockFileManager.uploadAndRegisterFile.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === 'user_feedback');
+    const feedbackCall = mockFileManager.uploadAndRegisterFile.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === FileType.UserFeedback);
     assertExists(feedbackCall, "Expected a call to save 'user_feedback' for the paralysis stage");
-    const feedbackUploadContext = feedbackCall.args[0];
+    const feedbackUploadContext: UploadContext = feedbackCall.args[0];
+    assert(feedbackUploadContext.pathContext.fileType === FileType.UserFeedback, "fileType should be UserFeedback");
     assertEquals(feedbackUploadContext.fileContent, "This is the final feedback for the paralysis stage.");
-    assertEquals(feedbackUploadContext.feedbackTypeForDb, "ParalysisReviewSummary_v1");
+    if('feedbackTypeForDb' in feedbackUploadContext) {
+      assertEquals(feedbackUploadContext.feedbackTypeForDb, "ParalysisReviewSummary_v1");
+    }
 
     // Verify seed prompt was NOT saved
-    const seedPromptCall = mockFileManager.uploadAndRegisterFile.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === 'seed_prompt');
+    const seedPromptCall = mockFileManager.uploadAndRegisterFile.calls.find((c: { args: [UploadContext] }) => c.args[0].pathContext.fileType === FileType.SeedPrompt);
     assertEquals(seedPromptCall, undefined, "Expected no call to save 'seed_prompt' as it's the end of process");
   });
 

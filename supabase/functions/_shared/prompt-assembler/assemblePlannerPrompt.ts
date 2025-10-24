@@ -44,6 +44,9 @@ export async function assemblePlannerPrompt(
       "PRECONDITION_FAILED: Job payload is missing.",
     );
   }
+  if (typeof job.payload.model_id !== "string") {
+    throw new Error("PRECONDITION_FAILED: Job payload is missing 'model_id'.");
+  }
   if (typeof job.payload.model_slug !== "string") {
     throw new Error("PRECONDITION_FAILED: Job payload is missing model_slug.");
   }
@@ -82,6 +85,21 @@ export async function assemblePlannerPrompt(
   if (!promptTemplateData) {
     throw new Error(
       `Failed to find planner prompt template with ID ${stage.recipe_step.prompt_template_id}`,
+    );
+  }
+
+  // 2. Fetch Model Details
+  const { data: model, error: modelError } = await dbClient
+    .from("ai_providers")
+    .select("name")
+    .eq("id", job.payload.model_id)
+    .single();
+
+  if (modelError || !model) {
+    throw new Error(
+      `Failed to fetch model details for id ${job.payload.model_id}: ${
+        modelError?.message
+      }`,
     );
   }
 
@@ -128,6 +146,14 @@ export async function assemblePlannerPrompt(
     userId: project.user_id,
     description:
       `Planner prompt for stage: ${stage.slug}, step: ${stage.recipe_step.step_name}`,
+    contributionMetadata: {
+      sessionId: session.id,
+      modelIdUsed: job.payload.model_id,
+      modelNameDisplay: model.name,
+      stageSlug: stage.slug,
+      iterationNumber: session.iteration_count,
+      rawJsonResponseContent: null,
+    },
   });
 
   if (response.error) {

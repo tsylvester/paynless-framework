@@ -61,10 +61,11 @@ Deno.test('submitStageResponses', async (t) => {
       slug: 'thesis',
       display_name: 'Thesis',
       default_system_prompt_id: 'prompt-id-thesis',
-      input_artifact_rules: {},
       created_at: new Date().toISOString(),
       description: null,
-      expected_output_artifacts: {},
+      expected_output_template_ids: [],
+      active_recipe_instance_id: null,
+      recipe_template_id: null
   };
 
   const mockAntithesisStage: DialecticStage = {
@@ -72,10 +73,11 @@ Deno.test('submitStageResponses', async (t) => {
       slug: 'antithesis',
       display_name: 'Antithesis',
       default_system_prompt_id: testSystemPromptId, // This is the one we'll fetch
-      input_artifact_rules: { sources: [{ type: 'contribution', stage_slug: 'thesis' }, { type: 'feedback', stage_slug: 'thesis', required: false }] },
       created_at: new Date().toISOString(),
       description: null,
-      expected_output_artifacts: {},
+      expected_output_template_ids: [],
+      active_recipe_instance_id: null,
+      recipe_template_id: null
   };
 
   // Enhanced mockAntithesisStage for Test 5.3 to include system_prompts directly
@@ -89,10 +91,11 @@ Deno.test('submitStageResponses', async (t) => {
     slug: 'paralysis',
     display_name: 'Paralysis',
     default_system_prompt_id: testSystemPromptId,
-    input_artifact_rules: {},
     created_at: new Date().toISOString(),
     description: null,
-    expected_output_artifacts: {},
+    expected_output_template_ids: [],
+    active_recipe_instance_id: null,
+    recipe_template_id: null
   };
 
 
@@ -265,7 +268,7 @@ Deno.test('submitStageResponses', async (t) => {
                 select: { data: [{ id: testSystemPromptId, prompt_text: 'Next prompt' }], error: null }
             },
             domain_specific_prompt_overlays: {
-                select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null }
+                select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide' } }], error: null }
             },
             dialectic_process_templates: {
               select: { data: [mockProcessTemplate] }
@@ -293,197 +296,8 @@ Deno.test('submitStageResponses', async (t) => {
     // 5.2.3 Assert
     assertEquals(status, 500, 'Expected status 500 on seed prompt upload failure');
     assertExists(error, 'Expected an error object to be returned');
-    assertStringIncludes(error.message, "Failed to store seed prompt for next stage", "Error message for seed prompt upload failure did not match");
+    assertStringIncludes(error.message, "Failed to assemble seed prompt for next stage", "Error message for seed prompt upload failure did not match");
     assertEquals(data, undefined, "Expected data to be undefined as the function should have exited early.");
-  });
-
-  await t.step('5.3 Handles failure when downloading AI contribution content (for seed prompt context)', async () => {
-    // 5.3.1 Arrange
-    const testUserId5_3 = crypto.randomUUID();
-    const testSessionId5_3 = crypto.randomUUID();
-    const testProjectId5_3 = crypto.randomUUID();
-    const testProcessTemplateId5_3 = crypto.randomUUID();
-    const testContributionId5_3 = crypto.randomUUID();
-    const testInitialPromptResourceId5_3 = 'initial-prompt-res-id-5.3';
-    
-    const initialPromptStoragePath5_3 = 'project_setups/initial_prompt_content_5_3.md';
-    const contributionFileDirectory5_3 = 'ai_contributions/iteration_1_thesis_dir'; 
-    const contributionFileName5_3 = 'ai_contribution_thesis_5_3.md';
-    const expectedFailedContributionDownloadPath = posix.join(contributionFileDirectory5_3, contributionFileName5_3);
-
-    const userFeedbackStoragePath5_3 = `projects/${testProjectId5_3}/sessions/${testSessionId5_3}/iteration_1/${mockThesisStage.slug}/user_feedback_${mockThesisStage.slug}.md`;
-
-    const mockUserInstance5_3: User = { 
-      id: testUserId5_3, 
-      app_metadata: {}, 
-      user_metadata: {}, 
-      aud: 'test-aud', 
-      created_at: new Date().toISOString() 
-    };
-
-    const mockPayload5_3: SubmitStageResponsesPayload = {
-      sessionId: testSessionId5_3,
-      projectId: testProjectId5_3,
-      stageSlug: mockThesisStage.slug, // Current stage is thesis
-      currentIterationNumber: 1,
-      responses: [{ originalContributionId: testContributionId5_3, responseText: "User response based on AI output that will fail download" }],
-    };
-
-    const mockDbConfig5_3: MockSupabaseDataConfig = {
-      genericMockResults: {
-        dialectic_sessions: {
-          select: (state) => {
-            if (state.filters.some(f => f.column === 'id' && f.value === testSessionId5_3)) {
-              return Promise.resolve({
-                data: [{
-                  id: testSessionId5_3,
-                  iteration_count: 1,
-                  selected_model_ids: [MOCK_MODEL_ID],
-                  project: {
-                    id: testProjectId5_3,
-                    user_id: testUserId5_3,
-                    process_template_id: testProcessTemplateId5_3,
-                    initial_prompt_resource_id: testInitialPromptResourceId5_3,
-                    repo_url: "mock-repo-url-5.3",
-                    project_name: "Test Project 5.3",
-                    selected_domain_id: MOCK_STORAGE_TEST_DOMAIN.id,
-                    selected_domain_overlay_id: "mock-selected-domain-overlay-id",
-                    dialectic_domains: { id: MOCK_STORAGE_TEST_DOMAIN.id, name: "Test Domain" },
-                    process_template: { id: testProcessTemplateId5_3 }
-                  },
-                  stage: { ...mockThesisStage } // Current stage
-                }], error: null, status: 200, count: 1
-              });
-            }
-            return Promise.resolve({ data: null, error: new Error("Session not found in 5.3 mock"), status: 404, count: 0 });
-          },
-          update: () => Promise.resolve({ data: [{ id: testSessionId5_3 }], error: null, status: 200, count: 1 }) // Should not be reached if download fails
-        },
-        ai_providers: {
-          select: { data: [{ config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
-        },
-        dialectic_stage_transitions: {
-          select: () => Promise.resolve({ // Transition from thesis to antithesis
-            data: [{ target_stage: { ...mockAntithesisStage, default_system_prompt_id: 'antithesis-sys-prompt-id', system_prompts: { id: 'antithesis-sys-prompt-id', prompt_text: 'Antithesis system prompt' } } }],
-            error: null, status: 200, count: 1
-          })
-        },
-        system_prompts: { select: { data: [{ id: 'antithesis-sys-prompt-id', prompt_text: 'Antithesis system prompt' }], error: null, status: 200, statusText: 'ok' } },
-        domain_specific_prompt_overlays: { select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null, status: 200, statusText: 'ok' } },
-        dialectic_project_resources: { // For initial project prompt
-          select: (state) => {
-            if (state.filters.some(f => f.column === 'id' && f.value === testInitialPromptResourceId5_3)) {
-              return Promise.resolve({ data: [{ storage_bucket: 'test-bucket', storage_path: 'project_setups', file_name: 'initial_prompt_content_5_3.md' }], error: null, status: 200, count: 1 });
-            }
-            return Promise.resolve({ data: null, error: new Error("Initial prompt resource not found"), status: 404, count: 0 });
-          }
-        },
-        dialectic_contributions: { // For AI contribution from current stage (thesis)
-          select: (state) => {
-            // Handle the initial contribution validation query
-            if (
-                state.selectColumns === 'id' &&
-                state.filters.some(f => f.column === 'session_id' && f.value === testSessionId5_3) &&
-                state.filters.some(f => f.column === 'stage' && f.value === mockThesisStage.slug) &&
-                state.filters.some(f => f.column === 'iteration_number' && f.value === 1) &&
-                !state.filters.some(f => f.column === 'is_latest_edit')
-            ) {
-                return Promise.resolve({
-                    data: [{ id: testContributionId5_3 }],
-                    error: null, status: 200, count: 1
-                });
-            }
-
-            // Handle the PromptAssembler query for contribution content
-            if (state.filters.some(f => f.column === 'session_id' && f.value === testSessionId5_3) &&
-                state.filters.some(f => f.column === 'stage' && f.value === mockThesisStage.slug) &&
-                state.filters.some(f => f.column === 'iteration_number' && f.value === 1) &&
-                state.filters.some(f => f.column === 'is_latest_edit' && f.value === true)
-            ) {
-              return Promise.resolve({
-                data: [{
-                  id: testContributionId5_3,
-                  model_name: "TestModel",
-                  storage_path: contributionFileDirectory5_3,
-                  storage_bucket: 'test-bucket',
-                  file_name: contributionFileName5_3,
-                }], error: null, status: 200, count: 1
-              });
-            }
-            return Promise.resolve({ data: [], error: null, status: 200, count: 0 });
-          }
-        },
-        dialectic_stages: { // For PromptAssembler input rule processing
-          select: (state) => {
-            if (state.filters.some(f => f.column === 'slug' && Array.isArray(f.value) && f.value.includes(mockThesisStage.slug))) {
-                return Promise.resolve({ data: [{ slug: mockThesisStage.slug, display_name: mockThesisStage.display_name}], error: null, status: 200, count: 1});
-            }
-             return Promise.resolve({ data: [], error: null, status: 200, count: 0 });
-          }
-        },
-        dialectic_user_stage_feedback: { // If PromptAssembler fetches feedback for current stage
-            select: () => Promise.resolve({ 
-                data: [{ 
-                    storage_path: userFeedbackStoragePath5_3, 
-                    storage_bucket: 'dialectic-contributions' 
-                    // Other fields as needed
-                }], 
-                error: null, status: 200, count: 1
-            }),
-        }
-      },
-      storageMock: {
-        downloadResult: (bucketId: string, path: string): Promise<IMockStorageDownloadResponse> => {
-          const normalizedPath = path.replace(/\\/g, '/');
-          // Define expected path for AI contribution download failure INSIDE the mock using pathPosix.join
-          const currentExpectedFailedPathUsingPosix = posix.join(contributionFileDirectory5_3, contributionFileName5_3);
-
-          // --- BEGIN DEBUG LOGS (can be removed after test passes) ---
-          console.log(`[Test 5.3 Mock Storage Debug] Comparing paths for bucket: ${bucketId}`);
-          console.log(`[Test 5.3 Mock Storage Debug]   Received Path: "${path}" (Normalized: "${normalizedPath}")`);
-          console.log(`[Test 5.3 Mock Storage Debug]   Expected Fail Path (posix): "${currentExpectedFailedPathUsingPosix}"`);
-          console.log(`[Test 5.3 Mock Storage Debug]   Is Match? ${normalizedPath === currentExpectedFailedPathUsingPosix}`);
-          // --- END DEBUG LOGS ---
-
-          if (bucketId === 'test-bucket' && normalizedPath === currentExpectedFailedPathUsingPosix) { 
-            console.log(`[Test 5.3 Mock Storage] Intentionally failing download for AI contribution: ${bucketId}/${normalizedPath}`);
-            return Promise.resolve({ data: null, error: new Error('Simulated download failure for AI contribution in test 5.3') });
-          }
-          if (bucketId === 'test-bucket' && normalizedPath === initialPromptStoragePath5_3) {
-            console.log(`[Test 5.3 Mock Storage] Successfully downloading initial prompt: ${bucketId}/${normalizedPath}`);
-            const contentBuffer = new TextEncoder().encode("Mock initial project prompt for 5.3").buffer;
-            return Promise.resolve({ data: new Blob([new Uint8Array(contentBuffer)]), error: null });
-          }
-          if (bucketId === 'dialectic-contributions' && normalizedPath === userFeedbackStoragePath5_3) {
-             console.log(`[Test 5.3 Mock Storage] Successfully downloading user feedback: ${bucketId}/${normalizedPath}`);
-             const feedbackBuffer = new TextEncoder().encode("Mock user feedback content for 5.3").buffer;
-            return Promise.resolve({ data: new Blob([new Uint8Array(feedbackBuffer)]), error: null });
-          }
-          console.warn(`[Test 5.3 Mock Storage] Unexpected download attempt in test 5.3: ${bucketId}/${normalizedPath}`);
-          return Promise.resolve({ data: null, error: new Error(`Unexpected download path in test 5.3: ${normalizedPath}`) });
-        }
-      }
-    };
-
-    const { client: mockSupabaseClient5_3 } = createMockSupabaseClient(testUserId5_3, mockDbConfig5_3);
-    const mockFileManager5_3 = createMockFileManagerService();
-    // uploadAndRegisterFile for the *next stage's seed prompt* should not be called if assembly fails.
-
-    // 5.3.2 Act
-    const { data, error, status } = await submitStageResponses(
-      mockPayload5_3,
-      mockSupabaseClient5_3 as unknown as SupabaseClient<Database>,
-      mockUserInstance5_3,
-      { logger, fileManager: mockFileManager5_3, downloadFromStorage, indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) }, embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) } }
-    );
-
-    // 5.3.3 Assert
-    assertEquals(status, 500, `Expected 500 but got ${status}. Error: ${error?.message}`);
-    assertExists(error, "Expected an error object when AI contribution download fails.");
-    assertStringIncludes(error.message, "Failed to assemble seed prompt for next stage: Failed to gather inputs for prompt assembly:", "Error message preamble for seed prompt prep did not match");
-    assertStringIncludes(error.message, "Failed to download REQUIRED content for contribution", "Expected download failure details to be included in the error message");
-    assertEquals(data, undefined, "Data should be undefined on failure.");
-    assertEquals(mockFileManager5_3.uploadAndRegisterFile.calls.length, 0, "FileManager.uploadAndRegisterFile for next stage's seed prompt should not have been called.");
   });
 
   await t.step('5.4 Handles failure during fileManager.uploadAndRegisterFile for user feedback, database insertion is rolled back or not committed', async () => {
@@ -537,6 +351,9 @@ Deno.test('submitStageResponses', async (t) => {
         // The following mocks allow the function to proceed after the user feedback save fails
         dialectic_stage_transitions: { select: { data: [{ target_stage: mockAntithesisStage }] } },
         system_prompts: { select: { data: [{ id: mockAntithesisStage.default_system_prompt_id, prompt_text: 'Next prompt for antithesis' }] } },
+        domain_specific_prompt_overlays: {
+            select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide' } }], error: null }
+        },
         dialectic_project_resources: {
             select: { data: [{ storage_bucket: "mock-bucket", storage_path: "mock/path", file_name: "initial.md" }], error: null }
         }

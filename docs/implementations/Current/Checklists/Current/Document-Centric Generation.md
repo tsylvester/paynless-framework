@@ -687,15 +687,15 @@ graph LR
                 *   Step 6 to migrate consumers must be performed before the test can run.  
     *   `[✅]` 5.e. `[COMMIT]` feat(prompt-assembler): Architect PromptAssembler as a centralized, persistence-aware service.
 
-*   `[ ]` 6. `[REFACTOR]` Migrate All Consumers to the Refactored `PromptAssembler` Service
+*   `[✅]` 6. `[REFACTOR]` Migrate All Consumers to the Refactored `PromptAssembler` Service
     *   **Objective:** To systematically refactor all services that generate prompts to use the new, centralized `PromptAssembler`. This is the "Use the Tool" phase, ensuring all parts of the system align with the new architecture.
-    *   `[ ]` 6.a. **Phase 1: Update the Final Data Consumer (`executeModelCallAndSave`)**
+    *   `[✅]` 6.a. **Phase 1: Update the Final Data Consumer (`executeModelCallAndSave`)**
         *   `[✅]` 6.a.i. `[BE]` In `dialectic.interface.ts`, update the `PromptConstructionPayload` interface to include the optional `source_prompt_resource_id: string` property.
         *   `[✅]` 6.a.ii. `[BE]` In `file_manager.types.ts`, update the `ContributionMetadata` interface to include the optional `source_prompt_resource_id: string` property and remove the deprecated `seedPromptStoragePath`. 
         *   `[✅]` 6.a.iii. `[TEST-UNIT]` In `executeModelCallAndSave.test.ts`, write a failing unit test that passes a `source_prompt_resource_id` via the `promptConstructionPayload` and asserts that this ID is correctly used on the `source_prompt_resource_id` field of the created `dialectic_contributions` record.
         *   `[✅]` 6.a.iv. `[BE]` In `executeModelCallAndSave.ts`, modify the logic that creates the `contributionMetadata` to use the `source_prompt_resource_id` from the payload, ensuring the test passes.
         *   `[✅]` 6.a.v. `[BE]` In `executeModelCallAndSave.ts`, **delete** the obsolete `seedPromptStoragePath` property from the `contributionMetadata` object.
-        *   `[ ]` 6.a.vi. `[REFACTOR]` Refactor all consumers of the deprecated `seedPromptStoragePath` property.
+        *   `[✅]` 6.a.vi. `[REFACTOR]` Refactor all consumers of the deprecated `seedPromptStoragePath` property.
             *   `[✅]` 6.a.vi.1. `[DOCS]` In `supabase/functions/_shared/services/file_manager.md`, remove the `seedPromptStoragePath` from the `UploadContext` documentation.
             *   `[✅]` 6.a.vi.2. `[REFACTOR]` Refactor `file_manager.ts` to use `source_prompt_resource_id`.
                 *   `[✅]` 6.a.vi.2.a. `[TEST-UNIT]` In `file_manager.upload.test.ts`, write a failing unit test that proves the `uploadAndRegisterFile` function incorrectly attempts to use the non-existent `seedPromptStoragePath` property from the `contributionMetadata` object. The test should assert that the `seed_prompt_url` on the created database record is `null` or `undefined`.

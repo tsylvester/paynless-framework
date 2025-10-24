@@ -25,12 +25,15 @@ import {
   FileType,
   type FileRecord,
   type UploadContext,
+  type ModelContributionUploadContext,
 } from "../types/file_manager.types.ts";
 import {
   DialecticJobRow,
   DialecticRecipeStep,
 } from "../../dialectic-service/dialectic.interface.ts";
 import { assertSpyCall, assertSpyCalls } from "jsr:@std/testing@0.225.1/mock";
+import { isRecord } from "../utils/type_guards.ts";
+import { assert } from "jsr:@std/assert@0.225.3";
 
 Deno.test("assemblePlannerPrompt", async (t) => {
   let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
@@ -182,6 +185,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
   const mockPlannerJob: DialecticJobRow = {
     ...legacyMockPlannerJob,
     payload: {
+      model_id: "model-claude-3-opus",
       model_slug: "claude-3-opus",
     },
   };
@@ -228,6 +232,13 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           system_prompts: {
             select: { data: [{ prompt_text: plannerPromptText }], error: null },
           },
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+              ],
+            }
+          }
         },
       };
 
@@ -296,7 +307,13 @@ Deno.test("assemblePlannerPrompt", async (t) => {
 
         // 5. Assert the file was saved with the correct and complete context
         assertSpyCalls(uploadSpy, 1);
-        const expectedUploadContext: UploadContext = {
+        if (!isRecord(mockPlannerJob.payload)) {
+          throw new Error("Test setup error: mockPlannerJob.payload is not a record.");
+        }
+        if (typeof mockPlannerJob.payload.model_id !== 'string') {
+          throw new Error("Test setup error: mockPlannerJob.payload.model_id is not a string.");
+        }
+        const expectedUploadContext: ModelContributionUploadContext = {
           pathContext: {
             projectId: defaultProject.id,
             sessionId: defaultSession.id,
@@ -313,6 +330,14 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           sizeBytes: 23,
           userId: defaultProject.user_id,
           description: `Planner prompt for stage: ${defaultStage.slug}, step: ${mockRecipeStep.step_name}`,
+          contributionMetadata: {
+            sessionId: defaultSession.id,
+            modelIdUsed: mockPlannerJob.payload.model_id,
+            modelNameDisplay: "Claude 3 Opus",
+            stageSlug: defaultStage.slug,
+            iterationNumber: defaultSession.iteration_count,
+            rawJsonResponseContent: null,
+          },
         };
         assertEquals(uploadSpy.calls[0].args[0], expectedUploadContext);
       } finally {
@@ -334,6 +359,13 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           system_prompts: {
             select: { data: [{ prompt_text: "any text" }], error: null },
           },
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+              ],
+            }
+          }
         },
       });
 
@@ -391,6 +423,13 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           system_prompts: {
             select: { data: [{ prompt_text: "special text" }], error: null },
           },
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+              ],
+            }
+          }
         },
       };
 
@@ -457,6 +496,13 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           system_prompts: {
             select: { data: null, error: null },
           },
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+              ],
+            }
+          }
         },
       };
 
@@ -497,6 +543,13 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           system_prompts: {
             select: { data: null, error: dbError }
           },
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+              ],
+            }
+          }
         },
       };
 
@@ -537,6 +590,13 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           system_prompts: {
             select: { data: [{ prompt_text: plannerPromptText }], error: null }
           },
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+              ],
+            }
+          }
         },
       };
       const {
@@ -578,6 +638,13 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           system_prompts: {
             select: { data: [{ prompt_text: "any text" }], error: null },
           },
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+              ],
+            }
+          }
         },
       });
       const mockDeps = {
@@ -608,6 +675,13 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         system_prompts: {
           select: { data: [{ prompt_text: "any text" }], error: null },
         },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
       },
     });
 
@@ -657,7 +731,17 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         fileManager,
         gatherContextFn,
         renderFn,
-      } = setup();
+      } = setup({
+        genericMockResults: {
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+              ],
+            }
+          }
+        }
+      });
       const sessionWithNoModels: SessionContext = {
         ...defaultSession,
         selected_model_ids: [],
@@ -692,7 +776,17 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         fileManager,
         gatherContextFn,
         renderFn,
-      } = setup();
+      } = setup({
+        genericMockResults: {
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+              ],
+            }
+          }
+        }
+      });
       
       const invalidJob: DialecticJobRow = {
         ...mockPlannerJob,
@@ -712,7 +806,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             render: renderFn,
           }),
         Error,
-        "PRECONDITION_FAILED: Job payload is missing model_slug.",
+        "PRECONDITION_FAILED: Job payload is missing 'model_id'.",
       );
 
       teardown();
@@ -732,6 +826,13 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           system_prompts: {
             select: { data: [{ prompt_text: "any text" }], error: null },
           },
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+              ],
+            }
+          }
         },
       });
       
@@ -804,6 +905,13 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         system_prompts: {
           select: { data: [{ prompt_text: "any text" }], error: null },
         },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
       },
     });
 
@@ -846,10 +954,22 @@ Deno.test("assemblePlannerPrompt", async (t) => {
 
   await t.step("should throw a precondition error if model_slug is missing from job payload",
     async () => {
-      const { client, fileManager } = setup();
+      const { client, fileManager } = setup({
+        genericMockResults: {
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+              ],
+            }
+          }
+        }
+      });
       const jobWithoutModelSlug = {
         ...mockPlannerJob,
-        payload: {},
+        payload: {
+          model_id: "model-claude-3-opus",
+        },
       };
 
       const fullMockDynamicContext: DynamicContextVariables = {
@@ -893,7 +1013,17 @@ Deno.test("assemblePlannerPrompt", async (t) => {
 
   await t.step("should throw a precondition error if recipe_step is missing from stage context",
     async () => {
-      const { client, fileManager } = setup();
+      const { client, fileManager } = setup({
+        genericMockResults: {
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+              ],
+            }
+          }
+        }
+      });
       // This is one of the two allowed exceptions for type casting, as we are intentionally
       // creating a malformed object to test graceful error handling.
       const stageWithoutRecipe: StageContext = {
@@ -942,7 +1072,17 @@ Deno.test("assemblePlannerPrompt", async (t) => {
 
   await t.step("should throw a precondition error if the legacy step_info object is present in the job payload",
     async () => {
-      const { client, fileManager, gatherContextFn, renderFn } = setup();
+      const { client, fileManager, gatherContextFn, renderFn } = setup({
+        genericMockResults: {
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+              ],
+            }
+          }
+        }
+      });
 
       await assertRejects(
         () =>
@@ -981,6 +1121,13 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         system_prompts: {
           select: { data: [{ prompt_text: plannerPromptText }], error: null },
         },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
       },
     };
 
@@ -1032,6 +1179,123 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         uploadContext.pathContext.parallelGroup,
         recipeWithKeys.parallel_group,
       );
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should throw PRECONDITION_FAILED if job payload is missing 'model_id'", async () => {
+    const { client, fileManager, gatherContextFn, renderFn } = setup({
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
+      }
+    });
+    if(!isRecord(mockPlannerJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
+    const payload = { ...mockPlannerJob.payload };
+    delete payload.model_id;
+    const jobWithMissingModelId: DialecticJobRow = {
+        ...mockPlannerJob,
+        payload,
+    };
+
+    await assertRejects(
+      () =>
+        assemblePlannerPrompt({
+          dbClient: client,
+          fileManager,
+          job: jobWithMissingModelId,
+          project: defaultProject,
+          session: defaultSession,
+          stage: defaultStage,
+          gatherContext: gatherContextFn,
+          render: renderFn,
+        }),
+      Error,
+      "PRECONDITION_FAILED: Job payload is missing 'model_id'.",
+    );
+
+    teardown();
+  });
+
+  await t.step("should include contributionMetadata when saving the planner prompt", async () => {
+    const mockModelName = "Test Model 7000";
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: { data: [{ prompt_text: plannerPromptText }], error: null },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: mockModelName, provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
+      },
+    };
+    const { client, fileManager, gatherContextFn, renderFn } = setup(config);
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-planner-resource-id-metadata",
+      project_id: defaultProject.id,
+      file_name: "planner_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/planner_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock planner prompt with metadata",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "planner_prompt",
+      source_contribution_id: null,
+    };
+    fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+    
+    if (!isRecord(mockPlannerJob.payload)) {
+      throw new Error("Test setup error: mockPlannerJob.payload is not a record.");
+    }
+
+    try {
+      await assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+        gatherContext: gatherContextFn,
+        render: renderFn,
+      });
+
+      assertSpyCalls(fileManager.uploadAndRegisterFile, 1);
+      const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+
+      assert('contributionMetadata' in uploadContext, "The upload context for a PlannerPrompt must include contributionMetadata.");
+      
+      const metadata = uploadContext.contributionMetadata;
+      assert(metadata, "Contribution metadata should not be null or undefined.");
+      assertEquals(metadata.sessionId, defaultSession.id);
+      if (typeof mockPlannerJob.payload.model_id !== 'string') {
+        throw new Error("Test setup error: mockPlannerJob.payload.model_id is not a string.");
+      }
+      assertEquals(metadata.modelIdUsed, mockPlannerJob.payload.model_id);
+      assertEquals(metadata.modelNameDisplay, mockModelName);
+      assertEquals(metadata.stageSlug, defaultStage.slug);
+      assertEquals(metadata.iterationNumber, defaultSession.iteration_count);
+      assertEquals(metadata.rawJsonResponseContent, null);
+
     } finally {
       teardown();
     }

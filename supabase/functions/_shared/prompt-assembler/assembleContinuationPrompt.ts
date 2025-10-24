@@ -58,7 +58,26 @@ export async function assembleContinuationPrompt(
   if (!isRecord(job.payload)) {
     throw new Error("PRECONDITION_FAILED: Job payload is missing.");
   }
+  if (typeof job.payload.model_id !== "string") {
+    throw new Error("PRECONDITION_FAILED: Job payload is missing 'model_id'.");
+  }
 
+  // 1. Fetch Model Details
+  const { data: model, error: modelError } = await dbClient
+    .from("ai_providers")
+    .select("name")
+    .eq("id", job.payload.model_id)
+    .single();
+
+  if (modelError || !model) {
+    throw new Error(
+      `Failed to fetch model details for id ${job.payload.model_id}: ${
+        modelError?.message
+      }`,
+    );
+  }
+
+  // 2. Fetch Header Context (if applicable)
   let headerContext: HeaderContext | null = null;
   const headerResourceId = job.payload?.header_context_resource_id;
 
@@ -135,6 +154,14 @@ export async function assembleContinuationPrompt(
     sizeBytes: new TextEncoder().encode(finalPrompt).length,
     userId: project.user_id,
     description: `Continuation prompt for job ${job.id}`,
+    contributionMetadata: {
+      sessionId: session.id,
+      modelIdUsed: job.payload.model_id,
+      modelNameDisplay: model.name,
+      stageSlug: stage.slug,
+      iterationNumber: session.iteration_count,
+      rawJsonResponseContent: null,
+    },
   });
 
   if (response.error) {

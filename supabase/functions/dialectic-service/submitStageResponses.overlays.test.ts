@@ -5,6 +5,8 @@ import { submitStageResponses } from './submitStageResponses.ts';
 import { createMockSupabaseClient, type MockSupabaseDataConfig } from '../_shared/supabase.mock.ts';
 import { logger } from "../_shared/logger.ts";
 import type { SubmitStageResponsesPayload, DialecticStage } from './dialectic.interface.ts';
+import { createMockFileManagerService } from "../_shared/services/file_manager.mock.ts";
+import { ServiceError } from "../_shared/types.ts";
 
 Deno.test("submitStageResponses - fails when overlays are missing for next stage", async () => {
   const testUser: User = { id: 'user-submit-red', app_metadata: {}, user_metadata: {}, aud: 'test', created_at: new Date().toISOString() };
@@ -16,20 +18,22 @@ Deno.test("submitStageResponses - fails when overlays are missing for next stage
     slug: 'thesis',
     display_name: 'Thesis',
     default_system_prompt_id: 'prompt-current',
-    input_artifact_rules: {},
     created_at: new Date().toISOString(),
     description: null,
-    expected_output_artifacts: {},
+    expected_output_template_ids: [],
+    active_recipe_instance_id: null,
+    recipe_template_id: null
   };
   const nextStage: DialecticStage = {
     id: 'stage-next',
     slug: 'antithesis',
     display_name: 'Antithesis',
     default_system_prompt_id: 'prompt-next',
-    input_artifact_rules: {},
     created_at: new Date().toISOString(),
     description: null,
-    expected_output_artifacts: {},
+    expected_output_template_ids: [],
+    active_recipe_instance_id: null,
+    recipe_template_id: null
   };
 
   const payload: SubmitStageResponsesPayload = {
@@ -57,11 +61,15 @@ Deno.test("submitStageResponses - fails when overlays are missing for next stage
   };
 
   const mockSupabase = createMockSupabaseClient(testUser.id, mockDb);
+  const mockFileManager = createMockFileManagerService();
+  const mockServiceError: ServiceError = { message: "File manager error", status: 500 };
+  mockFileManager.setUploadAndRegisterFileResponse(null, mockServiceError);
+
   const { error, status } = await submitStageResponses(
     payload,
     mockSupabase.client as unknown as SupabaseClient<Database>,
     testUser,
-    { logger, downloadFromStorage: async () => ({ data: null, error: null }), fileManager: { uploadAndRegisterFile: async () => ({ record: null, error: null }) } as any, indexingService: { indexDocument: async () => ({ success: true, tokensUsed: 0 }) }, embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) } }
+    { logger, downloadFromStorage: async () => ({ data: null, error: null }), fileManager: mockFileManager, indexingService: { indexDocument: async () => ({ success: true, tokensUsed: 0 }) }, embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) } }
   );
 
   assertExists(error);

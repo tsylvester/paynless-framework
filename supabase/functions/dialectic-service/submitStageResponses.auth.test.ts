@@ -56,10 +56,11 @@ Deno.test('submitStageResponses', async (t) => {
       slug: 'thesis',
       display_name: 'Thesis',
       default_system_prompt_id: 'prompt-id-thesis',
-      input_artifact_rules: {},
       created_at: new Date().toISOString(),
       description: null,
-      expected_output_artifacts: {},
+      expected_output_template_ids: [],
+      active_recipe_instance_id: null,
+      recipe_template_id: null
   };
 
   const mockAntithesisStage: DialecticStage = {
@@ -67,10 +68,11 @@ Deno.test('submitStageResponses', async (t) => {
       slug: 'antithesis',
       display_name: 'Antithesis',
       default_system_prompt_id: testSystemPromptId, // This is the one we'll fetch
-      input_artifact_rules: { sources: [{ type: 'contribution', stage_slug: 'thesis' }, { type: 'feedback', stage_slug: 'thesis'}] },
       created_at: new Date().toISOString(),
       description: null,
-      expected_output_artifacts: {},
+      expected_output_template_ids: [],
+      active_recipe_instance_id: null,
+      recipe_template_id: null
   };
 
   const mockParalysisStage: DialecticStage = {
@@ -78,10 +80,11 @@ Deno.test('submitStageResponses', async (t) => {
     slug: 'paralysis',
     display_name: 'Paralysis',
     default_system_prompt_id: testSystemPromptId,
-    input_artifact_rules: {},
     created_at: new Date().toISOString(),
     description: null,
-    expected_output_artifacts: {},
+    expected_output_template_ids: [],
+    active_recipe_instance_id: null,
+    recipe_template_id: null
   };
 
   await t.step('2.1 Fails if the user is not authenticated', async () => {

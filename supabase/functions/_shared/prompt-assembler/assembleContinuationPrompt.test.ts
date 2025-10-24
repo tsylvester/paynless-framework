@@ -22,8 +22,12 @@ import type { Database } from "../../types_db.ts";
 import { createMockFileManagerService } from "../services/file_manager.mock.ts";
 import { FileType } from "../types/file_manager.types.ts";
 import { FileRecord } from "../types/file_manager.types.ts";
-import { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
+import {
+  DialecticJobRow,
+  DialecticRecipeStep,
+} from "../../dialectic-service/dialectic.interface.ts";
 import { assertSpyCall } from "jsr:@std/testing@0.225.1/mock";
+import { isRecord } from "../utils/type_guards.ts";
 
 Deno.test("assembleContinuationPrompt", async (t) => {
   let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
@@ -162,6 +166,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             payload: {
               header_context_resource_id: "header-res-123",
               continuation_reason: "length",
+              model_id: "model-123",
               model_slug: "test-model",
             },
             session_id: defaultSession.id,
@@ -183,6 +188,13 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           };
 
           const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+              ai_providers: {
+                select: {
+                  data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                },
+              },
+            },
             storageMock: {
               downloadResult: () =>
                 Promise.resolve({
@@ -243,6 +255,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             const uploadContext =
               fileManager.uploadAndRegisterFile.calls[0].args[0];
             assertEquals(uploadContext.pathContext.fileType, FileType.TurnPrompt);
+            assert("contributionMetadata" in uploadContext);
             assertEquals(uploadContext.pathContext.isContinuation, true);
             assertEquals(uploadContext.pathContext.turnIndex, 2);
           } finally {
@@ -262,6 +275,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             job_type: "PLAN",
             payload: {
               continuation_reason: "length",
+              model_id: "model-123",
               model_slug: "test-model",
             },
             session_id: defaultSession.id,
@@ -282,7 +296,16 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             target_contribution_id: null,
           };
 
-          const { client, fileManager } = setup();
+          const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+              ai_providers: {
+                select: {
+                  data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                },
+              },
+            },
+          };
+          const { client, fileManager } = setup(config);
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
           const partialContent = `{"key": "value"`;
 
@@ -330,6 +353,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               uploadContext.pathContext.fileType,
               FileType.PlannerPrompt,
             );
+            assert("contributionMetadata" in uploadContext);
             assertEquals(uploadContext.pathContext.isContinuation, true);
           } finally {
             teardown();
@@ -348,6 +372,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             job_type: "EXECUTE", // No seed job type, so EXECUTE is a generic stand-in
             payload: {
               continuation_reason: "length",
+              model_id: "model-123",
               model_slug: "test-model",
             },
             session_id: defaultSession.id,
@@ -367,7 +392,16 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             started_at: null,
             target_contribution_id: null,
           };
-          const { client, fileManager } = setup();
+          const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+              ai_providers: {
+                select: {
+                  data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                },
+              },
+            },
+          };
+          const { client, fileManager } = setup(config);
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
           const partialContent = "This is generic partial text.";
 
@@ -410,6 +444,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               fileManager.uploadAndRegisterFile.calls[0].args[0];
             // Since there's no "SeedPrompt" file type for jobs, we expect a generic "TurnPrompt"
             assertEquals(uploadContext.pathContext.fileType, FileType.TurnPrompt);
+            assert("contributionMetadata" in uploadContext);
             assertEquals(uploadContext.pathContext.isContinuation, true);
             assertEquals(uploadContext.pathContext.turnIndex, 4);
           } finally {
@@ -436,6 +471,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             payload: {
               header_context_resource_id: "header-res-123",
               continuation_reason: "length",
+              model_id: "model-123",
               model_slug: "test-model",
             },
             session_id: defaultSession.id,
@@ -457,6 +493,13 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           };
 
           const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+              ai_providers: {
+                select: {
+                  data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                },
+              },
+            },
             storageMock: {
               downloadResult: () =>
                 Promise.resolve({
@@ -500,6 +543,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               fileManager.uploadAndRegisterFile.calls[0].args[0];
             assertEquals(uploadContext.pathContext.branchKey, "branch-abc");
             assertEquals(uploadContext.pathContext.parallelGroup, 1);
+            assert("contributionMetadata" in uploadContext);
           } finally {
             teardown();
           }
@@ -516,7 +560,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
         const mockPlannerJob: DialecticJobRow = {
           id: "job-plan-incomplete",
           job_type: "PLAN",
-          payload: { model_slug: "test-model" },
+          payload: { model_id: "model-123", model_slug: "test-model" },
           session_id: defaultSession.id,
           stage_slug: defaultStage.slug,
           iteration_number: 1,
@@ -534,7 +578,16 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           started_at: null,
           target_contribution_id: null,
         };
-        const { client, fileManager } = setup();
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            ai_providers: {
+              select: {
+                data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+              },
+            },
+          },
+        };
+        const { client, fileManager } = setup(config);
         fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
         const incompleteJson = `{"key": "value"`;
 
@@ -573,6 +626,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           assertSpyCall(fileManager.uploadAndRegisterFile, 0);
           const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
           assertEquals(uploadContext.pathContext.fileType, FileType.PlannerPrompt);
+          assert("contributionMetadata" in uploadContext);
         } finally {
           teardown();
         }
@@ -585,7 +639,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
         const mockTurnJob: DialecticJobRow = {
           id: "job-turn-incomplete",
           job_type: "EXECUTE",
-          payload: { header_context_resource_id: "header-res-456", model_slug: "test-model" },
+          payload: { header_context_resource_id: "header-res-456", model_id: "model-123", model_slug: "test-model" },
           session_id: defaultSession.id,
           stage_slug: defaultStage.slug,
           iteration_number: 1,
@@ -604,6 +658,13 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           target_contribution_id: null,
         };
         const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            ai_providers: {
+              select: {
+                data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+              },
+            },
+          },
           storageMock: {
             downloadResult: () => Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null }),
           },
@@ -646,6 +707,8 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           assert(result.promptContent.endsWith(incompleteJson));
         //    - Verify `fileManager.uploadAndRegisterFile` was called with `FileType.ContinuationPrompt`.
           assertSpyCall(fileManager.uploadAndRegisterFile, 0);
+          const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+          assert("contributionMetadata" in uploadContext);
         } finally {
           teardown();
         }
@@ -657,7 +720,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           const mockSeedJob: DialecticJobRow = {
             id: "job-seed-incomplete",
             job_type: "EXECUTE",
-            payload: { model_slug: "test-model" },
+            payload: { model_id: "model-123", model_slug: "test-model" },
             session_id: defaultSession.id,
             stage_slug: defaultStage.slug,
             iteration_number: 1,
@@ -675,7 +738,16 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             started_at: null,
             target_contribution_id: null,
           };
-          const { client, fileManager } = setup();
+          const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+              ai_providers: {
+                select: {
+                  data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                },
+              },
+            },
+          };
+          const { client, fileManager } = setup(config);
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
           const incompleteJson = `[{"item": 1},`;
 
@@ -711,6 +783,8 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             assert(result.promptContent.includes(MOCK_CONTINUATION_INSTRUCTION_MALFORMED_JSON));
           //    - Verify `fileManager.uploadAndRegisterFile` was called with `FileType.ContinuationPrompt`.
             assertSpyCall(fileManager.uploadAndRegisterFile, 0);
+            const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+            assert("contributionMetadata" in uploadContext);
           } finally {
             teardown();
           }
@@ -722,7 +796,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
         const mockPlannerJob: DialecticJobRow = {
           id: "job-plan-malformed",
           job_type: "PLAN",
-          payload: { model_slug: "test-model" },
+          payload: { model_id: "model-123", model_slug: "test-model" },
           session_id: defaultSession.id,
           stage_slug: defaultStage.slug,
           iteration_number: 1,
@@ -740,7 +814,16 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           started_at: null,
           target_contribution_id: null,
         };
-        const { client, fileManager } = setup();
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            ai_providers: {
+              select: {
+                data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+              },
+            },
+          },
+        };
+        const { client, fileManager } = setup(config);
         fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
         const malformedJson = `{"key": "value",}`;
 
@@ -776,6 +859,8 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           assert(result.promptContent.includes(MOCK_CONTINUATION_INSTRUCTION_MALFORMED_JSON));
         //    - Verify `fileManager.uploadAndRegisterFile` was called with `FileType.ContinuationPrompt`.
           assertSpyCall(fileManager.uploadAndRegisterFile, 0);
+          const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+          assert("contributionMetadata" in uploadContext);
         } finally {
           teardown();
         }
@@ -788,7 +873,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
         const mockTurnJob: DialecticJobRow = {
           id: "job-turn-malformed",
           job_type: "EXECUTE",
-          payload: { header_context_resource_id: "header-res-789", model_slug: "test-model" },
+          payload: { header_context_resource_id: "header-res-789", model_id: "model-123", model_slug: "test-model" },
           session_id: defaultSession.id,
           stage_slug: defaultStage.slug,
           iteration_number: 1,
@@ -807,6 +892,13 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           target_contribution_id: null,
         };
         const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            ai_providers: {
+              select: {
+                data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+              },
+            },
+          },
           storageMock: {
             downloadResult: () => Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null }),
           },
@@ -848,6 +940,8 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           assert(result.promptContent.includes(MOCK_CONTINUATION_INSTRUCTION_MALFORMED_JSON));
         //    - Verify `fileManager.uploadAndRegisterFile` was called with `FileType.ContinuationPrompt`.
           assertSpyCall(fileManager.uploadAndRegisterFile, 0);
+          const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+          assert("contributionMetadata" in uploadContext);
         } finally {
           teardown();
         }
@@ -859,7 +953,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
         const mockSeedJob: DialecticJobRow = {
           id: "job-seed-malformed",
           job_type: "EXECUTE",
-          payload: { model_slug: "test-model" },
+          payload: { model_id: "model-123", model_slug: "test-model" },
           session_id: defaultSession.id,
           stage_slug: defaultStage.slug,
           iteration_number: 1,
@@ -877,7 +971,16 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           started_at: null,
           target_contribution_id: null,
         };
-        const { client, fileManager } = setup();
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            ai_providers: {
+              select: {
+                data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+              },
+            },
+          },
+        };
+        const { client, fileManager } = setup(config);
         fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
         const malformedJson = `{"valid": true, "invalid":,}`;
 
@@ -913,6 +1016,8 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           assert(result.promptContent.includes(MOCK_CONTINUATION_INSTRUCTION_MALFORMED_JSON));
         //    - Verify `fileManager.uploadAndRegisterFile` was called with `FileType.ContinuationPrompt`.
           assertSpyCall(fileManager.uploadAndRegisterFile, 0);
+          const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+          assert("contributionMetadata" in uploadContext);
         } finally {
           teardown();
         }
@@ -935,6 +1040,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             job_type: "EXECUTE",
             payload: {
               continuation_reason: "length",
+              model_id: "model-123",
               model_slug: "test-model",
             },
             session_id: defaultSession.id,
@@ -954,7 +1060,16 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             started_at: null,
             target_contribution_id: null,
           };
-          const { client, fileManager } = setup();
+          const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+              ai_providers: {
+                select: {
+                  data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                },
+              },
+            },
+          };
+          const { client, fileManager } = setup(config);
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
 
           try {
@@ -990,6 +1105,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             const uploadContext =
               fileManager.uploadAndRegisterFile.calls[0].args[0];
             assertEquals(uploadContext.pathContext.turnIndex, 3); // 2 prior attempts + this one
+            assert("contributionMetadata" in uploadContext);
           } finally {
             teardown();
           }
@@ -1006,6 +1122,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             job_type: "PLAN",
             payload: {
               continuation_reason: "length",
+              model_id: "model-123",
               model_slug: "test-model",
             }, // Explicit reason
             session_id: defaultSession.id,
@@ -1025,7 +1142,16 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             started_at: null,
             target_contribution_id: null,
           };
-          const { client, fileManager } = setup();
+          const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+              ai_providers: {
+                select: {
+                  data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                },
+              },
+            },
+          };
+          const { client, fileManager } = setup(config);
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
           const malformedJson = `{"key": oops}`; // Corrective content
 
@@ -1076,6 +1202,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             job_type: "PLAN",
             payload: {
               continuation_reason: "truncation_recovery",
+              model_id: "model-123",
               model_slug: "test-model",
             }, // Corrective reason
             session_id: defaultSession.id,
@@ -1095,7 +1222,16 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             started_at: null,
             target_contribution_id: null,
           };
-          const { client, fileManager } = setup();
+          const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+              ai_providers: {
+                select: {
+                  data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                },
+              },
+            },
+          };
+          const { client, fileManager } = setup(config);
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
           // This content is valid but conceptually represents a truncated stream that needs an explicit continue.
           const partialValidJson = `{"key": "this is valid but we pretend it was cut off"`;
@@ -1146,6 +1282,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             job_type: "PLAN",
             payload: {
               continuation_reason: "truncation_recovery",
+              model_id: "model-123",
               model_slug: "test-model",
             },
             session_id: defaultSession.id,
@@ -1165,7 +1302,16 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             started_at: null,
             target_contribution_id: null,
           };
-          const { client, fileManager } = setup();
+          const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+              ai_providers: {
+                select: {
+                  data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                },
+              },
+            },
+          };
+          const { client, fileManager } = setup(config);
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
           const stillMalformedJson = `{"key": "value", "anotherkey"}`;
 
@@ -1202,6 +1348,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             const uploadContext =
               fileManager.uploadAndRegisterFile.calls[0].args[0];
             assertEquals(uploadContext.pathContext.turnIndex, 3);
+            assert("contributionMetadata" in uploadContext);
           } finally {
             teardown();
           }
@@ -1286,6 +1433,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             job_type: "EXECUTE",
             payload: {
               header_context_resource_id: "header-res-fail",
+              model_id: "model-123",
               model_slug: "test-model",
             },
             session_id: defaultSession.id,
@@ -1305,10 +1453,16 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             started_at: null,
             target_contribution_id: null,
           };
-          const storageError = new Error("Storage download failed");
           const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+              ai_providers: {
+                select: {
+                  data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                },
+              },
+            },
             storageMock: {
-              downloadResult: () => Promise.resolve({ data: null, error: storageError }),
+              downloadResult: () => Promise.resolve({ data: null, error: new Error("Storage download failed") }),
             },
           };
           const { client, fileManager } = setup(config);
@@ -1355,7 +1509,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           const mockPlannerJob: DialecticJobRow = {
             id: "job-plan-no-header",
             job_type: "PLAN",
-            payload: { model_slug: "test-model" },
+            payload: { model_id: "model-123", model_slug: "test-model" },
             session_id: defaultSession.id,
             stage_slug: defaultStage.slug,
             iteration_number: 1,
@@ -1373,7 +1527,16 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             started_at: null,
             target_contribution_id: null,
           };
-          const { client, fileManager } = setup();
+          const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+              ai_providers: {
+                select: {
+                  data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                },
+              },
+            },
+          };
+          const { client, fileManager } = setup(config);
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
 
           try {
@@ -1419,7 +1582,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           const mockPlannerJob: DialecticJobRow = {
             id: "job-plan-fm-fail",
             job_type: "PLAN",
-            payload: { model_slug: "test-model" },
+            payload: { model_id: "model-123", model_slug: "test-model" },
             session_id: defaultSession.id,
             stage_slug: defaultStage.slug,
             iteration_number: 1,
@@ -1437,7 +1600,16 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             started_at: null,
             target_contribution_id: null,
           };
-          const { client, fileManager } = setup();
+          const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+              ai_providers: {
+                select: {
+                  data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                },
+              },
+            },
+          };
+          const { client, fileManager } = setup(config);
           const fileManagerError = new Error("FileManager failed");
           fileManager.setUploadAndRegisterFileResponse(null, fileManagerError);
 

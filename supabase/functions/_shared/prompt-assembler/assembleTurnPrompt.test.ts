@@ -148,6 +148,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
     payload: {
         job_type: "EXECUTE",
         model_id: "model-123",
+        model_slug: "test-model",
         projectId: defaultProject.id,
         sessionId: defaultSession.id,
         stageSlug: defaultStage.slug,
@@ -158,7 +159,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
         document_specific_data: {
             title: "Project Executive Summary",
             points_to_cover: ["Problem", "Solution", "Market"]
-        }
+        },
     },
     session_id: defaultSession.id,
     stage_slug: defaultStage.slug,
@@ -215,6 +216,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
       };
 
       const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+              ],
+            }
+          }
+        },
         storageMock: {
             downloadResult: (bucket, path) => {
                 if (path.includes("header-context-id")) {
@@ -261,6 +271,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
 
   await t.step("should throw an error if the header context cannot be fetched", async () => {
     const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+              ],
+            }
+          }
+        },
         storageMock: {
             downloadResult: () => Promise.resolve({ data: null, error: new Error("Storage Error") }),
         }
@@ -303,6 +322,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
         payload: {
             job_type: "EXECUTE",
             model_id: "model-123",
+            model_slug: "test-model",
             projectId: defaultProject.id,
             sessionId: defaultSession.id,
             stageSlug: defaultStage.slug,
@@ -313,7 +333,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
             document_specific_data: {
                 title: "Technical Design",
                 points_to_cover: []
-            }
+            },
         }
     };
 
@@ -339,6 +359,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
       };
 
     const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        }
+      },
       storageMock: {
           downloadResult: (bucket, path) => {
               if (path.includes("header-context-id")) {
@@ -376,6 +405,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
 
   await t.step("should throw an error if the document template cannot be fetched", async () => {
     const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+              ],
+            }
+          }
+        },
         storageMock: {
             downloadResult: (bucket, path) => {
                 if (path.includes("header-context-id")) {
@@ -444,6 +482,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
 
   await t.step("should throw an error if fileManager.uploadAndRegisterFile fails", async () => {
     const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        }
+      },
       storageMock: {
           downloadResult: (bucket, path) => {
               if (path.includes("header-context-id")) {
@@ -485,6 +532,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
 
   await t.step("should throw an error if the fetched HeaderContext content is not valid JSON", async () => {
     const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+              ],
+            }
+          }
+        },
         storageMock: {
             downloadResult: () => Promise.resolve({ data: new Blob(["{ not json }"]), error: null }),
         }
@@ -519,6 +575,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
 
   await t.step("should throw an error if document_key from payload is not in header context", async () => {
     const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        }
+      },
       storageMock: {
           downloadResult: (bucket, path) => {
               if (path.includes("header-context-id")) {
@@ -536,7 +601,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
         ...mockTurnJob,
         payload: {
             ...mockTurnJob.payload,
-            document_key: "non_existent_key"
+            document_key: "non_existent_key",
+            model_slug: "test-model",
         }
     };
     
@@ -726,6 +792,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
   
     const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        }
+      },
       storageMock: {
           downloadResult: (bucket, path) => {
               if (path.includes("header-context-id")) {
@@ -751,7 +826,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
         payload: {
             ...mockTurnJob.payload,
             document_key: "technical_design",
-            document_specific_data: { custom_style: "minimalist" }
+            document_specific_data: { custom_style: "minimalist" },
+            model_slug: "test-model",
         }
     };
 
@@ -834,6 +910,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
       };
     
       const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+              ],
+            }
+          }
+        },
         storageMock: {
             downloadResult: (bucket, path) => {
                 if (path.includes("header-context-id")) {
@@ -858,7 +943,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
           payload: {
               ...mockTurnJob.payload,
               document_key: "technical_design",
-              document_specific_data: { custom_style: "brutalist" }
+              document_specific_data: { custom_style: "brutalist" },
+              model_slug: "test-model",
           }
       };
   
@@ -958,6 +1044,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
     } as unknown as StageContext;
 
     const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        }
+      },
       storageMock: {
           downloadResult: (bucket, path) => {
               if (path.includes("header-context-id")) {
@@ -1021,6 +1116,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
   
     const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        }
+      },
       storageMock: {
           downloadResult: (bucket, path) => {
               if (path.includes("header-context-id")) {
@@ -1087,6 +1191,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
       target_contribution_id: null, 
     };
     const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        }
+      },
       storageMock: {
           downloadResult: (bucket, path) => {
               if (path.includes("header-context-id")) {
@@ -1194,6 +1307,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
 
     const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        }
+      },
       storageMock: {
           downloadResult: (bucket, path) => {
               if (path.includes("header-context-id")) {
@@ -1240,6 +1362,93 @@ Deno.test("assembleTurnPrompt", async (t) => {
       
       assertEquals(uploadContext.pathContext.branchKey, branchKey, "branchKey was not passed correctly to the file manager.");
       assertEquals(uploadContext.pathContext.parallelGroup, parallelGroup, "parallelGroup was not passed correctly to the file manager.");
+
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should include contributionMetadata when saving the turn prompt", async () => {
+    const mockModelName = "Test Model 3000";
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: mockModelName, provider: "test", slug: "test-model-3000" },
+            ],
+          }
+        }
+      },
+      storageMock: {
+          downloadResult: (bucket, path) => {
+              if (path.includes("header-context-id")) {
+                  return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
+              }
+              if (path.includes("summary_template.md")) {
+                  return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
+              }
+              return Promise.resolve({ data: null, error: new Error("File not found in mock") });
+          },
+      }
+    };
+    const { client } = setup(config);
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-turn-resource-id-metadata",
+      project_id: defaultProject.id,
+      file_name: "turn_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/turn_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock turn prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "turn_prompt",
+      source_contribution_id: null,
+      feedback_type: "test",
+      target_contribution_id: null,
+    };
+    mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+    
+    // Type assertion to access payload properties safely
+    if (!isRecord(mockTurnJob.payload)) {
+      throw new Error("Test setup error: mockTurnJob.payload is not a record.");
+    }
+
+    try {
+      const deps: AssembleTurnPromptDeps = {
+        dbClient: client,
+        job: mockTurnJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+      };
+      await assembleTurnPrompt(deps);
+
+      assert(mockFileManager.uploadAndRegisterFile.calls.length === 1, "uploadAndRegisterFile should be called once");
+      const uploadContext = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
+
+      // Assert that we are using the ModelContributionUploadContext
+      assert('contributionMetadata' in uploadContext, "The upload context for a TurnPrompt must include contributionMetadata.");
+      
+      const metadata = uploadContext.contributionMetadata;
+      assert(metadata, "Contribution metadata should not be null or undefined.");
+      assertEquals(metadata.sessionId, defaultSession.id);
+      assertEquals(metadata.modelIdUsed, mockTurnJob.payload.model_id);
+      assertEquals(metadata.modelNameDisplay, mockModelName);
+      assertEquals(metadata.stageSlug, defaultStage.slug);
+      assertEquals(metadata.iterationNumber, defaultSession.iteration_count);
+      // Turn prompts are self-contained and don't have a separate raw JSON response.
+      assertEquals(metadata.rawJsonResponseContent, null);
 
     } finally {
       teardown();

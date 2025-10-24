@@ -54,10 +54,11 @@ const MOCK_MODEL_ID = 'model-id-1';
       slug: 'thesis',
       display_name: 'Thesis',
       default_system_prompt_id: 'prompt-id-thesis',
-      input_artifact_rules: {},
       created_at: new Date().toISOString(),
       description: null,
-      expected_output_artifacts: {},
+      expected_output_template_ids: [],
+      active_recipe_instance_id: null,
+      recipe_template_id: null
   };
 
 // Helper function to create consistent test session data
@@ -95,13 +96,12 @@ function mockStageTransitionData(
       slug: 'antithesis',
       display_name: 'Antithesis',
       default_system_prompt_id: systemPromptId,
-      input_artifact_rules: { 
-        sources: [
-          { type: 'contribution', stage_slug: 'thesis', required: false },
-          { type: 'feedback', stage_slug: 'thesis', required: true }
-        ] 
-      },
-                        system_prompts: { 
+      created_at: new Date().toISOString(),
+      description: null,
+      expected_output_template_ids: [],
+      active_recipe_instance_id: null,
+      recipe_template_id: null,
+      system_prompts: { 
         id: systemPromptId,
         prompt_text: systemPromptText
       },
@@ -181,7 +181,7 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
           select: { data: [{ id: 'fe6ec604-3cc1-41e5-ad75-8044247476c4', prompt_text: 'Mock system prompt text' }], error: null }
         },
         'domain_specific_prompt_overlays': {
-          select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null }
+          select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide' } }], error: null }
         },
         'dialectic_project_resources': {
           select: { data: null, error: new Error("Simulated DB error") }
@@ -250,7 +250,7 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
           select: { data: [{ id: 'fe6ec604-3cc1-41e5-ad75-8044247476c4', prompt_text: 'Mock system prompt text' }], error: null }
         },
         'domain_specific_prompt_overlays': {
-          select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null }
+          select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide' } }], error: null }
         },
         'dialectic_contributions': {
           select: { data: [
@@ -308,7 +308,6 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
     assertEquals(status, 200, `Test 6.1 failed. Error: ${error?.message}`);
 
     assertEquals(data!.updatedSession.status, 'pending_antithesis');
-    assertExists(data!.nextStageSeedPromptPath);
 
     const uploadCalls = mockFileManager.uploadAndRegisterFile.calls;
     assert(uploadCalls.some((call: any) => {
@@ -365,7 +364,7 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
           select: { data: [{ id: 'fe6ec604-3cc1-41e5-ad75-8044247476c4', prompt_text: 'Mock system prompt text' }], error: null }
         },
         'domain_specific_prompt_overlays': {
-          select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null }
+          select: { data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide' } }], error: null }
         },
         'dialectic_contributions': {
           select: { data: [], error: null }
@@ -427,6 +426,5 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
 
     assertEquals(status, 200, `Test 6.4 failed. Error: ${error?.message}`);
     assertEquals(data!.updatedSession.status, 'pending_antithesis');
-    assertExists(data!.nextStageSeedPromptPath, "Seed prompt file ID should exist");
   });
 });

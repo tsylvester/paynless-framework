@@ -9,12 +9,12 @@ import {
   type DialecticFeedback,
   type DialecticStage,
   type DialecticProject,
+  StartSessionRecipeStep,
 } from './dialectic.interface.ts';
-import type { PathContext } from '../_shared/types/file_manager.types.ts';
+import type { PathContext, UserFeedbackUploadContext } from '../_shared/types/file_manager.types.ts';
 import { PromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.ts";
-import { ProjectContext, SessionContext, StageContext } from "../_shared/prompt-assembler/prompt-assembler.interface.ts";
+import { AssembledPrompt, ProjectContext, SessionContext, StageContext } from "../_shared/prompt-assembler/prompt-assembler.interface.ts";
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
-import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 
 // Get storage bucket from environment variables, with a fallback for safety.
@@ -51,7 +51,7 @@ export async function submitStageResponses(
     };
   }
   
-  const { logger, fileManager } = dependencies;
+  const { logger, fileManager, promptAssembler } = dependencies;
   const userId = user?.id;
 
   if (!STORAGE_BUCKET) {
@@ -223,11 +223,11 @@ export async function submitStageResponses(
         mimeType: 'text/markdown',
         sizeBytes:
           new TextEncoder().encode(payload.userStageFeedback.content).length,
-        userId: userId || '', 
+        userId: userId || '',
         description: `Consolidated user feedback for stage: ${currentStage.display_name}, iteration: ${iterationNumber}`,
         feedbackTypeForDb: payload.userStageFeedback.feedbackType,
-        resourceDescriptionForDb: payload.userStageFeedback.resourceDescription, 
-      });
+        resourceDescriptionForDb: payload.userStageFeedback.resourceDescription,
+      } as UserFeedbackUploadContext);
 
     if (feedbackFileError || !feedbackFileRecord) {
       logger.error(
@@ -333,7 +333,6 @@ export async function submitStageResponses(
       data: {
         message: 'Stage responses submitted. Current stage is terminal.',
         updatedSession: updatedTerminalSession || sessionData, // return updated or original if update failed
-        nextStageSeedPromptPath: null,
         feedbackRecords: createdFeedbackRecords,
       },
       status: 200,
@@ -370,7 +369,11 @@ export async function submitStageResponses(
     return { error: { message: "Project configuration error: Missing or invalid dialectic domain name.", status: 500 }, status: 500 };
   }
 
-  const assembler = new PromptAssembler(dbClient, (bucket: string, path: string) => dependencies.downloadFromStorage(dbClient, bucket, path));
+  const assembler = promptAssembler || new PromptAssembler(
+    dbClient,
+    fileManager,
+    (bucket: string, path: string) => dependencies.downloadFromStorage(dbClient, bucket, path)
+);
 
   const projectContextForAssembler: ProjectContext = {
       id: project.id, 
@@ -424,8 +427,15 @@ export async function submitStageResponses(
   }
   overlays = overlayRows as { overlay_values: ProjectContext['user_domain_overlay_values'] }[];
 
+  const startSessionRecipeStep: StartSessionRecipeStep = {
+    prompt_type: 'Seed',
+    step_number: 1,
+    step_name: 'Assemble Seed Prompt',
+  };
+
   const stageContextForAssembler: StageContext = {
     ...nextStageFull,
+    recipe_step: startSessionRecipeStep,
     system_prompts: systemPrompt ? { prompt_text: systemPrompt.prompt_text } : null,
     domain_specific_prompt_overlays: overlays,
   };
@@ -450,18 +460,18 @@ export async function submitStageResponses(
   }
   const projectInitialUserPrompt = initialUserPromptData.content; 
 
-  let assembledSeedPromptText: string;
+  let assembledSeedPrompt: AssembledPrompt;
   try {
-    assembledSeedPromptText = await assembler.assemble(
-      projectContextForAssembler,
-      sessionContextForAssembler,
-      stageContextForAssembler,
+    assembledSeedPrompt = await assembler.assemble({
+      project: projectContextForAssembler,
+      session: sessionContextForAssembler,
+      stage: stageContextForAssembler,
       projectInitialUserPrompt,
-      iterationNumber
-    );
+      iterationNumber,
+    });
     console.log(
       `[submitStageResponses DBG] Assembled seed prompt text:`,
-      assembledSeedPromptText
+      assembledSeedPrompt.promptContent
     );
   } catch (assemblyError) {
     logger.error(
@@ -490,59 +500,9 @@ export async function submitStageResponses(
     };
   }
 
-  if (!assembledSeedPromptText) {
-    logger.error("[submitStageResponses] Critical error: assembledSeedPromptText is null after assembling seed prompt.");
+  if (!assembledSeedPrompt || !assembledSeedPrompt.promptContent) {
+    logger.error("[submitStageResponses] Critical error: assembledSeedPrompt is null or has no content after assembling seed prompt.");
     return { error: { message: "Internal server error: Failed to assemble seed prompt.", status: 500 }, status: 500 };
-  }
-
-  const seedPromptFileName = `seed_prompt.md`;
-  const seedPromptPathContext: PathContext = {
-    projectId: project.id,
-    sessionId: payload.sessionId,
-    iteration: iterationNumber, 
-    stageSlug: nextStageFull.slug, // Use the slug of the NEXT stage
-    fileType: FileType.SeedPrompt,
-    originalFileName: seedPromptFileName,
-  };
-
-  const { record: seedPromptFileRecord, error: seedFileError } =
-    await fileManager.uploadAndRegisterFile({
-      pathContext: seedPromptPathContext,
-      fileContent: assembledSeedPromptText,
-      mimeType: 'text/markdown',
-      sizeBytes: new TextEncoder().encode(assembledSeedPromptText).length,
-      userId: userId || '',
-      description: formatResourceDescription({
-        type: 'seed_prompt',
-        session_id: payload.sessionId,
-        stage_slug: nextStageFull.slug,
-        iteration: iterationNumber,
-        original_file_name: seedPromptFileName,
-        project_id: project.id,
-      }),
-    });
-
-  if (seedFileError || !seedPromptFileRecord) {
-    logger.error(
-      `[submitStageResponses] Failed to save seed prompt file for next stage ${nextStageFull.slug}.`,
-      { error: seedFileError },
-    );
-    return {
-      error: { message: 'Failed to store seed prompt for next stage.', status: 500, details: seedFileError?.message },
-      status: 500,
-    };
-  }
-  logger.info(
-    `[submitStageResponses] Seed prompt for next stage ${nextStageFull.slug} saved: ${seedPromptFileRecord.id}`,
-  );
-
-  // Construct full path for nextStageSeedPromptPath
-  let fullSeedPromptPath: string | null = null;
-  if (seedPromptFileRecord && seedPromptFileRecord.storage_path && seedPromptFileRecord.file_name) {
-    const folder = seedPromptFileRecord.storage_path;
-    const file = seedPromptFileRecord.file_name;
-    // Ensure single slash between folder and file
-    fullSeedPromptPath = folder.endsWith('/') ? folder + file : folder + '/' + file;
   }
 
   // 6. Update session status to pending for the next stage
@@ -583,7 +543,6 @@ export async function submitStageResponses(
     data: {
       message: 'Stage responses submitted successfully. Next stage pending.',
       updatedSession: updatedSession || sessionData, 
-      nextStageSeedPromptPath: fullSeedPromptPath, // Use the constructed full path
       feedbackRecords: createdFeedbackRecords,
     },
     status: 200,

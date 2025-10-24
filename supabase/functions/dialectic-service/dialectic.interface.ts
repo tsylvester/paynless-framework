@@ -16,7 +16,8 @@ import type { DeleteStorageResult, DownloadStorageResult } from '../_shared/supa
 import type {
   FinishReason,
   FactoryDependencies,
-  AiProviderAdapterInstance
+  AiProviderAdapterInstance,
+  AiProviderAdapter
 } from '../_shared/types.ts';
 import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
@@ -67,7 +68,23 @@ export type DialecticStageRecipeStep =
     outputs_required: OutputRule[];
   };
 
-export type DialecticRecipeStep = DialecticRecipeTemplateStep | DialecticStageRecipeStep;
+export type StartSessionRecipeStep = {
+  prompt_type: 'Seed';
+  step_number: 1; 
+  step_name: 'Assemble Seed Prompt'; 
+  granularity_strategy?: null;
+  branch_key?: null;
+  parallel_group?: null;
+  output_type?: 'seed_prompt';
+  description?: 'Assemble the seed prompt for the session.';
+  inputs_required?: [];
+  outputs_required?: [];
+  inputs_relevance?: [];
+  prompt_template_id?: null;
+  job_type?: null;
+};
+
+export type DialecticRecipeStep = DialecticRecipeTemplateStep | DialecticStageRecipeStep | StartSessionRecipeStep;
 
 export type StageWithRecipeSteps = Tables<'dialectic_stages'> & {
   steps: DialecticRecipeStep[];
@@ -724,7 +741,6 @@ export interface SubmitStageResponsesResponse {
   message: string;
   updatedSession: DialecticSession;
   feedbackRecords: DialecticFeedback[];
-  nextStageSeedPromptPath: string | null;
 }
 
 // Add new types for handling artifact assembly rules
@@ -756,6 +772,7 @@ export interface SubmitStageResponsesDependencies {
     downloadFromStorage: typeof downloadFromStorage;
     logger: ILogger;
     fileManager: IFileManager;
+    promptAssembler?: IPromptAssembler;
     indexingService: IIndexingService;
     embeddingClient: IEmbeddingClient;
 }
@@ -1054,4 +1071,13 @@ export type PlanJobInsert = JobInsert & {
           status: string;
       }
   }
+}
+export interface StartSessionDeps {
+  logger: ILogger;
+  fileManager: IFileManager;
+  promptAssembler: IPromptAssembler;
+  randomUUID: () => string;
+  getAiProviderAdapter: (deps: FactoryDependencies) => AiProviderAdapterInstance | null;
+  providerMap?: Record<string, AiProviderAdapter>;
+  embeddingApiKey?: string;
 }
