@@ -17,6 +17,7 @@ import {
   isRelevanceRule,
   isOutputRule,
 } from './type_guards.dialectic.recipe.ts';
+import { FileType } from '../../types/file_manager.types.ts';
 
 Deno.test('Type Guard: isDialecticRecipeTemplateStep', async (t) => {
   const baseValidStep: DialecticRecipeTemplateStep = {
@@ -31,7 +32,7 @@ Deno.test('Type Guard: isDialecticRecipeTemplateStep', async (t) => {
     step_name: 'Test Step',
     job_type: 'EXECUTE',
     prompt_type: 'Turn',
-    output_type: 'business_case',
+    output_type: FileType.business_case,
     granularity_strategy: 'all_to_one',
     inputs_required: [],
     inputs_relevance: [],
@@ -99,7 +100,7 @@ Deno.test('Type Guard: isDialecticStageRecipeStep', async (t) => {
     step_name: 'Test Stage Step',
     job_type: 'EXECUTE',
     prompt_type: 'Turn',
-    output_type: 'business_case',
+    output_type: FileType.business_case,
     granularity_strategy: 'all_to_one',
     inputs_required: [],
     inputs_relevance: [],
@@ -146,7 +147,7 @@ Deno.test('Type Guard: isDialecticRecipeStep (Union)', async (t) => {
         step_name: 'Test Step',
         job_type: 'EXECUTE',
         prompt_type: 'Turn',
-        output_type: 'business_case',
+        output_type: FileType.business_case,
         granularity_strategy: 'all_to_one',
         inputs_required: [],
         inputs_relevance: [],
@@ -167,7 +168,7 @@ Deno.test('Type Guard: isDialecticRecipeStep (Union)', async (t) => {
         step_name: 'Test Stage Step',
         job_type: 'EXECUTE',
         prompt_type: 'Turn',
-        output_type: 'business_case',
+        output_type: FileType.business_case,
         granularity_strategy: 'all_to_one',
         inputs_required: [],
         inputs_relevance: [],

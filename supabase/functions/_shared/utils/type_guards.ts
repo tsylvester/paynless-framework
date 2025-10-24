@@ -21,7 +21,6 @@ export {
     isDialecticJobRowArray, 
     isDialecticPlanJobPayload, 
     isDialecticStageRecipe, 
-    isDialecticStepInfo, 
     isDocumentRelationships, 
     isFailedAttemptError, 
     isFailedAttemptErrorArray, 

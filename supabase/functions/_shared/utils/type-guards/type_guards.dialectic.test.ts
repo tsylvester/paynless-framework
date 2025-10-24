@@ -21,7 +21,6 @@ import {
     isDialecticPlanJobPayload,
     isDialecticExecuteJobPayload,
     isContinuablePayload,
-    isDialecticStepInfo,
     isContributionType,
     isDialecticChunkMetadata,
     isDocumentRelationships,
@@ -119,7 +118,7 @@ Deno.test('Type Guard: hasProcessingStrategy', async (t) => {
                 step_key: 'key',
                 step_slug: 'slug',
                 step_name: 'name',
-                output_type: 'type',
+                output_type: FileType.system_architecture_overview,
                 granularity_strategy: 'per_source_document',
                 inputs_required: [],
                 inputs_relevance: [],
@@ -155,7 +154,7 @@ Deno.test('Type Guard: hasProcessingStrategy', async (t) => {
                 step_key: 'key',
                 step_slug: 'slug',
                 step_name: 'name',
-                output_type: 'type',
+                output_type: FileType.AssembledDocumentJson,
                 granularity_strategy: 'per_source_document',
                 inputs_required: [],
                 inputs_relevance: [],
@@ -213,7 +212,7 @@ Deno.test('Type Guard: hasStepsRecipe', async (t) => {
                     step_key: 'key',
                     step_slug: 'slug',
                     step_name: 'name',
-                    output_type: 'type',
+                    output_type: FileType.AssembledDocumentJson,
                     granularity_strategy: 'per_source_document',
                     inputs_required: [],
                     inputs_relevance: [],
@@ -250,7 +249,7 @@ Deno.test('Type Guard: hasStepsRecipe', async (t) => {
                     step_key: 'key',
                     step_slug: 'slug',
                     step_name: 'name',
-                    output_type: 'type',
+                    output_type: FileType.AssembledDocumentJson,
                     granularity_strategy: 'per_source_document',
                     inputs_required: [],
                     inputs_relevance: [],
@@ -449,7 +448,6 @@ Deno.test('Type Guard: isContributionType', async (t) => {
         'paralysis',
         'pairwise_synthesis_chunk',
         'reduced_synthesis',
-        'final_synthesis'
     ];
 
     for (const type of validTypes) {
@@ -646,7 +644,6 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
         stageSlug: 'thesis',
         iterationNumber: 1,
         job_type: 'execute',
-        step_info: { current_step: 1, total_steps: 1 },
         output_type: FileType.AssembledDocumentJson,
         canonicalPathParams: {
             contributionType: 'thesis',
@@ -654,6 +651,7 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
         inputs: {
             seed_prompt: 'resource-id-1',
         },
+        prompt_template_id: 'prompt-template-123',
     };
 
     await t.step('should return true for a valid payload and not throw', () => {
@@ -740,10 +738,6 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
     await t.step('should throw if job_type is not "execute"', () => {
         const p = { ...basePayload, job_type: 'plan' };
         assertThrows(() => isDialecticExecuteJobPayload(p), Error, "Invalid job_type: expected 'execute'");
-    });
-    await t.step('should throw if step_info is missing or invalid', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticExecuteJobPayload>).step_info;
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid step_info.');
     });
     await t.step('should throw if output_type is missing or invalid', () => {
         const p = { ...basePayload, output_type: 'invalid-type' as any };
@@ -1469,71 +1463,6 @@ Deno.test('Type Guard: isDialecticStageRecipe', async (t) => {
             ]
         };
         assert(!isDialecticStageRecipe(recipe));
-    });
-});
-
-Deno.test('Type Guard: isDialecticStepInfo', async (t) => {
-    await t.step('should return true for a valid step info object', () => {
-        const stepInfo = {
-            current_step: 1,
-            total_steps: 5,
-            step_key: 'planner-step-1',
-            step_slug: 'planner.header',
-            name: 'Generate Header Context',
-            prompt_template_name: 'thesis_planner_header_v1',
-            output_type: OutputType.HeaderContext,
-            document_key: FileType.HeaderContext,
-            branch_key: BranchKey.business_case,
-            parallel_group: 1,
-            granularity_strategy: 'one_to_one',
-            planner_metadata: {
-                recipe_template_id: 'template-1',
-                recipe_step_id: 'step-1',
-                stage_slug: 'thesis',
-                description: 'Planner step to produce header context',
-                dependencies: ['root'],
-                parallel_successors: ['branch-business-case'],
-            },
-        };
-        assert(isDialecticStepInfo(stepInfo));
-    });
-
-    await t.step('should return false if current_step is missing', () => {
-        const stepInfo = { total_steps: 5 };
-        assert(!isDialecticStepInfo(stepInfo));
-    });
-
-    await t.step('should return false if optional fields have wrong types', () => {
-        const stepInfo = {
-            current_step: 1,
-            total_steps: 5,
-            branch_key: 'not-a-branch',
-        };
-        assert(!isDialecticStepInfo(stepInfo));
-    });
-
-    await t.step('should return false if total_steps is not a number', () => {
-        const stepInfo = { current_step: 1, total_steps: '5' };
-        assert(!isDialecticStepInfo(stepInfo));
-    });
-
-    await t.step('should return false for a non-object', () => {
-        assert(!isDialecticStepInfo(null));
-    });
-
-    await t.step('should return false if step_key has wrong type', () => {
-        const stepInfo = { current_step: 1, total_steps: 5, step_key: 123 };
-        assert(!isDialecticStepInfo(stepInfo));
-    });
-
-    await t.step('should return false if branch_key is not a valid BranchKey enum', () => {
-        const stepInfo = { current_step: 1, total_steps: 5, branch_key: 'not_a_real_branch_key' };
-        assert(!isDialecticStepInfo(stepInfo));
-    });
-
-    await t.step('should return false if parallel_group has wrong type', () => {
-        const stepInfo = { current_step: 1, total_steps: 5, parallel_group: 'a' };
-        assert(!isDialecticStepInfo(stepInfo));
     });
 });
 

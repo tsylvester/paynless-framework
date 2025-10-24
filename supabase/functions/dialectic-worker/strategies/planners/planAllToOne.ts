@@ -1,6 +1,7 @@
 // supabase/functions/dialectic-worker/strategies/planners/planAllToOne.ts
 import type { DialecticExecuteJobPayload, GranularityPlannerFn } from "../../../dialectic-service/dialectic.interface.ts";
 import { createCanonicalPathParams } from "../canonical_context_builder.ts";
+import { isDialecticStageRecipeStep } from "../../../_shared/utils/type-guards/type_guards.dialectic.recipe.ts";
 
 export const planAllToOne: GranularityPlannerFn = (
     sourceDocs,
@@ -9,6 +10,16 @@ export const planAllToOne: GranularityPlannerFn = (
 ) => {
     if (sourceDocs.length === 0) {
         return [];
+    }
+
+    if (!isDialecticStageRecipeStep(recipeStep) || !recipeStep.prompt_template_id) {
+        throw new Error(
+            `planAllToOne received an invalid recipe step. Expected a DialecticStageRecipeStep with a prompt_template_id. Received: ${JSON.stringify(
+                recipeStep,
+                null,
+                2
+            )}`
+        );
     }
 
     const documentIds = sourceDocs.map(doc => doc.id);
@@ -20,12 +31,11 @@ export const planAllToOne: GranularityPlannerFn = (
         stageSlug: parentJob.payload.stageSlug,
         iterationNumber: parentJob.payload.iterationNumber,
         model_id: parentJob.payload.model_id,
-        step_info: parentJob.payload.step_info,
         output_type: recipeStep.output_type,
         canonicalPathParams: createCanonicalPathParams(sourceDocs, recipeStep.output_type, sourceDocs[0]),
         // Set job-specific properties
         job_type: 'execute',
-        prompt_template_name: recipeStep.prompt_template_name,
+        prompt_template_id: recipeStep.prompt_template_id,
         inputs: {
             document_ids: documentIds,
         },

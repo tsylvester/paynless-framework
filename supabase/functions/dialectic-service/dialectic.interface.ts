@@ -43,7 +43,7 @@ export type GranularityStrategy =
 export type DialecticRecipeTemplateStep =
   & Omit<
     Tables<'dialectic_recipe_template_steps'>,
-    'job_type' | 'prompt_type' | 'granularity_strategy' | 'inputs_required' | 'inputs_relevance' | 'outputs_required'
+    'job_type' | 'prompt_type' | 'granularity_strategy' | 'inputs_required' | 'inputs_relevance' | 'outputs_required' | 'output_type'
   >
   & {
     job_type: JobType;
@@ -52,12 +52,13 @@ export type DialecticRecipeTemplateStep =
     inputs_required: InputRule[];
     inputs_relevance: RelevanceRule[];
     outputs_required: OutputRule[];
+    output_type: ModelContributionFileTypes;
   };
 
 export type DialecticStageRecipeStep =
   & Omit<
     Tables<'dialectic_stage_recipe_steps'>,
-    'job_type' | 'prompt_type' | 'granularity_strategy' | 'inputs_required' | 'inputs_relevance' | 'outputs_required'
+    'job_type' | 'prompt_type' | 'granularity_strategy' | 'inputs_required' | 'inputs_relevance' | 'outputs_required' | 'output_type'
   >
   & {
     job_type: JobType;
@@ -66,6 +67,7 @@ export type DialecticStageRecipeStep =
     inputs_required: InputRule[];
     inputs_relevance: RelevanceRule[];
     outputs_required: OutputRule[];
+    output_type: ModelContributionFileTypes;
   };
 
 export type StartSessionRecipeStep = {
@@ -170,7 +172,6 @@ export type ContributionType =
   | 'paralysis'
   | 'pairwise_synthesis_chunk'
   | 'reduced_synthesis'
-  | 'final_synthesis'
   | 'rag_context_summary';
 
 
@@ -478,21 +479,6 @@ export interface DialecticStepPlannerMetadata {
     [key: string]: unknown;
 }
 
-export interface DialecticStepInfo {
-    current_step: number;
-    total_steps: number;
-    step_key?: string;
-    step_slug?: string;
-    name?: string;
-    prompt_template_name?: string;
-    output_type?: OutputType;
-    document_key?: FileType;
-    branch_key?: BranchKey;
-    parallel_group?: number;
-    granularity_strategy?: DialecticRecipeStep['granularity_strategy'];
-    planner_metadata?: DialecticStepPlannerMetadata;
-}
-
 /**
  * The base payload containing information common to all job types.
  */
@@ -512,7 +498,6 @@ export interface DialecticSimpleJobPayload extends DialecticBaseJobPayload {
  */
 export interface DialecticPlanJobPayload extends DialecticBaseJobPayload {
     job_type: JobType;
-    step_info: DialecticStepInfo;
 }
 
 /**
@@ -534,8 +519,7 @@ export type DocumentRelationships = {
  */
 export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
     job_type: 'execute';
-    step_info: DialecticStepInfo; // Pass down for context
-    prompt_template_name?: string;
+    prompt_template_id: string;
     output_type: ModelContributionFileTypes; // The type of artifact this job will produce
     canonicalPathParams: CanonicalPathParams; // The new formal contract for path context
     inputs: {

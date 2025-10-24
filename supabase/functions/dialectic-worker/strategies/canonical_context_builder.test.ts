@@ -1,7 +1,8 @@
 // supabase/functions/dialectic-worker/strategies/canonical_context_builder.test.ts
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createCanonicalPathParams } from "./canonical_context_builder.ts";
 import { SourceDocument } from "../../dialectic-service/dialectic.interface.ts";
+import { FileType } from "../../_shared/types/file_manager.types.ts";
 
 const mockSourceDocument1: SourceDocument = {
     model_name: 'a-model',
@@ -219,4 +220,22 @@ Deno.test('createCanonicalPathParams handles empty source docs array', () => {
     assertEquals(params.sourceAnchorType, 'thesis');
     assertEquals(params.sourceAnchorModelSlug, 'a-model');
     assertEquals(params.contributionType, 'thesis');
+});
+
+Deno.test('createCanonicalPathParams correctly handles a valid FileType input', () => {
+    const sourceDocs: SourceDocument[] = [mockSourceDocument1];
+    const params = createCanonicalPathParams(sourceDocs, FileType.business_case, mockSourceDocument1);
+    assertEquals(params.contributionType, 'thesis');
+});
+
+
+Deno.test('createCanonicalPathParams throws an error for unmappable FileType', () => {
+    const sourceDocs: SourceDocument[] = [mockSourceDocument1];
+    assertThrows(
+        () => {
+            createCanonicalPathParams(sourceDocs, FileType.ProjectReadme, mockSourceDocument1);
+        },
+        Error,
+        "Cannot create CanonicalPathParams for a FileType that does not map to a ContributionType."
+    );
 });

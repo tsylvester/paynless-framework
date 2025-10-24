@@ -10,7 +10,6 @@ import {
     DialecticStageRecipe,
     DialecticPlanJobPayload,
     DialecticExecuteJobPayload,
-    DialecticStepInfo,
     ContributionType,
     DocumentRelationships,
     JobInsert,
@@ -42,7 +41,6 @@ const validContributionTypes: ContributionType[] = [
     'paralysis',
     'pairwise_synthesis_chunk',
     'reduced_synthesis',
-    'final_synthesis',
 ];
 
 const validBranchKeys = new Set<string>(Object.values(BranchKey));
@@ -450,7 +448,6 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
 
     // Required ExecuteJobPayload properties
     if (payload.job_type !== 'execute') throw new Error("Invalid job_type: expected 'execute'");
-    if (!('step_info' in payload) || !isDialecticStepInfo(payload.step_info)) throw new Error('Missing or invalid step_info.');
     if (!('output_type' in payload) || !isFileType(payload.output_type)) throw new Error('Missing or invalid output_type.');
     if (!('canonicalPathParams' in payload) || !isRecord(payload.canonicalPathParams) || !('contributionType' in payload.canonicalPathParams)) throw new Error('Missing or invalid canonicalPathParams.');
     if (!('inputs' in payload) || !isRecord(payload.inputs)) throw new Error('Missing or invalid inputs.');
@@ -707,51 +704,6 @@ export function isDialecticStageRecipe(value: unknown): value is DialecticStageR
                 }
             }
         }
-    }
-
-    return true;
-}
-
-export function isDialecticStepInfo(obj: unknown): obj is DialecticStepInfo {
-    if (!isRecord(obj)) return false;
-    if (typeof obj.current_step !== 'number' || typeof obj.total_steps !== 'number') {
-        return false;
-    }
-
-    if ('step_key' in obj && obj.step_key !== undefined && typeof obj.step_key !== 'string') {
-        return false;
-    }
-
-    if ('step_slug' in obj && obj.step_slug !== undefined && typeof obj.step_slug !== 'string') {
-        return false;
-    }
-
-    if ('name' in obj && obj.name !== undefined && typeof obj.name !== 'string') {
-        return false;
-    }
-
-    if ('prompt_template_name' in obj && obj.prompt_template_name !== undefined && typeof obj.prompt_template_name !== 'string') {
-        return false;
-    }
-
-    if ('output_type' in obj && obj.output_type !== undefined && (typeof obj.output_type !== 'string' || !validOutputTypes.has(obj.output_type))) {
-        return false;
-    }
-
-    if ('document_key' in obj && obj.document_key !== undefined && (typeof obj.document_key !== 'string' || !isFileType(obj.document_key))) {
-        return false;
-    }
-
-    if ('branch_key' in obj && obj.branch_key !== undefined && (typeof obj.branch_key !== 'string' || !validBranchKeys.has(obj.branch_key))) {
-        return false;
-    }
-
-    if ('parallel_group' in obj && obj.parallel_group !== undefined && typeof obj.parallel_group !== 'number') {
-        return false;
-    }
-
-    if ('planner_metadata' in obj && obj.planner_metadata !== undefined && obj.planner_metadata !== null && !isPlannerMetadata(obj.planner_metadata)) {
-        return false;
     }
 
     return true;

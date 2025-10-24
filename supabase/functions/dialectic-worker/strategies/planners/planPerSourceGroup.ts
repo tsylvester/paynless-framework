@@ -2,12 +2,20 @@
 import type { DialecticExecuteJobPayload, GranularityPlannerFn, SourceDocument } from "../../../dialectic-service/dialectic.interface.ts";
 
 import { createCanonicalPathParams } from "../canonical_context_builder.ts";
+import { FileType } from "../../../_shared/types/file_manager.types.ts";
 
 export const planPerSourceGroup: GranularityPlannerFn = (
     sourceDocs,
     parentJob,
     recipeStep
 ) => {
+    if (!recipeStep.output_type) {
+        throw new Error('planPerSourceGroup requires a recipe step with a defined output_type.');
+    }
+    if (!recipeStep.prompt_template_id) {
+        throw new Error('planPerSourceGroup requires a recipe step with a defined prompt_template_id.');
+    }
+
     const childPayloads: DialecticExecuteJobPayload[] = [];
     
     // 1. Group documents by their source_group relationship
@@ -37,18 +45,17 @@ export const planPerSourceGroup: GranularityPlannerFn = (
             stageSlug: parentJob.payload.stageSlug,
             iterationNumber: parentJob.payload.iterationNumber,
             model_id: parentJob.payload.model_id,
-            step_info: parentJob.payload.step_info,
 
             // Set job-specific properties
             job_type: 'execute',
-            prompt_template_name: recipeStep.prompt_template_name,
+            prompt_template_id: recipeStep.prompt_template_id,
             output_type: recipeStep.output_type,
             canonicalPathParams: createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorDoc!),
             document_relationships: { source_group: groupId },
             inputs: {
                 document_ids: documentIds,
             },
-            isIntermediate: true,
+            isIntermediate: recipeStep.output_type !== FileType.Synthesis,
             walletId: parentJob.payload.walletId,
         };
 

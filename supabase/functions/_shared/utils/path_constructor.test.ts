@@ -403,7 +403,6 @@ Deno.test('constructStoragePath', async (t) => {
     const antithesisContext: PathContext = { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.ModelContributionMain, sourceModelSlugs: ['claude-3-opus'], sourceAttemptCount: 0 };
     const pairwiseContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'pairwise_synthesis_chunk', fileType: FileType.ModelContributionMain };
     const reducedContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'reduced_synthesis', fileType: FileType.ModelContributionMain };
-    const finalContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'final_synthesis', fileType: FileType.ModelContributionMain };
     const parenthesisContext: PathContext = { ...baseContext, stageSlug: 'parenthesis', contributionType: 'parenthesis', fileType: FileType.ModelContributionMain };
     const paralysisContext: PathContext = { ...baseContext, stageSlug: 'paralysis', contributionType: 'paralysis', fileType: FileType.ModelContributionMain };
 
@@ -696,12 +695,6 @@ Deno.test('constructStoragePath', async (t) => {
         assertEquals(fileName, 'gpt-4-turbo_reducing_thesis_by_claude-3-opus_0_reduced_synthesis.md');
     });
     
-    await t.step('constructs path for final_synthesis', () => {
-        const { storagePath, fileName } = constructStoragePath(finalContext);
-        assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis`);
-        assertEquals(fileName, 'gpt-4-turbo_0_final_synthesis.md');
-    });
-
     await t.step('constructs path for parenthesis', () => {
         const { storagePath, fileName } = constructStoragePath(parenthesisContext);
         assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis`);
@@ -720,7 +713,6 @@ Deno.test('constructStoragePath', async (t) => {
     const antithesisRawContext: PathContext = { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.ModelContributionRawJson, sourceModelSlugs: ['claude-3-opus'], sourceAttemptCount: 0 };
     const pairwiseRawContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'pairwise_synthesis_chunk', fileType: FileType.ModelContributionRawJson };
     const reducedRawContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'reduced_synthesis', fileType: FileType.ModelContributionRawJson };
-    const finalSynthesisRawContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'final_synthesis', fileType: FileType.ModelContributionRawJson };
     const parenthesisRawContext: PathContext = { ...baseContext, stageSlug: 'parenthesis', contributionType: 'parenthesis', fileType: FileType.ModelContributionRawJson };
     const paralysisRawContext: PathContext = { ...baseContext, stageSlug: 'paralysis', contributionType: 'paralysis', fileType: FileType.ModelContributionRawJson };
 
@@ -756,12 +748,6 @@ Deno.test('constructStoragePath', async (t) => {
         const { storagePath, fileName } = constructStoragePath(reducedRawContext);
         assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/raw_responses`);
         assertEquals(fileName, 'gpt-4-turbo_reducing_thesis_by_claude-3-opus_0_reduced_synthesis_raw.json');
-    });
-
-    await t.step('constructs raw path for final_synthesis', () => {
-        const { storagePath, fileName } = constructStoragePath(finalSynthesisRawContext);
-        assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/raw_responses`);
-        assertEquals(fileName, 'gpt-4-turbo_0_final_synthesis_raw.json');
     });
 
     await t.step('constructs raw path for parenthesis', () => {

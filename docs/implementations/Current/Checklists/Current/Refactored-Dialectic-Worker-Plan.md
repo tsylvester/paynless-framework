@@ -395,37 +395,60 @@ graph LR
 # Revised Implementation Plan
 
 *   `[ ]` 1. `[REFACTOR]` Phase 1: Refactor Low-Level Planner Strategies.
-    *   `[ ]` 1.a. Refactor `planAllToOne.ts`.
-        *   `[ ]` 1.a.i. `[TEST-UNIT]` In `planAllToOne.test.ts`, update the tests to establish the RED state. The tests must prove that the function fails with its current implementation due to outdated type contracts. Specifically:
+    *   `[✅]` 1.a. `[REFACTOR]` Implement `FileType` to `ContributionType` Mapping.
+        *   **Objective**: To create a utility that translates a specific `FileType` into its corresponding semantic `ContributionType`, resolving a critical type gap between recipe definitions and path construction logic.
+        *   `[✅]` 1.a.i. `[TEST-UNIT]` In a **new** test file, `supabase/functions/_shared/utils/type_mapper.test.ts`, write the complete and comprehensive test suite for the `getContributionTypeFromFileType` function.
+            *   This test must define the entire contract for the new function. It will fail to run because the source file and function do not yet exist, proving the code is incomplete.
+            *   The test must import the (not-yet-created) `getContributionTypeFromFileType` function.
+            *   The test must iterate over *every* value of the `FileType` enum, asserting that all `ModelContributionFileTypes` map to a valid `ContributionType`, returning the `ContributionType` of the input `FileType` if it is a `ModelContributionFileTypes` member, and all other `FileType` values map to `null` or `undefined`.
+        *   `[✅]` 1.a.ii. `[BE]` In a **new** file, `supabase/functions/_shared/utils/type_mapper.ts`, create and implement the `getContributionTypeFromFileType` function and its required mapping object to make the test from the previous step pass.
+        *   `[✅]` 1.a.iii. `[TEST-UNIT]` In `supabase/functions/dialectic-worker/strategies/canonical_context_builder.test.ts`, **update** the tests to establish the RED state for the new polymorphic behavior.
+            *   Preserve the existing tests to prove that calls using a `ContributionType` remain valid (backwards compatibility).
+            *   Add a **new test case** that passes a mappable `FileType` (e.g., `FileType.business_case`) and asserts that the correct `CanonicalPathParams` object is returned. This test will fail because the function signature and internal logic are not yet updated.
+            *   Ensure the test case that proves the function throws an error for an unmappable `FileType` (e.g., `FileType.ProjectReadme`) is still present and correct.
+        *   `[✅]` 1.a.iv. `[BE]` In `supabase/functions/dialectic-worker/strategies/canonical_context_builder.ts`, refactor the `createCanonicalPathParams` function to achieve the GREEN state.
+            *   Change the function signature to accept `outputType: FileType | ContributionType`.
+            *   Implement a runtime type guard to check if the `outputType` is a member of the `FileType` enum.
+            *   If it is a `FileType`, call `getContributionTypeFromFileType` to get the semantic `ContributionType`. If the result is `null`, throw a descriptive runtime error.
+            *   If it is already a `ContributionType`, use it directly.
+            *   Use the resolved `ContributionType` to construct and return the `CanonicalPathParams` object, ensuring all old and new tests pass.
+    *   `[✅]` 1.b. Refactor `planAllToOne.ts`.
+        *   `[✅]` 1.b.i. `[TEST-UNIT]` In `planAllToOne.test.ts`, update the tests to establish the RED state. The tests must prove that the function fails with its current implementation due to outdated type contracts. Specifically:
             *   Update mock `DialecticRecipeStep` objects to use `prompt_template_id` instead of the deprecated `prompt_template_name`.
             *   Ensure the mock `output_type` property is a valid `ModelContributionFileTypes`, not `string | undefined`.
             *   Assert that the function returns a `DialecticExecuteJobPayload` where `output_type` is correctly assigned and the `prompt_template_name` property is absent, while `prompt_template_id` is used correctly if present.
-        *   `[ ]` 1.a.ii. `[BE]` In `planAllToOne.ts`, refactor the implementation to achieve the GREEN state.
+        *   `[✅]` 1.b.ii. `[BE]` In `planAllToOne.ts`, refactor the implementation to achieve the GREEN state.
             *   Modify the logic to read `recipeStep.prompt_template_id` instead of `recipeStep.prompt_template_name`.
             *   Ensure `recipeStep.output_type` is correctly handled and passed to `createCanonicalPathParams` and the returned payload, resolving any type mismatches between `string | undefined` and `ModelContributionFileTypes` or `ContributionType`.
             *   Ensure all tests written in the previous step now pass.
-    *   `[ ]` 1.b. Refactor `planPairwiseByOrigin.ts`.
-        *   `[ ]` 1.b.i. `[TEST-UNIT]` In `planPairwiseByOrigin.test.ts`, update the tests to establish the RED state.
+    *   `[✅]` 1.c. Refactor `planPairwiseByOrigin.ts`.
+        *   `[✅]` 1.c.i. `[TEST-UNIT]` In `planPairwiseByOrigin.test.ts`, update the tests to establish the RED state.
             *   Update mock `DialecticRecipeStep` objects to use `prompt_template_id` instead of `prompt_template_name`.
             *   Ensure the mock `output_type` is a valid `ModelContributionFileTypes`.
             *   Assert that the function returns job payloads that correctly use `prompt_template_id` and have a valid `output_type`.
-        *   `[ ]` 1.b.ii. `[BE]` In `planPairwiseByOrigin.ts`, refactor the implementation to achieve the GREEN state.
+        *   `[✅]` 1.c.ii. `[BE]` In `planPairwiseByOrigin.ts`, refactor the implementation to achieve the GREEN state.
             *   Modify the logic to use `recipeStep.prompt_template_id`.
             *   Correctly handle `recipeStep.output_type` to resolve type errors.
             *   Ensure all tests pass.
-    *   `[ ]` 1.c. Refactor `planPerModel.ts`.
-        *   `[ ]` 1.c.i. `[TEST-UNIT]` In `planPerModel.test.ts`, update tests to establish the RED state, focusing on `prompt_template_id` and `output_type` correctness in mocks and assertions.
-        *   `[ ]` 1.c.ii. `[BE]` In `planPerModel.ts`, implement changes to use `prompt_template_id` and correctly typed `output_type` to make tests pass.
-    *   `[ ]` 1.d. Refactor `planPerSourceDocument.ts`.
-        *   `[ ]` 1.d.i. `[TEST-UNIT]` In `planPerSourceDocument.test.ts`, update tests to establish the RED state, focusing on `prompt_template_id` and `output_type` correctness.
-        *   `[ ]` 1.d.ii. `[BE]` In `planPerSourceDocument.ts`, implement changes to use `prompt_template_id` and correctly typed `output_type` to make tests pass.
-    *   `[ ]` 1.e. Refactor `planPerSourceDocumentByLineage.ts`.
-        *   `[ ]` 1.e.i. `[TEST-UNIT]` In `planPerSourceDocumentByLineage.test.ts`, update tests to establish the RED state, focusing on `prompt_template_id` and `output_type` correctness.
-        *   `[ ]` 1.e.ii. `[BE]` In `planPerSourceDocumentByLineage.ts`, implement changes to use `prompt_template_id` and correctly typed `output_type` to make tests pass.
-    *   `[ ]` 1.f. Refactor `planPerSourceGroup.ts`.
-        *   `[ ]` 1.f.i. `[TEST-UNIT]` In `planPerSourceGroup.test.ts`, update tests to establish the RED state, focusing on `prompt_template_id` and `output_type` correctness.
-        *   `[ ]` 1.f.ii. `[BE]` In `planPerSourceGroup.ts`, implement changes to use `prompt_template_id` and correctly typed `output_type` to make tests pass.
-    *   `[ ]` 1.g. `[REFACTOR]` As `task_isolator.ts` and its delegated planner strategies are job producers, refactor them to stop including the deprecated `step_info` object in the payloads of any new jobs they create.
+    *   `[ ]` 1.d. Refactor `planPerModel.ts`.
+        *   `[✅]` 1.d.i. `[TEST-UNIT]` In a **new** test file, `supabase/functions/dialectic-worker/strategies/planners/planPerModel.test.ts`, write the complete and comprehensive test suite for the `planPerModel` function.
+            *   This test suite must define the entire contract for the `planPerModel` function, proving that its current implementation is flawed due to outdated data contracts.
+            *   It must import the `planPerModel` function.
+            *   It must include mock data for `SourceDocument[]`, a `DialecticJobRow` with a `DialecticPlanJobPayload`, and a `DialecticStageRecipeStep`.
+            *   The mock `DialecticStageRecipeStep` must use `prompt_template_id` instead of `prompt_template_name` and a correctly typed `output_type` from the `FileType` enum.
+            *   The tests must assert that the function returns a `DialecticExecuteJobPayload` that correctly uses `prompt_template_id` and has a valid `output_type`, and that the deprecated `prompt_template_name` is not present.
+            *   This new test file will fail when run against the current `planPerModel.ts` implementation, successfully establishing the RED state.
+        *   `[✅]` 1.d.ii. `[BE]` In `planPerModel.ts`, implement changes to use `prompt_template_id` and correctly typed `output_type` to make tests pass.
+    *   `[✅]` 1.e. Refactor `planPerSourceDocument.ts`.
+        *   `[✅]` 1.e.i. `[TEST-UNIT]` In `planPerSourceDocument.test.ts`, update tests to establish the RED state, focusing on `prompt_template_id` and `output_type` correctness.
+        *   `[✅]` 1.e.ii. `[BE]` In `planPerSourceDocument.ts`, implement changes to use `prompt_template_id` and correctly typed `output_type` to make tests pass.
+    *   `[✅]` 1.f. Refactor `planPerSourceDocumentByLineage.ts`.
+        *   `[✅]` 1.f.i. `[TEST-UNIT]` In `planPerSourceDocumentByLineage.test.ts`, update tests to establish the RED state, focusing on `prompt_template_id` and `output_type` correctness.
+        *   `[✅]` 1.f.ii. `[BE]` In `planPerSourceDocumentByLineage.ts`, implement changes to use `prompt_template_id` and correctly typed `output_type` to make tests pass.
+    *   `[ ]` 1.g. Refactor `planPerSourceGroup.ts`.
+        *   `[✅]` 1.g.i. `[TEST-UNIT]` In `planPerSourceGroup.test.ts`, update tests to establish the RED state, focusing on `prompt_template_id` and `output_type` correctness.
+        *   `[✅]` 1.g.ii. `[BE]` In `planPerSourceGroup.ts`, implement changes to use `prompt_template_id` and correctly typed `output_type` to make tests pass.
+    *   `[✅]` 1.h. `[REFACTOR]` As `task_isolator.ts` and its delegated planner strategies are job producers, refactor them to stop including the deprecated `step_info` object in the payloads of any new jobs they create.
 
 *   `[ ]` 2. `[REFACTOR]` Phase 2: Adapt `PromptAssembler` to Drive Workflow from Recipes.
     *   **Justification:** This change makes the `PromptAssembler` a pure consumer of the recipe's instructions, removing implicit logic and making the system easier to debug and extend.
