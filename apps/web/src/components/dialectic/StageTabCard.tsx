@@ -19,11 +19,11 @@ interface StageCardProps {
 
 // UI-only mapping of stage names
 const stageNameMap: Record<string, string> = {
-	thesis: "Explore",
-	antithesis: "Debate",
-	synthesis: "Refine",
-	parenthesis: "Reflect",
-	paralysis: "Reset",
+	thesis: "Proposal",
+	antithesis: "Review",
+	synthesis: "Refinement",
+	parenthesis: "Planning",
+	paralysis: "Implementation",
 };
 
 const getDisplayName = (stage: DialecticStage): string => {
