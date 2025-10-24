@@ -12,11 +12,11 @@ import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockSupabas
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database, Tables } from "../../types_db.ts";
 import { downloadFromStorage } from '../supabase_storage_utils.ts';
-import { DialecticRecipeStep } from "../../dialectic-service/dialectic.interface.ts";
+import { DialecticRecipeStep, DialecticRecipeTemplateStep } from "../../dialectic-service/dialectic.interface.ts";
+import { FileType } from "../types/file_manager.types.ts";
 
-const mockSimpleRecipeStep: DialecticRecipeStep = {
+const mockSimpleRecipeStep: DialecticRecipeTemplateStep = {
     id: 'step-123',
-    instance_id: 'instance-123',
     job_type: 'EXECUTE',
     step_key: 'simple-step',
     step_slug: 'simple-step-slug',
@@ -24,24 +24,20 @@ const mockSimpleRecipeStep: DialecticRecipeStep = {
     step_number: 1,
     prompt_type: 'Turn',
     granularity_strategy: 'per_source_document',
-    output_type: 'thesis',
+    output_type: FileType.HeaderContext,
     inputs_required: [],
     inputs_relevance: [],
     outputs_required: [],
-    config_override: {},
-    object_filter: {},
-    output_overrides: {},
-    is_skipped: false,
     parallel_group: null,
     prompt_template_id: null,
-    template_step_id: null,
     branch_key: null,
-    execution_order: 1,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    step_description: 'A simple step',
+    template_id: 'template-123',
 };
 
-const mockRecipeStepWithInputs: DialecticRecipeStep = {
+const mockRecipeStepWithInputs: DialecticRecipeTemplateStep = {
     ...mockSimpleRecipeStep,
     id: 'step-with-inputs',
     inputs_required: [
@@ -49,7 +45,7 @@ const mockRecipeStepWithInputs: DialecticRecipeStep = {
     ]
 };
 
-const mockComplexRecipeStep: DialecticRecipeStep = {
+const mockComplexRecipeStep: DialecticRecipeTemplateStep = {
     ...mockSimpleRecipeStep,
     id: 'step-456',
     job_type: 'PLAN',

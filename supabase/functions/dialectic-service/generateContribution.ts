@@ -105,8 +105,7 @@ export async function generateContributions(
         console.log('[generateContributions] Result of hasStepsRecipe:', hasStepsRecipe(stageDef));
 
         // 2. Calculate total steps from the recipe
-        const totalSteps = hasStepsRecipe(stageDef) ? stageDef.steps.length : 1;
-        
+        const totalSteps = stageDef.steps.length;
         const jobIds: string[] = [];
         for (const modelId of selectedModelIds) {
             // 3. Create a formal 'plan' payload for each job
@@ -116,11 +115,7 @@ export async function generateContributions(
                 model_id: modelId,
                 user_jwt: authToken,
                 job_type: jobType,
-                step_info: {
-                    current_step: 1,
-                    total_steps: totalSteps,
-                    status: 'pending',
-                }
+                total_steps: totalSteps,
             };
 
 

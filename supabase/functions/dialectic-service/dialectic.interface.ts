@@ -1049,11 +1049,6 @@ export type JobInsert = {
 export type PlanJobInsert = JobInsert & {
   payload: {
       job_type: JobType;
-      step_info: {
-          current_step: number;
-          total_steps: number;
-          status: string;
-      }
   }
 }
 export interface StartSessionDeps {

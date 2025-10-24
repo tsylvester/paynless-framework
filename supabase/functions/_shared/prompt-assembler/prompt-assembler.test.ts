@@ -26,14 +26,13 @@ import {
   type RenderPromptFunctionType,
   type DynamicContextVariables,
 } from "./prompt-assembler.interface.ts";
-import { IFileManager } from "../types/file_manager.types.ts";
+import { IFileManager, FileType } from "../types/file_manager.types.ts";
 import { FileManagerService } from "../services/file_manager.ts";
 import {
   DialecticJobRow,
   DialecticRecipeStep,
 } from "../../dialectic-service/dialectic.interface.ts";
 
-// --- START: Mocks ---
 
 // Mock implementations for standalone functions
 const mockAssembleSeedPrompt = (
@@ -119,7 +118,7 @@ const mockRecipeStep: DialecticRecipeStep = {
   branch_key: "main",
   config_override: {},
   execution_order: 1,
-  output_type: "text",
+  output_type: FileType.HeaderContext,
   parallel_group: null,
   step_key: "step-key",
   step_slug: "test-step",

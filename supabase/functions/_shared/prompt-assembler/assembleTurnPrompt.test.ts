@@ -73,7 +73,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     execution_order: 1,
-    output_type: "RenderedDocument",
+    output_type: FileType.RenderedDocument,
     parallel_group: null,
     config_override: null,
     job_type: "EXECUTE",
@@ -83,7 +83,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
     inputs_required: [{ type: "header_context", required: true }],
     inputs_relevance: [],
     outputs_required: [{
-      type: "RenderedDocument",
+      type: FileType.RenderedDocument,
       document_key: "executive_summary",
     }],
     prompt_template_id: "pt-exec-summary-123",

@@ -791,7 +791,6 @@ export async function executeModelCallAndSave(
             fileType: fileType,
             sessionId,
             iteration: iterationNumber,
-            stageSlug,
             modelSlug: providerDetails.api_identifier,
             attemptCount: job.attempt_count,
             ...restOfCanonicalPathParams,

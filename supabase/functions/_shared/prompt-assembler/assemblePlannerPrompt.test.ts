@@ -123,7 +123,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     job_type: "PLAN",
     prompt_type: "Planner",
     prompt_template_id: "spt-123",
-    output_type: "HeaderContext",
+    output_type: FileType.HeaderContext,
     granularity_strategy: "all_to_one",
     inputs_required: [],
     inputs_relevance: [],
@@ -157,12 +157,8 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     job_type: "PLAN",
     payload: {
       model_slug: "claude-3-opus",
-      step_info: {
-        current_step: 1,
-        total_steps: 1,
-        name: "GeneratePlan",
-        prompt_template_name: "synthesis-planner-prompt",
-      },
+      model_id: "model-claude-3-opus",
+      step_info: {},
     },
     session_id: defaultSession.id,
     stage_slug: defaultStage.slug,
@@ -769,7 +765,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     },
   );
 
-  await t.step("should throw an error if job payload or step_info is invalid",
+  await t.step("should throw an error if job payload is invalid",
     async () => {
       const {
         client,
@@ -1080,7 +1076,17 @@ Deno.test("assemblePlannerPrompt", async (t) => {
                 { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
               ],
             }
-          }
+          },
+          system_prompts: {
+            select: {
+              data: [{
+                id: "spt-123",
+                prompt_text: "any text",
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              }],
+            },
+          },
         }
       });
 

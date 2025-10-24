@@ -848,13 +848,6 @@ export function isPlanJobInsert(item: unknown): item is PlanJobInsert {
 
     if (!('job_type' in payload) || payload.job_type !== 'PLAN') return false;
 
-    if (!('step_info' in payload) || typeof payload.step_info !== 'object' || payload.step_info === null) return false;
-
-    const stepInfo = payload.step_info;
-    if (!('current_step' in stepInfo) || typeof stepInfo.current_step !== 'number') return false;
-    if (!('total_steps' in stepInfo) || typeof stepInfo.total_steps !== 'number') return false;
-    if (!('status' in stepInfo) || typeof stepInfo.status !== 'string') return false;
-
     return true;
 }
 // Validation function that safely converts Json to DialecticJobPayload

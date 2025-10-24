@@ -84,6 +84,7 @@ export enum FileType {
 export interface CanonicalPathParams {
   contributionType: ContributionType;
   sourceModelSlugs?: string[]; // Guaranteed to be alphabetically sorted
+  stageSlug: string;
   sourceAnchorType?: string; // e.g., 'thesis', 'outline'
   sourceAnchorModelSlug?: string; // e.g., 'claude-3-opus'
   sourceAttemptCount?: number; // The attempt_count of the source document
@@ -182,6 +183,11 @@ export type ResourceFileTypes =
   | FileType.GeneralResource
   | FileType.SeedPrompt
   | FileType.ProjectExportZip
+  | FileType.PlannerPrompt
+  | FileType.TurnPrompt
+  | FileType.HeaderContext
+  | FileType.AssembledDocumentJson
+  | FileType.RenderedDocument
 
 // Context for model contributions, requiring contributionMetadata
 export type ModelContributionUploadContext = UploadContextBase & {

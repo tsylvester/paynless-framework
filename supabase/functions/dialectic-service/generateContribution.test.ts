@@ -7,6 +7,7 @@ import { logger } from "../_shared/logger.ts";
 import { isPlanJobInsert } from "../_shared/utils/type-guards/type_guards.dialectic.ts";
 import { createMockSupabaseClient, type MockQueryBuilderState } from "../_shared/supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { FileType } from "../_shared/types/file_manager.types.ts";
 
 const mockStep: DialecticRecipeStep = {
     id: 'step-id-1',
@@ -14,7 +15,7 @@ const mockStep: DialecticRecipeStep = {
     step_key: 'key',
     step_slug: 'slug',
     step_name: 'name',
-    output_type: 'synthesis',
+    output_type: FileType.Synthesis,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     is_skipped: false,
@@ -32,6 +33,19 @@ const mockStep: DialecticRecipeStep = {
     parallel_group: null,
     prompt_template_id: null,
     template_step_id: null,
+};
+
+const mockSingleStepStage: StageWithRecipeSteps = {
+    id: 'stage-1-single-step',
+    slug: 'thesis',
+    steps: [mockStep],
+    created_at: new Date().toISOString(),
+    default_system_prompt_id: 'prompt-1',
+    description: 'Test stage single step',
+    display_name: 'Thesis',
+    expected_output_template_ids: [],
+    recipe_template_id: 'rt-1',
+    active_recipe_instance_id: 'ari-1',
 };
 
 
@@ -134,7 +148,6 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
             assertEquals(firstInsertCallArgs.is_test_job, undefined);
             assertEquals(firstInsertPayload.model_id, mockModelIds[0]);
             assertEquals(firstInsertPayload.job_type, 'PLAN');
-            assertEquals(firstInsertPayload.step_info.total_steps, 2);
         } else {
             fail(`First insert call did not have the expected payload shape. Got: ${JSON.stringify(firstInsertCallArgs)}`);
         }
@@ -256,8 +269,6 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
             });
             assertEquals(insertArgs.payload.model_id, mockModelId);
             assertEquals(insertArgs.payload.job_type, 'PLAN');
-            assertEquals(insertArgs.payload.step_info.current_step, 1);
-            assertEquals(insertArgs.payload.step_info.total_steps, 3);
         } else {
             fail(`insert was not called with an object of the expected shape. Got: ${JSON.stringify(insertArgs)}`);
         }
@@ -356,7 +367,7 @@ Deno.test("generateContributions - Failure Path: Fails to enqueue a job", async 
             },
             'dialectic_stages': {
                 select: {
-                    data: [mockStep], // Simple 1-step recipe
+                    data: [mockSingleStepStage], // Use a valid stage with one step
                     error: null
                 }
             },
@@ -721,7 +732,7 @@ Deno.test("generateContributions - plan jobs carry payload.user_jwt equal to pro
             },
             'dialectic_stages': {
                 select: {
-                    data: [mockStep],
+                    data: [mockSingleStepStage],
                     error: null
                 }
             },
@@ -809,7 +820,7 @@ Deno.test("should create jobs with a top-level 'is_test_job' flag when specified
             },
             'dialectic_stages': {
                 select: {
-                    data: [mockStep], // Simple 1-step recipe
+                    data: [mockSingleStepStage], // Simple 1-step recipe
                     error: null
                 }
             },

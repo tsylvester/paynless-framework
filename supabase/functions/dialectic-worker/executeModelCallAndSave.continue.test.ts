@@ -22,6 +22,7 @@ import type {
     DialecticExecuteJobPayload,
     IDialecticJobDeps,
     DialecticContributionRow,
+    ContributionType,
 } from '../dialectic-service/dialectic.interface.ts';
 
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
@@ -415,6 +416,10 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
     const stageSlug = 'thesis';
     const documentRelationship: DocumentRelationships = { [stageSlug]: 'thesis-id-abc' };
 
+    const contributionType: ContributionType = 'thesis';
+    if (!contributionType) {
+        throw new Error('contributionType is null');
+    }
     const continuationPayload: DialecticExecuteJobPayload = {
         projectId: 'proj-123',
         sessionId: 'sess-123',
@@ -424,12 +429,12 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
         walletId: 'wallet-ghi',
         user_jwt: 'jwt.token.here',
         job_type: 'execute',
-        prompt_template_name: 'test-prompt',
+        prompt_template_id: 'test-prompt',
         output_type: FileType.HeaderContext,
-        step_info: { current_step: 1, total_steps: 1 },
         inputs: {},
         canonicalPathParams: {
-          contributionType: 'synthesis',
+          contributionType: contributionType,
+          stageSlug,
         },
         continuation_count: 1,
         target_contribution_id: 'prev-chunk-id-123',

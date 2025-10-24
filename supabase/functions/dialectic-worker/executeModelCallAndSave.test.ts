@@ -97,8 +97,7 @@ export function createMockJob(payload: DialecticJobPayload, overrides: Partial<D
 
 export const testPayload: DialecticExecuteJobPayload = {
     job_type: 'execute',
-    step_info: { current_step: 1, total_steps: 1 },
-    prompt_template_name: 'test-prompt',
+    prompt_template_id: 'test-prompt',
     inputs: {},
     output_type: FileType.HeaderContext,
     projectId: 'project-abc',
@@ -111,6 +110,7 @@ export const testPayload: DialecticExecuteJobPayload = {
     user_jwt: 'jwt.token.here',
     canonicalPathParams: {
         contributionType: 'thesis',
+        stageSlug: 'test-stage',
     }
   };
   
@@ -322,7 +322,7 @@ Deno.test("executeModelCallAndSave - should send '__none__' as promptId in ChatA
         dbClient: dbClient as unknown as SupabaseClient<Database>,
         deps,
         authToken: 'auth-token',
-        job: createMockJob({ ...testPayload, prompt_template_name: 'some-template-name' }),
+        job: createMockJob({ ...testPayload, prompt_template_id: 'some-template-id' }),
         projectOwnerUserId: 'user-789',
         providerDetails: mockProviderData,
         sessionData: mockSessionData,

@@ -1066,10 +1066,13 @@ Deno.test('FileManagerService', async (t) => {
 
   await t.step('should handle PlannerPrompt correctly', async () => {
     try {
-      const fileType = FileType.PlannerPrompt;
+      const fileType: FileType = FileType.PlannerPrompt;
+      if (!fileType) {
+        throw new Error('fileType is null');
+      }
       const stepName = 'generate_plan';
-      const pathContext: ResourceUploadContext['pathContext'] = {
-        fileType,
+      const pathContext: ModelContributionUploadContext['pathContext'] = {
+        fileType: FileType.PlannerPrompt,
         projectId: 'project-doc-centric',
         sessionId: 'session-doc-centric',
         iteration: 1,
@@ -1080,7 +1083,7 @@ Deno.test('FileManagerService', async (t) => {
 
       const expectedPathParts = {
         storagePath: `projects/project-doc-centric/sessions/session-doc-centric/iteration_1/1_thesis`,
-        fileName: `${fileType}_test.json`,
+        fileName: `${FileType.PlannerPrompt}_test.json`,
       };
 
       let passedContext: PathContext | undefined;
@@ -1091,8 +1094,8 @@ Deno.test('FileManagerService', async (t) => {
 
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
-          dialectic_project_resources: {
-            insert: { data: [{ id: `resource-${fileType}` }], error: null },
+          dialectic_contributions: {
+            insert: { data: [{ id: `contrib-${fileType}` }], error: null },
           },
         },
       };
@@ -1117,12 +1120,16 @@ Deno.test('FileManagerService', async (t) => {
         rawJsonResponseContent: '{}',
       };
 
-      const plannerContext: ResourceUploadContext = {
+      const plannerContext: ModelContributionUploadContext = {
         ...baseUploadContext,
-        pathContext,
+        pathContext: {
+          ...pathContext,
+          fileType: FileType.PlannerPrompt,
+        },
         fileContent: '{}',
         mimeType: 'application/json',
         description: `Test for ${fileType}`,
+        contributionMetadata,
       };
 
       const { record, error } = await fileManager.uploadAndRegisterFile(plannerContext);
@@ -1130,12 +1137,12 @@ Deno.test('FileManagerService', async (t) => {
       assertEquals(error, null, `Upload failed for ${fileType}: ${error?.message}`);
       assertExists(record, `Record should be created for ${fileType}`);
       
-      assertEquals(record.id, `resource-${fileType}`);
+      assertEquals(record.id, `contrib-${fileType}`);
 
       // 2. Verify the correct DB table was targeted
       const fromSpyCalls = setup.spies.fromSpy.calls;
-      const resourceTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_project_resources');
-      assertExists(resourceTableCall, `'dialectic_project_resources' table was not targeted for ${fileType}`);
+      const contributionTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_contributions');
+      assertExists(contributionTableCall, `'dialectic_contributions' table was not targeted for ${fileType}`);
     } finally {
       afterEach();
     }
@@ -1145,7 +1152,7 @@ Deno.test('FileManagerService', async (t) => {
     try {
       const fileType = FileType.TurnPrompt;
       const documentKey = 'business_case';
-      const pathContext: ResourceUploadContext['pathContext'] = {
+      const pathContext: ModelContributionUploadContext['pathContext'] = {
         fileType,
         projectId: 'project-doc-centric',
         sessionId: 'session-doc-centric',
@@ -1168,8 +1175,8 @@ Deno.test('FileManagerService', async (t) => {
   
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
-          dialectic_project_resources: {
-            insert: { data: [{ id: `resource-${fileType}` }], error: null },
+          dialectic_contributions: {
+            insert: { data: [{ id: `contrib-${fileType}` }], error: null },
           },
         },
       };
@@ -1194,23 +1201,27 @@ Deno.test('FileManagerService', async (t) => {
         rawJsonResponseContent: '{}',
       };
 
-      const turnContext: ResourceUploadContext = {
+      const turnContext: ModelContributionUploadContext = {
         ...baseUploadContext,
-        pathContext,
+        pathContext: {
+          ...pathContext,
+          fileType: FileType.TurnPrompt,
+        },
         fileContent: '{}',
         mimeType: 'application/json',
         description: `Test for ${fileType}`,
+        contributionMetadata,
       };
   
       const { record, error } = await fileManager.uploadAndRegisterFile(turnContext);
   
       assertEquals(error, null, `Upload failed for ${fileType}: ${error?.message}`);
       assertExists(record, `Record should be created for ${fileType}`);
-      assertEquals(record.id, `resource-${fileType}`);
+      assertEquals(record.id, `contrib-${fileType}`);
   
       const fromSpyCalls = setup.spies.fromSpy.calls;
-      const resourceTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_project_resources');
-      assertExists(resourceTableCall, `'dialectic_project_resources' table was not targeted for ${fileType}`);
+      const contributionTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_contributions');
+      assertExists(contributionTableCall, `'dialectic_contributions' table was not targeted for ${fileType}`);
     } finally {
       afterEach();
     }
@@ -1219,7 +1230,7 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('should handle HeaderContext correctly', async () => {
     try {
       const fileType = FileType.HeaderContext;
-      const pathContext: ResourceUploadContext['pathContext'] = {
+      const pathContext: ModelContributionUploadContext['pathContext'] = {
         fileType,
         projectId: 'project-doc-centric',
         sessionId: 'session-doc-centric',
@@ -1241,8 +1252,8 @@ Deno.test('FileManagerService', async (t) => {
   
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
-          dialectic_project_resources: {
-            insert: { data: [{ id: `resource-${fileType}` }], error: null },
+          dialectic_contributions: {
+            insert: { data: [{ id: `contrib-${fileType}` }], error: null },
           },
         },
       };
@@ -1266,23 +1277,27 @@ Deno.test('FileManagerService', async (t) => {
         rawJsonResponseContent: '{}',
       };
 
-      const headerContext: ResourceUploadContext = {
+      const headerContext: ModelContributionUploadContext = {
         ...baseUploadContext,
-        pathContext,
+        pathContext: {
+          ...pathContext,
+          fileType: FileType.HeaderContext,
+        },
         fileContent: '{}',
         mimeType: 'application/json',
         description: `Test for ${fileType}`,
+        contributionMetadata,
       };
   
       const { record, error } = await fileManager.uploadAndRegisterFile(headerContext);
   
       assertEquals(error, null, `Upload failed for ${fileType}: ${error?.message}`);
       assertExists(record, `Record should be created for ${fileType}`);
-      assertEquals(record.id, `resource-${fileType}`);
+      assertEquals(record.id, `contrib-${fileType}`);
   
       const fromSpyCalls = setup.spies.fromSpy.calls;
-      const resourceTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_project_resources');
-      assertExists(resourceTableCall, `'dialectic_project_resources' table was not targeted for ${fileType}`);
+      const contributionTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_contributions');
+      assertExists(contributionTableCall, `'dialectic_contributions' table was not targeted for ${fileType}`);
     } finally {
       afterEach();
     }
@@ -1292,7 +1307,7 @@ Deno.test('FileManagerService', async (t) => {
     try {
       const fileType = FileType.AssembledDocumentJson;
       const documentKey = 'feature_spec';
-      const pathContext: ResourceUploadContext['pathContext'] = {
+      const pathContext: ModelContributionUploadContext['pathContext'] = {
         fileType,
         projectId: 'project-doc-centric',
         sessionId: 'session-doc-centric',
@@ -1315,8 +1330,8 @@ Deno.test('FileManagerService', async (t) => {
   
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
-          dialectic_project_resources: {
-            insert: { data: [{ id: `resource-${fileType}` }], error: null },
+          dialectic_contributions: {
+            insert: { data: [{ id: `contrib-${fileType}` }], error: null },
           },
         },
       };
@@ -1340,23 +1355,27 @@ Deno.test('FileManagerService', async (t) => {
         rawJsonResponseContent: '{}',
       };
 
-      const assembledJsonContext: ResourceUploadContext = {
+      const assembledJsonContext: ModelContributionUploadContext = {
         ...baseUploadContext,
-        pathContext,
+        pathContext: {
+          ...pathContext,
+          fileType: FileType.AssembledDocumentJson,
+        },
         fileContent: '{}',
         mimeType: 'application/json',
         description: `Test for ${fileType}`,
+        contributionMetadata,
       };
   
       const { record, error } = await fileManager.uploadAndRegisterFile(assembledJsonContext);
   
       assertEquals(error, null, `Upload failed for ${fileType}: ${error?.message}`);
       assertExists(record, `Record should be created for ${fileType}`);
-      assertEquals(record.id, `resource-${fileType}`);
+      assertEquals(record.id, `contrib-${fileType}`);
   
       const fromSpyCalls = setup.spies.fromSpy.calls;
-      const resourceTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_project_resources');
-      assertExists(resourceTableCall, `'dialectic_project_resources' table was not targeted for ${fileType}`);
+      const contributionTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_contributions');
+      assertExists(contributionTableCall, `'dialectic_contributions' table was not targeted for ${fileType}`);
     } finally {
       afterEach();
     }
@@ -1366,7 +1385,7 @@ Deno.test('FileManagerService', async (t) => {
     try {
       const fileType = FileType.RenderedDocument;
       const documentKey = 'technical_approach';
-      const pathContext: ResourceUploadContext['pathContext'] = {
+      const pathContext: ModelContributionUploadContext['pathContext'] = {
         fileType,
         projectId: 'project-doc-centric',
         sessionId: 'session-doc-centric',
@@ -1389,8 +1408,8 @@ Deno.test('FileManagerService', async (t) => {
   
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
-          dialectic_project_resources: {
-            insert: { data: [{ id: `resource-${fileType}` }], error: null },
+          dialectic_contributions: {
+            insert: { data: [{ id: `contrib-${fileType}` }], error: null },
           },
         },
       };
@@ -1414,23 +1433,27 @@ Deno.test('FileManagerService', async (t) => {
         rawJsonResponseContent: '{}',
       };
 
-      const renderedDocContext: ResourceUploadContext = {
+      const renderedDocContext: ModelContributionUploadContext = {
         ...baseUploadContext,
-        pathContext,
+        pathContext: {
+          ...pathContext,
+          fileType: FileType.RenderedDocument,
+        },
         fileContent: '{}',
         mimeType: 'application/json',
         description: `Test for ${fileType}`,
+        contributionMetadata,
       };
   
       const { record, error } = await fileManager.uploadAndRegisterFile(renderedDocContext);
   
       assertEquals(error, null, `Upload failed for ${fileType}: ${error?.message}`);
       assertExists(record, `Record should be created for ${fileType}`);
-      assertEquals(record.id, `resource-${fileType}`);
+      assertEquals(record.id, `contrib-${fileType}`);
   
       const fromSpyCalls = setup.spies.fromSpy.calls;
-      const resourceTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_project_resources');
-      assertExists(resourceTableCall, `'dialectic_project_resources' table was not targeted for ${fileType}`);
+      const contributionTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_contributions');
+      assertExists(contributionTableCall, `'dialectic_contributions' table was not targeted for ${fileType}`);
     } finally {
       afterEach();
     }

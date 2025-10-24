@@ -9,7 +9,7 @@ import {
   GatheredRecipeContext,
 } from "./prompt-assembler.interface.ts";
 import { FileManagerService } from "../services/file_manager.ts";
-import { type DialecticRecipeStep, type DialecticContribution } from '../../dialectic-service/dialectic.interface.ts';
+import { type DialecticRecipeStep, type DialecticContribution, type DialecticRecipeTemplateStep } from '../../dialectic-service/dialectic.interface.ts';
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type IMockSupabaseClient, type IMockClientSpies, type MockSupabaseClientSetup, type MockQueryBuilderState } from "../supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { downloadFromStorage } from '../supabase_storage_utils.ts';
@@ -20,7 +20,7 @@ import { FileType } from "../types/file_manager.types.ts";
 import { join } from "jsr:@std/path/join";
 
 // Helper to create a minimal valid recipe step
-const createMockRecipeStep = (inputs: DialecticRecipeStep['inputs_required']): DialecticRecipeStep => ({
+const createMockRecipeStep = (inputs: DialecticRecipeTemplateStep['inputs_required']): DialecticRecipeTemplateStep => ({
     id: 'a1b2c3d4-e5f6-7890-1234-567890abcdef',
     template_id: 'b2c3d4e5-f6a7-8901-2345-67890abcdef1',
     created_at: new Date().toISOString(),
@@ -32,7 +32,7 @@ const createMockRecipeStep = (inputs: DialecticRecipeStep['inputs_required']): D
     step_name: 'Test Step',
     job_type: 'EXECUTE',
     prompt_type: 'Turn',
-    output_type: 'business_case',
+    output_type: FileType.HeaderContext,
     granularity_strategy: 'all_to_one',
     inputs_required: inputs,
     inputs_relevance: [],

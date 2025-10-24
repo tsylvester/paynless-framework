@@ -394,7 +394,7 @@ graph LR
 
 # Revised Implementation Plan
 
-*   `[ ]` 1. `[REFACTOR]` Phase 1: Refactor Low-Level Planner Strategies.
+*   `[✅]` 1. `[REFACTOR]` Phase 1: Refactor Low-Level Planner Strategies.
     *   `[✅]` 1.a. `[REFACTOR]` Implement `FileType` to `ContributionType` Mapping.
         *   **Objective**: To create a utility that translates a specific `FileType` into its corresponding semantic `ContributionType`, resolving a critical type gap between recipe definitions and path construction logic.
         *   `[✅]` 1.a.i. `[TEST-UNIT]` In a **new** test file, `supabase/functions/_shared/utils/type_mapper.test.ts`, write the complete and comprehensive test suite for the `getContributionTypeFromFileType` function.
@@ -450,15 +450,15 @@ graph LR
         *   `[✅]` 1.g.ii. `[BE]` In `planPerSourceGroup.ts`, implement changes to use `prompt_template_id` and correctly typed `output_type` to make tests pass.
     *   `[✅]` 1.h. `[REFACTOR]` As `task_isolator.ts` and its delegated planner strategies are job producers, refactor them to stop including the deprecated `step_info` object in the payloads of any new jobs they create.
 
-*   `[ ]` 2. `[REFACTOR]` Phase 2: Adapt `PromptAssembler` to Drive Workflow from Recipes.
+*   `[✅]` 2. `[REFACTOR]` Phase 2: Adapt `PromptAssembler` to Drive Workflow from Recipes.
     *   **Justification:** This change makes the `PromptAssembler` a pure consumer of the recipe's instructions, removing implicit logic and making the system easier to debug and extend.
-    *   `[ ]` 2.a. `[TEST-UNIT]` In `prompt-assembler.test.ts`, write a failing test for the `assemble` method. The test must prove that the method inspects the `recipe_step.prompt_type` field and correctly branches its logic:
+    *   `[✅]` 2.a. `[TEST-UNIT]` In `prompt-assembler.test.ts`, write a failing test for the `assemble` method. The test must prove that the method inspects the `recipe_step.prompt_type` field and correctly branches its logic:
         *   If `'Planner'`, it builds and saves a `PlannerPrompt`.
         *   If `'Turn'`, it finds the `HeaderContext` from the job's inputs, combines it with other inputs, and builds/saves a `TurnPrompt`.
         *   If `'Seed'` or `undefined`, it uses the existing `seed_prompt.md` logic.
-    *   `[ ]` 2.b. `[BE]` In `prompt-assembler.ts`, implement this branching logic in the `assemble` method.
-    *   `[ ]` 2.c. `[TEST-INT]` Write an integration test that consumes `testing_prompt.md` to generate and print an actual `SeedPrompt`, `PlannerPrompt`, `AssembledPrompt`, and `ContinuationPrompt` for the `testing_prompt` content for each stage so that the user can manually review the outputs for confirmation or correction of their content.
-    *   `[ ]` 2.d. `[COMMIT]` refactor(worker): Migrate all consumers to the refactore `PromptAssembler` service.
+    *   `[✅]` 2.b. `[BE]` In `prompt-assembler.ts`, implement this branching logic in the `assemble` method.
+    *   `[✅]` 2.c. `[TEST-INT]` Write an integration test that consumes `testing_prompt.md` to generate and print an actual `SeedPrompt`, `PlannerPrompt`, `AssembledPrompt`, and `ContinuationPrompt` for the `testing_prompt` content for each stage so that the user can manually review the outputs for confirmation or correction of their content.
+    *   `[✅]` 2.d. `[COMMIT]` refactor(worker): Migrate all consumers to the refactore `PromptAssembler` service.
 
 *   `[ ]` 3. `[REFACTOR]` Phase 3: Refactor `task_isolator` Service.
     *   **Justification:** With the recipes and `PromptAssembler` now being explicit, the `task_isolator` no longer needs complex special-case logic. It simply needs to pass the `HeaderContext` along with other inputs, simplifying its role to that of a dependency resolver and job planner.

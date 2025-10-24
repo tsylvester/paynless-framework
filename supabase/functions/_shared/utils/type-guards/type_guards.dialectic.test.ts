@@ -1761,7 +1761,6 @@ Deno.test('Type Guard: isPlanJobInsert', async (t) => {
             payload: {
                 job_type: 'PLAN',
                 model_id: 'm1',
-                step_info: { current_step: 1, total_steps: 1, status: 'pending' },
             },
             job_type: 'PLAN',
             is_test_job: false,
@@ -1778,7 +1777,6 @@ Deno.test('Type Guard: isPlanJobInsert', async (t) => {
             payload: {
                 job_type: 'PLAN',
                 model_id: 'm1',
-                step_info: { current_step: 1, total_steps: 1, status: 'pending' },
             },
             job_type: 'PLAN',
             is_test_job: undefined,
@@ -1795,7 +1793,6 @@ Deno.test('Type Guard: isPlanJobInsert', async (t) => {
             payload: {
                 // job_type: 'plan', // This is missing
                 model_id: 'm1',
-                step_info: { current_step: 1, total_steps: 1, status: 'pending' },
             },
             job_type: 'PLAN',
             is_test_job: false,
@@ -1812,7 +1809,6 @@ Deno.test('Type Guard: isPlanJobInsert', async (t) => {
             payload: {
                 job_type: 'plan', // lowercase, should fail
                 model_id: 'm1',
-                step_info: { current_step: 1, total_steps: 1, status: 'pending' },
             },
             job_type: 'PLAN',
             is_test_job: false,
@@ -1829,7 +1825,6 @@ Deno.test('Type Guard: isPlanJobInsert', async (t) => {
             payload: {
                 job_type: 'PLAN',
                 model_id: 'm1',
-                step_info: { current_step: 1, total_steps: 1, status: 'pending' },
             },
             job_type: 'EXECUTE', // Incorrect top-level type
             is_test_job: false,
