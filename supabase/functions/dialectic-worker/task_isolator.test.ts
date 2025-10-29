@@ -22,8 +22,9 @@ import {
     DialecticExecuteJobPayload,
     GranularityPlannerFn,
     IDialecticJobDeps,
-    ContributionType,
-    SourceDocument, // Import the real SourceDocument
+    SourceDocument,
+    DialecticFeedbackRow,
+    DialecticProjectResourceRow,
 } from '../dialectic-service/dialectic.interface.ts';
 import { ILogger } from '../_shared/types.ts';
 import { planComplexStage } from './task_isolator.ts';
@@ -31,13 +32,16 @@ import {
     isDialecticPlanJobPayload,
     isDialecticExecuteJobPayload,
 } from '../_shared/utils/type_guards.ts';
-import { PromptAssembler } from '../_shared/prompt-assembler.ts';
-import { createMockSupabaseClient, MockQueryBuilderState } from '../_shared/supabase.mock.ts';
+import { isModelContributionContext } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
+    import { PromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.ts';
+import { createMockSupabaseClient, MockQueryBuilderState, MockSupabaseDataConfig } from '../_shared/supabase.mock.ts';
 import { AiModelExtendedConfig } from '../_shared/types.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import { IRagContextResult, IRagServiceDependencies } from '../_shared/services/rag_service.interface.ts';
 import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
+import { isJson } from '../_shared/utils/type-guards/type_guards.common.ts';
 
 describe('planComplexStage', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
@@ -45,90 +49,176 @@ describe('planComplexStage', () => {
     let mockDeps: IDialecticJobDeps;
     let mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
     let mockRecipeStep: DialecticRecipeStep;
+    let mockContributions: DialecticContributionRow[];
+    let mockProjectResources: DialecticProjectResourceRow[];
+    let mockFeedback: DialecticFeedbackRow[];
 
-    const mockContributions: DialecticContributionRow[] = [
-        {
-            id: 'doc-1-thesis',
-            session_id: 'sess-1',
-            user_id: 'user-123',
-            stage: 'test-stage',
-            iteration_number: 1,
-            model_id: 'model-1',
-            model_name: 'Test Model',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            contribution_type: 'thesis',
-            file_name: 'doc1.txt',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage',
-            size_bytes: 123,
-            mime_type: 'text/plain',
-            document_relationships: null,
-        },
-        {
-            id: 'doc-2-antithesis',
-            session_id: 'sess-1',
-            user_id: 'user-123',
-            stage: 'test-stage',
-            iteration_number: 1,
-            model_id: 'model-1',
-            model_name: 'Test Model',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            contribution_type: 'antithesis',
-            file_name: 'doc2.txt',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage',
-            size_bytes: 123,
-            mime_type: 'text/plain',
-            document_relationships: null,
-        },
-    ];
 
     beforeEach(() => {
+        mockContributions = [
+            {
+                id: 'doc-1-thesis',
+                session_id: 'sess-1',
+                user_id: 'user-123',
+                stage: 'thesis',
+                iteration_number: 1,
+                model_id: 'model-1',
+                model_name: 'Test Model',
+                prompt_template_id_used: 'prompt-1',
+                seed_prompt_url: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                original_model_contribution_id: null,
+                raw_response_storage_path: null,
+                target_contribution_id: null,
+                tokens_used_input: 10,
+                tokens_used_output: 20,
+                processing_time_ms: 100,
+                error: null,
+                citations: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                contribution_type: 'thesis',
+                file_name: 'doc1.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
+                size_bytes: 123,
+                mime_type: 'text/plain',
+                document_relationships: null,
+                is_header: false,
+                source_prompt_resource_id: null,
+            },
+            {
+                id: 'doc-2-antithesis',
+                session_id: 'sess-1',
+                user_id: 'user-123',
+                stage: 'antithesis',
+                iteration_number: 1,
+                model_id: 'model-1',
+                model_name: 'Test Model',
+                prompt_template_id_used: 'prompt-1',
+                seed_prompt_url: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                original_model_contribution_id: null,
+                raw_response_storage_path: null,
+                target_contribution_id: null,
+                tokens_used_input: 10,
+                tokens_used_output: 20,
+                processing_time_ms: 100,
+                error: null,
+                citations: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                contribution_type: 'antithesis',
+                file_name: 'doc2.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/antithesis',
+                size_bytes: 123,
+                mime_type: 'text/plain',
+                document_relationships: null,
+                is_header: false,
+                source_prompt_resource_id: null,
+            },
+            {
+                id: 'header-context-1',
+                session_id: 'sess-1',
+                user_id: 'user-123',
+                stage: 'test-stage',
+                iteration_number: 1,
+                model_id: 'model-1',
+                model_name: 'Test Model',
+                prompt_template_id_used: 'prompt-planner',
+                seed_prompt_url: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                original_model_contribution_id: null,
+                raw_response_storage_path: null,
+                target_contribution_id: null,
+                tokens_used_input: 5,
+                tokens_used_output: 5,
+                processing_time_ms: 50,
+                error: null,
+                citations: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                contribution_type: 'header_context',
+                file_name: 'header.json',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+                size_bytes: 80,
+                mime_type: 'application/json',
+                document_relationships: null,
+                is_header: true,
+                source_prompt_resource_id: null,
+            },
+        ];
+
+        mockProjectResources = [{
+            id: 'resource-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'resource1.txt',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/plain',
+            size_bytes: 456,
+            resource_description: { "description": "A test resource file" },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: null,
+            resource_type: 'document',
+            session_id: null,
+            source_contribution_id: null,
+            stage_slug: null,
+        }];
+
+        mockFeedback = [{
+            id: 'feedback-1',
+            session_id: 'sess-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            target_contribution_id: 'doc-1-thesis',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis/_feedback',
+            file_name: 'feedback.txt',
+            mime_type: 'text/plain',
+            size_bytes: 789,
+            feedback_type: 'user_feedback',
+            resource_description: { note: 'This is user feedback.' },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        }];
+
+        // This beforeEach block is re-initialized for every 'it' block,
+        // ensuring test isolation.
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 dialectic_contributions: {
                     select: (state: MockQueryBuilderState) => {
-                        const stageFilter = state.filters.find(f => f.column === 'stage')?.value;
-                        if (stageFilter) {
-                            const filteredData = mockContributions.filter(c => c.stage === stageFilter);
-                            return Promise.resolve({ data: filteredData, error: null, count: filteredData.length, status: 200, statusText: 'OK' });
+                        // A robust mock that correctly applies all chained filters.
+                        let data = [...mockContributions];
+                        for (const filter of state.filters) {
+                            if (filter.column && filter.type === 'eq') {
+                                data = data.filter((c: any) => c[filter.column!] === filter.value);
+                            }
                         }
-
-                        const typeFilter = state.filters.find(f => f.column === 'contribution_type')?.value;
-                        if (typeFilter) {
-                            const filteredData = mockContributions.filter(c => c.contribution_type === typeFilter);
-                            return Promise.resolve({ data: filteredData, error: null, count: filteredData.length, status: 200, statusText: 'OK' });
-                        }
-                        
-                        return Promise.resolve({ data: mockContributions, error: null, count: mockContributions.length, status: 200, statusText: 'OK' });
+                        return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
                     },
                 },
+                dialectic_project_resources: {
+                    select: (state: MockQueryBuilderState) => {
+                        let data = [...mockProjectResources];
+                        for (const filter of state.filters) {
+                            if (filter.column && filter.type === 'eq') {
+                                data = data.filter((r: any) => r[filter.column!] === filter.value);
+                            }
+                        }
+                        return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
+                    },
+                }
             },
         });
 
@@ -143,8 +233,7 @@ describe('planComplexStage', () => {
             id: 'parent-job-123',
             status: 'pending',
             payload: {
-                job_type: 'plan',
-                step_info: { current_step: 1, total_steps: 2 },
+                job_type: 'PLAN',
                 model_id: 'model-1',
                 projectId: 'proj-1',
                 sessionId: 'sess-1',
@@ -154,6 +243,7 @@ describe('planComplexStage', () => {
                 continueUntilComplete: false,
                 maxRetries: 3,
                 continuation_count: 0,
+                user_jwt: 'parent-jwt-default',
             },
             created_at: new Date().toISOString(),
             user_id: 'user-123',
@@ -168,16 +258,36 @@ describe('planComplexStage', () => {
             session_id: 'sess-1',
             started_at: null,
             stage_slug: 'test-stage',
-            target_contribution_id: null
+            target_contribution_id: null,
+            is_test_job: false,
+            job_type: 'PLAN',
         };
 
         mockRecipeStep = {
-            step: 1,
-            name: 'Test Step',
-            prompt_template_name: 'test-prompt',
-            inputs_required: [{ type: 'thesis' }],
+            id: 'step-uuid-123',
+            instance_id: 'instance-uuid-456',
+            template_step_id: 'template-step-uuid-789',
+            step_key: 'test_step_1',
+            step_slug: 'test-step-1',
+            step_name: 'Test Step',
+            step_description: 'A test step description',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            prompt_template_id: 'test-prompt-uuid',
+            output_type: FileType.business_case,
             granularity_strategy: 'per_source_document',
-            output_type: 'thesis',
+            inputs_required: [{ type: 'document', document_key: '*' }],
+            inputs_relevance: [],
+            outputs_required: [],
+            config_override: {},
+            object_filter: {},
+            output_overrides: {},
+            is_skipped: false,
+            execution_order: 1,
+            parallel_group: null,
+            branch_key: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
         };
 
         const mockRagDeps: IRagServiceDependencies = {
@@ -192,7 +302,8 @@ describe('planComplexStage', () => {
             logger: mockLogger,
             planComplexStage: () => Promise.resolve([]),
             downloadFromStorage: (bucket, path) => {
-                const doc = mockContributions.find(c => `${c.storage_path}/${c.file_name}` === path);
+                const allDocs: (DialecticContributionRow | DialecticProjectResourceRow)[] = [...mockContributions, ...mockProjectResources];
+                const doc = allDocs.find(c => `${c.storage_path}/${c.file_name}` === path);
                 const contentBuffer = doc ? new TextEncoder().encode(`content for ${doc.id}`).buffer : new ArrayBuffer(0);
                 // Ensure it's a concrete ArrayBuffer
                 const data = contentBuffer instanceof ArrayBuffer ? contentBuffer : new ArrayBuffer(0);
@@ -225,11 +336,6 @@ describe('planComplexStage', () => {
             randomUUID: () => 'random-uuid',
             deleteFromStorage: () => Promise.resolve({ data: null, error: null }),
         };
-
-        // Default: parent payload carries a valid user_jwt under new contract
-        Object.defineProperty(mockParentJob.payload, 'user_jwt', {
-            value: 'parent-jwt-default', configurable: true, enumerable: true, writable: true,
-        });
     });
     
     it('should throw an error if no planner is found for the strategy', async () => {
@@ -241,20 +347,74 @@ describe('planComplexStage', () => {
         );
     });
 
+    it('should throw if granularity_strategy is missing from the recipe step', async () => {
+        // Arrange: This test proves that the function correctly validates the recipe step.
+        const incompleteRecipeStep = { ...mockRecipeStep };
+        delete incompleteRecipeStep.granularity_strategy;
+
+        // Act & Assert
+        await assertRejects(
+            () => planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                incompleteRecipeStep as DialecticRecipeStep,
+                'user-jwt-123'
+            ),
+            Error,
+            'recipeStep.granularity_strategy is required'
+        );
+    });
+
+    it('should throw if inputs_required is missing from the recipe step', async () => {
+        const incompleteRecipeStep = { ...mockRecipeStep };
+        delete incompleteRecipeStep.inputs_required;
+
+        await assertRejects(
+            () => planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                incompleteRecipeStep as DialecticRecipeStep,
+                'user-jwt-123'
+            ),
+            Error,
+            'recipeStep.inputs_required is required and cannot be empty'
+        );
+    });
+
+    it('should throw if inputs_required is an empty array', async () => {
+        const incompleteRecipeStep = {
+            ...mockRecipeStep,
+            inputs_required: [],
+        };
+
+        await assertRejects(
+            () => planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                incompleteRecipeStep as DialecticRecipeStep,
+                'user-jwt-123'
+            ),
+            Error,
+            'recipeStep.inputs_required is required and cannot be empty'
+        );
+    });
+
     it('should correctly create child jobs for an "execute" planner creating an intermediate artifact', async () => {
         const mockExecutePayload: DialecticExecuteJobPayload = {
             job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 2 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'pairwise_synthesis_chunk',
+            prompt_template_id: 'test-prompt',
+            output_type: FileType.PairwiseSynthesisChunk,
             inputs: { documentId: 'doc-1-thesis' },
             isIntermediate: true,
             model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'test-stage',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
+            projectId: mockParentJob.payload.projectId,
+            sessionId: mockParentJob.payload.sessionId,
+            stageSlug: mockParentJob.payload.stageSlug,
+            iterationNumber: mockParentJob.payload.iterationNumber,
+            walletId: mockParentJob.payload.walletId,
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
@@ -263,6 +423,7 @@ describe('planComplexStage', () => {
                 sourceModelSlugs: ['Test Model'],
                 sourceAnchorType: 'thesis',
                 sourceAnchorModelSlug: 'Test Model',
+                stageSlug: 'test-stage',
             },
         };
         const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
@@ -286,6 +447,7 @@ describe('planComplexStage', () => {
         assertEquals(payload.job_type, 'execute');
         assertEquals(payload.output_type, 'pairwise_synthesis_chunk');
         assertEquals(payload.isIntermediate, true);
+        assertEquals(Object.hasOwn(payload, 'step_info'), false);
         
         // Assert the full canonical path params are passed through correctly
         assertExists(payload.canonicalPathParams);
@@ -297,18 +459,23 @@ describe('planComplexStage', () => {
     });
 
     it('should throw an error if fetching source contributions fails', async () => {
-        mockRecipeStep.inputs_required = [{ type: 'thesis' }];
+        mockRecipeStep.inputs_required = [{ type: 'document', stage_slug: 'thesis' }];
         
-        if (mockSupabase.genericMockResults?.dialectic_contributions) {
-            mockSupabase.genericMockResults.dialectic_contributions.select = () => {
-                return Promise.resolve({ data: null, error: new Error('DB Read Error'), count: 0, status: 500, statusText: 'Internal Server Error' });
-            };
-        }
+        // This test now targets project_resources because the input type is 'document'
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => {
+                        return Promise.resolve({ data: null, error: new Error('DB Read Error'), count: 0, status: 500, statusText: 'Internal Server Error' });
+                    },
+                },
+            },
+        });
 
         await assertRejects(
             () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123'),
             Error,
-            "Failed to fetch source contributions for type 'thesis': DB Read Error",
+            "Failed to fetch source documents for type 'document' from project_resources: DB Read Error",
         );
     });
 
@@ -324,51 +491,49 @@ describe('planComplexStage', () => {
         await assertRejects(
             () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123'),
             Error,
-            'Failed to download content for contribution doc-1-thesis from projects/proj-1/sessions/sess-1/iteration_1/test-stage/doc1.txt: Storage Download Error',
+            'Failed to download content for contribution resource-1 from projects/proj-1/resources/resource1.txt: Storage Download Error',
         );
     });
     
-    it('should skip contributions that are missing a file_name', async () => {
-        const localMockContributions = [
-            ...mockContributions,
-            { ...mockContributions[0], id: 'doc-3', file_name: null }
+    it('should throw when a contribution is missing a file_name', async () => {
+        const localMockResources = [
+            ...mockProjectResources,
+            { ...mockProjectResources[0], id: 'resource-2', file_name: null },
         ];
 
-        if (mockSupabase.genericMockResults?.dialectic_contributions) {
-            mockSupabase.genericMockResults.dialectic_contributions.select = (state: MockQueryBuilderState) => {
-                const typeFilter = state.filters.find(f => f.column === 'contribution_type');
-                if (typeFilter?.value === 'thesis') {
-                    const data = localMockContributions.filter(c => c.contribution_type === 'thesis');
-                    return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
-                }
-                return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
-            };
-        }
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => {
+                        return Promise.resolve({ data: localMockResources, error: null, count: localMockResources.length, status: 200, statusText: 'OK' });
+                    },
+                },
+            },
+        });
         
-        const plannerFn: GranularityPlannerFn = (sourceDocs) => {
-            assertEquals(sourceDocs.length, 1);
-            assert(!sourceDocs.some(doc => doc.id === 'doc-3'));
-            return [];
-        };
+        const plannerFn: GranularityPlannerFn = () => [];
         mockDeps.getGranularityPlanner = () => plannerFn;
         
-        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
+        await assertRejects(
+            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123'),
+            Error,
+            "Contribution resource-2 is missing required storage information (file_name, storage_bucket, or storage_path)."
+        );
     });
 
     it('should not call the planner if no source documents are found', async () => {
-        mockRecipeStep.inputs_required = [{ type: 'non_existent_type' }];
+        mockRecipeStep.inputs_required = [{ type: 'document', stage_slug: 'non_existent_type' }];
         
-        let plannerCalled = false;
         const plannerFn: GranularityPlannerFn = () => {
-            plannerCalled = true;
-            return [];
+            throw new Error('Planner should not have been called');
         };
         mockDeps.getGranularityPlanner = () => plannerFn;
 
-        const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
-
-        assertEquals(childJobs.length, 0);
-        assertEquals(plannerCalled, false);
+        await assertRejects(
+            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123'),
+            Error,
+            "A required input of type 'document' was not found for the current job."
+        );
     });
 
     it('should return an empty array if the planner returns no payloads', async () => {
@@ -380,36 +545,52 @@ describe('planComplexStage', () => {
         assertEquals(childJobs.length, 0);
     });
 
-    it('should skip contributions that are missing storage_bucket or storage_path', async () => {
-        const localMockContributions = [
-            ...mockContributions,
-            { ...mockContributions[0], id: 'doc-3', storage_bucket: null },
-            { ...mockContributions[0], id: 'doc-4', storage_path: null },
+    it('should throw when a contribution is missing storage_bucket or storage_path', async () => {
+        const localMockResources = [
+            ...mockProjectResources,
+            { ...mockProjectResources[0], id: 'resource-2', storage_bucket: null },
+            { ...mockProjectResources[0], id: 'resource-3', storage_path: null },
         ];
 
-        if (mockSupabase.genericMockResults?.dialectic_contributions) {
-            mockSupabase.genericMockResults.dialectic_contributions.select = (state: MockQueryBuilderState) => {
-                const typeFilter = state.filters.find(f => f.column === 'contribution_type');
-                 if (typeFilter?.value === 'thesis') {
-                    const data = localMockContributions.filter(c => c.contribution_type === 'thesis');
-                    return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
-                }
-                return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
-            };
-        }
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => {
+                        return Promise.resolve({ data: localMockResources, error: null, count: localMockResources.length, status: 200, statusText: 'OK' });
+                    },
+                },
+            },
+        });
         
-        const plannerFn: GranularityPlannerFn = (sourceDocs) => {
-            assertEquals(sourceDocs.length, 1);
-            assert(!sourceDocs.some(doc => doc.id === 'doc-3' || doc.id === 'doc-4'));
-            return [];
-        };
+        const plannerFn: GranularityPlannerFn = () => [];
         mockDeps.getGranularityPlanner = () => plannerFn;
         
-        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
+        await assertRejects(
+            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123'),
+            Error,
+            "Contribution resource-2 is missing required storage information (file_name, storage_bucket, or storage_path)."
+        );
     });
 
     it('should handle downloaded files that are empty', async () => {
         mockDeps.downloadFromStorage = () => Promise.resolve({ data: new ArrayBuffer(0), error: null });
+        mockRecipeStep.inputs_required = [{ type: 'document', document_key: 'resource-1' }];
+
+        const mockConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+                'dialectic_project_resources': {
+                    select: (state: MockQueryBuilderState) => {
+                        let data = [...mockProjectResources];
+                        const idFilter = state.filters.find(f => f.column === 'id');
+                        if (idFilter) {
+                            data = data.filter((r: any) => r.id === idFilter.value);
+                        }
+                        return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
+                    },
+                },
+            },
+        };
+        mockSupabase = createMockSupabaseClient('user-123', mockConfig);
 
         let receivedDocs: SourceDocument[] = [];
         const plannerFn: GranularityPlannerFn = (sourceDocs) => {
@@ -427,21 +608,20 @@ describe('planComplexStage', () => {
     it('should gracefully skip malformed payloads from the planner', async () => {
         const mockExecutePayload: DialecticExecuteJobPayload = {
             job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 2 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'thesis',
+            prompt_template_id: 'test-prompt',
+            output_type: FileType.HeaderContext,
             inputs: { documentId: 'doc-1-thesis' },
             isIntermediate: true, // ADDED FOR TEST
             model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'test-stage',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
+            projectId: mockParentJob.payload.projectId,
+            sessionId: mockParentJob.payload.sessionId,
+            stageSlug: mockParentJob.payload.stageSlug,
+            iterationNumber: mockParentJob.payload.iterationNumber,
+            walletId: mockParentJob.payload.walletId,
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
-            canonicalPathParams: { contributionType: 'thesis' },
+            canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
         };
         const malformedPayload = { an_invalid: 'payload' };
 
@@ -456,19 +636,27 @@ describe('planComplexStage', () => {
     });
 
     it('should query by stage_slug when present in the rule', async () => {
-        mockRecipeStep.inputs_required = [{ type: 'some_generic_type', stage_slug: 'thesis' }];
-        
-        // Custom mock for this test case
-        if (mockSupabase.genericMockResults?.dialectic_contributions) {
-            mockSupabase.genericMockResults.dialectic_contributions.select = (state: MockQueryBuilderState) => {
-                const stageFilter = state.filters.find(f => f.column === 'stage' && f.value === 'thesis');
-                if (stageFilter) {
-                    const data = mockContributions.filter(c => c.contribution_type === 'thesis'); // The mock data uses this as the distinguisher
-                    return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
-                }
-                return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
-            };
-        }
+        mockRecipeStep.inputs_required = [{ type: 'document', stage_slug: 'test-stage-resource' }];
+
+        const localResource = {
+            ...mockProjectResources[0],
+            id: 'staged-resource',
+            stage_slug: 'test-stage-resource'
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: (state: MockQueryBuilderState) => {
+                        const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === 'test-stage-resource');
+                        if (stageFilter) {
+                            return Promise.resolve({ data: [localResource], error: null, count: 1, status: 200, statusText: 'OK' });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
+                    },
+                },
+            },
+        });
         
         let receivedDocs: SourceDocument[] = [];
         const plannerFn: GranularityPlannerFn = (sourceDocs) => {
@@ -480,12 +668,12 @@ describe('planComplexStage', () => {
         await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
 
         assertEquals(receivedDocs.length, 1);
-        assertEquals(receivedDocs[0].contribution_type, 'thesis');
-        assertEquals(receivedDocs[0].id, 'doc-1-thesis');
+        assertEquals(receivedDocs[0].contribution_type, 'document');
+        assertEquals(receivedDocs[0].id, 'staged-resource');
     });
 
     it('should query by type when stage_slug is not present in the rule', async () => {
-        mockRecipeStep.inputs_required = [{ type: 'antithesis' }];
+        mockRecipeStep.inputs_required = [{ type: 'document' }];
         
         let receivedDocs: SourceDocument[] = [];
         const plannerFn: GranularityPlannerFn = (sourceDocs) => {
@@ -497,34 +685,41 @@ describe('planComplexStage', () => {
         await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
 
         assertEquals(receivedDocs.length, 1);
-        assertEquals(receivedDocs[0].contribution_type, 'antithesis');
-        assertEquals(receivedDocs[0].id, 'doc-2-antithesis');
+        assertEquals(receivedDocs[0].contribution_type, 'document');
     });
 
-    it('should invoke RAG service when token count exceeds the limit', async () => {
-        const mockRagService = new MockRagService({ mockContextResult: 'Mocked RAG context' });
-        const getContextForModelSpy = spy(mockRagService, 'getContextForModel');
-        mockDeps.ragService = mockRagService;
-        mockDeps.countTokens = () => 9000; // Exceeds the mock limit of 8192
-
-        const mockFileRecord: Tables<'dialectic_project_resources'> = {
-            id: 'mock-file-record-id',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            project_id: 'proj-1',
-            file_name: 'rag_summary_for_job_parent-job-123.txt',
-            mime_type: 'text/plain',
-            size_bytes: 123,
-            storage_bucket: 'test-bucket',
-            storage_path: '/path/to',
-            user_id: 'user-123',
-            resource_description: { description: 'RAG summary' }
+    it('should bypass RAG and pass all documents to the planner even when token count exceeds limit', async () => {
+        // Arrange: Spy on the RAG service to ensure it's not called.
+        const getContextForModelSpy = spy(mockDeps.ragService!, 'getContextForModel');
+    
+        // Arrange: Force a high token count that would have previously triggered RAG.
+        mockDeps.countTokens = () => 9999; // Exceeds the mock limit of 8192
+    
+        // Arrange: Set up a planner that captures the documents it receives.
+        let receivedDocs: SourceDocument[] | undefined;
+        const plannerFn: GranularityPlannerFn = (sourceDocs, _parentJob, _recipeStep, _authToken) => {
+            receivedDocs = sourceDocs;
+            // Return a simple payload to confirm the workflow completes.
+            return [{
+                job_type: 'execute',
+                prompt_template_id: 'test-prompt',
+                output_type: FileType.business_case,
+                inputs: { documentIds: sourceDocs.map(d => d.id) },
+                model_id: 'model-1',
+                projectId: mockParentJob.payload.projectId,
+                sessionId: mockParentJob.payload.sessionId,
+                stageSlug: mockParentJob.payload.stageSlug,
+                iterationNumber: mockParentJob.payload.iterationNumber,
+                walletId: mockParentJob.payload.walletId,
+                continueUntilComplete: false,
+                maxRetries: 3,
+                continuation_count: 0,
+                canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+            }];
         };
-        mockDeps.fileManager.uploadAndRegisterFile = () => Promise.resolve({ record: mockFileRecord, error: null });
-        
-        const uploadSpy = spy(mockDeps.fileManager, 'uploadAndRegisterFile');
-
-        // Act
+        mockDeps.getGranularityPlanner = () => plannerFn;
+    
+        // Act: Run the function.
         const childJobs = await planComplexStage(
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
@@ -532,124 +727,327 @@ describe('planComplexStage', () => {
             mockRecipeStep,
             'user-jwt-123'
         );
-
-        // Assert
-        // 1. RAG service was called
-        assertEquals(getContextForModelSpy.calls.length, 1);
-        
-        // 2. File manager was called to save the RAG context
-        assertEquals(uploadSpy.calls.length, 1);
-        const uploadContext = uploadSpy.calls[0].args[0];
-
-        assertExists(uploadContext);
-        assertEquals(uploadContext.resourceTypeForDb, 'rag_context_summary');
-        assertEquals(uploadContext.fileContent, 'Mocked RAG context');
-        assertEquals(uploadContext.pathContext.fileType, 'rag_context_summary');
-
-        // 3. A single child job was created
+    
+        // Assert: The RAG service was NOT called.
+        assertEquals(getContextForModelSpy.calls.length, 0, 'RAG service should not have been called.');
+    
+        // Assert: The planner was called and received ALL source documents.
+        assertExists(receivedDocs, 'Planner function was not called.');
+        assertEquals(receivedDocs.length, 1, 'Planner should have received 1 source document.');
+    
+        // Assert: A child job was created correctly without RAG intervention.
         assertEquals(childJobs.length, 1);
-        const childJob = childJobs[0];
-        assert(isDialecticExecuteJobPayload(childJob.payload));
-        
-        // 4. The child job has the correct inputs pointing to the RAG artifact
-        assertEquals(childJob.payload.inputs.rag_summary_id, 'mock-file-record-id');
-        assertEquals(childJob.payload.job_type, 'execute');
-
-        // 5. Assert the canonical path params are correct for a RAG-generated job
-        assertExists(childJob.payload.canonicalPathParams);
-        const params = childJob.payload.canonicalPathParams;
-        assertEquals(params.contributionType, mockRecipeStep.output_type);
-        assertEquals(params.sourceModelSlugs, [ "Test Model" ]);
-        assertEquals(params.sourceAnchorType, 'thesis');
-        assertEquals(params.sourceAnchorModelSlug, 'Test Model');
+        const childPayload = childJobs[0].payload;
+        assert(isDialecticExecuteJobPayload(childPayload));
+        assertEquals(childPayload.inputs, { documentIds: ['resource-1'] });
+        assertEquals(Object.hasOwn(childPayload, 'step_info'), false);
     });
 
-    it('should create correct canonicalPathParams in RAG workflow for complex types', async () => {
-        // This test proves the fix for the RAG workflow, ensuring it creates
-        // the full canonical path context required for complex output types.
-        mockRecipeStep.output_type = 'pairwise_synthesis_chunk';
-        mockDeps.countTokens = () => 9000; // Force RAG path
+    it('should correctly find and use a specific document when document_key is provided', async () => {
+        mockRecipeStep.inputs_required = [{ type: 'document', document_key: 'resource-1' }];
+        
+        let receivedDocs: SourceDocument[] = [];
+        const plannerFn: GranularityPlannerFn = (sourceDocs) => {
+            receivedDocs = sourceDocs;
+            return [];
+        };
+        mockDeps.getGranularityPlanner = () => plannerFn;
 
-        // Provide a custom mock for this specific test to ensure we have two documents
-        // with distinct model names.
+        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
+
+        assertEquals(receivedDocs.length, 1);
+        assertEquals(receivedDocs[0].id, 'resource-1');
+    });
+
+    describe('findSourceDocuments data source routing', () => {
+        it('should find a required resource from dialectic_project_resources', async () => {
+            // Arrange: The recipe requires a document that only exists as a project resource.
+            mockRecipeStep.inputs_required = [{ type: 'document', document_key: 'resource-1' }];
+            
+            // Mock the DB to return the resource from the correct table, but nothing from contributions.
+            mockSupabase = createMockSupabaseClient(undefined, {
+                genericMockResults: {
+                    dialectic_contributions: {
+                        select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' }),
+                    },
+                    dialectic_project_resources: {
+                        select: () => Promise.resolve({ data: mockProjectResources, error: null, count: 1, status: 200, statusText: 'OK' }),
+                    },
+                },
+            });
+    
+            let receivedDocs: SourceDocument[] = [];
+            const plannerFn: GranularityPlannerFn = (sourceDocs) => {
+                receivedDocs = sourceDocs;
+                return [];
+            };
+            mockDeps.getGranularityPlanner = () => plannerFn;
+    
+            // Act
+            await planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                mockRecipeStep,
+                'user-jwt-123'
+            );
+    
+            // Assert: The function should find the document in `dialectic_project_resources`.
+            assertEquals(receivedDocs.length, 1);
+            assertEquals(receivedDocs[0].id, 'resource-1');
+        });
+    
+        it('should find feedback from dialectic_feedback', async () => {
+            // Arrange: The recipe requires feedback.
+            mockRecipeStep.inputs_required = [{ type: 'feedback' }];
+            
+            // Mock the DB so feedback exists in its own table.
+            mockSupabase = createMockSupabaseClient(undefined, {
+                genericMockResults: {
+                    dialectic_contributions: {
+                        select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' }),
+                    },
+                    dialectic_feedback: {
+                        select: () => Promise.resolve({ data: mockFeedback, error: null, count: 1, status: 200, statusText: 'OK' }),
+                    },
+                },
+            });
+    
+            let receivedDocs: SourceDocument[] = [];
+            const plannerFn: GranularityPlannerFn = (sourceDocs) => {
+                receivedDocs = sourceDocs;
+                return [];
+            };
+            mockDeps.getGranularityPlanner = () => plannerFn;
+    
+            // Act
+            await planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                mockRecipeStep,
+                'user-jwt-123'
+            );
+    
+            // Assert: The function should find the feedback document.
+            assertEquals(receivedDocs.length, 1);
+            assertEquals(receivedDocs[0].id, 'feedback-1');
+        });
+
+        it('should only query project_resources for type "document"', async () => {
+            // Arrange: The recipe asks for 'document' type.
+            mockRecipeStep.inputs_required = [{ type: 'document' }];
+            
+            mockSupabase = createMockSupabaseClient(undefined, {
+                genericMockResults: {
+                    // Contributions should NOT be returned for a 'document' query.
+                    dialectic_contributions: {
+                        select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' }),
+                    },
+                    dialectic_project_resources: {
+                        select: () => Promise.resolve({ data: mockProjectResources, error: null, count: 1, status: 200, statusText: 'OK' }),
+                    },
+                },
+            });
+
+            let receivedDocs: SourceDocument[] = [];
+            const plannerFn: GranularityPlannerFn = (sourceDocs) => {
+                receivedDocs = sourceDocs;
+                return [];
+            };
+            mockDeps.getGranularityPlanner = () => plannerFn;
+
+            // Act
+            await planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                mockRecipeStep,
+                'user-jwt-123'
+            );
+
+            // Assert: Only the document from project_resources should be returned.
+            assertEquals(receivedDocs.length, 1);
+            assertEquals(receivedDocs[0].id, 'resource-1');
+            assertEquals(receivedDocs[0].contribution_type, 'document');
+        });
+    });
+
+    it('should throw when recipe step uses deprecated prompt_template_name', async () => {
+        // Arrange: This test ensures the function enforces the modern data contract by
+        // rejecting recipe steps that use the deprecated `prompt_template_name`.
+        const deprecatedRecipeStep: any = {
+            ...mockRecipeStep,
+            prompt_template_name: 'old-deprecated-name',
+        };
+        delete deprecatedRecipeStep.prompt_template_id;
+
+        const plannerFn: GranularityPlannerFn = () => [];
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        // Act & Assert
+        await assertRejects(
+            () => planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                deprecatedRecipeStep as DialecticRecipeStep, // Cast back for the function call
+                'user-jwt-123'
+            ),
+            Error,
+            'recipeStep.prompt_template_id is required'
+        );
+    });
+
+    it('should throw when recipe step uses deprecated step property', async () => {
+        // Arrange: This test proves that the function rejects recipe steps that
+        // use the outdated `step` property, enforcing the modern contract.
+        const deprecatedRecipeStep: any = {
+            ...mockRecipeStep,
+            step: 1, // The deprecated property
+        };
+        // The new properties that should be used are not present.
+        delete deprecatedRecipeStep.step_name;
+        delete deprecatedRecipeStep.step_key;
+
+        // The function is expected to validate the incoming recipe step and throw a
+        // specific error when it encounters the deprecated property.
+        const plannerFn: GranularityPlannerFn = () => [];
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        // Act & Assert
+        await assertRejects(
+            () => planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                deprecatedRecipeStep as DialecticRecipeStep,
+                'user-jwt-123'
+            ),
+            Error,
+            'recipeStep.step is a deprecated property. Please use step_key or step_name.'
+        );
+    });
+
+    it('should find and pass HeaderContext when required by recipe', async () => {
+        // Arrange: The test is configured to require `header_context` as an input.
+        mockRecipeStep.inputs_required = [
+            { type: 'document', document_key: '*' },
+            { type: 'header_context', document_key: '*' },
+        ];
+
+        let receivedDocs: SourceDocument[] = [];
+        const plannerFn: GranularityPlannerFn = (sourceDocs) => {
+            receivedDocs = sourceDocs;
+            return [];
+        };
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        // Act: The function is called with the recipe requiring the header.
+        await planComplexStage(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockDeps,
+            mockRecipeStep,
+            'user-jwt-123'
+        );
+
+        // Assert: The planner should receive all documents, including the header context.
+        assertEquals(receivedDocs.length, 2, 'Should have received the project resource and the header');
+        const headerContextDoc = receivedDocs.find(doc => doc.contribution_type === 'header_context');
+        assertExists(headerContextDoc, 'HeaderContext document was not found');
+        assertEquals(headerContextDoc.id, 'header-context-1');
+    });
+
+    it('should proceed without HeaderContext if not required by recipe', async () => {
+        // Arrange: The test is configured to only require standard documents.
+        mockRecipeStep.inputs_required = [
+            { type: 'document', document_key: '*' },
+        ];
+
+        let receivedDocs: SourceDocument[] = [];
+        const plannerFn: GranularityPlannerFn = (sourceDocs) => {
+            receivedDocs = sourceDocs;
+            return [];
+        };
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        // Act: The function is called with the recipe NOT requiring the header.
+        await planComplexStage(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockDeps,
+            mockRecipeStep,
+            'user-jwt-123'
+        );
+
+        // Assert: The planner should only receive the documents, excluding the header context.
+        assertEquals(receivedDocs.length, 1, 'Should have received only the one project resource');
+        const headerContextDoc = receivedDocs.find(doc => doc.contribution_type === 'header_context');
+        assertEquals(headerContextDoc, undefined, 'HeaderContext should not have been included');
+    });
+
+    it('should throw if HeaderContext is required but not found', async () => {
+        // Arrange: The recipe is configured to require a `header_context`.
+        mockRecipeStep.inputs_required = [
+            { type: 'document', document_key: '*' },
+            { type: 'header_context', document_key: '*' },
+        ];
+
+        // Arrange: The database mock is configured to find no `header_context` documents.
         if (mockSupabase.genericMockResults?.dialectic_contributions) {
-            mockSupabase.genericMockResults.dialectic_contributions.select = () => {
-                const data = [
-                    { ...mockContributions[0], id: 'rag-thesis', model_name: 'Test Model', contribution_type: 'thesis' },
-                    { ...mockContributions[1], id: 'rag-antithesis', model_name: 'paired-model', contribution_type: 'antithesis' }
-                ];
-                return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
+            mockSupabase.genericMockResults.dialectic_contributions.select = (state: MockQueryBuilderState) => {
+                const typeFilter = state.filters.find(f => f.column === 'contribution_type')?.value;
+                if (typeFilter === 'header_context') {
+                    // The mock will return no documents for this specific type.
+                    return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
+                }
+                // For other types, it returns the standard set of mock documents.
+                const filteredData = mockContributions.filter(c => c.contribution_type !== 'header_context');
+                return Promise.resolve({ data: filteredData, error: null, count: filteredData.length, status: 200, statusText: 'OK' });
             };
         }
-
-        const mockFileRecord: Tables<'dialectic_project_resources'> = {
-            id: 'mock-file-record-id',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            project_id: 'proj-1',
-            file_name: 'rag_summary.txt',
-            mime_type: 'text/plain',
-            size_bytes: 123,
-            storage_bucket: 'test-bucket',
-            storage_path: '/path/to',
-            user_id: 'user-123',
-            resource_description: { description: 'RAG summary' }
-        };
-        mockDeps.fileManager.uploadAndRegisterFile = () => Promise.resolve({ record: mockFileRecord, error: null });
-
-        // Act
-        const childJobs = await planComplexStage(
-            mockSupabase.client as unknown as SupabaseClient<Database>,
-            mockParentJob,
-            mockDeps,
-            mockRecipeStep,
-            'user-jwt-123'
+    
+        // Act & Assert: The function must throw a specific error when a required
+        // input document is missing, preventing silent failures.
+        await assertRejects(
+            () => planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                mockRecipeStep,
+                'user-jwt-123'
+            ),
+            Error,
+            "A required input of type 'header_context' was not found for the current job."
         );
-
-        // Assert
-        assertEquals(childJobs.length, 1);
-        const childJob = childJobs[0];
-        assert(isDialecticExecuteJobPayload(childJob.payload));
-
-        const params = childJob.payload.canonicalPathParams;
-        assertExists(params);
-        assertEquals(params.contributionType, 'pairwise_synthesis_chunk');
-        assertExists(params.sourceAnchorType);
-        assertExists(params.sourceAnchorModelSlug);
-        assertExists(params.pairedModelSlug);
-        assertEquals(params.sourceModelSlugs, ['Test Model', 'paired-model']);
-        assertEquals(params.sourceAnchorModelSlug, 'Test Model');
-        // Because both mock docs have the same model name, the paired slug will also be 'Test Model'.
-        // The key is that the logic correctly found a non-anchor document.
-        assertEquals(params.pairedModelSlug, 'paired-model');
     });
 
     it('should correctly inherit user_jwt from parent payload into child job payloads', async () => {
-        // 1. Setup: Define a mock JWT
+        // 1. Arrange: Define a mock JWT for the test context.
         const MOCK_AUTH_TOKEN = 'mock-user-jwt-for-test';
 
-        // 2. Setup: Define a simple planner that returns a basic payload
+        // 2. Arrange: Define a simple planner that returns a valid payload.
         const mockExecutePayload: DialecticExecuteJobPayload = {
             job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 1 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'synthesis',
+            prompt_template_id: 'test-prompt',
+            output_type: FileType.HeaderContext,
             inputs: { documentId: 'doc-1-thesis' },
             model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'test-stage',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
+            projectId: mockParentJob.payload.projectId,
+            sessionId: mockParentJob.payload.sessionId,
+            stageSlug: mockParentJob.payload.stageSlug,
+            iterationNumber: mockParentJob.payload.iterationNumber,
+            walletId: mockParentJob.payload.walletId,
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis' },
+            canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
         };
         const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
         mockDeps.getGranularityPlanner = () => plannerFn;
 
-        // 3. Act: Call the function under test
+        // 3. Act: Call the function under test.
         const childJobs = await planComplexStage(
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
@@ -658,45 +1056,45 @@ describe('planComplexStage', () => {
             MOCK_AUTH_TOKEN
         );
 
-        // 4. Assert: Check that the payload of the created child job contains the parent payload JWT
+        // 4. Assert: Verify that the created child job's payload correctly contains the JWT from the parent's payload.
         assertEquals(childJobs.length, 1);
         const childPayload = childJobs[0].payload;
         assert(isDialecticExecuteJobPayload(childPayload), 'Payload should be a valid execute job payload');
         assertEquals(childPayload.user_jwt, 'parent-jwt-default', "The user_jwt was not correctly inherited from the parent payload.");
+        assertEquals(Object.hasOwn(childPayload, 'step_info'), false);
     });
 
     // =============================================================
     // user_jwt must be inherited from parent payload (not param)
     // =============================================================
     it('planComplexStage should construct child payload with user_jwt inherited from parent payload (ignoring authToken param)', async () => {
-        // Arrange
+        // Arrange: Define two distinct JWTs to prove which one is used.
         const PARENT_JWT = 'parent-payload-jwt';
         const PARAM_JWT = 'param-auth-jwt-should-be-ignored';
 
-        // Inject user_jwt into the parent plan payload at runtime without casting
+        // Inject the primary JWT into the parent job's payload.
         Object.defineProperty(mockParentJob.payload, 'user_jwt', { value: PARENT_JWT, configurable: true, enumerable: true, writable: true });
 
         const mockExecutePayload: DialecticExecuteJobPayload = {
             job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 1 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'synthesis',
+            prompt_template_id: 'test-prompt',
+            output_type: FileType.HeaderContext,
             inputs: { documentId: 'doc-1-thesis' },
             model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'test-stage',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
+            projectId: mockParentJob.payload.projectId,
+            sessionId: mockParentJob.payload.sessionId,
+            stageSlug: mockParentJob.payload.stageSlug,
+            iterationNumber: mockParentJob.payload.iterationNumber,
+            walletId: mockParentJob.payload.walletId,
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis' },
+            canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
         };
         const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
         mockDeps.getGranularityPlanner = () => plannerFn;
 
-        // Act
+        // Act: Call the function with the secondary, ignored JWT.
         const childJobs = await planComplexStage(
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
@@ -705,12 +1103,12 @@ describe('planComplexStage', () => {
             PARAM_JWT
         );
 
-        // Assert
+        // Assert: The child job must inherit the JWT from the parent payload, not the one passed as a parameter.
         assertEquals(childJobs.length, 1);
         const payload = childJobs[0].payload;
         assert(isDialecticExecuteJobPayload(payload));
-        // RED expectation: implementation should inherit from parent (PARENT_JWT), not PARAM_JWT
         assertEquals(payload.user_jwt, PARENT_JWT);
+        assertEquals(Object.hasOwn(payload, 'step_info'), false);
     });
 
     // =============================================================
@@ -729,21 +1127,20 @@ describe('planComplexStage', () => {
 
         const plannerFn: GranularityPlannerFn = () => [{
             job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 1 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'synthesis',
+            prompt_template_id: 'test-prompt',
+            output_type: FileType.HeaderContext,
             inputs: { documentId: 'doc-1-thesis' },
             model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'test-stage',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
+            projectId: mockParentJob.payload.projectId,
+            sessionId: mockParentJob.payload.sessionId,
+            stageSlug: mockParentJob.payload.stageSlug,
+            iterationNumber: mockParentJob.payload.iterationNumber,
+            walletId: mockParentJob.payload.walletId,
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis' },
-        } as DialecticExecuteJobPayload];
+            canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+        }];
         mockDeps.getGranularityPlanner = () => plannerFn;
 
         await assertRejects(
@@ -765,21 +1162,20 @@ describe('planComplexStage', () => {
 
         const plannerFn: GranularityPlannerFn = () => [{
             job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 1 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'synthesis',
+            prompt_template_id: 'test-prompt',
+            output_type: FileType.HeaderContext,
             inputs: { documentId: 'doc-1-thesis' },
             model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'test-stage',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
+            projectId: mockParentJob.payload.projectId,
+            sessionId: mockParentJob.payload.sessionId,
+            stageSlug: mockParentJob.payload.stageSlug,
+            iterationNumber: mockParentJob.payload.iterationNumber,
+            walletId: mockParentJob.payload.walletId,
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis' },
-        } as DialecticExecuteJobPayload];
+            canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+        }];
         mockDeps.getGranularityPlanner = () => plannerFn;
 
         await assertRejects(
@@ -801,9 +1197,8 @@ describe('planComplexStage', () => {
     it('constructs execute child rows with consistent dynamic stage markers (row.stage_slug === payload.stageSlug)', async () => {
         const plannerFn: GranularityPlannerFn = () => [{
             job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 1 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'synthesis',
+            prompt_template_id: 'test-prompt',
+            output_type: FileType.HeaderContext,
             inputs: { documentId: 'doc-1-thesis' },
             model_id: mockParentJob.payload.model_id,
             projectId: mockParentJob.payload.projectId,
@@ -814,7 +1209,7 @@ describe('planComplexStage', () => {
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis' },
+            canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
         }];
         mockDeps.getGranularityPlanner = () => plannerFn;
 
@@ -833,6 +1228,7 @@ describe('planComplexStage', () => {
         const expectedStage = mockParentJob.payload.stageSlug;
         assertEquals(child.stage_slug, expectedStage);
         assertEquals(child.payload.stageSlug, expectedStage);
+        assertEquals(Object.hasOwn(child.payload, 'step_info'), false);
     });
 
     it('throws when parent payload.stageSlug is missing (no healing, no defaults)', async () => {
@@ -844,21 +1240,20 @@ describe('planComplexStage', () => {
 
         const plannerFn: GranularityPlannerFn = () => [{
             job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 1 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'synthesis',
+            prompt_template_id: 'test-prompt',
+            output_type: FileType.HeaderContext,
             inputs: { documentId: 'doc-1-thesis' },
             model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
+            projectId: mockParentJob.payload.projectId,
+            sessionId: mockParentJob.payload.sessionId,
             stageSlug: 'should-not-be-used-when-parent-missing',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
+            iterationNumber: mockParentJob.payload.iterationNumber,
+            walletId: mockParentJob.payload.walletId,
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis' },
-        } as DialecticExecuteJobPayload];
+            canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+        }];
         mockDeps.getGranularityPlanner = () => plannerFn;
 
         await assertRejects(
@@ -874,3 +1269,5 @@ describe('planComplexStage', () => {
         );
     });
 }); 
+
+

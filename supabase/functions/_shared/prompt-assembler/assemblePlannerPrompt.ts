@@ -140,20 +140,13 @@ export async function assemblePlannerPrompt(
       branchKey: stage.recipe_step.branch_key,
       parallelGroup: stage.recipe_step.parallel_group,
     },
+    resourceTypeForDb: "planner_prompt",
     fileContent: renderedPrompt,
     mimeType: "text/markdown",
     sizeBytes: new TextEncoder().encode(renderedPrompt).length,
     userId: project.user_id,
     description:
       `Planner prompt for stage: ${stage.slug}, step: ${stage.recipe_step.step_name}`,
-    contributionMetadata: {
-      sessionId: session.id,
-      modelIdUsed: job.payload.model_id,
-      modelNameDisplay: model.name,
-      stageSlug: stage.slug,
-      iterationNumber: session.iteration_count,
-      rawJsonResponseContent: null,
-    },
   });
 
   if (response.error) {

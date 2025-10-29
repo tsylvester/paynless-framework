@@ -7,7 +7,6 @@ import {
     DialecticJobRow,
     JobResultsWithModelProcessing,
     ModelProcessingResult,
-    DialecticStageRecipe,
     DialecticPlanJobPayload,
     DialecticExecuteJobPayload,
     ContributionType,
@@ -17,7 +16,6 @@ import {
     FailedAttemptError,
     DialecticStepPlannerMetadata,
     BranchKey,
-    OutputType,
     StageWithRecipeSteps,
     DialecticRecipeStep,
 } from '../../../dialectic-service/dialectic.interface.ts';
@@ -44,7 +42,6 @@ const validContributionTypes: ContributionType[] = [
 ];
 
 const validBranchKeys = new Set<string>(Object.values(BranchKey));
-const validOutputTypes = new Set<string>([...Object.values(OutputType), ...Object.values(FileType)]);
 
 function isPlannerMetadata(value: unknown): value is DialecticStepPlannerMetadata {
     if (!isRecord(value)) return false;
@@ -466,6 +463,22 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
     // Legacy property check
     if ('originalFileName' in payload) throw new Error('Legacy property originalFileName is not allowed.');
 
+    // Final check for extraneous properties to enforce a strict shape.
+    const allowedKeys = new Set<string>([
+        'sessionId', 'projectId', 'model_id', 'walletId', 'stageSlug', 'iterationNumber',
+        'job_type', 'output_type', 'canonicalPathParams', 'inputs', 'prompt_template_id',
+        'document_key', 'branch_key', 'parallel_group', 'planner_metadata',
+        'document_relationships', 'isIntermediate', 'user_jwt', 'target_contribution_id',
+        // Base job payload fields that may be present on execute jobs
+        'continueUntilComplete', 'maxRetries', 'continuation_count'
+    ]);
+
+    const unknownKeys = Object.keys(payload).filter(key => !allowedKeys.has(key));
+
+    if (unknownKeys.length > 0) {
+        throw new Error(`Payload contains unknown properties: ${unknownKeys.join(', ')}`);
+    }
+
     return true;
 }
 
@@ -587,127 +600,6 @@ export function isDialecticPlanJobPayload(payload: unknown): payload is Dialecti
     );
 }
 
-export function isDialecticStageRecipe(value: unknown): value is DialecticStageRecipe {
-    if (!isRecord(value)) return false;
-
-    if (!isRecord(value.processing_strategy) || value.processing_strategy.type !== 'task_isolation') {
-        return false;
-    }
-
-    if (!Array.isArray(value.steps) || value.steps.length === 0) {
-        return false;
-    }
-
-    for (const step of value.steps) {
-        if (!isRecord(step)) {
-            return false;
-        }
-
-        if (typeof step.step !== 'number') {
-            return false;
-        }
-
-        if (typeof step.name !== 'string' || step.name.length === 0) {
-            return false;
-        }
-
-        if (typeof step.prompt_template_name !== 'string' || step.prompt_template_name.length === 0) {
-            return false;
-        }
-
-        if (typeof step.granularity_strategy !== 'string') {
-            return false;
-        }
-
-        if (typeof step.output_type !== 'string' || !validOutputTypes.has(step.output_type)) {
-            return false;
-        }
-
-        if (!Array.isArray(step.inputs_required)) {
-            return false;
-        }
-
-        for (const rule of step.inputs_required) {
-            if (!isRecord(rule)) {
-                return false;
-            }
-
-            if (typeof rule.type !== 'string') {
-                return false;
-            }
-
-            if (rule.stage_slug !== undefined && typeof rule.stage_slug !== 'string') {
-                return false;
-            }
-
-            if (rule.required !== undefined && typeof rule.required !== 'boolean') {
-                return false;
-            }
-
-            const requiresDocumentKey = rule.type === 'header_context';
-
-            if (requiresDocumentKey) {
-                if (typeof rule.document_key !== 'string' || !isFileType(rule.document_key)) {
-                    return false;
-                }
-            } else if (rule.document_key !== undefined && (typeof rule.document_key !== 'string' || !isFileType(rule.document_key))) {
-                return false;
-            }
-        }
-
-        if ('branch_key' in step && step.branch_key !== undefined) {
-            if (typeof step.branch_key !== 'string' || !validBranchKeys.has(step.branch_key)) {
-                return false;
-            }
-        }
-
-        if ('parallel_group' in step && step.parallel_group !== undefined) {
-            if (typeof step.parallel_group !== 'number' || step.parallel_group < 0) {
-                return false;
-            }
-        }
-
-        if ('outputs_required' in step) {
-            const outputs = step.outputs_required;
-            if (!isRecord(outputs)) {
-                return false;
-            }
-
-            if ('system_materials' in outputs && !isHeaderContextSystemMaterials(outputs.system_materials)) {
-                return false;
-            }
-
-            if ('header_context_artifact' in outputs && !isHeaderContextArtifact(outputs.header_context_artifact)) {
-                return false;
-            }
-
-            if ('context_for_documents' in outputs && !isHeaderContextDocuments(outputs.context_for_documents)) {
-                return false;
-            }
-
-            if ('documents' in outputs) {
-                const documents = outputs.documents;
-                if (!Array.isArray(documents)) {
-                    return false;
-                }
-                for (const doc of documents) {
-                    if (!isRecord(doc) || typeof doc.document_key !== 'string' || !isFileType(doc.document_key) || typeof doc.template_filename !== 'string') {
-                        return false;
-                    }
-                }
-            }
-
-            if ('files_to_generate' in outputs) {
-                const files = outputs.files_to_generate;
-                if (!Array.isArray(files) || !files.every(file => isRecord(file) && typeof file.template_filename === 'string' && typeof file.from_document_key === 'string' && isFileType(file.from_document_key))) {
-                    return false;
-                }
-            }
-        }
-    }
-
-    return true;
-}
 
 export function isDocumentRelationships(obj: unknown): obj is DocumentRelationships {
     if (!isRecord(obj)) {

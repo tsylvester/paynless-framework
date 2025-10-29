@@ -1199,6 +1199,7 @@ export type Database = {
           parallel_group: number | null
           prompt_template_id: string | null
           prompt_type: string
+          step_description: string | null
           step_key: string
           step_name: string
           step_slug: string
@@ -1224,6 +1225,7 @@ export type Database = {
           parallel_group?: number | null
           prompt_template_id?: string | null
           prompt_type: string
+          step_description?: string | null
           step_key: string
           step_name: string
           step_slug: string
@@ -1249,6 +1251,7 @@ export type Database = {
           parallel_group?: number | null
           prompt_template_id?: string | null
           prompt_type?: string
+          step_description?: string | null
           step_key?: string
           step_name?: string
           step_slug?: string

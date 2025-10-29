@@ -460,59 +460,70 @@ graph LR
     *   `[✅]` 2.c. `[TEST-INT]` Write an integration test that consumes `testing_prompt.md` to generate and print an actual `SeedPrompt`, `PlannerPrompt`, `AssembledPrompt`, and `ContinuationPrompt` for the `testing_prompt` content for each stage so that the user can manually review the outputs for confirmation or correction of their content.
     *   `[✅]` 2.d. `[COMMIT]` refactor(worker): Migrate all consumers to the refactore `PromptAssembler` service.
 
-*   `[ ]` 3. `[REFACTOR]` Phase 3: Refactor `task_isolator` Service.
-    *   **Justification:** With the recipes and `PromptAssembler` now being explicit, the `task_isolator` no longer needs complex special-case logic. It simply needs to pass the `HeaderContext` along with other inputs, simplifying its role to that of a dependency resolver and job planner.
-    *   `[ ]` 3.a. `[TEST-UNIT]` In `task_isolator.test.ts`, update all tests to establish the RED state. The tests must prove the current implementation is broken due to its reliance on outdated data contracts and types, and that it correctly handles the new recipes.
+*   `[✅]` 3. `[REFACTOR]` Phase 3: Refactor `task_isolator` Service to Delegate Context Management.
+    *   **Justification:** The `task_isolator` contains several pieces of logic that must be refactored to align with modern data contracts. **_Discovery:_** Our investigation revealed two critical architectural flaws. First, its RAG-related logic for handling context overflows is unsound; context management belongs downstream in `executeModelCallAndSave`. Second, and more critically, the `findSourceDocuments` helper is blind to finished artifacts, as it **only queries the `dialectic_contributions` table**. It cannot see "finished products" stored in `dialectic_project_resources` or user feedback in `dialectic_feedback`, preventing recipes from using finished documents or feedback as inputs for subsequent steps. This refactor will centralize context management, remove the redundant RAG logic, expand the document search scope, and resolve the associated `FileType` ambiguity permanently.
+    *   `[✅]` 3.a. `[REFACTOR]` In `supabase/functions/_shared/types/file_manager.types.ts`, remove the `RagContextSummary` member from the `FileType` enum and any associated type unions.
+    *   `[✅]` 3.b. `[TEST-UNIT]` In `task_isolator.test.ts`, update all tests to establish the RED state.
         *   Update mocks for all planner strategy dependencies to reflect their new, correct signatures and return values.
         *   Provide valid, complete `DialecticRecipeStep` objects in all test mocks, ensuring `granularity_strategy` and `inputsRequired` are defined where needed.
         *   Modify assertions to prove that `planComplexStage` fails when using deprecated properties like `recipeStep.step` and `recipeStep.prompt_template_name`.
-        *   Add assertions to prove the RAG context generation logic fails due to type mismatches (`FileType.RagContextSummary` vs `ResourceFileTypes`).
-        *   Assert that any new jobs created by the `task_isolator` (e.g., in `createAndStoreRagContext`) do NOT contain the deprecated `step_info` object in their payload.
-        *   The tests must prove that the planner correctly handles cases where `HeaderContext` is required but missing, correctly finds and provide it when available, and correctly passes all other required inputs alongside it as `SourceDocument` objects.
-    *   `[ ]` 3.b. `[BE]` In `task_isolator.ts`, refactor the implementation to achieve the GREEN state.
+        *   **Delete all existing tests that validate the RAG context generation workflow. Add a new test case with enough `SourceDocument`s to trigger the (now-deleted) overflow logic, and assert that `ragService` is NOT called and that all original `SourceDocument` IDs are passed through to the resulting child job payloads.**
+        *   Assert that any new jobs created by the `task_isolator` do NOT contain the deprecated `step_info` object in their payload.
+        *   The tests must prove that the planner correctly handles cases where `HeaderContext` is required but missing, correctly finds and provides it when available, and correctly passes all other required inputs alongside it as `SourceDocument` objects.
+        *   `[✅]` `[DISCOVERY]` Add new tests to prove that `findSourceDocuments` cannot see finished artifacts.
+            *   `[✅]` Add a test case where a mock recipe step's `inputs_required` rule targets a `contribution_type` stored in `dialectic_project_resources`.
+            *   `[✅]` In this test, mock the Supabase client to return a matching record from the `dialectic_project_resources` table.
+            *   `[✅]` Assert that the call to `findSourceDocuments` **fails** to find and return this document, establishing the RED state.
+            *   `[✅]` Repeat this pattern with another test case for the `dialectic_feedback` table.
+    *   `[✅]` 3.c. `[BE]` In `task_isolator.ts`, refactor the implementation to achieve the GREEN state.
         *   Refactor all logic to correctly use the properties of the modern `DialecticRecipeStep` object, replacing `prompt_template_name` with `prompt_template_id` and removing usage of `step`.
         *   Add null checks or guards for `inputsRequired` and `granularity_strategy` to resolve potential `undefined` errors.
-        *   Correct the type error in the RAG context generation logic by ensuring the `UploadContext` passed to `fileManager.uploadAndRegisterFile` is correctly typed.
+        *   **Delete the token estimation logic and the entire `if (estimatedTokens > maxTokens)` block. The function should now unconditionally call the appropriate granularity planner with all fetched `sourceDocuments`.**
         *   Remove all logic that creates or propagates the `step_info` object in job payloads.
         *   Validate that the existing implementation correctly handles the new recipes and the `HeaderContext` input type. While no major logic change is anticipated, this step focuses on proving correctness through the newly expanded test suite. Adjust the implementation if any gaps are revealed by the tests.
+        *   `[✅]` `[DISCOVERY]` Refactor `findSourceDocuments` to query all three potential source tables (`contributions`, `resources`, `feedback`).
+            *   `[✅]` Implement logic to inspect the `contribution_type` for each rule in `inputs_required`.
+            *   `[✅]` Based on the `contribution_type`, dynamically determine the correct table to query.
+            *   `[✅]` Execute the query against the determined table.
+            *   `[✅]` Ensure the records from all three tables are correctly mapped to the `SourceDocument` type.
         *   Ensure all tests written in the previous step now pass.
 
-*   `[ ]` 4. `[REFACTOR]` Phase 4: Refactor `processComplexJob`.
+*   `[✅]` 4. `[REFACTOR]` Phase 4: Refactor `processComplexJob`.
     *   **Justification:** With the `processJob` router now distinguishing between 'PLAN' and 'EXECUTE' jobs, `processComplexJob` becomes the dedicated orchestrator for the planning phase. This refactor adapts it to the new recipe-driven model, removing its dependency on deprecated data contracts like `input_artifact_rules` and `step_info`.
-    *   `[ ]` 4.a. `[TEST-UNIT]` In `processComplexJob.test.ts`, update tests to establish the RED state.
+    *   `[✅]` 4.a. `[TEST-UNIT]` In `processComplexJob.test.ts`, update tests to establish the RED state.
         *   Update mocks for `task_isolator` to reflect its corrected behavior.
         *   The tests must prove that the function fails when it attempts to access the deprecated `stageData.input_artifact_rules` property.
         *   Update mocks to provide stage data that aligns with the new schema, where recipes are fetched from the `dialectic_stage_recipes` table.
         *   Assert that the function fails to find the current recipe step because it's using the deprecated `job.payload.step_info` object.
-    *   `[ ]` 4.b. `[BE]` In `processComplexJob.ts`, refactor the implementation to achieve the GREEN state.
+    *   `[✅]` 4.b. `[BE]` In `processComplexJob.ts`, refactor the implementation to achieve the GREEN state.
         *   Remove the logic that reads `stageData.input_artifact_rules`. Replace it with logic to fetch the recipe correctly from the stage data.
         *   Refactor the logic for finding the current recipe step to derive the step from the job context without using the deprecated `job.payload.step_info`.
         *   Remove any implicit `any` types, such as the parameter in the `.find()` call.
         *   Ensure all tests pass.
 
-*   `[ ]` 5. `[REFACTOR]` Phase 5: Refactor `processSimpleJob`.
-    *   `[ ]` 5.a. `[TEST-UNIT]` In `processSimpleJob.test.ts`, implement the comprehensive failing test suite as described in the original work plan's step `6.d.i`. This suite establishes the RED state.
+*   `[✅]` 5. `[REFACTOR]` Phase 5: Refactor `processSimpleJob`.
+    *   `[✅]` 5.a. `[TEST-UNIT]` In `processSimpleJob.test.ts`, implement the following failing test suite: 
         *   The test must mock the `promptAssembler` dependency. The mock for the `assemble` facade will return a mock `AssembledPrompt` object.
         *   The test must assert that the `assemble` facade method is called with a correctly structured `AssemblePromptOptions` object, which correctly sources its data from the job and context.
         *   It must also assert that the newly-private methods on the prompt assembler (`_gatherContext`, `_render`, `_gatherInputsForStage`, `_gatherContinuationInputs`) are **not** called directly by `processSimpleJob`.
         *   It must assert that `executeModelCallAndSave` is called with a `promptConstructionPayload` that correctly uses the `promptContent` and `source_prompt_resource_id` from the mocked `AssembledPrompt` object.
         *   It must prove that the current logic for creating `stageContext` is invalid because it is missing the required `recipe_step` property.
-    *   `[ ]` 5.b. `[BE]` In `processSimpleJob.ts`, perform the major refactoring to achieve the GREEN state, as described in the original step `6.d.ii`.
-        *   `[ ]` 5.b.i. First, **analyze** the existing manual prompt assembly logic to ensure that the replacement call to the `assemble` facade will be logically equivalent and can fully replace the manual construction without loss of functionality.
-        *   `[ ]` 5.b.ii. Then, **delete** the entire block of manual prompt assembly logic. This includes the calls to `gatherContinuationInputs`, `gatherInputsForStage`, `gatherContext`, and `render`.
-        *   `[ ]` 5.b.iii. Correct the construction of the `stageContext` object to include the `recipe_step` property, sourced from the `stage` data.
-        *   `[ ]` 5.b.iv. Replace the deleted block with a single `await` call to `deps.promptAssembler.assemble`, passing in a correctly constructed `AssemblePromptOptions` object.
-        *   `[ ]` 5.b.v. Use the returned `AssembledPrompt` object to build the `promptConstructionPayload` for `executeModelCallAndSave`.
-        *   `[ ]` 5.b.vi. Remove the logic that causes the `This comparison appears to be unintentional` type error.
-        *   `[ ]` 5.b.vii. Ensure all tests from the previous step now pass.
+    *   `[✅]` 5.b. `[BE]` In `processSimpleJob.ts`, perform the major refactoring to achieve the GREEN state against the above tests.
+        *   `[✅]` 5.b.i. First, **analyze** the existing manual prompt assembly logic to ensure that the replacement call to the `assemble` facade will be logically equivalent and can fully replace the manual construction without loss of functionality.
+        *   `[✅]` 5.b.ii. Then, **delete** the entire block of manual prompt assembly logic. This includes the calls to `gatherContinuationInputs`, `gatherInputsForStage`, `gatherContext`, and `render`.
+        *   `[✅]` 5.b.iii. Correct the construction of the `stageContext` object to include the `recipe_step` property, sourced from the `stage` data.
+        *   `[✅]` 5.b.iv. Replace the deleted block with a single `await` call to `deps.promptAssembler.assemble`, passing in a correctly constructed `AssemblePromptOptions` object.
+        *   `[✅]` 5.b.v. Use the returned `AssembledPrompt` object to build the `promptConstructionPayload` for `executeModelCallAndSave`.
+        *   `[✅]` 5.b.vi. Remove the logic that causes the `This comparison appears to be unintentional` type error.
+        *   `[✅]` 5.b.vii. Ensure all tests from the previous step now pass.
 
 *   `[ ]` 6. `[REFACTOR]` Phase 6: Refactor `processJob` Router.
-    *   `[ ]` 6.a. `[TEST-UNIT]` In `processJob.test.ts`, write a failing test suite to establish the RED state, as described in the original work plan's step `7.a.i`.
+    *   `[✅]` 6.a. `[TEST-UNIT]` In `processJob.test.ts`, write a failing test suite to establish the RED state, as described in the original work plan's step `7.a.i`.
         *   The tests must prove that the router dispatches jobs based on the `job.job_type` database column.
         *   Provide a mock job with `job_type: 'PLAN'` and assert that `deps.processComplexJob` is called.
         *   Provide a mock job with `job_type: 'EXECUTE'` and assert that `deps.processSimpleJob` is called.
         *   Assert that the old payload-sniffing and `processing_strategy` logic is no longer used.
-    *   `[ ]` 6.b. `[BE]` In `processJob.ts`, refactor the main function to achieve the GREEN state.
+    *   `[✅]` 6.b. `[BE]` In `processJob.ts`, refactor the main function to achieve the GREEN state.
         *   Implement a `switch` statement that operates on `job.job_type`.
         *   Route jobs to the appropriate downstream processor (`processComplexJob` or `processSimpleJob`) based on the type.
         *   Delete the old, deprecated routing logic.
@@ -537,7 +548,7 @@ graph LR
 *   `[ ]` 8. `[BE]` Phase 8: Enforce Fan-in Orchestration.
     *   `[ ]` 8.a. `[TEST-INT]` Write failing integration tests that prove final "fan-in" steps (e.g., Synthesis's final deliverable) do not start until all parallel prerequisite jobs are complete.
     *   `[ ]` 8.b. `[BE]` Modify worker scheduling logic to check for sibling job completion within a `parallel_group` before enqueueing a dependent fan-in step.
-    *   `[ ]` 8.c. `[TEST-INT]` Ensure tests pass and verify that consolidated artifacts are correctly generated only after the fan-in guard is satisfied.
+    *   `[ ]` 8.c. `[TEST-INT]` Ensure tests pass and verify that final versions of consolidated artifacts are generated, or validated as complete, after the fan-in guard is satisfied.
 
 *   `[ ]` 9. `[BE]` Phase 9: Implement Document Rendering and Finalization.
     *   `[ ]` 9.a. `[TEST-UNIT]` Write failing unit tests for the `DocumentRenderer` service that verify its ability to be idempotent and cumulative. It must prove that it can:
@@ -563,11 +574,11 @@ graph LR
         *   `[ ]` 10.b.iv Ensure all tests from the previous step now pass.
     *   `[ ]` 10.c. `[COMMIT]` feat(prompt-assembler): Enable granular document selection via recipe system.
 
-*   `[ ]` 11. `[REFACTOR]` Phase 11: Finalize Deprecation of `step_info`.
-    *   `[ ]` 11.a. `[REFACTOR]` Refactor `generateContribution.ts` to stop producing the `step_info` object in job payloads.
-    *   `[ ]` 11.b. `[REFACTOR]` Remove the `step_info` property from the `DialecticJobPayload` interface in `dialectic.interface.ts`.
-    *   `[ ]` 11.c. `[REFACTOR]` Remove all type guards related to `step_info` (e.g., `isDialecticStepInfo`) from `type_guards.dialectic.ts`.
-    *   `[ ]` 11.d. `[TEST-UNIT]` Update all remaining unit tests across the codebase that still use mock payloads with `step_info`, ensuring the entire test suite passes after its removal.
+*   `[✅]` 11. `[REFACTOR]` Phase 11: Finalize Deprecation of `step_info`.
+    *   `[✅]` 11.a. `[REFACTOR]` Refactor `generateContribution.ts` to stop producing the `step_info` object in job payloads.
+    *   `[✅]` 11.b. `[REFACTOR]` Remove the `step_info` property from the `DialecticJobPayload` interface in `dialectic.interface.ts`.
+    *   `[✅]` 11.c. `[REFACTOR]` Remove all type guards related to `step_info` (e.g., `isDialecticStepInfo`) from `type_guards.dialectic.ts`.
+    *   `[✅]` 11.d. `[TEST-UNIT]` Update all remaining unit tests across the codebase that still use mock payloads with `step_info`, ensuring the entire test suite passes after its removal.
 
 *   `[ ]` 12. `[REFACTOR]` Phase 12: Align Worker Index and Finalize.
     *   `[ ]` 12.a. `[TEST-UNIT]` In `index.test.ts` for the `dialectic-worker`, review and update tests.

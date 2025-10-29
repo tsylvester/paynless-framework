@@ -7,34 +7,6 @@ import type { ContributionType } from '../../dialectic-service/dialectic.interfa
 import { isContributionType } from './type_guards.ts';
 
 // --- Direct Deconstruction Tests ---
-Deno.test('[path_deconstructor] direct - model_contribution_main', () => {
-  const projectId = 'proj-mcm';
-  const sessionId = 'sess-mcm-uuid';
-  const shortSessionId = generateShortId(sessionId);
-  const iteration = 1;
-  const stageSlug = 'thesis';
-  const mappedStageDir = mapStageSlugToDirName(stageSlug);
-  const modelSlug = 'claude-3-opus';
-  const attemptCount = 2;
-  const modelSlugSanitized = sanitizeForPath(modelSlug);
-  const stageSlugSanitized = sanitizeForPath(stageSlug);
-
-  const dirPart = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}`;
-  const filePart = `${modelSlugSanitized}_${attemptCount}_${stageSlugSanitized}.md`;
-  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
-
-  assertEquals(info.originalProjectId, projectId);
-  assertEquals(info.shortSessionId, shortSessionId);
-  assertEquals(info.iteration, iteration);
-  assertEquals(info.stageDirName, mappedStageDir);
-  assertEquals(info.stageSlug, stageSlug); // Verifying stageSlug directly
-  assertEquals(info.modelSlug, modelSlugSanitized); 
-  assertEquals(info.attemptCount, attemptCount);
-  assertEquals(info.parsedFileNameFromPath, `${modelSlugSanitized}_${attemptCount}_${stageSlugSanitized}.md`);
-  assertEquals(info.fileTypeGuess, 'model_contribution_main');
-  assertEquals(info.error, undefined);
-});
-
 Deno.test('[path_deconstructor] direct - model_contribution_raw_json', () => {
   const projectId = 'proj-mcrj';
   const sessionId = 'sess-mcrj-uuid';
@@ -105,30 +77,6 @@ Deno.test('[path_deconstructor] direct - user_feedback', () => {
   assertEquals(info.stageSlug, stageSlug);
   assertEquals(info.parsedFileNameFromPath, `user_feedback_${stageSlugSanitized}.md`);
   assertEquals(info.fileTypeGuess, 'user_feedback');
-  assertEquals(info.error, undefined);
-});
-
-Deno.test('[path_deconstructor] direct - contribution_document', () => {
-  const projectId = 'proj-cd';
-  const sessionId = 'sess-cd-uuid';
-  const shortSessionId = generateShortId(sessionId);
-  const iteration = 2;
-  const stageSlug = 'synthesis';
-  const mappedStageDir = mapStageSlugToDirName(stageSlug);
-  const originalFileName = 'Detailed Analysis Report.xlsx';
-  const sanitizedFileName = sanitizeForPath(originalFileName);
-
-  const dirPart = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/documents`;
-  const filePart = sanitizedFileName;
-  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: dirPart, fileName: filePart, dbOriginalFileName: originalFileName });
-
-  assertEquals(info.originalProjectId, projectId);
-  assertEquals(info.shortSessionId, shortSessionId);
-  assertEquals(info.iteration, iteration);
-  assertEquals(info.stageDirName, mappedStageDir);
-  assertEquals(info.stageSlug, stageSlug);
-  assertEquals(info.parsedFileNameFromPath, sanitizedFileName);
-  assertEquals(info.fileTypeGuess, 'contribution_document');
   assertEquals(info.error, undefined);
 });
 
@@ -282,13 +230,14 @@ Deno.test('[path_deconstructor] direct - rag_context_summary', () => {
   assertEquals(info.error, undefined);
 });
 
-Deno.test('[path_deconstructor] direct - model_contribution_main with continuation', () => {
+Deno.test('[path_deconstructor] direct - business_case with continuation', () => {
   const context: PathContext = {
     projectId: 'proj-cont',
     sessionId: 'sess-cont-uuid',
     iteration: 2,
     stageSlug: 'synthesis',
-    fileType: FileType.ModelContributionMain,
+    fileType: FileType.business_case,
+    documentKey: 'business_case',
     modelSlug: 'claude-3-sonnet',
     attemptCount: 0,
     contributionType: 'synthesis',
@@ -308,7 +257,8 @@ Deno.test('[path_deconstructor] direct - model_contribution_main with continuati
   assertEquals(info.contributionType, context.contributionType);
   assertEquals(info.isContinuation, context.isContinuation);
   assertEquals(info.turnIndex, context.turnIndex);
-  assertEquals(info.fileTypeGuess, FileType.ModelContributionMain);
+  assertEquals(info.fileTypeGuess, FileType.business_case);
+  assertEquals(info.documentKey, context.documentKey);
 });
 
 
@@ -461,19 +411,6 @@ const constructDeconstructTestCases: Array<{
     expectedFixedFileNameInPath: 'gpt-x_alpha_0_parenthesis_raw.json'
   },
   {
-    name: 'contribution_document',
-    context: {
-      projectId: 'yy-cdoc',
-      fileType: FileType.ContributionDocument,
-      sessionId: 'session-yy-cdoc',
-      iteration: 1,
-      stageSlug: 'paralysis',
-      originalFileName: 'Final Output Plan.docx',
-    },
-    checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug'],
-    expectedSanitizedFileName: 'final_output_plan.docx'
-  },
-  {
     name: 'pairwise_synthesis_chunk',
     context: {
       projectId: 'yy-psc',
@@ -583,13 +520,13 @@ const constructDeconstructTestCases: Array<{
     name: 'synthesis_pairwise_business_case',
     context: { projectId: 'yy-spbc', fileType: FileType.synthesis_pairwise_business_case, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
     checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
-    expectedFixedFileNameInPath: 'm_0_synthesis_pairwise_business_case.md',
+    expectedFixedFileNameInPath: 'm_0_synthesis_pairwise_business_case.json',
   },
   {
     name: 'synthesis_document_business_case',
     context: { projectId: 'yy-sdbc', fileType: FileType.synthesis_document_business_case, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
     checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
-    expectedFixedFileNameInPath: 'm_0_synthesis_document_business_case.md',
+    expectedFixedFileNameInPath: 'm_0_synthesis_document_business_case.json',
   },
   {
     name: 'trd',
@@ -744,18 +681,6 @@ const deconstructReconstructTestCases: DeconstructReconstructTestCase[] = [
       attemptCount: 1,
     },
   },
-  {
-    name: 'contribution_document',
-    samplePath: 'proj_iota/session_sess005/iteration_0/5_paralysis/documents/final_output.pdf',
-    dbOriginalFileName: 'Final Output.pdf',
-    expectedFileType: FileType.ContributionDocument,
-    expectedContextParts: {
-      originalProjectId: 'proj_iota',
-      shortSessionId: 'sess005',
-      iteration: 0,
-      stageSlug: 'paralysis',
-    },
-  },
 ];
 
 // Test Deconstruction then Reconstruction (D->C)
@@ -813,8 +738,7 @@ deconstructReconstructTestCases.forEach((tc) => {
     // prefer that for reconstruction IF the fileType is one that uses originalFileName directly for naming (not fixed names or complex model names)
     if (tc.dbOriginalFileName && (
         reconstructionContext.fileType === FileType.InitialUserPrompt || 
-        reconstructionContext.fileType === FileType.GeneralResource || 
-        reconstructionContext.fileType === FileType.ContributionDocument)) {
+        reconstructionContext.fileType === FileType.GeneralResource)) {
       reconstructionContext.originalFileName = tc.dbOriginalFileName;
     }
 

@@ -73,7 +73,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     execution_order: 1,
-    output_type: FileType.RenderedDocument,
+    output_type: FileType.business_case,
     parallel_group: null,
     config_override: null,
     job_type: "EXECUTE",
@@ -1038,10 +1038,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
     const stageWithMissingTemplate: StageContext = {
       ...defaultStage,
       recipe_step: {
-        ...defaultStage.recipe_step,
+        ...defaultRecipeStep, // Use the complete default recipe step
         prompt_template_id: "non-existent-template",
       },
-    } as unknown as StageContext;
+    };
 
     const config: MockSupabaseDataConfig = {
       genericMockResults: {
@@ -1368,90 +1368,4 @@ Deno.test("assembleTurnPrompt", async (t) => {
     }
   });
 
-  await t.step("should include contributionMetadata when saving the turn prompt", async () => {
-    const mockModelName = "Test Model 3000";
-    const config: MockSupabaseDataConfig = {
-      genericMockResults: {
-        ai_providers: {
-          select: {
-            data: [
-              { id: "model-123", name: mockModelName, provider: "test", slug: "test-model-3000" },
-            ],
-          }
-        }
-      },
-      storageMock: {
-          downloadResult: (bucket, path) => {
-              if (path.includes("header-context-id")) {
-                  return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
-              }
-              if (path.includes("summary_template.md")) {
-                  return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
-              }
-              return Promise.resolve({ data: null, error: new Error("File not found in mock") });
-          },
-      }
-    };
-    const { client } = setup(config);
-
-    const mockFileRecord: FileRecord = {
-      id: "mock-turn-resource-id-metadata",
-      project_id: defaultProject.id,
-      file_name: "turn_prompt.md",
-      storage_bucket: "test-bucket",
-      storage_path: "path/to/mock/turn_prompt.md",
-      mime_type: "text/markdown",
-      size_bytes: 123,
-      resource_description: "A mock turn prompt",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      user_id: defaultProject.user_id,
-      session_id: defaultSession.id,
-      stage_slug: defaultStage.slug,
-      iteration_number: 1,
-      resource_type: "turn_prompt",
-      source_contribution_id: null,
-      feedback_type: "test",
-      target_contribution_id: null,
-    };
-    mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
-    
-    // Type assertion to access payload properties safely
-    if (!isRecord(mockTurnJob.payload)) {
-      throw new Error("Test setup error: mockTurnJob.payload is not a record.");
-    }
-
-    try {
-      const deps: AssembleTurnPromptDeps = {
-        dbClient: client,
-        job: mockTurnJob,
-        project: defaultProject,
-        session: defaultSession,
-        stage: defaultStage,
-        gatherContext: mockGatherContext,
-        render: mockRender,
-        fileManager: mockFileManager,
-      };
-      await assembleTurnPrompt(deps);
-
-      assert(mockFileManager.uploadAndRegisterFile.calls.length === 1, "uploadAndRegisterFile should be called once");
-      const uploadContext = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
-
-      // Assert that we are using the ModelContributionUploadContext
-      assert('contributionMetadata' in uploadContext, "The upload context for a TurnPrompt must include contributionMetadata.");
-      
-      const metadata = uploadContext.contributionMetadata;
-      assert(metadata, "Contribution metadata should not be null or undefined.");
-      assertEquals(metadata.sessionId, defaultSession.id);
-      assertEquals(metadata.modelIdUsed, mockTurnJob.payload.model_id);
-      assertEquals(metadata.modelNameDisplay, mockModelName);
-      assertEquals(metadata.stageSlug, defaultStage.slug);
-      assertEquals(metadata.iterationNumber, defaultSession.iteration_count);
-      // Turn prompts are self-contained and don't have a separate raw JSON response.
-      assertEquals(metadata.rawJsonResponseContent, null);
-
-    } finally {
-      teardown();
-    }
-  });
 });

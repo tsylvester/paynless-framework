@@ -14,7 +14,9 @@ import { isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
 import { isRecord } from "../_shared/utils/type_guards.ts";
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { type Messages } from '../_shared/types.ts';
-import { type AssemblerSourceDocument, type StageContext } from '../_shared/prompt-assembler.interface.ts';
+import { type StageContext } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
+import { type DialecticRecipeStep } from '../dialectic-service/dialectic.interface.ts';
+import { isDialecticRecipeTemplateStep, isDialecticStageRecipeStep } from '../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 
@@ -115,114 +117,127 @@ export async function processSimpleJob(
             throw new Error('payload.user_jwt required');
         }
 
-        let conversationHistory: Messages[] = [];
-        let gatheredInputs: AssemblerSourceDocument[] = [];
-        let currentUserPrompt: string;
+        const conversationHistory: Messages[] = [];
         const resourceDocuments: SourceDocument[] = [];
 
-        if (job.payload.target_contribution_id) {
-            // 1. Fetch the target contribution to find the true root.
-            const { data: targetChunk, error: targetChunkError } = await dbClient
-                .from('dialectic_contributions')
-                .select('stage, document_relationships')
-                .eq('id', job.payload.target_contribution_id)
-                .single();
-
-            if (targetChunkError || !targetChunk) {
-                throw new Error(`Failed to retrieve target contribution for id ${job.payload.target_contribution_id}.`);
-            }
-            if (!targetChunk.stage) {
-                throw new Error(`Target contribution ${job.payload.target_contribution_id} has no stage information.`);
-            }
-            
-            // 2. Discover the true root ID from the chunk's relationships.
-            const relationships = targetChunk.document_relationships;
-            let trueRootId = job.payload.target_contribution_id; // Default
-
-            if (isRecord(relationships)) {
-                const potentialRootId = relationships[targetChunk.stage];
-                if (typeof potentialRootId === 'string' && potentialRootId) {
-                    trueRootId = potentialRootId;
-                }
-            }
-
-            conversationHistory = await deps.promptAssembler.gatherContinuationInputs(
-                trueRootId
-            );
-            currentUserPrompt = "Please continue.";
-        } else {
-            // Fetch domain-specific overlays for this stage's system prompt and selected domain
-            const systemPromptId = system_prompts.id;
-            if (!systemPromptId) {
-                throw new Error('STAGE_CONFIG_MISSING_OVERLAYS');
-            }
-            const { data: overlayRows, error: overlayErr } = await dbClient
-                .from('domain_specific_prompt_overlays')
-                .select('overlay_values')
-                .eq('system_prompt_id', systemPromptId)
-                .eq('domain_id', project.selected_domain_id);
-
-            if (overlayErr || !overlayRows || overlayRows.length === 0) {
-                throw new Error('STAGE_CONFIG_MISSING_OVERLAYS');
-            }
-
-            const stageContext: StageContext = {
-                ...stageData,
-                system_prompts,
-                domain_specific_prompt_overlays: overlayRows.map((o) => ({ overlay_values: o.overlay_values})),
-            };
-            gatheredInputs = await deps.promptAssembler.gatherInputsForStage(
-                stageContext,
-                project,
-                sessionData,
-                sessionData.iteration_count,
-            );
-            conversationHistory = gatheredInputs.map((input) => {
-                if (input.type === 'contribution') {
-                    return { role: 'assistant', content: input.content };
-                } else {
-                    return { role: 'user', content: input.content };
-                }
-            });
-
-            const initialPromptResult = await getInitialPromptContent(
-                dbClient,
-                project,
-                deps.logger,
-                (_client, bucket, path) => deps.downloadFromStorage(bucket, path)
-            );
-
-            const directPrompt = typeof project.initial_user_prompt === 'string' ? project.initial_user_prompt.trim() : '';
-            const loaderContent = (initialPromptResult && typeof initialPromptResult.content === 'string') ? initialPromptResult.content.trim() : '';
-            const hasLoaderSource = !!(initialPromptResult && initialPromptResult.storagePath);
-
-            if (directPrompt) {
-                currentUserPrompt = directPrompt;
-            } else if (hasLoaderSource && loaderContent) {
-                currentUserPrompt = loaderContent;
-            } else {
-                throw new Error('Initial prompt is required to start this stage, but none was provided.');
-            }
-            // Render the prompt template using the resolved initial prompt and gathered context
-            const dynamicContext = await deps.promptAssembler.gatherContext(
-                project,
-                sessionData,
-                stageContext,
-                currentUserPrompt,
-                sessionData.iteration_count,
-            );
-            const renderedPrompt = deps.promptAssembler.render(
-                stageContext,
-                dynamicContext,
-                project.user_domain_overlay_values ?? null,
-            );
-            const renderedTrimmed = (renderedPrompt || '').trim();
-            if (!renderedTrimmed) {
-                throw new Error('Rendered initial prompt is empty.');
-            }
-            currentUserPrompt = renderedTrimmed;
-            console.log('currentUserPrompt', currentUserPrompt);
+        // Fetch domain-specific overlays for this stage's system prompt and selected domain
+        const systemPromptId = system_prompts.id;
+        if (!systemPromptId) {
+            throw new Error('STAGE_CONFIG_MISSING_OVERLAYS');
         }
+        const { data: overlayRows, error: overlayErr } = await dbClient
+            .from('domain_specific_prompt_overlays')
+            .select('overlay_values')
+            .eq('system_prompt_id', systemPromptId)
+            .eq('domain_id', project.selected_domain_id);
+
+        if (overlayErr || !overlayRows || overlayRows.length === 0) {
+            throw new Error('STAGE_CONFIG_MISSING_OVERLAYS');
+        }
+
+        // Resolve the correct recipe_step for this EXECUTE job
+        const metadataUnknown = (isRecord(job.payload) && 'planner_metadata' in job.payload && isRecord(job.payload['planner_metadata']))
+            ? job.payload['planner_metadata']
+            : null;
+        const recipeStepId = metadataUnknown && typeof metadataUnknown['recipe_step_id'] === 'string'
+            ? metadataUnknown['recipe_step_id']
+            : undefined;
+        const templateIdFromMetadata = metadataUnknown && typeof metadataUnknown['recipe_template_id'] === 'string'
+            ? metadataUnknown['recipe_template_id']
+            : undefined;
+        const stepSlugInPayload = isRecord(job.payload) && typeof job.payload['step_slug'] === 'string'
+            ? job.payload['step_slug']
+            : undefined;
+
+        let resolvedRecipeStep: DialecticRecipeStep | null = null;
+        if (typeof recipeStepId === 'string') {
+            const { data: instanceStep, error: instanceErr } = await dbClient
+                .from('dialectic_stage_recipe_steps')
+                .select('*')
+                .eq('id', recipeStepId)
+                .single();
+            if (!instanceErr && instanceStep && isDialecticStageRecipeStep(instanceStep)) {
+                resolvedRecipeStep = instanceStep;
+            }
+            if (!resolvedRecipeStep) {
+                const { data: templateStep, error: templateErr } = await dbClient
+                    .from('dialectic_recipe_template_steps')
+                    .select('*')
+                    .eq('id', recipeStepId)
+                    .single();
+                if (!templateErr && templateStep && isDialecticRecipeTemplateStep(templateStep)) {
+                    resolvedRecipeStep = templateStep;
+                }
+            }
+        }
+
+        if (!resolvedRecipeStep && typeof stepSlugInPayload === 'string') {
+            if (stageData.active_recipe_instance_id) {
+                const { data: bySlugInstance } = await dbClient
+                    .from('dialectic_stage_recipe_steps')
+                    .select('*')
+                    .eq('instance_id', stageData.active_recipe_instance_id)
+                    .eq('step_slug', stepSlugInPayload);
+                const candidate = Array.isArray(bySlugInstance) && bySlugInstance.length > 0 ? bySlugInstance[0] : null;
+                if (candidate && isDialecticStageRecipeStep(candidate)) {
+                    resolvedRecipeStep = candidate;
+                }
+            }
+            if (!resolvedRecipeStep) {
+                const templateId = stageData.recipe_template_id || templateIdFromMetadata;
+                if (templateId) {
+                    const { data: bySlugTemplate } = await dbClient
+                        .from('dialectic_recipe_template_steps')
+                        .select('*')
+                        .eq('template_id', templateId)
+                        .eq('step_slug', stepSlugInPayload);
+                    const candidate = Array.isArray(bySlugTemplate) && bySlugTemplate.length > 0 ? bySlugTemplate[0] : null;
+                    if (candidate && isDialecticRecipeTemplateStep(candidate)) {
+                        resolvedRecipeStep = candidate;
+                    }
+                }
+            }
+        }
+
+        if (!resolvedRecipeStep) {
+            throw new Error('RECIPE_STEP_RESOLUTION_FAILED');
+        }
+
+        const stageContext: StageContext = {
+            ...stageData,
+            system_prompts,
+            domain_specific_prompt_overlays: overlayRows.map((o) => ({ overlay_values: o.overlay_values})),
+            recipe_step: resolvedRecipeStep,
+        };
+
+        // Determine projectInitialUserPrompt (required by assembler for non-continuation; safe to supply for continuation)
+        const initialPromptResult = await getInitialPromptContent(
+            dbClient,
+            project,
+            deps.logger,
+            (_client, bucket, path) => deps.downloadFromStorage(bucket, path)
+        );
+        const directPrompt = typeof project.initial_user_prompt === 'string' ? project.initial_user_prompt.trim() : '';
+        const loaderContent = (initialPromptResult && typeof initialPromptResult.content === 'string') ? initialPromptResult.content.trim() : '';
+        const hasLoaderSource = !!(initialPromptResult && initialPromptResult.storagePath);
+        const projectInitialUserPrompt = directPrompt ? directPrompt : (hasLoaderSource && loaderContent ? loaderContent : '');
+        if (!projectInitialUserPrompt && !job.payload.target_contribution_id) {
+            throw new Error('Initial prompt is required to start this stage, but none was provided.');
+        }
+
+        // Continuation-specific content
+        const continuationContent = job.payload.target_contribution_id ? 'Please continue.' : undefined;
+
+        // Assemble prompt using the unified facade
+        const assembled = await deps.promptAssembler.assemble({
+            project,
+            session: sessionData,
+            stage: stageContext,
+            projectInitialUserPrompt,
+            iterationNumber: sessionData.iteration_count,
+            job,
+            ...(continuationContent ? { continuationContent } : {}),
+        });
         
         // Pass-through-only: include systemInstruction if an upstream value is provided in the future.
         const maybeSystemInstruction: string | undefined = undefined;
@@ -231,7 +246,8 @@ export async function processSimpleJob(
             ...(maybeSystemInstruction !== undefined ? { systemInstruction: maybeSystemInstruction } : {}),
             conversationHistory,
             resourceDocuments,
-            currentUserPrompt,
+            currentUserPrompt: assembled.promptContent,
+            source_prompt_resource_id: assembled.source_prompt_resource_id,
         };
 
         // Ensure executor receives a normalized payload object

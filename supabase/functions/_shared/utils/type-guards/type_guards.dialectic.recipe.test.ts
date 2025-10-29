@@ -113,6 +113,7 @@ Deno.test('Type Guard: isDialecticStageRecipeStep', async (t) => {
     object_filter: {},
     output_overrides: {},
     execution_order: 1,
+    step_description: 'A test step',
   };
 
   await t.step('should return true for a valid DialecticStageRecipeStep object', () => {
@@ -181,6 +182,7 @@ Deno.test('Type Guard: isDialecticRecipeStep (Union)', async (t) => {
         object_filter: {},
         output_overrides: {},
         execution_order: 1,
+        step_description: 'A test step',
     };
 
     await t.step('should return true for a valid DialecticRecipeTemplateStep', () => {

@@ -176,14 +176,6 @@ export async function assembleTurnPrompt(
     userId: project.user_id,
     description:
       `Turn prompt for stage: ${stage.slug}, document: ${documentKey}`,
-    contributionMetadata: {
-      sessionId: session.id,
-      modelIdUsed: job.payload.model_id,
-      modelNameDisplay: model.name,
-      stageSlug: stage.slug,
-      iterationNumber: session.iteration_count,
-      rawJsonResponseContent: null,
-    },
   });
 
   if (response.error) {

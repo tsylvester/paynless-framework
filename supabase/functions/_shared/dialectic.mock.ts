@@ -169,7 +169,7 @@ export const mockSubmitStageResponsesError = (
 // --- Job Processors Mock ---
 
 // Import types for the processor functions
-import type { IJobProcessors } from '../dialectic-worker/processJob.ts';
+import type { IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
 
 // Dummy implementation class for job processors
 class _JobProcessorsDummyImpl implements IJobProcessors {

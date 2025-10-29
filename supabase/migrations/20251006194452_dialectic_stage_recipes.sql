@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS public.dialectic_stage_recipe_steps (
     step_key TEXT NOT NULL,
     step_slug TEXT NOT NULL,
     step_name TEXT NOT NULL,
+    step_description TEXT,
     job_type TEXT NOT NULL,
     prompt_type TEXT NOT NULL,
     prompt_template_id UUID REFERENCES public.system_prompts (id),

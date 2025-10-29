@@ -8,6 +8,7 @@ import {
 import { isRecord } from "../utils/type_guards.ts";
 import type { Json } from "../../types_db.ts";
 import { DialecticRecipeStep } from "../../dialectic-service/dialectic.interface.ts";
+import { FileType } from "../types/file_manager.types.ts";
 
 // Define a type for the mock implementation of renderPrompt
 type RenderPromptMock = (
@@ -23,7 +24,6 @@ Deno.test("render", async (t) => {
   const stageOverlayValues: Json = { "style": "formal" };
   const mockSimpleRecipeStep: DialecticRecipeStep = {
     id: 'step-123',
-    instance_id: 'instance-123',
     job_type: 'EXECUTE',
     step_key: 'simple-step',
     step_slug: 'simple-step-slug',
@@ -31,22 +31,21 @@ Deno.test("render", async (t) => {
     step_number: 1,
     prompt_type: 'Turn',
     granularity_strategy: 'per_source_document',
-    output_type: 'thesis',
+    output_type: FileType.business_case,
     inputs_required: [],
     inputs_relevance: [],
-    outputs_required: [],
-    config_override: {},
-    object_filter: {},
-    output_overrides: {},
-    is_skipped: false,
-    parallel_group: null,
-    prompt_template_id: null,
-    template_step_id: null,
-    branch_key: null,
-    execution_order: 1,
+    outputs_required: [{
+      type: FileType.business_case,
+      document_key: 'business_case',
+    }],
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-};
+    prompt_template_id: "pt-exec-summary-123",
+    branch_key: "executive_summary",
+    parallel_group: 1,
+    template_id: "pt-exec-summary-123",
+    step_description: "Simple Step Description",
+  };
 
   const defaultStage: StageContext = {
     id: "stage-123",

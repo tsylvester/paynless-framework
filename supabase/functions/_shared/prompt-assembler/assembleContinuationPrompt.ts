@@ -154,14 +154,6 @@ export async function assembleContinuationPrompt(
     sizeBytes: new TextEncoder().encode(finalPrompt).length,
     userId: project.user_id,
     description: `Continuation prompt for job ${job.id}`,
-    contributionMetadata: {
-      sessionId: session.id,
-      modelIdUsed: job.payload.model_id,
-      modelNameDisplay: model.name,
-      stageSlug: stage.slug,
-      iterationNumber: session.iteration_count,
-      rawJsonResponseContent: null,
-    },
   });
 
   if (response.error) {

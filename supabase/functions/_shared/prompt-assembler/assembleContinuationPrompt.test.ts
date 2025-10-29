@@ -111,7 +111,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
       prompt_template_id: null,
       template_step_id: null,
       execution_order: 1,
-      output_type: "RenderedDocument",
+      output_type: FileType.business_case,
       instance_id: "instance-123",
     }, // Not always needed for continuation
     active_recipe_instance_id: null,
@@ -255,7 +255,6 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             const uploadContext =
               fileManager.uploadAndRegisterFile.calls[0].args[0];
             assertEquals(uploadContext.pathContext.fileType, FileType.TurnPrompt);
-            assert("contributionMetadata" in uploadContext);
             assertEquals(uploadContext.pathContext.isContinuation, true);
             assertEquals(uploadContext.pathContext.turnIndex, 2);
           } finally {
@@ -353,7 +352,6 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               uploadContext.pathContext.fileType,
               FileType.PlannerPrompt,
             );
-            assert("contributionMetadata" in uploadContext);
             assertEquals(uploadContext.pathContext.isContinuation, true);
           } finally {
             teardown();
@@ -444,7 +442,6 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               fileManager.uploadAndRegisterFile.calls[0].args[0];
             // Since there's no "SeedPrompt" file type for jobs, we expect a generic "TurnPrompt"
             assertEquals(uploadContext.pathContext.fileType, FileType.TurnPrompt);
-            assert("contributionMetadata" in uploadContext);
             assertEquals(uploadContext.pathContext.isContinuation, true);
             assertEquals(uploadContext.pathContext.turnIndex, 4);
           } finally {
@@ -460,7 +457,27 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           const stageWithOrchestrationKeys: StageContext = {
             ...defaultStage,
             recipe_step: {
-              ...defaultStage.recipe_step!,
+              id: "recipe-step-456",
+              step_key: "recipe-step-key-orchestration",
+              step_slug: "recipe-step-slug-orchestration",
+              step_name: "Orchestration Recipe Step",
+              job_type: "EXECUTE",
+              prompt_type: "Turn",
+              granularity_strategy: "all_to_one",
+              inputs_required: [],
+              inputs_relevance: [],
+              outputs_required: [],
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              is_skipped: false,
+              config_override: {},
+              object_filter: {},
+              output_overrides: {},
+              prompt_template_id: null,
+              template_step_id: null,
+              execution_order: 1,
+              output_type: FileType.business_case,
+              instance_id: "instance-456",
               branch_key: "branch-abc",
               parallel_group: 1,
             },
@@ -543,7 +560,6 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               fileManager.uploadAndRegisterFile.calls[0].args[0];
             assertEquals(uploadContext.pathContext.branchKey, "branch-abc");
             assertEquals(uploadContext.pathContext.parallelGroup, 1);
-            assert("contributionMetadata" in uploadContext);
           } finally {
             teardown();
           }
@@ -626,7 +642,6 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           assertSpyCall(fileManager.uploadAndRegisterFile, 0);
           const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
           assertEquals(uploadContext.pathContext.fileType, FileType.PlannerPrompt);
-          assert("contributionMetadata" in uploadContext);
         } finally {
           teardown();
         }
@@ -708,7 +723,6 @@ Deno.test("assembleContinuationPrompt", async (t) => {
         //    - Verify `fileManager.uploadAndRegisterFile` was called with `FileType.ContinuationPrompt`.
           assertSpyCall(fileManager.uploadAndRegisterFile, 0);
           const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
-          assert("contributionMetadata" in uploadContext);
         } finally {
           teardown();
         }
@@ -784,7 +798,6 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           //    - Verify `fileManager.uploadAndRegisterFile` was called with `FileType.ContinuationPrompt`.
             assertSpyCall(fileManager.uploadAndRegisterFile, 0);
             const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
-            assert("contributionMetadata" in uploadContext);
           } finally {
             teardown();
           }
@@ -860,7 +873,6 @@ Deno.test("assembleContinuationPrompt", async (t) => {
         //    - Verify `fileManager.uploadAndRegisterFile` was called with `FileType.ContinuationPrompt`.
           assertSpyCall(fileManager.uploadAndRegisterFile, 0);
           const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
-          assert("contributionMetadata" in uploadContext);
         } finally {
           teardown();
         }
@@ -941,7 +953,6 @@ Deno.test("assembleContinuationPrompt", async (t) => {
         //    - Verify `fileManager.uploadAndRegisterFile` was called with `FileType.ContinuationPrompt`.
           assertSpyCall(fileManager.uploadAndRegisterFile, 0);
           const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
-          assert("contributionMetadata" in uploadContext);
         } finally {
           teardown();
         }
@@ -1017,7 +1028,6 @@ Deno.test("assembleContinuationPrompt", async (t) => {
         //    - Verify `fileManager.uploadAndRegisterFile` was called with `FileType.ContinuationPrompt`.
           assertSpyCall(fileManager.uploadAndRegisterFile, 0);
           const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
-          assert("contributionMetadata" in uploadContext);
         } finally {
           teardown();
         }
@@ -1105,7 +1115,6 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             const uploadContext =
               fileManager.uploadAndRegisterFile.calls[0].args[0];
             assertEquals(uploadContext.pathContext.turnIndex, 3); // 2 prior attempts + this one
-            assert("contributionMetadata" in uploadContext);
           } finally {
             teardown();
           }
@@ -1348,7 +1357,6 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             const uploadContext =
               fileManager.uploadAndRegisterFile.calls[0].args[0];
             assertEquals(uploadContext.pathContext.turnIndex, 3);
-            assert("contributionMetadata" in uploadContext);
           } finally {
             teardown();
           }

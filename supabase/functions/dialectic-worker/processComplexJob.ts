@@ -7,37 +7,19 @@ import type {
     IDialecticJobDeps,
 } from '../dialectic-service/dialectic.interface.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
-import { isDialecticPlanJobPayload, isDialecticStageRecipe, isJson, isRecord, isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
-import { AiModelExtendedConfig } from '../_shared/types.ts';
-
-export async function getAiProviderConfig(dbClient: SupabaseClient<Database>, modelId: string): Promise<AiModelExtendedConfig> {
-    const { data: providerData, error: providerError } = await dbClient
-        .from('ai_providers')
-        .select('config, api_identifier')
-        .eq('id', modelId)
-        .single();
-
-    if (providerError || !providerData) {
-        throw new Error(`Failed to fetch provider details for model ID ${modelId}: ${providerError?.message}`);
-    }
-    
-    if (!isRecord(providerData.config)) {
-        throw new Error(`Invalid configuration for provider ID '${modelId}'. Config is not a valid object.`);
-    }
-
-    const potentialConfig = {
-        ...providerData.config,
-        api_identifier: providerData.api_identifier,
-        model_id: modelId,
-    };
-
-    if (!isAiModelExtendedConfig(potentialConfig)) {
-        throw new Error(`Invalid configuration for provider ID '${modelId}'. The config object does not match the expected structure.`);
-    }
-    
-    return potentialConfig;
-}
-
+import {
+    isDialecticPlanJobPayload,
+    isRecord,
+} from '../_shared/utils/type_guards.ts';
+import type {
+    DialecticRecipeTemplateStep,
+    DialecticStageRecipeStep,
+    DialecticStageRecipeInstance,
+} from '../dialectic-service/dialectic.interface.ts';
+import {
+    isDialecticRecipeTemplateStep,
+    isDialecticStageRecipeStep,
+} from '../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
 
 export async function processComplexJob(
     dbClient: SupabaseClient<Database>,
@@ -52,65 +34,208 @@ export async function processComplexJob(
         throw new Error(`[processComplexJob] Job ${parentJobId} has an invalid payload for complex processing.`);
     }
 
-    if (!job.payload.step_info) {
-        throw new Error(`[processComplexJob] Critical Error: Complex job ${parentJobId} is missing required step_info in its payload.`);
-    }
-    
-    deps.logger.info(`[processComplexJob] Processing step ${job.payload.step_info.current_step}/${job.payload.step_info.total_steps} for job ${parentJobId}`);
+    // 1. Fetch the stage data to find the active recipe instance
+    const stageSlug = job.stage_slug ?? job.payload.stageSlug!;
+    const { data: stageData, error: stageError } = await dbClient
+        .from('dialectic_stages')
+        .select('active_recipe_instance_id')
+        .eq('slug', stageSlug)
+        .single();
 
-    // 1. Fetch the recipe and validate its structure with a type guard
-    const { data: stageData, error: stageError } = await dbClient.from('dialectic_stages').select('input_artifact_rules').eq('slug', job.payload.stageSlug!).single();
-    if (stageError || !stageData) throw new Error(`Stage '${job.payload.stageSlug}' not found.`);
-
-    if (!isDialecticStageRecipe(stageData.input_artifact_rules)) {
-        throw new Error(`Stage '${job.payload.stageSlug}' has an invalid or missing recipe.`);
-    }
-    const recipe = stageData.input_artifact_rules;
-
-    // 2. Handle "waking up" after children complete
-    if (job.status === 'pending_next_step') {
-        job.payload.step_info.current_step++;
-        
-        if (isJson(job.payload)) {
-            const { error: payloadUpdateError } = await dbClient
-                .from('dialectic_generation_jobs')
-                .update({ payload: job.payload })
-                .eq('id', parentJobId);
-
-            if (payloadUpdateError) {
-                throw new Error(`Failed to increment step for job ${parentJobId}: ${payloadUpdateError.message}`);
-            }
-        } else {
-            // This should be impossible if DialecticPlanJobPayload only contains JSON-safe types.
-            throw new Error(`CRITICAL: The constructed payload for job ${parentJobId} is not valid JSON.`);
-        }
-    }
-    
-    // 3. If we've completed all steps, we're done.
-    if (job.payload.step_info.current_step > job.payload.step_info.total_steps) {
-        deps.logger.info(`[processComplexJob] All ${job.payload.step_info.total_steps} steps complete for parent job ${parentJobId}.`);
-        await dbClient.from('dialectic_generation_jobs').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', parentJobId);
+    if (stageError || !stageData || !stageData.active_recipe_instance_id) {
+        await dbClient.from('dialectic_generation_jobs').update({
+            status: 'failed',
+            completed_at: new Date().toISOString(),
+            error_details: { message: `Stage '${stageSlug}' not found or has no active recipe.` },
+        }).eq('id', parentJobId);
         return;
     }
 
-    // 4. Determine the current step's recipe
-    const currentRecipeStep = recipe.steps.find(s => s.step === job.payload.step_info.current_step);
-    if (!currentRecipeStep) {
-        throw new Error(`Could not find recipe for step ${job.payload.step_info.current_step} in stage '${job.payload.stageSlug}'.`);
+    // 2. Resolve the active recipe instance, then load steps/edges from template or instance tables (CoW model)
+    const { data: instance, error: instanceError } = await dbClient
+        .from('dialectic_stage_recipe_instances')
+        .select('*')
+        .eq('id', stageData.active_recipe_instance_id)
+        .single();
+
+    if (instanceError || !instance) {
+        await dbClient.from('dialectic_generation_jobs').update({
+            status: 'failed',
+            completed_at: new Date().toISOString(),
+            error_details: { message: `Recipe instance not found for stage '${stageSlug}' with instance ID '${stageData.active_recipe_instance_id}'.` },
+        }).eq('id', parentJobId);
+        return;
     }
+
+    const isClonedInstance = (inst: DialecticStageRecipeInstance): boolean => inst.is_cloned === true;
+
+    let steps: unknown[] = [];
+    let edges: { from_step_id: string; to_step_id: string }[] = [];
+
+    if (isClonedInstance(instance)) {
+        const [{ data: stepRows, error: stepErr }, { data: edgeRows, error: _edgeErr }] = await Promise.all([
+            dbClient.from('dialectic_stage_recipe_steps').select('*').eq('instance_id', instance.id),
+            dbClient.from('dialectic_stage_recipe_edges').select('*').eq('instance_id', instance.id),
+        ]);
+        if (stepErr || !stepRows || stepRows.length === 0) {
+            await dbClient.from('dialectic_generation_jobs').update({
+                status: 'failed',
+                completed_at: new Date().toISOString(),
+                error_details: { message: `Active recipe instance '${instance.id}' has no recipe steps.` },
+            }).eq('id', parentJobId);
+            return;
+        }
+        steps = (stepRows ?? []);
+        const validCount = (steps).filter(isDialecticStageRecipeStep).length;
+        if (validCount === 0) {
+            await dbClient.from('dialectic_generation_jobs').update({
+                status: 'failed',
+                completed_at: new Date().toISOString(),
+                error_details: { message: `Active recipe instance '${instance.id}' has no valid recipe steps.` },
+            }).eq('id', parentJobId);
+            return;
+        }
+        edges = (edgeRows ?? []).map((e) => ({ from_step_id: e.from_step_id, to_step_id: e.to_step_id }));
+    } else {
+        const [{ data: stepRows, error: stepErr }, { data: edgeRows, error: _edgeErr }] = await Promise.all([
+            dbClient.from('dialectic_recipe_template_steps').select('*').eq('template_id', instance.template_id),
+            dbClient.from('dialectic_recipe_template_edges').select('*').eq('template_id', instance.template_id),
+        ]);
+        if (stepErr || !stepRows || stepRows.length === 0) {
+            await dbClient.from('dialectic_generation_jobs').update({
+                status: 'failed',
+                completed_at: new Date().toISOString(),
+                error_details: { message: `Recipe template '${instance.template_id}' has no recipe steps.` },
+            }).eq('id', parentJobId);
+            return;
+        }
+        steps = (stepRows ?? []);
+        const validCount = steps.filter(isDialecticRecipeTemplateStep).length;
+        if (validCount === 0) {
+            await dbClient.from('dialectic_generation_jobs').update({
+                status: 'failed',
+                completed_at: new Date().toISOString(),
+                error_details: { message: `Recipe template '${instance.template_id}' has no valid recipe steps.` },
+            }).eq('id', parentJobId);
+            return;
+        }
+        edges = (edgeRows ?? []).map((e) => ({ from_step_id: e.from_step_id, to_step_id: e.to_step_id }));
+    }
+
+    // 3. Determine readiness by looking at completed child jobs and the DAG
+    const { data: completedChildren, error: childrenError } = await dbClient
+        .from('dialectic_generation_jobs')
+        .select('payload')
+        .eq('parent_job_id', parentJobId)
+        .eq('status', 'completed');
+
+    if (childrenError) {
+        throw new Error(`Failed to fetch completed child jobs for parent ${parentJobId}: ${childrenError.message}`);
+    }
+
+    const completedStepSlugs = new Set<string>();
+    for (const child of completedChildren) {
+        if (isRecord(child.payload) && typeof child.payload.step_slug === 'string') {
+            completedStepSlugs.add(child.payload.step_slug);
+        }
+    }
+    // Build predecessor map from edges
+    const stepIdToStep = new Map<string, DialecticRecipeTemplateStep | DialecticStageRecipeStep>();
+    const stepSlugById = new Map<string, string>();
+    for (const s of steps) {
+        if (isDialecticStageRecipeStep(s)) {
+            stepIdToStep.set(s.id, s);
+            stepSlugById.set(s.id, s.step_slug);
+            continue;
+        }
+        if (isDialecticRecipeTemplateStep(s)) {
+            stepIdToStep.set(s.id, s);
+            stepSlugById.set(s.id, s.step_slug);
+        }
+    }
+    const predecessors = new Map<string, Set<string>>();
+    for (const e of edges) {
+        const set = predecessors.get(e.to_step_id) ?? new Set<string>();
+        set.add(e.from_step_id);
+        predecessors.set(e.to_step_id, set);
+    }
+
+    const isSkipped = (s: DialecticRecipeTemplateStep | DialecticStageRecipeStep): boolean => {
+        // Template steps never have is_skipped; instance steps may
+        return ('is_skipped' in s) && s.is_skipped === true;
+    };
+
+    // Determine which steps are ready: all predecessors completed (or skipped) and not already completed
+    const readySteps: (DialecticRecipeTemplateStep | DialecticStageRecipeStep)[] = [];
+    for (const [id, s] of stepIdToStep.entries()) {
+        const slug = stepSlugById.get(id)!;
+        if (completedStepSlugs.has(slug)) continue;
+        if (isSkipped(s)) continue;
+        const preds = predecessors.get(id);
+        if (!preds || preds.size === 0) {
+            // No predecessors → initial step
+            readySteps.push(s);
+        } else {
+            let allPredsDone = true;
+            for (const predId of preds) {
+                const predStep = stepIdToStep.get(predId);
+                const predSlug = stepSlugById.get(predId);
+                const predWasSkipped = predStep ? isSkipped(predStep) : false;
+                // A predecessor is satisfied if it was completed OR explicitly marked as skipped
+                if (!predWasSkipped && (!predSlug || !completedStepSlugs.has(predSlug))) {
+                    allPredsDone = false;
+                    break;
+                }
+            }
+            if (allPredsDone) {
+                readySteps.push(s);
+            }
+        }
+    }
+
+    // If no ready steps remain, either we're waiting on siblings or all steps are complete
+    if (readySteps.length === 0) {
+        // Check if all non-skipped, validated steps are completed → complete the parent job
+        const validatedSteps = Array.from(stepIdToStep.values());
+        const allDone = validatedSteps
+            .filter((s) => !isSkipped(s))
+            .every((s) => completedStepSlugs.has(s.step_slug));
+        if (allDone) {
+            await dbClient.from('dialectic_generation_jobs').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', parentJobId);
+        }
+        return;
+    }
+
+    // Choose deterministic order for planning (execution_order for instance, step_number for template) but plan all
+    readySteps.sort((a, b) => {
+        const ao = ('execution_order' in a && typeof a.execution_order === 'number')
+            ? a.execution_order
+            : ('step_number' in a && typeof a.step_number === 'number') ? a.step_number : 0;
+        const bo = ('execution_order' in b && typeof b.execution_order === 'number')
+            ? b.execution_order
+            : ('step_number' in b && typeof b.step_number === 'number') ? b.step_number : 0;
+        return ao - bo;
+    });
+
+    // Log the first step for continuity with prior messages
+    const firstReady = readySteps[0];
+    deps.logger.info(`[processComplexJob] Processing step '${firstReady.step_slug}' for job ${parentJobId}`);
 
     try {
         if (!deps.planComplexStage) {
             throw new Error("planComplexStage dependency is missing.");
         }
-        // 5. Delegate to the planner to get the child jobs.
-        const childJobs = await deps.planComplexStage(
-            dbClient,
-            job,
-            deps,
-            currentRecipeStep,
-            authToken,
+        // 5. Delegate to the planner for each ready step and aggregate child jobs.
+        const plannedChildrenArrays = await Promise.all(
+            readySteps.map((recipeStep) => deps.planComplexStage!(
+                dbClient,
+                job,
+                deps,
+                recipeStep,
+                authToken,
+            ))
         );
+        const childJobs = plannedChildrenArrays.flat();
 
         if (!childJobs || childJobs.length === 0) {
             deps.logger.warn(`[processComplexJob] Planner returned no child jobs for parent ${parentJobId}. Completing parent job.`);
@@ -158,3 +283,5 @@ export async function processComplexJob(
         }).eq('id', parentJobId);
     }
 }
+
+

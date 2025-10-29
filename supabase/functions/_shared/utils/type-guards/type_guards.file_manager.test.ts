@@ -19,12 +19,13 @@ import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts'
 
 const mockModelContributionContext: ModelContributionUploadContext = {
   pathContext: {
-    fileType: FileType.ModelContributionMain,
+    fileType: FileType.business_case,
     projectId: 'project-123',
     sessionId: 'session-123',
     iteration: 1,
     stageSlug: 'test-stage',
     modelSlug: 'test-model',
+    attemptCount: 1,
   },
   contributionMetadata: {
     iterationNumber: 1,
@@ -74,6 +75,7 @@ Deno.test('Type Guard: isCanonicalPathParams', async (t) => {
     const params: CanonicalPathParams = {
             contributionType: 'thesis',
             sourceModelSlugs: ['model-1', 'model-2'],
+            stageSlug: 'test-stage',
         };
         assert(isCanonicalPathParams(params));
     });
@@ -81,6 +83,7 @@ Deno.test('Type Guard: isCanonicalPathParams', async (t) => {
     await t.step('should return true for a minimal CanonicalPathParams object', () => {
         const params: CanonicalPathParams = {
             contributionType: 'synthesis',
+            stageSlug: 'test-stage',
         };
         assert(isCanonicalPathParams(params));
     });

@@ -24,8 +24,7 @@ import {
 import {
   FileType,
   type FileRecord,
-  type UploadContext,
-  type ModelContributionUploadContext,
+  type ResourceUploadContext,
 } from "../types/file_manager.types.ts";
 import {
   DialecticJobRow,
@@ -309,7 +308,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         if (typeof mockPlannerJob.payload.model_id !== 'string') {
           throw new Error("Test setup error: mockPlannerJob.payload.model_id is not a string.");
         }
-        const expectedUploadContext: ModelContributionUploadContext = {
+        const expectedUploadContext: ResourceUploadContext = {
           pathContext: {
             projectId: defaultProject.id,
             sessionId: defaultSession.id,
@@ -321,19 +320,12 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             branchKey: null,
             parallelGroup: null,
           },
+          resourceTypeForDb: "planner_prompt",
           fileContent: "rendered planner prompt",
           mimeType: "text/markdown",
           sizeBytes: 23,
           userId: defaultProject.user_id,
           description: `Planner prompt for stage: ${defaultStage.slug}, step: ${mockRecipeStep.step_name}`,
-          contributionMetadata: {
-            sessionId: defaultSession.id,
-            modelIdUsed: mockPlannerJob.payload.model_id,
-            modelNameDisplay: "Claude 3 Opus",
-            stageSlug: defaultStage.slug,
-            iterationNumber: defaultSession.iteration_count,
-            rawJsonResponseContent: null,
-          },
         };
         assertEquals(uploadSpy.calls[0].args[0], expectedUploadContext);
       } finally {
@@ -1231,7 +1223,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     teardown();
   });
 
-  await t.step("should include contributionMetadata when saving the planner prompt", async () => {
+  await t.step("should include resourceTypeForDb when saving the planner prompt", async () => {
     const mockModelName = "Test Model 7000";
     const config: MockSupabaseDataConfig = {
       genericMockResults: {
@@ -1288,19 +1280,9 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       assertSpyCalls(fileManager.uploadAndRegisterFile, 1);
       const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
 
-      assert('contributionMetadata' in uploadContext, "The upload context for a PlannerPrompt must include contributionMetadata.");
+      assert('resourceTypeForDb' in uploadContext, "The upload context for a PlannerPrompt must include resourceTypeForDb.");
       
-      const metadata = uploadContext.contributionMetadata;
-      assert(metadata, "Contribution metadata should not be null or undefined.");
-      assertEquals(metadata.sessionId, defaultSession.id);
-      if (typeof mockPlannerJob.payload.model_id !== 'string') {
-        throw new Error("Test setup error: mockPlannerJob.payload.model_id is not a string.");
-      }
-      assertEquals(metadata.modelIdUsed, mockPlannerJob.payload.model_id);
-      assertEquals(metadata.modelNameDisplay, mockModelName);
-      assertEquals(metadata.stageSlug, defaultStage.slug);
-      assertEquals(metadata.iterationNumber, defaultSession.iteration_count);
-      assertEquals(metadata.rawJsonResponseContent, null);
+      assertEquals(uploadContext.resourceTypeForDb, "planner_prompt");
 
     } finally {
       teardown();

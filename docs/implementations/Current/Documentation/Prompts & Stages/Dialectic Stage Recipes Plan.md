@@ -89,7 +89,6 @@ Table: dialectic_stages (current)
   active_recipe_instance_id uuid
   expected_output_template_ids uuid[] NOT NULL DEFAULT '{}'::uuid[]
   created_at              timestamptz NOT NULL DEFAULT now()
-  updated_at              timestamptz NOT NULL DEFAULT now()
 
 Constraints / indexes:
 ------------------------------------------------------------------------------------
@@ -106,6 +105,7 @@ Table: dialectic_stage_recipe_steps
   step_key                text NOT NULL
   step_slug               text NOT NULL
   step_name               text NOT NULL
+  step_description        text
   job_type                text NOT NULL
   prompt_type             text NOT NULL
   prompt_template_id      uuid REFERENCES system_prompts (id)
@@ -287,10 +287,10 @@ To support reusable template recipes today and future user-authored or user-muta
       -- copy template steps
       INSERT INTO dialectic_stage_recipe_steps (instance_id, template_step_id, step_key, step_slug, step_name,
         job_type, prompt_type, prompt_template_id, output_type, granularity_strategy,
-        inputs_required, inputs_relevance, outputs_required, parallel_group, branch_key, execution_order)
+        inputs_required, inputs_relevance, outputs_required, parallel_group, branch_key, execution_order, step_description)
       SELECT :instance_id, ts.id, ts.step_key, ts.step_slug, ts.step_name,
              ts.job_type, ts.prompt_type, ts.prompt_template_id, ts.output_type, ts.granularity_strategy,
-             ts.inputs_required, ts.inputs_relevance, ts.outputs_required, ts.parallel_group, ts.branch_key, ts.step_number
+             ts.inputs_required, ts.inputs_relevance, ts.outputs_required, ts.parallel_group, ts.branch_key, ts.step_number, ts.step_description
       FROM dialectic_recipe_template_steps ts
       WHERE ts.template_id = :template_id;
 
@@ -396,3 +396,55 @@ def query_instance_steps(instance_id):
    - After stability window, drop legacy columns and run consistency audit.
 5. **Rollback (within window)**
    - Revert code to legacy readers; stage data remains untouched because old columns were preserved.
+
+## Future Work: Completed-Step Aggregation and Readiness Checks
+
+This plan currently illustrates readiness checks using a conceptual `worker_completed_steps` relation in pseudocode. The worker implementation today derives step completion by polling `dialectic_generation_jobs` for child jobs with `status='completed'` and reading `payload.step_slug`. Both approaches answer the same question: which recipe steps are complete for a parent job/stage/instance. The choice is primarily about consolidation, performance, and coupling.
+
+### Option A — Polling `dialectic_generation_jobs` (current behavior)
+- Derive completed steps from child rows: `parent_job_id = :parent`, `status = 'completed'`, extracting `payload.step_slug` (or a normalized step identifier).
+- Pros:
+  - No new schema; simple to maintain.
+  - Naturally reflects ground truth of job lifecycle.
+- Cons:
+  - Repeats mapping logic across call sites unless carefully centralized.
+  - Couples readiness to `payload.step_slug` (less normalized than IDs).
+  - May require query-time JSON extraction and broader scanning under load.
+
+Recommended hardening if keeping polling:
+- Ensure indexes on `dialectic_generation_jobs(parent_job_id, status)` and `stage_slug` as needed.
+- Standardize child job payload schema to include a normalized step identifier (e.g., `template_step_id` or `stage_step_id`) in addition to `step_slug`.
+- Centralize the readiness query in a shared helper to avoid drift.
+
+### Option B — Materialized View: `worker_completed_steps`
+Define a materialized view (or updatable view with triggers) that normalizes job completions to recipe step identifiers for both template and instance modes.
+
+Proposed columns:
+- `parent_job_id uuid`, `session_id uuid`, `iteration_number int` — scoping and provenance.
+- `stage_slug text`, `template_id uuid`, `instance_id uuid` — recipe context.
+- `template_step_id uuid NULL`, `stage_step_id uuid NULL`, `step_slug text` — unified step identity (one of the IDs set depending on template vs instance).
+- `completed_at timestamptz` — completion timestamp from the child job.
+
+Population logic (conceptual):
+- Select from `dialectic_generation_jobs` where `status='completed'` and `job_type='EXECUTE'` (or relevant), joining payload-derived `step_slug` to either `dialectic_recipe_template_steps.step_slug` or `dialectic_stage_recipe_steps.step_slug` based on the active instance.
+- Normalize into IDs for use in DAG predecessor checks.
+
+Pros:
+- Centralizes readiness derivation with consistent joins and filters (e.g., skip flags, iteration scoping).
+- Enables indexing/materialization for hot fan-in checks and large parallel plans.
+- Decouples orchestrator logic from JSON payload fields.
+
+Cons:
+- Additional schema and refresh complexity (choose between on-commit refresh via triggers or periodic refresh depending on write volume).
+
+Indexing suggestions:
+- `(instance_id, stage_step_id)` and `(template_id, template_step_id)` for predecessor checks.
+- `(parent_job_id)` for parent aggregation.
+- `(session_id, iteration_number)` for session-scoped queries.
+
+### Compatibility and Rollout
+1. Introduce a shared readiness helper that continues to poll the jobs table but emits normalized step IDs when present.
+2. Add the `worker_completed_steps` materialized view behind a feature flag, benchmark both approaches on representative parallel DAGs.
+3. If the view provides measurable wins (latency/CPU), migrate callers to query the view; otherwise retain polling with the strengthened indices and normalized payloads.
+
+Both paths preserve semantics; the materialized view primarily offers consolidation and performance headroom at scale.

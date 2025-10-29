@@ -17,7 +17,6 @@ import {
     isModelProcessingResult,
     validatePayload,
     hasStepsRecipe,
-    isDialecticStageRecipe,
     isDialecticPlanJobPayload,
     isDialecticExecuteJobPayload,
     isContinuablePayload,
@@ -154,7 +153,7 @@ Deno.test('Type Guard: hasProcessingStrategy', async (t) => {
                 step_key: 'key',
                 step_slug: 'slug',
                 step_name: 'name',
-                output_type: FileType.AssembledDocumentJson,
+                output_type: FileType.business_case,
                 granularity_strategy: 'per_source_document',
                 inputs_required: [],
                 inputs_relevance: [],
@@ -212,7 +211,7 @@ Deno.test('Type Guard: hasStepsRecipe', async (t) => {
                     step_key: 'key',
                     step_slug: 'slug',
                     step_name: 'name',
-                    output_type: FileType.AssembledDocumentJson,
+                    output_type: FileType.business_case,
                     granularity_strategy: 'per_source_document',
                     inputs_required: [],
                     inputs_relevance: [],
@@ -249,7 +248,7 @@ Deno.test('Type Guard: hasStepsRecipe', async (t) => {
                     step_key: 'key',
                     step_slug: 'slug',
                     step_name: 'name',
-                    output_type: FileType.AssembledDocumentJson,
+                    output_type: FileType.business_case,
                     granularity_strategy: 'per_source_document',
                     inputs_required: [],
                     inputs_relevance: [],
@@ -264,6 +263,7 @@ Deno.test('Type Guard: hasStepsRecipe', async (t) => {
                     output_overrides: {},
                     template_step_id: null,
                     prompt_type: 'Turn',
+                    step_description: 'A test step',
                 }
             ],
             created_at: new Date().toISOString(),
@@ -644,9 +644,10 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
         stageSlug: 'thesis',
         iterationNumber: 1,
         job_type: 'execute',
-        output_type: FileType.AssembledDocumentJson,
+        output_type: FileType.business_case,
         canonicalPathParams: {
             contributionType: 'thesis',
+            stageSlug: 'thesis',
         },
         inputs: {
             seed_prompt: 'resource-id-1',
@@ -659,10 +660,6 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
     });
 
     // Test each optional property individually for valid cases
-    await t.step('should pass with a valid optional prompt_template_name', () => {
-        const p = { ...basePayload, prompt_template_name: 'test-template' };
-        assert(isDialecticExecuteJobPayload(p));
-    });
     await t.step('should pass with a valid optional document_key', () => {
         const p = { ...basePayload, document_key: FileType.business_case };
         assert(isDialecticExecuteJobPayload(p));
@@ -713,6 +710,17 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
     });
     await t.step('should pass with a valid optional target_contribution_id', () => {
         const p = { ...basePayload, target_contribution_id: 'target-id' };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+
+    // Base job payload extras should be permitted on execute payloads
+    await t.step('should pass when base payload fields are present', () => {
+        const p = {
+            ...basePayload,
+            continueUntilComplete: true,
+            maxRetries: 3,
+            continuation_count: 1,
+        };
         assert(isDialecticExecuteJobPayload(p));
     });
 
@@ -807,6 +815,15 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
             () => isDialecticExecuteJobPayload(invalidPayload),
             Error,
             'Legacy property originalFileName is not allowed.'
+        );
+    });
+
+    await t.step('should throw for an unknown/extraneous property', () => {
+        const pollutedPayload = { ...basePayload, step_info: 'some-orchestrator-context' };
+        assertThrows(
+            () => isDialecticExecuteJobPayload(pollutedPayload),
+            Error,
+            'Payload contains unknown properties: step_info'
         );
     });
 });
@@ -1251,218 +1268,6 @@ Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
         assert(!isDialecticPlanJobPayload(null));
         assert(!isDialecticPlanJobPayload("a string"));
         assert(!isDialecticPlanJobPayload(123));
-    });
-});
-
-Deno.test('Type Guard: isDialecticStageRecipe', async (t) => {
-    await t.step('should return true for a valid recipe', () => {
-        const recipe = {
-            processing_strategy: { type: 'task_isolation' },
-            steps: [
-                {
-                    step: 1,
-                    name: 'Build Stage Header',
-                    prompt_template_name: 'thesis_planner_header_v1',
-                    granularity_strategy: 'all_to_one',
-                    output_type: OutputType.HeaderContext,
-                    step_slug: 'build-stage-header',
-                    inputs_required: [
-                        { type: 'seed_prompt', stage_slug: 'thesis', document_key: FileType.SeedPrompt }
-                    ],
-                    outputs_required: {
-                        system_materials: {
-                            stage_rationale: 'why',
-                            executive_summary: 'summary',
-                            input_artifacts_summary: 'inputs',
-                            validation_checkpoint: ['a'],
-                            quality_standards: ['b'],
-                            diversity_rubric: { rule: 'value' }
-                        },
-                        header_context_artifact: {
-                            type: 'header_context',
-                            document_key: 'header_context',
-                            artifact_class: 'header_context',
-                            file_type: 'json'
-                        },
-                        context_for_documents: [
-                            {
-                                document_key: FileType.business_case,
-                                content_to_include: { section: '' }
-                            }
-                        ],
-                        files_to_generate: [
-                            {
-                                template_filename: 'thesis_planner_header.json',
-                                from_document_key: FileType.HeaderContext
-                            }
-                        ]
-                    }
-                },
-                {
-                    step: 2,
-                    name: 'Generate Business Case',
-                    prompt_template_name: 'thesis_business_case_turn_v1',
-                    granularity_strategy: 'one_to_one',
-                    output_type: OutputType.RenderedDocument,
-                    branch_key: BranchKey.business_case,
-                    parallel_group: 2,
-                    inputs_required: [
-                        {
-                            type: 'header_context',
-                            document_key: FileType.HeaderContext,
-                            stage_slug: 'thesis'
-                        }
-                    ],
-                    outputs_required: {
-                        documents: [
-                            {
-                                document_key: FileType.business_case,
-                                template_filename: 'thesis_business_case.md',
-                                artifact_class: 'rendered_document',
-                                file_type: 'markdown',
-                                content_to_include: { section: '' }
-                            }
-                        ],
-                        files_to_generate: [
-                            {
-                                template_filename: 'thesis_business_case.md',
-                                from_document_key: FileType.business_case
-                            }
-                        ]
-                    }
-                }
-            ]
-        };
-        assert(isDialecticStageRecipe(recipe));
-    });
-    
-    await t.step('should return false if processing_strategy is wrong', () => {
-        const recipe = {
-            processing_strategy: { type: 'wrong_type' },
-            steps: []
-        };
-        assert(!isDialecticStageRecipe(recipe));
-    });
-
-    await t.step('should return false if inputs_required is missing document_key for context-bound types', () => {
-        const recipe = {
-            processing_strategy: { type: 'task_isolation' },
-            steps: [
-                {
-                    step: 2,
-                    name: 'Generate Business Case',
-                    prompt_template_name: 'thesis_business_case_turn_v1',
-                    granularity_strategy: 'one_to_one',
-                    output_type: OutputType.RenderedDocument,
-                    branch_key: BranchKey.business_case,
-                    parallel_group: 2,
-                    inputs_required: [
-                        { type: 'header_context', stage_slug: 'thesis' }
-                    ],
-                    outputs_required: {
-                        documents: [
-                            {
-                                document_key: FileType.business_case,
-                                template_filename: 'thesis_business_case.md',
-                                artifact_class: 'rendered_document',
-                                file_type: 'markdown',
-                                content_to_include: { section: '' }
-                            }
-                        ],
-                        files_to_generate: [
-                            {
-                                template_filename: 'thesis_business_case.md',
-                                from_document_key: FileType.business_case
-                            }
-                        ]
-                    }
-                }
-            ]
-        };
-        assert(!isDialecticStageRecipe(recipe));
-    });
-
-    await t.step('should return false if outputs_required.files_to_generate is malformed', () => {
-        const recipe = {
-            processing_strategy: { type: 'task_isolation' },
-            steps: [
-                {
-                    step: 2,
-                    name: 'Generate Business Case',
-                    prompt_template_name: 'thesis_business_case_turn_v1',
-                    granularity_strategy: 'one_to_one',
-                    output_type: OutputType.RenderedDocument,
-                    branch_key: BranchKey.business_case,
-                    parallel_group: 2,
-                    inputs_required: [
-                        {
-                            type: 'header_context',
-                            document_key: FileType.HeaderContext,
-                            stage_slug: 'thesis'
-                        }
-                    ],
-                    outputs_required: {
-                        documents: [
-                            {
-                                document_key: FileType.business_case,
-                                template_filename: 'thesis_business_case.md',
-                                artifact_class: 'rendered_document',
-                                file_type: 'markdown',
-                                content_to_include: { section: '' }
-                            }
-                        ],
-                        files_to_generate: [
-                            {
-                                template_filename: 'thesis_business_case.md'
-                            }
-                        ]
-                    }
-                }
-            ]
-        };
-        assert(!isDialecticStageRecipe(recipe));
-    });
-
-    await t.step('should return false if branch metadata is invalid', () => {
-        const recipe = {
-            processing_strategy: { type: 'task_isolation' },
-            steps: [
-                {
-                    step: 2,
-                    name: 'Generate Business Case',
-                    prompt_template_name: 'thesis_business_case_turn_v1',
-                    granularity_strategy: 'one_to_one',
-                    output_type: OutputType.RenderedDocument,
-                    branch_key: 'unknown-branch',
-                    parallel_group: 'two',
-                    inputs_required: [
-                        {
-                            type: 'header_context',
-                            document_key: FileType.HeaderContext,
-                            stage_slug: 'thesis'
-                        }
-                    ],
-                    outputs_required: {
-                        documents: [
-                            {
-                                document_key: FileType.business_case,
-                                template_filename: 'thesis_business_case.md',
-                                artifact_class: 'rendered_document',
-                                file_type: 'markdown',
-                                content_to_include: { section: '' }
-                            }
-                        ],
-                        files_to_generate: [
-                            {
-                                template_filename: 'thesis_business_case.md',
-                                from_document_key: FileType.business_case
-                            }
-                        ]
-                    }
-                }
-            ]
-        };
-        assert(!isDialecticStageRecipe(recipe));
     });
 });
 

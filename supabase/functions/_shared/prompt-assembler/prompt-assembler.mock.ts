@@ -37,10 +37,7 @@ export class MockPromptAssembler extends PromptAssembler {
 			async (
 				_options: AssemblePromptOptions,
 			): Promise<AssembledPrompt> => {
-				return await Promise.resolve({
-					promptContent: 'mock assembled prompt from options entry point',
-					source_prompt_resource_id: 'mock-resource-id',
-				});
+				return await Promise.resolve(MOCK_ASSEMBLED_PROMPT);
 			},
 		);
 
@@ -48,10 +45,7 @@ export class MockPromptAssembler extends PromptAssembler {
 			async (
 				_deps: AssembleSeedPromptDeps,
 			): Promise<AssembledPrompt> => {
-				return await Promise.resolve({
-					promptContent: 'mock assembled seed prompt',
-					source_prompt_resource_id: 'mock-seed-resource-id',
-				});
+				return await Promise.resolve(MOCK_ASSEMBLED_SEED_PROMPT);
 			},
 		);
 
@@ -59,10 +53,7 @@ export class MockPromptAssembler extends PromptAssembler {
 			async (
 				_deps: AssemblePlannerPromptDeps,
 			): Promise<AssembledPrompt> => {
-				return await Promise.resolve({
-					promptContent: 'mock assembled planner prompt',
-					source_prompt_resource_id: 'mock-planner-resource-id',
-				});
+				return await Promise.resolve(MOCK_ASSEMBLED_PLANNER_PROMPT);
 			},
 		);
 
@@ -70,10 +61,7 @@ export class MockPromptAssembler extends PromptAssembler {
 			async (
 				_deps: AssembleTurnPromptDeps,
 			): Promise<AssembledPrompt> => {
-				return await Promise.resolve({
-					promptContent: 'mock assembled turn prompt',
-					source_prompt_resource_id: 'mock-turn-resource-id',
-				});
+				return await Promise.resolve(MOCK_ASSEMBLED_TURN_PROMPT);
 			},
 		);
 
@@ -81,10 +69,7 @@ export class MockPromptAssembler extends PromptAssembler {
 			async (
 				_deps: AssembleContinuationPromptDeps,
 			): Promise<AssembledPrompt> => {
-				return await Promise.resolve({
-					promptContent: 'mock assembled continuation prompt',
-					source_prompt_resource_id: 'mock-continuation-resource-id',
-				});
+				return await Promise.resolve(MOCK_ASSEMBLED_CONTINUATION_PROMPT);
 			},
 		);
 	}
@@ -95,3 +80,29 @@ export const createMockPromptAssembler = (
 ): MockPromptAssembler => {
 	return new MockPromptAssembler(supabaseClient);
 }; 
+
+// Shared constants for test assertions
+export const MOCK_ASSEMBLED_PROMPT: AssembledPrompt = {
+    promptContent: 'mock assembled prompt from options entry point',
+    source_prompt_resource_id: 'mock-resource-id',
+};
+
+export const MOCK_ASSEMBLED_SEED_PROMPT: AssembledPrompt = {
+    promptContent: 'mock assembled seed prompt',
+    source_prompt_resource_id: 'mock-seed-resource-id',
+};
+
+export const MOCK_ASSEMBLED_PLANNER_PROMPT: AssembledPrompt = {
+    promptContent: 'mock assembled planner prompt',
+    source_prompt_resource_id: 'mock-planner-resource-id',
+};
+
+export const MOCK_ASSEMBLED_TURN_PROMPT: AssembledPrompt = {
+    promptContent: 'mock assembled turn prompt',
+    source_prompt_resource_id: 'mock-turn-resource-id',
+};
+
+export const MOCK_ASSEMBLED_CONTINUATION_PROMPT: AssembledPrompt = {
+    promptContent: 'mock assembled continuation prompt',
+    source_prompt_resource_id: 'mock-continuation-resource-id',
+};

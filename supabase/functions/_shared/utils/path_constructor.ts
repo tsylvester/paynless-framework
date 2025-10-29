@@ -123,11 +123,6 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     case FileType.UserFeedback:
       if (!stageRootPath || !rawStageSlug) throw new Error('Base path context and stageSlug required for user_feedback.');
       return { storagePath: stageRootPath, fileName: `user_feedback_${sanitizeForPath(rawStageSlug)}.md` };
-    case FileType.ContributionDocument: {
-      if (!stageRootPath || !originalFileName) throw new Error('Base path and originalFileName required for contribution_document.');
-      return { storagePath: `${stageRootPath}/documents`, fileName: sanitizeForPath(originalFileName) };
-    }
-
     case FileType.PlannerPrompt: {
       if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
         throw new Error('Required context missing for planner_prompt.');
@@ -174,141 +169,6 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       const fileName = `${modelSlugSanitized}_${attemptCount}_synthesis_header_context.json`;
       return { storagePath: `${stageRootPath}/_work/context`, fileName };
     }
-    case FileType.prd: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for synthesis_prd.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_prd.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-    case FileType.system_architecture_overview: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for system_architecture_overview.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_system_architecture.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-    case FileType.tech_stack_recommendations: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for synthesis_tech_stack.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_tech_stack.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-
-    // --- Thesis document FileTypes ---
-    case FileType.business_case: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for business_case.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_business_case.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-    case FileType.feature_spec: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for feature_spec.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_feature_spec.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-    case FileType.technical_approach: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for technical_approach.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_technical_approach.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-    case FileType.success_metrics: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for success_metrics.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_success_metrics.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-
-    // --- Antithesis document FileTypes ---
-    case FileType.business_case_critique: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for business_case_critique.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_business_case_critique.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-    case FileType.technical_feasibility_assessment: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for technical_feasibility_assessment.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_technical_feasibility_assessment.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-    case FileType.risk_register: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for risk_register.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_risk_register.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-    case FileType.non_functional_requirements: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for non_functional_requirements.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_non_functional_requirements.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-    case FileType.dependency_map: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for dependency_map.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_dependency_map.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-    case FileType.comparison_vector: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for comparison_vector.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_comparison_vector.json`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-
-    // --- Parenthesis document FileTypes ---
-    case FileType.trd: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for trd.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_trd.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-    case FileType.milestone_schema: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for milestone_schema.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_milestone_schema.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-
-    // --- Paralysis document FileTypes ---
-    case FileType.updated_master_plan: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for updated_master_plan.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_updated_master_plan.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-    case FileType.actionable_checklist: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for actionable_checklist.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_actionable_checklist.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-    case FileType.advisor_recommendations: {
-      if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for advisor_recommendations.');
-      }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_advisor_recommendations.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
-    }
-
     case FileType.RagContextSummary: {
       if (!stageRootPath || !modelSlugSanitized || !sourceModelSlugs || sourceModelSlugs.length === 0) {
         throw new Error('Required context missing for rag_context_summary.');
@@ -319,7 +179,6 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     }
 
     // --- All Model Contributions (Main, Raw, and Intermediate Types) ---
-    case FileType.ModelContributionMain:
     case FileType.ModelContributionRawJson:
     case FileType.PairwiseSynthesisChunk:
     case FileType.ReducedSynthesis:
@@ -332,14 +191,32 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     case FileType.synthesis_pairwise_success_metrics:
     case FileType.synthesis_document_feature_spec:
     case FileType.synthesis_document_technical_approach:
-    case FileType.synthesis_document_success_metrics: {
+    case FileType.synthesis_document_success_metrics:
+    case FileType.business_case:
+    case FileType.feature_spec:
+    case FileType.technical_approach:
+    case FileType.success_metrics:
+    case FileType.business_case_critique:
+    case FileType.technical_feasibility_assessment:
+    case FileType.risk_register:
+    case FileType.non_functional_requirements:
+    case FileType.dependency_map:
+    case FileType.comparison_vector:
+    case FileType.prd:
+    case FileType.system_architecture_overview:
+    case FileType.tech_stack_recommendations:
+    case FileType.trd:
+    case FileType.milestone_schema:
+    case FileType.updated_master_plan:
+    case FileType.actionable_checklist:
+    case FileType.advisor_recommendations: {
       // For fileType calls, infer contributionType.
-      const effectiveContributionType = contributionType ?? fileType;
+      const effectiveContributionType = documentKey ?? contributionType ?? fileType;
       const contributionTypeSanitized = sanitizeForPath(effectiveContributionType);
       
       // We must re-validate context with the now-known effectiveContributionType
       if (!stageRootPath || !modelSlugSanitized || !contributionTypeSanitized || attemptCount === undefined) {
-        throw new Error('Required context missing for model contribution file.');
+        throw new Error(`Required context missing for model contribution file of type ${fileType}.`);
       }
 
       // Handle new document-centric raw JSONs first, as they have a simpler naming scheme.
@@ -347,11 +224,30 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
         const sanitizedDocumentKey = sanitizeForPath(documentKey);
         const continuationSuffix = isContinuation ? `_continuation_${turnIndex}` : '';
         const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizedDocumentKey}${continuationSuffix}_raw.json`;
-        return { storagePath: `${stageRootPath}/raw_responses`, fileName };
+        const storagePath = isContinuation ? `${stageRootPath}/_work/raw_responses` : `${stageRootPath}/raw_responses`;
+        return { storagePath, fileName };
       }
 
       let baseFileName: string;
-      const suffix = fileType === FileType.ModelContributionRawJson ? '_raw.json' : '.md';
+      const jsonFileTypes = [
+        FileType.comparison_vector,
+        FileType.synthesis_document_business_case,
+        FileType.synthesis_document_feature_spec,
+        FileType.synthesis_document_success_metrics,
+        FileType.synthesis_document_technical_approach,
+        FileType.synthesis_pairwise_business_case,
+        FileType.synthesis_pairwise_feature_spec,
+        FileType.synthesis_pairwise_success_metrics,
+        FileType.synthesis_pairwise_technical_approach,
+      ];
+      let suffix: string;
+      if (fileType === FileType.ModelContributionRawJson) {
+        suffix = '_raw.json';
+      } else if (jsonFileTypes.includes(fileType)) {
+        suffix = '.json';
+      } else {
+        suffix = '.md';
+      }
 
       switch (effectiveContributionType) {
         case 'antithesis':
@@ -373,7 +269,7 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
           baseFileName = `${modelSlugSanitized}_reducing_${sanitizeForPath(sourceAnchorType)}_by_${sanitizeForPath(sourceAnchorModelSlug)}_${attemptCount}_${contributionTypeSanitized}`;
           break;
         }
-        default: // Covers thesis, synthesis, parenthesis, paralysis
+        default: // Covers thesis, synthesis, parenthesis, paralysis, and all document keys
           baseFileName = `${modelSlugSanitized}_${attemptCount}_${contributionTypeSanitized}`;
           break;
       }
@@ -394,14 +290,26 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
         effectiveContributionType === FileType.synthesis_document_technical_approach ||
         effectiveContributionType === FileType.synthesis_document_success_metrics;
 
+      const isDocument = [
+        FileType.business_case, FileType.feature_spec, FileType.technical_approach, FileType.success_metrics,
+        FileType.business_case_critique, FileType.technical_feasibility_assessment, FileType.risk_register, FileType.non_functional_requirements, FileType.dependency_map, FileType.comparison_vector,
+        FileType.prd, FileType.system_architecture_overview, FileType.tech_stack_recommendations,
+        FileType.trd, FileType.milestone_schema,
+        FileType.updated_master_plan, FileType.actionable_checklist, FileType.advisor_recommendations
+      ].includes(fileType);
+
       if (isIntermediate || isContinuation) {
         storagePath = (fileType === FileType.ModelContributionRawJson)
           ? `${stageRootPath}/_work/raw_responses`
           : `${stageRootPath}/_work`;
       } else {
-        storagePath = (fileType === FileType.ModelContributionRawJson)
-          ? `${stageRootPath}/raw_responses`
-          : stageRootPath;
+        if (fileType === FileType.ModelContributionRawJson) {
+          storagePath = `${stageRootPath}/raw_responses`;
+        } else if (isDocument || documentKey) {
+          storagePath = `${stageRootPath}/documents`;
+        } else {
+          storagePath = stageRootPath;
+        }
       }
 
       return { storagePath, fileName };

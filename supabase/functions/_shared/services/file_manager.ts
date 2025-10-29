@@ -70,8 +70,7 @@ export class FileManagerService {
 
     // This logic is restored from the original function to handle filename collisions for contributions
     if (
-      pathContextForStorage.fileType === 'model_contribution_main' ||
-      pathContextForStorage.fileType === 'model_contribution_raw_json'
+      isModelContributionContext(context)
     ) {
       for (currentAttemptCount = 0; currentAttemptCount < MAX_UPLOAD_ATTEMPTS; currentAttemptCount++) {
         const attemptPathContext: PathContext = {

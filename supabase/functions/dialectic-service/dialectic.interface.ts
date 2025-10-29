@@ -8,7 +8,6 @@ import type { Logger } from '../_shared/logger.ts';
 import type { 
   IFileManager, 
   CanonicalPathParams, 
-  FileType, 
   ModelContributionFileTypes,
 } from '../_shared/types/file_manager.types.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
@@ -29,6 +28,39 @@ import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts'
 import type { debitTokens } from '../chat/debitTokens.ts';
 import { ICompressionStrategy } from '../_shared/utils/vector_utils.ts';
 import type { ServiceError } from "../_shared/types.ts";
+export type DialecticStageRecipeEdge = Database['public']['Tables']['dialectic_stage_recipe_edges']['Row'];
+export type DialecticStageRecipeInstance = Database['public']['Tables']['dialectic_stage_recipe_instances']['Row'];
+
+// Explicit function type definitions for worker processors (no implementation imports)
+export type ProcessSimpleJobFn = (
+  dbClient: SupabaseClient<Database>,
+  job: DialecticJobRow & { payload: DialecticExecuteJobPayload },
+  projectOwnerUserId: string,
+  deps: IDialecticJobDeps,
+  authToken: string,
+) => Promise<void>;
+
+export type ProcessComplexJobFn = (
+  dbClient: SupabaseClient<Database>,
+  job: DialecticJobRow & { payload: DialecticPlanJobPayload },
+  projectOwnerUserId: string,
+  deps: IDialecticJobDeps,
+  authToken: string,
+) => Promise<void>;
+
+export type PlanComplexStageFn = (
+  dbClient: SupabaseClient<Database>,
+  parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
+  deps: IDialecticJobDeps,
+  recipeStep: DialecticRecipeStep,
+  authToken: string,
+) => Promise<DialecticJobRow[]>;
+
+export interface IJobProcessors {
+  processSimpleJob: ProcessSimpleJobFn;
+  processComplexJob: ProcessComplexJobFn;
+  planComplexStage: PlanComplexStageFn;
+}
 
 export type JobType = 'PLAN' | 'EXECUTE' | 'RENDER';
 export type PromptType = 'Seed' | 'Planner' | 'Turn' | 'Continuation';
@@ -70,7 +102,7 @@ export type DialecticStageRecipeStep =
     output_type: ModelContributionFileTypes;
   };
 
-export type StartSessionRecipeStep = {
+export type SeedPromptRecipeStep = {
   prompt_type: 'Seed';
   step_number: 1; 
   step_name: 'Assemble Seed Prompt'; 
@@ -86,7 +118,7 @@ export type StartSessionRecipeStep = {
   job_type?: null;
 };
 
-export type DialecticRecipeStep = DialecticRecipeTemplateStep | DialecticStageRecipeStep | StartSessionRecipeStep;
+export type DialecticRecipeStep = DialecticRecipeTemplateStep | DialecticStageRecipeStep | SeedPromptRecipeStep;
 
 export type StageWithRecipeSteps = Tables<'dialectic_stages'> & {
   steps: DialecticRecipeStep[];
@@ -809,18 +841,6 @@ export interface ProgressReporting {
   message_template: string;
 }
 
-export type ProcessingStrategyType = 'task_isolation';
-export type ProcessingGranularity =
-  | 'per_thesis_contribution'
-  | 'per_pairwise_synthesis';
-
-export interface ProcessingStrategy {
-  type: ProcessingStrategyType;
-  granularity: ProcessingGranularity;
-  description: string;
-  progress_reporting: ProgressReporting;
-}
-
 export interface DialecticServiceError {
   message: string;
   details?: string;
@@ -909,13 +929,7 @@ export interface IDialecticJobDeps extends GenerateContributionsDeps {
   notificationService: NotificationServiceType;
   executeModelCallAndSave: (params: ExecuteModelCallAndSaveParams) => Promise<void>;
   // Properties from the former IPlanComplexJobDeps
-        planComplexStage?: (
-          dbClient: SupabaseClient<Database>,
-          parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
-          deps: IDialecticJobDeps, // Self-reference
-          recipeStep: DialecticRecipeStep,
-          authToken: string,
-      ) => Promise<(DialecticJobRow)[]>;
+        planComplexStage?: PlanComplexStageFn;
   getGranularityPlanner?: (strategyId: string) => GranularityPlannerFn | undefined;
   ragService?: IRagService;
   countTokens?: (deps: CountTokensDeps, payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number;
@@ -1000,17 +1014,6 @@ export interface OutputRule {
         content_to_include: Record<string, unknown>;
     }[];
 }
-
-/**
- * Describes the complete recipe for a complex, multi-step stage.
- */
-export interface DialecticStageRecipe {
-    processing_strategy: {
-        type: 'task_isolation';
-    };
-    steps: DialecticRecipeStep[];
-}
-
 
 export interface StartSessionDeps {
   logger: ILogger;

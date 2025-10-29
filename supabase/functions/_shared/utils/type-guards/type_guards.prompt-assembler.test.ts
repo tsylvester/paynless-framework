@@ -4,10 +4,10 @@ import {
     isStageContext,
 } from './type_guards.prompt-assembler.ts';
 import { ProjectContext, StageContext } from '../../prompt-assembler/prompt-assembler.interface.ts';
-import { DialecticRecipeStep } from '../../../dialectic-service/dialectic.interface.ts';
+import { DialecticStageRecipeStep } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 
-const mockRecipeStep: DialecticRecipeStep = {
+const mockRecipeStep: DialecticStageRecipeStep = {
     id: 'step1',
     job_type: 'EXECUTE',
     prompt_type: 'Turn',
@@ -30,7 +30,8 @@ const mockRecipeStep: DialecticRecipeStep = {
     updated_at: new Date().toISOString(),
     prompt_template_id: null,
     template_step_id: null,
-    output_type: FileType.RenderedDocument,
+    output_type: FileType.business_case,
+    step_description: 'A test step',
 };
 
 Deno.test('Type Guard: isProjectContext', async (t) => {

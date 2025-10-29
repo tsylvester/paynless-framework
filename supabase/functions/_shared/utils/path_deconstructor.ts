@@ -34,7 +34,7 @@ export function deconstructStoragePath(
   const antithesisContribPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/([^_]+)_critiquing_\\(([^_]+)'s_([^_]+)_(\\d+)\\)_(\\d+)_antithesis\\.md$";
   
   // New pattern for continuation chunks - must be checked before general model contributions
-  const modelContribContinuationPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(.+)_(\\d+)_(.+)_continuation_(\\d+)(\\.md|_raw\\.json)$";
+  const modelContribContinuationPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(.+)_(\\d+)_(.+)_continuation_(\\d+)(\\.md)$";
 
   const modelContribRawPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/raw_responses/(.+)_(\\d+)_(.+)_raw\\.json$";
   const modelContribPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/(.+)_(\\d+)_(.+)\\.md$";
@@ -63,8 +63,9 @@ export function deconstructStoragePath(
   const renderedDocumentPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/documents/(.+)_(\\d+)_(.+)\\.md$";
   const renderedDocumentJsonPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/documents/(.+)_(\\d+)_(.+)\\.json$";
   const docCentricRawJsonPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/raw_responses/(.+)_(\\d+)_(.+?)(_continuation_(\\d+))?_raw\\.json$";
+  const docCentricRawJsonContinuationPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/raw_responses/(.+)_(\\d+)_(.+?)_continuation_(\\d+)_raw\\.json$";
   
-  const intermediateSynthesisDocPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(.+)_(\\d+)_(synthesis_(?:pairwise|document)_.+)\\.md$";
+  const intermediateSynthesisDocPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(.+)_(\\d+)_(synthesis_(?:pairwise|document)_[^/]+?)\\.(json|md)$";
 
   const genericWorkFilePatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(.+)_(\\d+)_(.+)\\.md$";
   const genericIntermediateFilePatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/([^/]+)$";
@@ -101,11 +102,10 @@ export function deconstructStoragePath(
     info.sourceAttemptCount = parseInt(matches[8], 10);
     info.attemptCount = parseInt(matches[9], 10);
     info.contributionType = 'antithesis';
-    info.fileTypeGuess = FileType.ModelContributionMain;
     return info;
   }
 
-  // Path: .../{stageDir}/_work/{modelSlug}_{attemptCount}_{contribType}_continuation_{turnIndex}(.md/_raw.json)
+  // Path: .../{stageDir}/_work/{modelSlug}_{attemptCount}_{contribType}_continuation_{turnIndex}(.md)
   matches = fullPath.match(new RegExp(modelContribContinuationPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
@@ -116,17 +116,45 @@ export function deconstructStoragePath(
     const modelSlugPart = matches[5];
     info.modelSlug = modelSlugPart;
     info.attemptCount = parseInt(matches[6], 10);
-    info.contributionType = matches[7];
+    
+    const ambiguousPart = matches[7];
+    if (isContributionType(ambiguousPart)) {
+      info.contributionType = ambiguousPart;
+    } else {
+      info.documentKey = ambiguousPart;
+      info.contributionType = info.stageSlug;
+      const specificFileType = Object.values(FileType).find(ft => ft === info.documentKey);
+      if (specificFileType) {
+        info.fileTypeGuess = specificFileType;
+      }
+    }
+
     info.isContinuation = true;
     info.turnIndex = parseInt(matches[8], 10);
     const extension = matches[9];
     info.parsedFileNameFromPath = `${modelSlugPart}_${matches[6]}_${matches[7]}_continuation_${info.turnIndex}${extension}`;
-    info.fileTypeGuess = extension === '_raw.json' ? FileType.ModelContributionRawJson : FileType.ModelContributionMain;
     return info;
   }
 
   // --- Document-Centric Artifacts ---
   // These are checked with high priority as they are the new canonical format.
+
+  // Path: .../_work/raw_responses/{modelSlug}_{attemptCount}_{documentKey}_continuation_{turnIndex}_raw.json
+  matches = fullPath.match(new RegExp(docCentricRawJsonContinuationPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.attemptCount = parseInt(matches[6], 10);
+    info.documentKey = matches[7];
+    info.isContinuation = true;
+    info.turnIndex = parseInt(matches[8], 10);
+    info.fileTypeGuess = FileType.ModelContributionRawJson;
+    return info;
+  }
 
   // Path: .../_work/prompts/{modelSlug}_{attemptCount}_{stepName}_planner_prompt.md
   matches = fullPath.match(new RegExp(plannerPromptPatternString));
@@ -460,7 +488,7 @@ export function deconstructStoragePath(
     info.parsedFileNameFromPath = `${modelSlugPart}_${matches[6]}_${matches[7]}.md`;
     // Guess the file type based on the parsed contribution type
     const fileTypeGuess = Object.values(FileType).find(ft => ft === info.contributionType);
-    info.fileTypeGuess = fileTypeGuess || FileType.ModelContributionMain; // Fallback
+    info.fileTypeGuess = fileTypeGuess // Fallback
     if (dbOriginalFileName && dbOriginalFileName !== info.parsedFileNameFromPath) {
         console.warn(`[deconstructStoragePath] dbOriginalFileName mismatch for model_contribution_main: ${dbOriginalFileName} vs ${info.parsedFileNameFromPath}`);
     }
@@ -476,7 +504,6 @@ export function deconstructStoragePath(
     info.stageDirName = matches[4];
     info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
     info.parsedFileNameFromPath = matches[5];
-    info.fileTypeGuess = FileType.ContributionDocument;
     return info;
   }
 
