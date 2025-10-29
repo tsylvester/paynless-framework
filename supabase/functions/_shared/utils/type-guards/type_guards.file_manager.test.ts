@@ -4,6 +4,7 @@ import {
   isCanonicalPathParams,
   isModelContributionContext,
   isUserFeedbackContext,
+  isModelContributionFileType,
   isResourceContext,
 } from './type_guards.file_manager.ts'
 import {
@@ -186,5 +187,18 @@ Deno.test('Type Guard: isResourceContext', async (t) => {
 
   await t.step('should return false for a UserFeedbackUploadContext', () => {
     assert(!isResourceContext(mockUserFeedbackContext))
+  })
+})
+
+Deno.test('Type Guard: isModelContributionFileType', async (t) => {
+  await t.step('accepts model contribution file types', () => {
+    assert(isModelContributionFileType(FileType.HeaderContext))
+    assert(isModelContributionFileType(FileType.business_case))
+  })
+
+  await t.step('rejects non-model file types', () => {
+    assert(!isModelContributionFileType(FileType.ProjectReadme))
+    assert(!isModelContributionFileType(FileType.SeedPrompt))
+    assert(!isModelContributionFileType(FileType.PlannerPrompt))
   })
 })

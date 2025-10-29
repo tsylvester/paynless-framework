@@ -22,7 +22,7 @@ import {
 import { isPlainObject, isRecord } from './type_guards.common.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 import { isFileType } from './type_guards.file_manager.ts';
-import { ContinueReason, FinishReason } from "../../types.ts";
+import { ContinueReason } from "../../types.ts";
 import { isContinueReason } from './type_guards.chat.ts';
 
 // Helper type for the citations array
@@ -470,7 +470,7 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
         'document_key', 'branch_key', 'parallel_group', 'planner_metadata',
         'document_relationships', 'isIntermediate', 'user_jwt', 'target_contribution_id',
         // Base job payload fields that may be present on execute jobs
-        'continueUntilComplete', 'maxRetries', 'continuation_count'
+        'continueUntilComplete', 'maxRetries', 'continuation_count', 'is_test_job'
     ]);
 
     const unknownKeys = Object.keys(payload).filter(key => !allowedKeys.has(key));
@@ -784,7 +784,7 @@ export function validatePayload(payload: Json): DialecticJobPayload {
 
 export type DialecticContinueReason = ContinueReason | 'next_document' | 'tool_calls' | 'function_call' | 'content_filter';
 
-export function isDialecticContinueReason(reason: FinishReason): reason is DialecticContinueReason {
+export function isDialecticContinueReason(reason: unknown): reason is DialecticContinueReason {
     if (isContinueReason(reason)) {
         return true;
     }

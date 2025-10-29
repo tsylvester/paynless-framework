@@ -237,6 +237,10 @@ export enum ContinueReason {
     ContentTruncated = 'content_truncated',
     Unknown = 'unknown',
     NextDocument = 'next_document',
+    ToolCalls = 'tool_calls',
+    TruncationRecovery = 'truncation_recovery',
+    Continuation = 'continuation',
+    TokenLimit = 'token_limit',
 }
 
 /**

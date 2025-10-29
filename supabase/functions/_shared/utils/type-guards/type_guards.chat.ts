@@ -131,14 +131,15 @@ export function isChatMessageRow(record: unknown): record is Tables<'chat_messag
     return true;
 }
 
-export function isContinueReason(reason: FinishReason): reason is ContinueReason {
-    if (reason === null) return false;
-    for (const value of Object.values(ContinueReason)) {
-        if (value === reason) {
-            return true;
-        }
-    }
-    return false;
+export function isContinueReason(reason: unknown): reason is ContinueReason {
+    if (typeof reason !== 'string') return false;
+    // Continuation subset only
+    return (
+        reason === 'max_tokens' ||
+        reason === 'length' ||
+        reason === 'content_truncated' ||
+        reason === 'unknown'
+    );
 }
 
 export function isFinishReason(value: unknown): value is FinishReason {

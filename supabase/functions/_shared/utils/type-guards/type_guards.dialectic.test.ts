@@ -1772,11 +1772,17 @@ Deno.test('Type Guard: isHeaderContext', async (t) => {
 });
 
 Deno.test('Type Guard: isDialecticContinueReason', async (t) => {
-    // Standard continuation reasons from the shared type guard
-    const standardContinueReasons: FinishReason[] = [ContinueReason.Length, ContinueReason.MaxTokens, ContinueReason.ContentTruncated, ContinueReason.Unknown];
+    // Standard continuation reasons from the shared type guard (now includes tool_calls via ContinueReason)
+    const standardContinueReasons: FinishReason[] = [
+        ContinueReason.Length,
+        ContinueReason.MaxTokens,
+        ContinueReason.ContentTruncated,
+        ContinueReason.Unknown,
+        ContinueReason.ToolCalls,
+    ];
     
-    // Dialectic-specific continuation reasons
-    const dialecticContinueReasons: FinishReason[] = ['next_document', 'tool_calls', 'function_call', 'content_filter'];
+    // Dialectic-specific continuation reasons that are not part of ContinueReason
+    const dialecticContinueReasons: FinishReason[] = ['next_document', 'function_call', 'content_filter'];
 
     // Reasons that should NOT trigger a continuation
     const nonContinueReasons: FinishReason[] = ['stop', 'error', null];

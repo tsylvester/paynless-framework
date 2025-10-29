@@ -528,8 +528,7 @@ graph LR
         *   Route jobs to the appropriate downstream processor (`processComplexJob` or `processSimpleJob`) based on the type.
         *   Delete the old, deprecated routing logic.
         *   Ensure all tests pass.
-    *   `[ ]` 6.c. `[BE]` Update the prompt assembly pipeline (gatherInputsForStage + RAG compression) to consume `inputs_relevance` weights, ordering inputs by recipe-defined priority while permitting user overrides when supplied. (When we reach this step, we will research the current RAG pipeline and expand this step to ensure it's complete.)
-    *   `[ ]` 6.d. `[REFACTOR]` As part of this refactor, ensure that `processJob` and its downstream consumers (`processComplexJob`, `processSimpleJob`) no longer access the deprecated `job.payload.step_info` object, sourcing all step-related data from `stage.recipe_step` instead.
+    *   `[ ]` 6.c. `[REFACTOR]` As part of this refactor, ensure that `processJob` and its downstream consumers (`processComplexJob`, `processSimpleJob`) no longer access the deprecated `job.payload.step_info` object, sourcing all step-related data from `stage.recipe_step` instead.
 
 *   `[ ]` 7. `[BE]` Phase 7: Improve Continue Logic.
     *   **Objective**: Enhance `continueJob` to handle both explicit, provider-signaled continuations (e.g., `finish_reason: 'length'`) and implicit continuations caused by malformed or incomplete JSON responses. The specific reason for continuation must be passed to the next job's payload to enable context-aware prompt generation.
@@ -544,6 +543,45 @@ graph LR
         *   `[ ]` 7.b.iii. When creating the `newPayload` for the continuation job, add a `continuation_context` object. Populate its `reason` property based on which condition triggered the continuation (e.g., `'length'`, `'tool_calls'`, `'truncation_recovery'`). This provides the necessary context for the downstream `PromptAssembler`. Ensure all new tests pass.
         *   `[ ]` 7.b.iv. As part of the refactor, remove any logic that propagates or accesses the `step_info` object, ensuring the test from `8.a.iv` passes.
     *   `[ ]` 7.c. `[COMMIT]` feat(worker): Plumb finish_reason through continueJob to enable context-aware prompts.
+
+*   `[ ]` 8. `[BE]` Phase 8: Implement Input Relevance Weights to Prompt Generation
+    *   **Objective:** Update the runtime to order and insert prior-step/stage artifacts into the ChatApiRequest inside `executeModelCallAndSave`, weighted by `inputs_relevance`. Keep `gatherInputsForStage` prompt-only; do not expand prompts with runtime document gathering.
+    *   `[ ]` 8.a   `[TYPE]` `supabase/functions/_shared/services/rag_service.interface.ts` — Require `inputsRelevance: RelevanceRule[]` in `getContextForModel(sourceDocuments, modelConfig, sessionId, stageSlug, inputsRelevance)`.
+    *   `[ ]` 8.b   `[TEST-UNIT]` `supabase/functions/_shared/services/rag_service.test.ts`
+        *   `[ ]` 8.b.i Require `inputsRelevance` argument (throws when omitted).
+        *   `[ ]` 8.b.ii Accepts populated `inputsRelevance` and returns successful context result.
+        *   `[ ]` 8.b.iii Accepts empty `inputsRelevance` array and returns successful context result (explicit empty allowed).
+    *   `[ ]` 8.c   `[BE]` `supabase/functions/_shared/services/rag_service.ts`
+        *   `[ ]` 8.c.i Update function signature to include `inputsRelevance` and plumb through internals (no behavior change yet).
+        *   `[ ]` 8.c.ii Maintain strict typing and existing retry/logging behavior.
+    *   `[ ]` 8.d   `[TYPE]` `supabase/functions/dialectic-service/dialectic.interface.ts` — Extend runtime types to carry identity/weights to compression and enable scoped selection:
+        *   Add optional fields to `SourceDocument`: `document_key?: string`, `stage_slug?: string`, `relevance_weight?: number`.
+        *   Add `inputsRelevance: RelevanceRule[]` and `inputsRequired: InputRule[]` to `ExecuteModelCallAndSaveParams`.
+    *   `[ ]` 8.e   `[TEST-UNIT]` `supabase/functions/_shared/utils/vector_utils.test.ts`
+        *   `[ ]` 8.e.i Blended scoring: with equal similarity, higher `relevance_weight` documents are ranked later (less likely victims).
+        *   `[ ]` 8.e.ii Weight protects high-priority docs when similarity ties with lower-weight docs.
+    *   `[ ]` 8.f   `[BE]` `supabase/functions/_shared/utils/vector_utils.ts`
+        *   `[ ]` 8.f.i In `getSortedCompressionCandidates`, for document candidates compute `effectiveScore = (1 - (relevance_weight ?? 0.5)) * similarity` and sort ascending by `effectiveScore`.
+        *   `[ ]` 8.f.ii Leave history scoring unchanged; preserve diagnostics.
+    *   `[ ]` 8.g   `[TEST-UNIT]` `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts` (+ `executeModelCallAndSave.rag.test.ts`)
+        *   `[ ]` 8.g.i Non-oversized: executor gathers prior artifacts across `dialectic_contributions`, `dialectic_project_resources`, `dialectic_feedback`; maps to `SourceDocument[]` with `document_key`, `stage_slug`, `relevance_weight`; `ChatApiRequest.resourceDocuments` includes them unchanged.
+        *   `[ ]` 8.g.ii Oversized: `rag_service.getContextForModel` is called with `inputsRelevance`; compression removes lowest blended-score candidates first; identities preserved.
+        *   `[ ]` 8.g.iii Ordering preservation: resource document order after weight sort is reflected in `ChatApiRequest`; IDs unchanged through compression loop rebuilds.
+        *   `[ ]` 8.g.iv Scoped selection: only artifacts matching the current step’s `inputsRequired` rules (by `slug`/`document_key`/`type`) are included; non-matching artifacts are excluded.
+        *   `[ ]` 8.g.v Empty `inputsRelevance`: defaults apply (neutral weights) and behavior remains deterministic.
+    *   `[ ]` 8.h   `[BE]` `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`
+        *   `[ ]` 8.h.i Before sizing, gather session/iteration prior artifacts from `dialectic_contributions` (latest), `dialectic_project_resources`, and `dialectic_feedback`.
+        *   `[ ]` 8.h.ii Scope selection strictly to the current step’s `inputsRequired`: include only artifacts whose (`slug`/`stage`, `document_key`, `type`) match the rules; exclude all others.
+        *   `[ ]` 8.h.iii Map to `SourceDocument[]` (attach `document_key`, `stage_slug`, derive `relevance_weight` by matching `inputsRelevance` on `document_key` and optional type; default neutral when missing).
+        *   `[ ]` 8.h.iv Sort resource documents by descending `relevance_weight` and append to any prompt-only docs present; then proceed with sizing, affordability, and compression.
+        *   `[ ]` 8.h.v Pass `inputsRelevance` to `rag_service.getContextForModel` during compression; leave conversation history unchanged (assembler/continuation remains source).
+    *   `[ ]` 8.i   `[TEST-UNIT]` `supabase/functions/dialectic-worker/processSimpleJob.test.ts`
+        *   `[ ]` 8.i.i `processSimpleJob` passes `stageContext.recipe_step.inputs_relevance` and `stageContext.recipe_step.inputs_required` to `executeModelCallAndSave` params.
+        *   `[ ]` 8.i.ii `assemble` returns prompt-only data; executor is responsible for gathering model-call documents (assert no resource docs expected from assembler).
+    *   `[ ]` 8.j   `[BE]` `supabase/functions/dialectic-worker/processSimpleJob.ts`
+        *   `[ ]` 8.j.i Include `inputsRelevance: stageContext.recipe_step.inputs_relevance` and `inputsRequired: stageContext.recipe_step.inputs_required` when invoking `executeModelCallAndSave`.
+    *   `[ ]` 8.k   `[TEST-UNIT]` `supabase/functions/_shared/prompt-assembler/gatherInputsForStage.test.ts`
+        *   `[ ]` 8.k.i Confirm `gatherInputsForStage` remains prompt-only (does not fetch unrelated prior artifacts); required-rule error semantics unchanged.
 
 *   `[ ]` 8. `[BE]` Phase 8: Enforce Fan-in Orchestration.
     *   `[ ]` 8.a. `[TEST-INT]` Write failing integration tests that prove final "fan-in" steps (e.g., Synthesis's final deliverable) do not start until all parallel prerequisite jobs are complete.
