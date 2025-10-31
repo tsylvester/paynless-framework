@@ -233,7 +233,7 @@ Deno.test('createCanonicalPathParams uses stage for specific FileType when appro
 Deno.test('createCanonicalPathParams uses stage for generic FileType', () => {
     const sourceDocs: SourceDocument[] = [mockSourceDocument1];
     const stage: ContributionType = 'synthesis'; // The stage is the only source of truth here
-    const params = createCanonicalPathParams(sourceDocs, FileType.ModelContributionMain, mockSourceDocument1, stage);
+    const params = createCanonicalPathParams(sourceDocs, FileType.business_case, mockSourceDocument1, stage);
     assertEquals(params.contributionType, 'synthesis');
 });
 

@@ -114,6 +114,7 @@ const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
 	branch_key: null,
 	execution_order: 1,
 	parallel_group: null,
+	step_description: 'Generate Technical Requirements Document',
 };
 
 Deno.test('planPerModel should create a single job with correct properties', () => {

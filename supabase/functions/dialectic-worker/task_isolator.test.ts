@@ -335,6 +335,7 @@ describe('planComplexStage', () => {
             getExtensionFromMimeType: () => '.txt',
             randomUUID: () => 'random-uuid',
             deleteFromStorage: () => Promise.resolve({ data: null, error: null }),
+            documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
         };
     });
     

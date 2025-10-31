@@ -14,6 +14,7 @@ import { isJson } from '../_shared/utils/type_guards.ts';
 import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
 import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 const mockDeps: IDialecticJobDeps = {
@@ -51,6 +52,7 @@ const mockDeps: IDialecticJobDeps = {
         tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'p50k_base' } })),
     getGranularityPlanner: spy(() => () => []),
     planComplexStage: spy(async () => await Promise.resolve([])),
+    documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.business_case, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
 };
 
 // Step 6.a — Dispatch strictly by job.job_type: PLAN -> processComplexJob (ignore payload shape)

@@ -29,7 +29,7 @@ import { IndexingService, LangchainTextSplitter, EmbeddingClient } from '../_sha
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
 import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 import { MockPromptAssembler, MOCK_ASSEMBLED_PROMPT } from '../_shared/prompt-assembler/prompt-assembler.mock.ts';
-
+import { FileType } from '../_shared/types/file_manager.types.ts';
 // Helper: wrap a PromptAssembler to forbid direct calls to legacy methods
 function wrapAssemblerForbidLegacy<T extends object>(assembler: T): T {
   const forbidden = new Set(['gatherContext', 'render', 'gatherInputsForStage', 'gatherContinuationInputs']);
@@ -147,6 +147,7 @@ const mockNotificationService: NotificationServiceType = {
     sendContributionGenerationContinuedEvent: async () => {},
     sendContributionGenerationCompleteEvent: async () => {},
     sendDialecticProgressUpdateEvent: async () => {},
+    sendDocumentRenderedNotification: async () => {},
   };
 
 const setupMockClient = (configOverrides: Record<string, any> = {}) => {
@@ -332,6 +333,7 @@ const getMockDeps = (): { deps: IDialecticJobDeps, promptAssembler: MockPromptAs
       indexingService,
       embeddingClient,
       promptAssembler: promptAssembler,
+      documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
     }
     return { deps, promptAssembler };
 };

@@ -59,6 +59,7 @@ const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
     branch_key: null,
     execution_order: 3,
     parallel_group: null,
+    step_description: 'Generate Final Synthesis',
 };
 
 Deno.test('planAllToOne should create exactly one child job', () => {

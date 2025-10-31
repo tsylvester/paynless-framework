@@ -241,6 +241,7 @@ export const getMockDeps = (
         tokenWalletService: tokenWalletServiceOverride || createMockTokenWalletService({ getBalance: () => Promise.resolve('1000000') }).instance,
         embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) },
         countTokens: () => 0, // Default to 0, tests that need it will stub this.
+        documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
       }
   };
   
@@ -276,6 +277,7 @@ Deno.test('executeModelCallAndSave - Happy Path', async (t) => {
       executeModelCallAndSave: async () => {},
       tokenWalletService: createMockTokenWalletService({ getBalance: () => Promise.resolve('1000000') }).instance,
       countTokens: () => 0, // Default to 0, tests that need specific counts will stub this.
+      documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
     };
     
     await t.step('should run to completion successfully', async () => {
@@ -381,6 +383,7 @@ Deno.test('executeModelCallAndSave - Intermediate Flag', async (t) => {
       executeModelCallAndSave: async () => {},
       tokenWalletService: createMockTokenWalletService({ getBalance: () => Promise.resolve('1000000') }).instance,
       countTokens: () => 0, // Default to 0, tests that need specific counts will stub this.
+      documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
     };
 
     await t.step('should pass isIntermediate flag to fileManager', async () => {
@@ -448,6 +451,7 @@ Deno.test('executeModelCallAndSave - Final Artifact Flag', async (t) => {
       executeModelCallAndSave: async () => {},
       tokenWalletService: createMockTokenWalletService().instance,
       countTokens: () => 0, // Default to 0, tests that need specific counts will stub this.
+      documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
     };
   
     await t.step('should pass isIntermediate: false to fileManager when explicitly set', async () => {

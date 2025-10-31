@@ -240,6 +240,7 @@ const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
 	branch_key: null,
 	execution_order: 1,
 	parallel_group: null,
+	step_description: 'Generate Pairwise Syntheses',
 };
 
 Deno.test('planPairwiseByOrigin should create one child job for each thesis-antithesis pair', () => {

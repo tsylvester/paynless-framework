@@ -360,6 +360,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             getExtensionFromMimeType: spy(() => '.txt'),
             randomUUID: spy(() => 'mock-uuid'),
             deleteFromStorage: spy(async () => ({ data: [], error: null })),
+            documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
         };
     });
 
@@ -684,6 +685,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             getExtensionFromMimeType: spy(() => '.txt'),
             randomUUID: spy(() => 'mock-uuid'),
             deleteFromStorage: spy(async () => ({ data: [], error: null })),
+            documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
         };
     });
 
@@ -1059,6 +1061,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             getExtensionFromMimeType: spy(() => '.txt'),
             randomUUID: spy(() => 'mock-uuid'),
             deleteFromStorage: spy(async () => ({ data: [], error: null })),
+            documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
         };
     });
 
