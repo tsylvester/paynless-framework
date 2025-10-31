@@ -9,7 +9,7 @@ import type {
 } from "./document_renderer.interface.ts";
 import type { DownloadFromStorageFn } from "../supabase_storage_utils.ts";
 import type { DialecticContributionRow } from "../../dialectic-service/dialectic.interface.ts";
-import { isRecord } from "../utils/type_guards.ts";
+ 
 
 function toStageKey(stageSlug: string): string {
   return stageSlug.toUpperCase();
@@ -39,27 +39,21 @@ export async function renderDocument(
 ): Promise<RenderDocumentResult> {
   const { sessionId, iterationNumber, stageSlug, documentIdentity, documentKey, projectId } = params;
 
-  // 1) Load contribution rows and filter to this document chain
-  const { data: allRows, error: selectError } = await dbClient
+  // 1) Load contribution rows for this document chain using DB-side filtering and ordering
+  const stageKey = toStageKey(stageSlug);
+  const { data: rows, error: selectError } = await dbClient
     .from("dialectic_contributions")
     .select("*")
+    .eq("session_id", sessionId)
+    .eq("iteration_number", iterationNumber)
+    .contains("document_relationships", { [stageKey]: documentIdentity })
+    .order("edit_version", { ascending: true })
+    .order("created_at", { ascending: true })
     .returns<DialecticContributionRow[]>();
 
   if (selectError) {
     throw new Error("Failed to query contributions for rendering");
   }
-  const rows = (allRows ?? []).filter((r) => {
-    const stageKey = toStageKey(stageSlug);
-    if (!isRecord(r.document_relationships)) {
-      return false;
-    }
-    const rel = r.document_relationships && r.document_relationships[stageKey];
-    return (
-      r.session_id === sessionId &&
-      r.iteration_number === iterationNumber &&
-      typeof rel === "string" && rel === documentIdentity
-    );
-  });
 
   if (rows.length === 0) {
     throw new Error("No contribution chunks found for requested document");

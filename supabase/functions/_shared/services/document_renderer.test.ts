@@ -659,6 +659,116 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
 
     clearAllStubs?.();
   });
+  
+  await t.step("applies DB-side filtering predicates to contributions query", async () => {
+    const rootId = "root-filter-1";
+    const sessionId = "session_f1";
+    const stageSlug = "thesis";
+
+    const contributions: ContributionRowMinimal[] = [
+      {
+        id: rootId,
+        session_id: sessionId,
+        stage: "THESIS",
+        iteration_number: 1,
+        storage_bucket: "content",
+        storage_path: "project_123/session_s/iteration_1/thesis/documents",
+        file_name: "gpt-4o-mini_0_business_case.md",
+        mime_type: "text/markdown",
+        document_relationships: { THESIS: rootId },
+        created_at: new Date(2025, 7, 1, 10, 0, 0).toISOString(),
+        target_contribution_id: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        user_id: "user_123",
+      },
+      // Unrelated row that should be excluded by DB filtering
+      {
+        id: "unrelated-x",
+        session_id: sessionId,
+        stage: "THESIS",
+        iteration_number: 1,
+        storage_bucket: "content",
+        storage_path: "project_123/session_s/iteration_1/thesis/documents",
+        file_name: "gpt-4o-mini_0_other_doc.md",
+        mime_type: "text/markdown",
+        document_relationships: { THESIS: "another-root" },
+        created_at: new Date(2025, 7, 1, 9, 59, 0).toISOString(),
+        target_contribution_id: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        user_id: "user_123",
+      },
+    ];
+
+    const { dbClient, spies, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: {
+          select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_document_templates: {
+          select: { data: [ { stage_slug: "thesis", document_key: "business_case", storage_bucket: "prompt-templates", storage_path: "templates/thesis", file_name: "thesis_business_case.md" } ], error: null, count: null, status: 200, statusText: "OK" }
+        },
+      },
+      storageMock: {
+        downloadResult: async (_bucketId: string, _path: string) => ({ data: new Blob(["# {{title}}\n\n{{content}}\n"], { type: "text/markdown" }), error: null }),
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId,
+      iterationNumber: 1,
+      stageSlug,
+      documentIdentity: rootId,
+      documentKey: FileType.business_case,
+      overwrite: true,
+    };
+
+    await renderDocument(
+      dbClient,
+      { downloadFromStorage, fileManager: new MockFileManagerService() },
+      params,
+    );
+
+    // Assert predicate usage on dialectic_contributions query
+    const eqCalls = spies.getHistoricQueryBuilderSpies("dialectic_contributions", "eq");
+    const containsCalls = spies.getHistoricQueryBuilderSpies("dialectic_contributions", "contains");
+    const orderCalls = spies.getHistoricQueryBuilderSpies("dialectic_contributions", "order");
+
+    // Expect at least session_id and iteration_number equality filters
+    assert(eqCalls && eqCalls.callCount >= 2, "expected eq() filters to be applied");
+    const hasSessionEq = (eqCalls?.callsArgs || []).some((args) => args[0] === "session_id" && args[1] === sessionId);
+    const hasIterationEq = (eqCalls?.callsArgs || []).some((args) => args[0] === "iteration_number" && args[1] === 1);
+    assert(hasSessionEq, "expected eq('session_id', sessionId)");
+    assert(hasIterationEq, "expected eq('iteration_number', 1)");
+
+    // Expect JSON containment on document_relationships for stage key
+    assert(containsCalls && containsCalls.callCount >= 1, "expected contains() on document_relationships");
+    const stageKey = stageSlug.toUpperCase();
+    const hasContains = (containsCalls?.callsArgs || []).some((args) => {
+      if (!Array.isArray(args)) return false;
+      const [col, val] = args;
+      if (col !== "document_relationships") return false;
+      if (typeof val !== "object" || val === null) return false;
+      try {
+        const s = JSON.stringify(val);
+        return s.includes(`"${stageKey}":"${rootId}"`);
+      } catch {
+        return false;
+      }
+    });
+    assert(hasContains, "expected contains('document_relationships', { [STAGE]: documentIdentity })");
+
+    // Expect ordering by edit_version then created_at
+    assert(orderCalls && orderCalls.callCount >= 2, "expected order() by edit_version and created_at");
+    const hasOrderEdit = (orderCalls?.callsArgs || []).some((args) => Array.isArray(args) && args[0] === "edit_version");
+    const hasOrderCreated = (orderCalls?.callsArgs || []).some((args) => Array.isArray(args) && args[0] === "created_at");
+    assert(hasOrderEdit, "expected order('edit_version', { ascending: true })");
+    assert(hasOrderCreated, "expected order('created_at', { ascending: true })");
+
+    clearAllStubs?.();
+  });
 });
 
 
