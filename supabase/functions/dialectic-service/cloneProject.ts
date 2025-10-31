@@ -92,7 +92,15 @@ function buildUploadContextForAsset(
     }
 
     if (originalAsset.sourceTable === 'dialectic_project_resources') {
-        if (!isFileType(pathContext.fileType) || (pathContext.fileType !== FileType.InitialUserPrompt && pathContext.fileType !== FileType.GeneralResource && pathContext.fileType !== FileType.PlannerPrompt)) {
+        if (
+            !isFileType(pathContext.fileType) || 
+            (pathContext.fileType !== FileType.InitialUserPrompt && 
+            pathContext.fileType !== FileType.GeneralResource && 
+            pathContext.fileType !== FileType.PlannerPrompt &&
+            pathContext.fileType !== FileType.ProjectReadme &&
+            pathContext.fileType !== FileType.PendingFile &&
+            pathContext.fileType !== FileType.CurrentFile &&
+            pathContext.fileType !== FileType.CompleteFile)) {
             throw new Error(`Asset from resources table has unexpected fileType: ${pathContext.fileType}`);
         }
         

@@ -36,7 +36,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       // Build canonical original contribution storage path
       const originalPath = constructStoragePath({
         projectId,
-        fileType: FileType.ModelContributionMain,
+        fileType: FileType.business_case,
         sessionId,
         iteration: iterationNumber,
         stageSlug: stage.slug,
@@ -181,7 +181,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       assertEquals(ctx.pathContext.sessionId, sessionId);
       assertEquals(ctx.pathContext.iteration, iterationNumber);
       assertEquals(ctx.pathContext.stageSlug, 'thesis');
-      assertEquals(ctx.pathContext.fileType, FileType.ModelContributionMain);
+      assertEquals(ctx.pathContext.fileType, FileType.business_case);
       assertEquals(ctx.pathContext.modelSlug, modelName);
       assertEquals(ctx.pathContext.attemptCount, attemptCount);
       assertEquals(ctx.pathContext.originalFileName, `${modelName}_${attemptCount}_thesis.md`);

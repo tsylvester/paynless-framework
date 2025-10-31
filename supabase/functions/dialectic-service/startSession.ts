@@ -21,7 +21,7 @@ import { IFileManager } from '../_shared/types/file_manager.types.ts';
 import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
 import { defaultProviderMap } from '../_shared/ai_service/factory.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
-import { StartSessionDeps, StartSessionRecipeStep } from './dialectic.interface.ts';
+import { StartSessionDeps, SeedPromptRecipeStep } from './dialectic.interface.ts';
 
 export async function startSession(
   user: User,
@@ -212,7 +212,7 @@ export async function startSession(
         dialectic_domains: dialectic_domains ? { name: dialectic_domains.name } : { name: 'General' },
     };
 
-    const recipe_step: StartSessionRecipeStep = {
+    const recipe_step: SeedPromptRecipeStep = {
         prompt_type: 'Seed',
         step_number: 1,
         step_name: 'Assemble Seed Prompt',

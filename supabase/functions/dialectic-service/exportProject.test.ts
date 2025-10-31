@@ -143,8 +143,9 @@ describe("exportProject", () => {
             display_name: "Hypothesis (Export Test)",
             description: "Mock stage for export testing",
             default_system_prompt_id: "dsp-1",
-            expected_output_artifacts: { artifacts: [] },
-            input_artifact_rules: { rules: [] },
+            expected_output_template_ids: [],
+            active_recipe_instance_id: null,
+            recipe_template_id: null,
             created_at: new Date().toISOString(),
         };
 

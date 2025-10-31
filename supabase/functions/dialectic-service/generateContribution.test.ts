@@ -33,6 +33,7 @@ const mockStep: DialecticRecipeStep = {
     parallel_group: null,
     prompt_template_id: null,
     template_step_id: null,
+    step_description: 'A test description',
 };
 
 const mockSingleStepStage: StageWithRecipeSteps = {

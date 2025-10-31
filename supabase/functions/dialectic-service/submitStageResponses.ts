@@ -9,7 +9,7 @@ import {
   type DialecticFeedback,
   type DialecticStage,
   type DialecticProject,
-  StartSessionRecipeStep,
+  SeedPromptRecipeStep,
 } from './dialectic.interface.ts';
 import type { PathContext, UserFeedbackUploadContext } from '../_shared/types/file_manager.types.ts';
 import { PromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.ts";
@@ -427,7 +427,7 @@ export async function submitStageResponses(
   }
   overlays = overlayRows as { overlay_values: ProjectContext['user_domain_overlay_values'] }[];
 
-  const startSessionRecipeStep: StartSessionRecipeStep = {
+  const seedPromptRecipeStep: SeedPromptRecipeStep = {
     prompt_type: 'Seed',
     step_number: 1,
     step_name: 'Assemble Seed Prompt',
@@ -435,7 +435,7 @@ export async function submitStageResponses(
 
   const stageContextForAssembler: StageContext = {
     ...nextStageFull,
-    recipe_step: startSessionRecipeStep,
+    recipe_step: seedPromptRecipeStep,
     system_prompts: systemPrompt ? { prompt_text: systemPrompt.prompt_text } : null,
     domain_specific_prompt_overlays: overlays,
   };
