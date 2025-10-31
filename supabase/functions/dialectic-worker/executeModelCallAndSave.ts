@@ -23,7 +23,7 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { ResourceDocuments } from "../_shared/types.ts";
 import { getMaxOutputTokens } from '../_shared/utils/affordability_utils.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
-
+import { TablesInsert } from '../types_db.ts';  
 export async function executeModelCallAndSave(
     params: ExecuteModelCallAndSaveParams,
 ) {
@@ -1193,6 +1193,57 @@ export async function executeModelCallAndSave(
                 projectId: projectId,
                 job_id: jobId,
             }, projectOwnerUserId);
+        }
+
+        // Programmatically schedule a RENDER job after successful EXECUTE completion
+        try {
+            // Derive a stable document identity from relationships when present; fallback to contribution.id
+            let documentIdentity: string = contribution.id;
+            if (isRecord(contribution.document_relationships)) {
+                const relObj = contribution.document_relationships;
+                for (const k of Object.keys(relObj)) {
+                    const v = relObj[k];
+                    if (typeof v === 'string' && v.trim() !== '') {
+                        documentIdentity = v;
+                        break;
+                    }
+                }
+            }
+
+            const renderPayload = {
+                projectId,
+                sessionId,
+                iterationNumber,
+                stageSlug,
+                documentIdentity,
+            };
+
+            const insertObj: TablesInsert<'dialectic_generation_jobs'> = {
+                job_type: 'RENDER',
+                session_id: job.session_id,
+                stage_slug: stageSlug,
+                iteration_number: iterationNumber,
+                parent_job_id: jobId,
+                payload: renderPayload,
+                is_test_job: job.is_test_job ?? false,
+                status: 'pending',
+                user_id: projectOwnerUserId,
+            };
+
+            const { data: renderInsertData, error: renderInsertError } = await dbClient
+                .from('dialectic_generation_jobs')
+                .insert(insertObj)
+                .select('*')
+                .single();
+
+            if (renderInsertError) {
+                deps.logger.error('[executeModelCallAndSave] Failed to enqueue RENDER job', { renderInsertError, insertObj });
+            } else {
+                const newId = isRecord(renderInsertData) && typeof renderInsertData['id'] === 'string' ? renderInsertData['id'] : undefined;
+                deps.logger.info('[executeModelCallAndSave] Enqueued RENDER job', { parent_job_id: jobId, render_job_id: newId });
+            }
+        } catch (e) {
+            deps.logger.error('[executeModelCallAndSave] CRITICAL: Exception while scheduling RENDER job', { error: e instanceof Error ? e.message : String(e) });
         }
     }
 

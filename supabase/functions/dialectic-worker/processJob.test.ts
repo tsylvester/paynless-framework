@@ -615,3 +615,188 @@ Deno.test('processJob - bubbles errors from downstream processor', async () => {
         mockSupabase.clearAllStubs?.();
     }
 });
+
+// Step 9.f — Dispatch strictly by job.job_type: RENDER -> processRenderJob (ignore payload shape)
+Deno.test('processJob - dispatches by job.job_type: RENDER routes to processRenderJob', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    // Payload intentionally shaped like PLAN to prove payload is ignored
+    const planShapedPayload: DialecticPlanJobPayload = {
+        job_type: 'PLAN',
+        sessionId: 'session-id-render-dispatch',
+        projectId: 'project-id-render-dispatch',
+        stageSlug: 'synthesis',
+        model_id: 'model-id',
+        walletId: 'wallet-id-render-dispatch',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(planShapedPayload)) throw new Error('Test setup failed: planShapedPayload not Json');
+
+    const mockJob: MockJob = {
+        id: 'job-id-render-dispatch',
+        user_id: 'user-id',
+        session_id: 'session-id-render-dispatch',
+        stage_slug: 'synthesis',
+        payload: planShapedPayload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'RENDER',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload: planShapedPayload },
+            'user-id',
+            mockDeps,
+            'mock-token',
+            processors,
+        );
+
+        assertEquals(spies.processRenderJob.calls.length, 1, 'RENDER must dispatch to processRenderJob');
+        assertEquals(spies.processSimpleJob.calls.length, 0, 'processSimpleJob must not be called for RENDER');
+        assertEquals(spies.processComplexJob.calls.length, 0, 'processComplexJob must not be called for RENDER');
+    } finally {
+        spies.processRenderJob.restore();
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Step 9.f — Propagation: RENDER passes job and args through unchanged
+Deno.test('processJob - RENDER passes job unchanged and propagates args', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const planShapedPayload: DialecticPlanJobPayload = {
+        job_type: 'PLAN',
+        sessionId: 'session-id-render-propagation',
+        projectId: 'project-id-render-propagation',
+        stageSlug: 'parenthesis',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(planShapedPayload)) throw new Error('Test setup failed: planShapedPayload not Json');
+
+    const rowJob: MockJob = {
+        id: 'job-id-render-propagation',
+        user_id: 'user-id-render',
+        session_id: 'session-id-render-propagation',
+        stage_slug: 'parenthesis',
+        payload: planShapedPayload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'RENDER',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+    const authToken = 'propagation-token-render';
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...rowJob, payload: planShapedPayload },
+            'user-id-render',
+            mockDeps,
+            authToken,
+            processors,
+        );
+
+        const call = spies.processRenderJob.calls[0];
+        assertEquals(call.args[0], mockSupabase.client, 'dbClient should be passed through unchanged');
+        assertEquals(call.args[1], { ...rowJob, payload: planShapedPayload }, 'job row should be passed through unchanged');
+        assertEquals(call.args[2], 'user-id-render', 'projectOwnerUserId should be passed through unchanged');
+        assertEquals(call.args[3], mockDeps, 'deps should be passed through unchanged');
+        assertEquals(call.args[4], authToken, 'authToken should be passed through unchanged');
+    } finally {
+        spies.processRenderJob.restore();
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Step 9.f — No stage queries in the router for RENDER
+Deno.test('processJob - RENDER does not query dialectic_stages in router', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const planShapedPayload: DialecticPlanJobPayload = {
+        job_type: 'PLAN',
+        sessionId: 'session-id-no-stage-render',
+        projectId: 'project-id-no-stage-render',
+        stageSlug: 'paralysis',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(planShapedPayload)) throw new Error('Test setup failed: planShapedPayload not Json');
+
+    const rowJob: MockJob = {
+        id: 'job-id-no-stage-render',
+        user_id: 'user-id-no-stage-render',
+        session_id: 'session-id-no-stage-render',
+        stage_slug: 'paralysis',
+        payload: planShapedPayload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'RENDER',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...rowJob, payload: planShapedPayload },
+            'user-id-no-stage-render',
+            mockDeps,
+            'mock-token',
+            processors,
+        );
+
+        const stageFromCalls = mockSupabase.spies.fromSpy.calls.filter((call) => call.args && call.args[0] === 'dialectic_stages');
+        assertEquals(stageFromCalls.length, 0, 'router must not query dialectic_stages for RENDER dispatch');
+        assertEquals(spies.processRenderJob.calls.length, 1);
+    } finally {
+        spies.processRenderJob.restore();
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});

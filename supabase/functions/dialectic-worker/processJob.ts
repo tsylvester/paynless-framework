@@ -54,6 +54,11 @@ export async function processJob(
       }
       return;
     }
+    case 'RENDER': {
+      deps.logger.info(`[dialectic-worker] [processJob] Delegating 'render' job ${jobId} to renderer.`);
+      await processors.processRenderJob(dbClient, job, projectOwnerUserId, deps, authToken);
+      return;
+    }
     default: {
       throw new Error(`Unsupported or null job_type for job ${jobId}`);
     }

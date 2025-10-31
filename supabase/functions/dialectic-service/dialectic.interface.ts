@@ -28,6 +28,9 @@ import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts'
 import type { debitTokens } from '../chat/debitTokens.ts';
 import { ICompressionStrategy } from '../_shared/utils/vector_utils.ts';
 import type { ServiceError } from "../_shared/types.ts";
+import type { IDocumentRenderer } from '../_shared/services/document_renderer.interface.ts';
+import type { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
+
 export type DialecticStageRecipeEdge = Database['public']['Tables']['dialectic_stage_recipe_edges']['Row'];
 export type DialecticStageRecipeInstance = Database['public']['Tables']['dialectic_stage_recipe_instances']['Row'];
 
@@ -48,6 +51,14 @@ export type ProcessComplexJobFn = (
   authToken: string,
 ) => Promise<void>;
 
+export type ProcessRenderJobFn = (
+  dbClient: SupabaseClient<Database>,
+  job: DialecticJobRow,
+  projectOwnerUserId: string,
+  deps: IDialecticJobDeps,
+  authToken: string,
+) => Promise<void>;
+
 export type PlanComplexStageFn = (
   dbClient: SupabaseClient<Database>,
   parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
@@ -60,6 +71,15 @@ export interface IJobProcessors {
   processSimpleJob: ProcessSimpleJobFn;
   processComplexJob: ProcessComplexJobFn;
   planComplexStage: PlanComplexStageFn;
+  processRenderJob: ProcessRenderJobFn;
+}
+
+export interface IRenderJobDeps {
+  documentRenderer: IDocumentRenderer;
+  logger: ILogger;
+  downloadFromStorage: DownloadFromStorageFn;
+  fileManager: IFileManager;
+  notificationService: NotificationServiceType;
 }
 
 export type JobType = 'PLAN' | 'EXECUTE' | 'RENDER';
@@ -944,6 +964,7 @@ export interface IDialecticJobDeps extends GenerateContributionsDeps {
   promptAssembler?: IPromptAssembler;
   getAiProviderAdapter?: (deps: FactoryDependencies) => AiProviderAdapterInstance | null;
   tokenWalletService?: ITokenWalletService;
+  documentRenderer: IDocumentRenderer;
   debitTokens?: typeof debitTokens;
 }
 export type RecipeStep = {

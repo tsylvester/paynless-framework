@@ -1,20 +1,9 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../types_db.ts';
-import type { ILogger } from '../_shared/types.ts';
 import { isRecord } from '../_shared/utils/type_guards.ts';
-import type { IFileManager } from '../_shared/types/file_manager.types.ts';
-import type { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
-import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
-import type { IDocumentRenderer, RenderDocumentParams, DocumentRendererDeps } from '../_shared/services/document_renderer.interface.ts';
+import type { IRenderJobDeps } from '../dialectic-service/dialectic.interface.ts';
+import type { RenderDocumentParams, DocumentRendererDeps } from '../_shared/services/document_renderer.interface.ts';
 import { isFileType } from '../_shared/utils/type_guards.ts';
-
-export interface IRenderJobDeps {
-  documentRenderer: IDocumentRenderer;
-  logger: ILogger;
-  downloadFromStorage: DownloadFromStorageFn;
-  fileManager: IFileManager;
-  notificationService: NotificationServiceType;
-}
 
 export async function processRenderJob(
   dbClient: SupabaseClient<Database>,

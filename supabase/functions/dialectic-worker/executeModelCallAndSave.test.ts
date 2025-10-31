@@ -198,6 +198,7 @@ export  const mockNotificationService: NotificationServiceType = {
       sendDialecticProgressUpdateEvent: async () => {},
       sendContributionFailedNotification: async () => {},
       sendContributionGenerationFailedEvent: async () => {},
+      sendDocumentRenderedNotification: async () => {},
     };
   
 export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
@@ -1718,4 +1719,59 @@ Deno.test('executeModelCallAndSave - scoped selection includes only artifacts ma
   assert(ids.includes('c-match'), 'Expected c-match to be included');
   assert(ids.includes('f-match'), 'Expected f-match to be included');
   assert(!ids.includes('c-skip') && !ids.includes('r-skip'), 'Non-matching artifacts must be excluded');
+});
+
+// On successful EXECUTE completion, insert a RENDER job with correct payload
+Deno.test('executeModelCallAndSave - schedules RENDER job after success with renderer identity payload', async () => {
+  const { client: dbClient, spies } = setupMockClient({
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+  });
+
+  // Ensure saved contribution carries a true-root identity
+  const fileManager = new MockFileManagerService();
+  const savedWithIdentity = { ...mockContribution, document_relationships: { thesis: 'doc-root-abc' } };
+  fileManager.setUploadAndRegisterFileResponse(savedWithIdentity, null);
+
+  const deps = getMockDeps();
+  deps.fileManager = fileManager;
+
+  const job = createMockJob(testPayload);
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job,
+    projectOwnerUserId: 'user-789',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: buildPromptPayload(),
+    sessionData: mockSessionData,
+    compressionStrategy: getSortedCompressionCandidates,
+  };
+
+  await executeModelCallAndSave(params);
+
+  // Assert a single INSERT into jobs for the follow-up RENDER job
+  const insertCalls = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+  assertExists(insertCalls, 'Expected to track insert calls for dialectic_generation_jobs');
+  assertEquals(insertCalls.callCount, 1, 'Expected a single insert for the scheduled RENDER job');
+
+  const insertedArg = insertCalls.callsArgs[0][0];
+  const inserted = Array.isArray(insertedArg) ? (insertedArg[0]) : (insertedArg);
+  assert(isRecord(inserted), 'Inserted payload must be an object');
+
+  // job_type must be RENDER
+  assertEquals(inserted['job_type'], 'RENDER');
+
+  // Parent must associate to the just-completed EXECUTE job
+  assertEquals(inserted['parent_job_id'], job.id, 'Parent job id must point to completed EXECUTE job');
+
+  // Payload must include required renderer identity fields; no step_info allowed
+  const pl = inserted['payload'];
+  assert(isRecord(pl), 'Inserted payload.payload must be an object');
+  assertEquals(pl['projectId'], testPayload.projectId);
+  assertEquals(pl['sessionId'], testPayload.sessionId);
+  assertEquals(pl['iterationNumber'], testPayload.iterationNumber);
+  assertEquals(pl['stageSlug'], testPayload.stageSlug);
+  assertEquals(pl['documentIdentity'], 'doc-root-abc');
+  assert(!('step_info' in pl), 'Payload must not include deprecated step_info');
 });

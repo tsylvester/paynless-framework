@@ -649,42 +649,42 @@ graph LR
             - Write to storage path derived from `constructStoragePath` (final-artifact location).
             - Return path context and byte size; log diagnostics; strict typing; no defaults.
         *   `[✅]` 9.c.ii. Ensure 9.a tests pass (GREEN).
-    *   `[ ]` 9.d. `[TEST-UNIT]` Add RED tests for a new `processRenderJob`.
-        *   `[ ]` 9.d.i. Create `supabase/functions/dialectic-worker/processRenderJob.test.ts`:
+    *   `[✅]` 9.d. `[TEST-UNIT]` Add RED tests for a new `processRenderJob`.
+        *   `[✅]` 9.d.i. Create `supabase/functions/dialectic-worker/processRenderJob.test.ts`:
             - When given a job with `job_type: 'RENDER'` and payload carrying document identity, the processor:
               - Invokes `documentRenderer.renderDocument` with params from job row/payload.
               - Records completion to `dialectic_generation_jobs` (status -> completed, results path).
             - Failure cases bubble as job failure with meaningful error_details.
-    *   `[ ]` 9.e. `[BE]` Implement `processRenderJob`.
-        *   `[ ]` 9.e.i. Add `supabase/functions/dialectic-worker/processRenderJob.ts`:
+    *   `[✅]` 9.e. `[BE]` Implement `processRenderJob`.
+        *   `[✅]` 9.e.i. Add `supabase/functions/dialectic-worker/processRenderJob.ts`:
             - Resolve params from job row/payload (no `step_info`).
             - Call `deps.documentRenderer.renderDocument`.
             - Update job row status and results; strict error mapping, no retries for deterministic render errors.
-        *   `[ ]` 9.e.ii. Make 9.d tests pass (GREEN).
-    *   `[ ]` 9.f. `[TEST-UNIT]` Update router tests to cover 'RENDER'.
-        *   `[ ]` 9.f.i. In `supabase/functions/dialectic-worker/processJob.test.ts`, add tests:
+        *   `[✅]` 9.e.ii. Make 9.d tests pass (GREEN).
+    *   `[✅]` 9.f. `[TEST-UNIT]` Update router tests to cover 'RENDER'.
+        *   `[✅]` 9.f.i. In `supabase/functions/dialectic-worker/processJob.test.ts`, add tests:
             - RENDER routes to `processors.processRenderJob` by `job.job_type === 'RENDER'`.
             - PLAN/EXECUTE behavior remains unchanged; no stage queries in the router.
             - Propagation: dbClient, job row, deps, authToken are forwarded unchanged.
-    *   `[ ]` 9.g. `[BE]` Update `processJob` to route 'RENDER'.
-        *   `[ ]` 9.g.i. In `supabase/functions/dialectic-worker/processJob.ts`, add a `case 'RENDER'`:
+    *   `[✅]` 9.g. `[BE]` Update `processJob` to route 'RENDER'.
+        *   `[✅]` 9.g.i. In `supabase/functions/dialectic-worker/processJob.ts`, add a `case 'RENDER'`:
             - Delegate to `processors.processRenderJob`.
             - Keep strict type guards; do not sniff payload shape.
-        *   `[ ]` 9.g.ii. Ensure 9.f tests pass (GREEN).
-    *   `[ ]` 9.h. `[TEST-UNIT]` Assert programmatic scheduling after successful EXECUTE.
-        *   `[ ]` 9.h.i. In `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts`, add RED tests:
+        *   `[✅]` 9.g.ii. Ensure 9.f tests pass (GREEN).
+    *   `[✅]` 9.h. `[TEST-UNIT]` Assert programmatic scheduling after successful EXECUTE.
+        *   `[✅]` 9.h.i. In `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts`, add RED tests:
             - On successful EXECUTE completion (including final continuation), the code inserts a new `dialectic_generation_jobs` row with:
               - `job_type: 'RENDER'`
               - Parent/association to the just-completed EXECUTE job
               - Payload containing renderer identity fields: `projectId`, `sessionId`, `iterationNumber`, `stageSlug`, and `documentIdentity` (e.g., `document_root_id` or equivalent from `document_relationships`).
             - Assert a single INSERT with exact values; no `step_info`; strict typing.
-    *   `[ ]` 9.i. `[BE]` Implement programmatic scheduling after EXECUTE completes.
-        *   `[ ]` 9.i.i. In `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`, after a successful save:
+    *   `[✅]` 9.i. `[BE]` Implement programmatic scheduling after EXECUTE completes.
+        *   `[✅]` 9.i.i. In `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`, after a successful save:
             - Insert a 'RENDER' job row with the payload described in 9.i.
             - Do not add defaults; use existing identity from the current contribution (prefer `document_relationships` true-root identity).
             - Log the new job id; preserve existing success behavior.
-        *   `[ ]` 9.i.ii. Ensure 9.i tests pass (GREEN).
-    *   `[ ]` 9.j. `[COMMIT]` feat(worker): Add DocumentRenderer, render job processor, router support, and auto-scheduling after EXECUTE.
+        *   `[✅]` 9.i.ii. Ensure 9.i tests pass (GREEN).
+    *   `[✅]` 9.j. `[COMMIT]` feat(worker): Add DocumentRenderer, render job processor, router support, and auto-scheduling after EXECUTE.
 
 *   `[✅]` 11. `[REFACTOR]` Phase 11: Finalize Deprecation of `step_info`.
     *   `[✅]` 11.a. `[REFACTOR]` Refactor `generateContribution.ts` to stop producing the `step_info` object in job payloads.
@@ -692,11 +692,11 @@ graph LR
     *   `[✅]` 11.c. `[REFACTOR]` Remove all type guards related to `step_info` (e.g., `isDialecticStepInfo`) from `type_guards.dialectic.ts`.
     *   `[✅]` 11.d. `[TEST-UNIT]` Update all remaining unit tests across the codebase that still use mock payloads with `step_info`, ensuring the entire test suite passes after its removal.
 
-*   `[ ]` 12. `[REFACTOR]` Phase 12: Align Worker Index and Finalize.
-    *   `[ ]` 12.a. `[TEST-UNIT]` In `index.test.ts` for the `dialectic-worker`, review and update tests.
+*   `[✅]` 12. `[REFACTOR]` Phase 12: Align Worker Index and Finalize.
+    *   `[✅]` 12.a. `[TEST-UNIT]` In `index.test.ts` for the `dialectic-worker`, review and update tests.
         *   Ensure that the dependencies injected into `processJob` are complete and correct, reflecting all the refactoring in the previous steps.
         *   Add or update tests to ensure the main handler correctly parses incoming job data from the request and passes it to `processJob`.
-    *   `[ ]` 12.b. `[BE]` In `index.ts` for the `dialectic-worker`, update the dependency injection setup.
+    *   `[✅]` 12.b. `[BE]` In `index.ts` for the `dialectic-worker`, update the dependency injection setup.
         *   Ensure that the correct, refactored services (`processComplexJob`, `processSimpleJob`, etc.) and their own dependencies are instantiated and passed correctly into the `processJob` function.
         *   Make any other necessary adjustments to align the entry point with the fully refactored worker stack.
 

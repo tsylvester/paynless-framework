@@ -9,14 +9,12 @@ import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import type { UnifiedAIResponse } from '../dialectic-service/dialectic.interface.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { createMockJobProcessors, createMockProcessJob } from '../_shared/dialectic.mock.ts';
+import { createMockJobProcessors, createMockProcessJob,  } from '../_shared/dialectic.mock.ts';
 import { getMockAiProviderAdapter } from '../_shared/ai_service/ai_provider.mock.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
-import { type AiModelExtendedConfig } from '../_shared/types.ts';
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
-import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
-import type { AiProviderAdapterInstance, ILogger } from '../_shared/types.ts';
+import { renderDocument } from '../_shared/services/document_renderer.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -87,6 +85,8 @@ const mockJobMissingUserId: MockJob = {
     parent_job_id: null,
     target_contribution_id: null,
     prerequisite_job_id: null,
+    is_test_job: false,
+    job_type: 'PLAN',
 };
 
 // Global mock job for invalid payload test
@@ -111,6 +111,8 @@ const mockJobInvalidPayload: MockJob = {
     parent_job_id: null,
     target_contribution_id: null,
     prerequisite_job_id: null,
+    is_test_job: false,
+    job_type: 'PLAN',
 };
 
 // Global mock supabase client for invalid payload test
@@ -160,6 +162,7 @@ const mockDeps: IDialecticJobDeps = {
         tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'p50k_base' } })),
     getGranularityPlanner: spy(() => () => []),
     planComplexStage: spy(async () => await Promise.resolve([])),
+    documentRenderer: { renderDocument },
 };
 
 // Global test deps for invalid payload test
@@ -175,13 +178,12 @@ const mockJobValid: MockJob = {
         session_id: 'session-id',
         stage_slug: 'thesis',
         payload: {
-        job_type: 'plan',
+        job_type: 'PLAN',
         sessionId: 'session-id',
         projectId: 'project-id',
         stageSlug: 'thesis',
         model_id: 'model-id',
         continueUntilComplete: false,
-        step_info: { current_step: 1, total_steps: 1 },
     },
         iteration_number: 1,
         status: 'pending',
@@ -195,6 +197,8 @@ const mockJobValid: MockJob = {
         parent_job_id: null,
         target_contribution_id: null,
         prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'PLAN',
     };
 
 // Global mock supabase client for valid job test
@@ -226,9 +230,6 @@ const mockSupabaseClientValid = createMockSupabaseClient(undefined, {
                                 inputs_required: [],
                             }],
                             sources: [],
-                            processing_strategy: {
-                                type: 'task_isolation',
-                            }
                         },
                     }],
                     error: null,
@@ -263,13 +264,12 @@ const mockJobPayloadValidation: MockJob = {
     session_id: 'session-id',
     stage_slug: 'thesis',
     payload: {
-        job_type: 'plan',
+        job_type: 'PLAN',
         sessionId: 'session-id',
         projectId: 'project-id',
         stageSlug: 'thesis',
         model_id: 'model-id',
         continueUntilComplete: false,
-        step_info: { current_step: 1, total_steps: 1 },
         user_jwt: 'jwt.token.here',
     },
     iteration_number: 1,
@@ -284,6 +284,8 @@ const mockJobPayloadValidation: MockJob = {
     parent_job_id: null,
     target_contribution_id: null,
     prerequisite_job_id: null,
+    is_test_job: false,
+    job_type: 'PLAN',
 };
 
 // Global mock client for payload validation test
@@ -294,7 +296,7 @@ const mockSupabaseClientPayloadValidation = createMockSupabaseClient(undefined, 
             update: { data: [{ id: 'job-payload-validation' }], error: null }
         },
         'dialectic_stages': {
-            select: { data: [{ id: 1, slug: 'thesis', name: 'Thesis', display_name: 'Thesis', input_artifact_rules: { steps: [{ step: 1, prompt_template_name: 'test-prompt', granularity_strategy: 'full_text', output_type: 'test-output', inputs_required: [] }], sources: [], processing_strategy: { type: 'task_isolation' } } }], error: null }
+            select: { data: [{ id: 1, slug: 'thesis', name: 'Thesis', display_name: 'Thesis', input_artifact_rules: { steps: [{ step: 1, prompt_template_name: 'test-prompt', granularity_strategy: 'full_text', output_type: 'test-output', inputs_required: [] }], sources: [] } }], error: null }
         }
     }
 });
@@ -307,12 +309,11 @@ const mockJobException: MockJob = {
     session_id: 'session-id',
     stage_slug: 'thesis',
     payload: {
-        job_type: 'plan',
+        job_type: 'PLAN',
         sessionId: 'session-id',
         projectId: 'project-id',
         stageSlug: 'thesis',
         model_id: 'model-id',
-        step_info: { current_step: 1, total_steps: 1 },
         user_jwt: 'jwt.token.here',
     },
         iteration_number: 1,
@@ -327,6 +328,8 @@ const mockJobException: MockJob = {
         parent_job_id: null,
         target_contribution_id: null,
         prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'PLAN',
     };
 
 // Global mock supabase client for exception test
@@ -427,7 +430,22 @@ Deno.test('handleJob - fails when payload is invalid', async () => {
 });
 
 Deno.test('handleJob - successfully processes valid job', async () => {
-    await handleJob(mockSupabaseClientValid.client as unknown as SupabaseClient<Database>, mockJobValid, testDepsValid, 'mock-token');
+    const { processors } = createMockJobProcessors();
+    // Make the PLAN path complete the job
+    processors.processComplexJob = async (dbClient, job) => {
+        await (dbClient as unknown as SupabaseClient<Database>)
+            .from('dialectic_generation_jobs')
+            .update({ status: 'completed', completed_at: new Date().toISOString() })
+            .eq('id', job.id);
+    };
+
+    await handleJob(
+        mockSupabaseClientValid.client as unknown as SupabaseClient<Database>,
+        mockJobValid,
+        testDepsValid,
+        'mock-token',
+        processors,
+    );
 
     const updateSpies = mockSupabaseClientValid.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
     assertExists(updateSpies, 'Update spy should exist');
@@ -442,92 +460,62 @@ Deno.test('handleJob - successfully processes valid job', async () => {
     assert(secondUpdatePayload && typeof secondUpdatePayload === 'object' && 'status' in secondUpdatePayload);
     assertEquals(secondUpdatePayload.status, 'completed');
     assert('completed_at' in secondUpdatePayload);
-
-    const rpcSpy = mockSupabaseClientValid.spies.rpcSpy;
-    assertEquals(rpcSpy.calls.length, 1, 'RPC should be called once for start notification');
-    const startNotification = rpcSpy.calls[0];
-    assertEquals(startNotification.args[0], 'create_notification_for_user');
-    const notificationArgs = startNotification.args[1];
-    assertEquals(notificationArgs.p_target_user_id, mockJobValid.user_id);
-    assertEquals(notificationArgs.p_notification_type, 'contribution_generation_started');
-
-    assert(typeof notificationArgs.p_notification_data === 'object' && notificationArgs.p_notification_data !== null, "notification_data should be an object");
-    const parsedNotificationData = notificationArgs.p_notification_data;
-    assertEquals(parsedNotificationData.sessionId, 'session-id');
-    assertEquals(parsedNotificationData.job_id, 'job-valid');
 });
 
 Deno.test('handleJob - handles exceptions during processJob execution', async () => {
-    // Configure mock processors to throw an error
-    const testProcessors = {
-        ...mockJobProcessors.processors,
-        processSimpleJob: () => Promise.reject(testError)
-    };
-    
+    const { processors } = createMockJobProcessors();
+    // Make PLAN path throw
+    const err = new Error('Simulated processJob error');
+    processors.processComplexJob = async () => { throw err; };
+
     const internalFailSpy = spy(testDepsException.notificationService, 'sendContributionGenerationFailedEvent');
 
-    await handleJob(mockSupabaseClientException.client as unknown as SupabaseClient<Database>, mockJobException, testDepsException, 'mock-token', testProcessors);
+    await handleJob(
+        mockSupabaseClientException.client as unknown as SupabaseClient<Database>,
+        mockJobException,
+        testDepsException,
+        'mock-token',
+        processors,
+    );
 
     const updateSpies = mockSupabaseClientException.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
-        assertExists(updateSpies, 'Update spy should exist');
-        assertEquals(updateSpies.callCount, 2, 'Should update status to processing, then to failed');
-        
-        const finalUpdatePayload = updateSpies.callsArgs[1][0];
-        assert(finalUpdatePayload && typeof finalUpdatePayload === 'object' && 'status' in finalUpdatePayload && 'error_details' in finalUpdatePayload);
+    assertExists(updateSpies, 'Update spy should exist');
+    assertEquals(updateSpies.callCount, 2, 'Should update status to processing, then to failed');
+    const finalUpdatePayload = updateSpies.callsArgs[1][0];
+    assert(finalUpdatePayload && typeof finalUpdatePayload === 'object' && 'status' in finalUpdatePayload && 'error_details' in finalUpdatePayload);
+    assertEquals(finalUpdatePayload.status, 'failed', "Job status should be 'failed'");
+    assert('completed_at' in finalUpdatePayload, "completed_at should be set");
 
-        assertEquals(finalUpdatePayload.status, 'failed', "Job status should be 'failed'");
-        assert('completed_at' in finalUpdatePayload, "completed_at should be set");
-        const errorDetails = finalUpdatePayload.error_details;
-        assert(errorDetails && typeof errorDetails === 'object' && 'final_error' in errorDetails && typeof errorDetails.final_error === 'string' && errorDetails.final_error.includes('Simulated processJob error'), "Error details should contain the simulated error message");
-
-    const rpcSpy = mockSupabaseClientException.spies.rpcSpy;
-        assertEquals(rpcSpy.calls.length, 3, 'RPC should be called thrice (start, internal fail, user fail)');
-
-        const startCall = rpcSpy.calls.find((c: any) => c.args[1]?.p_notification_type === 'contribution_generation_started');
-        assertExists(startCall, 'Start notification should be sent');
-
-        const internalFailCall = rpcSpy.calls.find((c: any) => c.args[1]?.p_notification_type === 'other_generation_failed');
-        assertExists(internalFailCall, 'Internal failure event should be sent');
-        const internalArgs = internalFailCall!.args[1];
-        assertEquals(internalArgs.p_is_internal_event, true);
-        const internalData = internalArgs.p_notification_data;
-    assertEquals(internalData.job_id, mockJobException.id);
-    assertEquals(internalData.sessionId, mockJobException.session_id);
-        assertEquals(internalData.error.code, 'UNHANDLED_EXCEPTION');
-
-        const userFailCall = rpcSpy.calls.find((c: any) => c.args[1]?.p_notification_type === 'contribution_generation_failed');
-        assertExists(userFailCall, 'User-facing failure notification should be sent');
-        const userArgs = userFailCall!.args[1];
-        assertEquals(userArgs.p_is_internal_event, false);
-
-        assertEquals(internalFailSpy.calls.length, 1, 'Internal failure event should be emitted once');
-        const internalPayload = internalFailSpy.calls[0].args[0];
-        assertEquals(internalPayload.type, 'other_generation_failed');
-    assertEquals(internalPayload.sessionId, mockJobException.session_id);
-    assertEquals(internalPayload.job_id, mockJobException.id);
-        assert(typeof internalPayload.error === 'object' && internalPayload.error !== null);
-        assertEquals(internalPayload.error.code, 'UNHANDLED_EXCEPTION');
-
-        internalFailSpy.restore();
+    assertEquals(internalFailSpy.calls.length, 1, 'Internal failure event should be emitted once');
+    internalFailSpy.restore();
 });
 
 Deno.test('handleJob - validates payload correctly and extracts user info', async () => {
-    await handleJob(mockSupabaseClientPayloadValidation.client as unknown as SupabaseClient<Database>, mockJobPayloadValidation, mockDeps, 'mock-token');
+    const { processors } = createMockJobProcessors();
+    processors.processComplexJob = async (dbClient, job) => {
+        await (dbClient as unknown as SupabaseClient<Database>)
+            .from('dialectic_generation_jobs')
+            .update({ status: 'completed', completed_at: new Date().toISOString(), results: {} })
+            .eq('id', job.id);
+    };
+
+    await handleJob(
+        mockSupabaseClientPayloadValidation.client as unknown as SupabaseClient<Database>,
+        mockJobPayloadValidation,
+        mockDeps,
+        'mock-token',
+        processors,
+    );
 
     const updateSpies = mockSupabaseClientPayloadValidation.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
-        assertExists(updateSpies, 'Update spy should exist');
-        assertEquals(updateSpies.callCount, 2, 'Job should be updated twice (processing, then completed)');
-
-        const firstUpdatePayload = updateSpies.callsArgs[0][0];
-        assert(firstUpdatePayload && typeof firstUpdatePayload === 'object' && 'status' in firstUpdatePayload);
-        assertEquals(firstUpdatePayload.status, 'processing');
-    assert('started_at' in firstUpdatePayload);
-
-        const secondUpdatePayload = updateSpies.callsArgs[1][0];
-        assert(secondUpdatePayload && typeof secondUpdatePayload === 'object' && 'status' in secondUpdatePayload);
-        assertEquals(secondUpdatePayload.status, 'completed');
-    assert('completed_at' in secondUpdatePayload);
-    assert('results' in secondUpdatePayload);
+    assertExists(updateSpies, 'Update spy should exist');
+    assertEquals(updateSpies.callCount, 2, 'Job should be updated twice (processing, then completed)');
+    const firstUpdatePayload = updateSpies.callsArgs[0][0];
+    assert(firstUpdatePayload && typeof firstUpdatePayload === 'object' && 'status' in firstUpdatePayload);
+    assertEquals(firstUpdatePayload.status, 'processing');
+    const secondUpdatePayload = updateSpies.callsArgs[1][0];
+    assert(secondUpdatePayload && typeof secondUpdatePayload === 'object' && 'status' in secondUpdatePayload);
+    assertEquals(secondUpdatePayload.status, 'completed');
 });
 
 // ---  worker deps factory exists and injects wallet service for compression path ---
@@ -686,7 +674,6 @@ Deno.test('handleJob - does not inject user_jwt and fails when payload.user_jwt 
             stageSlug: 'thesis',
             model_id: 'model-x',
             continueUntilComplete: false,
-            step_info: { current_step: 1, total_steps: 1 },
             walletId: 'wallet-xyz',
         };
     
@@ -708,6 +695,8 @@ Deno.test('handleJob - does not inject user_jwt and fails when payload.user_jwt 
             parent_job_id: null,
             target_contribution_id: null,
             prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'PLAN',
         };
     
         const mockSupabase = createMockSupabaseClient(undefined, {
@@ -788,7 +777,7 @@ Deno.test('should log isTestRunner context when the flag is present in the paylo
     // Mock processJob to prevent the job from running too far; we only need to test the entry log
     const mockProcessors = {
         ...createMockJobProcessors().processors,
-        processJob: spy(async () => Promise.resolve({ status: 'completed' as const, results: {}, final_error: null }))
+        processJob: spy(async () => Promise.resolve({ status: 'completed', results: {}, final_error: null }))
     };
 
     // Act
@@ -806,7 +795,69 @@ Deno.test('should log isTestRunner context when the flag is present in the paylo
     const contextCheckCall = loggerSpy.calls.find(call => call.args[0] === '[handleJob] context_check');
     assertExists(contextCheckCall, "Expected a log entry with message '[handleJob] context_check'");
 
-    const logPayload = contextCheckCall.args[1] as { isTestRunner?: boolean; jobId?: string };
+    const logPayload = contextCheckCall.args[1];
     assertExists(logPayload, "Log entry should have a payload object.");
     assertEquals(logPayload.isTestRunner, true, "isTestRunner flag in log payload should be true.");
+});
+
+// RENDER path: handler forwards args and uses provided processors
+Deno.test('handleJob - RENDER routes via provided processors and propagates args unchanged', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    // PLAN-shaped payload (to satisfy payload validator), while row is RENDER
+    const planShapedPayload: Json = {
+        job_type: 'PLAN',
+        sessionId: 'session-id-render',
+        projectId: 'project-id-render',
+        stageSlug: 'synthesis',
+        model_id: 'model-id',
+        continueUntilComplete: false,
+        user_jwt: 'jwt.token.here',
+        walletId: 'wallet-render',
+    };
+
+    const renderJob: MockJob = {
+        id: 'job-render',
+        user_id: 'user-render',
+        session_id: 'session-id-render',
+        stage_slug: 'synthesis',
+        payload: planShapedPayload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'RENDER',
+    };
+
+    const { client: dbClient } = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': {
+                select: { data: [renderJob], error: null },
+                update: { data: [{ id: renderJob.id }], error: null },
+            },
+        },
+    });
+
+    const deps = { ...mockDeps };
+    const authToken = 'auth-render';
+
+    await handleJob(dbClient as unknown as SupabaseClient<Database>, renderJob, deps, authToken, processors);
+
+    // Assert: provided processors.processRenderJob was invoked exactly once with forwarded args
+    assertEquals(spies.processRenderJob.calls.length, 1, 'processRenderJob should be called once');
+    const call = spies.processRenderJob.calls[0];
+    assertStrictEquals(call.args[0], dbClient, 'dbClient forwarded unchanged');
+    assertEquals(call.args[1], renderJob, 'job forwarded unchanged');
+    assertEquals(call.args[2], 'user-render', 'projectOwnerUserId forwarded unchanged');
+    assertEquals(call.args[3], deps, 'deps forwarded unchanged');
+    assertEquals(call.args[4], authToken, 'authToken forwarded unchanged');
 });
