@@ -97,26 +97,38 @@ export async function renderDocument(
   const modelSlug = info.modelSlug;
   const attemptCount = info.attemptCount;
 
-  // 4) Load a template (stage/document specific) from templates bucket; this is required
-  const templatesBucket = Deno.env.get('PROMPT_TEMPLATE_BUCKET') ?? 'prompt-templates';
+  // 4) Load template by querying dialectic_document_templates (authoritative map)
+  type DocumentTemplateRow = Database['public']['Tables']['dialectic_document_templates']['Row'];
   const stage = String(stageSlug).toLowerCase();
   const docKey = String(documentKey);
-  const templateCandidates = [
-    `templates/${stage}/${docKey}.md`,
-    `templates/${stage}/default.md`,
-    `templates/default.md`,
-  ];
-  let template: string | null = null;
-  for (const candidatePath of templateCandidates) {
-    const { data, error } = await deps.downloadFromStorage(dbClient as unknown as SupabaseClient, templatesBucket, candidatePath);
-    if (!error && data) {
-      template = new TextDecoder().decode(data);
-      break;
-    }
+  const { data: templateRow, error: templateErr } = await dbClient
+    .from('dialectic_document_templates')
+    .select('*')
+    .eq('stage_slug', stage)
+    .eq('document_key', docKey)
+    .maybeSingle<DocumentTemplateRow>();
+
+  if (templateErr || !templateRow) {
+    throw new Error(`No template mapping found for stage='${stage}' document='${docKey}': ${templateErr ? (templateErr).message ?? 'unknown error' : 'not found'}`);
   }
-  if (!template) {
-    throw new Error(`Template not found for stage '${stage}' and document '${docKey}' in bucket '${templatesBucket}'. Tried: ${templateCandidates.join(', ')}`);
+
+  const templateBucket = templateRow.storage_bucket;
+  const templateStoragePath = templateRow.storage_path;
+  const templateFileName = templateRow.file_name;
+  const fullTemplatePath = `${templateStoragePath?.replace(/\/$/, '')}/${templateFileName}`;
+
+  if (!templateBucket || !templateStoragePath || !templateFileName) {
+    throw new Error(`Invalid template row: ${JSON.stringify(templateRow)}`);
   }
+  const { data: templateData, error: templateDownloadErr } = await deps.downloadFromStorage(
+    dbClient as unknown as SupabaseClient,
+    templateBucket,
+    fullTemplatePath,
+  );
+  if (templateDownloadErr || !templateData) {
+    throw new Error(`Failed to download template '${fullTemplatePath}' from bucket '${templateBucket}': ${templateDownloadErr ? (templateDownloadErr).message ?? 'unknown error' : 'no data'}`);
+  }
+  const template = new TextDecoder().decode(templateData);
 
   const bodyParts: string[] = [];
   const contentBucket = base.storage_bucket;

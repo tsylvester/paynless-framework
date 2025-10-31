@@ -50,6 +50,11 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         dialectic_contributions: {
           select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
         },
+        dialectic_document_templates: {
+          select: { data: [
+            { stage_slug: 'thesis', document_key: 'business_case', storage_bucket: 'prompt-templates', storage_path: 'templates/thesis', file_name: 'thesis_business_case.md' }
+          ], error: null, count: null, status: 200, statusText: 'OK' }
+        },
       },
       storageMock: {
         downloadResult: async (_bucketId: string, path: string) => {
@@ -153,6 +158,11 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         dialectic_contributions: {
           select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
         },
+        dialectic_document_templates: {
+          select: { data: [
+            { stage_slug: 'thesis', document_key: 'business_case', storage_bucket: 'prompt-templates', storage_path: 'templates/thesis', file_name: 'thesis_business_case.md' }
+          ], error: null, count: null, status: 200, statusText: 'OK' }
+        },
       },
       storageMock: {
         downloadResult: async (_bucketId: string, path: string) => {
@@ -239,6 +249,11 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         dialectic_contributions: {
           select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
         },
+        dialectic_document_templates: {
+          select: { data: [
+            { stage_slug: 'thesis', document_key: 'business_case', storage_bucket: 'prompt-templates', storage_path: 'templates/thesis', file_name: 'thesis_business_case.md' }
+          ], error: null, count: null, status: 200, statusText: 'OK' }
+        },
       },
       storageMock: {
         downloadResult: async (_bucketId: string, path: string) => {
@@ -305,6 +320,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     const { dbClient, clearAllStubs } = setup({
       genericMockResults: {
         dialectic_contributions: { select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" } },
+        dialectic_document_templates: { select: { data: [ { stage_slug: 'thesis', document_key: 'business_case', storage_bucket: 'prompt-templates', storage_path: 'templates/thesis', file_name: 'thesis_business_case.md' } ], error: null, count: null, status: 200, statusText: 'OK' } },
       },
       storageMock: {
         downloadResult: async (_bucketId: string, path: string) => {
@@ -394,7 +410,10 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     resetMockNotificationService();
 
     const { dbClient, clearAllStubs } = setup({
-      genericMockResults: { dialectic_contributions: { select: { data: contributionsNotif, error: null, count: null, status: 200, statusText: "OK" } } },
+      genericMockResults: {
+        dialectic_contributions: { select: { data: contributionsNotif, error: null, count: null, status: 200, statusText: "OK" } },
+        dialectic_document_templates: { select: { data: [ { stage_slug: 'thesis', document_key: 'business_case', storage_bucket: 'prompt-templates', storage_path: 'templates/thesis', file_name: 'thesis_business_case.md' } ], error: null, count: null, status: 200, statusText: 'OK' } }
+      },
       storageMock: { downloadResult: async () => ({ data: new Blob(["# T\n\n{{content}}\n"], { type: "text/markdown" }), error: null }) },
     });
 
@@ -465,7 +484,10 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     };
 
     const { dbClient: dbClientIdem, clearAllStubs: clearAllStubsIdem } = setup({
-      genericMockResults: { dialectic_contributions: { select: async () => ({ data: contributionsIdem, error: null, count: null, status: 200, statusText: "OK" }) } },
+      genericMockResults: {
+        dialectic_contributions: { select: async () => ({ data: contributionsIdem, error: null, count: null, status: 200, statusText: "OK" }) },
+        dialectic_document_templates: { select: { data: [ { stage_slug: 'thesis', document_key: 'business_case', storage_bucket: 'prompt-templates', storage_path: 'templates/thesis', file_name: 'thesis_business_case.md' } ], error: null, count: null, status: 200, statusText: 'OK' } }
+      },
       storageMock: {
         downloadResult: async (_bucketId: string, path: string) => {
           const name = path.substring(path.lastIndexOf("/") + 1);
@@ -552,7 +574,10 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     };
 
     const { dbClient, clearAllStubs } = setup({
-      genericMockResults: { dialectic_contributions: { select: async () => ({ data: contributions, error: null, count: null, status: 200, statusText: "OK" }) } },
+      genericMockResults: { 
+        dialectic_contributions: { select: async () => ({ data: contributions, error: null, count: null, status: 200, statusText: "OK" }) },
+        dialectic_document_templates: { select: { data: [ { stage_slug: 'thesis', document_key: 'business_case', storage_bucket: 'prompt-templates', storage_path: 'templates/thesis', file_name: 'thesis_business_case.md' } ], error: null, count: null, status: 200, statusText: 'OK' } }
+      },
       storageMock: {
         downloadResult: async (_bucketId: string, path: string) => {
           const name = path.substring(path.lastIndexOf("/") + 1);
@@ -609,15 +634,18 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     const contributions: ContributionRowMinimal[] = [modelChunk, userEdit];
 
     const { dbClient, clearAllStubs } = setup({
-      genericMockResults: { dialectic_contributions: { select: async () => ({ data: contributions, error: null, count: null, status: 200, statusText: "OK" }) } },
+      genericMockResults: { 
+        dialectic_contributions: { select: async () => ({ data: contributions, error: null, count: null, status: 200, statusText: "OK" }) },
+        dialectic_document_templates: { select: { data: [ { stage_slug: 'thesis', document_key: 'business_case', storage_bucket: 'prompt-templates', storage_path: 'templates/thesis', file_name: 'thesis_business_case.md' } ], error: null, count: null, status: 200, statusText: 'OK' } }
+      },
       storageMock: {
         downloadResult: async (_bucketId: string, path: string) => {
           const isEdit = path.endsWith(userEdit.file_name);
-          // Return USER for edit detection; renderer should choose edit over model body
-          const body = isEdit ? "USER" : "MODEL";
-          const template = "# {{title}}\n\n{{content}}\n";
-          // heuristic: content request paths are chunk paths; template path is not equal to model/edit name
-          return { data: new Blob([path.includes("business_case.md") ? body : template], { type: "text/markdown" }), error: null };
+          const isModel = path.endsWith(modelChunk.file_name);
+          if (isEdit) return { data: new Blob(["USER"], { type: "text/markdown" }), error: null };
+          if (isModel) return { data: new Blob(["MODEL"], { type: "text/markdown" }), error: null };
+          // Otherwise this is the template fetch
+          return { data: new Blob(["# {{title}}\n\n{{content}}\n"], { type: "text/markdown" }), error: null };
         },
       },
     });
