@@ -24,7 +24,7 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import { describe, it, beforeEach } from 'https://deno.land/std@0.170.0/testing/bdd.ts';
-import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
+import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import {
     isDialecticStageRecipeStep,
@@ -479,6 +479,45 @@ describe('processComplexJob', () => {
         const finalUpdateArgs = updateSpy.callsArgs[updateSpy.callCount - 1]; // Get the last update call
         assert(isRecord(finalUpdateArgs[0]));
         assertEquals(finalUpdateArgs[0].status, 'waiting_for_children');
+    });
+
+    it('emits planner_started when planner work begins with document and model context', async () => {
+        // Arrange
+        resetMockNotificationService();
+        // Re-bind deps to the reset mock instance
+        mockDeps.notificationService = mockNotificationService;
+
+        // Ensure a simple child is produced to pass happy path
+        const firstStep = mockTemplateRecipeSteps[0];
+        const mockChildJob: DialecticJobRow = {
+            id: 'child-1', user_id: 'user-1', session_id: mockParentJob.session_id, stage_slug: mockParentJob.stage_slug,
+            payload: { message: 'Child 1' }, iteration_number: 1, status: 'pending',
+            attempt_count: 0, max_retries: 3, created_at: new Date().toISOString(), started_at: null,
+            completed_at: null, results: null, error_details: null, parent_job_id: mockParentJob.id,
+            target_contribution_id: null, prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+        mockDeps.planComplexStage = async (...args) => {
+            mockProcessorSpies.planComplexStage(...args);
+            return [mockChildJob];
+        };
+
+        // Act
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+
+        // Assert
+        const calls = mockNotificationService.sendDocumentCentricNotification.calls;
+        assert(calls.length >= 1, 'Expected at least one document-centric notification');
+        const [payloadArg, targetUserId] = calls[0].args;
+        assertEquals(payloadArg.type, 'planner_started');
+        assertEquals(payloadArg.sessionId, mockParentJob.session_id);
+        assertEquals(payloadArg.stageSlug, mockParentJob.stage_slug);
+        assertEquals(payloadArg.job_id, mockParentJob.id);
+        assertEquals(payloadArg.document_key, String(firstStep.output_type));
+        assertEquals(payloadArg.modelId, mockParentJob.payload.model_id);
+        assertEquals(payloadArg.iterationNumber, mockParentJob.iteration_number);
+        assertEquals(targetUserId, mockParentJob.user_id);
     });
 
     it('should correctly advance to the next step when waking up from a "pending_next_step" status', async () => {

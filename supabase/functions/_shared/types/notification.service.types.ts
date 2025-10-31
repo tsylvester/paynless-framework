@@ -1,5 +1,4 @@
 import type { Database } from '@paynless/db-types';
-import type { FileType } from './file_manager.types.ts';
 
 export interface NotificationServiceType {
     sendContributionStartedEvent(payload: ContributionGenerationStartedPayload, targetUserId: string): Promise<void>;
@@ -11,7 +10,7 @@ export interface NotificationServiceType {
     sendContributionGenerationContinuedEvent(payload: ContributionGenerationContinuedPayload, targetUserId: string): Promise<void>;
     sendDialecticProgressUpdateEvent(payload: DialecticProgressUpdatePayload, targetUserId: string): Promise<void>;
     sendContributionGenerationFailedEvent(payload: ContributionGenerationFailedInternalPayload, targetUserId: string): Promise<void>;
-    sendDocumentRenderedNotification(payload: DocumentRenderedNotificationPayload, targetUserId: string): Promise<void>;
+    sendDocumentCentricNotification(payload: DocumentCentricNotificationEvent, targetUserId: string): Promise<void>;
 }
 
 export interface RpcNotification<T> {
@@ -33,16 +32,6 @@ export interface ApiError {
     details?: unknown;
   }
   
-export interface DocumentRenderedNotificationPayload {
-    type: 'document_rendered';
-    projectId: string;
-    sessionId: string;
-    iterationNumber: number;
-    stageSlug: string;
-    documentIdentity: string;
-    documentKey: FileType;
-    completed: boolean;
-}
 
 export interface ContributionGenerationStartedPayload {
     // This is the overall contribution generation for the entire session stage. 
@@ -144,3 +133,48 @@ export interface ContributionGenerationStartedPayload {
   | ContributionGenerationContinuedPayload
   | ContributionGenerationCompletePayload
   | DialecticProgressUpdatePayload;
+
+// ------------------------------
+// Document-centric notification payloads (Step 1.a.i)
+// Ensure common fields + document-scoped fields per checklist
+
+export interface DocumentPayload {
+  sessionId: string;
+  stageSlug: string;
+  job_id: string;
+  document_key: string;
+  modelId: string;
+  iterationNumber: number;
+}
+export interface PlannerStartedPayload extends DocumentPayload {
+  type: 'planner_started';
+}
+
+export interface DocumentStartedPayload extends DocumentPayload {
+  type: 'document_started';
+}
+
+export interface DocumentChunkCompletedPayload extends DocumentPayload {
+  type: 'document_chunk_completed';
+}
+
+export interface DocumentCompletedPayload extends DocumentPayload {
+  type: 'document_completed';
+}
+
+export interface RenderCompletedPayload extends DocumentPayload {
+  type: 'render_completed';
+}
+
+export interface JobFailedPayload extends DocumentPayload {
+  type: 'job_failed';
+  error: ApiError;
+}
+
+export type DocumentCentricNotificationEvent =
+  | PlannerStartedPayload
+  | DocumentStartedPayload
+  | DocumentChunkCompletedPayload
+  | DocumentCompletedPayload
+  | RenderCompletedPayload
+  | JobFailedPayload;

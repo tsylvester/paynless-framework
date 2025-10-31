@@ -221,6 +221,17 @@ export async function processComplexJob(
     const firstReady = readySteps[0];
     deps.logger.info(`[processComplexJob] Processing step '${firstReady.step_slug}' for job ${parentJobId}`);
 
+	// Emit planner_started notification with required context
+	await deps.notificationService.sendDocumentCentricNotification({
+		type: 'planner_started',
+		sessionId: job.session_id,
+		stageSlug: stageSlug,
+		job_id: job.id,
+		document_key: String(firstReady.output_type),
+		modelId: job.payload.model_id,
+		iterationNumber: job.iteration_number,
+	}, projectOwnerUserId);
+
     try {
         if (!deps.planComplexStage) {
             throw new Error("planComplexStage dependency is missing.");
@@ -281,6 +292,24 @@ export async function processComplexJob(
             completed_at: new Date().toISOString(),
             error_details: { message: failureReason }
         }).eq('id', parentJobId);
+
+        // Emit document-centric job_failed notification
+        try {
+            const documentKey = (firstReady && 'output_type' in firstReady)
+                ? String(firstReady.output_type)
+                : 'unknown';
+            const errCode = e instanceof ContextWindowError ? 'CONTEXT_WINDOW_ERROR' : 'PLANNING_FAILED';
+            await deps.notificationService.sendDocumentCentricNotification({
+                type: 'job_failed',
+                sessionId: job.session_id,
+                stageSlug: stageSlug,
+                job_id: parentJobId,
+                document_key: documentKey,
+                modelId: job.payload.model_id,
+                iterationNumber: job.iteration_number,
+                error: { code: errCode, message: error.message },
+            }, projectOwnerUserId);
+        } catch { /* best-effort notification */ }
     }
 }
 

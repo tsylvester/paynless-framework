@@ -748,15 +748,26 @@ graph LR
 
 #### `[ ]` 1. Phase: Foundational Observability
 *   **Objective:** Establish the foundational backend schema and routing needed for the new architecture, and build the UI hooks to observe these new events, setting the stage for the document-centric view.
-*   `[ ]` 1.a. `[DB]` **Backend Milestone:** Implement Core Schema and Notification Contracts.
-    *   `[ ]` 1.a.i. Implement the database migrations from the TRD (add `job_type`, enhance artifact tables).
-    *   `[ ]` 1.a.ii. `[Migration]` Use the `document_centric_generation` migration to refactor the `dialectic_document_templates` table to support storing templates as files.
-        *   `[ ]` 1.a.ii.1. Add `storage_bucket`, `storage_path`, and `file_name` columns to the `dialectic_document_templates` table.
-    *   `[ ]` 1.a.iii. `[Migration]` Refactor `dialectic_stages` and `domain_specific_prompt_overlays` to use normalized document template references.
-        *   `[ ]` 1.a.iii.1. In `dialectic_stages`, rename the `expected_output_artifacts` column to `expected_output_template_ids` and change its type from `JSONB` to `uuid[]`.
-        *   `[ ]` 1.a.iii.2. Extract the `expected_output_artifacts_json` values from `domain_specific_prompt_overlays`, create new template files in storage, populate the `dialectic_document_templates` table with the corresponding records, link the new template IDs to the appropriate stages in `dialectic_stages.expected_output_template_ids`, and finally remove the `expected_output_artifacts_json` key from all `domain_specific_prompt_overlays.overlay_values`.
-        *   `[ ]` 1.a.iii.3. Update `seed.sql` to reflect the condensed values to ensure the dev database is correctly populated after each reset. 
-    *   `[ ]` 1.a.iv. Define and document the new notification events (e.g., `PLANNER_STARTED`, `DOCUMENT_STARTED`, `DOCUMENT_CHUNK_COMPLETED`, `RENDER_COMPLETED`, `JOB_FAILED`) that the worker will emit.
+*   `[ ]` 1.a. `[BE]` **Backend Milestone:** Notification Contracts and Emissions.
+    *   `[✅]` 1.a.i. `[BE]` Update `notification.service.types.ts` to define/extend types for required events.
+        *   `[✅]` 1.a.i.1. Add `planner_started`, `document_started`, `document_chunk_completed`, `render_completed`, and `job_failed` payload types.
+        *   `[✅]` 1.a.i.2. Ensure all payloads include `userId`, `sessionId`, `stageSlug`, and `job_id`.
+        *   `[✅]` 1.a.i.3. For document-scoped events, include `document_key` and `iterationNumber`; include `modelId` where applicable.
+    *   `[✅]` 1.a.ii. `[TEST-UNIT]` Add/extend unit tests for `NotificationService` to assert `_sendNotification` calls with correct `notification_type` and payload (including `userId` and `document_key`).
+    *   `[✅]` 1.a.iii. `[BE]` Implement new sender methods in `notification.service.ts`.
+        *   `[✅]` 1.a.iii.1. `sendPlannerStartedEvent` → `notification_type: 'planner_started'`.
+        *   `[✅]` 1.a.iii.2. `sendDocumentStartedEvent` → `notification_type: 'document_started'`.
+        *   `[✅]` 1.a.iii.3. `sendDocumentChunkCompletedEvent` → `notification_type: 'document_chunk_completed'`.
+        *   `[✅]` 1.a.iii.4. `sendJobFailedEvent` → `notification_type: 'job_failed'`.
+        *   `[✅]` 1.a.iii.5. Confirm/alias `sendDocumentRenderedNotification` as `render_completed` semantics.
+    *   `[✅]` 1.a.iv. `[MOCK]` Update notification service mocks to include new methods with type-correct payloads.
+    *   `[ ]` 1.a.v. `[BE]` Update workers to emit notifications at the right orchestration points.
+        *   `[✅]` 1.a.v.1. `processComplexJob`: emit `planner_started` when planner work begins (include `userId`, `sessionId`, `stageSlug`, `job_id`).
+        *   `[✅]` 1.a.v.2. `processSimpleJob`: emit `document_started` at EXECUTE job start (include `document_key`, `iterationNumber`, `modelId`).
+        *   `[✅]` 1.a.v.3. `executeModelCallAndSave`: after each saved chunk/continuation, emit `document_chunk_completed` with `document_key` and progression info and `document_completed` when `finish_reason: stop`.
+        *   `[✅]` 1.a.v.4. `processRenderJob` (or renderer): ensure final render emits `render_completed` via existing `document_rendered` path.
+        *   `[✅]` 1.a.v.5. All workers: on unrecoverable failure, emit `job_failed` with `error`, `job_id`, `sessionId`, `userId`, `stageSlug`.
+    *   `[✅]` 1.a.vi. `[TEST-UNIT]` Add worker unit tests to verify each emission point and payload shape.
 *   `[ ]` 1.b. `[UI]` **UI Milestone:** Implement Notification Service and State Management.
     *   `[ ]` 1.b.i. Update the frontend notification service to subscribe to and handle the new backend events.
     *   `[ ]` 1.b.ii. Update the application's state management (`store`) to accommodate the concept of a stage having a collection of individual documents, each with its own status.
@@ -765,47 +776,33 @@ graph LR
 *   `[ ]` 1.c. `[COMMIT]` feat: Establish foundational DB schema and UI state for document-centric job observability.
 
 #### `[ ]` 2. Phase: Backend Deconstruction & UI Document View
-*   **Objective:** Decompose monolithic backend jobs into document-centric jobs and provide the user with a UI to see and interact with these new, distinct document artifacts for the first time.
+*   **Objective:** Decompose monolithic backend jobs into document-centric jobs and provide a UI that lists per-document jobs and shows live rendered Markdown for each document.
 *   `[ ]` 2.a. `[BE]` **Backend Milestone:** Implement Document API.
-    *   `[ ]` 2.a.i. Create a new API endpoint that lists all document artifacts associated with a stage run.
+    *   `[ ]` 2.a.i. `[TEST-UNIT]` Write failing tests for a "list stage documents" endpoint that returns one row per `document_key` for the current run. The documents should be ordered by the steps within the stage to show their anticipated generation order. This will enable a progress bar for users as each step is completed. 
+        *   `[ ]` 2.a.i.a. Assert each item includes: `document_key`, `job_id`, `status`, `model_id` (if applicable), `iterationNumber`, and a pointer to the latest rendered artifact (resource id or storage path).
+    *   `[ ]` 2.a.ii. `[BE]` Implement the endpoint to query jobs by stage/session/iteration, derive `document_key` from the recipe step, and join to the latest rendered document resource (if any).
+    *   `[ ]` 2.a.iii. `[TEST-UNIT]` Ensure the endpoint maps multiple jobs for the same `document_key` to the latest status and latest rendered Markdown reference.
 *   `[ ]` 2.b. `[UI]` **UI Milestone:** Build Document-Centric Stage View.
-    *   `[ ]` 2.b.i. Redesign the stage output view to call the new API endpoint and display a list of document artifacts.
-    *   `[ ]` 2.b.ii. Allow users to click on a document artifact to view its raw, un-rendered JSON content.
-    *   `[ ]` 2.b.iii This new document view will replace the current "monolithic per-model contribution" view in the UI. 
-*   `[ ]` 2.c. `[COMMIT]` feat: Deconstruct backend jobs and reflect the new document structure in the UI.
+    *   `[ ]` 2.b.i. `[STORE]` Add store slice, actions, and selectors for `document_key` → { status, job_id, latestRenderedResource }.
+        *   `[ ]` 2.b.i.a. `[TEST-UNIT]` Reducer/selector tests for ingesting the document list and mapping by `document_key`.
+    *   `[ ]` 2.b.ii. `[UI]` Build a list component that calls the document API and displays all documents with their current status.
+    *   `[ ]` 2.b.iii. `[UI]` Build a detail viewer that shows the latest rendered Markdown for the selected `document_key` (not raw JSON).
+        *   `[ ]` 2.b.iii.a. `[TEST-UNIT]` Component test: on `document_key` change, fetch and render Markdown content.
+    *   `[ ]` 2.b.iv. `[UI]` Replace the current monolithic per-model contribution view with the document-centric view while preserving navigation to legacy data as needed.
+*   `[ ]` 2.c. `[COMMIT]` feat: Document API and document-centric UI view (Markdown-based).
 
 #### `[ ]` 3. Phase: Live Rendering Pipeline
-*   **Objective:** Implement the "render-on-chunk" logic to provide a near-real-time document generation experience for the user.
+*   **Objective:** Provide near-real-time document updates by rendering Markdown on each chunk and refreshing the UI via notifications.
 *   `[ ]` 3.a. `[BE]` **Backend Milestone:** Implement Idempotent `DocumentRenderer` and Content API.
-    *   `[ ]` 3.a.i. Implement the revised `DocumentRenderer` service, triggered after each `EXECUTE` job `DOCUMENT_CHUNK_COMPLETED` to cumulatively assemble and render final Markdown files.
-    *   `[ ]` 3.a.ii. Create a new API endpoint that retrieves the latest rendered Markdown content for a specific document from storage.
+    *   `[✅]` 3.a.i. `[TEST-UNIT]` Validate renderer tests cover cumulative Markdown assembly from chunked JSON without duplication; add edge cases if missing (empty chunk, repeated chunk, out-of-order chunk).
+    *   `[✅]` 3.a.ii. `[BE]` Confirm renderer is triggered after each EXECUTE job completion (chunk) by enqueuing a RENDER job in `executeModelCallAndSave`; ensure it saves updated Markdown with `RenderedDocument` pathing and emits `document_rendered`.
+    *   `[ ]` 3.a.iii. `[TEST-UNIT]` Create a failing test and implement (or validate) a content endpoint to fetch the latest rendered Markdown by `{ sessionId, stageSlug, iterationNumber, document_key }`.
 *   `[ ]` 3.b. `[UI]` **UI Milestone:** Implement Live Document Refresh.
-    *   `[ ]` 3.b.i. Enhance the document view to use the new content endpoint.
-    *   `[ ]` 3.b.ii. Use the existing notification service with its updated richer state notifications to trigger a refresh of the view when the state change notification is received. 
-    *   `[ ]` 3.b.iii. Update the new per-document view to support displaying the latest version of the currently selected document fully rendered in markdown. 
-    *   `[ ]` 3.b.iv. Let users switch between the unrendered json object and the rendered document in the per-document view. 
-*   `[ ]` 3.c. `[COMMIT]` feat: Implement live rendering pipeline from backend to frontend.
-
-#### `[ ]` 4. Phase: Per-Document User Feedback
-*   **Objective:** Refactor the user feedback system to align with the new document-centric model, allowing for precise, targeted feedback on individual artifacts.
-*   `[ ]` 4.b. `[BE]` **Backend Milestone:** Refactor Feedback API.
-    *   `[ ]` 4.b.i. Create new API endpoints for submitting and retrieving feedback associated with a specific document contribution ID.
-*   `[ ]` 4.c. `[UI]` **UI Milestone:** Implement In-Document Feedback UI.
-    *   `[ ]` 4.c.i. Redesign the feedback UI to be a component within the document view. (The existing monolithic view model already provides a feedback window, we can reuse this.)
-    *   `[ ]` 4.c.ii. Ensure the new UI submits feedback associated with the specific document being viewed.
-*   `[ ]` 4.d. `[COMMIT]` feat: Enable granular, per-document user feedback.
-
-#### `[ ]` 5. Phase: Advanced Workflow Configuration
-*   **Objective:** Expose the full power of the new architecture to the user by allowing them to configure stage inputs and outputs dynamically.
-*   `[ ]` 5.a. `[BE]` **Backend Milestone:** Implement Granular Document Selection.
-    *   `[ ]` 5.a.ii. Create a new API endpoint that returns a list of all available, templatable documents for a given domain by querying the new `dialectic_document_templates` table.
-*   `[ ]` 5.b. `[UI]` **UI Milestone:** Build Stage Output Configuration View.
-    *   `[ ]` 5.b.i. Build the UI components that allow a user to configure the documents to be generated by a stage (e.g., by modifying the job recipe before execution).
-    *   `[ ]` 5.b.ii. Pre-populate the checklist with the standard documents from the job recipe, but expose the entire list of documents that have domain prompts for selection by the user (fetched from the new API endpoint).
-*   `[ ]` 5.c. `[UI]` **UI Milestone:** Build Next-Stage Input Configuration View.
-    *   `[ ]` 5.c.i. Build the UI components that allow a user to select which specific documents from prior stages should be used as inputs for the next stage (by modifying `input_artifact_rules`).
-    *   `[ ]` 5.c.ii. Pre-populate the checklist with the standard documents from the job recipe, but expose the entire list of documents that have domain prompts for selection by the user.
-*   `[ ]` 5.d. `[COMMIT]` feat: Expose advanced, user-configurable workflow controls in the UI.
+    *   `[ ]` 3.b.i. `[STORE]` Handle notifications `document_started`, `document_chunk_completed`, and `render_completed` by dispatching a fetch for the affected `document_key`'s latest Markdown.
+        *   `[ ]` 3.b.i.a. `[TEST-UNIT]` Store test: on each notification, request content for the matching `document_key`.
+    *   `[ ]` 3.b.ii. `[UI]` Auto-refresh the document detail viewer when store content updates; display error banner on `job_failed` with the mapped `document_key`/`job_id` when available.
+    *   `[ ]` 3.b.iii. `[UI]` Preserve scroll position while updating content to reduce jank during live refresh.
+*   `[ ]` 3.c. `[COMMIT]` feat: Live rendering pipeline and UI auto-refresh wired to notifications.
 
 #### `[ ]` 6. Phase: Final Polish and Cleanup
 *   `[ ]` 6.a. `[UI]` **UI Milestone:** Filter User-Facing Prompt Selector.

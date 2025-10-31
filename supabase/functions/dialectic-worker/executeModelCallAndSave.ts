@@ -1079,6 +1079,19 @@ export async function executeModelCallAndSave(
 
     const contribution = savedResult.record;
 
+    // Emit chunk completion for continuation jobs immediately after save
+    if (projectOwnerUserId && isContinuationForStorage) {
+        await deps.notificationService.sendDocumentCentricNotification({
+            type: 'document_chunk_completed',
+            sessionId: sessionId,
+            stageSlug: stageSlug,
+            job_id: jobId,
+            document_key: String(output_type),
+            modelId: model_id,
+            iterationNumber: iterationNumber,
+        }, projectOwnerUserId);
+    }
+
     // Persist full document_relationships for continuation saves to avoid initializer self-map
     const payloadRelationships = job.payload.document_relationships;
     if (isContinuationForStorage && isDocumentRelationships(payloadRelationships)) {
@@ -1151,6 +1164,19 @@ export async function executeModelCallAndSave(
     const isFinalChunk = resolvedFinish === 'stop';
 
     if (isFinalChunk) {
+        // Emit document_completed for final chunk
+        if (projectOwnerUserId) {
+            await deps.notificationService.sendDocumentCentricNotification({
+                type: 'document_completed',
+                sessionId: sessionId,
+                stageSlug: stageSlug,
+                job_id: jobId,
+                document_key: String(output_type),
+                modelId: model_id,
+                iterationNumber: iterationNumber,
+            }, projectOwnerUserId);
+        }
+
         let rootIdFromSaved: string | undefined = undefined;
         const savedRelationships = contribution.document_relationships;
         if (isRecord(savedRelationships)) {

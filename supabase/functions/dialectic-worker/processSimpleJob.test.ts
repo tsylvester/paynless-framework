@@ -147,7 +147,7 @@ const mockNotificationService: NotificationServiceType = {
     sendContributionGenerationContinuedEvent: async () => {},
     sendContributionGenerationCompleteEvent: async () => {},
     sendDialecticProgressUpdateEvent: async () => {},
-    sendDocumentRenderedNotification: async () => {},
+    sendDocumentCentricNotification: async () => {},
   };
 
 const setupMockClient = (configOverrides: Record<string, any> = {}) => {
@@ -374,6 +374,36 @@ Deno.test('processSimpleJob - Happy Path', async (t) => {
     clearAllStubs?.();
 });
 
+Deno.test('processSimpleJob - emits document_started at EXECUTE job start', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient();
+  const { deps } = getMockDeps();
+
+  const docStartedSpy = spy(deps.notificationService, 'sendDocumentCentricNotification');
+
+  const executeJob: typeof mockJob = { ...mockJob, job_type: 'EXECUTE' };
+
+  await processSimpleJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    { ...executeJob, payload: mockPayload },
+    'user-789',
+    deps,
+    'auth-token',
+  );
+
+  assertEquals(docStartedSpy.calls.length, 1, 'Expected document_started event to be emitted once');
+  const [payloadArg, targetUserId] = docStartedSpy.calls[0].args;
+  assertEquals(payloadArg.type, 'document_started');
+  assertEquals(payloadArg.sessionId, executeJob.session_id);
+  assertEquals(payloadArg.stageSlug, executeJob.stage_slug);
+  assertEquals(payloadArg.job_id, executeJob.id);
+  assertEquals(payloadArg.document_key, 'model_contribution_main');
+  assertEquals(payloadArg.modelId, 'model-def');
+  assertEquals(payloadArg.iterationNumber, 1);
+  assertEquals(targetUserId, 'user-789');
+
+  clearAllStubs?.();
+});
+
 Deno.test('processSimpleJob - does not call legacy promptAssembler methods directly', async () => {
     const { client: dbClient, clearAllStubs } = setupMockClient();
     const { deps, promptAssembler } = getMockDeps();
@@ -447,6 +477,50 @@ Deno.test('processSimpleJob - Failure with No Retries Remaining', async (t) => {
 
     clearAllStubs?.();
     executorStub.restore();
+});
+
+Deno.test('processSimpleJob - emits job_failed document-centric notification on terminal failure', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient();
+  const { deps } = getMockDeps();
+
+  // Force executor to fail so job reaches terminal failure path
+  const executorStub = stub(deps, 'executeModelCallAndSave', () => {
+    return Promise.reject(new Error('Executor failed consistently'));
+  });
+
+  const docEventSpy = spy(deps.notificationService, 'sendDocumentCentricNotification');
+
+  const jobWithNoRetries: DialecticJobRow = { ...mockJob, attempt_count: 3, max_retries: 3 };
+
+  let threw = false;
+  try {
+    await processSimpleJob(
+      dbClient as unknown as SupabaseClient<Database>,
+      { ...jobWithNoRetries, payload: mockPayload },
+      'user-789',
+      deps,
+      'auth-token',
+    );
+  } catch (_e) {
+    threw = true;
+  }
+
+  // Expect a single document-centric job_failed event
+  assertEquals(docEventSpy.calls.length, 1, 'Expected job_failed notification to be emitted');
+  const [payloadArg, targetUserId] = docEventSpy.calls[0].args;
+  assert(isRecord(payloadArg));
+  assertEquals(payloadArg.type, 'job_failed');
+  assertEquals(payloadArg.sessionId, mockPayload.sessionId);
+  assertEquals(payloadArg.stageSlug, mockPayload.stageSlug);
+  assertEquals(payloadArg.job_id, jobWithNoRetries.id);
+  assertEquals(typeof payloadArg.document_key, 'string');
+  assertEquals(payloadArg.modelId, mockPayload.model_id);
+  assertEquals(payloadArg.iterationNumber, mockPayload.iterationNumber);
+  assertEquals(targetUserId, 'user-789');
+
+  docEventSpy.restore();
+  executorStub.restore();
+  clearAllStubs?.();
 });
 
 Deno.test('processSimpleJob - emits internal and user-facing failure notifications when retries are exhausted', async (t) => {

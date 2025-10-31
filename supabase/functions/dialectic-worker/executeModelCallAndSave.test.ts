@@ -198,7 +198,7 @@ export  const mockNotificationService: NotificationServiceType = {
       sendDialecticProgressUpdateEvent: async () => {},
       sendContributionFailedNotification: async () => {},
       sendContributionGenerationFailedEvent: async () => {},
-      sendDocumentRenderedNotification: async () => {},
+      sendDocumentCentricNotification: async () => {},
     };
   
 export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
@@ -934,6 +934,115 @@ Deno.test('executeModelCallAndSave - includes rendered template as first user me
   assertEquals(firstArg.systemInstruction, undefined);
   assertEquals(firstArg.messages.length, 0, 'messages should be empty when no history/resources');
 
+  clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - emits document_completed when finish_reason is stop', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient({
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+  });
+
+  const deps = getMockDeps();
+  const sendDocEventSpy = spy(deps.notificationService, 'sendDocumentCentricNotification');
+
+  // Stub call to return finish_reason: stop
+  const callUnifiedAISpy = stub(deps, 'callUnifiedAIModel', async () => ({
+    content: '{"ok": true}',
+    contentType: 'application/json',
+    inputTokens: 10,
+    outputTokens: 5,
+    processingTimeMs: 50,
+    rawProviderResponse: { finish_reason: 'stop' },
+  }));
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob(testPayload),
+    projectOwnerUserId: 'user-789',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: buildPromptPayload(),
+    sessionData: mockSessionData,
+    compressionStrategy: getSortedCompressionCandidates,
+    inputsRelevance: [],
+  };
+
+  await executeModelCallAndSave(params);
+
+  assertEquals(sendDocEventSpy.calls.length, 1, 'Expected a document_completed event emission');
+  const [payloadArg, targetUserId] = sendDocEventSpy.calls[0].args;
+  assert(isRecord(payloadArg));
+  assertEquals(payloadArg.type, 'document_completed');
+  assertEquals(payloadArg.sessionId, testPayload.sessionId);
+  assertEquals(payloadArg.stageSlug, testPayload.stageSlug);
+  assertEquals(payloadArg.job_id, 'job-id-123');
+  assertEquals(payloadArg.document_key, String(testPayload.output_type));
+  assertEquals(payloadArg.modelId, testPayload.model_id);
+  assertEquals(payloadArg.iterationNumber, testPayload.iterationNumber);
+  assertEquals(targetUserId, 'user-789');
+
+  callUnifiedAISpy.restore();
+  sendDocEventSpy.restore();
+  clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - emits document_chunk_completed for continuation chunks', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient({
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+  });
+
+  const deps = getMockDeps();
+  const sendDocEventSpy = spy(deps.notificationService, 'sendDocumentCentricNotification');
+
+  // Continuation job payload with required document_relationships
+  const continuationPayload = {
+    ...testPayload,
+    target_contribution_id: 'root-123',
+    continuation_count: 2,
+    document_relationships: { thesis: 'root-123', isContinuation: true, turnIndex: 2 },
+  };
+
+  // Stub model to return a non-final finish_reason (requires continuation), but we only assert chunk event
+  const callUnifiedAISpy = stub(deps, 'callUnifiedAIModel', async () => ({
+    content: '{"ok": true}',
+    contentType: 'application/json',
+    inputTokens: 10,
+    outputTokens: 5,
+    processingTimeMs: 50,
+    rawProviderResponse: { finish_reason: 'length' },
+  }));
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob(continuationPayload),
+    projectOwnerUserId: 'user-789',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: buildPromptPayload(),
+    sessionData: mockSessionData,
+    compressionStrategy: getSortedCompressionCandidates,
+    inputsRelevance: [],
+  };
+
+  await executeModelCallAndSave(params);
+
+  // One call expected: document_chunk_completed (no document_completed because finish_reason != stop)
+  assertEquals(sendDocEventSpy.calls.length, 1, 'Expected a document_chunk_completed event emission');
+  const [payloadArg, targetUserId] = sendDocEventSpy.calls[0].args;
+  assert(isRecord(payloadArg));
+  assertEquals(payloadArg.type, 'document_chunk_completed');
+  assertEquals(payloadArg.sessionId, testPayload.sessionId);
+  assertEquals(payloadArg.stageSlug, testPayload.stageSlug);
+  assertEquals(payloadArg.job_id, 'job-id-123');
+  assertEquals(payloadArg.document_key, String(testPayload.output_type));
+  assertEquals(payloadArg.modelId, testPayload.model_id);
+  assertEquals(payloadArg.iterationNumber, testPayload.iterationNumber);
+  assertEquals(targetUserId, 'user-789');
+
+  callUnifiedAISpy.restore();
+  sendDocEventSpy.restore();
   clearAllStubs?.();
 });
 

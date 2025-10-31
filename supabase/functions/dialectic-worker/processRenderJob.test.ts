@@ -15,7 +15,7 @@ import { createDocumentRendererMock } from "../_shared/services/document_rendere
 import { isRecord } from "../_shared/utils/type_guards.ts";
 import { processRenderJob } from "./processRenderJob.ts";
 import { MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
-import { mockNotificationService } from "../_shared/utils/notification.service.mock.ts";
+import { mockNotificationService, resetMockNotificationService } from "../_shared/utils/notification.service.mock.ts";
 
 // Helpers
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
@@ -137,7 +137,7 @@ Deno.test("processRenderJob - records failure with error_details when renderer t
     // The processor may throw or may swallow and set job failed; tests assert DB update regardless
   }
 
-  // Assert
+  // Assert DB update
   // - renderer.renderDocument was called exactly once
   // - Job row updated once with { status: 'failed', error_details: includes 'render failed' }
   const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
@@ -149,6 +149,47 @@ Deno.test("processRenderJob - records failure with error_details when renderer t
   assertEquals(status, "failed");
   const errorDetails = updatePayload.error_details;
   assert(typeof errorDetails === "string" && errorDetails.includes("render failed"));
+
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - emits job_failed document-centric notification on renderer failure", async () => {
+  const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
+  const err = new Error("render crashed hard");
+  const { renderer } = createDocumentRendererMock({ handler: async () => { throw err; } });
+  const job = makeRenderJob();
+
+  resetMockNotificationService();
+
+  try {
+    await processRenderJob(
+      dbClient as unknown as SupabaseClient<Database>,
+      job,
+      job.user_id ?? 'user-123',
+      {
+        documentRenderer: renderer,
+        logger,
+        downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
+        fileManager: new MockFileManagerService(),
+        notificationService: mockNotificationService,
+      },
+      'auth-token',
+    );
+  } catch (_e) {
+    // swallow for test
+  }
+
+  assertEquals(mockNotificationService.sendDocumentCentricNotification.calls.length, 1, 'Expected job_failed notification');
+  const [payloadArg, targetUserId] = mockNotificationService.sendDocumentCentricNotification.calls[0].args;
+  assert(isRecord(payloadArg));
+  assertEquals(payloadArg.type, 'job_failed');
+  assertEquals(payloadArg.sessionId, 'session_abc');
+  assertEquals(payloadArg.stageSlug, 'thesis');
+  assertEquals(payloadArg.job_id, job.id);
+  assertEquals(payloadArg.document_key, String(FileType.business_case));
+  assertEquals(payloadArg.modelId, 'renderer');
+  assertEquals(payloadArg.iterationNumber, 1);
+  assertEquals(targetUserId, job.user_id);
 
   clearAllStubs?.();
 });

@@ -38,6 +38,9 @@ export async function processSimpleJob(
     deps.logger.info(`[dialectic-worker] [processSimpleJob] Starting attempt ${currentAttempt + 1}/${max_retries + 1} for job ID: ${jobId}`);
     let providerDetails: SelectedAiProvider | undefined;
 
+    // Track document key for notifications where possible
+    let notificationDocumentKey: string | undefined = undefined;
+
     try {
         if (!stageSlug) throw new Error('stageSlug is required in the payload.');
         if (!projectId) throw new Error('projectId is required in the payload.');
@@ -203,6 +206,21 @@ export async function processSimpleJob(
             throw new Error('RECIPE_STEP_RESOLUTION_FAILED');
         }
 
+        // Emit document_started at EXECUTE job start
+        if (currentAttempt === 0 && projectOwnerUserId) {
+            const documentKey = String(resolvedRecipeStep.output_type);
+            notificationDocumentKey = documentKey;
+            await deps.notificationService.sendDocumentCentricNotification({
+                type: 'document_started',
+                sessionId,
+                stageSlug,
+                job_id: jobId,
+                document_key: documentKey,
+                modelId: providerDetails.id,
+                iterationNumber: sessionData.iteration_count,
+            }, projectOwnerUserId);
+        }
+
         const stageContext: StageContext = {
             ...stageData,
             system_prompts,
@@ -320,6 +338,21 @@ export async function processSimpleJob(
                     },
                     job_id: jobId,
                 }, projectOwnerUserId);
+
+                // Document-centric failure event
+                const fallbackKey = (isRecord(job.payload) && typeof (job.payload)['output_type'] === 'string')
+                  ? String(job.payload['output_type'])
+                  : (notificationDocumentKey ?? 'unknown');
+                await deps.notificationService.sendDocumentCentricNotification({
+                    type: 'job_failed',
+                    sessionId: String(sessionId),
+                    stageSlug: String(stageSlug),
+                    job_id: jobId,
+                    document_key: String(fallbackKey),
+                    modelId: model_id,
+                    iterationNumber: (typeof job.iteration_number === 'number' ? job.iteration_number : 1),
+                    error: { code: 'CONTEXT_WINDOW_ERROR', message: error.message },
+                }, projectOwnerUserId);
             }
             return;
         }
@@ -352,6 +385,21 @@ export async function processSimpleJob(
                     projectId: job.payload.projectId ?? '',
                     error: { code, message: userMessage },
                     job_id: jobId,
+                }, projectOwnerUserId);
+
+                // Document-centric failure event
+                const fallbackKey = (isRecord(job.payload) && typeof (job.payload)['output_type'] === 'string')
+                  ? String(job.payload['output_type'])
+                  : (notificationDocumentKey ?? 'unknown');
+                await deps.notificationService.sendDocumentCentricNotification({
+                    type: 'job_failed',
+                    sessionId: String(sessionId),
+                    stageSlug: String(stageSlug),
+                    job_id: jobId,
+                    document_key: String(fallbackKey),
+                    modelId: model_id,
+                    iterationNumber: (typeof job.iteration_number === 'number' ? job.iteration_number : 1),
+                    error: { code, message: userMessage },
                 }, projectOwnerUserId);
             }
         };
@@ -496,6 +544,21 @@ export async function processSimpleJob(
                     code: 'RETRY_LOOP_FAILED',
                     message: failedAttempt.error,
                 },
+            }, projectOwnerUserId);
+
+            // Document-centric failure event on terminal failure
+            const fallbackKey = (isRecord(job.payload) && typeof (job.payload)['output_type'] === 'string')
+              ? String(job.payload['output_type'])
+              : (notificationDocumentKey ?? 'unknown');
+            await deps.notificationService.sendDocumentCentricNotification({
+                type: 'job_failed',
+                sessionId: String(sessionId),
+                stageSlug: String(stageSlug),
+                job_id: jobId,
+                document_key: String(fallbackKey),
+                modelId: model_id,
+                iterationNumber: (typeof job.iteration_number === 'number' ? job.iteration_number : 1),
+                error: { code: 'RETRY_LOOP_FAILED', message: failedAttempt.error },
             }, projectOwnerUserId);
         }
         return;

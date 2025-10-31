@@ -25,7 +25,7 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import { describe, it, beforeEach } from 'https://deno.land/std@0.170.0/testing/bdd.ts';
-import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
+import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
 
@@ -351,6 +351,60 @@ describe('processComplexJob', () => {
         assert(isRecord(updateArgs) && 'status' in updateArgs && 'error_details' in updateArgs);
         assertEquals(updateArgs.status, 'failed');
         assert(JSON.stringify(updateArgs.error_details).includes('Planner failed!'));
+    });
+
+    it('emits job_failed notification when planner throws a generic error', async () => {
+        // Arrange
+        resetMockNotificationService();
+        mockDeps.notificationService = mockNotificationService;
+        mockDeps.planComplexStage = async () => Promise.reject(new Error('Planner failed!'));
+
+        // Act
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps, 'user-jwt-123');
+
+        // Assert
+        const calls = mockNotificationService.sendDocumentCentricNotification.calls;
+        const jobFailedCalls = calls.filter((c) => {
+            const a = c.args?.[0];
+            return a && typeof a === 'object' && (a).type === 'job_failed';
+        });
+        assertEquals(jobFailedCalls.length, 1, 'Expected one job_failed notification');
+        const [payloadArg, targetUserId] = jobFailedCalls[0].args;
+        assertEquals(payloadArg.type, 'job_failed');
+        assertEquals(payloadArg.sessionId, mockParentJob.session_id);
+        assertEquals(payloadArg.stageSlug, mockParentJob.stage_slug);
+        assertEquals(payloadArg.job_id, mockParentJob.id);
+        assert(typeof payloadArg.document_key === 'string');
+        assertEquals(payloadArg.modelId, mockParentJob.payload.model_id);
+        assertEquals(payloadArg.iterationNumber, mockParentJob.iteration_number);
+        assertEquals(targetUserId, 'user-id-fail');
+    });
+
+    it('emits job_failed notification when planner throws a ContextWindowError', async () => {
+        // Arrange
+        resetMockNotificationService();
+        mockDeps.notificationService = mockNotificationService;
+        mockDeps.planComplexStage = async () => Promise.reject(new ContextWindowError('Context too large!'));
+
+        // Act
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps, 'user-jwt-123');
+
+        // Assert
+        const calls = mockNotificationService.sendDocumentCentricNotification.calls;
+        const jobFailedCalls = calls.filter((c) => {
+            const a = c.args?.[0];
+            return a && typeof a === 'object' && (a).type === 'job_failed';
+        });
+        assertEquals(jobFailedCalls.length, 1, 'Expected one job_failed notification');
+        const [payloadArg, targetUserId] = jobFailedCalls[0].args;
+        assertEquals(payloadArg.type, 'job_failed');
+        assertEquals(payloadArg.sessionId, mockParentJob.session_id);
+        assertEquals(payloadArg.stageSlug, mockParentJob.stage_slug);
+        assertEquals(payloadArg.job_id, mockParentJob.id);
+        assert(typeof payloadArg.document_key === 'string');
+        assertEquals(payloadArg.modelId, mockParentJob.payload.model_id);
+        assertEquals(payloadArg.iterationNumber, mockParentJob.iteration_number);
+        assertEquals(targetUserId, 'user-id-fail');
     });
 
     it('should fail the job with a specific message if "planComplexStage" throws a ContextWindowError', async () => {
