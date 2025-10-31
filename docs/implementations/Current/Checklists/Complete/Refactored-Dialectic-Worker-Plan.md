@@ -623,7 +623,7 @@ graph LR
     *   `[✅]` 8.k   `[TEST-UNIT]` `supabase/functions/_shared/prompt-assembler/gatherInputsForStage.test.ts`
         *   `[✅]` 8.k.i Confirm `gatherInputsForStage` remains prompt-only (does not fetch unrelated prior artifacts); required-rule error semantics unchanged.
 
-*   `[ ]` 9. `[BE]` Phase 9: Implement Document Rendering and Finalization.
+*   `[✅]` 9. `[BE]` Phase 9: Implement Document Rendering and Finalization.
     *   `[✅]` 9.a. `[TEST-UNIT]` Define the RED tests for the DocumentRenderer service.
         *   `[✅]` 9.a.i. Create `supabase/functions/_shared/services/document_renderer.test.ts`.
             *   Prove idempotent and cumulative behavior:
@@ -700,27 +700,4 @@ graph LR
         *   Ensure that the correct, refactored services (`processComplexJob`, `processSimpleJob`, etc.) and their own dependencies are instantiated and passed correctly into the `processJob` function.
         *   Make any other necessary adjustments to align the entry point with the fully refactored worker stack.
 
-*   `[ ]` 13. `[BE]` Phase 13: Refactor `submitStageResponses` for Document-Specific Feedback.
-    *   **Justification**: The current implementation handles user feedback monolithically, saving it as a single file per stage. This is incompatible with a document-centric workflow where feedback must be tied to specific generated documents. This refactor will enable the service to accept and store feedback for each individual document, maintaining the critical link between a critique and its subject for downstream consumers.
-    *   `[ ]` 13.a. `[API]` In `dialectic.interface.ts`, refactor the `SubmitStageResponsesPayload` interface.
-        *   `[ ]` 13.a.i. Deprecate and remove the existing `userStageFeedback` property.
-        *   `[ ]` 13.a.ii. Add a new property `documentFeedback` which is an array of a new `DialecticDocumentFeedback` type.
-        *   `[ ]` 13.a.iii. Define the `DialecticDocumentFeedback` interface to include `targetContributionId: string`, `content: string`, `feedbackType: string`, and an optional `resourceDescription: string`.
-    *   `[ ]` 13.b. `[TEST-UNIT]` In `submitStageResponses.test.ts`, write a new suite of failing tests.
-        *   `[ ]` 13.b.i. Write a test that provides a payload with the old `userStageFeedback` property and proves that the function now rejects it.
-        *   `[ ]` 13.b.ii. Write a test that provides a valid `documentFeedback` array with multiple feedback items.
-            *   The test must mock the `dialectic_contributions` table to contain the contributions referenced by `targetContributionId`.
-            *   It must assert that `fileManager.uploadAndRegisterFile` is called once for *each* item in the `documentFeedback` array.
-            *   It must assert that the `pathContext` passed to the file manager for each call correctly references the specific document (e.g., by including the original document's file name in the new feedback file's name).
-            *   It must assert that the `feedbackTypeForDb` and other metadata from each feedback item are correctly passed to the file manager.
-    *   `[ ]` 13.c. `[BE]` In `submitStageResponses.ts`, refactor the implementation to achieve the GREEN state.
-        *   `[ ]` 13.c.i. Remove the entire logic block that processes the old `userStageFeedback` object.
-        *   `[ ]` 13.c.ii. Implement a loop that iterates over the new `payload.documentFeedback` array.
-        *   `[ ]` 13.c.iii. Inside the loop, for each feedback item, query the `dialectic_contributions` table using the `targetContributionId` to retrieve the metadata of the document being critiqued.
-        *   `[ ]` 13.c.iv. Construct a new, specific `feedbackFileName` (e.g., `feedback_for_contribution_${item.targetContributionId}.md`) and `PathContext`.
-        *   `[ ]` 13.c.v. Call `fileManager.uploadAndRegisterFile` with the context and content for the individual feedback item.
-        *   `[ ]` 13.c.vi. Ensure the function aggregates the created feedback records correctly and returns them in the response.
-        *   `[ ]` 13.c.vii. Ensure all new tests pass.
-    *   `[ ]` 13.d. `[COMMIT]` feat(api): Enable document-specific feedback submission.
-
-*   `[ ]` 14. `[COMMIT]` feat(worker): Refactor dialectic worker for document-centric generation.
+*   `[✅]` 14. `[COMMIT]` feat(worker): Refactor dialectic worker for document-centric generation.

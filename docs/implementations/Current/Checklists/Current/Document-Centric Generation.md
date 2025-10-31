@@ -53,6 +53,10 @@
         * We cannot strictly type Supabase clients
         * When we test graceful error handling, we often need to pass in malformed objects that must be typecast to pass linting to permit testing of improperly shaped objects. 
 *   We only edit a SINGLE FILE at a time. We NEVER edit multiple files in one turn.
+*   You NEVER "rewrite the entire file". 
+*   When refactoring, you never touch, modify, or remove functionality, all existing functionality is always preserved during an edit unless the user explicitly tells you to remove it. 
+*   You never output large code blocks in chat unless explicitly asked.
+*   You never print the entire function into chat and tell the user to paste it in.
 *   We do EXACTLY what the instruction in the checklist step says without exception.
 *   The Agent does NOT edit the checklist without explicit instruction.
 *   When the Agent is instructed to edit the checklist they only edit the EXACT steps they're instructed to edit and NEVER touch ANY step that is outside the scope of their instruction.  
@@ -736,7 +740,7 @@ graph LR
         *   `[✅]` 6.c.v. `[TEST-UNIT]` In `submitStageResponses.test.ts`, update any existing tests that relied on the old method's behavior to align with the new, correct implementation.
     *   `[✅]` 6.f. `[COMMIT]` refactor(worker): Migrate all consumers to the refactore `PromptAssembler` service.
 
-*   `[ ]` **INJECTION:** This section of the checklist was reordered and moved to `Refactored-Dialectic-Worker-Plan.md`
+*   `[✅]` **INJECTION:** This section of the checklist was reordered and moved to `Refactored-Dialectic-Worker-Plan.md`
 
 # Implementation Plan
 
