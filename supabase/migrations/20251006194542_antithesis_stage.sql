@@ -799,28 +799,37 @@ BEGIN
         '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"business_case","relevance":0.95},{"document_key":"feature_spec","relevance":0.85},{"document_key":"technical_approach","relevance":0.75},{"document_key":"success_metrics","relevance":0.65},{"document_key":"business_case","type":"feedback","relevance":0.6},{"document_key":"feature_spec","type":"feedback","relevance":0.6},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"success_metrics","type":"feedback","relevance":0.6}]'::jsonb,
         '{
-           "documents": [
-             {
-               "document_key": "business_case_critique",
-               "template_filename": "antithesis_business_case_critique.md",
-               "artifact_class": "rendered_document",
-               "file_type": "markdown",
-               "content_to_include": {
-                 "strengths": [],
-                 "weaknesses": [],
-                 "opportunities": [],
-                 "threats": [],
-                 "recommendations": [],
-                 "notes": []
-               }
-             }
-           ],
-           "files_to_generate": [
-             {
-               "template_filename": "antithesis_business_case_critique.md",
-               "from_document_key": "business_case_critique"
-             }
-           ]
+          "documents": [
+            {
+              "document_key": "business_case_critique",
+              "template_filename": "antithesis_business_case_critique.md",
+              "artifact_class": "rendered_document",
+              "file_type": "markdown",
+              "content_to_include": {
+                "executive_summary": "",  
+                "fit_to_original_user_request": "",
+                "strengths": [],
+                "weaknesses": [],
+                "opportunities": [],
+                "threats": [],
+                "problems": [],
+                "obstacles": [],
+                "errors": [],
+                "omissions": [],
+                "discrepancies": [],
+                "areas_for_improvement": [],
+                "feasibility": ""
+                "recommendations": [],
+                "notes": [],
+              }
+            }
+          ],
+          "files_to_generate": [
+            {
+              "template_filename": "antithesis_business_case_critique.md",
+              "from_document_key": "business_case_critique"
+            }
+          ]
         }'::jsonb
     )
     ON CONFLICT (template_id, step_key) DO UPDATE
@@ -886,7 +895,15 @@ BEGIN
                 "opportunities": [],
                 "threats": [],
                 "recommendations": [],
-                "notes": []
+                "notes": [],
+                "fit_to_original_user_request": "",
+                "problems": [],
+                "obstacles": [],
+                "errors": [],
+                "omissions": [],
+                "discrepancies": [],
+                "areas_for_improvement": [],
+                "feasibility": ""
               }
             }
           ],
