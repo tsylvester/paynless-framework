@@ -1,6 +1,6 @@
 // supabase/functions/_shared/utils/vector_utils.ts
 
-import { type SourceDocument } from '../../dialectic-service/dialectic.interface.ts';
+import { type SourceDocument, type RelevanceRule } from '../../dialectic-service/dialectic.interface.ts';
 import { type ILogger, type Messages } from '../types.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { Database } from '../../types_db.ts';
@@ -27,6 +27,7 @@ export interface ICompressionStrategy {
         documents: SourceDocument[],
         history: Messages[],
         currentUserPrompt: string,
+        inputsRelevance?: RelevanceRule[],
     ): Promise<CompressionCandidate[]>;
 }
 
@@ -89,6 +90,7 @@ export type CompressionCandidate = {
     sourceType: 'history' | 'document';
     originalIndex: number;
     valueScore: number;
+    effectiveScore: number;
 };
 
 // --- Helper Functions for Compression ---
@@ -124,6 +126,7 @@ export async function scoreResourceDocuments(
             sourceType: 'document',
             originalIndex: i,
             valueScore: relevance,
+            effectiveScore: relevance,
         });
     }
     return scoredDocuments;
@@ -176,6 +179,7 @@ export function scoreHistory(
             sourceType: 'history',
             originalIndex,
             valueScore,
+            effectiveScore: valueScore,
         };
     });
 }
@@ -189,11 +193,72 @@ export async function getSortedCompressionCandidates(
     documents: SourceDocument[],
     history: Messages[],
     currentUserPrompt: string,
+    inputsRelevance?: RelevanceRule[],
 ): Promise<CompressionCandidate[]> {
     const documentCandidates = await scoreResourceDocuments(deps, documents, currentUserPrompt);
     const historyCandidates = scoreHistory(history);
 
-    const allCandidates = [...documentCandidates, ...historyCandidates];
+    // Build a quick lookup for matrix relevance: key -> weight (0..1)
+    // Key formats (no fallbacks): `${type}:${document_key}` or `${type}:${document_key}:${stage_slug}`
+    const relevanceMap: Record<string, number> = {};
+    if (inputsRelevance && Array.isArray(inputsRelevance)) {
+        for (const rule of inputsRelevance) {
+            const key = rule.stage_slug
+                ? `${rule.type}:${rule.document_key}:${rule.stage_slug}`
+                : `${rule.type}:${rule.document_key}`;
+            // If multiple rules map to same key, keep the max relevance (normalized 0..1)
+            relevanceMap[key] = Math.max(
+                relevanceMap[key] ?? 0,
+                Math.max(0, Math.min(1, rule.relevance)),
+            );
+        }
+    }
+
+    // Helper to compute an effective score for a document candidate using matrix weighting
+    function getEffectiveScoreForDocumentCandidate(candidate: CompressionCandidate, correspondingDoc: SourceDocument): number {
+        const baseSimilarity = candidate.valueScore; // cosine similarity already computed
+
+        // Identity: require document_key and type; stage_slug is only used if a rule provides it.
+        const documentKey = correspondingDoc.document_key;
+        const type = correspondingDoc.type;
+        const stageSlug = correspondingDoc.stage_slug;
+
+        // If matrix weighting is provided but identity is missing, do not guess — skip weighting.
+        if ((inputsRelevance && inputsRelevance.length > 0) && (!documentKey || !type)) {
+            return baseSimilarity;
+        }
+
+        // Try stage-specific key first (only matches if a rule was defined with stage_slug),
+        // then general key without stage (no fallbacks to other identity sources).
+        let relevanceWeight = 0;
+        if (documentKey && type) {
+            const stageKey = stageSlug ? `${type}:${documentKey}:${stageSlug}` : undefined;
+            if (stageKey && relevanceMap[stageKey] !== undefined) {
+                relevanceWeight = relevanceMap[stageKey];
+            } else {
+                const generalKey = `${type}:${documentKey}`;
+                if (relevanceMap[generalKey] !== undefined) {
+                    relevanceWeight = relevanceMap[generalKey];
+                }
+            }
+        }
+
+        // Corrected formula: effectiveScore = relevance × (1 - similarity)
+        // Higher relevance increases preservation; higher similarity increases compressibility.
+        const effectiveScore = relevanceWeight * (1 - baseSimilarity);
+        return effectiveScore;
+    }
+
+    // Attach effectiveScore to each candidate (single source of truth)
+    const allCandidates: CompressionCandidate[] = [...documentCandidates, ...historyCandidates].map((c) => {
+        if (c.sourceType === 'document') {
+            const doc = documents.find(d => d.id === c.id);
+            const eff = doc ? getEffectiveScoreForDocumentCandidate(c, doc) : c.valueScore;
+            return { ...c, effectiveScore: eff };
+        }
+        // history candidates already have effectiveScore = valueScore from scoreHistory
+        return c;
+    });
 
     // Get the IDs of all potential candidates
     const candidateIds = allCandidates.map(c => c.id);
@@ -209,11 +274,35 @@ export async function getSortedCompressionCandidates(
         deps.logger?.warn('Non-fatal: error fetching indexed chunks from dialectic_memory (diagnostic only)', { error });
     }
 
-    const sortedCandidates = allCandidates.sort((a, b) => a.valueScore - b.valueScore);
+    const sortedCandidates = allCandidates
+        // Ascending order: compress lowest effectiveScore first
+        .sort((a, b) => a.effectiveScore - b.effectiveScore);
 
-    console.log('[DEBUG] getSortedCompressionCandidates - Final Sorted Candidates:', JSON.stringify(sortedCandidates.map(c => ({ id: c.id, score: c.valueScore, type: c.sourceType })), null, 2));
+    // Diagnostics include effectiveScore and identity fields when available (document candidates)
+    const debugPayload = sortedCandidates.map((c) => {
+        if (c.sourceType === 'document') {
+            const doc = documents.find(d => d.id === c.id);
+            const documentKey = doc?.document_key ?? null;
+            const docType = doc?.type ?? null;
+            const stageSlug = doc?.stage_slug ?? null;
+            return {
+                id: c.id,
+                type: c.sourceType,
+                valueScore: c.valueScore,
+                effectiveScore: c.effectiveScore,
+                document_key: documentKey,
+                doc_type: docType,
+                stage_slug: stageSlug,
+            };
+        }
+        return { id: c.id, type: c.sourceType, valueScore: c.valueScore, effectiveScore: c.effectiveScore };
+    });
+    console.log('[DEBUG] getSortedCompressionCandidates - Final Sorted Candidates:', JSON.stringify(debugPayload, null, 2));
 
     return sortedCandidates;
 }
+
+
+
 
 

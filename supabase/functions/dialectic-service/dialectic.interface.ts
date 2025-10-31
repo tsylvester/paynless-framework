@@ -882,6 +882,9 @@ export type SourceDocument = Omit<DialecticContributionRow, 'document_relationsh
   content: string;
   document_relationships?: DocumentRelationships | null;
   attempt_count?: number; // The attempt_count of the source document itself, derived from its filename
+  document_key?: string; 
+  type?: string;
+  stage_slug?: string;
 };
 
 export type SourceFeedback = Omit<DialecticFeedback, 'resource_description'> & { 
@@ -900,6 +903,8 @@ export interface ExecuteModelCallAndSaveParams {
   promptConstructionPayload: PromptConstructionPayload;
   sessionData: DialecticSession;
   compressionStrategy: ICompressionStrategy;
+  inputsRelevance?: RelevanceRule[];
+  inputsRequired?: InputRule[];
 }
 export interface IDialecticJobDeps extends GenerateContributionsDeps {
   getSeedPromptForStage: (
@@ -997,6 +1002,7 @@ export interface RelevanceRule {
     type: string;
     /** A normalized float from 0.0 to 1.0 indicating the priority of this artifact. */
     relevance: number;
+    stage_slug?: string;
 }
 
 /**

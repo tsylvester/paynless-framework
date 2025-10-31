@@ -1049,3 +1049,77 @@ Deno.test('processSimpleJob - Preflight dependency missing is immediate failure 
   executorStub.restore();
   clearAllStubs?.();
 });
+
+Deno.test('processSimpleJob - forwards recipe_step inputs_relevance and inputs_required to executor', async () => {
+  // Arrange: override recipe step to include non-empty inputs_required and inputs_relevance
+  const customStep = {
+    id: 'step-1',
+    template_id: 'template-123',
+    step_number: 1,
+    step_key: 'seed',
+    step_slug: 'seed',
+    step_name: 'Assemble Seed Prompt',
+    step_description: 'Test seed step with inputs',
+    job_type: 'EXECUTE',
+    prompt_type: 'Seed',
+    prompt_template_id: 'prompt-123',
+    output_type: 'document',
+    granularity_strategy: 'per_source_document',
+    inputs_required: [
+      { type: 'document' },
+      { document_key: 'header_context' },
+    ],
+    inputs_relevance: [
+      { type: 'document', stage_slug: 'test-stage', relevance: 3 },
+      { document_key: 'header_context', relevance: 2 },
+    ],
+    outputs_required: [],
+    parallel_group: null,
+    branch_key: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const { client: dbClient, clearAllStubs } = setupMockClient({
+    dialectic_recipe_template_steps: {
+      select: () => Promise.resolve({ data: [customStep], error: null }),
+    },
+  });
+  const { deps } = getMockDeps();
+
+  const executeSpy = spy(deps, 'executeModelCallAndSave');
+
+  // Act
+  await processSimpleJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    { ...mockJob, payload: mockPayload },
+    'user-789',
+    deps,
+    'auth-token',
+  );
+
+  // Assert
+  const [executorParams] = executeSpy.calls[0].args;
+  assert('inputsRelevance' in executorParams && Array.isArray((executorParams).inputsRelevance));
+  assert('inputsRequired' in executorParams && Array.isArray((executorParams).inputsRequired));
+
+  const inputsRelevanceUnknown = (executorParams).inputsRelevance;
+  const inputsRequiredUnknown = (executorParams).inputsRequired;
+
+  // Verify lengths
+  assert(Array.isArray(inputsRelevanceUnknown) && inputsRelevanceUnknown.length === 2);
+  assert(Array.isArray(inputsRequiredUnknown) && inputsRequiredUnknown.length === 2);
+
+  // Verify selected identity fields are preserved verbatim
+  const r0 = inputsRelevanceUnknown[0];
+  const r1 = inputsRelevanceUnknown[1];
+  assert(isRecord(r0) && r0.type === 'document' && r0.stage_slug === 'test-stage');
+  assert(isRecord(r1) && r1.document_key === 'header_context');
+
+  const req0 = inputsRequiredUnknown[0];
+  const req1 = inputsRequiredUnknown[1];
+  assert(isRecord(req0) && req0.type === 'document');
+  assert(isRecord(req1) && req1.document_key === 'header_context');
+
+  clearAllStubs?.();
+});

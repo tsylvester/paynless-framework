@@ -259,6 +259,7 @@ Deno.test('preflight (non-oversized) fails for NSF when total estimated cost exc
     promptConstructionPayload: { systemInstruction: '', conversationHistory: [], resourceDocuments: [], currentUserPrompt: 'hello' },
     sessionData: mockSessionData,
     compressionStrategy: getSortedCompressionCandidates,
+    inputsRelevance: [],
   };
 
   let threw = false;
@@ -326,7 +327,7 @@ Deno.test('should orchestrate RAG and debit tokens for un-indexed history chunks
 
     // Single candidate in the mutable middle ensures exactly one RAG call
     const oneCandidateStrategy: ICompressionStrategy = async () => ([
-        { id: 'history-msg-3', content: 'long content', sourceType: 'history', originalIndex: 3, valueScore: 0.5 },
+        { id: 'history-msg-3', content: 'long content', sourceType: 'history', originalIndex: 3, valueScore: 0.5, effectiveScore: 0.5 },
     ]);
 
     // History with a mutable middle item (id matches strategy)
@@ -354,6 +355,7 @@ Deno.test('should orchestrate RAG and debit tokens for un-indexed history chunks
         promptConstructionPayload: prompt,
         sessionData: mockSessionData,
         compressionStrategy: oneCandidateStrategy,
+        inputsRelevance: [],
     };
 
     // Act
@@ -403,7 +405,7 @@ Deno.test('does not debit when compression tokensUsedForIndexing is zero', async
     };
 
     const oneCandidateStrategy: ICompressionStrategy = async () => ([
-        { id: 'history-msg-3', content: 'long content', sourceType: 'history', originalIndex: 3, valueScore: 0.5 },
+        { id: 'history-msg-3', content: 'long content', sourceType: 'history', originalIndex: 3, valueScore: 0.5, effectiveScore: 0.5 },
     ]);
 
     const prompt: PromptConstructionPayload = {
@@ -428,6 +430,7 @@ Deno.test('does not debit when compression tokensUsedForIndexing is zero', async
         promptConstructionPayload: prompt,
         sessionData: mockSessionData,
         compressionStrategy: oneCandidateStrategy,
+        inputsRelevance: [],
     };
 
     // Act
@@ -491,6 +494,7 @@ Deno.test('should throw an error if the estimated cost exceeds the 80% rationali
         promptConstructionPayload: { systemInstruction: '', conversationHistory: [], resourceDocuments: [], currentUserPrompt: '' }, // content doesn't matter, we mock countTokens
         sessionData: mockSessionData,
         compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
     };
     
     // 2. Act & 3. Assert
@@ -558,6 +562,7 @@ Deno.test('should throw an error if the estimated cost exceeds the absolute bala
         promptConstructionPayload: { systemInstruction: '', conversationHistory: [], resourceDocuments: [], currentUserPrompt: '' },
         sessionData: mockSessionData,
         compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
     };
     
     // 2. Act & 3. Assert
@@ -644,6 +649,7 @@ Deno.test('should perform affordable compression, checking balance once', async 
         },
         sessionData: mockSessionData,
         compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
     };
 
     // 2. Act
@@ -673,50 +679,28 @@ Deno.test('should use source documents for token estimation before prompt assemb
     const { client: dbClient, clearAllStubs } = setupMockClient({
         'ai_providers': {
             select: { data: [{ ...mockFullProviderData, config: limitedConfig }], error: null }
-        }
+        },
+        // Executor now gathers its own documents; seed a large matching contribution
+        'dialectic_contributions': {
+            select: { data: [
+                {
+                    id: 'doc-oversize',
+                    content: 'X'.repeat(2000),
+                    stage: 'test-stage',
+                    created_at: new Date().toISOString(),
+                    // Use document-centric path so the parser can extract stage + documentKey
+                    storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+                    file_name: 'modelA_1_large_doc.md',
+                }
+            ], error: null }
+        },
+        'dialectic_project_resources': { select: { data: [], error: null } },
+        'dialectic_feedback': { select: { data: [], error: null } },
     });
 
     const deps = getMockDeps();
     deps.ragService = mockRagService;
     deps.countTokens = countTokens;
-
-    const largeSourceDoc = {
-        id: 'doc-1',
-        content: 'This is a very long source document that is clearly over one hundred tokens all by itself, which should force the RAG service to be called for compression to avoid a context window error downstream. To ensure this, I am adding a lot of extra text to this string. This additional text will push the character count well over the four hundred character threshold needed to exceed the one hundred token limit when using the rough character count estimation strategy, which divides the total number of characters by four. This is the only way to properly test the RAG service invocation logic.',
-        metadata: {},
-        created_at: new Date().toISOString(),
-        iteration_number: 1,
-        session_id: 'session-1',
-        target_contribution_id: 'contribution-1',
-        user_id: 'user-789',
-        document_relationships: null,
-        updated_at: new Date().toISOString(),
-        mime_type: 'text/plain',
-        citations: [],
-        contribution_type: 'source_document',
-        edit_version: 1,
-        error: null,
-        file_name: 'test.txt',
-        is_latest_edit: true,
-        model_id: 'model-1',
-        model_name: 'test-model',
-        original_model_contribution_id: 'contribution-1',
-        processing_time_ms: 100,
-        is_active: true,
-        prompt_template_id_used: null,
-        raw_response_storage_path: null,
-        seed_prompt_url: null,
-        size_bytes: 100,
-        status: 'completed',
-        is_default_embedding: false,
-        stage: 'test-stage',
-        storage_bucket: 'test-bucket',
-        storage_path: 'test/path',
-        tokens_used_input: 10,
-        tokens_used_output: 20,
-        is_header: false,
-        source_prompt_resource_id: null,
-    };
 
     const params: ExecuteModelCallAndSaveParams = {
         dbClient: dbClient as unknown as SupabaseClient<Database>,
@@ -728,11 +712,17 @@ Deno.test('should use source documents for token estimation before prompt assemb
         promptConstructionPayload: {
             systemInstruction: 'System instruction',
             conversationHistory: [],
-            resourceDocuments: [largeSourceDoc],
+            resourceDocuments: [], // assembler no longer provides docs to executor sizing
             currentUserPrompt: 'User prompt',
         },
+        // New executor behavior: provide inputsRequired so it gathers matching docs
+        inputsRequired: [
+            // document_key must match the parsed key (without extension)
+            { type: 'document', stage_slug: 'test-stage', document_key: 'large_doc' },
+        ],
         sessionData: mockSessionData,
         compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
     };
 
     await executeModelCallAndSave(params);

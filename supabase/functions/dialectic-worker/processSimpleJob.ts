@@ -281,6 +281,8 @@ export async function processSimpleJob(
             providerDetails,
             sessionData,
             promptConstructionPayload,
+            inputsRelevance: stageContext.recipe_step.inputs_relevance,
+            inputsRequired: stageContext.recipe_step.inputs_required,
             compressionStrategy: getSortedCompressionCandidates,
         });
 
