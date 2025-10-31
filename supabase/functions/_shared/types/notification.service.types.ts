@@ -1,4 +1,5 @@
 import type { Database } from '@paynless/db-types';
+import type { FileType } from './file_manager.types.ts';
 
 export interface NotificationServiceType {
     sendContributionStartedEvent(payload: ContributionGenerationStartedPayload, targetUserId: string): Promise<void>;
@@ -10,6 +11,7 @@ export interface NotificationServiceType {
     sendContributionGenerationContinuedEvent(payload: ContributionGenerationContinuedPayload, targetUserId: string): Promise<void>;
     sendDialecticProgressUpdateEvent(payload: DialecticProgressUpdatePayload, targetUserId: string): Promise<void>;
     sendContributionGenerationFailedEvent(payload: ContributionGenerationFailedInternalPayload, targetUserId: string): Promise<void>;
+    sendDocumentRenderedNotification(payload: DocumentRenderedNotificationPayload, targetUserId: string): Promise<void>;
 }
 
 export interface RpcNotification<T> {
@@ -31,6 +33,16 @@ export interface ApiError {
     details?: unknown;
   }
   
+export interface DocumentRenderedNotificationPayload {
+    type: 'document_rendered';
+    projectId: string;
+    sessionId: string;
+    iterationNumber: number;
+    stageSlug: string;
+    documentIdentity: string;
+    documentKey: FileType;
+    completed: boolean;
+}
 
 export interface ContributionGenerationStartedPayload {
     // This is the overall contribution generation for the entire session stage. 

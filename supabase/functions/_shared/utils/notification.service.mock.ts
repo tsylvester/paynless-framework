@@ -11,8 +11,10 @@ import type {
     DialecticProgressUpdatePayload,
     ContributionGenerationFailedPayload,
     ContributionGenerationFailedInternalPayload,
-    ApiError
+    ApiError,
+    DocumentRenderedNotificationPayload
 } from '../types/notification.service.types.ts';
+import { FileType } from '../types/file_manager.types.ts';
 
 export type MockNotificationService = {
     [K in keyof NotificationServiceType]: Spy<NotificationServiceType[K]>;
@@ -29,6 +31,7 @@ function createMockService(): MockNotificationService {
         sendDialecticProgressUpdateEvent: spy(() => Promise.resolve()),
         sendContributionGenerationFailedEvent: spy(() => Promise.resolve()),
         sendContributionFailedNotification: spy(() => Promise.resolve()),
+        sendDocumentRenderedNotification: spy(() => Promise.resolve()),
     };
 }
 
@@ -152,4 +155,15 @@ export const mockContributionGenerationFailedInternalPayload: ContributionGenera
     sessionId: 'session-uuid-456',
     job_id: 'job-uuid-123',
     error: mockContributionGenerationFailedApiError,
+  };
+
+export const mockDocumentRenderedNotificationPayload: DocumentRenderedNotificationPayload = {
+    type: 'document_rendered',
+    projectId: 'project-uuid-abc',
+    sessionId: 'session-uuid-456',
+    iterationNumber: 1,
+    stageSlug: 'thesis',
+    documentIdentity: 'root-uuid-123',
+    documentKey: FileType.business_case,
+    completed: true,
   };

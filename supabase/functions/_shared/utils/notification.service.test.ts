@@ -18,6 +18,7 @@ import {
   mockContributionGenerationFailedPayload,
   mockContributionGenerationFailedApiError,
   mockContributionGenerationFailedInternalPayload,
+  mockDocumentRenderedNotificationPayload,
 } from './notification.service.mock.ts';
 import {
   createMockSupabaseClient,
@@ -25,6 +26,7 @@ import {
 } from '../supabase.mock.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../../types_db.ts';
+import type { DocumentRenderedNotificationPayload } from '../types/notification.service.types.ts';
 
 Deno.test('NotificationService - should send a valid internal event for contribution_generation_started', async () => {
   // Arrange
@@ -309,4 +311,39 @@ Deno.test('NotificationService - should send a valid internal event for other_ge
   assertEquals(rpcParams.p_notification_data.sessionId, mockContributionGenerationFailedInternalPayload.sessionId);
   assertEquals(rpcParams.p_notification_data.job_id, mockContributionGenerationFailedInternalPayload.job_id);
   assertEquals(rpcParams.p_notification_data.error.message, mockContributionGenerationFailedInternalPayload.error.message);
+});
+
+Deno.test('NotificationService - should send a valid internal event for document_rendered', async () => {
+  // Arrange
+  const mockUserId = 'user-123';
+  const { client, spies } = createMockSupabaseClient(mockUserId, {
+    rpcResults: {
+      create_notification_for_user: { data: null, error: null },
+    },
+  });
+  const service = new NotificationService(
+    client as unknown as SupabaseClient<Database>,
+  );
+
+  const payload: DocumentRenderedNotificationPayload = mockDocumentRenderedNotificationPayload;
+
+  // Act
+  await service.sendDocumentRenderedNotification(payload, mockUserId);
+
+  // Assert
+  assertEquals(spies.rpcSpy.calls.length, 1);
+  const rpcArgs = spies.rpcSpy.calls[0].args;
+  const rpcParams = rpcArgs[1];
+  assertEquals(rpcArgs[0], 'create_notification_for_user');
+  assertEquals(rpcParams.p_target_user_id, mockUserId);
+  assertEquals(rpcParams.p_notification_type, 'document_rendered');
+  assertEquals(rpcParams.p_is_internal_event, true);
+  assertEquals(rpcParams.p_notification_data.type, 'document_rendered');
+  assertEquals(rpcParams.p_notification_data.projectId, payload.projectId);
+  assertEquals(rpcParams.p_notification_data.sessionId, payload.sessionId);
+  assertEquals(rpcParams.p_notification_data.iterationNumber, payload.iterationNumber);
+  assertEquals(rpcParams.p_notification_data.stageSlug, payload.stageSlug);
+  assertEquals(rpcParams.p_notification_data.documentIdentity, payload.documentIdentity);
+  assertEquals(rpcParams.p_notification_data.documentKey, payload.documentKey);
+  assertEquals(rpcParams.p_notification_data.completed, payload.completed);
 });

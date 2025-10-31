@@ -26,6 +26,10 @@ To create a revised, correctly dependency-ordered work plan that refactors the D
         * We cannot strictly type Supabase clients
         * When we test graceful error handling, we often need to pass in malformed objects that must be typecast to pass linting to permit testing of improperly shaped objects. 
 *   We only edit a SINGLE FILE at a time. We NEVER edit multiple files in one turn.
+*   You NEVER "rewrite the entire file". 
+*   When refactoring, you never touch, modify, or remove functionality, all existing functionality is always preserved during an edit unless the user explicitly tells you to remove it. 
+*   You never output large code blocks in chat unless explicitly asked.
+*   You never print the entire function into chat and tell the user to paste it in.
 *   We do EXACTLY what the instruction in the checklist step says without exception.
 *   The Agent does NOT edit the checklist without explicit instruction.
 *   When the Agent is instructed to edit the checklist they only edit the EXACT steps they're instructed to edit and NEVER touch ANY step that is outside the scope of their instruction.  
@@ -430,7 +434,7 @@ graph LR
             *   Modify the logic to use `recipeStep.prompt_template_id`.
             *   Correctly handle `recipeStep.output_type` to resolve type errors.
             *   Ensure all tests pass.
-    *   `[ ]` 1.d. Refactor `planPerModel.ts`.
+    *   `[✅]` 1.d. Refactor `planPerModel.ts`.
         *   `[✅]` 1.d.i. `[TEST-UNIT]` In a **new** test file, `supabase/functions/dialectic-worker/strategies/planners/planPerModel.test.ts`, write the complete and comprehensive test suite for the `planPerModel` function.
             *   This test suite must define the entire contract for the `planPerModel` function, proving that its current implementation is flawed due to outdated data contracts.
             *   It must import the `planPerModel` function.
@@ -445,7 +449,7 @@ graph LR
     *   `[✅]` 1.f. Refactor `planPerSourceDocumentByLineage.ts`.
         *   `[✅]` 1.f.i. `[TEST-UNIT]` In `planPerSourceDocumentByLineage.test.ts`, update tests to establish the RED state, focusing on `prompt_template_id` and `output_type` correctness.
         *   `[✅]` 1.f.ii. `[BE]` In `planPerSourceDocumentByLineage.ts`, implement changes to use `prompt_template_id` and correctly typed `output_type` to make tests pass.
-    *   `[ ]` 1.g. Refactor `planPerSourceGroup.ts`.
+    *   `[✅]` 1.g. Refactor `planPerSourceGroup.ts`.
         *   `[✅]` 1.g.i. `[TEST-UNIT]` In `planPerSourceGroup.test.ts`, update tests to establish the RED state, focusing on `prompt_template_id` and `output_type` correctness.
         *   `[✅]` 1.g.ii. `[BE]` In `planPerSourceGroup.ts`, implement changes to use `prompt_template_id` and correctly typed `output_type` to make tests pass.
     *   `[✅]` 1.h. `[REFACTOR]` As `task_isolator.ts` and its delegated planner strategies are job producers, refactor them to stop including the deprecated `step_info` object in the payloads of any new jobs they create.
@@ -517,7 +521,7 @@ graph LR
         *   `[✅]` 5.b.vi. Remove the logic that causes the `This comparison appears to be unintentional` type error.
         *   `[✅]` 5.b.vii. Ensure all tests from the previous step now pass.
 
-*   `[ ]` 6. `[REFACTOR]` Phase 6: Refactor `processJob` Router.
+*   `[✅]` 6. `[REFACTOR]` Phase 6: Refactor `processJob` Router.
     *   `[✅]` 6.a. `[TEST-UNIT]` In `processJob.test.ts`, write a failing test suite to establish the RED state, as described in the original work plan's step `7.a.i`.
         *   The tests must prove that the router dispatches jobs based on the `job.job_type` database column.
         *   Provide a mock job with `job_type: 'PLAN'` and assert that `deps.processComplexJob` is called.
@@ -528,89 +532,159 @@ graph LR
         *   Route jobs to the appropriate downstream processor (`processComplexJob` or `processSimpleJob`) based on the type.
         *   Delete the old, deprecated routing logic.
         *   Ensure all tests pass.
-    *   `[ ]` 6.c. `[REFACTOR]` As part of this refactor, ensure that `processJob` and its downstream consumers (`processComplexJob`, `processSimpleJob`) no longer access the deprecated `job.payload.step_info` object, sourcing all step-related data from `stage.recipe_step` instead.
+    *   `[✅]` 6.c. `[REFACTOR]` As part of this refactor, ensure that `processJob` and its downstream consumers (`processComplexJob`, `processSimpleJob`) no longer access the deprecated `job.payload.step_info` object, sourcing all step-related data from `stage.recipe_step` instead.
 
-*   `[ ]` 7. `[BE]` Phase 7: Improve Continue Logic.
-    *   **Objective**: Enhance `continueJob` to handle both explicit, provider-signaled continuations (e.g., `finish_reason: 'length'`) and implicit continuations caused by malformed or incomplete JSON responses. The specific reason for continuation must be passed to the next job's payload to enable context-aware prompt generation.
-    *   `[ ]` 7.a. `[TEST-UNIT]` Write a new suite of failing unit tests for `continueJob`.
-        *   `[ ]` 7.a.i. Write a test that proves when `aiResponse.finish_reason` is a continuable reason (e.g., `'length'`), a new job is enqueued, and its payload contains a `continuation_context` object like `{ reason: 'length' }`.
-        *   `[ ]` 7.a.ii. Write a test that proves when the content of the AI response is an incomplete or malformed JSON string, a new job is enqueued, and its payload contains a `continuation_context` object like `{ reason: 'truncation_recovery' }`.
-        *   `[ ]` 7.a.iii. Write a test proving that even if `aiResponse.finish_reason` is `'stop'`, if the response content is malformed JSON, a continuation is still enqueued with `reason: 'truncation_recovery'`, ensuring that recovery logic takes precedence over a potentially incorrect stop signal.
-        *   `[ ]` 7.a.iv. Write a failing test to prove that when `continueJob` creates a continuation job, the new payload does NOT contain the deprecated `step_info` object.
-    *   `[ ]` 7.b. `[BE]` In `continueJob.ts`, refactor the logic to implement the checks from the new tests.
-        *   `[ ]` 7.b.i. Introduce a JSON validation check at the beginning of the function to inspect the AI response content.
-        *   `[ ]` 7.b.ii. The decision to continue should be `true` if the provider's `finish_reason` is a known continuable reason OR if the JSON validation fails.
-        *   `[ ]` 7.b.iii. When creating the `newPayload` for the continuation job, add a `continuation_context` object. Populate its `reason` property based on which condition triggered the continuation (e.g., `'length'`, `'tool_calls'`, `'truncation_recovery'`). This provides the necessary context for the downstream `PromptAssembler`. Ensure all new tests pass.
-        *   `[ ]` 7.b.iv. As part of the refactor, remove any logic that propagates or accesses the `step_info` object, ensuring the test from `8.a.iv` passes.
-    *   `[ ]` 7.c. `[COMMIT]` feat(worker): Plumb finish_reason through continueJob to enable context-aware prompts.
+*   `[✅]` 7. `[BE]` Phase 7: Improve Continue Logic.
+    *   **Objective**: Enhance `continueJob` to handle both explicit, provider-signaled continuations (e.g., `finish_reason: 'length'`) and implicit continuations caused by malformed or incomplete JSON responses. 
+    *   `[✅]` 7.a. `[TEST-UNIT]` Write a new suite of failing unit tests for `continueJob`.
+        *   `[✅]` 7.a.i. Write a test that proves when `aiResponse.finish_reason` is a continuable reason (e.g., `'length'`), a new job is enqueued.
+        *   `[✅]` 7.a.ii. Write a test that proves when the content of the AI response is an incomplete or malformed JSON string, a new job is enqueued.
+        *   `[✅]` 7.a.iii. Write a test proving that even if `aiResponse.finish_reason` is `'stop'`, if the response content is malformed JSON, a continuation is still enqueued, ensuring that recovery logic takes precedence over a potentially incorrect stop signal.
+        *   `[✅]` 7.a.iv. Write a failing test to prove that when `continueJob` creates a continuation job, the new payload does NOT contain the deprecated `step_info` object.
+        *   `[✅]` 7.a.v. Write a test asserting that the continuation job payload preserves recipe step identity and required context: `recipe_step_id` (preferred) or `step_slug`, plus `stageSlug`, `sessionId`, `projectId`, `iterationNumber`, `model_id`, `walletId`, `user_jwt`, and `target_contribution_id` unchanged from the originating job.
+        *   `[✅]` 7.a.vi. Write a test verifying that, for a continuation of a specific step, the executor re-gathers the same set of `resourceDocuments` by scoping to that step’s `inputs_required`, producing the same inclusion/exclusion set as the original call.
+    *   `[✅]` 7.b. `[BE]` In `continueJob.ts`, refactor the logic to implement the checks from the new tests.
+        *   `[✅]` 7.b.i. Introduce a JSON validation check at the beginning of the function to inspect the AI response content.
+        *   `[✅]` 7.b.ii. The decision to continue should be `true` if the provider's `finish_reason` is a known continuable reason OR if the JSON validation fails.
+        *   `[✅]` 7.b.iv. As part of the refactor, remove any logic that propagates or accesses the `step_info` object, ensuring the test from `8.a.iv` passes.
+        *   `[✅]` 7.b.v. Copy step identity and required context fields into the continuation payload unchanged: include `recipe_step_id` (preferred) or `step_slug`, `stageSlug`, `sessionId`, `projectId`, `iterationNumber`, `model_id`, `walletId`, `user_jwt`, and `target_contribution_id`; do not mutate or inject step-specific selection in this function.
+        *   `[✅]` 7.b.vi. Do not include or alter `inputs_required` or `inputs_relevance` in the continuation payload; the executor will re-scope selection using the step identified by the preserved `recipe_step_id`/`step_slug`.
+    *   `[✅]` 7.c. `[COMMIT]` feat(worker): continueJob responds to internal explicit, external explicit, and all implicit ContinueReasons.
 
-*   `[ ]` 8. `[BE]` Phase 8: Implement Input Relevance Weights to Prompt Generation
+*   `[✅]` 8. `[BE]` Phase 8: Implement Input Relevance Weights to Prompt Generation
     *   **Objective:** Update the runtime to order and insert prior-step/stage artifacts into the ChatApiRequest inside `executeModelCallAndSave`, weighted by `inputs_relevance`. Keep `gatherInputsForStage` prompt-only; do not expand prompts with runtime document gathering.
-    *   `[ ]` 8.a   `[TYPE]` `supabase/functions/_shared/services/rag_service.interface.ts` — Require `inputsRelevance: RelevanceRule[]` in `getContextForModel(sourceDocuments, modelConfig, sessionId, stageSlug, inputsRelevance)`.
-    *   `[ ]` 8.b   `[TEST-UNIT]` `supabase/functions/_shared/services/rag_service.test.ts`
-        *   `[ ]` 8.b.i Require `inputsRelevance` argument (throws when omitted).
-        *   `[ ]` 8.b.ii Accepts populated `inputsRelevance` and returns successful context result.
-        *   `[ ]` 8.b.iii Accepts empty `inputsRelevance` array and returns successful context result (explicit empty allowed).
-    *   `[ ]` 8.c   `[BE]` `supabase/functions/_shared/services/rag_service.ts`
-        *   `[ ]` 8.c.i Update function signature to include `inputsRelevance` and plumb through internals (no behavior change yet).
-        *   `[ ]` 8.c.ii Maintain strict typing and existing retry/logging behavior.
-    *   `[ ]` 8.d   `[TYPE]` `supabase/functions/dialectic-service/dialectic.interface.ts` — Extend runtime types to carry identity/weights to compression and enable scoped selection:
-        *   Add optional fields to `SourceDocument`: `document_key?: string`, `stage_slug?: string`, `relevance_weight?: number`.
+    *   `[✅]` 8.a   `[TEST-UNIT]` `supabase/functions/_shared/utils/vector_utils.test.ts`
+        *   `[✅]` 8.a.i Blended scoring using the matrix: with equal similarity, documents with higher matrix relevance are ranked later (less likely to be removed).
+        *   `[✅]` 8.a.ii Matrix priority protects high-priority docs when similarity ties with lower-priority docs.
+    *   `[✅]` 8.b   `[BE]` `supabase/functions/_shared/utils/vector_utils.ts`
+        *   `[✅]` 8.b.i Update the existing `getSortedCompressionCandidates(dbClient, deps, documents, history, currentUserPrompt, inputsRelevance)` to matrix-weight document candidates: look up relevance by identity (`document_key`, `type`, optional `stage_slug`), compute `effectiveScore = relevance * (1 - similarity)` (higher relevance is preferred, lower similarity is preferred), and sort by `effectiveScore` so that the lowest value document is compressed first.
+        *   `[✅]` 8.b.ii Leave history scoring unchanged; preserve diagnostics (include `effectiveScore` and identity fields in debug output).
+        *   `[✅]` 8.b.iii Update `ICompressionStrategy` to accept `inputsRelevance: RelevanceRule[]` and adjust callers accordingly. Ensure document-derived compression candidates carry identity needed for matrix matching (`document_key`, `stage_slug`, and artifact `type`).
+    *   `[✅]` 8.c   `[TYPE]` `supabase/functions/_shared/services/rag_service.interface.ts` — Require `inputsRelevance: RelevanceRule[]` in `getContextForModel(sourceDocuments, modelConfig, sessionId, stageSlug, inputsRelevance)`.
+    *   `[✅]` 8.d   `[TEST-UNIT]` `supabase/functions/_shared/services/rag_service.test.ts`
+        *   `[✅]` 8.d.i Accepts populated `inputsRelevance` and validates plumbing (no internal weighting applied by `rag_service`).
+        *   `[✅]` 8.d.ii Accepts empty `inputsRelevance` array and proceeds with existing retrieval/MMR; behavior unchanged.
+    *   `[✅]` 8.e   `[BE]` `supabase/functions/_shared/services/rag_service.ts`
+        *   `[✅]` 8.e.i Ensure function accepts `inputsRelevance`, validate it is an array, and keep retrieval/MMR logic unchanged (do not apply matrix weighting here).
+        *   `[✅]` 8.e.ii Maintain strict typing and existing retry/logging behavior.
+    *   `[✅]` 8.f   `[TYPE]` `supabase/functions/dialectic-service/dialectic.interface.ts` — Extend runtime types to enable scoped selection without duplicating weights:
+        *   Add fields to `SourceDocument`: `document_key?: string`, `type?: string`, `stage_slug?: string`.
         *   Add `inputsRelevance: RelevanceRule[]` and `inputsRequired: InputRule[]` to `ExecuteModelCallAndSaveParams`.
-    *   `[ ]` 8.e   `[TEST-UNIT]` `supabase/functions/_shared/utils/vector_utils.test.ts`
-        *   `[ ]` 8.e.i Blended scoring: with equal similarity, higher `relevance_weight` documents are ranked later (less likely victims).
-        *   `[ ]` 8.e.ii Weight protects high-priority docs when similarity ties with lower-weight docs.
-    *   `[ ]` 8.f   `[BE]` `supabase/functions/_shared/utils/vector_utils.ts`
-        *   `[ ]` 8.f.i In `getSortedCompressionCandidates`, for document candidates compute `effectiveScore = (1 - (relevance_weight ?? 0.5)) * similarity` and sort ascending by `effectiveScore`.
-        *   `[ ]` 8.f.ii Leave history scoring unchanged; preserve diagnostics.
-    *   `[ ]` 8.g   `[TEST-UNIT]` `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts` (+ `executeModelCallAndSave.rag.test.ts`)
-        *   `[ ]` 8.g.i Non-oversized: executor gathers prior artifacts across `dialectic_contributions`, `dialectic_project_resources`, `dialectic_feedback`; maps to `SourceDocument[]` with `document_key`, `stage_slug`, `relevance_weight`; `ChatApiRequest.resourceDocuments` includes them unchanged.
-        *   `[ ]` 8.g.ii Oversized: `rag_service.getContextForModel` is called with `inputsRelevance`; compression removes lowest blended-score candidates first; identities preserved.
-        *   `[ ]` 8.g.iii Ordering preservation: resource document order after weight sort is reflected in `ChatApiRequest`; IDs unchanged through compression loop rebuilds.
-        *   `[ ]` 8.g.iv Scoped selection: only artifacts matching the current step’s `inputsRequired` rules (by `slug`/`document_key`/`type`) are included; non-matching artifacts are excluded.
-        *   `[ ]` 8.g.v Empty `inputsRelevance`: defaults apply (neutral weights) and behavior remains deterministic.
-    *   `[ ]` 8.h   `[BE]` `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`
-        *   `[ ]` 8.h.i Before sizing, gather session/iteration prior artifacts from `dialectic_contributions` (latest), `dialectic_project_resources`, and `dialectic_feedback`.
-        *   `[ ]` 8.h.ii Scope selection strictly to the current step’s `inputsRequired`: include only artifacts whose (`slug`/`stage`, `document_key`, `type`) match the rules; exclude all others.
-        *   `[ ]` 8.h.iii Map to `SourceDocument[]` (attach `document_key`, `stage_slug`, derive `relevance_weight` by matching `inputsRelevance` on `document_key` and optional type; default neutral when missing).
-        *   `[ ]` 8.h.iv Sort resource documents by descending `relevance_weight` and append to any prompt-only docs present; then proceed with sizing, affordability, and compression.
-        *   `[ ]` 8.h.v Pass `inputsRelevance` to `rag_service.getContextForModel` during compression; leave conversation history unchanged (assembler/continuation remains source).
-    *   `[ ]` 8.i   `[TEST-UNIT]` `supabase/functions/dialectic-worker/processSimpleJob.test.ts`
-        *   `[ ]` 8.i.i `processSimpleJob` passes `stageContext.recipe_step.inputs_relevance` and `stageContext.recipe_step.inputs_required` to `executeModelCallAndSave` params.
-        *   `[ ]` 8.i.ii `assemble` returns prompt-only data; executor is responsible for gathering model-call documents (assert no resource docs expected from assembler).
-    *   `[ ]` 8.j   `[BE]` `supabase/functions/dialectic-worker/processSimpleJob.ts`
-        *   `[ ]` 8.j.i Include `inputsRelevance: stageContext.recipe_step.inputs_relevance` and `inputsRequired: stageContext.recipe_step.inputs_required` when invoking `executeModelCallAndSave`.
-    *   `[ ]` 8.k   `[TEST-UNIT]` `supabase/functions/_shared/prompt-assembler/gatherInputsForStage.test.ts`
-        *   `[ ]` 8.k.i Confirm `gatherInputsForStage` remains prompt-only (does not fetch unrelated prior artifacts); required-rule error semantics unchanged.
-
-*   `[ ]` 8. `[BE]` Phase 8: Enforce Fan-in Orchestration.
-    *   `[ ]` 8.a. `[TEST-INT]` Write failing integration tests that prove final "fan-in" steps (e.g., Synthesis's final deliverable) do not start until all parallel prerequisite jobs are complete.
-    *   `[ ]` 8.b. `[BE]` Modify worker scheduling logic to check for sibling job completion within a `parallel_group` before enqueueing a dependent fan-in step.
-    *   `[ ]` 8.c. `[TEST-INT]` Ensure tests pass and verify that final versions of consolidated artifacts are generated, or validated as complete, after the fan-in guard is satisfied.
+        *   Update `RelevanceRule` to include optional `stage_slug?: string` for disambiguated matching.
+    *   `[✅]` 8.g   `[TEST-UNIT]` `supabase/functions/dialectic-worker/executeModelCallAndSave*.test.ts`
+        *   `[✅]` 8.g.i Non-oversized: executor gathers prior artifacts across `dialectic_contributions`, `dialectic_project_resources`, `dialectic_feedback`; maps to `SourceDocument[]` with `document_key`, `stage_slug`; `ChatApiRequest.resourceDocuments` includes them unchanged.
+        *   `[✅]` 8.g.ii Oversized: executor calls `rag_service.getContextForModel` with `inputsRelevance`; compression removes lowest blended-score candidates first via `getSortedCompressionCandidates`; identities preserved.
+        *   `[✅]` 8.g.iii Ordering preservation: preserve `resourceDocuments` order; `rag_service` does not reorder documents. Compression candidate ordering/removal is determined by the matrix-weighted `getSortedCompressionCandidates`.
+        *   `[✅]` 8.g.iv Scoped selection: only artifacts matching the current step’s `inputsRequired` rules (by `slug`/`document_key`/`type`) are included; non-matching artifacts are excluded.
+        *   `[✅]` 8.g.v Empty `inputsRelevance`: similarity-only behavior remains deterministic.
+        *   `[✅]` 8.g.vi Identity preserved to compression: assert candidates include `document_key`, `type`, and `stage_slug`.
+            *   Explanation: The unit test must verify that identity-rich `SourceDocument[]` is passed into the compression strategy exactly as collected/scoped. This ensures matrix relevance can be applied and stage_slug-specific precedence holds.
+        *   `[✅]` 8.g.vii Replacement preserves identity: after compression, assert only `content` changes; identity fields remain unchanged.
+            *   Explanation: The test should replace a victim’s content and then assert that `document_key`, `type`, and `stage_slug` are identical to their pre-compression values.
+        *   `[✅]` 8.g.viii Fail-fast/skip on missing identity: assert the executor either throws or logs-and-excludes any identity-less documents before invoking compression.
+            *   Explanation: The test must construct an identity-missing document and prove the executor surfaces the pipeline flaw instead of silently defaulting behavior.
+        *   `[✅]` 8.g.ix Inputs relevance is plumbed verbatim: assert `stageContext.recipe_step.inputs_relevance` is passed to the compression strategy unchanged (empty array allowed).
+            *   Explanation: The test must include a populated `inputs_relevance` array (and a separate empty-array case) and assert exact pass-through into compression.
+        *   `[✅]` 8.g.x Test intent, not brittle order, when ties occur without `inputs_relevance`.
+            *   Explanation: When `inputs_relevance` is empty, assert that the function produces candidates from both sources and returns them in non-decreasing `effectiveScore` order; do not assert a specific first element under ties.
+    *   `[✅]` 8.h   `[BE]` `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`
+        *   `[✅]` 8.h.i Before sizing, gather session/iteration prior artifacts from `dialectic_contributions` (latest), `dialectic_project_resources`, and `dialectic_feedback`.
+        *   `[✅]` 8.h.ii Scope selection strictly to the current step’s `inputsRequired`: include only artifacts whose (`slug`/`stage`, `document_key`, `type`) match the rules; exclude all others.
+        *   `[✅]` 8.h.iii Map to `SourceDocument[]` (attach `document_key`, `stage_slug`; do not attach weights—use the matrix at compression time).
+        *   `[✅]` 8.h.iv Do not pre-sort by weight; maintain stable order for non-oversized calls, and delegate ordering/removal to `getSortedCompressionCandidates` when compression is required.
+        *   `[✅]` 8.h.v Pass `inputsRelevance` to `rag_service.getContextForModel` during compression; leave conversation history unchanged (assembler/continuation remains source).
+        *   `[✅]` 8.h.vi Pass `inputsRelevance` into the `compressionStrategy` (`getSortedCompressionCandidates`).
+        *   `[✅]` 8.h.vii Collection: keep identity intact end-to-end
+            *   Ensure `gatherArtifacts()` maps contributions/resources/feedback to the compression `SourceDocument` shape: `{ id, content, document_key, type, stage_slug }`.
+            *   Do not reduce documents to `{ id, content }` in the path that supplies compression candidates.
+        *   `[✅]` 8.h.viii Scoping without stripping identity
+            *   `applyInputsRequiredScope()` must return identity-rich objects and preserve `document_key`, `type`, and `stage_slug` when constructing the array destined for compression.
+        *   `[✅]` 8.h.ix Build two parallel views (identity-rich vs sizing/send)
+            *   `workingResourceDocsSource` (compression): identity-rich `SourceDocument[]` with `{ id, content, document_key, type, stage_slug }`.
+            *   `workingResourceDocs` / `currentResourceDocuments` (sizing/send only): `{ id, content }` projections for token counting and `ChatApiRequest`.
+            *   Explanation: Compression operates exclusively on `workingResourceDocsSource`; sizing and send use the id/content view.
+        *   `[✅]` 8.h.x Invoke compression with identity docs (never from prompt-only projections)
+            *   `candidates = await compressionStrategy(dbClient, deps, workingResourceDocsSource, workingHistory, currentUserPrompt, inputsRelevance)`.
+            *   Do not derive candidates from `promptConstructionPayload.resourceDocuments` when identity-rich docs are available.
+        *   `[✅]` 8.h.xi Replacement keeps identity intact
+            *   On compression: update `workingResourceDocsSource[srcIdx].content = newContent` and synchronize `workingResourceDocs` and `currentResourceDocuments`.
+            *   Do not mutate `document_key`/`type`/`stage_slug`; only the `content` changes.
+        *   `[✅]` 8.h.xii Validation before compression (no defaults, no tie-breakers)
+            *   Assert every `SourceDocument` in `workingResourceDocsSource` has non-empty `document_key`, `type`, and `stage_slug`.
+            *   If any are missing: fail fast (throw) or log-and-skip that document. Do not pass identity-less documents to compression.
+        *   `[✅]` 8.h.xiii Plumb `inputsRelevance` verbatim from the recipe step
+            *   Pass `stageContext.recipe_step.inputs_relevance` directly into the compression strategy (empty array allowed).
+            *   With identity preserved and `inputsRelevance` present, matrix precedence (`stage_slug`-specific > general) applies without any tie-breaking shims.
+        *   `[✅]` 8.i   `[TEST-UNIT]` `supabase/functions/dialectic-worker/processSimpleJob.test.ts`
+        *   `[✅]` 8.i.i `processSimpleJob` passes `stageContext.recipe_step.inputs_relevance` and `stageContext.recipe_step.inputs_required` to `executeModelCallAndSave` params.
+        *   `[✅]` 8.i.ii `assemble` returns prompt-only data; executor is responsible for gathering model-call documents (assert no resource docs expected from assembler).
+    *   `[✅]` 8.j   `[BE]` `supabase/functions/dialectic-worker/processSimpleJob.ts`
+        *   `[✅]` 8.j.i Include `inputsRelevance: stageContext.recipe_step.inputs_relevance` and `inputsRequired: stageContext.recipe_step.inputs_required` when invoking `executeModelCallAndSave`.
+    *   `[✅]` 8.k   `[TEST-UNIT]` `supabase/functions/_shared/prompt-assembler/gatherInputsForStage.test.ts`
+        *   `[✅]` 8.k.i Confirm `gatherInputsForStage` remains prompt-only (does not fetch unrelated prior artifacts); required-rule error semantics unchanged.
 
 *   `[ ]` 9. `[BE]` Phase 9: Implement Document Rendering and Finalization.
-    *   `[ ]` 9.a. `[TEST-UNIT]` Write failing unit tests for the `DocumentRenderer` service that verify its ability to be idempotent and cumulative. It must prove that it can:
-        *   `[ ]` 9.a.i. Be triggered by the completion of a single `EXECUTE` job (including continuations).
-        *   `[ ]` 9.a.ii. Find all existing contribution chunks for a specific document.
-        *   `[ ]` 9.a.iii. Assemble the chunks in the correct order in memory.
-        *   `[ ]` 9.a.iv. Render the complete-so-far content into a Markdown file, overwriting any previous version.
-    *   `[ ]` 9.b. `[API]` Define the `IDocumentRenderer` interface and create the concrete `DocumentRenderer` class and its mock.
-    *   `[ ]` 9.c. `[BE]` Implement the idempotent and cumulative `renderDocument` method.
-    *   `[ ]` 9.d. `[BE]` Modify the orchestration logic to enqueue a `RENDER` job every time a `EXECUTE` job successfully completes.
-    *   `[ ]` 9.e. `[COMMIT]` feat(worker): Implement "live build" document rendering service for final artifact generation.
-
-*   `[ ]` 10. `[BE]` Phase 10: Implement Granular Cross-Stage Document Selection.
-    *   **Justification:** This phase adapts the `PromptAssembler` to consume input requirements from the new, explicit database recipe structure, deprecating the old `input_artifact_rules` object. This change allows for precise, per-step control over which documents and sub-documents are included as context for the AI.
-    *   `[ ]` 10.a. `[TEST-UNIT]` In the test file for `PromptAssembler`, write a failing unit test for the `gatherInputsForStage` method.
-        *   `[ ]` 10.a.i The test must prove that the method now sources its rules from the `recipe_step.inputs_required` array, not the deprecated `input_artifact_rules`.
-        *   `[ ]` 10.a.ii The test must provide a mock recipe step with an `inputs_required` rule that contains a `document_key`.
-        *   `[ ]` 10.a.iii It must assert that when a `document_key` is provided in a rule, the function correctly parses the raw JSON content of the source contribution and returns only the specified sub-object.
-    *   `[ ]` 10.b. `[BE]` In `prompt-assembler.ts`, refactor the `gatherInputsForStage` implementation to use the new recipe system.
-        *   `[ ]` 10.b.i Remove all logic that reads from the deprecated `stage.input_artifact_rules` object.
-        *   `[ ]` 10.b.ii Update the logic to iterate through the `recipe_step.inputs_required` array.
-        *   `[ ]` 10.b.iii Implement the logic to handle the `document_key` property, extracting the correct sub-object from the contribution's content when specified.
-        *   `[ ]` 10.b.iv Ensure all tests from the previous step now pass.
-    *   `[ ]` 10.c. `[COMMIT]` feat(prompt-assembler): Enable granular document selection via recipe system.
+    *   `[✅]` 9.a. `[TEST-UNIT]` Define the RED tests for the DocumentRenderer service.
+        *   `[✅]` 9.a.i. Create `supabase/functions/_shared/services/document_renderer.test.ts`.
+            *   Prove idempotent and cumulative behavior:
+                - Given multiple contribution chunks for one document (mixed edit versions), the renderer:
+                  - Fetches all relevant chunks for the target document identity.
+                  - Assembles them in correct order (edit_version ascending, then created_at).
+                  - Writes a complete-so-far Markdown file, overwriting any prior render.
+            *   Prove re-run idempotence: the same input set produces identical output without duplicate writes.
+            *   Prove partial continuations: when new continuation chunks exist, only the new range is appended in-memory before writing the final file.
+            *   Prove metadata: output path is deterministic from project/session/iteration/stage/document identity.
+            *   Use existing mock Supabase client; assert:
+                - Correct selects against `dialectic_contributions`.
+                - Single storage write with expected path and file name.
+    *   `[✅]` 9.b. `[API]` Define the `IDocumentRenderer` interface and test doubles.
+        *   `[✅]` 9.b.i. Add `supabase/functions/_shared/services/document_renderer.interface.ts`:
+            - `renderDocument(dbClient, deps, params): Promise<{ pathContext; renderedBytes; }>`
+            - Params: `projectId`, `sessionId`, `iterationNumber`, `stageSlug`, `documentIdentity` (see 9.a contract), and optional `overwrite?: boolean`.
+        *   `[✅]` 9.b.ii. Add `supabase/functions/_shared/services/document_renderer.mock.ts` to support unit tests.
+    *   `[ ]` 9.c. `[BE]` Implement the concrete `DocumentRenderer`.
+        *   `[ ]` 9.c.i. Add `supabase/functions/_shared/services/document_renderer.ts`:
+            - Query latest contribution chunks for the provided `documentIdentity`.
+            - Order chunks, assemble content, render Markdown.
+            - Write to storage path derived from `constructStoragePath` (final-artifact location).
+            - Return path context and byte size; log diagnostics; strict typing; no defaults.
+        *   `[ ]` 9.c.ii. Ensure 9.a tests pass (GREEN).
+    *   `[ ]` 9.d. `[TEST-UNIT]` Add RED tests for a new `processRenderJob`.
+        *   `[ ]` 9.d.i. Create `supabase/functions/dialectic-worker/processRenderJob.test.ts`:
+            - When given a job with `job_type: 'RENDER'` and payload carrying document identity, the processor:
+              - Invokes `documentRenderer.renderDocument` with params from job row/payload.
+              - Records completion to `dialectic_generation_jobs` (status -> completed, results path).
+            - Failure cases bubble as job failure with meaningful error_details.
+    *   `[ ]` 9.e. `[BE]` Implement `processRenderJob`.
+        *   `[ ]` 9.e.i. Add `supabase/functions/dialectic-worker/processRenderJob.ts`:
+            - Resolve params from job row/payload (no `step_info`).
+            - Call `deps.documentRenderer.renderDocument`.
+            - Update job row status and results; strict error mapping, no retries for deterministic render errors.
+        *   `[ ]` 9.e.ii. Make 9.d tests pass (GREEN).
+    *   `[ ]` 9.f. `[TEST-UNIT]` Update router tests to cover 'RENDER'.
+        *   `[ ]` 9.f.i. In `supabase/functions/dialectic-worker/processJob.test.ts`, add tests:
+            - RENDER routes to `processors.processRenderJob` by `job.job_type === 'RENDER'`.
+            - PLAN/EXECUTE behavior remains unchanged; no stage queries in the router.
+            - Propagation: dbClient, job row, deps, authToken are forwarded unchanged.
+    *   `[ ]` 9.g. `[BE]` Update `processJob` to route 'RENDER'.
+        *   `[ ]` 9.g.i. In `supabase/functions/dialectic-worker/processJob.ts`, add a `case 'RENDER'`:
+            - Delegate to `processors.processRenderJob`.
+            - Keep strict type guards; do not sniff payload shape.
+        *   `[ ]` 9.g.ii. Ensure 9.f tests pass (GREEN).
+    *   `[ ]` 9.h. `[TEST-UNIT]` Assert programmatic scheduling after successful EXECUTE.
+        *   `[ ]` 9.h.i. In `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts`, add RED tests:
+            - On successful EXECUTE completion (including final continuation), the code inserts a new `dialectic_generation_jobs` row with:
+              - `job_type: 'RENDER'`
+              - Parent/association to the just-completed EXECUTE job
+              - Payload containing renderer identity fields: `projectId`, `sessionId`, `iterationNumber`, `stageSlug`, and `documentIdentity` (e.g., `document_root_id` or equivalent from `document_relationships`).
+            - Assert a single INSERT with exact values; no `step_info`; strict typing.
+    *   `[ ]` 9.i. `[BE]` Implement programmatic scheduling after EXECUTE completes.
+        *   `[ ]` 9.i.i. In `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`, after a successful save:
+            - Insert a 'RENDER' job row with the payload described in 9.i.
+            - Do not add defaults; use existing identity from the current contribution (prefer `document_relationships` true-root identity).
+            - Log the new job id; preserve existing success behavior.
+        *   `[ ]` 9.i.ii. Ensure 9.i tests pass (GREEN).
+    *   `[ ]` 9.j. `[COMMIT]` feat(worker): Add DocumentRenderer, render job processor, router support, and auto-scheduling after EXECUTE.
 
 *   `[✅]` 11. `[REFACTOR]` Phase 11: Finalize Deprecation of `step_info`.
     *   `[✅]` 11.a. `[REFACTOR]` Refactor `generateContribution.ts` to stop producing the `step_info` object in job payloads.
