@@ -9,6 +9,7 @@ import type { ContributionRowMinimal, RendererPathContext, FileManagerCall, Rend
 import { FileType } from "../types/file_manager.types.ts";
 import { MockFileManagerService } from "./file_manager.mock.ts";
 import { mockNotificationService, resetMockNotificationService } from "../utils/notification.service.mock.ts";
+import { logger } from "../logger.ts";
 
 Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
   // Shared setup helpers
@@ -74,12 +75,16 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       stageSlug,
       documentIdentity: rootId,
       documentKey: FileType.business_case,
-      overwrite: true,
     };
 
     const result: RenderDocumentResult = await renderDocument(
       dbClient,
-      { downloadFromStorage, fileManager: new MockFileManagerService() },
+      { 
+        downloadFromStorage, 
+        fileManager: new MockFileManagerService(), 
+        notificationService: mockNotificationService, 
+        notifyUserId: "user_123", 
+        logger: logger },
       params,
     );
 
@@ -180,12 +185,17 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       stageSlug: "thesis",
       documentIdentity: rootId,
       documentKey: FileType.business_case,
-      overwrite: true,
     };
 
     const result: RenderDocumentResult = await renderDocument(
       dbClient,
-      { downloadFromStorage, fileManager: new MockFileManagerService() },
+      { 
+        downloadFromStorage, 
+        fileManager: new MockFileManagerService(), 
+        notificationService: mockNotificationService, 
+        notifyUserId: "user_123", 
+        logger: logger,
+      },
       params,
     );
 
@@ -271,12 +281,17 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       stageSlug: "thesis",
       documentIdentity: rootId,
       documentKey: FileType.business_case,
-      overwrite: true,
     };
 
     const result: RenderDocumentResult = await renderDocument(
       dbClient,
-      { downloadFromStorage, fileManager: new MockFileManagerService() },
+      { 
+        downloadFromStorage, 
+        fileManager: new MockFileManagerService(), 
+        notificationService: mockNotificationService, 
+        notifyUserId: "user_123", 
+        logger: logger,
+      },
       params,
     );
 
@@ -339,10 +354,15 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       stageSlug,
       documentIdentity: rootId,
       documentKey: FileType.business_case,
-      overwrite: true,
     };
 
-    await renderDocument(dbClient, { downloadFromStorage, fileManager: fm }, params);
+    await renderDocument(dbClient, { 
+      downloadFromStorage, 
+      fileManager: fm, 
+      notificationService: mockNotificationService, 
+      notifyUserId: "user_123", 
+      logger: logger,
+    }, params);
 
     assert(fm.uploadAndRegisterFile.calls.length === 1);
     const callArg = fm.uploadAndRegisterFile.calls[0].args[0];
@@ -418,7 +438,13 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     });
 
     const params: RenderDocumentParams = { projectId: "project_123", sessionId, iterationNumber: 1, stageSlug, documentIdentity: rootId, documentKey: FileType.business_case };
-    await renderDocument(dbClient, { downloadFromStorage, fileManager: new MockFileManagerService(), notificationService: mockNotificationService }, params);
+    await renderDocument(dbClient, { 
+      downloadFromStorage, 
+      fileManager: new MockFileManagerService(), 
+      notificationService: mockNotificationService, 
+      notifyUserId: "user_123", 
+      logger: logger,
+    }, params);
 
     assert(mockNotificationService.sendDocumentRenderedNotification.calls.length === 1);
     const [payload, userId] = mockNotificationService.sendDocumentRenderedNotification.calls[0].args;
@@ -504,7 +530,10 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         { 
         downloadFromStorage, 
         fileManager: fmIdem,
-        notificationService: mockNotificationService }, paramsIdem);
+        notificationService: mockNotificationService,
+        notifyUserId: "user_123",
+        logger: logger,
+      }, paramsIdem);
 
     const rendered1 = new TextDecoder().decode(r1.renderedBytes);
     assert(rendered1.includes("C1") && rendered1.includes("C2"));
@@ -513,7 +542,10 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         { 
             downloadFromStorage, 
             fileManager: fmIdem,
-            notificationService: mockNotificationService }, paramsIdem);
+            notificationService: mockNotificationService,
+            notifyUserId: "user_123",
+            logger: logger,
+          }, paramsIdem);
 
     const rendered2 = new TextDecoder().decode(r2.renderedBytes);
     assert(rendered2 === rendered1);
@@ -525,7 +557,11 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     const r3 = await renderDocument(dbClientIdem, 
         { 
             downloadFromStorage, 
-                fileManager: fmIdem }, paramsIdem);
+            fileManager: fmIdem,
+            notificationService: mockNotificationService,
+            notifyUserId: "user_123",
+            logger: logger,
+          }, paramsIdem);
                     
     const rendered3 = new TextDecoder().decode(r3.renderedBytes);
     assert(rendered3.includes("C1") && rendered3.includes("C2") && rendered3.includes("C3"));
@@ -589,7 +625,13 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     });
 
     const params: RenderDocumentParams = { projectId: "project_123", sessionId, iterationNumber: 1, stageSlug, documentIdentity: rootId, documentKey: FileType.business_case };
-    const result: RenderDocumentResult = await renderDocument(dbClient, { downloadFromStorage, fileManager: new MockFileManagerService(), notificationService: mockNotificationService }, params);
+    const result: RenderDocumentResult = await renderDocument(dbClient, { 
+      downloadFromStorage, 
+      fileManager: new MockFileManagerService(), 
+      notificationService: mockNotificationService, 
+      notifyUserId: "user_123", 
+      logger: logger,
+    }, params);
     const rendered = new TextDecoder().decode(result.renderedBytes);
     const i1 = rendered.indexOf("X1");
     const i2 = rendered.indexOf("X2");
@@ -651,7 +693,13 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     });
 
     const params: RenderDocumentParams = { projectId: "project_123", sessionId, iterationNumber: 1, stageSlug, documentIdentity: rootId, documentKey: FileType.business_case };
-    const result: RenderDocumentResult = await renderDocument(dbClient, { downloadFromStorage, fileManager: new MockFileManagerService(), notificationService: mockNotificationService }, params);
+    const result: RenderDocumentResult = await renderDocument(dbClient, { 
+      downloadFromStorage, 
+      fileManager: new MockFileManagerService(), 
+      notificationService: mockNotificationService, 
+      notifyUserId: "user_123", 
+      logger: logger,
+    }, params);
     const rendered = new TextDecoder().decode(result.renderedBytes);
     assert(rendered.includes("USER"));
     // ensure model body is not used if edit exists
@@ -722,12 +770,17 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       stageSlug,
       documentIdentity: rootId,
       documentKey: FileType.business_case,
-      overwrite: true,
     };
 
     await renderDocument(
       dbClient,
-      { downloadFromStorage, fileManager: new MockFileManagerService() },
+      { 
+        downloadFromStorage, 
+        fileManager: new MockFileManagerService(), 
+        notificationService: mockNotificationService, 
+        notifyUserId: "user_123", 
+        logger: logger,
+      },
       params,
     );
 

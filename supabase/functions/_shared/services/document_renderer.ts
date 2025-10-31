@@ -174,8 +174,8 @@ export async function renderDocument(
     }
   }
 
-  // 6) Notification (optional)
-  const targetUser = base.user_id || "";
+  // 6) Notification 
+  const targetUser = base.user_id;
   if (deps.notificationService && typeof deps.notificationService.sendDocumentRenderedNotification === "function" && targetUser) {
     try {
       await deps.notificationService.sendDocumentRenderedNotification({

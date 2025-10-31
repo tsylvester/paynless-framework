@@ -42,7 +42,6 @@ export type RenderDocumentParams = {
   stageSlug: string;
   documentIdentity: string; // true-root id for this document chain
   documentKey: FileType;
-  overwrite?: boolean;
 };
 
 export type RenderDocumentResult = {
@@ -53,8 +52,9 @@ export type RenderDocumentResult = {
 export interface DocumentRendererDeps {
   downloadFromStorage: DownloadFromStorageFn;
   fileManager: IFileManager;
-  notificationService?: NotificationServiceType;
-  logger?: ILogger;
+  notificationService: NotificationServiceType;
+  notifyUserId: string;
+  logger: ILogger;
 }
 
 export type RenderDocumentFn = (

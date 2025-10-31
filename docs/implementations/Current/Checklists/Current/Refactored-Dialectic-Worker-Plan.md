@@ -642,13 +642,13 @@ graph LR
             - `renderDocument(dbClient, deps, params): Promise<{ pathContext; renderedBytes; }>`
             - Params: `projectId`, `sessionId`, `iterationNumber`, `stageSlug`, `documentIdentity` (see 9.a contract), and optional `overwrite?: boolean`.
         *   `[✅]` 9.b.ii. Add `supabase/functions/_shared/services/document_renderer.mock.ts` to support unit tests.
-    *   `[ ]` 9.c. `[BE]` Implement the concrete `DocumentRenderer`.
-        *   `[ ]` 9.c.i. Add `supabase/functions/_shared/services/document_renderer.ts`:
+    *   `[✅]` 9.c. `[BE]` Implement the concrete `DocumentRenderer`.
+        *   `[✅]` 9.c.i. Add `supabase/functions/_shared/services/document_renderer.ts`:
             - Query latest contribution chunks for the provided `documentIdentity`.
             - Order chunks, assemble content, render Markdown.
             - Write to storage path derived from `constructStoragePath` (final-artifact location).
             - Return path context and byte size; log diagnostics; strict typing; no defaults.
-        *   `[ ]` 9.c.ii. Ensure 9.a tests pass (GREEN).
+        *   `[✅]` 9.c.ii. Ensure 9.a tests pass (GREEN).
     *   `[ ]` 9.d. `[TEST-UNIT]` Add RED tests for a new `processRenderJob`.
         *   `[ ]` 9.d.i. Create `supabase/functions/dialectic-worker/processRenderJob.test.ts`:
             - When given a job with `job_type: 'RENDER'` and payload carrying document identity, the processor:
