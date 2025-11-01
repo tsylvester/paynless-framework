@@ -342,6 +342,17 @@ export interface DialecticStateValues {
   activeDialecticWalletId: string | null;
 
   sessionProgress: { [sessionId: string]: ProgressData };
+  
+  // Recipe hydration and per-stage-run progress
+  recipesByStageSlug: Record<string, DialecticStageRecipe>;
+  stageRunProgress: Record<string, {
+    stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed'>;
+    documents: Record<string, {
+      status: 'idle' | 'generating' | 'retrying' | 'failed' | 'completed' | 'continuing';
+      job_id?: string;
+      latestRenderedResourceId?: string | null;
+    }>;
+  }>;
 }
 
 export interface InitialPromptCacheEntry {
@@ -444,6 +455,10 @@ export interface DialecticActions {
   _handleProgressUpdate: (event: DialecticProgressUpdatePayload) => void;
   
   reset: () => void;
+
+  // Recipe hydration and per-stage-run progress
+  fetchStageRecipe: (stageSlug: string) => Promise<void>;
+  ensureRecipeForActiveStage: (sessionId: string, stageSlug: string, iterationNumber: number) => Promise<void>;
 }
 
 export type DialecticStore = DialecticStateValues & DialecticActions;
@@ -610,6 +625,7 @@ export interface DialecticFeedback {
 }
 
 export interface DialecticApiClient {
+  fetchStageRecipe(stageSlug: string): Promise<ApiResponse<DialecticStageRecipe>>;
   listAvailableDomains(): Promise<ApiResponse<{ data: DomainDescriptor[] }>>;
   listAvailableDomainOverlays(payload: { stageAssociation: string }): Promise<ApiResponse<DomainOverlayDescriptor[]>>;
   createProject(payload: FormData): Promise<ApiResponse<DialecticProject>>;

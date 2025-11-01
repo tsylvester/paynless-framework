@@ -794,15 +794,15 @@ graph LR
         *   `[✅]` 1.c.iv.a. `[TEST-UNIT]` Router test: request dispatches to handler and returns normalized payload; error paths propagate status and message.
         *   `[✅]` 1.c.iv.b. Add an action/route (e.g., `action: 'getStageRecipe'`) in `supabase/functions/dialectic-service/index.ts` (or the central router) that invokes `getStageRecipe`.
         *   `[✅]` 1.c.iv.c. `[COMMIT]` feat(backend): add getStageRecipe handler and router wiring.
-    *   `[ ]` 1.c.v. `[API][TEST-UNIT]` Write failing unit tests for `fetchStageRecipe(stageSlug)` in `@paynless/api`.
-        *   `[ ]` 1.c.v.a. Mock backend response equivalent to `dialectic_stage_recipe_steps` for Synthesis-like complexity; include `execution_order`, `parallel_group`, `branch_key`, `inputs_required`, `outputs_required`.
-        *   `[ ]` 1.c.v.b. Assert normalization to `DialecticStageRecipe`; steps sorted by `execution_order` (stable); fields preserved exactly.
-        *   `[ ]` 1.c.v.c. Assert each `InputRequirement`/`OutputRequirement` preserves `required`, `multiple`, `document_key`, and artifact/file types.
-    *   `[ ]` 1.c.vi. `[API]` Implement `fetchStageRecipe` in `DialecticApiClient`.
-        *   `[ ]` 1.c.vi.a. Request: `{ stageSlug: string }`. Response: `DialecticStageRecipe` from backend.
-        *   `[ ]` 1.c.vi.b. Map backend fields 1:1 to FE types; ensure optionals are omitted when absent; do not invent defaults.
-        *   `[ ]` 1.c.vi.c. Return `instanceId` and `steps` exactly as provided.
-    *   `[ ]` 1.c.vii. `[API][TEST-UNIT]` Ensure tests pass; validate error propagation on malformed payloads and missing `stageSlug`.
+    *   `[✅]` 1.c.v. `[API][TEST-UNIT]` Write failing unit tests for `fetchStageRecipe(stageSlug)` in `@paynless/api`.
+        *   `[✅]` 1.c.v.a. Mock backend response equivalent to `dialectic_stage_recipe_steps` for Synthesis-like complexity; include `execution_order`, `parallel_group`, `branch_key`, `inputs_required`, `outputs_required`.
+        *   `[✅]` 1.c.v.b. Assert normalization to `DialecticStageRecipe`; steps sorted by `execution_order` (stable); fields preserved exactly.
+        *   `[✅]` 1.c.v.c. Assert each `InputRequirement`/`OutputRequirement` preserves `required`, `multiple`, `document_key`, and artifact/file types.
+    *   `[✅]` 1.c.vi. `[API]` Implement `fetchStageRecipe` in `DialecticApiClient`.
+        *   `[✅]` 1.c.vi.a. Request: `{ stageSlug: string }`. Response: `DialecticStageRecipe` from backend.
+        *   `[✅]` 1.c.vi.b. Map backend fields 1:1 to FE types; ensure optionals are omitted when absent; do not invent defaults.
+        *   `[✅]` 1.c.vi.c. Return `instanceId` and `steps` exactly as provided.
+    *   `[✅]` 1.c.vii. `[API][TEST-UNIT]` Ensure tests pass; validate error propagation on malformed payloads and missing `stageSlug`.
     *   `[ ]` 1.c.viii. `[COMMIT]` feat(api): add fetchStageRecipe and normalize stage recipe steps.
 
 *   `[ ]` 1.d. `[STORE]` Hydrate recipes and initialize per-stage-run progress.

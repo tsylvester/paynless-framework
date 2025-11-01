@@ -70,8 +70,9 @@ const mockThesisStage: DialecticStage = {
     description: 'Mock thesis stage',
     created_at: new Date().toISOString(),
     default_system_prompt_id: 'sp-1',
-    input_artifact_rules: null,
-    expected_output_artifacts: null,
+    expected_output_template_ids: [],
+    recipe_template_id: null,
+    active_recipe_instance_id: null,
 };
 
 const mockSynthesisStage: DialecticStage = {
@@ -95,8 +96,8 @@ describe('Dialectic Store Selectors', () => {
     ];
     const mockOverlayError: ApiError = { code: 'OVERLAY_ERR', message: 'Test Overlay Error' };
     const mockDomains: DialecticDomain[] = [
-        { id: 'dom1', name: 'Domain 1', description: 'Test domain 1', parent_domain_id: null },
-        { id: 'dom2', name: 'Domain 2', description: 'Test domain 2', parent_domain_id: null },
+        { id: 'dom1', name: 'Domain 1', description: 'Test domain 1', parent_domain_id: null, is_enabled: true },
+        { id: 'dom2', name: 'Domain 2', description: 'Test domain 2', parent_domain_id: null, is_enabled: true },
     ];
     const mockDomainsError: ApiError = { code: 'DOMAIN_ERR', message: 'Test Domain Error' };
     const mockStage1: DialecticStage = { 
@@ -106,8 +107,9 @@ describe('Dialectic Store Selectors', () => {
         description: 'First mock stage',
         created_at: new Date().toISOString(),
         default_system_prompt_id: 'sp-1',
-        input_artifact_rules: null,
-        expected_output_artifacts: null,
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
     };
     const mockStage2: DialecticStage = { 
         id: 'stage-def', 
@@ -116,8 +118,9 @@ describe('Dialectic Store Selectors', () => {
         description: 'Second mock stage',
         created_at: new Date().toISOString(),
         default_system_prompt_id: 'sp-2',
-        input_artifact_rules: null,
-        expected_output_artifacts: null,
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
     };
     const mockProcessTemplate: DialecticProcessTemplate = {
         id: 'pt-1',
@@ -127,7 +130,7 @@ describe('Dialectic Store Selectors', () => {
         starting_stage_id: 'stage-abc',
         stages: [mockStage1, mockStage2],
         transitions: [
-            { id: 't1', process_template_id: 'pt-1', source_stage_id: 'stage-abc', target_stage_id: 'stage-def', created_at: new Date().toISOString() }
+            { id: 't1', process_template_id: 'pt-1', source_stage_id: 'stage-abc', target_stage_id: 'stage-def', created_at: new Date().toISOString(), condition_description: null }
         ]
     };
     const mockProcessTemplateError: ApiError = { code: 'TEMPLATE_ERR', message: 'Test Template Error' };
@@ -789,9 +792,9 @@ describe('Dialectic Store Selectors', () => {
     });
 
     describe('selectSortedStages', () => {
-        const stage1: DialecticStage = { id: '1', display_name: 'Thesis', slug: 'thesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_artifacts: null, input_artifact_rules: null };
-        const stage2: DialecticStage = { id: '2', display_name: 'Antithesis', slug: 'antithesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_artifacts: null, input_artifact_rules: null };
-        const stage3: DialecticStage = { id: '3', display_name: 'Synthesis', slug: 'synthesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_artifacts: null, input_artifact_rules: null };
+        const stage1: DialecticStage = { id: '1', display_name: 'Thesis', slug: 'thesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null };
+        const stage2: DialecticStage = { id: '2', display_name: 'Antithesis', slug: 'antithesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null };
+        const stage3: DialecticStage = { id: '3', display_name: 'Synthesis', slug: 'synthesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null };
     
         const transitions: DialecticStageTransition[] = [
           { id: 't1', process_template_id: 'p1', source_stage_id: '1', target_stage_id: '2', created_at: new Date().toISOString(), condition_description: null },
@@ -889,7 +892,6 @@ describe('selectIsStageReadyForSessionIteration', () => {
         description: 'A template for testing',
         starting_stage_id: 'stage-thesis',
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
         stages: [{
             id: 'stage-thesis',
             slug: 'thesis',
@@ -897,13 +899,10 @@ describe('selectIsStageReadyForSessionIteration', () => {
             description: 'The first stage',
             default_system_prompt_id: null,
             created_at: new Date().toISOString(),
-            input_artifact_rules: {
-                sources: [{
-                    type: 'seed_prompt',
-                    required: true
-                }]
-            },
-        } as DialecticStage],
+            expected_output_template_ids: [],
+            recipe_template_id: null,
+            active_recipe_instance_id: null,
+        }],
     };
 
     const projectWithResource: DialecticProject = {

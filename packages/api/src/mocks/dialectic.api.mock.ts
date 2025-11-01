@@ -3,6 +3,7 @@ import type {
     DialecticProject, 
     CreateProjectPayload, 
     ApiResponse, 
+    DialecticStageRecipe,
     GetContributionContentDataResponse,
     StartSessionPayload, 
     DialecticSession, 
@@ -31,6 +32,7 @@ import type {
 export type MockDialecticApiClient = {
     listAvailableDomains: ReturnType<typeof vi.fn<[], Promise<ApiResponse<{ data: DomainDescriptor[] }>>>>;
     listAvailableDomainOverlays: ReturnType<typeof vi.fn<[payload: { stageAssociation: string }], Promise<ApiResponse<DomainOverlayDescriptor[]>>>>;
+    fetchStageRecipe: ReturnType<typeof vi.fn<[stageSlug: string], Promise<ApiResponse<DialecticStageRecipe>>>>;
     createProject: ReturnType<typeof vi.fn<[payload: CreateProjectPayload], Promise<ApiResponse<DialecticProject>>>>;
     listProjects: ReturnType<typeof vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>>;
     getContributionContentData: ReturnType<typeof vi.fn<[contributionId: string], Promise<ApiResponse<GetContributionContentDataResponse | null>>>>;
@@ -58,6 +60,7 @@ export function createMockDialecticClient(): MockDialecticApiClient {
     return {
         listAvailableDomains: vi.fn<[], Promise<ApiResponse<{ data: DomainDescriptor[] }>>>(),
         listAvailableDomainOverlays: vi.fn<[{ stageAssociation: string }], Promise<ApiResponse<DomainOverlayDescriptor[]>>>(),
+        fetchStageRecipe: vi.fn<[string], Promise<ApiResponse<DialecticStageRecipe>>>(),
         createProject: vi.fn<[CreateProjectPayload], Promise<ApiResponse<DialecticProject>>>(),
         listProjects: vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>(),
         getContributionContentData: vi.fn<[string], Promise<ApiResponse<GetContributionContentDataResponse | null>>>(),
@@ -85,7 +88,7 @@ export function resetMockDialecticClient(instance: MockDialecticApiClient) {
     for (const key in instance) {
         const prop = instance[key as keyof MockDialecticApiClient];
         if (typeof prop === 'function' && 'mockReset' in prop) {
-            (prop as ReturnType<typeof vi.fn>).mockReset();
+            (prop).mockReset();
         }
     }
 }

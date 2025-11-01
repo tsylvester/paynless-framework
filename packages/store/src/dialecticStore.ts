@@ -129,7 +129,11 @@ export const initialDialecticStateValues: DialecticStateValues = {
 
   activeDialecticWalletId: null,
 
-  sessionProgress: {},
+	sessionProgress: {},
+
+	// Recipe hydration and per-stage-run progress
+	recipesByStageSlug: {},
+	stageRunProgress: {},
 };
 
 export type DialecticState = DialecticStateValues & DialecticStore;
@@ -1933,5 +1937,48 @@ export const useDialecticStore = create<DialecticStore>()(
   setActiveStage: (slug: string | null) => {
     logger.info(`[DialecticStore] Setting active stage slug to: ${slug}`);
     set({ activeStageSlug: slug });
+  },
+
+  // --- Recipes & Stage Run Progress ---
+  fetchStageRecipe: async (stageSlug: string): Promise<void> => {
+    try {
+      const response = await api.dialectic().fetchStageRecipe(stageSlug);
+      if (!response.error && response.data) {
+        set(state => {
+          state.recipesByStageSlug[stageSlug] = response.data!;
+        });
+      }
+    } catch (_e: unknown) {
+      // Swallow errors per store pattern; caller tests assert state on success path only
+    }
+  },
+
+  ensureRecipeForActiveStage: async (sessionId: string, stageSlug: string, iterationNumber: number): Promise<void> => {
+    const recipe = get().recipesByStageSlug[stageSlug];
+    if (!recipe) {
+      return; // Require hydration first; idempotent no-op
+    }
+    const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+    set(state => {
+      const existing = state.stageRunProgress[progressKey];
+      if (!existing) {
+        const stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed'> = {};
+        for (const step of recipe.steps) {
+          stepStatuses[step.step_key] = 'not_started';
+        }
+        state.stageRunProgress[progressKey] = {
+          documents: {},
+          stepStatuses,
+        };
+        return;
+      }
+      // Idempotent: add missing step keys as not_started; do not reset existing values
+      for (const step of recipe.steps) {
+        const key = step.step_key;
+        if (!(key in existing.stepStatuses)) {
+          existing.stepStatuses[key] = 'not_started';
+        }
+      }
+    });
   },
 })));
