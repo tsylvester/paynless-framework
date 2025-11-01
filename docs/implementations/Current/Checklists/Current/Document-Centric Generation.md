@@ -793,7 +793,7 @@ graph LR
     *   `[✅]` 1.c.iv. `[BE]` Wire the handler into the dialectic-service router/index.
         *   `[✅]` 1.c.iv.a. `[TEST-UNIT]` Router test: request dispatches to handler and returns normalized payload; error paths propagate status and message.
         *   `[✅]` 1.c.iv.b. Add an action/route (e.g., `action: 'getStageRecipe'`) in `supabase/functions/dialectic-service/index.ts` (or the central router) that invokes `getStageRecipe`.
-        *   `[ ]` 1.c.iv.c. `[COMMIT]` feat(backend): add getStageRecipe handler and router wiring.
+        *   `[✅]` 1.c.iv.c. `[COMMIT]` feat(backend): add getStageRecipe handler and router wiring.
     *   `[ ]` 1.c.v. `[API][TEST-UNIT]` Write failing unit tests for `fetchStageRecipe(stageSlug)` in `@paynless/api`.
         *   `[ ]` 1.c.v.a. Mock backend response equivalent to `dialectic_stage_recipe_steps` for Synthesis-like complexity; include `execution_order`, `parallel_group`, `branch_key`, `inputs_required`, `outputs_required`.
         *   `[ ]` 1.c.v.b. Assert normalization to `DialecticStageRecipe`; steps sorted by `execution_order` (stable); fields preserved exactly.

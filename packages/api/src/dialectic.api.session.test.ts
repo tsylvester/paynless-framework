@@ -67,8 +67,9 @@ describe('DialecticApiClient - Session Methods', () => {
       // template_stage_id: 'original-template-stage-id' // Removed
       // Add properties that ARE part of DialecticStage (Database['public']['Tables']['dialectic_stages']['Row'])
       // For example, if 'expected_output_artifacts' and 'input_artifact_rules' are required and are of type Json:
-      expected_output_artifacts: {}, // or null if nullable, or valid Json
-      input_artifact_rules: {}, // or null if nullable, or valid Json
+      expected_output_template_ids: [],
+      active_recipe_instance_id: null,
+      recipe_template_id: null
     };
 
     it('should call apiClient.post with correct parameters for getSessionDetails', async () => {

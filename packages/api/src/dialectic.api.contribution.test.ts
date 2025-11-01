@@ -114,8 +114,19 @@ describe('DialecticApiClient', () => {
    
     describe('generateContributions', () => {
         const endpoint = 'dialectic-service';
-        const mockStageObject: DialecticStage = { id: 'stage-1', slug: 'thesis', display_name: 'Thesis', created_at: new Date().toISOString(), description: null, default_system_prompt_id: null, expected_output_artifacts: null, input_artifact_rules: null };
-        const validPayload: GenerateContributionsPayload = {
+        const mockStageObject: DialecticStage = { 
+            id: 'stage-1', 
+            slug: 'thesis', 
+            display_name: 'Thesis', 
+            created_at: new Date().toISOString(), 
+            description: null, 
+            default_system_prompt_id: null, 
+            expected_output_template_ids: [], 
+            active_recipe_instance_id: null,
+            recipe_template_id: null
+        };
+        
+            const validPayload: GenerateContributionsPayload = {
             sessionId: 'sess-456',
             projectId: 'proj-123',
             stageSlug: mockStageObject.slug,
@@ -589,7 +600,17 @@ describe('DialecticApiClient', () => {
 
     describe('submitStageResponses', () => {
         const endpoint = 'dialectic-service';
-        const mockStageObject: DialecticStage = { id: 'stage-1', slug: 'thesis', display_name: 'Thesis', created_at: new Date().toISOString(), description: null, default_system_prompt_id: null, expected_output_artifacts: null, input_artifact_rules: null };
+        const mockStageObject: DialecticStage = { 
+            id: 'stage-1', 
+            slug: 'thesis', 
+            display_name: 'Thesis', 
+            created_at: new Date().toISOString(), 
+            description: null, 
+            default_system_prompt_id: null, 
+            expected_output_template_ids: [], 
+            active_recipe_instance_id: null,
+            recipe_template_id: null
+        };
         
         // Original validPayload without userStageFeedback
         const validPayloadWithoutFeedback: SubmitStageResponsesPayload = {

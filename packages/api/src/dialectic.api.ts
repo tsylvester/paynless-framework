@@ -2,6 +2,7 @@ import type { ApiClient } from './apiClient';
 import type {
     ApiResponse,
     DialecticProject,
+    DialecticStageRecipe,
     StartSessionPayload,
     DialecticSession,
     AIModelCatalogEntry,
@@ -40,6 +41,49 @@ export class DialecticApiClient {
 
     constructor(apiClient: ApiClient) {
         this.apiClient = apiClient;
+    }
+
+    /**
+     * Fetch the active stage recipe for a stageSlug.
+     * Public endpoint (no auth required).
+     */
+    async fetchStageRecipe(stageSlug: string): Promise<ApiResponse<DialecticStageRecipe>> {
+        logger.info('Fetching stage recipe', { stageSlug });
+        try {
+            const response = await this.apiClient.post<DialecticStageRecipe, { action: string; payload: { stageSlug: string } }>(
+                'dialectic-service',
+                { action: 'getStageRecipe', payload: { stageSlug } }
+            );
+
+            if (response.error) {
+                logger.error('Error fetching stage recipe', { error: response.error, stageSlug });
+                return response;
+            }
+
+            // Return steps sorted by execution_order, then step_key for stability
+            const steps = Array.isArray(response.data?.steps) ? [...response.data!.steps] : [];
+            steps.sort((a, b) => {
+                if (a.execution_order !== b.execution_order) return a.execution_order - b.execution_order;
+                return a.step_key.localeCompare(b.step_key);
+            });
+
+            const normalized: ApiResponse<DialecticStageRecipe> = {
+                status: response.status,
+                data: response.data ? { ...response.data, steps } : undefined,
+                error: undefined,
+            };
+
+            logger.info('Successfully fetched stage recipe', { stageSlug });
+            return normalized;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in fetchStageRecipe', { errorMessage: message, errorObject: error, stageSlug });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
     }
 
     /**
@@ -247,7 +291,7 @@ export class DialecticApiClient {
                 {
                     action: 'getContributionContentData',
                     payload: { contributionId },
-                } as DialecticServiceActionPayload
+                }
             );
 
             if (response.error) {
@@ -346,7 +390,7 @@ export class DialecticApiClient {
                 {
                     action: 'deleteProject',
                     payload,
-                } as DialecticServiceActionPayload
+                }
             );
 
             if (response.error) {
@@ -362,7 +406,7 @@ export class DialecticApiClient {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },
                 status: 0,
-            } as ApiResponse<void>;
+            };
         }
     }
 
@@ -371,7 +415,7 @@ export class DialecticApiClient {
         try {
             const response = await this.apiClient.post<DialecticProject, DialecticServiceActionPayload>(
                 'dialectic-service',
-                { action: 'cloneProject', payload } as DialecticServiceActionPayload
+                { action: 'cloneProject', payload }
             );
             if (response.error) {
                 logger.error('Error cloning project:', { error: response.error, projectId: payload.projectId });
@@ -395,7 +439,7 @@ export class DialecticApiClient {
         try {
             const response = await this.apiClient.post<ExportProjectResponse, DialecticServiceActionPayload>(
                 'dialectic-service',
-                { action: 'exportProject', payload } as DialecticServiceActionPayload
+                { action: 'exportProject', payload }
             );
             if (response.error) {
                 logger.error('Error exporting project:', { error: response.error, projectId: payload.projectId });
@@ -544,7 +588,7 @@ export class DialecticApiClient {
           {
             action: 'getProjectResourceContent',
             payload,
-          } as DialecticServiceActionPayload
+          }
         );
     
         if (response.error) {
@@ -570,7 +614,7 @@ export class DialecticApiClient {
           data: undefined,
           error: { code: 'NETWORK_ERROR', message },
           status: 0,
-        } as ApiResponse<GetProjectResourceContentResponse>;
+        };
       }
     }
 
@@ -587,7 +631,7 @@ export class DialecticApiClient {
                 {
                     action: 'updateSessionModels',
                     payload,
-                } as DialecticServiceActionPayload
+                }
             );
 
             if (response.error) {
