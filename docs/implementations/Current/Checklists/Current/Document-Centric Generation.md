@@ -744,9 +744,9 @@ graph LR
 
 # Implementation Plan
 
-### `[DEPLOY]` Epic: Transition to Document-Centric Generation
+## `[DEPLOY]` Epic: Transition to Document-Centric Generation
 
-#### `[ ]` 1. Phase: Foundational Observability
+### `[ ]` 1. Phase: Foundational Observability
 *   **Objective:** Establish the foundational backend schema and routing needed for the new architecture, and build the UI hooks to observe these new events, setting the stage for the document-centric view.
 *   `[ ]` 1.a. `[BE]` **Backend Milestone:** Notification Contracts and Emissions.
     *   `[✅]` 1.a.i. `[BE]` Update `notification.service.types.ts` to define/extend types for required events.
@@ -768,12 +768,92 @@ graph LR
         *   `[✅]` 1.a.v.4. `processRenderJob` (or renderer): ensure final render emits `render_completed` via existing `document_rendered` path.
         *   `[✅]` 1.a.v.5. All workers: on unrecoverable failure, emit `job_failed` with `error`, `job_id`, `sessionId`, `userId`, `stageSlug`.
     *   `[✅]` 1.a.vi. `[TEST-UNIT]` Add worker unit tests to verify each emission point and payload shape.
-*   `[ ]` 1.b. `[UI]` **UI Milestone:** Implement Notification Service and State Management.
-    *   `[ ]` 1.b.i. Update the frontend notification service to subscribe to and handle the new backend events.
-    *   `[ ]` 1.b.ii. Update the application's state management (`store`) to accommodate the concept of a stage having a collection of individual documents, each with its own status.
-    *   `[ ]` 1.b.iii Update the UI elements to correctly display the model and its current state of generation, with a checklist of its TODOs. 
-    *   `[ ]` 1.b.iv Ensure all UI elements use the SSOT for the current stage state and do not identify as "complete" until the checklist is complete. 
-*   `[ ]` 1.c. `[COMMIT]` feat: Establish foundational DB schema and UI state for document-centric job observability.
+
+*   `[✅]` 1.b. `[TYPES]` Define stage recipe contracts for the frontend.
+    *   `[✅]` 1.b.i. Create precise recipe types in `@paynless/types` aligned with backend (`dialectic_stage_recipe_steps`).
+        *   `[✅]` 1.b.i.a. Add `DialecticStageRecipe`: `{ stageSlug: string; instanceId: string; steps: DialecticStageRecipeStep[] }`.
+        *   `[✅]` 1.b.i.b. Add `DialecticStageRecipeStep` with fields: `id`, `step_key`, `step_slug`, `step_name`, `execution_order`, `parallel_group?`, `branch_key?`, `job_type ('PLAN'|'EXECUTE'|'RENDER')`, `prompt_type ('Planner'|'Turn')`, `prompt_template_id?`, `output_type ('HeaderContext'|'AssembledDocumentJson'|'RenderedDocument')`, `granularity_strategy ('all_to_one'|'one_to_one'|'one_to_many'|'many_to_one')`, `inputs_required: InputRequirement[]`, `inputs_relevance?: InputsRelevanceItem[]`, `outputs_required?: OutputRequirement[]`.
+        *   `[✅]` 1.b.i.c. Add `InputRequirement`: `{ type: 'seed_prompt'|'document'|'header_context'|'feedback'; slug: string; document_key: string; required: boolean; multiple?: boolean }`.
+        *   `[✅]` 1.b.i.d. Add `OutputRequirement`: `{ document_key: string; artifact_class: 'header_context'|'assembled_json'|'rendered_document'; file_type: 'json'|'markdown'; template_filename?: string }`.
+        *   `[✅]` 1.b.i.e. Add `InputsRelevanceItem`: `{ document_key: string; slug: string; relevance: number; type?: 'feedback' }`.
+        *   `[✅]` 1.b.i.f. Note: Types files are exempt from TDD per Instructions; ensure strict explicit typing with no `any` or casting.
+
+*   `[ ]` 1.c. `[BE][API]` Provide a stage-recipe fetch end-to-end (backend function + API client).
+    *   `[✅]` 1.c.i. `[BE][TYPES]` Define backend response types for the dialectic-service.
+        *   `[✅]` 1.c.i.a. In `supabase/functions/dialectic-service/dialectic.interface.ts`, add `StageRecipeResponse` and `StageRecipeStep` mirroring FE types: `stageSlug`, `instanceId`, `steps[]` with fields `id`, `step_key`, `step_slug`, `step_name`, `execution_order`, `parallel_group?`, `branch_key?`, `job_type`, `prompt_type`, `prompt_template_id?`, `output_type`, `granularity_strategy`, `inputs_required`, `inputs_relevance?`, `outputs_required?`.
+        *   `[✅]` 1.c.i.b. Ensure strict typing only; no casting; reuse existing recipe-related types if present to avoid duplication.
+    *   `[✅]` 1.c.ii. `[BE][TEST-UNIT]` Create failing tests for `getStageRecipe` handler.
+        *   `[✅]` 1.c.ii.a. Location: `supabase/functions/dialectic-service/getStageRecipe.test.ts`.
+        *   `[✅]` 1.c.ii.b. Cases: valid `stageSlug` returns sorted `steps` (by `execution_order`), preserves `parallel_group`/`branch_key`; missing stage returns 404/structured error; stage without `active_recipe_instance_id` returns 400; malformed DB rows are rejected.
+    *   `[✅]` 1.c.iii. `[BE]` Implement `getStageRecipe.ts` in dialectic-service.
+        *   `[✅]` 1.c.iii.a. Query `dialectic_stages` by `slug` → read `active_recipe_instance_id`.
+        *   `[✅]` 1.c.iii.b. Query `dialectic_stage_recipe_steps` by `instance_id`, selecting fields needed for normalization; `ORDER BY execution_order ASC, step_key ASC` for stable results.
+        *   `[✅]` 1.c.iii.c. Map rows → `StageRecipeResponse` without defaults; omit absent optionals.
+        *   `[✅]` 1.c.iii.d. Return JSON; ensure RLS-friendly read path; no secrets.
+    *   `[✅]` 1.c.iv. `[BE]` Wire the handler into the dialectic-service router/index.
+        *   `[✅]` 1.c.iv.a. `[TEST-UNIT]` Router test: request dispatches to handler and returns normalized payload; error paths propagate status and message.
+        *   `[✅]` 1.c.iv.b. Add an action/route (e.g., `action: 'getStageRecipe'`) in `supabase/functions/dialectic-service/index.ts` (or the central router) that invokes `getStageRecipe`.
+        *   `[ ]` 1.c.iv.c. `[COMMIT]` feat(backend): add getStageRecipe handler and router wiring.
+    *   `[ ]` 1.c.v. `[API][TEST-UNIT]` Write failing unit tests for `fetchStageRecipe(stageSlug)` in `@paynless/api`.
+        *   `[ ]` 1.c.v.a. Mock backend response equivalent to `dialectic_stage_recipe_steps` for Synthesis-like complexity; include `execution_order`, `parallel_group`, `branch_key`, `inputs_required`, `outputs_required`.
+        *   `[ ]` 1.c.v.b. Assert normalization to `DialecticStageRecipe`; steps sorted by `execution_order` (stable); fields preserved exactly.
+        *   `[ ]` 1.c.v.c. Assert each `InputRequirement`/`OutputRequirement` preserves `required`, `multiple`, `document_key`, and artifact/file types.
+    *   `[ ]` 1.c.vi. `[API]` Implement `fetchStageRecipe` in `DialecticApiClient`.
+        *   `[ ]` 1.c.vi.a. Request: `{ stageSlug: string }`. Response: `DialecticStageRecipe` from backend.
+        *   `[ ]` 1.c.vi.b. Map backend fields 1:1 to FE types; ensure optionals are omitted when absent; do not invent defaults.
+        *   `[ ]` 1.c.vi.c. Return `instanceId` and `steps` exactly as provided.
+    *   `[ ]` 1.c.vii. `[API][TEST-UNIT]` Ensure tests pass; validate error propagation on malformed payloads and missing `stageSlug`.
+    *   `[ ]` 1.c.viii. `[COMMIT]` feat(api): add fetchStageRecipe and normalize stage recipe steps.
+
+*   `[ ]` 1.d. `[STORE]` Hydrate recipes and initialize per-stage-run progress.
+    *   `[ ]` 1.d.i. Add state:
+        *   `[ ]` 1.d.i.a. `recipesByStageSlug: Record<string, DialecticStageRecipe>`.
+        *   `[ ]` 1.d.i.b. `stageRunProgress: Record<string, { stepStatuses: Record<string, 'not_started'|'in_progress'|'waiting_for_children'|'completed'|'failed'>; documents: Record<string, { status: 'idle'|'generating'|'retrying'|'failed'|'completed'|'continuing'; job_id?: string; latestRenderedResourceId?: string|null }>; }>` where key = `${sessionId}:${stageSlug}:${iterationNumber}`.
+    *   `[ ]` 1.d.ii. Add actions:
+        *   `[ ]` 1.d.ii.a. `fetchStageRecipe(stageSlug)` → calls API and stores recipe under `recipesByStageSlug`.
+        *   `[ ]` 1.d.ii.b. `ensureRecipeForActiveStage(sessionId, stageSlug)` → idempotent; hydrates recipe and initializes `stageRunProgress[progressKey]` with all `step_key` → `not_started`.
+    *   `[ ]` 1.d.iii. `[TEST-UNIT]` Store tests.
+        *   `[ ]` 1.d.iii.a. Hydration initializes step statuses; documents map remains empty until events arrive.
+        *   `[ ]` 1.d.iii.b. Idempotence: repeated calls do not duplicate or reset completed statuses.
+    *   `[ ]` 1.d.iv. `[COMMIT]` feat(store): add recipe hydration and stageRunProgress scaffolding.
+
+*   `[ ]` 1.e. `[STORE]` Add selectors for recipe, steps, documents, and latest rendered reference.
+    *   `[ ]` 1.e.i. `selectStageRecipe(stageSlug)`; `selectStageRunProgress(sessionId, stageSlug, iterationNumber)`.
+    *   `[ ]` 1.e.ii. `selectStepList(stageSlug)` (ordered by `execution_order`, include `parallel_group` and `branch_key`).
+    *   `[ ]` 1.e.iii. `selectStepStatus(progressKey, step_key)`.
+    *   `[ ]` 1.e.iv. `selectDocumentsForStageRun(progressKey)`; `selectDocumentStatus(progressKey, document_key)`.
+    *   `[ ]` 1.e.v. `selectLatestRenderedRef(progressKey, document_key)` (resource id or storage path pointer).
+    *   `[ ]` 1.e.vi. `[TEST-UNIT]` Selector tests using a mock Synthesis-like recipe to verify ordering and parallel grouping.
+    *   `[ ]` 1.e.vii. `[COMMIT]` feat(store): add recipe/step/document selectors.
+
+*   `[ ]` 1.f. `[STORE]` Replace legacy readiness gating with recipe-driven gating.
+    *   `[ ]` 1.f.i. `[TEST-UNIT]` Write failing tests for `selectIsStageReadyForSessionIteration` using `inputs_required` from the earliest executable step(s):
+        *   `[ ]` 1.f.i.a. `seed_prompt` present in `project.resources` (resource_description with `type='seed_prompt'`, matching `sessionId`, `stageSlug`, `iteration`).
+        *   `[ ]` 1.f.i.b. `document` present in `session.dialectic_contributions` for `stage_slug`, `document_key`, `iteration_number`.
+        *   `[ ]` 1.f.i.c. `header_context` present only after its producing planner step is marked `completed` in `stageRunProgress`.
+        *   `[ ]` 1.f.i.d. `feedback` present in `session.feedback` for matching `stage_slug`/`document_key`/`iteration_number`.
+    *   `[ ]` 1.f.ii. `[STORE]` Implement gating logic to evaluate required inputs across those sources; no defaults or fallbacks.
+    *   `[ ]` 1.f.iii. `[TEST-UNIT]` Ensure tests pass; remove references to deprecated `input_artifact_rules`.
+    *   `[ ]` 1.f.iv. `[COMMIT]` refactor(store): readiness selector uses recipe inputs_required.
+
+*   `[ ]` 1.g. `[STORE]` Map backend lifecycle notifications to step/doc progress.
+    *   `[ ]` 1.g.i. `[TEST-UNIT]` Add tests for handlers mapping events to progress updates:
+        *   `[ ]` 1.g.i.a. `planner_started` → set planner step `in_progress`.
+        *   `[ ]` 1.g.i.b. `document_started` → set execute step `in_progress`; `documents[document_key].status='generating'`; set `job_id`.
+        *   `[ ]` 1.g.i.c. `document_chunk_completed` → `documents[document_key].status='continuing'` unless final.
+        *   `[ ]` 1.g.i.d. `render_completed` → attach `latestRenderedResourceId`; mark render step `completed` for that `document_key` when applicable.
+        *   `[ ]` 1.g.i.e. `job_failed` → mark active step and document (if present) `failed`.
+    *   `[ ]` 1.g.ii. `[STORE]` Implement handlers `_handleDialecticLifecycleEvent` and per-event private reducers.
+        *   `[ ]` 1.g.ii.a. Resolve target `step_key` via payload hints (prefer explicit keys), else by `job_type`/`output_type`/`document_key` against `outputs_required` and `branch_key`.
+    *   `[ ]` 1.g.iii. `[TEST-UNIT]` Ensure all tests pass for transition correctness and idempotence.
+    *   `[ ]` 1.g.iv. `[COMMIT]` feat(store): notification → progress mapping.
+
+*   `[ ]` 1.h. `[UI]` **UI Milestone:** Implement Notification Service and State Management.
+    *   `[ ]` 1.h.i. Update the frontend notification service to subscribe to and handle the new backend events.
+    *   `[ ]` 1.h.ii. Update the application's state management (`store`) to accommodate the concept of a stage having a collection of individual documents, each with its own status.
+    *   `[ ]` 1.h.iii Update the UI elements to correctly display the model and its current state of generation, with a checklist of its TODOs. 
+    *   `[ ]` 1.h.iv Ensure all UI elements use the SSOT for the current stage state and do not identify as "complete" until the checklist is complete. 
+*   `[ ]` 1.i. `[COMMIT]` feat(ui/store/api): stage recipe fetch, store progress, and notification-driven updates.
 
 #### `[ ]` 2. Phase: Backend Deconstruction & UI Document View
 *   **Objective:** Decompose monolithic backend jobs into document-centric jobs and provide a UI that lists per-document jobs and shows live rendered Markdown for each document.

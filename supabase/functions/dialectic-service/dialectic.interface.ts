@@ -122,6 +122,35 @@ export type DialecticStageRecipeStep =
     output_type: ModelContributionFileTypes;
   };
 
+// DTOs for Stage Recipe responses (instance-first; template-ready)
+// Normalized view tailored for frontend consumption; avoids leaking DB-only columns.
+export interface StageRecipeStepDto {
+  id: string;
+  step_key: string;
+  step_slug: string;
+  step_name: string;
+  execution_order: number;
+  parallel_group?: number | null;
+  branch_key?: BranchKey | null;
+  job_type: JobType;
+  prompt_type: PromptType;
+  prompt_template_id?: string | null;
+  output_type: OutputType; // Mapped from ModelContributionFileTypes
+  granularity_strategy: GranularityStrategy;
+  inputs_required: InputRule[];
+  inputs_relevance?: RelevanceRule[];
+  outputs_required?: OutputRule[];
+}
+
+export interface StageRecipeResponse {
+  stageSlug: string;
+  instanceId: string;
+  steps: StageRecipeStepDto[];
+}
+
+// Reserved for future template responses (CoW DAG support without refactor)
+export interface TemplateRecipeStepDto extends StageRecipeStepDto {}
+
 export type SeedPromptRecipeStep = {
   prompt_type: 'Seed';
   step_number: 1; 
@@ -305,6 +334,11 @@ export interface GetSessionDetailsPayload { // Export if it might be used extern
 }
 type GetSessionDetailsAction = { action: 'getSessionDetails', payload: GetSessionDetailsPayload };
 
+export interface GetStageRecipePayload {
+  stageSlug: string;
+}
+type GetStageRecipeAction = { action: 'getStageRecipe', payload: GetStageRecipePayload };
+
 // The main union type for all possible JSON requests to the service.
 export type DialecticServiceRequest =
   | ListProjectsAction
@@ -324,7 +358,8 @@ export type DialecticServiceRequest =
   | ListAvailableDomainOverlaysAction
   | FetchProcessTemplateAction
   | UpdateSessionModelsAction
-  | GetSessionDetailsAction; // Add the new action to the union
+  | GetSessionDetailsAction
+  | GetStageRecipeAction; // Add the new action to the union
 
 // --- END: Discriminated Union ---
 

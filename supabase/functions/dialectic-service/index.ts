@@ -28,8 +28,10 @@ import {
   DeleteProjectPayload,
   CloneProjectPayload,
   ExportProjectPayload,
-  StorageError
+  StorageError,
+  StageRecipeResponse,
 } from "./dialectic.interface.ts";
+import { getStageRecipe } from "./getStageRecipe.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import {
   handleCorsPreflightRequest,
@@ -174,6 +176,7 @@ export interface ActionHandlers {
   listDomains: (dbClient: SupabaseClient) => Promise<{ data?: DialecticDomain[]; error?: ServiceError }>;
   fetchProcessTemplate: (dbClient: SupabaseClient, payload: FetchProcessTemplatePayload) => Promise<{ data?: DialecticProcessTemplate; error?: ServiceError; status?: number }>;
   updateSessionModels: (dbClient: SupabaseClient, payload: UpdateSessionModelsPayload, userId: string) => Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }>;
+  getStageRecipe: (payload: { stageSlug: string }, dbClient: SupabaseClient) => Promise<{ data?: StageRecipeResponse; error?: ServiceError; status?: number }>;
 }
 
 export async function handleRequest(
@@ -288,6 +291,17 @@ export async function handleRequest(
         case "fetchProcessTemplate": {
           const payload: FetchProcessTemplatePayload = requestBody.payload;
           const { data, error, status } = await handlers.fetchProcessTemplate(userClient, payload);
+          if (error) {
+            return createErrorResponse(error.message, status || 500, req, error);
+          }
+          return createSuccessResponse(data, status || 200, req);
+        }
+        case "getStageRecipe": {
+          const payload: { stageSlug: string } = requestBody.payload;
+          if (!payload || typeof payload.stageSlug !== 'string' || payload.stageSlug.length === 0) {
+            return createErrorResponse("stageSlug is required", 400, req, { message: "stageSlug is required", status: 400 });
+          }
+          const { data, error, status } = await handlers.getStageRecipe({ stageSlug: payload.stageSlug }, userClient);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
@@ -536,6 +550,7 @@ export const defaultHandlers: ActionHandlers = {
   listDomains,
   fetchProcessTemplate,
   updateSessionModels: handleUpdateSessionModels,
+  getStageRecipe,
 };
 
 export function createDialecticServiceHandler(

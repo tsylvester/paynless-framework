@@ -45,7 +45,7 @@ function buildUploadContextForAsset(
     };
 
     if (originalAsset.sourceTable === 'dialectic_contributions') {
-        if (pathContext.fileType !== FileType.ModelContributionMain && pathContext.fileType !== FileType.ModelContributionRawJson && pathContext.fileType !== FileType.PairwiseSynthesisChunk) {
+        if (pathContext.fileType !== FileType.ModelContributionRawJson && pathContext.fileType !== FileType.PairwiseSynthesisChunk) {
              throw new Error(`Asset from contributions table has unexpected fileType: ${pathContext.fileType}`);
         }
         const context: ModelContributionUploadContext = {

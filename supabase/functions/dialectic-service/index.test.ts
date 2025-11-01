@@ -29,7 +29,7 @@ import type {
 } from "./dialectic.interface.ts";
 import { createMockSupabaseClient, type MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
 import { CloneProjectResult } from "./cloneProject.ts";
-import { Json } from "../types_db.ts";
+import { Database, Json } from "../types_db.ts";
 
 // #region MOCK DATA
 // To satisfy the strict types from dialectic.interface.ts
@@ -76,7 +76,7 @@ const mockSession: DialecticSession = {
 // #endregion
 
 // Helper to create a mostly empty but type-compliant ActionHandlers mock
-const createMockHandlers = (overrides?: Partial<ActionHandlers>): ActionHandlers => {
+const createMockHandlers = (overrides?: Partial<ActionHandlers> & { getStageRecipe?: (...args: any[]) => Promise<{ data?: unknown; error?: { message: string }; status?: number }> }): ActionHandlers => {
     return {
         createProject: overrides?.createProject || (() => Promise.resolve({ data: mockProject as any, status: 201 })),
         listAvailableDomains: overrides?.listAvailableDomains || (() => Promise.resolve([])),
@@ -96,6 +96,8 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers>): ActionHandlers
         listDomains: overrides?.listDomains || (() => Promise.resolve({ data: [] })),
         fetchProcessTemplate: overrides?.fetchProcessTemplate || (() => Promise.resolve({ data: {} as any, status: 200 })),
         updateSessionModels: overrides?.updateSessionModels || (() => Promise.resolve({ data: mockSession as any, status: 200 })),
+        // Pass-through for router tests; concrete type will be added in source when wiring route
+        ...(overrides?.getStageRecipe ? { getStageRecipe: overrides.getStageRecipe } : {}),
         ...overrides,
     } as ActionHandlers;
 };
@@ -1371,3 +1373,51 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
         assertEquals(specificErrorSpy.calls.length, 1); 
     });
 }); 
+
+withSupabaseEnv("handleRequest - getStageRecipe routing", async (t) => {
+  await t.step("dispatches to handler and returns normalized payload", async () => {
+    const stageSlug = "synthesis";
+    const expected = { stageSlug, instanceId: "instance-123", steps: [] };
+    const getStageRecipeSpy = spy(() => Promise.resolve({ data: expected, status: 200 }));
+
+    const mockHandlers = createMockHandlers({ getStageRecipe: getStageRecipeSpy });
+
+    const { client: mockUserClient } = createMockSupabaseClient();
+    const { client: mockAdminClient } = createMockSupabaseClient();
+
+    const req = createJsonRequest("getStageRecipe", { stageSlug });
+    const response = await handleRequest(
+      req,
+      mockHandlers,
+      mockUserClient as unknown as SupabaseClient<Database>,
+      mockAdminClient as unknown as SupabaseClient<Database>
+    );
+
+    assertEquals(response.status, 200);
+    const body = await response.json();
+    assertEquals(body.stageSlug, stageSlug);
+    assertEquals(getStageRecipeSpy.calls.length, 1);
+  });
+
+  await t.step("propagates error status and message from handler", async () => {
+    const getStageRecipeSpy = spy(() => Promise.resolve({ error: { message: "Stage not found" }, status: 404 }));
+
+    const mockHandlers = createMockHandlers({ getStageRecipe: getStageRecipeSpy });
+
+    const { client: mockUserClient } = createMockSupabaseClient();
+    const { client: mockAdminClient } = createMockSupabaseClient();
+
+    const req = createJsonRequest("getStageRecipe", { stageSlug: "missing-stage" });
+    const response = await handleRequest(
+      req,
+      mockHandlers,
+      mockUserClient as unknown as SupabaseClient<Database>,
+      mockAdminClient as unknown as SupabaseClient<Database>
+    );
+
+    assertEquals(response.status, 404);
+    const body = await response.json();
+    assertEquals(body.error, "Stage not found");
+    assertEquals(getStageRecipeSpy.calls.length, 1);
+  });
+});

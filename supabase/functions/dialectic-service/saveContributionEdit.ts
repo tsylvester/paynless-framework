@@ -202,7 +202,7 @@ export async function saveContributionEdit(
             sessionId: typedOriginalContribution.session_id,
             iteration: deconstructed.iteration,
             stageSlug: deconstructed.stageSlug,
-            fileType: FileType.ModelContributionMain,
+            fileType: FileType.business_case, // TODO: Use the actual file type from the stage recipe, this is a placeholder
             modelSlug: deconstructed.modelSlug,
             attemptCount: deconstructed.attemptCount,
             contributionType: pathContributionType,

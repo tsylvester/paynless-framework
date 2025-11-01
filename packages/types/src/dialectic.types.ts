@@ -180,6 +180,58 @@ export type PromptTemplate = Omit<SystemPromptsRow, 'variables_required'> & {
   variables_required?: Record<string, PromptTemplateVariable['type']> | PromptTemplateVariable[];
 };
 
+// Stage Recipe Contracts (Frontend)
+export type RecipeJobType = 'PLAN' | 'EXECUTE' | 'RENDER';
+export type RecipePromptType = 'Planner' | 'Turn';
+export type RecipeOutputType = 'HeaderContext' | 'AssembledDocumentJson' | 'RenderedDocument';
+export type RecipeGranularity = 'all_to_one' | 'one_to_one' | 'one_to_many' | 'many_to_one';
+
+export interface InputRequirement {
+  type: 'seed_prompt' | 'document' | 'header_context' | 'feedback';
+  slug: string;
+  document_key: string;
+  required: boolean;
+  multiple?: boolean;
+}
+
+export interface InputsRelevanceItem {
+  document_key: string;
+  slug: string;
+  relevance: number;
+  type?: 'feedback';
+}
+
+export interface OutputRequirement {
+  document_key: string;
+  artifact_class: 'header_context' | 'assembled_json' | 'rendered_document';
+  file_type: 'json' | 'markdown';
+  template_filename?: string;
+}
+
+export interface DialecticStageRecipeStep {
+  id: string;
+  step_key: string;
+  step_slug: string;
+  step_name: string;
+  execution_order: number;
+  parallel_group?: number | null;
+  branch_key?: string | null;
+  job_type: RecipeJobType;
+  prompt_type: RecipePromptType;
+  prompt_template_id?: string | null;
+  output_type: RecipeOutputType;
+  granularity_strategy: RecipeGranularity;
+  inputs_required: InputRequirement[];
+  inputs_relevance?: InputsRelevanceItem[];
+  outputs_required?: OutputRequirement[];
+}
+
+export interface DialecticStageRecipe {
+  stageSlug: string;
+  instanceId: string;
+  steps: DialecticStageRecipeStep[];
+}
+
 export interface DomainDescriptor {
   id: string; // Corresponds to domain_specific_prompt_overlays.id
   domain_name: string;
