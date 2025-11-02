@@ -30,6 +30,11 @@ import {
   type ContributionGenerationContinuedPayload,
   type DialecticProgressUpdatePayload,
   type ProgressData,
+  type PlannerStartedPayload,
+  type DocumentStartedPayload,
+  type DocumentChunkCompletedPayload,
+  type RenderCompletedPayload,
+  type JobFailedPayload,
   isContributionStatus,
   ExportProjectResponse,
 } from '@paynless/types';
@@ -1219,12 +1224,197 @@ export const useDialecticStore = create<DialecticStore>()(
         case 'dialectic_progress_update':
             handlers._handleProgressUpdate(payload);
             break;
+        case 'planner_started':
+            handlers._handlePlannerStarted(payload);
+            break;
+        case 'document_started':
+            handlers._handleDocumentStarted(payload);
+            break;
+        case 'document_chunk_completed':
+            handlers._handleDocumentChunkCompleted(payload);
+            break;
+        case 'render_completed':
+            handlers._handleRenderCompleted(payload);
+            break;
+        case 'job_failed':
+            handlers._handleJobFailed(payload);
+            break;
         default:
             logger.warn('[DialecticStore] Received unhandled dialectic lifecycle event', { payload });
     }
   },
 
   // --- Private Handlers for Lifecycle Events ---
+  _handlePlannerStarted: (event: PlannerStartedPayload) => {
+    const recipe = get().recipesByStageSlug[event.stageSlug];
+    if (!recipe) {
+      logger.warn('[DialecticStore] planner_started ignored; recipe missing', { stageSlug: event.stageSlug });
+      return;
+    }
+    const progressKey = `${event.sessionId}:${event.stageSlug}:${event.iterationNumber}`;
+    const progressSnapshot = get().stageRunProgress[progressKey];
+    if (!progressSnapshot) {
+      logger.warn('[DialecticStore] planner_started ignored; progress bucket missing', { progressKey });
+      return;
+    }
+    const stepKey = event.step_key ?? recipe.steps.find(step => step.job_type === 'PLAN')?.step_key;
+    if (!stepKey) {
+      logger.warn('[DialecticStore] planner_started ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
+      return;
+    }
+    set(state => {
+      const progress = state.stageRunProgress[progressKey];
+      if (!progress) {
+        return;
+      }
+      progress.stepStatuses[stepKey] = 'in_progress';
+    });
+  },
+
+  _handleDocumentStarted: (event: DocumentStartedPayload) => {
+    const recipe = get().recipesByStageSlug[event.stageSlug];
+    if (!recipe) {
+      logger.warn('[DialecticStore] document_started ignored; recipe missing', { stageSlug: event.stageSlug });
+      return;
+    }
+    const progressKey = `${event.sessionId}:${event.stageSlug}:${event.iterationNumber}`;
+    const progressSnapshot = get().stageRunProgress[progressKey];
+    if (!progressSnapshot) {
+      logger.warn('[DialecticStore] document_started ignored; progress bucket missing', { progressKey });
+      return;
+    }
+    const stepKey = event.step_key ?? recipe.steps.find(step => step.job_type === 'EXECUTE')?.step_key;
+    if (!stepKey) {
+      logger.warn('[DialecticStore] document_started ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
+      return;
+    }
+    set(state => {
+      const progress = state.stageRunProgress[progressKey];
+      if (!progress) {
+        return;
+      }
+      progress.stepStatuses[stepKey] = 'in_progress';
+      const documentKey = event.document_key;
+      const existingDocument = progress.documents[documentKey];
+      if (existingDocument) {
+        existingDocument.status = 'generating';
+        existingDocument.job_id = event.job_id;
+      } else {
+        progress.documents[documentKey] = {
+          status: 'generating',
+          job_id: event.job_id,
+        };
+      }
+    });
+  },
+
+  _handleDocumentChunkCompleted: (event: DocumentChunkCompletedPayload) => {
+    const recipe = get().recipesByStageSlug[event.stageSlug];
+    if (!recipe) {
+      logger.warn('[DialecticStore] document_chunk_completed ignored; recipe missing', { stageSlug: event.stageSlug });
+      return;
+    }
+    const progressKey = `${event.sessionId}:${event.stageSlug}:${event.iterationNumber}`;
+    const progressSnapshot = get().stageRunProgress[progressKey];
+    if (!progressSnapshot) {
+      logger.warn('[DialecticStore] document_chunk_completed ignored; progress bucket missing', { progressKey });
+      return;
+    }
+    set(state => {
+      const progress = state.stageRunProgress[progressKey];
+      if (!progress) {
+        return;
+      }
+      const documentEntry = progress.documents[event.document_key];
+      if (!documentEntry) {
+        logger.warn('[DialecticStore] document_chunk_completed ignored; document not tracked', { progressKey, documentKey: event.document_key });
+        return;
+      }
+      documentEntry.job_id = event.job_id;
+      if (event.isFinalChunk === true) {
+        documentEntry.status = 'completed';
+      } else {
+        documentEntry.status = 'continuing';
+      }
+    });
+  },
+
+  _handleRenderCompleted: (event: RenderCompletedPayload) => {
+    const recipe = get().recipesByStageSlug[event.stageSlug];
+    if (!recipe) {
+      logger.warn('[DialecticStore] render_completed ignored; recipe missing', { stageSlug: event.stageSlug });
+      return;
+    }
+    const progressKey = `${event.sessionId}:${event.stageSlug}:${event.iterationNumber}`;
+    const progressSnapshot = get().stageRunProgress[progressKey];
+    if (!progressSnapshot) {
+      logger.warn('[DialecticStore] render_completed ignored; progress bucket missing', { progressKey });
+      return;
+    }
+    const stepKey = event.step_key ?? recipe.steps.find(step => step.job_type === 'RENDER')?.step_key;
+    if (!stepKey) {
+      logger.warn('[DialecticStore] render_completed ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
+      return;
+    }
+    set(state => {
+      const progress = state.stageRunProgress[progressKey];
+      if (!progress) {
+        return;
+      }
+      progress.stepStatuses[stepKey] = 'completed';
+      const documentKey = event.document_key;
+      const existingDocument = progress.documents[documentKey];
+      if (existingDocument) {
+        existingDocument.status = 'completed';
+        existingDocument.job_id = event.job_id;
+        existingDocument.latestRenderedResourceId = event.latestRenderedResourceId;
+      } else {
+        progress.documents[documentKey] = {
+          status: 'completed',
+          job_id: event.job_id,
+          latestRenderedResourceId: event.latestRenderedResourceId,
+        };
+      }
+    });
+  },
+
+  _handleJobFailed: (event: JobFailedPayload) => {
+    const recipe = get().recipesByStageSlug[event.stageSlug];
+    if (!recipe) {
+      logger.warn('[DialecticStore] job_failed ignored; recipe missing', { stageSlug: event.stageSlug });
+      return;
+    }
+    const progressKey = `${event.sessionId}:${event.stageSlug}:${event.iterationNumber}`;
+    const progressSnapshot = get().stageRunProgress[progressKey];
+    if (!progressSnapshot) {
+      logger.warn('[DialecticStore] job_failed ignored; progress bucket missing', { progressKey });
+      return;
+    }
+    const stepKey = event.step_key ?? recipe.steps.find(step => step.job_type === 'EXECUTE' || step.job_type === 'PLAN')?.step_key;
+    if (!stepKey) {
+      logger.warn('[DialecticStore] job_failed ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
+      return;
+    }
+    set(state => {
+      const progress = state.stageRunProgress[progressKey];
+      if (!progress) {
+        return;
+      }
+      progress.stepStatuses[stepKey] = 'failed';
+      const documentKey = event.document_key;
+      const existingDocument = progress.documents[documentKey];
+      if (existingDocument) {
+        existingDocument.status = 'failed';
+        existingDocument.job_id = event.job_id;
+      } else {
+        progress.documents[documentKey] = {
+          status: 'failed',
+          job_id: event.job_id,
+        };
+      }
+    });
+  },
+
   _handleContributionGenerationStarted: (event: ContributionGenerationStartedPayload) => {
     set({
       contributionGenerationStatus: 'generating',

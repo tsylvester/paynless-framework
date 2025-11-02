@@ -104,6 +104,28 @@
 *   Use proper legal-style nesting for sub-steps within each file edit.
 *   NEVER create multiple top-level steps for the same file edit operation.
 
+## Example Checklist
+
+*   `[ ]`   1. **Title** Objective
+    *   `[ ]`   1.a. [DEPS] A list explaining dependencies of the function, its signature, and its return shape
+        *   `[ ]` 1.a.i. eg. `function(something)` in `file.ts` provides this or that
+    *   `[ ]`   1.b. [TYPES] A list strictly typing all the objects used in the function
+    *   `[ ]`   1.c. [TEST-UNIT] A list explaining the test cases
+        *   `[ ]` 1.c.i. Assert `function(something)` in `file.ts` acts a certain way 
+    *   `[ ]`   1.d. [SPACE] A list explaining the implementation requirements
+        *   `[ ]` 1.d.i. Implement `function(something)` in `file.ts` acts a certain way 
+    *   `[ ]`   1.d. [TEST-UNIT] Rerun and expand test proving the function
+        *   `[ ]` 1.d.i. Implement `function(something)` in `file.ts` acts a certain way 
+    *   `[ ]`   1.d. [TEST-INT] If there is a chain of functions that work together, prove it
+        *   `[ ]` 1.d.i. For every cross-function interaction, assert `thisFunction(something)` in `this_file.ts` acts a certain way towards `thatFunction(other)` in `that_file.ts`
+    *   `[ ]`   1.d. [CRITERIA] A list explaining the acceptence criteria to consider the work complete and correct. 
+    *   `[ ]`   1.e. [COMMIT] A commit that explains the function and its proofs
+
+*   `[ ]`   2. **Title** Objective
+    *   `[ ]`   2.a. [DEPS] Low level providers are always build before high level consumers (DI/DIP)
+    *   `[ ]`   2.b. [TYPES] DI/DIP and strict typing ensures unit tests can always run 
+    *   `[ ]`   2.c. [TEST-UNIT] All functions matching defined external objects and acting as asserted helps ensure integration tests pass
+
 # Legend - You must use this EXACT format. Do not modify it, adapt it, or "improve" it. The bullets, square braces, ticks, nesting, and numbering are ABSOLUTELY MANDATORY and UNALTERABLE. 
 
 *   `[ ]` 1. Unstarted work step. Each work step will be uniquely named for easy reference. We begin with 1.
@@ -806,47 +828,97 @@ graph LR
     *   `[ ]` 1.c.viii. `[COMMIT]` feat(api): add fetchStageRecipe and normalize stage recipe steps.
 
 *   `[ ]` 1.d. `[STORE]` Hydrate recipes and initialize per-stage-run progress.
-    *   `[ ]` 1.d.i. Add state:
-        *   `[ ]` 1.d.i.a. `recipesByStageSlug: Record<string, DialecticStageRecipe>`.
-        *   `[ ]` 1.d.i.b. `stageRunProgress: Record<string, { stepStatuses: Record<string, 'not_started'|'in_progress'|'waiting_for_children'|'completed'|'failed'>; documents: Record<string, { status: 'idle'|'generating'|'retrying'|'failed'|'completed'|'continuing'; job_id?: string; latestRenderedResourceId?: string|null }>; }>` where key = `${sessionId}:${stageSlug}:${iterationNumber}`.
-    *   `[ ]` 1.d.ii. Add actions:
-        *   `[ ]` 1.d.ii.a. `fetchStageRecipe(stageSlug)` → calls API and stores recipe under `recipesByStageSlug`.
-        *   `[ ]` 1.d.ii.b. `ensureRecipeForActiveStage(sessionId, stageSlug)` → idempotent; hydrates recipe and initializes `stageRunProgress[progressKey]` with all `step_key` → `not_started`.
-    *   `[ ]` 1.d.iii. `[TEST-UNIT]` Store tests.
-        *   `[ ]` 1.d.iii.a. Hydration initializes step statuses; documents map remains empty until events arrive.
-        *   `[ ]` 1.d.iii.b. Idempotence: repeated calls do not duplicate or reset completed statuses.
+    *   `[ ]` 1.d.i. `[TEST-UNIT]` Store tests.
+        *   `[ ]` 1.d.i.a. Hydration initializes step statuses; documents map remains empty until events arrive.
+        *   `[ ]` 1.d.i.b. Idempotence: repeated calls do not duplicate or reset completed statuses.
+    *   `[ ]` 1.d.ii. Add state:
+        *   `[ ]` 1.d.ii.a. `recipesByStageSlug: Record<string, DialecticStageRecipe>`.
+        *   `[ ]` 1.d.ii.b. `stageRunProgress: Record<string, { stepStatuses: Record<string, 'not_started'|'in_progress'|'waiting_for_children'|'completed'|'failed'>; documents: Record<string, { status: 'idle'|'generating'|'retrying'|'failed'|'completed'|'continuing'; job_id?: string; latestRenderedResourceId?: string|null }>; }>` where key = `${sessionId}:${stageSlug}:${iterationNumber}`.
+    *   `[ ]` 1.d.iii. Add actions:
+        *   `[ ]` 1.d.iii.a. `fetchStageRecipe(stageSlug)` → calls API and stores recipe under `recipesByStageSlug`.
+        *   `[ ]` 1.d.iii.b. `ensureRecipeForActiveStage(sessionId, stageSlug)` → idempotent; hydrates recipe and initializes `stageRunProgress[progressKey]` with all `step_key` → `not_started`.
     *   `[ ]` 1.d.iv. `[COMMIT]` feat(store): add recipe hydration and stageRunProgress scaffolding.
 
-*   `[ ]` 1.e. `[STORE]` Add selectors for recipe, steps, documents, and latest rendered reference.
-    *   `[ ]` 1.e.i. `selectStageRecipe(stageSlug)`; `selectStageRunProgress(sessionId, stageSlug, iterationNumber)`.
-    *   `[ ]` 1.e.ii. `selectStepList(stageSlug)` (ordered by `execution_order`, include `parallel_group` and `branch_key`).
-    *   `[ ]` 1.e.iii. `selectStepStatus(progressKey, step_key)`.
-    *   `[ ]` 1.e.iv. `selectDocumentsForStageRun(progressKey)`; `selectDocumentStatus(progressKey, document_key)`.
-    *   `[ ]` 1.e.v. `selectLatestRenderedRef(progressKey, document_key)` (resource id or storage path pointer).
-    *   `[ ]` 1.e.vi. `[TEST-UNIT]` Selector tests using a mock Synthesis-like recipe to verify ordering and parallel grouping.
-    *   `[ ]` 1.e.vii. `[COMMIT]` feat(store): add recipe/step/document selectors.
+*   `[✅]` 1.d.v. `[TYPES]` Extend `@paynless/types` for recipe hydration and progress.
+    *   `[✅]` 1.d.v.a. In `packages/types/src/dialectic.types.ts`, extend `DialecticStateValues` with:
+        *   `recipesByStageSlug: Record<string, DialecticStageRecipe>`
+        *   `stageRunProgress: Record<string, { stepStatuses: Record<string, 'not_started'|'in_progress'|'waiting_for_children'|'completed'|'failed'>; documents: Record<string, { status: 'idle'|'generating'|'retrying'|'failed'|'completed'|'continuing'; job_id?: string; latestRenderedResourceId?: string|null }>; }>`
+    *   `[✅]` 1.d.v.b. In `DialecticActions`, add:
+        *   `fetchStageRecipe(stageSlug: string): Promise<void>`
+        *   `ensureRecipeForActiveStage(sessionId: string, stageSlug: string, iterationNumber: number): Promise<void>`
+    *   `[✅]` 1.d.v.c. Use strict explicit typing; no casting; no defaults.
 
-*   `[ ]` 1.f. `[STORE]` Replace legacy readiness gating with recipe-driven gating.
-    *   `[ ]` 1.f.i. `[TEST-UNIT]` Write failing tests for `selectIsStageReadyForSessionIteration` using `inputs_required` from the earliest executable step(s):
-        *   `[ ]` 1.f.i.a. `seed_prompt` present in `project.resources` (resource_description with `type='seed_prompt'`, matching `sessionId`, `stageSlug`, `iteration`).
-        *   `[ ]` 1.f.i.b. `document` present in `session.dialectic_contributions` for `stage_slug`, `document_key`, `iteration_number`.
-        *   `[ ]` 1.f.i.c. `header_context` present only after its producing planner step is marked `completed` in `stageRunProgress`.
-        *   `[ ]` 1.f.i.d. `feedback` present in `session.feedback` for matching `stage_slug`/`document_key`/`iteration_number`.
-    *   `[ ]` 1.f.ii. `[STORE]` Implement gating logic to evaluate required inputs across those sources; no defaults or fallbacks.
-    *   `[ ]` 1.f.iii. `[TEST-UNIT]` Ensure tests pass; remove references to deprecated `input_artifact_rules`.
-    *   `[ ]` 1.f.iv. `[COMMIT]` refactor(store): readiness selector uses recipe inputs_required.
+*   `[✅]` 1.d.vi. `[API][MOCK]` Add recipe fetch to API mocks.
+    *   `[✅]` 1.d.vi.a. In `packages/api/src/mocks/dialectic.api.mock.ts`, add `fetchStageRecipe: vi.fn<[stageSlug: string], Promise<ApiResponse<DialecticStageRecipe>>>()` to `MockDialecticApiClient` and `createMockDialecticClient()`.
+    *   `[✅]` 1.d.vi.b. Ensure tests can stub `api.dialectic().fetchStageRecipe` via `@paynless/api/mocks`.
+
+*   `[✅]` 1.d.vii. `[STORE]` Initialize new state maps.
+    *   `[✅]` 1.d.vii.a. In `packages/store/src/dialecticStore.ts`, add `recipesByStageSlug: {}` and `stageRunProgress: {}` to `initialDialecticStateValues`.
+    *   `[✅]` 1.d.vii.b. Do not introduce implicit defaults or fallbacks.
+
+*   `[✅]` 1.d.viii. `[STORE]` Implement `fetchStageRecipe(stageSlug)`.
+    *   `[✅]` 1.d.viii.a. Call `api.dialectic().fetchStageRecipe(stageSlug)`.
+    *   `[✅]` 1.d.viii.b. On success, store the full `DialecticStageRecipe` under `recipesByStageSlug[stageSlug]` without re-sorting (the API client normalizes ordering).
+    *   `[✅]` 1.d.viii.c. On error, leave `recipesByStageSlug` unchanged; return normally and log via the existing logger.
+
+*   `[✅]` 1.d.ix. `[STORE]` Implement `ensureRecipeForActiveStage(sessionId, stageSlug, iterationNumber)`.
+    *   `[✅]` 1.d.ix.a. Compute `progressKey = \`${sessionId}:${stageSlug}:${iterationNumber}\`.`
+    *   `[✅]` 1.d.ix.b. Require `recipesByStageSlug[stageSlug]` to exist (caller hydrates first). If absent, exit idempotently.
+    *   `[✅]` 1.d.ix.c. If `stageRunProgress[progressKey]` is missing, create it with `documents: {}` and `stepStatuses` set to `'not_started'` for every `step_key` in the recipe.
+    *   `[✅]` 1.d.ix.d. If it exists, add any missing `step_key` entries with `'not_started'` and do not reset existing values (preserve `'completed'`, etc.).
+    *   `[✅]` 1.d.ix.e. Never delete keys or add behavior beyond the specified initialization; no casting.
+
+*   `[✅]` 1.d.x. `[TEST-UNIT]` Make `packages/store/src/dialecticStore.recipes.test.ts` pass without casting.
+    *   `[✅]` 1.d.x.a. Ensure the test can stub `api.dialectic().fetchStageRecipe` (enabled by 1.d.vi).
+    *   `[✅]` 1.d.x.b. Assert:
+        *   After hydration, `recipesByStageSlug[stageSlug]` exists and `steps.length` matches the mock.
+        *   After initialization, `stageRunProgress[progressKey].documents` is `{}` and all recipe `step_key`s are `'not_started'`.
+        *   Re-running initialization preserves any pre-marked `'completed'` statuses.
+
+*   `[✅]` 1.d.xii. `[COMMIT]` feat(store/types/api-mock): recipe hydration + stageRunProgress scaffolding.
+    *   `[✅]` 1.d.xii.a. Commit message: `feat(store): add recipe hydration and stageRunProgress scaffolding` (+ `feat(types)` / `chore(mocks)` if split commits are preferred).
+
+*   `[✅]` 1.e. `[STORE]` Add selectors for recipe, steps, documents, and latest rendered reference.
+    *   `[✅]` 1.e.i. `[TEST-UNIT]` Selector tests using a mock Synthesis-like recipe to verify ordering and parallel grouping.
+    *   `[✅]` 1.e.ii. `selectStageRecipe(stageSlug)`; `selectStageRunProgress(sessionId, stageSlug, iterationNumber)`.
+    *   `[✅]` 1.e.iii. `selectStepList(stageSlug)` (ordered by `execution_order`, include `parallel_group` and `branch_key`).
+    *   `[✅]` 1.e.iv. `selectStepStatus(progressKey, step_key)`.
+    *   `[✅]` 1.e.v. `selectDocumentsForStageRun(progressKey)`; `selectDocumentStatus(progressKey, document_key)`.
+    *   `[✅]` 1.e.vi. `selectLatestRenderedRef(progressKey, document_key)` (resource id or storage path pointer).
+    *   `[✅]` 1.e.vii. `[COMMIT]` feat(store): add recipe/step/document selectors.
+
+*   `[✅]` 1.f. `[STORE]` Replace legacy readiness gating with recipe-driven gating.
+    *   `[✅]` 1.f.i. `[TEST-UNIT]` Write failing tests for `selectIsStageReadyForSessionIteration` using `inputs_required` from the earliest executable step(s):
+        *   `[✅]` 1.f.i.a. `seed_prompt` present in `project.resources` (resource_description with `type='seed_prompt'`, matching `sessionId`, `stageSlug`, `iteration`).
+        *   `[✅]` 1.f.i.b. `document` present in `session.dialectic_contributions` for `stage_slug`, `document_key`, `iteration_number`.
+        *   `[✅]` 1.f.i.c. `header_context` present only after its producing planner step is marked `completed` in `stageRunProgress`.
+        *   `[✅]` 1.f.i.d. `feedback` present in `session.feedback` for matching `stage_slug`/`document_key`/`iteration_number`.
+    *   `[✅]` 1.f.ii. `[STORE]` Implement gating logic to evaluate required inputs across those sources; no defaults or fallbacks.
+    *   `[✅]` 1.f.iii. `[TEST-UNIT]` Ensure tests pass; remove references to deprecated `input_artifact_rules`.
+    *   `[✅]` 1.f.iv. `[COMMIT]` refactor(store): readiness selector uses recipe inputs_required.
 
 *   `[ ]` 1.g. `[STORE]` Map backend lifecycle notifications to step/doc progress.
-    *   `[ ]` 1.g.i. `[TEST-UNIT]` Add tests for handlers mapping events to progress updates:
-        *   `[ ]` 1.g.i.a. `planner_started` → set planner step `in_progress`.
-        *   `[ ]` 1.g.i.b. `document_started` → set execute step `in_progress`; `documents[document_key].status='generating'`; set `job_id`.
-        *   `[ ]` 1.g.i.c. `document_chunk_completed` → `documents[document_key].status='continuing'` unless final.
-        *   `[ ]` 1.g.i.d. `render_completed` → attach `latestRenderedResourceId`; mark render step `completed` for that `document_key` when applicable.
-        *   `[ ]` 1.g.i.e. `job_failed` → mark active step and document (if present) `failed`.
-    *   `[ ]` 1.g.ii. `[STORE]` Implement handlers `_handleDialecticLifecycleEvent` and per-event private reducers.
-        *   `[ ]` 1.g.ii.a. Resolve target `step_key` via payload hints (prefer explicit keys), else by `job_type`/`output_type`/`document_key` against `outputs_required` and `branch_key`.
-    *   `[ ]` 1.g.iii. `[TEST-UNIT]` Ensure all tests pass for transition correctness and idempotence.
-    *   `[ ]` 1.g.iv. `[COMMIT]` feat(store): notification → progress mapping.
+    *   `[✅]` 1.g.i. `[TYPES]` Extend lifecycle payload contracts in `packages/types/src/dialectic.types.ts` for planner/document/render notifications.
+        *   `[✅]` 1.g.i.a. Add interfaces for `planner_started`, `document_started`, `document_chunk_completed`, `render_completed`, and `job_failed` payloads, preserving strict typing for `sessionId`, `stageSlug`, `iterationNumber`, `step_key`, `document_key`, `job_id`, `modelId`, `latestRenderedResourceId`, and continuation metadata.
+        *   `[✅]` 1.g.i.b. Update `DialecticNotificationTypes` and `DialecticLifecycleEvent` unions to include the new interfaces without introducing defaults or casts.
+        *   `[✅]` 1.g.i.c. Confirm any downstream type helpers/builders compile with the expanded union (no `any` usage).
+    *   `[✅]` 1.g.ii. `[TEST-UNIT]` Add type regression coverage (e.g., tsd/expectTypeOf) in `packages/types/src/dialectic.types.test.ts` validating the new payload shapes and rejecting malformed objects.
+    *   `[✅]` 1.g.iii. `[TEST-UNIT]` Extend `packages/utils/src/type_guards.test.ts` to prove `isDialecticLifecycleEventType` currently rejects/afterwards accepts the new event strings.
+    *   `[✅]` 1.g.iv. `[UTILS]` Update `packages/utils/src/type_guards.ts` to recognize the new lifecycle event variants and guard their payload requirements.
+    *   `[✅]` 1.g.v. `[TEST-UNIT]` Expand `packages/store/src/notificationStore.test.ts` with fixtures for each new notification, asserting `handleIncomingNotification` constructs the correct typed payload and routes it to `_handleDialecticLifecycleEvent`.
+    *   `[✅]` 1.g.vi. `[STORE]` Modify `packages/store/src/notificationStore.ts` to map Supabase notification `data` into the new lifecycle payloads, validating required fields before delegating to the dialectic store.
+    *   `[✅]` 1.g.vii. `[TEST-UNIT]` Augment `packages/store/src/dialecticStore.notifications.test.ts` (or create dedicated spec) to cover `planner_started`, `document_started`, `document_chunk_completed`, `render_completed`, and `job_failed`, asserting:
+        *   `[✅]` 1.g.vii.a. Planner events drive `stageRunProgress[progressKey].stepStatuses[planner_key]` to `'in_progress'`.
+        *   `[✅]` 1.g.vii.b. Document start updates execute-step status, initializes/updates `documents[document_key]` with `status='generating'` and the emitted `job_id`.
+        *   `[✅]` 1.g.vii.c. Chunk completion toggles `documents[document_key].status` to `'continuing'` unless flagged final, leaving `job_id` intact.
+        *   `[✅]` 1.g.vii.d. Render completion records `latestRenderedResourceId`, marks the render step `'completed'`, and sets document status `'completed'`.
+        *   `[✅]` 1.g.vii.e. Job failure marks the active step `'failed'`, updates the associated document status to `'failed'`, and preserves earlier successes.
+        *   `[✅]` 1.g.vii.f. Edge-case coverage asserts the handlers no-op (with logged warnings) when recipes or progress buckets are absent, preserving state integrity.
+    *   `[✅]` 1.g.viii. `[STORE]` Implement event-specific reducers in `packages/store/src/dialecticStore.ts` that mutate `stageRunProgress` and `documents` per the tests while maintaining dependency-injection patterns and strict typing (no defaults, no casts).
+        *   `[✅]` 1.g.viii.a. Ensure each handler derives `progressKey` (`sessionId:stageSlug:iterationNumber`), validates recipe availability, and updates only the targeted step/document while leaving unrelated state untouched.
+        *   `[✅]` 1.g.viii.b. Wire the reducers into `_handleDialecticLifecycleEvent`, adding structured logging for missing context or unexpected payload combinations.
+    *   `[✅]` 1.g.ix. `[TEST-UNIT]` Add or extend readiness integration coverage in `packages/store/src/dialecticStore.selectors.recipes.test.ts` (or equivalent) to demonstrate the full notification sequence transitions `selectIsStageReadyForSessionIteration` from `false` to `true`, and that `job_failed` reverts readiness to `false`.
+    *   `[✅]` 1.g.x. `[COMMIT]` `feat(store): notification → progress mapping` once all updated/new tests pass.
 
 *   `[ ]` 1.h. `[UI]` **UI Milestone:** Implement Notification Service and State Management.
     *   `[ ]` 1.h.i. Update the frontend notification service to subscribe to and handle the new backend events.

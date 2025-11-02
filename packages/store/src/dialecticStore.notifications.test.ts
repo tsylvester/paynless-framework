@@ -7,9 +7,12 @@ import type {
   AIModelCatalogEntry,
   DialecticLifecycleEvent,
   GenerateContributionsResponse,
+  DialecticStageRecipe,
+  DialecticStageRecipeStep,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { resetApiMock, getMockDialecticClient } from '@paynless/api/mocks';
+import { logger } from '@paynless/utils';
 
 // Mock the entire API module
 vi.mock('@paynless/api', async () => {
@@ -112,6 +115,244 @@ describe('Dialectic Store Notification Handlers', () => {
     vi.clearAllMocks();
   });
 
+  describe('Document lifecycle events', () => {
+    const sessionId = 'session-1';
+    const stageSlug = 'thesis';
+    const iterationNumber = 1;
+    const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+    const plannerStep: DialecticStageRecipeStep = {
+      id: 'step-1',
+      step_key: 'planner_step',
+      step_slug: 'planner',
+      step_name: 'Planner',
+      execution_order: 1,
+      job_type: 'PLAN',
+      prompt_type: 'Planner',
+      output_type: 'HeaderContext',
+      granularity_strategy: 'all_to_one',
+      inputs_required: [],
+    };
+    const executeStep: DialecticStageRecipeStep = {
+      id: 'step-2',
+      step_key: 'document_step',
+      step_slug: 'document',
+      step_name: 'Document',
+      execution_order: 2,
+      job_type: 'EXECUTE',
+      prompt_type: 'Turn',
+      output_type: 'AssembledDocumentJson',
+      granularity_strategy: 'one_to_one',
+      inputs_required: [],
+    };
+    const renderStep: DialecticStageRecipeStep = {
+      id: 'step-3',
+      step_key: 'render_step',
+      step_slug: 'render',
+      step_name: 'Render',
+      execution_order: 3,
+      job_type: 'RENDER',
+      prompt_type: 'Turn',
+      output_type: 'RenderedDocument',
+      granularity_strategy: 'one_to_one',
+      inputs_required: [],
+    };
+
+    beforeEach(() => {
+      useDialecticStore.setState({
+        recipesByStageSlug: {
+          [stageSlug]: {
+            stageSlug,
+            instanceId: 'recipe-1',
+            steps: [plannerStep, executeStep, renderStep],
+          },
+        },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: {
+              planner_step: 'not_started',
+              document_step: 'not_started',
+              render_step: 'not_started',
+            },
+            documents: {},
+          },
+        },
+      });
+    });
+
+    it('marks planner step in progress when planner_started arrives', () => {
+      const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
+      const event: DialecticLifecycleEvent = {
+        type: 'planner_started',
+        sessionId,
+        stageSlug,
+        iterationNumber,
+        job_id: 'job-planner',
+        document_key: 'global_header',
+        modelId: 'model-1',
+        step_key: 'planner_step',
+      };
+
+      _handleDialecticLifecycleEvent?.(event);
+
+      const state = useDialecticStore.getState();
+      expect(state.stageRunProgress[progressKey].stepStatuses.planner_step).toBe('in_progress');
+    });
+
+    it('ignores planner events when recipe step is missing', () => {
+      useDialecticStore.setState({ recipesByStageSlug: {}, stageRunProgress: {} });
+      const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
+      const event: DialecticLifecycleEvent = {
+        type: 'planner_started',
+        sessionId,
+        stageSlug,
+        iterationNumber,
+        job_id: 'job-planner',
+        document_key: 'global_header',
+        modelId: 'model-1',
+      };
+
+      _handleDialecticLifecycleEvent?.(event);
+
+      const state = useDialecticStore.getState();
+      expect(state.stageRunProgress).toEqual({});
+    });
+
+    it('initializes document tracking when document_started arrives', () => {
+      const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
+      const event: DialecticLifecycleEvent = {
+        type: 'document_started',
+        sessionId,
+        stageSlug,
+        iterationNumber,
+        job_id: 'job-doc',
+        document_key: 'business_case',
+        modelId: 'model-2',
+        step_key: 'document_step',
+      };
+
+      _handleDialecticLifecycleEvent?.(event);
+
+      const state = useDialecticStore.getState();
+      const progress = state.stageRunProgress[progressKey];
+      expect(progress.stepStatuses.document_step).toBe('in_progress');
+      expect(progress.documents.business_case).toEqual({ status: 'generating', job_id: 'job-doc' });
+    });
+
+    it('ignores document events when stage progress bucket missing', () => {
+      useDialecticStore.setState({ stageRunProgress: {} });
+      const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
+      const event: DialecticLifecycleEvent = {
+        type: 'document_started',
+        sessionId,
+        stageSlug,
+        iterationNumber,
+        job_id: 'job-doc',
+        document_key: 'business_case',
+        modelId: 'model-2',
+      };
+
+      _handleDialecticLifecycleEvent?.(event);
+
+      const state = useDialecticStore.getState();
+      expect(state.stageRunProgress[progressKey]).toBeUndefined();
+    });
+
+    it('updates chunk status when document_chunk_completed arrives', () => {
+      useDialecticStore.setState(state => {
+        state.stageRunProgress[progressKey].documents.business_case = { status: 'generating', job_id: 'job-doc' };
+      });
+      const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
+      const event: DialecticLifecycleEvent = {
+        type: 'document_chunk_completed',
+        sessionId,
+        stageSlug,
+        iterationNumber,
+        job_id: 'job-doc',
+        document_key: 'business_case',
+        modelId: 'model-2',
+        isFinalChunk: false,
+        continuationNumber: 2,
+      };
+
+      _handleDialecticLifecycleEvent?.(event);
+
+      const state = useDialecticStore.getState();
+      expect(state.stageRunProgress[progressKey].documents.business_case).toEqual({ status: 'continuing', job_id: 'job-doc' });
+    });
+
+    it('marks document completed when final chunk flagged', () => {
+      useDialecticStore.setState(state => {
+        state.stageRunProgress[progressKey].documents.business_case = { status: 'continuing', job_id: 'job-doc' };
+      });
+      const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
+      const event: DialecticLifecycleEvent = {
+        type: 'document_chunk_completed',
+        sessionId,
+        stageSlug,
+        iterationNumber,
+        job_id: 'job-doc',
+        document_key: 'business_case',
+        modelId: 'model-2',
+        isFinalChunk: true,
+      };
+
+      _handleDialecticLifecycleEvent?.(event);
+
+      const state = useDialecticStore.getState();
+      expect(state.stageRunProgress[progressKey].documents.business_case.status).toBe('completed');
+    });
+
+    it('records render completion and latest resource', () => {
+      useDialecticStore.setState(state => {
+        state.stageRunProgress[progressKey].documents.business_case = { status: 'continuing', job_id: 'job-doc' };
+      });
+      const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
+      const event: DialecticLifecycleEvent = {
+        type: 'render_completed',
+        sessionId,
+        stageSlug,
+        iterationNumber,
+        job_id: 'job-render',
+        document_key: 'business_case',
+        modelId: 'model-render',
+        latestRenderedResourceId: 'resource-123',
+        step_key: 'render_step',
+      };
+
+      _handleDialecticLifecycleEvent?.(event);
+
+      const state = useDialecticStore.getState();
+      const progress = state.stageRunProgress[progressKey];
+      expect(progress.stepStatuses.render_step).toBe('completed');
+      expect(progress.documents.business_case).toEqual({ status: 'completed', job_id: 'job-render', latestRenderedResourceId: 'resource-123' });
+    });
+
+    it('marks document failed when job_failed arrives', () => {
+      useDialecticStore.setState(state => {
+        state.stageRunProgress[progressKey].documents.business_case = { status: 'continuing', job_id: 'job-doc' };
+      });
+      const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
+      const event: DialecticLifecycleEvent = {
+        type: 'job_failed',
+        sessionId,
+        stageSlug,
+        iterationNumber,
+        job_id: 'job-doc',
+        document_key: 'business_case',
+        modelId: 'model-2',
+        error: { code: 'MODEL_FAILURE', message: 'Failure' },
+        step_key: 'document_step',
+      };
+
+      _handleDialecticLifecycleEvent?.(event);
+
+      const state = useDialecticStore.getState();
+      const progress = state.stageRunProgress[progressKey];
+      expect(progress.stepStatuses.document_step).toBe('failed');
+      expect(progress.documents.business_case).toEqual({ status: 'failed', job_id: 'job-doc' });
+    });
+  });
+
   it('should correctly update placeholder status on a multi-model generation', async () => {
     const { generateContributions, _handleDialecticLifecycleEvent } = useDialecticStore.getState();
 
@@ -138,6 +379,7 @@ describe('Dialectic Store Notification Handlers', () => {
       stageSlug: 'test-stage',
       iterationNumber: 1,
       continueUntilComplete: false,
+      walletId: 'wallet-1',
     });
     
     // Verify that two placeholders were created
@@ -189,6 +431,7 @@ describe('Dialectic Store Notification Handlers', () => {
       stageSlug: 'test-stage',
       iterationNumber: 1,
       continueUntilComplete: false,
+      walletId: 'wallet-1',
     });
 
     const receivedContribution = {
@@ -227,6 +470,7 @@ describe('Dialectic Store Notification Handlers', () => {
       sessionId: 'session-1',
       contribution: receivedContribution,
       job_id: 'job-1',
+      is_continuing: false,
     };
     
     if (_handleDialecticLifecycleEvent) {
@@ -259,6 +503,7 @@ describe('Dialectic Store Notification Handlers', () => {
           stageSlug: 'test-stage',
           iterationNumber: 1,
           continueUntilComplete: false,
+          walletId: 'wallet-1',
       });
 
       const failureNotification: DialecticLifecycleEvent = {
@@ -303,6 +548,7 @@ describe('Dialectic Store Notification Handlers', () => {
       stageSlug: 'test-stage',
       iterationNumber: 1,
       continueUntilComplete: false,
+      walletId: 'wallet-1',
     });
     
     // First, mark it as generating
@@ -381,6 +627,7 @@ describe('Dialectic Store Notification Handlers', () => {
           stageSlug: 'test-stage',
           iterationNumber: 1,
           continueUntilComplete: false,
+          walletId: 'wallet-1',
       });
 
       // Check that the session is being tracked as generating
@@ -411,6 +658,7 @@ describe('Dialectic Store Notification Handlers', () => {
       stageSlug: 'test-stage',
       iterationNumber: 1,
       continueUntilComplete: false,
+      walletId: 'wallet-1',
     });
 
     const continuingContribution = {
@@ -458,6 +706,7 @@ describe('Dialectic Store Notification Handlers', () => {
       sessionId: 'session-1',
       contribution: newContribution,
       job_id: 'job-3',
+      is_continuing: false,
     };
 
     _handleDialecticLifecycleEvent?.(receivedNotification);
@@ -496,6 +745,7 @@ describe('Dialectic Store Notification Handlers', () => {
         stageSlug: 'test-stage',
         iterationNumber: 1,
         continueUntilComplete: false,
+        walletId: 'wallet-1',
     });
     
     // Check for two placeholders for model-1

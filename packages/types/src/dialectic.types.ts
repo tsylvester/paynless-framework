@@ -453,6 +453,11 @@ export interface DialecticActions {
   _handleContributionGenerationComplete: (event: ContributionGenerationCompletePayload) => void;
   _handleContributionGenerationContinued: (event: ContributionGenerationContinuedPayload) => void;
   _handleProgressUpdate: (event: DialecticProgressUpdatePayload) => void;
+  _handlePlannerStarted: (event: PlannerStartedPayload) => void;
+  _handleDocumentStarted: (event: DocumentStartedPayload) => void;
+  _handleDocumentChunkCompleted: (event: DocumentChunkCompletedPayload) => void;
+  _handleRenderCompleted: (event: RenderCompletedPayload) => void;
+  _handleJobFailed: (event: JobFailedPayload) => void;
   
   reset: () => void;
 
@@ -515,7 +520,12 @@ export type DialecticNotificationTypes =
   | 'contribution_generation_failed'
   | 'contribution_generation_complete'
   | 'dialectic_progress_update'
-  | 'contribution_generation_continued';
+  | 'contribution_generation_continued'
+  | 'planner_started'
+  | 'document_started'
+  | 'document_chunk_completed'
+  | 'render_completed'
+  | 'job_failed';
 export interface ContributionGenerationStartedPayload {
   // This is the overall contribution generation for the entire session stage. 
   type: 'contribution_generation_started';
@@ -596,6 +606,41 @@ export interface ProgressData {
   message: string;
 }
 
+export interface DocumentLifecyclePayload {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+  job_id: string;
+  document_key: string;
+  modelId: string;
+  step_key?: string;
+  latestRenderedResourceId?: string | null;
+}
+
+export interface PlannerStartedPayload extends DocumentLifecyclePayload {
+  type: 'planner_started';
+}
+
+export interface DocumentStartedPayload extends DocumentLifecyclePayload {
+  type: 'document_started';
+}
+
+export interface DocumentChunkCompletedPayload extends DocumentLifecyclePayload {
+  type: 'document_chunk_completed';
+  isFinalChunk?: boolean;
+  continuationNumber?: number;
+}
+
+export interface RenderCompletedPayload extends DocumentLifecyclePayload {
+  type: 'render_completed';
+  latestRenderedResourceId: string;
+}
+
+export interface JobFailedPayload extends DocumentLifecyclePayload {
+  type: 'job_failed';
+  error: ApiError;
+}
+
 export type DialecticLifecycleEvent = 
 ContributionGenerationStartedPayload 
 | DialecticContributionStartedPayload 
@@ -604,7 +649,12 @@ ContributionGenerationStartedPayload
 | ContributionGenerationFailedPayload 
 | ContributionGenerationContinuedPayload
 | ContributionGenerationCompletePayload
-| DialecticProgressUpdatePayload;
+| DialecticProgressUpdatePayload
+| PlannerStartedPayload
+| DocumentStartedPayload
+| DocumentChunkCompletedPayload
+| RenderCompletedPayload
+| JobFailedPayload;
 
 export interface DialecticFeedback {
   id: string;

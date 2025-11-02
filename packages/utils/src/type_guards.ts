@@ -113,6 +113,16 @@ export function isDialecticLifecycleEventType(x: unknown): x is DialecticNotific
   if (typeof x !== 'string' || x.length === 0) return false;
   if (x === 'dialectic_progress_update') return true;
 
+  if (
+    x === 'planner_started'
+    || x === 'document_started'
+    || x === 'document_chunk_completed'
+    || x === 'render_completed'
+    || x === 'job_failed'
+  ) {
+    return true;
+  }
+
   const cgPrefix = 'contribution_generation_';
   if (x.startsWith(cgPrefix)) {
     const suffix = x.slice(cgPrefix.length);

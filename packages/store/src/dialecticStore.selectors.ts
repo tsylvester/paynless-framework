@@ -8,6 +8,8 @@ import type {
     DialecticContribution,
     DialecticDomain,
     DialecticFeedback,
+    DialecticStageRecipe,
+    DialecticStageRecipeStep,
 } from '@paynless/types';
 import { createSelector } from 'reselect';
 
@@ -226,6 +228,8 @@ export const selectStageById = createSelector(
 
 export const selectIsStageReadyForSessionIteration = createSelector(
     [
+        (state: DialecticStateValues) => state.recipesByStageSlug,
+        (state: DialecticStateValues) => state.stageRunProgress,
         selectCurrentProjectDetail,
         selectCurrentProcessTemplate,
         (_state, projectId: string) => projectId,
@@ -233,7 +237,7 @@ export const selectIsStageReadyForSessionIteration = createSelector(
         (_state, _projectId, _sessionId, stageSlug: string) => stageSlug,
         (_state, _projectId, _sessionId, _stageSlug, iterationNumber: number) => iterationNumber
     ],
-    (project, processTemplate, projectId, sessionId, stageSlug, iterationNumber): boolean => {
+    (recipesByStageSlug, stageRunProgressMap, project, processTemplate, projectId, sessionId, stageSlug, iterationNumber): boolean => {
         if (!project || project.id !== projectId || !processTemplate) {
             return false;
         }
@@ -241,72 +245,250 @@ export const selectIsStageReadyForSessionIteration = createSelector(
         const stage = processTemplate.stages?.find(s => s.slug === stageSlug);
         if (!stage) return false;
 
-        // If a stage has no input rules, it's ready by default.
-        if (!stage.input_artifact_rules) {
+        const projectResources = Array.isArray(project.resources) ? project.resources : [];
+        const projectSession = project.dialectic_sessions?.find((candidateSession) => candidateSession.id === sessionId);
+        if (!projectSession) {
+            return false;
+        }
+
+        const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+        const progressEntry = stageRunProgressMap[progressKey];
+        const stepStatuses = progressEntry?.stepStatuses ?? {};
+
+        const recipe = recipesByStageSlug?.[stageSlug];
+        const steps = recipe?.steps ?? [];
+        const stepsWithInputs = steps
+            .filter((step) => Array.isArray(step.inputs_required) && step.inputs_required.length > 0);
+
+        const orderForStep = (step: DialecticStageRecipeStep): number => {
+            if (typeof step.execution_order === 'number') {
+                return step.execution_order;
+            }
+            return Number.MAX_SAFE_INTEGER;
+        };
+
+        const orderedSteps = [...stepsWithInputs].sort((left, right) => {
+            const orderDifference = orderForStep(left) - orderForStep(right);
+            if (orderDifference !== 0) {
+                return orderDifference;
+            }
+            return left.step_key.localeCompare(right.step_key);
+        });
+
+        const stepsByOrder = new Map<number, DialecticStageRecipeStep[]>();
+        for (const step of orderedSteps) {
+            const orderValue = orderForStep(step);
+            const existing = stepsByOrder.get(orderValue);
+            if (existing) {
+                existing.push(step);
+            } else {
+                stepsByOrder.set(orderValue, [step]);
+            }
+        }
+
+        let pendingSteps: DialecticStageRecipeStep[] = [];
+        for (const [_orderValue, stepsAtOrder] of stepsByOrder.entries()) {
+            const pendingAtOrder = stepsAtOrder.filter((step) => stepStatuses[step.step_key] !== 'completed');
+            if (pendingAtOrder.length === 0) {
+                continue;
+            }
+            pendingSteps = pendingAtOrder;
+            break;
+        }
+
+        const deriveRequirementStageSlug = (slugValue: string | undefined): string => {
+            if (typeof slugValue === 'string' && slugValue.length > 0) {
+                const separatorIndex = slugValue.indexOf('.');
+                if (separatorIndex > 0) {
+                    return slugValue.slice(0, separatorIndex);
+                }
+                return slugValue;
+            }
+            return stageSlug;
+        };
+
+        if (pendingSteps.length === 0) {
             return true;
         }
 
-        let rules;
-        if (typeof stage.input_artifact_rules === 'string') {
-            try {
-                rules = JSON.parse(stage.input_artifact_rules);
-            } catch (e) {
-                console.error("Failed to parse input_artifact_rules", e);
-                return false; // Invalid rules definition
+        for (const step of pendingSteps) {
+            const stepStatus = stepStatuses[step.step_key];
+            if (stepStatus && stepStatus !== 'not_started') {
+                return false;
             }
-        } else {
-            rules = stage.input_artifact_rules;
-        }
 
-        if (!rules || !Array.isArray(rules.sources)) {
-            return true; // No sources defined, so we are ready.
-        }
-
-        for (const rule of rules.sources) {
-            if (rule.required === false) { // Explicitly check for false, as undefined should be treated as true
+            const stepRequirements = step.inputs_required ?? [];
+            if (stepRequirements.length === 0) {
                 continue;
             }
 
-            let found = false;
-            if (rule.type === 'contribution') {
-                const session = project.dialectic_sessions?.find(s => s.id === sessionId);
-                if (!session) {
-                    return false; // Contributions require a session object.
+            for (const requirement of stepRequirements) {
+                if (requirement.required === false) {
+                    continue;
                 }
-                found = session.dialectic_contributions?.some(c => 
-                    c.stage === rule.stage_slug &&
-                    c.iteration_number === iterationNumber
-                ) ?? false;
-            } else if (rule.type === 'seed_prompt') {
-                found = project.resources?.some(r => {
-                    if (typeof r.resource_description !== 'string') return false;
-                    try {
-                        const desc = JSON.parse(r.resource_description);
-                        return desc.type === 'seed_prompt' &&
-                               desc.session_id === sessionId &&
-                               desc.stage_slug === stageSlug &&
-                               desc.iteration === iterationNumber;
-                    } catch {
+
+                if (requirement.type === 'seed_prompt') {
+                    let hasSeedPrompt = false;
+                    for (const resource of projectResources) {
+                        let descriptorCandidate: unknown = resource.resource_description;
+                        if (typeof descriptorCandidate === 'string') {
+                            try {
+                                const parsed: unknown = JSON.parse(descriptorCandidate);
+                                descriptorCandidate = parsed;
+                            } catch {
+                                continue;
+                            }
+                        }
+                        if (typeof descriptorCandidate !== 'object' || descriptorCandidate === null) {
+                            continue;
+                        }
+                        const typeDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'type');
+                        const typeValue = typeDescriptor?.value;
+                        if (typeof typeValue !== 'string' || typeValue !== 'seed_prompt') {
+                            continue;
+                        }
+                        const sessionDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'session_id');
+                        const sessionValue = sessionDescriptor?.value;
+                        if (typeof sessionValue !== 'string' || sessionValue !== sessionId) {
+                            continue;
+                        }
+                        const stageDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'stage_slug');
+                        const stageValue = stageDescriptor?.value;
+                        if (typeof stageValue !== 'string' || stageValue !== stageSlug) {
+                            continue;
+                        }
+                        const iterationDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'iteration');
+                        const iterationValue = iterationDescriptor?.value;
+                        if (typeof iterationValue !== 'number' || iterationValue !== iterationNumber) {
+                            continue;
+                        }
+                        hasSeedPrompt = true;
+                        break;
+                    }
+                    if (!hasSeedPrompt) {
                         return false;
                     }
-                }) ?? false;
-            } else if (rule.type === 'feedback') {
-                const session = project.dialectic_sessions?.find(s => s.id === sessionId);
-                if (!session) {
-                    return false; // Feedback requires a session object.
+                    continue;
                 }
-                found = session.feedback?.some(f =>
-                    f.stage_slug === rule.stage_slug &&
-                    f.iteration_number === iterationNumber
-                ) ?? false;
-            }
 
-            if (!found) {
-                return false; // A required input is missing
+                if (requirement.type === 'feedback') {
+                    const feedbackEntries = Array.isArray(projectSession.feedback) ? projectSession.feedback : [];
+                    const sourceStageSlug = deriveRequirementStageSlug(requirement.slug);
+                    const hasFeedback = feedbackEntries.some((entry) => {
+                        if (entry.iteration_number !== iterationNumber) {
+                            return false;
+                        }
+                        if (entry.stage_slug !== sourceStageSlug) {
+                            return false;
+                        }
+                        if (requirement.document_key && entry.feedback_type !== requirement.document_key) {
+                            return false;
+                        }
+                        return true;
+                    });
+                    if (!hasFeedback) {
+                        return false;
+                    }
+                    continue;
+                }
+
+                if (requirement.type === 'document') {
+                    const contributions = Array.isArray(projectSession.dialectic_contributions)
+                        ? projectSession.dialectic_contributions
+                        : [];
+                    const sourceStageSlug = deriveRequirementStageSlug(requirement.slug);
+                    const hasDocument = contributions.some((contribution) => {
+                        if (contribution.iteration_number !== iterationNumber) {
+                            return false;
+                        }
+                        if (typeof contribution.stage !== 'string' || contribution.stage !== sourceStageSlug) {
+                            return false;
+                        }
+                        if (requirement.document_key && contribution.contribution_type !== requirement.document_key) {
+                            return false;
+                        }
+                        return true;
+                    });
+                    if (!hasDocument) {
+                        return false;
+                    }
+                    continue;
+                }
+
+                if (requirement.type === 'header_context') {
+                    const sourceStageSlug = deriveRequirementStageSlug(requirement.slug);
+                    const producingStep = steps.find((candidateStep) => candidateStep.outputs_required?.some((output) => {
+                        if (output.artifact_class !== 'header_context') {
+                            return false;
+                        }
+                        if (requirement.document_key && output.document_key !== requirement.document_key) {
+                            return false;
+                        }
+                        return true;
+                    }));
+
+                    if (!producingStep) {
+                        return false;
+                    }
+
+                    const producingStatus = stepStatuses[producingStep.step_key];
+                    if (producingStatus !== 'completed') {
+                        return false;
+                    }
+
+                    let hasHeaderContext = false;
+                    for (const resource of projectResources) {
+                        let descriptorCandidate: unknown = resource.resource_description;
+                        if (typeof descriptorCandidate === 'string') {
+                            try {
+                                const parsed: unknown = JSON.parse(descriptorCandidate);
+                                descriptorCandidate = parsed;
+                            } catch {
+                                continue;
+                            }
+                        }
+                        if (typeof descriptorCandidate !== 'object' || descriptorCandidate === null) {
+                            continue;
+                        }
+                        const typeDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'type');
+                        const typeValue = typeDescriptor?.value;
+                        if (typeof typeValue !== 'string' || typeValue !== 'header_context') {
+                            continue;
+                        }
+                        const sessionDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'session_id');
+                        const sessionValue = sessionDescriptor?.value;
+                        if (typeof sessionValue === 'string' && sessionValue !== sessionId) {
+                            continue;
+                        }
+                        const stageDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'stage_slug');
+                        const stageValue = stageDescriptor?.value;
+                        if (typeof stageValue === 'string' && stageValue !== sourceStageSlug) {
+                            continue;
+                        }
+                        if (requirement.document_key) {
+                            const documentDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'document_key');
+                            const documentKeyValue = documentDescriptor?.value;
+                            if (typeof documentKeyValue === 'string' && documentKeyValue !== requirement.document_key) {
+                                continue;
+                            }
+                        }
+                        const iterationDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'iteration');
+                        const iterationValue = iterationDescriptor?.value;
+                        if (typeof iterationValue === 'number' && iterationValue !== iterationNumber) {
+                            continue;
+                        }
+                        hasHeaderContext = true;
+                        break;
+                    }
+                    if (!hasHeaderContext) {
+                        return false;
+                    }
+                    continue;
+                }
             }
         }
 
-        return true; // All required inputs were found
+        return true;
     }
 );
 
@@ -385,3 +567,103 @@ export const selectDialecticSessionTotalTokenUsage = createSelector(
 
 // Selector for the active dialectic wallet ID
 export const selectActiveDialecticWalletId = (state: DialecticStateValues): string | null => state.activeDialecticWalletId;
+
+type StageRunProgressEntry = NonNullable<DialecticStateValues['stageRunProgress'][string]>;
+type StageRunDocuments = StageRunProgressEntry['documents'];
+type StepStatus = StageRunProgressEntry['stepStatuses'][string];
+type StageRunDocumentEntry = StageRunDocuments[string];
+type DocumentStatus = StageRunDocumentEntry['status'];
+
+const emptyDocuments: StageRunDocuments = {};
+
+const selectRecipeSteps = (
+    state: DialecticStateValues,
+    stageSlug: string
+): DialecticStageRecipeStep[] => {
+    const recipe = state.recipesByStageSlug[stageSlug];
+    if (!recipe) {
+        return [];
+    }
+    return recipe.steps;
+};
+
+export const selectStageRecipe = (
+    state: DialecticStateValues,
+    stageSlug: string
+): DialecticStageRecipe | undefined => state.recipesByStageSlug[stageSlug];
+
+export const selectStepList = createSelector(
+    [selectRecipeSteps],
+    (steps): DialecticStageRecipeStep[] => {
+        if (steps.length === 0) {
+            return steps;
+        }
+        const sortedSteps = [...steps].sort((a, b) => {
+            if (a.execution_order === b.execution_order) {
+                return a.step_key.localeCompare(b.step_key);
+            }
+            return a.execution_order - b.execution_order;
+        });
+        return sortedSteps;
+    }
+);
+
+export const selectStageRunProgress = (
+    state: DialecticStateValues,
+    sessionId: string,
+    stageSlug: string,
+    iterationNumber: number
+): StageRunProgressEntry | undefined => {
+    const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+    return state.stageRunProgress[progressKey];
+};
+
+export const selectStepStatus = (
+    state: DialecticStateValues,
+    progressKey: string,
+    stepKey: string
+): StepStatus | undefined => {
+    const progress = state.stageRunProgress[progressKey];
+    if (!progress) {
+        return undefined;
+    }
+    return progress.stepStatuses[stepKey];
+};
+
+export const selectDocumentsForStageRun = (
+    state: DialecticStateValues,
+    progressKey: string
+): StageRunDocuments => {
+    const progress = state.stageRunProgress[progressKey];
+    if (!progress) {
+        return emptyDocuments;
+    }
+    return progress.documents;
+};
+
+export const selectDocumentStatus = (
+    state: DialecticStateValues,
+    progressKey: string,
+    documentKey: string
+): DocumentStatus | undefined => {
+    const documents = selectDocumentsForStageRun(state, progressKey);
+    const descriptor = documents[documentKey];
+    if (!descriptor) {
+        return undefined;
+    }
+    return descriptor.status;
+};
+
+export const selectLatestRenderedRef = (
+    state: DialecticStateValues,
+    progressKey: string,
+    documentKey: string
+): string | null | undefined => {
+    const documents = selectDocumentsForStageRun(state, progressKey);
+    const descriptor = documents[documentKey];
+    if (!descriptor) {
+        return undefined;
+    }
+    return descriptor.latestRenderedResourceId ?? null;
+};
+
