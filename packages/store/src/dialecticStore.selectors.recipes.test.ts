@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, expectTypeOf } from 'vitest';
 import type {
   DialecticContribution,
   DialecticFeedback,
@@ -21,6 +21,9 @@ import {
   selectDocumentStatus,
   selectLatestRenderedRef,
   selectIsStageReadyForSessionIteration,
+  selectStageProgressSummary,
+  selectStageDocumentChecklist,
+  selectFocusedStageDocument,
 } from './dialecticStore.selectors';
 
 describe('Selectors - Recipes', () => {
@@ -73,6 +76,7 @@ describe('Selectors - Recipes', () => {
     ...initialDialecticStateValues,
     recipesByStageSlug: { [stageSlug]: recipe },
     stageRunProgress: {},
+    focusedStageDocument: {},
     ...(overrides || {}),
   });
 
@@ -98,6 +102,8 @@ describe('Selectors - Recipes', () => {
     const sessionId = 'sess-xyz';
     const iterationNumber = 2;
     const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+    const modelId = 'model-42';
+    const focusKey = `${sessionId}:${stageSlug}:${modelId}`;
 
     const baseProgressState = makeState({
       stageRunProgress: {
@@ -107,8 +113,8 @@ describe('Selectors - Recipes', () => {
             b_key: 'not_started',
           },
           documents: {
-            doc_a: { status: 'completed', job_id: 'job-1', latestRenderedResourceId: 'res-1' },
-            doc_b: { status: 'generating', job_id: 'job-2', latestRenderedResourceId: null },
+            doc_a: { status: 'completed', job_id: 'job-1', latestRenderedResourceId: 'res-1', modelId: 'model-1', versionHash: 'hash-1', lastRenderedResourceId: 'res-1', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
+            doc_b: { status: 'generating', job_id: 'job-2', latestRenderedResourceId: 'res-2', modelId: 'model-2', versionHash: 'hash-2', lastRenderedResourceId: 'res-2', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
           },
         },
       },
@@ -139,6 +145,193 @@ describe('Selectors - Recipes', () => {
     it('selectLatestRenderedRef returns the latestRenderedResourceId for a document', () => {
       const ref = selectLatestRenderedRef(baseProgressState, progressKey, 'doc_a');
       expect(ref).toBe('res-1');
+    });
+
+    it('selectStageProgressSummary reports outstanding documents when any are incomplete', () => {
+      const summary = selectStageProgressSummary(baseProgressState, sessionId, stageSlug, iterationNumber);
+      expect(summary).toEqual({
+        isComplete: false,
+        totalDocuments: 2,
+        completedDocuments: 1,
+        outstandingDocuments: ['doc_b'],
+      });
+    });
+
+    it('selectStageProgressSummary reports completion when all documents are finished', () => {
+      const completeState = makeState({
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: {
+              a_key: 'completed',
+              b_key: 'completed',
+            },
+            documents: {
+              doc_a: { status: 'completed', job_id: 'job-1', latestRenderedResourceId: 'res-1', modelId: 'model-1', versionHash: 'hash-1', lastRenderedResourceId: 'res-1', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
+              doc_b: { status: 'completed', job_id: 'job-2', latestRenderedResourceId: 'res-2', modelId: 'model-2', versionHash: 'hash-2', lastRenderedResourceId: 'res-2', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
+            },
+          },
+        },
+      });
+
+      const summary = selectStageProgressSummary(completeState, sessionId, stageSlug, iterationNumber);
+      expect(summary).toEqual({
+        isComplete: true,
+        totalDocuments: 2,
+        completedDocuments: 2,
+        outstandingDocuments: [],
+      });
+    });
+
+    describe('selectStageProgressSummary model filtering', () => {
+      const stateWithMultipleModels = makeState({
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { a_key: 'completed', b_key: 'not_started' },
+            documents: {
+              doc_a: { status: 'completed', job_id: 'job-1', latestRenderedResourceId: 'res-1', modelId: 'model-a', versionHash: 'hash-1', lastRenderedResourceId: 'res-1', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
+              doc_b: { status: 'generating', job_id: 'job-2', latestRenderedResourceId: 'res-2', modelId: 'model-b', versionHash: 'hash-2', lastRenderedResourceId: 'res-2', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
+              doc_c: { status: 'completed', job_id: 'job-3', latestRenderedResourceId: 'res-3', modelId: 'model-a', versionHash: 'hash-3', lastRenderedResourceId: 'res-3', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
+              doc_d: { status: 'continuing', job_id: 'job-4', latestRenderedResourceId: 'res-4', modelId: 'model-a', versionHash: 'hash-4', lastRenderedResourceId: 'res-4', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
+            },
+          },
+        },
+      });
+
+      it('should return a summary scoped to the specified modelId', () => {
+        const summary = selectStageProgressSummary(stateWithMultipleModels, sessionId, stageSlug, iterationNumber, 'model-a');
+        expect(summary).toEqual({
+          isComplete: false,
+          totalDocuments: 3,
+          completedDocuments: 2,
+          outstandingDocuments: ['doc_d'],
+        });
+      });
+
+      it('should return a summary for a different modelId correctly', () => {
+        const summary = selectStageProgressSummary(stateWithMultipleModels, sessionId, stageSlug, iterationNumber, 'model-b');
+        expect(summary).toEqual({
+          isComplete: false,
+          totalDocuments: 1,
+          completedDocuments: 0,
+          outstandingDocuments: ['doc_b'],
+        });
+      });
+
+      it('should return a summary for all models when modelId is not provided', () => {
+        const summary = selectStageProgressSummary(stateWithMultipleModels, sessionId, stageSlug, iterationNumber);
+        expect(summary).toBeDefined();
+        if (!summary) return;
+
+        const { outstandingDocuments, ...rest } = summary;
+
+        expect(outstandingDocuments.sort()).toEqual(['doc_b', 'doc_d'].sort());
+        expect(rest).toEqual({
+          isComplete: false,
+          totalDocuments: 4,
+          completedDocuments: 2,
+        });
+      });
+    });
+
+    it('selectStageDocumentChecklist returns each tracked document with status metadata', () => {
+      const checklist = selectStageDocumentChecklist(baseProgressState, progressKey, 'model-1');
+      expect(checklist).toEqual([
+        {
+          documentKey: 'doc_a',
+          status: 'completed',
+          jobId: 'job-1',
+          latestRenderedResourceId: 'res-1',
+          modelId: 'model-1',
+        },
+
+      ]);
+    });
+
+    it('selectStageDocumentChecklist entries always expose a modelId', () => {
+      const checklist = selectStageDocumentChecklist(baseProgressState, progressKey, 'model-1');
+
+      expectTypeOf(checklist).items
+        .toHaveProperty('modelId')
+        .toEqualTypeOf<string>();
+
+      checklist.forEach((entry) => {
+        expect(entry.modelId).toBeDefined();
+        expect(entry.modelId).not.toBe('');
+      });
+    });
+
+    describe('selectStageDocumentChecklist model filtering', () => {
+      const stateWithMultipleModels = makeState({
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { a_key: 'completed', b_key: 'not_started' },
+            documents: {
+              doc_a: { status: 'completed', job_id: 'job-1', latestRenderedResourceId: 'res-1', modelId: 'model-a', versionHash: 'hash-1', lastRenderedResourceId: 'res-1', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
+              doc_b: { status: 'generating', job_id: 'job-2', latestRenderedResourceId: 'res-2', modelId: 'model-b', versionHash: 'hash-2', lastRenderedResourceId: 'res-2', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
+              doc_c: { status: 'completed', job_id: 'job-3', latestRenderedResourceId: 'res-3', modelId: 'model-a', versionHash: 'hash-3', lastRenderedResourceId: 'res-3', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
+            },
+          },
+        },
+      });
+
+      it('should return only documents for the specified modelId', () => {
+        const checklist = selectStageDocumentChecklist(stateWithMultipleModels, progressKey, 'model-a');
+        expect(checklist.length).toBe(2);
+        expect(checklist.map(d => d.documentKey).sort()).toEqual(['doc_a', 'doc_c']);
+        expect(checklist.every(d => d.modelId === 'model-a')).toBe(true);
+      });
+
+      it('should return an empty array if the modelId has no documents', () => {
+        const checklist = selectStageDocumentChecklist(stateWithMultipleModels, progressKey, 'model-c');
+        expect(checklist.length).toBe(0);
+      });
+    });
+
+    it('selectFocusedStageDocument returns null when no focus is set for a model', () => {
+      const focus = selectFocusedStageDocument(baseProgressState, sessionId, stageSlug, modelId);
+      expect(focus).toBeNull();
+    });
+
+    it('selectFocusedStageDocument returns the entry when the model/doc is focused', () => {
+      const state = makeState({
+        stageRunProgress: baseProgressState.stageRunProgress,
+        focusedStageDocument: {
+          [focusKey]: {
+            modelId,
+            documentKey: 'doc_b',
+          },
+        },
+      });
+
+      const focus = selectFocusedStageDocument(state, sessionId, stageSlug, modelId);
+      expect(focus).toEqual({ modelId, documentKey: 'doc_b' });
+    });
+
+    it('selectFocusedStageDocument composes with selectStageDocumentChecklist to fetch context for the focused document', () => {
+      const modelIdForTest = 'model-1'; // Use the actual modelId of the document
+      const focusKeyForTest = `${sessionId}:${stageSlug}:${modelIdForTest}`;
+      const state = makeState({
+        stageRunProgress: baseProgressState.stageRunProgress,
+        focusedStageDocument: {
+          [focusKeyForTest]: {
+            modelId: modelIdForTest,
+            documentKey: 'doc_a',
+          },
+        },
+      });
+
+      const focus = selectFocusedStageDocument(state, sessionId, stageSlug, modelIdForTest);
+      const checklist = selectStageDocumentChecklist(state, progressKey, modelIdForTest);
+      const focusedDetails = checklist.find(entry => entry.documentKey === focus?.documentKey);
+
+      expect(focus).toEqual({ modelId: modelIdForTest, documentKey: 'doc_a' });
+      expect(focusedDetails).toEqual({
+        documentKey: 'doc_a',
+        status: 'completed',
+        jobId: 'job-1',
+        latestRenderedResourceId: 'res-1',
+        modelId: 'model-1',
+      });
     });
   });
 

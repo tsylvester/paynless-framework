@@ -29,6 +29,9 @@ import type {
     GenerateContributionsResponse,
     DialecticProjectRow,
     ExportProjectResponse,
+    GetStageDocumentFeedbackPayload,
+    StageDocumentFeedback,
+    SubmitStageDocumentFeedbackPayload,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -761,6 +764,62 @@ export class DialecticApiClient {
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
             logger.error('Network error in getSessionDetails:', { errorMessage: message, errorObject: error });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
+    }
+
+    async getStageDocumentFeedback(payload: GetStageDocumentFeedbackPayload): Promise<ApiResponse<StageDocumentFeedback[]>> {
+        logger.info('Fetching stage document feedback', { ...payload });
+        try {
+            const response = await this.apiClient.post<StageDocumentFeedback[], DialecticServiceActionPayload>(
+                'dialectic-service',
+                {
+                    action: 'getStageDocumentFeedback',
+                    payload,
+                }
+            );
+    
+            if (response.error) {
+                logger.error('Error fetching stage document feedback:', { error: response.error, ...payload });
+            } else {
+                logger.info('Successfully fetched stage document feedback', { ...payload });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in getStageDocumentFeedback:', { errorMessage: message, errorObject: error, ...payload });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
+    }
+
+    async submitStageDocumentFeedback(payload: SubmitStageDocumentFeedbackPayload): Promise<ApiResponse<{ success: boolean }>> {
+        logger.info('Submitting stage document feedback', { ...payload });
+        try {
+            const response = await this.apiClient.post<{ success: boolean }, DialecticServiceActionPayload>(
+                'dialectic-service',
+                {
+                    action: 'submitStageDocumentFeedback',
+                    payload,
+                }
+            );
+    
+            if (response.error) {
+                logger.error('Error submitting stage document feedback:', { error: response.error, ...payload });
+            } else {
+                logger.info('Successfully submitted stage document feedback', { ...payload });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in submitStageDocumentFeedback:', { errorMessage: message, errorObject: error, ...payload });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },

@@ -1,6 +1,8 @@
 import { vi, type Mock } from 'vitest';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { useStore } from 'zustand';
+import { immer } from 'zustand/middleware/immer';
+import type { Draft } from 'immer';
 import type {
   DialecticStateValues,
   DialecticStore,
@@ -13,7 +15,30 @@ import type {
   DialecticFeedback,
   ContributionGenerationStatus,
   DialecticProcessTemplate,
+  DialecticStageRecipe,
+  DialecticStageRecipeStep,
+  SetFocusedStageDocumentPayload,
+  ClearFocusedStageDocumentPayload,
+  StageRunProgressEntry,
+  RenderCompletedPayload,
+  StageDocumentChecklistEntry,
+  StageDocumentCompositeKey,
+  StageDocumentContentState,
+  StageDocumentVersionInfo,
 } from '@paynless/types';
+import {
+  beginStageDocumentEditLogic,
+  clearStageDocumentDraftLogic,
+  ensureStageDocumentContentLogic,
+  fetchStageDocumentContentLogic,
+  flushStageDocumentDraftActionLogic,
+  flushStageDocumentDraftLogic,
+  handleRenderCompletedLogic,
+  reapplyDraftToNewBaselineLogic,
+  recordStageDocumentDraftLogic,
+  updateStageDocumentDraftLogic,
+  upsertStageDocumentVersionLogic,
+} from '../../../../packages/store/src/dialecticStore.documents';
 
 // ---- START: Define ALL controllable selectors as top-level vi.fn() mocks ----
 // These are kept if tests rely on setting their return values directly at a global level.
@@ -63,9 +88,139 @@ export const selectActiveContextStage = (state: DialecticStateValues): Dialectic
 export const selectSelectedModelIds = vi.fn<[DialecticStateValues], string[]>().mockReturnValue([]);
 export const selectActiveContextProjectId = (state: DialecticStateValues): string | null => state.activeContextProjectId;
 export const selectActiveContextSessionId = (state: DialecticStateValues): string | null => state.activeContextSessionId;
+export const selectActiveStageSlug = (state: DialecticStateValues): string | null => state.activeStageSlug;
 export const selectSessionById = (state: DialecticStateValues, sessionId: string): DialecticSession | undefined => state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
 export const selectCurrentProcessTemplate = (state: DialecticStateValues): DialecticProcessTemplate | null => state.currentProcessTemplate;
 export const selectOverlay = vi.fn();
+export const setFocusedStageDocument = vi.fn();
+export const submitStageDocumentFeedback = vi.fn();
+
+const selectRecipeSteps = (
+  state: DialecticStateValues,
+  stageSlug: string,
+): DialecticStageRecipeStep[] => {
+  const recipe = state.recipesByStageSlug[stageSlug];
+  if (!recipe) {
+    return [];
+  }
+  return recipe.steps;
+};
+
+export const selectStageRecipe = (
+  state: DialecticStateValues,
+  stageSlug: string,
+): DialecticStageRecipe | undefined => state.recipesByStageSlug[stageSlug];
+
+export const selectStepList = (
+  state: DialecticStateValues,
+  stageSlug: string,
+): DialecticStageRecipeStep[] => {
+  const steps = selectRecipeSteps(state, stageSlug);
+  if (steps.length === 0) {
+    return steps;
+  }
+  return [...steps].sort((left, right) => {
+    if (left.execution_order === right.execution_order) {
+      return left.step_key.localeCompare(right.step_key);
+    }
+    return left.execution_order - right.execution_order;
+  });
+};
+
+export const selectStageRunProgress = (
+  state: DialecticStateValues,
+  sessionId: string,
+  stageSlug: string,
+  iterationNumber: number,
+): StageRunProgressEntry | undefined => {
+  const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+  return state.stageRunProgress[progressKey];
+};
+
+export const selectStageDocumentChecklist = (
+  state: DialecticStateValues,
+  progressKey: string,
+  modelId: string
+): StageDocumentChecklistEntry[] => {
+  const progress = state.stageRunProgress[progressKey];
+  if (!progress) {
+    return [];
+  }
+
+  const checklist: StageDocumentChecklistEntry[] = [];
+
+  for (const documentKey of Object.keys(progress.documents)) {
+    const descriptor = progress.documents[documentKey];
+    if (!descriptor || descriptor.modelId !== modelId) {
+      continue;
+    }
+    checklist.push({
+      documentKey,
+      status: descriptor.status,
+      jobId: descriptor.job_id,
+      latestRenderedResourceId: descriptor.latestRenderedResourceId ?? null,
+      modelId: descriptor.modelId,
+    });
+  }
+
+  return checklist;
+};
+
+export const selectStageProgressSummary = (
+  state: DialecticStateValues,
+  sessionId: string,
+  stageSlug: string,
+  iterationNumber: number,
+  modelId?: string,
+): {
+  isComplete: boolean;
+  totalDocuments: number;
+  completedDocuments: number;
+  outstandingDocuments: string[];
+} => {
+  const progress = selectStageRunProgress(state, sessionId, stageSlug, iterationNumber);
+  if (!progress) {
+    return {
+      isComplete: false,
+      totalDocuments: 0,
+      completedDocuments: 0,
+      outstandingDocuments: [],
+    };
+  }
+
+  const documentKeys = Object.keys(progress.documents).filter((key) => {
+    if (!modelId) return true;
+    const documentDescriptor = progress.documents[key];
+    return documentDescriptor?.modelId === modelId;
+  });
+
+  let completedDocuments = 0;
+  const outstandingDocuments: string[] = [];
+
+  for (const documentKey of documentKeys) {
+    const descriptor = progress.documents[documentKey];
+    if (!descriptor) {
+      continue;
+    }
+    if (descriptor.status === 'completed') {
+      completedDocuments += 1;
+    } else {
+      outstandingDocuments.push(documentKey);
+    }
+  }
+
+  const totalDocuments = documentKeys.length;
+  const isComplete = totalDocuments > 0 && completedDocuments === totalDocuments;
+
+  outstandingDocuments.sort();
+
+  return {
+    isComplete,
+    totalDocuments,
+    completedDocuments,
+    outstandingDocuments,
+  };
+};
 // ---- END: Controllable selectors ----
 
 // Define and export the mock for the new thunk
@@ -148,110 +303,254 @@ export const initialDialecticStateValues: DialecticStateValues = {
   activeDialecticWalletId: null,
   activeStageSlug: 'thesis',
   sessionProgress: {},
+  recipesByStageSlug: {},
+  stageRunProgress: {},
+  focusedStageDocument: {},
+  stageDocumentContent: {},
+  stageDocumentVersions: {},
+  stageDocumentFeedback: {},
+  isLoadingStageDocumentFeedback: false,
+  stageDocumentFeedbackError: null,
+  isSubmittingStageDocumentFeedback: false,
+  submitStageDocumentFeedbackError: null,
 };
 
 // 2. Helper function to create a new mock store instance
 const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>): StoreApi<DialecticStore> => {
-  return createStore<DialecticStore>((set, get) => ({
-    ...initialDialecticStateValues,
-    ...(initialOverrides || {}),
+  return createStore<DialecticStore>()(
+    immer((set, get) => {
+      /*
+      const getStageDocumentKey = (key: StageDocumentCompositeKey): string =>
+        `${key.sessionId}:${key.stageSlug}:${key.iterationNumber}:${key.modelId}:${key.documentKey}`;
+      */
 
-    // Actions - implemented using vi.fn() and using `set` for state changes
-    fetchDomains: vi.fn().mockResolvedValue(undefined),
-    setSelectedDomain: vi.fn((domain: DialecticDomain | null) => set({ selectedDomain: domain })),
-    fetchAvailableDomainOverlays: vi.fn().mockResolvedValue(undefined),
-    setSelectedStageAssociation: vi.fn((stage: DialecticStage | null) => set({ selectedStageAssociation: stage })),
-    setSelectedDomainOverlayId: vi.fn((id: string | null) => set({ selectedDomainOverlayId: id })),
-    fetchDialecticProjects: vi.fn().mockResolvedValue(undefined),
-    fetchDialecticProjectDetails: vi.fn().mockResolvedValue(undefined), // Tests might override this to use `set`
-    fetchProcessTemplate: vi.fn().mockResolvedValue(undefined),
-    createDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
-    startDialecticSession: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
-    updateSessionModels: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
-    fetchAIModelCatalog: vi.fn().mockResolvedValue(undefined),
-    fetchContributionContent: vi.fn().mockImplementation(async (contributionId: string) => {
-        // This is a base mock. Tests should provide specific implementations if needed,
-        // especially for updating contributionContentCache via `set`.
-        // For example: set(state => ({ contributionContentCache: { ...state.contributionContentCache, [contributionId]: { isLoading: false, content: '...', error: null, mimeType: 'text/markdown' } } }));
-        return { data: { content: `Default mock content for ${contributionId}`, mimeType: 'text/markdown'}, error: null };
-    }),
-    resetCreateProjectError: vi.fn(() => set({ createProjectError: null })),
-    resetProjectDetailsError: vi.fn(() => set({ projectDetailError: null })),
-    deleteDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
-    cloneDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
-    exportDialecticProject: vi.fn().mockResolvedValue({ data: { export_url: '' }, error: undefined, status: 200 }),
-    updateDialecticProjectInitialPrompt: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
-    setSelectedModelIds: vi.fn((ids: string[]) => set({ selectedModelIds: ids })),
-    setModelMultiplicity: vi.fn((modelId: string, count: number) => {
-      const currentSelectedIds = get().selectedModelIds || [];
-      const filteredIds = currentSelectedIds.filter((id) => id !== modelId);
-      const newSelectedIds = [...filteredIds];
-      for (let i = 0; i < count; i++) {
-        newSelectedIds.push(modelId);
-      }
-      set({ selectedModelIds: newSelectedIds });
-    }),
-    resetSelectedModelId: vi.fn(() => set({ selectedModelIds: [] })),
-    fetchInitialPromptContent: vi.fn().mockResolvedValue(undefined),
-    generateContributions: vi.fn().mockResolvedValue({ data: { message: 'ok', contributions: [] }, error: undefined, status: 200 }),
-    submitStageResponses: vi.fn().mockResolvedValue({ data: { message: 'ok', userFeedbackStoragePath: '/path', nextStageSeedPromptStoragePath: '/path', updatedSession: mockSession }, error: undefined, status: 200 }),
-    setSubmittingStageResponses: vi.fn((isLoading: boolean) => set({ isSubmittingStageResponses: isLoading })),
-    setSubmitStageResponsesError: vi.fn((error: ApiError | null) => set({ submitStageResponsesError: error })),
-    resetSubmitStageResponsesError: vi.fn(() => set({ submitStageResponsesError: null })),
-    saveContributionEdit: vi.fn().mockImplementation(async (params) => {
-        // Base mock. Tests may override.
-        // Example of setting loading state: set({ isSavingContributionEdit: true });
-        // After "async" work: set({ isSavingContributionEdit: false });
-        return { data: ({ id: params.originalContributionIdToEdit, ...params }), error: null, status: 200 };
-    }),
-    setSavingContributionEdit: vi.fn((isLoading: boolean) => set({ isSavingContributionEdit: isLoading })),
-    setSaveContributionEditError: vi.fn((error: ApiError | null) => set({ saveContributionEditError: error })),
-    resetSaveContributionEditError: vi.fn(() => set({ saveContributionEditError: null })),
-    setActiveContextProjectId: vi.fn((id: string | null) => set({ activeContextProjectId: id })),
-    setActiveContextSessionId: vi.fn((id: string | null) => set({ activeContextSessionId: id })),
-    setActiveContextStage: vi.fn((stage: DialecticStage | null) => set({ activeContextStage: stage })),
-    setActiveDialecticContext: vi.fn((context: { projectId: string | null; sessionId: string | null; stage: DialecticStage | null }) => {
-      set({
-        activeContextProjectId: context.projectId,
-        activeContextSessionId: context.sessionId,
-        activeContextStage: context.stage,
-      });
-    }),
-    fetchFeedbackFileContent: vi.fn().mockResolvedValue(undefined),
-    resetFetchFeedbackFileContentError: vi.fn(() => set({ fetchFeedbackFileContentError: null })),
-    clearCurrentFeedbackFileContent: vi.fn(() => set({ currentFeedbackFileContent: null })),
-    reset: vi.fn(() => {
-      // Resets state values to initial, action mocks remain the same vi.fn() instances
-      // but their call history etc. would be affected by a new store instance if we fully re-created.
-      // For a simple state reset:
-      set(initialDialecticStateValues);
-      // If full action mock reset is needed, initializeMockDialecticState should be called.
-    }),
-    _resetForTesting: vi.fn(() => {
-      // This is primarily handled by initializeMockDialecticState creating a new store.
-      // Calling reset here will reset the values of the *current* store instance.
-      get().reset();
-    }),
-    activateProjectAndSessionContextForDeepLink: mockActivateProjectAndSessionContextForDeepLink,
-    fetchAndSetCurrentSessionDetails: mockFetchAndSetCurrentSessionDetails,
-    setActiveDialecticWalletId: vi.fn((id: string | null) => set({ activeDialecticWalletId: id })),
-    setActiveStage: vi.fn((slug: string | null) => {
-      const stages = get().currentProcessTemplate?.stages ?? [];
-      const stage = stages.find(s => s.slug === slug) ?? null;
-      set({ 
-        activeContextStage: stage,
-        activeStageSlug: slug
-      });
-    }),
-    _handleContributionGenerationStarted: vi.fn(),
-    _handleDialecticContributionStarted: vi.fn(),
-    _handleContributionGenerationRetrying: vi.fn(),
-    _handleDialecticContributionReceived: vi.fn(),
-    _handleContributionGenerationFailed: vi.fn(),
-    _handleContributionGenerationContinued: vi.fn(),
-    _handleProgressUpdate: vi.fn(),
-    _handleContributionGenerationComplete: vi.fn(),
-  }));
+      const upsertStageDocumentVersion = (
+        state: Draft<DialecticStateValues>,
+        key: StageDocumentCompositeKey,
+        info: StageDocumentVersionInfo,
+      ): void => {
+        upsertStageDocumentVersionLogic(state, key, info);
+      };
+
+      const ensureStageDocumentContent = (
+        state: Draft<DialecticStateValues>,
+        key: StageDocumentCompositeKey,
+        seed?: { baselineMarkdown?: string; version?: StageDocumentVersionInfo },
+      ): StageDocumentContentState => {
+        return ensureStageDocumentContentLogic(state, key, seed);
+      };
+
+      const recordStageDocumentDraft = (
+        state: Draft<DialecticStateValues>,
+        key: StageDocumentCompositeKey,
+        draftMarkdown: string,
+      ): void => {
+        recordStageDocumentDraftLogic(state, key, draftMarkdown);
+      };
+
+      const flushStageDocumentDraft = (
+        state: Draft<DialecticStateValues>,
+        key: StageDocumentCompositeKey,
+      ): void => {
+        flushStageDocumentDraftLogic(state, key);
+      };
+
+      const reapplyDraftToNewBaseline = (
+        state: Draft<DialecticStateValues>,
+        key: StageDocumentCompositeKey,
+        newBaseline: string,
+        newVersion: StageDocumentVersionInfo,
+      ): void => {
+        reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion);
+      };
+
+      return {
+      ...initialDialecticStateValues,
+      ...(initialOverrides || {}),
+
+      // Actions - implemented using vi.fn() and using `set` for state changes
+      fetchDomains: vi.fn().mockResolvedValue(undefined),
+      setSelectedDomain: vi.fn((domain: DialecticDomain | null) => set({ selectedDomain: domain })),
+      fetchAvailableDomainOverlays: vi.fn().mockResolvedValue(undefined),
+      setSelectedStageAssociation: vi.fn((stage: DialecticStage | null) => set({ selectedStageAssociation: stage })),
+      setSelectedDomainOverlayId: vi.fn((id: string | null) => set({ selectedDomainOverlayId: id })),
+      fetchDialecticProjects: vi.fn().mockResolvedValue(undefined),
+      fetchDialecticProjectDetails: vi.fn().mockResolvedValue(undefined), // Tests might override this to use `set`
+      fetchProcessTemplate: vi.fn().mockResolvedValue(undefined),
+      createDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
+      startDialecticSession: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
+      updateSessionModels: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
+      fetchAIModelCatalog: vi.fn().mockResolvedValue(undefined),
+      fetchContributionContent: vi.fn().mockImplementation(async (contributionId: string) => {
+          // This is a base mock. Tests should provide specific implementations if needed,
+          // especially for updating contributionContentCache via `set`.
+          // For example: set(state => ({ contributionContentCache: { ...state.contributionContentCache, [contributionId]: { isLoading: false, content: '...', error: null, mimeType: 'text/markdown' } } }));
+          return { data: { content: `Default mock content for ${contributionId}`, mimeType: 'text/markdown'}, error: null };
+      }),
+      resetCreateProjectError: vi.fn(() => set({ createProjectError: null })),
+      resetProjectDetailsError: vi.fn(() => set({ projectDetailError: null })),
+      deleteDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
+      cloneDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
+      exportDialecticProject: vi.fn().mockResolvedValue({ data: { export_url: '' }, error: undefined, status: 200 }),
+      updateDialecticProjectInitialPrompt: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
+      setSelectedModelIds: vi.fn((ids: string[]) => set({ selectedModelIds: ids })),
+      setModelMultiplicity: vi.fn((modelId: string, count: number) => {
+        const currentSelectedIds = get().selectedModelIds || [];
+        const filteredIds = currentSelectedIds.filter((id) => id !== modelId);
+        const newSelectedIds = [...filteredIds];
+        for (let i = 0; i < count; i++) {
+          newSelectedIds.push(modelId);
+        }
+        set({ selectedModelIds: newSelectedIds });
+      }),
+      resetSelectedModelId: vi.fn(() => set({ selectedModelIds: [] })),
+      fetchInitialPromptContent: vi.fn().mockResolvedValue(undefined),
+      generateContributions: vi.fn().mockResolvedValue({ data: { message: 'ok', contributions: [] }, error: undefined, status: 200 }),
+      submitStageResponses: vi.fn().mockResolvedValue({ data: { message: 'ok', userFeedbackStoragePath: '/path', nextStageSeedPromptStoragePath: '/path', updatedSession: mockSession }, error: undefined, status: 200 }),
+      setSubmittingStageResponses: vi.fn((isLoading: boolean) => set({ isSubmittingStageResponses: isLoading })),
+      setSubmitStageResponsesError: vi.fn((error: ApiError | null) => set({ submitStageResponsesError: error })),
+      resetSubmitStageResponsesError: vi.fn(() => set({ submitStageResponsesError: null })),
+      saveContributionEdit: vi.fn().mockImplementation(async (params) => {
+          // Base mock. Tests may override.
+          // Example of setting loading state: set({ isSavingContributionEdit: true });
+          // After "async" work: set({ isSavingContributionEdit: false });
+          return { data: ({ id: params.originalContributionIdToEdit, ...params }), error: null, status: 200 };
+      }),
+      setSavingContributionEdit: vi.fn((isLoading: boolean) => set({ isSavingContributionEdit: isLoading })),
+      setSaveContributionEditError: vi.fn((error: ApiError | null) => set({ saveContributionEditError: error })),
+      resetSaveContributionEditError: vi.fn(() => set({ saveContributionEditError: null })),
+      setActiveContextProjectId: vi.fn((id: string | null) => set({ activeContextProjectId: id })),
+      setActiveContextSessionId: vi.fn((id: string | null) => set({ activeContextSessionId: id })),
+      setActiveContextStage: vi.fn((stage: DialecticStage | null) => set({ activeContextStage: stage })),
+      setActiveDialecticContext: vi.fn((context: { projectId: string | null; sessionId: string | null; stage: DialecticStage | null }) => {
+        set({
+          activeContextProjectId: context.projectId,
+          activeContextSessionId: context.sessionId,
+          activeContextStage: context.stage,
+        });
+      }),
+      fetchFeedbackFileContent: vi.fn().mockResolvedValue(undefined),
+      resetFetchFeedbackFileContentError: vi.fn(() => set({ fetchFeedbackFileContentError: null })),
+      clearCurrentFeedbackFileContent: vi.fn(() => set({ currentFeedbackFileContent: null })),
+      reset: vi.fn(() => {
+        // Resets state values to initial, action mocks remain the same vi.fn() instances
+        // but their call history etc. would be affected by a new store instance if we fully re-created.
+        // For a simple state reset:
+        set(initialDialecticStateValues);
+        // If full action mock reset is needed, initializeMockDialecticState should be called.
+      }),
+      _resetForTesting: vi.fn(() => {
+        // This is primarily handled by initializeMockDialecticState creating a new store.
+        // Calling reset here will reset the values of the *current* store instance.
+        get().reset();
+      }),
+      activateProjectAndSessionContextForDeepLink: mockActivateProjectAndSessionContextForDeepLink,
+      fetchAndSetCurrentSessionDetails: mockFetchAndSetCurrentSessionDetails,
+      setActiveDialecticWalletId: vi.fn((id: string | null) => set({ activeDialecticWalletId: id })),
+      setActiveStage: vi.fn((slug: string | null) => {
+        const stages = get().currentProcessTemplate?.stages ?? [];
+        const stage = stages.find(s => s.slug === slug) ?? null;
+        set({
+          activeContextStage: stage,
+          activeStageSlug: slug
+        });
+      }),
+      setFocusedStageDocument: vi.fn((payload: SetFocusedStageDocumentPayload) => {
+        const { sessionId, stageSlug, modelId, documentKey } = payload;
+        const key = `${sessionId}:${stageSlug}:${modelId}`;
+        set((state) => {
+          if (!state.focusedStageDocument) {
+            state.focusedStageDocument = {};
+          }
+          state.focusedStageDocument[key] = { modelId, documentKey };
+        });
+      }),
+      clearFocusedStageDocument: vi.fn((payload: ClearFocusedStageDocumentPayload) => {
+        const { sessionId, stageSlug, modelId } = payload;
+        const key = `${sessionId}:${stageSlug}:${modelId}`;
+        set((state) => {
+          const current = state.focusedStageDocument ?? {};
+          if (!(key in current)) {
+            return;
+          }
+          current[key] = null;
+        });
+      }),
+      _handleContributionGenerationStarted: vi.fn(),
+      _handleDialecticContributionStarted: vi.fn(),
+      _handleContributionGenerationRetrying: vi.fn(),
+      _handleDialecticContributionReceived: vi.fn(),
+      _handleContributionGenerationFailed: vi.fn(),
+      _handleContributionGenerationContinued: vi.fn(),
+      _handleProgressUpdate: vi.fn(),
+      _handleContributionGenerationComplete: vi.fn(),
+      _handlePlannerStarted: vi.fn(),
+      _handleDocumentStarted: vi.fn(),
+      _handleDocumentChunkCompleted: vi.fn(),
+      _handleRenderCompleted: vi.fn().mockImplementation((event: RenderCompletedPayload) => {
+        handleRenderCompletedLogic(get, set, event);
+      }),
+      _handleJobFailed: vi.fn(),
+      fetchStageRecipe: vi.fn().mockResolvedValue(undefined),
+      ensureRecipeForActiveStage: vi.fn().mockResolvedValue(undefined),
+      fetchStageDocumentFeedback: vi.fn().mockResolvedValue(undefined),
+      submitStageDocumentFeedback: vi.fn().mockResolvedValue({ data: { success: true }, error: undefined, status: 200 }),
+      beginStageDocumentEdit: vi.fn().mockImplementation(
+        (key: StageDocumentCompositeKey, initialDraftMarkdown: string) => {
+            beginStageDocumentEditLogic(
+                get,
+                set,
+                {
+                    ensureStageDocumentContent,
+                    recordStageDocumentDraft,
+                    upsertStageDocumentVersion,
+                    reapplyDraftToNewBaseline,
+                },
+                key,
+                initialDraftMarkdown,
+            );
+        },
+      ),
+      updateStageDocumentDraft: vi.fn().mockImplementation(
+        (key: StageDocumentCompositeKey, draftMarkdown: string) => {
+            updateStageDocumentDraftLogic(
+                set,
+                {
+                    ensureStageDocumentContent,
+                    recordStageDocumentDraft,
+                    upsertStageDocumentVersion,
+                    reapplyDraftToNewBaseline,
+                },
+                key,
+                draftMarkdown,
+            );
+        },
+      ),
+      flushStageDocumentDraft: vi.fn().mockImplementation((key: StageDocumentCompositeKey) => {
+        flushStageDocumentDraftActionLogic(set, { flushStageDocumentDraft }, key);
+      }),
+      clearStageDocumentDraft: vi.fn().mockImplementation((key: StageDocumentCompositeKey) => {
+        clearStageDocumentDraftLogic(set, key);
+      }),
+      fetchStageDocumentContent: vi.fn().mockImplementation(
+        async (key: StageDocumentCompositeKey, resourceId: string) => {
+            await fetchStageDocumentContentLogic(
+                set,
+                {
+                    ensureStageDocumentContent,
+                    recordStageDocumentDraft,
+                    upsertStageDocumentVersion,
+                    reapplyDraftToNewBaseline,
+                },
+                key,
+                resourceId,
+            );
+        },
+      ),
+      resetSubmitStageDocumentFeedbackError: vi.fn(() => set({ submitStageDocumentFeedbackError: null })),
+    };
+  }),
+);
 };
 
 // 3. Initialize the store at module level

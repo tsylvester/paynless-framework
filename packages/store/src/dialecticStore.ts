@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
+import type { Draft } from 'immer';
 import { 
   type ApiError, 
   type ApiResponse, 
@@ -21,6 +22,7 @@ import {
   type GenerateContributionsResponse,
   type DialecticProjectRow,
   type DialecticLifecycleEvent,
+  type StageDocumentCompositeKey,
   type ContributionGenerationStartedPayload,
   type DialecticContributionStartedPayload,
   type ContributionGenerationRetryingPayload,
@@ -33,17 +35,46 @@ import {
   type PlannerStartedPayload,
   type DocumentStartedPayload,
   type DocumentChunkCompletedPayload,
-  type RenderCompletedPayload,
-  type JobFailedPayload,
+	type RenderCompletedPayload,
+	type JobFailedPayload,
+	type SetFocusedStageDocumentPayload,
+	type ClearFocusedStageDocumentPayload,
   isContributionStatus,
   ExportProjectResponse,
+  StageDocumentVersionInfo,
+  StageDocumentContentState,
+  type SubmitStageDocumentFeedbackPayload,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { useWalletStore } from './walletStore';
 import { useAiStore } from './aiStore';
 import { selectActiveChatWalletInfo } from './walletStore.selectors';
 import { logger } from '@paynless/utils';
+import {
+	ensureStageDocumentContentLogic,
+	flushStageDocumentDraftLogic,
+	reapplyDraftToNewBaselineLogic,
+	recordStageDocumentDraftLogic,
+	upsertStageDocumentVersionLogic,
+	beginStageDocumentEditLogic,
+	updateStageDocumentDraftLogic,
+	flushStageDocumentDraftActionLogic,
+	clearStageDocumentDraftLogic,
+	fetchStageDocumentContentLogic,
+	handlePlannerStartedLogic,
+	handleDocumentStartedLogic,
+	handleDocumentChunkCompletedLogic,
+	handleRenderCompletedLogic,
+	handleJobFailedLogic,
+	fetchStageDocumentFeedbackLogic,
+	submitStageDocumentFeedbackLogic,
+	selectStageDocumentFeedbackLogic,
+} from './dialecticStore.documents';
 
+type FocusedDocumentKeyParams = Pick<SetFocusedStageDocumentPayload, 'sessionId' | 'stageSlug' | 'modelId'>;
+
+const buildFocusedDocumentKey = ({ sessionId, stageSlug, modelId }: FocusedDocumentKeyParams): string =>
+	`${sessionId}:${stageSlug}:${modelId}`;
 
 export const initialDialecticStateValues: DialecticStateValues = {
 	domains: [],
@@ -139,6 +170,14 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	// Recipe hydration and per-stage-run progress
 	recipesByStageSlug: {},
 	stageRunProgress: {},
+	focusedStageDocument: {},
+	stageDocumentContent: {},
+	stageDocumentVersions: {},
+	stageDocumentFeedback: {},
+	isLoadingStageDocumentFeedback: false,
+	stageDocumentFeedbackError: null,
+	isSubmittingStageDocumentFeedback: false,
+	submitStageDocumentFeedbackError: null,
 };
 
 export type DialecticState = DialecticStateValues & DialecticStore;
@@ -148,10 +187,56 @@ export const selectGeneratingSessionsForSession = (state: DialecticState, sessio
 };
 
 export const useDialecticStore = create<DialecticStore>()(
-  immer((set, get) => ({
-    ...initialDialecticStateValues,
-    
-    _handleProgressUpdate: (event: DialecticProgressUpdatePayload) => {
+  immer((set, get) => {
+
+
+    const getStageDocumentKey = (key: StageDocumentCompositeKey): string =>
+      `${key.sessionId}:${key.stageSlug}:${key.iterationNumber}:${key.modelId}:${key.documentKey}`;
+
+    const upsertStageDocumentVersion = (
+			state: Draft<DialecticStateValues>,
+			key: StageDocumentCompositeKey,
+			info: StageDocumentVersionInfo,
+		): void => {
+			upsertStageDocumentVersionLogic(state, key, info);
+		};
+
+		const ensureStageDocumentContent = (
+			state: Draft<DialecticStateValues>,
+			key: StageDocumentCompositeKey,
+			seed?: { baselineMarkdown?: string; version?: StageDocumentVersionInfo },
+		): StageDocumentContentState => {
+			return ensureStageDocumentContentLogic(state, key, seed);
+		};
+
+		const recordStageDocumentDraft = (
+			state: Draft<DialecticStateValues>,
+			key: StageDocumentCompositeKey,
+			draftMarkdown: string,
+		): void => {
+			recordStageDocumentDraftLogic(state, key, draftMarkdown);
+		};
+
+		const flushStageDocumentDraft = (
+			state: Draft<DialecticStateValues>,
+			key: StageDocumentCompositeKey,
+		): void => {
+			flushStageDocumentDraftLogic(state, key);
+		};
+
+		const reapplyDraftToNewBaseline = (
+			state: Draft<DialecticStateValues>,
+			key: StageDocumentCompositeKey,
+			newBaseline: string,
+			newVersion: StageDocumentVersionInfo,
+		) => {
+			reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion);
+		};
+
+    return {
+      ...initialDialecticStateValues,
+
+      _handleProgressUpdate: (event: DialecticProgressUpdatePayload) => {
         logger.info(`[DialecticStore] Handling progress update for session ${event.sessionId}`, { event });
         set(state => {
           const progress: ProgressData = {
@@ -1172,7 +1257,86 @@ export const useDialecticStore = create<DialecticStore>()(
     }
   },
 
-	reset: () => {
+	beginStageDocumentEdit: (
+		key: StageDocumentCompositeKey,
+		initialDraftMarkdown: string,
+	) => {
+		beginStageDocumentEditLogic(
+			get,
+			set,
+			{
+				ensureStageDocumentContent,
+				recordStageDocumentDraft,
+				upsertStageDocumentVersion,
+				reapplyDraftToNewBaseline,
+			},
+			key,
+			initialDraftMarkdown,
+		);
+	},
+
+	updateStageDocumentDraft: (
+		key: StageDocumentCompositeKey,
+		draftMarkdown: string,
+	) => {
+		updateStageDocumentDraftLogic(
+			set,
+			{
+				ensureStageDocumentContent,
+				recordStageDocumentDraft,
+				upsertStageDocumentVersion,
+				reapplyDraftToNewBaseline,
+			},
+			key,
+			draftMarkdown,
+		);
+	},
+
+	flushStageDocumentDraft: (key: StageDocumentCompositeKey) => {
+		flushStageDocumentDraftActionLogic(set, { flushStageDocumentDraft }, key);
+	},
+
+	clearStageDocumentDraft: (key: StageDocumentCompositeKey) => {
+		clearStageDocumentDraftLogic(set, key);
+	},
+
+	fetchStageDocumentContent: async (
+		key: StageDocumentCompositeKey,
+		resourceId: string,
+	) => {
+		await fetchStageDocumentContentLogic(
+			set,
+			{
+				ensureStageDocumentContent,
+				recordStageDocumentDraft,
+				upsertStageDocumentVersion,
+				reapplyDraftToNewBaseline,
+			},
+			key,
+			resourceId,
+		);
+	},
+
+	fetchStageDocumentFeedback: async (key: StageDocumentCompositeKey) => {
+		await fetchStageDocumentFeedbackLogic(set, key);
+	},
+
+	submitStageDocumentFeedback: async (payload: SubmitStageDocumentFeedbackPayload) => {
+		return submitStageDocumentFeedbackLogic(set, {
+			...payload,
+			feedbackMarkdown: payload.feedback,
+		});
+	},
+
+	resetSubmitStageDocumentFeedbackError: () => {
+		set({ submitStageDocumentFeedbackError: null });
+	},
+
+	selectStageDocumentFeedback: (key: StageDocumentCompositeKey) => {
+		return selectStageDocumentFeedbackLogic(get, key);
+	},
+
+    reset: () => {
 		logger.info("[DialecticStore] Resetting store to initial state", {
 			storeKeys: Object.keys(initialDialecticStateValues),
 		});
@@ -1245,175 +1409,18 @@ export const useDialecticStore = create<DialecticStore>()(
   },
 
   // --- Private Handlers for Lifecycle Events ---
-  _handlePlannerStarted: (event: PlannerStartedPayload) => {
-    const recipe = get().recipesByStageSlug[event.stageSlug];
-    if (!recipe) {
-      logger.warn('[DialecticStore] planner_started ignored; recipe missing', { stageSlug: event.stageSlug });
-      return;
-    }
-    const progressKey = `${event.sessionId}:${event.stageSlug}:${event.iterationNumber}`;
-    const progressSnapshot = get().stageRunProgress[progressKey];
-    if (!progressSnapshot) {
-      logger.warn('[DialecticStore] planner_started ignored; progress bucket missing', { progressKey });
-      return;
-    }
-    const stepKey = event.step_key ?? recipe.steps.find(step => step.job_type === 'PLAN')?.step_key;
-    if (!stepKey) {
-      logger.warn('[DialecticStore] planner_started ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
-      return;
-    }
-    set(state => {
-      const progress = state.stageRunProgress[progressKey];
-      if (!progress) {
-        return;
-      }
-      progress.stepStatuses[stepKey] = 'in_progress';
-    });
-  },
+  _handlePlannerStarted: (event: PlannerStartedPayload) => handlePlannerStartedLogic(get, set, event),
 
-  _handleDocumentStarted: (event: DocumentStartedPayload) => {
-    const recipe = get().recipesByStageSlug[event.stageSlug];
-    if (!recipe) {
-      logger.warn('[DialecticStore] document_started ignored; recipe missing', { stageSlug: event.stageSlug });
-      return;
-    }
-    const progressKey = `${event.sessionId}:${event.stageSlug}:${event.iterationNumber}`;
-    const progressSnapshot = get().stageRunProgress[progressKey];
-    if (!progressSnapshot) {
-      logger.warn('[DialecticStore] document_started ignored; progress bucket missing', { progressKey });
-      return;
-    }
-    const stepKey = event.step_key ?? recipe.steps.find(step => step.job_type === 'EXECUTE')?.step_key;
-    if (!stepKey) {
-      logger.warn('[DialecticStore] document_started ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
-      return;
-    }
-    set(state => {
-      const progress = state.stageRunProgress[progressKey];
-      if (!progress) {
-        return;
-      }
-      progress.stepStatuses[stepKey] = 'in_progress';
-      const documentKey = event.document_key;
-      const existingDocument = progress.documents[documentKey];
-      if (existingDocument) {
-        existingDocument.status = 'generating';
-        existingDocument.job_id = event.job_id;
-      } else {
-        progress.documents[documentKey] = {
-          status: 'generating',
-          job_id: event.job_id,
-        };
-      }
-    });
-  },
+  _handleDocumentStarted: (event: DocumentStartedPayload) =>
+		handleDocumentStartedLogic(get, set, event),
 
-  _handleDocumentChunkCompleted: (event: DocumentChunkCompletedPayload) => {
-    const recipe = get().recipesByStageSlug[event.stageSlug];
-    if (!recipe) {
-      logger.warn('[DialecticStore] document_chunk_completed ignored; recipe missing', { stageSlug: event.stageSlug });
-      return;
-    }
-    const progressKey = `${event.sessionId}:${event.stageSlug}:${event.iterationNumber}`;
-    const progressSnapshot = get().stageRunProgress[progressKey];
-    if (!progressSnapshot) {
-      logger.warn('[DialecticStore] document_chunk_completed ignored; progress bucket missing', { progressKey });
-      return;
-    }
-    set(state => {
-      const progress = state.stageRunProgress[progressKey];
-      if (!progress) {
-        return;
-      }
-      const documentEntry = progress.documents[event.document_key];
-      if (!documentEntry) {
-        logger.warn('[DialecticStore] document_chunk_completed ignored; document not tracked', { progressKey, documentKey: event.document_key });
-        return;
-      }
-      documentEntry.job_id = event.job_id;
-      if (event.isFinalChunk === true) {
-        documentEntry.status = 'completed';
-      } else {
-        documentEntry.status = 'continuing';
-      }
-    });
-  },
+	_handleDocumentChunkCompleted: (event: DocumentChunkCompletedPayload) =>
+		handleDocumentChunkCompletedLogic(get, set, event),
 
-  _handleRenderCompleted: (event: RenderCompletedPayload) => {
-    const recipe = get().recipesByStageSlug[event.stageSlug];
-    if (!recipe) {
-      logger.warn('[DialecticStore] render_completed ignored; recipe missing', { stageSlug: event.stageSlug });
-      return;
-    }
-    const progressKey = `${event.sessionId}:${event.stageSlug}:${event.iterationNumber}`;
-    const progressSnapshot = get().stageRunProgress[progressKey];
-    if (!progressSnapshot) {
-      logger.warn('[DialecticStore] render_completed ignored; progress bucket missing', { progressKey });
-      return;
-    }
-    const stepKey = event.step_key ?? recipe.steps.find(step => step.job_type === 'RENDER')?.step_key;
-    if (!stepKey) {
-      logger.warn('[DialecticStore] render_completed ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
-      return;
-    }
-    set(state => {
-      const progress = state.stageRunProgress[progressKey];
-      if (!progress) {
-        return;
-      }
-      progress.stepStatuses[stepKey] = 'completed';
-      const documentKey = event.document_key;
-      const existingDocument = progress.documents[documentKey];
-      if (existingDocument) {
-        existingDocument.status = 'completed';
-        existingDocument.job_id = event.job_id;
-        existingDocument.latestRenderedResourceId = event.latestRenderedResourceId;
-      } else {
-        progress.documents[documentKey] = {
-          status: 'completed',
-          job_id: event.job_id,
-          latestRenderedResourceId: event.latestRenderedResourceId,
-        };
-      }
-    });
-  },
+	_handleRenderCompleted: (event: RenderCompletedPayload) =>
+		handleRenderCompletedLogic(get, set, event),
 
-  _handleJobFailed: (event: JobFailedPayload) => {
-    const recipe = get().recipesByStageSlug[event.stageSlug];
-    if (!recipe) {
-      logger.warn('[DialecticStore] job_failed ignored; recipe missing', { stageSlug: event.stageSlug });
-      return;
-    }
-    const progressKey = `${event.sessionId}:${event.stageSlug}:${event.iterationNumber}`;
-    const progressSnapshot = get().stageRunProgress[progressKey];
-    if (!progressSnapshot) {
-      logger.warn('[DialecticStore] job_failed ignored; progress bucket missing', { progressKey });
-      return;
-    }
-    const stepKey = event.step_key ?? recipe.steps.find(step => step.job_type === 'EXECUTE' || step.job_type === 'PLAN')?.step_key;
-    if (!stepKey) {
-      logger.warn('[DialecticStore] job_failed ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
-      return;
-    }
-    set(state => {
-      const progress = state.stageRunProgress[progressKey];
-      if (!progress) {
-        return;
-      }
-      progress.stepStatuses[stepKey] = 'failed';
-      const documentKey = event.document_key;
-      const existingDocument = progress.documents[documentKey];
-      if (existingDocument) {
-        existingDocument.status = 'failed';
-        existingDocument.job_id = event.job_id;
-      } else {
-        progress.documents[documentKey] = {
-          status: 'failed',
-          job_id: event.job_id,
-        };
-      }
-    });
-  },
+	_handleJobFailed: (event: JobFailedPayload) => handleJobFailedLogic(get, set, event),
 
   _handleContributionGenerationStarted: (event: ContributionGenerationStartedPayload) => {
     set({
@@ -2129,6 +2136,74 @@ export const useDialecticStore = create<DialecticStore>()(
     set({ activeStageSlug: slug });
   },
 
+	setFocusedStageDocument: ({ sessionId, stageSlug, modelId, documentKey, iterationNumber }: SetFocusedStageDocumentPayload) => {
+		const focusKey = buildFocusedDocumentKey({ sessionId, stageSlug, modelId });
+		logger.info('[DialecticStore] Setting focused stage document', {
+			sessionId,
+			stageSlug,
+			modelId,
+			documentKey,
+			iterationNumber,
+		});
+		set(state => {
+			if (!state.focusedStageDocument) {
+				state.focusedStageDocument = {};
+			}
+			state.focusedStageDocument[focusKey] = { modelId, documentKey };
+		});
+
+		const compositeKey: StageDocumentCompositeKey = {
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			modelId,
+			documentKey,
+		};
+		const serializedKey = getStageDocumentKey(compositeKey);
+		const existingEntry = get().stageDocumentContent[serializedKey];
+		const initialDraft = existingEntry ? existingEntry.currentDraftMarkdown : '';
+		get().beginStageDocumentEdit(compositeKey, initialDraft);
+	},
+
+	clearFocusedStageDocument: ({ sessionId, stageSlug, modelId }: ClearFocusedStageDocumentPayload) => {
+		const focusKey = buildFocusedDocumentKey({ sessionId, stageSlug, modelId });
+		logger.info('[DialecticStore] Clearing focused stage document', {
+			sessionId,
+			stageSlug,
+			modelId,
+		});
+		const snapshot = get();
+		const focusedEntry = snapshot.focusedStageDocument?.[focusKey] ?? null;
+		if (focusedEntry) {
+			let iterationNumber: number | null = null;
+			for (const [progressKey, progress] of Object.entries(snapshot.stageRunProgress)) {
+				const [sessionKey, stageKey, iterationValue] = progressKey.split(':');
+				if (sessionKey === sessionId && stageKey === stageSlug && progress.documents[focusedEntry.documentKey]) {
+					const parsed = Number(iterationValue);
+					if (!Number.isNaN(parsed)) {
+						iterationNumber = parsed;
+						break;
+					}
+				}
+			}
+			if (iterationNumber !== null) {
+				get().clearStageDocumentDraft({
+					sessionId,
+					stageSlug,
+					iterationNumber,
+					modelId,
+					documentKey: focusedEntry.documentKey,
+				});
+			}
+		}
+		set(state => {
+			if (!state.focusedStageDocument) {
+				return;
+			}
+			state.focusedStageDocument[focusKey] = null;
+		});
+	},
+
   // --- Recipes & Stage Run Progress ---
   fetchStageRecipe: async (stageSlug: string): Promise<void> => {
     try {
@@ -2171,4 +2246,6 @@ export const useDialecticStore = create<DialecticStore>()(
       }
     });
   },
-})));
+    };
+  }),
+);

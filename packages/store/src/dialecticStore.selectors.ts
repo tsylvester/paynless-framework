@@ -1,8 +1,8 @@
-import type { 
-    DialecticStateValues, 
-    DialecticProject, 
-    AIModelCatalogEntry, 
-    ApiError, 
+import type {
+    DialecticStateValues,
+    DialecticProject,
+    AIModelCatalogEntry,
+    ApiError,
     DomainOverlayDescriptor,
     DialecticStage,
     DialecticContribution,
@@ -10,6 +10,7 @@ import type {
     DialecticFeedback,
     DialecticStageRecipe,
     DialecticStageRecipeStep,
+    FocusedStageDocumentState,
 } from '@paynless/types';
 import { createSelector } from 'reselect';
 
@@ -664,6 +665,118 @@ export const selectLatestRenderedRef = (
     if (!descriptor) {
         return undefined;
     }
-    return descriptor.latestRenderedResourceId ?? null;
+    return descriptor.latestRenderedResourceId;
 };
 
+export const selectStageProgressSummary = (
+    state: DialecticStateValues,
+    sessionId: string,
+    stageSlug: string,
+    iterationNumber: number,
+    modelId?: string
+): {
+    isComplete: boolean;
+    totalDocuments: number;
+    completedDocuments: number;
+    outstandingDocuments: string[];
+} => {
+    const progress = selectStageRunProgress(state, sessionId, stageSlug, iterationNumber);
+    if (!progress) {
+        return {
+            isComplete: false,
+            totalDocuments: 0,
+            completedDocuments: 0,
+            outstandingDocuments: [],
+        };
+    }
+
+    const documentEntries = progress.documents;
+
+    const documentKeys = Object.keys(documentEntries).filter((key) => {
+        if (!modelId) return true;
+        const documentDescriptor = documentEntries[key];
+        return documentDescriptor?.modelId === modelId;
+    });
+
+    let completedDocuments = 0;
+    const outstandingDocuments: string[] = [];
+
+    for (const key of documentKeys) {
+        const documentDescriptor = documentEntries[key];
+        if (!documentDescriptor) {
+            continue;
+        }
+        if (documentDescriptor.status === 'completed') {
+            completedDocuments += 1;
+        } else {
+            outstandingDocuments.push(key);
+        }
+    }
+
+    const totalDocuments = documentKeys.length;
+    const isComplete = totalDocuments > 0 && completedDocuments === totalDocuments;
+
+    outstandingDocuments.sort();
+
+    return {
+        isComplete,
+        totalDocuments,
+        completedDocuments,
+        outstandingDocuments,
+    };
+};
+
+export const selectStageDocumentChecklist = (
+    state: DialecticStateValues,
+    progressKey: string,
+    modelId: string
+): Array<{
+    documentKey: string;
+    status: DocumentStatus;
+    jobId: string;
+    latestRenderedResourceId: string;
+    modelId: string;
+}> => {
+    const documents = selectDocumentsForStageRun(state, progressKey);
+    const checklist: Array<{
+        documentKey: string;
+        status: DocumentStatus;
+        jobId: string;
+        latestRenderedResourceId: string;
+        modelId: string;
+    }> = [];
+
+    for (const documentKey of Object.keys(documents)) {
+        const descriptor = documents[documentKey];
+        if (!descriptor || descriptor.modelId !== modelId) {
+            continue;
+        }
+        checklist.push({
+            documentKey,
+            status: descriptor.status,
+            jobId: descriptor.job_id,
+            latestRenderedResourceId: descriptor.latestRenderedResourceId,
+            modelId: descriptor.modelId,
+        });
+    }
+
+    return checklist;
+};
+
+export const selectFocusedStageDocument = (
+    state: DialecticStateValues,
+    sessionId: string,
+    stageSlug: string,
+    modelId: string,
+): FocusedStageDocumentState | null => {
+    const key = `${sessionId}:${stageSlug}:${modelId}`;
+    const focusMap = state.focusedStageDocument;
+    if (!focusMap) {
+        return null;
+    }
+    const entry = focusMap[key] ?? null;
+    if (!entry) {
+        return null;
+    }
+    return entry;
+};

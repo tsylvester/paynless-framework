@@ -7,9 +7,9 @@ import {
   selectSessionById, 
   selectActiveContextSessionId, 
   selectCurrentProjectDetail, 
-  selectIsStageReadyForSessionIteration,
   selectSortedStages,
-  selectActiveStageSlug
+  selectActiveStageSlug,
+  selectStageProgressSummary
 } from '@paynless/store';
 
 interface StageCardProps {
@@ -27,48 +27,23 @@ const StageCard: React.FC<StageCardProps> = ({ stage }) => {
     activeSessionId ? selectSessionById(state, activeSessionId) : undefined
   );
   
-  const initialPromptContentCache = useDialecticStore(state => state.initialPromptContentCache);
-
   const isActiveStage = stage.slug === activeStageSlug;
 
-  const isStageReady = useDialecticStore(state => {
-    // Ensure project and session from the state are used for consistency with the selector call
-    const currentProjectFromState = selectCurrentProjectDetail(state);
-    const currentSessionFromState = activeSessionId ? selectSessionById(state, activeSessionId) : undefined;
-
-    if (!currentProjectFromState || !currentSessionFromState) {
-      return false;
+  const { isComplete, completedDocuments, totalDocuments } = useDialecticStore(state => {
+    if (!activeSessionId) {
+      return { isComplete: false, completedDocuments: 0, totalDocuments: 0 };
     }
-    return selectIsStageReadyForSessionIteration(
-      state, 
-      currentProjectFromState.id, 
-      currentSessionFromState.id, 
-      stage.slug, 
-      currentSessionFromState.iteration_count
+    const activeSession = selectSessionById(state, activeSessionId);
+    if (!activeSession) {
+      return { isComplete: false, completedDocuments: 0, totalDocuments: 0 };
+    }
+    return selectStageProgressSummary(
+      state,
+      activeSession.id,
+      stage.slug,
+      activeSession.iteration_count
     );
   });
-
-  if (project && session && project.resources && isStageReady) {
-    const targetResource = project.resources.find(resource => {
-      if (typeof resource.resource_description === 'string') {
-        try {
-          const desc = JSON.parse(resource.resource_description) as { type: string; session_id: string; stage_slug: string; iteration: number };
-          return (
-            desc.type === 'seed_prompt' &&
-            desc.session_id === session.id &&
-            desc.stage_slug === stage.slug &&
-            desc.iteration === session.iteration_count
-          );
-        } catch (e) {
-          return false;
-        }
-      }
-      return false;
-    });
-    if (targetResource && initialPromptContentCache && initialPromptContentCache[targetResource.id]) {
-      // isSeedPromptLoading = initialPromptContentCache[targetResource.id].isLoading;
-    }
-  }
 
   if (!project || !session) { // Ensure project is also checked here
     return (
@@ -82,9 +57,6 @@ const StageCard: React.FC<StageCardProps> = ({ stage }) => {
       </Card>
     );
   }
-
-  const contributionsForStageExist = session.dialectic_contributions?.some(c => c.stage === stage.slug);
-
   const handleCardClick = () => {
     if (setActiveStage) {
       setActiveStage(stage.slug);
@@ -109,12 +81,17 @@ const StageCard: React.FC<StageCardProps> = ({ stage }) => {
         <CardTitle className="text-base">
           {stage.display_name}
         </CardTitle>
-        {contributionsForStageExist && (
+        {isComplete && (
           <div className="text-xs text-green-600">Completed</div>
         )}
       </div>
       {stage.description && (
         <p className="text-xs text-muted-foreground text-center">{stage.description}</p>
+      )}
+      {totalDocuments > 0 && (
+        <p className="text-xs text-muted-foreground text-center">
+          {`${completedDocuments} / ${totalDocuments} documents`}
+        </p>
       )}
     </Card>
   );

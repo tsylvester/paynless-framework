@@ -23,6 +23,8 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
   const stageSlug = 'synthesis';
   const sessionId = 'sess-xyz';
   const iterationNumber = 1;
+  const modelId = 'model-123';
+  const focusKey = `${sessionId}:${stageSlug}:${modelId}`;
 
   const stepA: DialecticStageRecipeStep = {
     id: 'step-a',
@@ -131,6 +133,76 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
       if (!key) throw new Error('progressKey should be defined');
       expect(state.stageRunProgress[key].stepStatuses['a_key']).toBe('completed');
       expect(state.stageRunProgress[key].stepStatuses['b_key']).toBe('not_started');
+    });
+  });
+
+  describe('focused stage document state', () => {
+    it('defaults to no focused document for a stage/model combination', () => {
+      const state = useDialecticStore.getState();
+      expect(state.focusedStageDocument?.[focusKey] ?? null).toBeNull();
+    });
+
+    it('stores and retrieves the focused document', () => {
+      useDialecticStore.getState().setFocusedStageDocument({
+        sessionId,
+        stageSlug,
+        modelId,
+        documentKey: 'doc-alpha',
+        stepKey: 'a_key',
+        iterationNumber,
+      });
+
+      const state = useDialecticStore.getState();
+      expect(state.focusedStageDocument?.[focusKey]).toEqual({
+        modelId,
+        documentKey: 'doc-alpha',
+      });
+    });
+
+    it('updates the focus when a different document is selected', () => {
+      useDialecticStore.getState().setFocusedStageDocument({
+        sessionId,
+        stageSlug,
+        modelId,
+        documentKey: 'doc-alpha',
+        stepKey: 'a_key',
+        iterationNumber,
+      });
+
+      useDialecticStore.getState().setFocusedStageDocument({
+        sessionId,
+        stageSlug,
+        modelId,
+        documentKey: 'doc-beta',
+        stepKey: 'b_key',
+        iterationNumber,
+      });
+
+      const state = useDialecticStore.getState();
+      expect(state.focusedStageDocument?.[focusKey]).toEqual({
+        modelId,
+        documentKey: 'doc-beta',
+      });
+    });
+
+    it('clears the focus when documents reset for the model', () => {
+      useDialecticStore.getState().setFocusedStageDocument({
+        sessionId,
+        stageSlug,
+        modelId,
+        documentKey: 'doc-alpha',
+        stepKey: 'a_key',
+        iterationNumber,
+      });
+
+      useDialecticStore.getState().clearFocusedStageDocument({
+        sessionId,
+        stageSlug,
+        modelId,
+      });
+
+      const state = useDialecticStore.getState();
+      expect(state.focusedStageDocument?.[focusKey] ?? null).toBeNull();
     });
   });
 });

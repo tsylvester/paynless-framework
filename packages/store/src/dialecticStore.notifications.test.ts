@@ -228,6 +228,7 @@ describe('Dialectic Store Notification Handlers', () => {
         document_key: 'business_case',
         modelId: 'model-2',
         step_key: 'document_step',
+      latestRenderedResourceId: 'resource/business_case.json',
       };
 
       _handleDialecticLifecycleEvent?.(event);
@@ -235,7 +236,15 @@ describe('Dialectic Store Notification Handlers', () => {
       const state = useDialecticStore.getState();
       const progress = state.stageRunProgress[progressKey];
       expect(progress.stepStatuses.document_step).toBe('in_progress');
-      expect(progress.documents.business_case).toEqual({ status: 'generating', job_id: 'job-doc' });
+      expect(progress.documents.business_case).toEqual({
+        status: 'generating',
+        job_id: 'job-doc',
+        latestRenderedResourceId: 'resource/business_case.json',
+        modelId: 'model-2',
+        lastRenderedResourceId: 'resource/business_case.json',
+        versionHash: expect.any(String),
+        lastRenderAtIso: expect.any(String),
+      });
     });
 
     it('ignores document events when stage progress bucket missing', () => {
@@ -259,7 +268,15 @@ describe('Dialectic Store Notification Handlers', () => {
 
     it('updates chunk status when document_chunk_completed arrives', () => {
       useDialecticStore.setState(state => {
-        state.stageRunProgress[progressKey].documents.business_case = { status: 'generating', job_id: 'job-doc' };
+        state.stageRunProgress[progressKey].documents.business_case = {
+          status: 'generating',
+          job_id: 'job-doc',
+          latestRenderedResourceId: 'resource/business_case.json',
+          modelId: 'model-2',
+          lastRenderedResourceId: 'resource/business_case.json',
+          versionHash: expect.any(String),
+          lastRenderAtIso: expect.any(String),
+        };
       });
       const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
       const event: DialecticLifecycleEvent = {
@@ -272,17 +289,34 @@ describe('Dialectic Store Notification Handlers', () => {
         modelId: 'model-2',
         isFinalChunk: false,
         continuationNumber: 2,
+        latestRenderedResourceId: 'resource/business_case.json',
       };
 
       _handleDialecticLifecycleEvent?.(event);
 
       const state = useDialecticStore.getState();
-      expect(state.stageRunProgress[progressKey].documents.business_case).toEqual({ status: 'continuing', job_id: 'job-doc' });
+      expect(state.stageRunProgress[progressKey].documents.business_case).toEqual({
+        status: 'continuing',
+        job_id: 'job-doc',
+        latestRenderedResourceId: 'resource/business_case.json',
+        modelId: 'model-2',
+        lastRenderedResourceId: 'resource/business_case.json',
+        versionHash: expect.any(String),
+        lastRenderAtIso: expect.any(String),
+      });
     });
 
     it('marks document completed when final chunk flagged', () => {
       useDialecticStore.setState(state => {
-        state.stageRunProgress[progressKey].documents.business_case = { status: 'continuing', job_id: 'job-doc' };
+        state.stageRunProgress[progressKey].documents.business_case = {
+          status: 'continuing',
+          job_id: 'job-doc',
+          latestRenderedResourceId: 'resource/business_case.json',
+          modelId: 'model-2',
+          lastRenderedResourceId: 'resource/business_case.json',
+          versionHash: expect.any(String),
+          lastRenderAtIso: expect.any(String),
+        };
       });
       const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
       const event: DialecticLifecycleEvent = {
@@ -294,6 +328,7 @@ describe('Dialectic Store Notification Handlers', () => {
         document_key: 'business_case',
         modelId: 'model-2',
         isFinalChunk: true,
+        latestRenderedResourceId: 'resource/business_case.json',
       };
 
       _handleDialecticLifecycleEvent?.(event);
@@ -304,7 +339,15 @@ describe('Dialectic Store Notification Handlers', () => {
 
     it('records render completion and latest resource', () => {
       useDialecticStore.setState(state => {
-        state.stageRunProgress[progressKey].documents.business_case = { status: 'continuing', job_id: 'job-doc' };
+        state.stageRunProgress[progressKey].documents.business_case = {
+          status: 'continuing',
+          job_id: 'job-doc',
+          latestRenderedResourceId: 'resource/business_case.json',
+          modelId: 'model-2',
+          lastRenderedResourceId: 'resource/business_case.json',
+          versionHash: expect.any(String),
+          lastRenderAtIso: expect.any(String),
+        };
       });
       const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
       const event: DialecticLifecycleEvent = {
@@ -324,12 +367,28 @@ describe('Dialectic Store Notification Handlers', () => {
       const state = useDialecticStore.getState();
       const progress = state.stageRunProgress[progressKey];
       expect(progress.stepStatuses.render_step).toBe('completed');
-      expect(progress.documents.business_case).toEqual({ status: 'completed', job_id: 'job-render', latestRenderedResourceId: 'resource-123' });
+      expect(progress.documents.business_case).toEqual({
+        status: 'completed',
+        job_id: 'job-render',
+        latestRenderedResourceId: 'resource-123',
+        modelId: 'model-render',
+        lastRenderedResourceId: 'resource-123',
+        versionHash: expect.any(String),
+        lastRenderAtIso: expect.any(String),
+      });
     });
 
     it('marks document failed when job_failed arrives', () => {
       useDialecticStore.setState(state => {
-        state.stageRunProgress[progressKey].documents.business_case = { status: 'continuing', job_id: 'job-doc' };
+        state.stageRunProgress[progressKey].documents.business_case = {
+          status: 'continuing',
+          job_id: 'job-doc',
+          latestRenderedResourceId: 'resource/business_case.json',
+          modelId: 'model-2',
+          lastRenderedResourceId: 'resource/business_case.json',
+          versionHash: expect.any(String),
+          lastRenderAtIso: expect.any(String),
+        };
       });
       const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
       const event: DialecticLifecycleEvent = {
@@ -342,6 +401,7 @@ describe('Dialectic Store Notification Handlers', () => {
         modelId: 'model-2',
         error: { code: 'MODEL_FAILURE', message: 'Failure' },
         step_key: 'document_step',
+        latestRenderedResourceId: 'resource/business_case.json',
       };
 
       _handleDialecticLifecycleEvent?.(event);
@@ -349,7 +409,15 @@ describe('Dialectic Store Notification Handlers', () => {
       const state = useDialecticStore.getState();
       const progress = state.stageRunProgress[progressKey];
       expect(progress.stepStatuses.document_step).toBe('failed');
-      expect(progress.documents.business_case).toEqual({ status: 'failed', job_id: 'job-doc' });
+      expect(progress.documents.business_case).toEqual({
+        status: 'failed',
+        job_id: 'job-doc',
+        latestRenderedResourceId: 'resource/business_case.json',
+        modelId: 'model-2',
+        lastRenderedResourceId: 'resource/business_case.json',
+        versionHash: expect.any(String),
+        lastRenderAtIso: expect.any(String),
+      });
     });
   });
 

@@ -296,6 +296,7 @@ describe('DialecticStore (integration) - readiness notifications', () => {
       document_key: 'global_header',
       modelId: 'model-planner',
       step_key: plannerStepKey,
+      latestRenderedResourceId: headerContextResource.id,
     });
 
     expect(readiness()).toBe(false);
@@ -337,6 +338,7 @@ describe('DialecticStore (integration) - readiness notifications', () => {
         code: 'MODEL_FAILURE',
         message: 'Writer step failed',
       },
+      latestRenderedResourceId: headerContextResource.id,
     });
 
     expect(readiness()).toBe(false);
