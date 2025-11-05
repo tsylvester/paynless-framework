@@ -26,6 +26,8 @@ const DialecticProjectsPage = lazy(() => import('../pages/DialecticProjectsPage'
 const CreateDialecticProjectPage = lazy(() => import('../pages/CreateDialecticProjectPage').then(module => ({ default: module.CreateDialecticProjectPage })));
 const DialecticProjectDetailsPage = lazy(() => import('../pages/DialecticProjectDetailsPage').then(module => ({ default: module.DialecticProjectDetailsPage })));
 const DialecticSessionDetailsPage = lazy(() => import('../pages/DialecticSessionDetailsPage').then(module => ({ default: module.DialecticSessionDetailsPage })));
+const DocsPage = lazy(() => import('../pages/DocsPage').then(module => ({ default: module.DocsPage })));
+const DocPage = lazy(() => import('../pages/DocPage').then(module => ({ default: module.DocPage })));
 //import { ForgotPassword } from '../pages/ForgotPassword';
 //import { ResetPassword } from '../pages/ResetPassword';
 //import { VerifyEmail } from '../pages/VerifyEmail';
@@ -101,6 +103,14 @@ const routes: RouteObject[] = [
         ),
       },
       {
+        path: 'chat/:chatId',
+        element: (
+          <ProtectedRoute>
+            <AiChatPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
         path: 'dashboard',
         element: (
           <ProtectedRoute>
@@ -129,22 +139,6 @@ const routes: RouteObject[] = [
         element: (
           <ProtectedRoute>
             <ChatPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'organizations',
-        element: (
-          <ProtectedRoute>  
-            <OrganizationHubPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'organizations/:orgId',
-        element: (
-          <ProtectedRoute>
-            <OrganizationFocusedViewPage />
           </ProtectedRoute>
         ),
       },
@@ -179,6 +173,18 @@ const routes: RouteObject[] = [
             <DialecticSessionDetailsPage />
           </ProtectedRoute>
         ),
+      },
+      {
+        path: 'docs',
+        element: <Navigate to="/docs/getting-started" replace />,
+      },
+      {
+        path: 'docs/:documentSlug',
+        element: <DocPage />,
+      },
+      {
+        path: 'docs-all',
+        element: <DocsPage />,
       },
       {
         path: 'admin',

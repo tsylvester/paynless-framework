@@ -65,4 +65,5 @@ export const ChatApiRequestSchema = z.object({
   continue_until_complete: z.boolean().optional(),
   isDialectic: z.boolean().optional(),
   systemInstruction: z.string().optional(),
+  stream: z.boolean().optional(),
 });

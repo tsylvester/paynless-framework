@@ -1,5 +1,6 @@
 import * as React from "react";
-import { BookOpen, Frame, PieChart, User, SquareTerminal } from "lucide-react";
+import { useEffect } from "react";
+import { BookOpen, File, User, SquareTerminal } from "lucide-react";
 import { NavMain } from "@/components/sidebar/nav-main";
 import { NavProjects } from "@/components/sidebar/nav-projects";
 import { NavUser } from "@/components/sidebar/nav-user";
@@ -12,12 +13,12 @@ import {
 	SidebarMenuButton,
 } from "@/components/ui/sidebar";
 import { useDialecticStore, useAiStore, useAuthStore } from "@paynless/store";
-import { OrganizationSwitcher } from "../organizations/OrganizationSwitcher";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	const navigate = useNavigate();
+	const storeLoadChatHistory = useAiStore.getState().loadChatHistory;
 
 	const { user, isLoading } = useAuthStore((state) => ({ user: state.user }));
 
@@ -27,28 +28,40 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 		fetchDialecticProjects: state.fetchDialecticProjects,
 	}));
 
-	const { personal } = useAiStore((state) => ({
-		personal: state.chatsByContext.personal,
-		orgs: state.chatsByContext.orgs,
-	}));
+	const personal = useAiStore((state) => state.chatsByContext.personal);
+	const isLoadingPersonalChats = useAiStore(
+		(state) => state.isLoadingHistoryByContext.personal,
+	);
 
-	console.log("chatsForContext", personal);
+	// console.log("chatsForContext personal:", personal);
+	// console.log("personal is array?", Array.isArray(personal));
+	// console.log("personal length:", personal?.length);
+	// console.log("isLoadingPersonalChats:", isLoadingPersonalChats);
+
+	// Load chat history for personal context
+	useEffect(() => {
+		const activeContextId = "personal";
+		const shouldLoad =
+			personal === undefined && !isLoadingPersonalChats && !!user; // Only load if user is authenticated
+
+		if (shouldLoad) {
+			console.log("Loading chat history for personal context");
+			storeLoadChatHistory(activeContextId);
+		}
+	}, [personal, isLoadingPersonalChats, user, storeLoadChatHistory]);
 
 	useQuery({
 		queryKey: ["projects"],
-		queryFn: () => fetchDialecticProjects(),
+		queryFn: async () => {
+			const result = await fetchDialecticProjects();
+			return result || [];
+		},
 	});
 
 	const state = isLoading ? "LOADING" : !user ? "NO_AUTH" : "AUTHENTICATED";
 
 	const data = {
 		navMain: [
-			// {
-			// 	title: "New Chat",
-			// 	url: "/new",
-			// 	icon: SquareTerminal,
-			// 	isActive: true,
-			// },
 			{
 				title: "Dashboard",
 				url: "/dashboard",
@@ -75,11 +88,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 				url: "/chat",
 				icon: User,
 				isActive: true,
-				items: personal?.map((chat) => ({
-					title: chat.title,
+				items: (personal || []).map((chat) => ({
+					title: chat.title || `Chat ${chat.id}`,
 					url: `/chat/${chat.id}`,
 				})),
 			},
+
 			{
 				title: "Projects",
 				url: "/dialectic",
@@ -94,24 +108,24 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 			{
 				title: "Documentation",
 				url: "#",
-				icon: BookOpen,
+				icon: File,
 				items: [
 					{
-						title: "How it works",
-						url: "/docs/how-it-works",
+						title: "Getting started",
+						url: "/docs/getting-started",
 					},
-					{
-						title: "Pricing",
-						url: "/docs/pricing",
-					},
-					{
-						title: "Tutorials",
-						url: "/docs/tutorials",
-					},
-					{
-						title: "Changelog",
-						url: "/docs/changelog",
-					},
+					// {
+					// 	title: "Pricing",
+					// 	url: "/docs/pricing",
+					// },
+					// {
+					// 	title: "Tutorials",
+					// 	url: "/docs/tutorials",
+					// },
+					// {
+					// 	title: "Changelog",
+					// 	url: "/docs/changelog",
+					// },
 				],
 			},
 		],
@@ -146,17 +160,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 				</>
 			) : (
 				<>
-					<SidebarHeader>
-						<OrganizationSwitcher />
-					</SidebarHeader>
 					<SidebarContent>
 						<NavMain items={data.navMain} />
-						<NavMain
-							items={data.navSecondary}
-							hideLogo={true}
-							subtitle="History"
-						/>
-						{/* <NavProjects /> */}
+						<NavMain items={data.navSecondary} subtitle="History" hideLogo />
 					</SidebarContent>
 					<SidebarFooter>
 						<NavUser user={user} />

@@ -52,9 +52,11 @@ export interface ChatSessionTokenUsageDetails {
 
 /**
  * Represents a single message within a Chat.
- * Derived from the `chat_messages` table.
+ * Derived from the `chat_messages` table with optional status field for UI states.
  */
-export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] 
+export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] & {
+  status?: 'pending' | 'sent' | 'streaming' | 'failed' | 'error';
+}; 
 
 // --- Application/API/Adapter/Store Specific Types ---
 
@@ -297,6 +299,18 @@ export interface AiActions {
     chatId?: Chat['id'] | null; // Use aliased type
     contextMessages?: Messages[]; // Use the more permissive type here
   }) => Promise<ChatMessage | null>; // Use aliased type
+  sendStreamingMessage: (
+    data: {
+      message: string; 
+      providerId: AiProvider['id'];
+      promptId: SystemPrompt['id'] | null;
+      chatId?: Chat['id'] | null;
+      contextMessages?: Messages[];
+    },
+    onMessage?: (event: MessageEvent) => void,
+    onComplete?: (assistantMessage: ChatMessage) => void,
+    onError?: (error: string) => void
+  ) => Promise<EventSource | null>;
   loadChatHistory: (organizationId?: string | null) => Promise<void>;
   loadChatDetails: (chatId: Chat['id']) => Promise<void>; // Use aliased type
   startNewChat: (organizationId?: string | null) => void;

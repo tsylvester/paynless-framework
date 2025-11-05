@@ -448,9 +448,15 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         return false;
       },
 
-      handleOAuthLogin: async (_provider: 'google' | 'github'): Promise<void> => {
-        // Implementation for handling OAuth login
-        // This is a placeholder and should be implemented
+      handleOAuthLogin: async (provider: 'google' | 'github'): Promise<void> => {
+        switch (provider) {
+          case 'google':
+            return get().loginWithGoogle();
+          case 'github':
+            throw new Error('GitHub OAuth not implemented yet');
+          default:
+            throw new Error(`Unsupported OAuth provider: ${provider}`);
+        }
       },
 
       updateProfileWithAvatar: async (
