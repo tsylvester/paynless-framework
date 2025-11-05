@@ -1,12 +1,36 @@
 // supabase/functions/dialectic-worker/strategies/canonical_context_builder.ts
 import { ContributionType, SourceDocument } from '../../dialectic-service/dialectic.interface.ts';
-import { CanonicalPathParams } from '../../_shared/types/file_manager.types.ts';
+import { CanonicalPathParams, FileType } from '../../_shared/types/file_manager.types.ts';
+import { isFileType } from '../../_shared/utils/type-guards/type_guards.file_manager.ts';
+
+const intermediateFileTypeMap: Partial<Record<FileType, ContributionType>> = {
+    [FileType.PairwiseSynthesisChunk]: 'pairwise_synthesis_chunk',
+    [FileType.ReducedSynthesis]: 'reduced_synthesis',
+    [FileType.RagContextSummary]: 'rag_context_summary',
+};
 
 export function createCanonicalPathParams(
     sourceDocs: SourceDocument[],
-    outputType: ContributionType,
-    anchorDoc: SourceDocument
+    outputType: FileType | ContributionType,
+    anchorDoc: SourceDocument,
+    stage: ContributionType,
 ): CanonicalPathParams {
+    let resolvedContributionType: ContributionType;
+
+    if (isFileType(outputType)) {
+        // If the file type is a specific intermediate type, use its fixed contribution type.
+        const intermediateType = intermediateFileTypeMap[outputType];
+        if (intermediateType) {
+            resolvedContributionType = intermediateType;
+        } else {
+            // Otherwise, the stage determines the contribution type.
+            resolvedContributionType = stage;
+        }
+    } else {
+        // If outputType is already a ContributionType, use it directly.
+        resolvedContributionType = outputType;
+    }
+
     const sourceModelSlugs = Array.from(new Set(sourceDocs.map(d => d.model_name || '')))
         .filter(Boolean)
         .sort();
@@ -15,7 +39,8 @@ export function createCanonicalPathParams(
     const pairedDoc = sourceDocs.find(doc => doc.id !== anchorDoc.id);
 
     const params: CanonicalPathParams = {
-        contributionType: outputType,
+        contributionType: resolvedContributionType,
+        stageSlug: stage,
         sourceModelSlugs: sourceModelSlugs.length > 0 ? sourceModelSlugs : undefined,
         sourceAnchorType: anchorDoc.contribution_type || undefined,
         sourceAnchorModelSlug: anchorDoc.model_name || undefined,

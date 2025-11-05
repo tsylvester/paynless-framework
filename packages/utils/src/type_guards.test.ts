@@ -140,11 +140,18 @@ describe('isDialecticLifecycleEventType', () => {
     it('should return true for valid dialectic event types', () => {
         expect(isDialecticLifecycleEventType('contribution_generation_started')).toBe(true);
         expect(isDialecticLifecycleEventType('dialectic_contribution_received')).toBe(true);
+        expect(isDialecticLifecycleEventType('planner_started')).toBe(true);
+        expect(isDialecticLifecycleEventType('document_started')).toBe(true);
+        expect(isDialecticLifecycleEventType('document_chunk_completed')).toBe(true);
+        expect(isDialecticLifecycleEventType('render_completed')).toBe(true);
+        expect(isDialecticLifecycleEventType('job_failed')).toBe(true);
     });
 
     it('should return false for invalid event types', () => {
         expect(isDialecticLifecycleEventType('some_other_event')).toBe(false);
         expect(isDialecticLifecycleEventType('WALLET_TRANSACTION')).toBe(false);
+        expect(isDialecticLifecycleEventType('document_completed')).toBe(false);
+        expect(isDialecticLifecycleEventType('planner_finished')).toBe(false);
         expect(isDialecticLifecycleEventType('')).toBe(false);
     });
 });

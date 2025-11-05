@@ -42,6 +42,8 @@ Deno.test('retryJob', async (t) => {
         parent_job_id: null,
         target_contribution_id: null,
         prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'PLAN',
     };
 
     const failedAttempts: FailedAttemptError[] = [

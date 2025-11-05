@@ -35,6 +35,8 @@ const MOCK_SOURCE_DOCUMENTS: SourceDocument[] = [
         seed_prompt_url: null,
         iteration_number: 0,
         content: '',
+        is_header: false,
+        source_prompt_resource_id: null,
     },
     { 
         id: 'thesis-2', 
@@ -66,6 +68,8 @@ const MOCK_SOURCE_DOCUMENTS: SourceDocument[] = [
         seed_prompt_url: null,
         iteration_number: 0,
         content: '',
+        is_header: false,
+        source_prompt_resource_id: null,
     },
     { 
         id: 'antithesis-1a', 
@@ -97,6 +101,8 @@ const MOCK_SOURCE_DOCUMENTS: SourceDocument[] = [
         seed_prompt_url: null,
         iteration_number: 0,
         content: '',
+        is_header: false,
+        source_prompt_resource_id: null,
     },
     { 
         id: 'antithesis-1b', 
@@ -128,6 +134,8 @@ const MOCK_SOURCE_DOCUMENTS: SourceDocument[] = [
         seed_prompt_url: null,
         iteration_number: 0,
         content: '',
+        is_header: false,
+        source_prompt_resource_id: null,
     },
     { 
         id: 'antithesis-2a', 
@@ -159,6 +167,8 @@ const MOCK_SOURCE_DOCUMENTS: SourceDocument[] = [
         seed_prompt_url: null,
         iteration_number: 0,
         content: '',
+        is_header: false,
+        source_prompt_resource_id: null,
     },
     { 
         id: 'synthesis-1', 
@@ -190,6 +200,8 @@ const MOCK_SOURCE_DOCUMENTS: SourceDocument[] = [
         seed_prompt_url: null,
         iteration_number: 0,
         content: '',
+        is_header: false,
+        source_prompt_resource_id: null,
     },
 ];
 

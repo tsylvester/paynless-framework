@@ -1,6 +1,6 @@
 import { expect } from 'https://deno.land/x/expect@v0.4.0/mod.ts';
 import { getInitialPromptContent } from './project-initial-prompt.ts';
-import type { ProjectContext } from '../prompt-assembler.interface.ts';
+import type { ProjectContext } from '../prompt-assembler/prompt-assembler.interface.ts';
 import type { ILogger } from '../types.ts';
 import type { SupabaseClient, PostgrestSingleResponse } from 'npm:@supabase/supabase-js@2';
 import type { Database, Json } from '../../types_db.ts';
@@ -23,15 +23,15 @@ const mockDbClient = {
           eq: (column: string, value: string) => ({
             single: async () => {
               // This will be overridden in specific tests
-              return { data: null, error: null } as PostgrestSingleResponse<any>; 
+              return { data: null, error: null }; 
             },
           }),
         }),
       };
     }
-    return {} as any; // Should not be called for other tables in these tests
+    return {} ; // Should not be called for other tables in these tests
   },
-} as unknown as SupabaseClient<Database>;
+};
 
 Deno.test('getInitialPromptContent - should return direct initial_user_prompt if available', async () => {
   const project: ProjectContext = {
@@ -50,7 +50,7 @@ Deno.test('getInitialPromptContent - should return direct initial_user_prompt if
     selected_domain_overlay_id: null,
     user_domain_overlay_values: null,
   };
-  const result = await getInitialPromptContent(mockDbClient, project, mockLogger, downloadFromStorage);
+  const result = await getInitialPromptContent(mockDbClient as unknown as SupabaseClient<Database>, project, mockLogger, downloadFromStorage);
   expect(result).toEqual({ content: 'This is a direct prompt.' });
 });
 
@@ -78,7 +78,7 @@ Deno.test('getInitialPromptContent - should return content from resource if init
     from: () => ({
       select: () => ({
         eq: () => ({
-          single: async () => ({ data: mockResource, error: null } as PostgrestSingleResponse<any>),
+          single: async () => ({ data: mockResource, error: null }),
         }),
       }),
     }),
@@ -92,9 +92,9 @@ Deno.test('getInitialPromptContent - should return content from resource if init
         },
       }),
     },
-  } as unknown as SupabaseClient<Database>; 
+  }; 
 
-  const result = await getInitialPromptContent(specificMockDbClient, project, mockLogger, downloadFromStorage);
+  const result = await getInitialPromptContent(specificMockDbClient as unknown as SupabaseClient<Database>, project, mockLogger, downloadFromStorage);
   expect(result).toEqual({ content: 'This is a test prompt.', storagePath: 'path/to/resource.txt' });
 });
 
@@ -121,13 +121,13 @@ Deno.test('getInitialPromptContent - should return error if resource fetch fails
     from: () => ({
       select: () => ({
         eq: () => ({
-          single: async () => ({ data: null, error: dbError } as PostgrestSingleResponse<any>),
+          single: async () => ({ data: null, error: dbError }),
         }),
       }),
     }),
-  } as unknown as SupabaseClient<Database>;
+  };
 
-  const result = await getInitialPromptContent(specificMockDbClient, project, mockLogger, downloadFromStorage);
+  const result = await getInitialPromptContent(specificMockDbClient as unknown as SupabaseClient<Database>, project, mockLogger, downloadFromStorage);
   expect(result).toEqual({ error: 'Could not find prompt resource details for ID resource_not_found.' });
 });
 
@@ -148,6 +148,6 @@ Deno.test('getInitialPromptContent - should return fallback content if no direct
     selected_domain_overlay_id: null,
     user_domain_overlay_values: null,
   };
-  const result = await getInitialPromptContent(mockDbClient, project, mockLogger, downloadFromStorage);
+  const result = await getInitialPromptContent(mockDbClient as unknown as SupabaseClient<Database>, project, mockLogger, downloadFromStorage);
   expect(result).toEqual({ error: 'No prompt provided.' });
 }); 

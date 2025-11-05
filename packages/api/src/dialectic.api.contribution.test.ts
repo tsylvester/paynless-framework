@@ -114,8 +114,19 @@ describe('DialecticApiClient', () => {
    
     describe('generateContributions', () => {
         const endpoint = 'dialectic-service';
-        const mockStageObject: DialecticStage = { id: 'stage-1', slug: 'thesis', display_name: 'Thesis', created_at: new Date().toISOString(), description: null, default_system_prompt_id: null, expected_output_artifacts: null, input_artifact_rules: null };
-        const validPayload: GenerateContributionsPayload = {
+        const mockStageObject: DialecticStage = { 
+            id: 'stage-1', 
+            slug: 'thesis', 
+            display_name: 'Thesis', 
+            created_at: new Date().toISOString(), 
+            description: null, 
+            default_system_prompt_id: null, 
+            expected_output_template_ids: [], 
+            active_recipe_instance_id: null,
+            recipe_template_id: null
+        };
+        
+            const validPayload: GenerateContributionsPayload = {
             sessionId: 'sess-456',
             projectId: 'proj-123',
             stageSlug: mockStageObject.slug,
@@ -589,110 +600,63 @@ describe('DialecticApiClient', () => {
 
     describe('submitStageResponses', () => {
         const endpoint = 'dialectic-service';
-        const mockStageObject: DialecticStage = { id: 'stage-1', slug: 'thesis', display_name: 'Thesis', created_at: new Date().toISOString(), description: null, default_system_prompt_id: null, expected_output_artifacts: null, input_artifact_rules: null };
-        
-        // Original validPayload without userStageFeedback
-        const validPayloadWithoutFeedback: SubmitStageResponsesPayload = {
+        const validPayload: SubmitStageResponsesPayload = {
             sessionId: 'sess-123',
             projectId: 'proj-123',
-            stageSlug: mockStageObject.slug,
+            stageSlug: 'synthesis',
             currentIterationNumber: 1,
-            responses: [{ originalContributionId: 'contrib-abc', responseText: 'This is a great point.' }]
         };
 
-        // New validPayload with userStageFeedback
-        const validPayloadWithFeedback: SubmitStageResponsesPayload = {
-            sessionId: 'sess-456',
-            projectId: 'proj-789',
-            stageSlug: mockStageObject.slug,
-            currentIterationNumber: 2,
-            responses: [{ originalContributionId: 'contrib-def', responseText: 'Interesting idea.' }],
-            userStageFeedback: {
-                content: "This is the overall feedback for the stage.",
-                feedbackType: "StageReviewSummary_v1",
-                resourceDescription: { summary: "Positive feedback" }
-            }
+        const mockDialecticSession: DialecticSession = {
+            id: 'sess-123',
+            project_id: 'proj-123',
+            session_description: "Test Session",
+            iteration_count: 1,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            status: "pending_parenthesis", // The expected next stage
+            associated_chat_id: null,
+            current_stage_id: 'stage-456', // ID of the next stage
+            selected_model_ids: ['model-1'],
+            user_input_reference_url: null,
         };
 
-        it('should call apiClient.post with the correct endpoint and body when userStageFeedback IS provided', async () => {
+        it('should call apiClient.post with the correct action and payload', async () => {
             const expectedBody: DialecticServiceActionPayload = {
                 action: 'submitStageResponses',
-                payload: validPayloadWithFeedback // Use the payload with feedback
-            };
-            // Assuming mockDialecticSession is a suitable response type for SubmitStageResponsesResponse
-            // The plan indicates SubmitStageResponsesResponse includes userFeedbackStoragePath, nextStageSeedPromptStoragePath, updatedSession
-            // For now, we'll keep mockDialecticSession for the data part of the response if it aligns with updatedSession.
-            // A more specific mockSubmitStageResponsesResponse might be needed later if tests become more granular.
-            const mockResponseData: SubmitStageResponsesResponse = {
-                userFeedbackStoragePath: 'path/to/feedback.md',
-                nextStageSeedPromptStoragePath: 'path/to/next_seed.md',
-                updatedSession: mockDialecticSession, // Assuming mockDialecticSession is a valid DialecticSession
-                message: 'Responses submitted successfully'
-            };
-            mockApiClientPost.mockResolvedValue({ data: mockResponseData, status: 200 });
-
-            await dialecticApiClient.submitStageResponses(validPayloadWithFeedback);
-
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, expectedBody);
-        });
-        
-        it('should call apiClient.post with the correct endpoint and body when userStageFeedback is NOT provided', async () => {
-            const expectedBody: DialecticServiceActionPayload = {
-                action: 'submitStageResponses',
-                payload: validPayloadWithoutFeedback // Use the payload without feedback
+                payload: validPayload,
             };
             const mockResponseData: SubmitStageResponsesResponse = {
-                userFeedbackStoragePath: 'path/to/feedback_alt.md', // Different path for clarity
-                nextStageSeedPromptStoragePath: 'path/to/next_seed_alt.md',
                 updatedSession: mockDialecticSession,
-                message: 'Responses submitted (no feedback file)'
+                message: 'Stage advanced successfully.',
             };
             mockApiClientPost.mockResolvedValue({ data: mockResponseData, status: 200 });
 
-            await dialecticApiClient.submitStageResponses(validPayloadWithoutFeedback);
+            await dialecticApiClient.submitStageResponses(validPayload);
 
             expect(mockApiClientPost).toHaveBeenCalledTimes(1);
             expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, expectedBody);
         });
 
-        it('should return the success response on successful submission (with feedback)', async () => {
+        it('should return the updated session on successful stage advancement', async () => {
             const mockResponseData: SubmitStageResponsesResponse = {
-                userFeedbackStoragePath: 'path/to/feedback.md',
-                nextStageSeedPromptStoragePath: 'path/to/next_seed.md',
                 updatedSession: mockDialecticSession,
-                message: 'Submission successful'
+                message: 'Stage advanced successfully.',
             };
             mockApiClientPost.mockResolvedValue({ data: mockResponseData, status: 200 });
 
-            const result = await dialecticApiClient.submitStageResponses(validPayloadWithFeedback);
+            const result = await dialecticApiClient.submitStageResponses(validPayload);
 
             expect(result.data).toEqual(mockResponseData);
             expect(result.status).toBe(200);
             expect(result.error).toBeUndefined();
         });
 
-        it('should return the success response on successful submission (without feedback)', async () => {
-            const mockResponseData: SubmitStageResponsesResponse = {
-                userFeedbackStoragePath: 'path/to/feedback_alt.md',
-                nextStageSeedPromptStoragePath: 'path/to/next_seed_alt.md',
-                updatedSession: mockDialecticSession,
-                message: 'Submission successful (no feedback file)'
-            };
-            mockApiClientPost.mockResolvedValue({ data: mockResponseData, status: 200 });
-
-            const result = await dialecticApiClient.submitStageResponses(validPayloadWithoutFeedback);
-
-            expect(result.data).toEqual(mockResponseData);
-            expect(result.status).toBe(200);
-            expect(result.error).toBeUndefined();
-        });
-
-        it('should return an error object on failed submission', async () => {
-            const mockError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to submit' };
+        it('should return an error object on failed stage advancement', async () => {
+            const mockError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to advance stage' };
             mockApiClientPost.mockResolvedValue({ error: mockError, status: 500 });
 
-            const result = await dialecticApiClient.submitStageResponses(validPayloadWithFeedback); // Can use either payload here
+            const result = await dialecticApiClient.submitStageResponses(validPayload);
 
             expect(result.error).toEqual(mockError);
             expect(result.data).toBeUndefined();

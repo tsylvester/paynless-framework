@@ -1,7 +1,6 @@
 import {
   assertEquals,
   assertExists,
-  assertNotEquals,
   assert,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { spy, type Spy } from "https://deno.land/std@0.208.0/testing/mock.ts";
@@ -14,22 +13,22 @@ import {
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js';
 import type { ServiceError } from '../_shared/types.ts';
 import {
-  createErrorResponse,
-  createSuccessResponse,
-  handleCorsPreflightRequest,
-} from "../_shared/cors-headers.ts";
-import type {
   DialecticProject,
   DialecticSession,
-  CloneProjectSuccessResponse,
   DomainOverlayDescriptor,
   GetProjectResourceContentResponse,
-  GenerateContributionsSuccessResponse,
   CloneProjectPayload,
+  ListStageDocumentsPayload,
+  ListStageDocumentsResponse,
+  SubmitStageDocumentFeedbackPayload,
+  DialecticProjectRow,
+  DialecticFeedbackRow,
+  DialecticServiceResponse,
+  GetSessionDetailsResponse,
 } from "./dialectic.interface.ts";
 import { createMockSupabaseClient, type MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
 import { CloneProjectResult } from "./cloneProject.ts";
-import { Json } from "../types_db.ts";
+import { Database, Json } from "../types_db.ts";
 
 // #region MOCK DATA
 // To satisfy the strict types from dialectic.interface.ts
@@ -42,21 +41,20 @@ const mockUser: User = {
 };
 
 // This mock needs to be compatible with both DialecticProject and the DB's DialecticProjectRow
-const mockProject = {
-  id: 'proj-123',
-  user_id: 'user-123',
-  project_name: 'Test Project',
-  initial_user_prompt: 'Test prompt',
-  selected_domain_id: 'domain-1',
-  repo_url: null as Json,
+const mockProject: DialecticProjectRow = {
+  id: 'mock-project-id',
+  user_id: 'mock-user-id',
+  project_name: 'mock-project-name',
+  initial_user_prompt: 'mock-initial-user-prompt',
+  selected_domain_id: 'mock-domain-id',
+  repo_url: null,
   status: 'active',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   initial_prompt_resource_id: null,
-  selected_domain_overlay_id: null,
-  // Add missing properties from DB row type
   process_template_id: null,
-  user_domain_overlay_values: null as Json,
+  selected_domain_overlay_id: null,
+  user_domain_overlay_values: null,
 };
 
 const mockSession: DialecticSession = {
@@ -73,31 +71,57 @@ const mockSession: DialecticSession = {
     updated_at: new Date().toISOString(),
 };
 
+const mockFeedbackRow: DialecticFeedbackRow = {
+  id: 'fb-123',
+  session_id: 'sess-123',
+  project_id: 'proj-123',
+  user_id: 'user-123',
+  stage_slug: 'test-stage',
+  iteration_number: 1,
+  feedback_type: 'user_edit',
+  resource_description: {
+    document_key: 'doc1',
+    model_id: 'model-a',
+  },
+  file_name: 'feedback_doc1_model-a.md',
+  storage_bucket: 'dialectic-contributions',
+  storage_path: 'path/to/feedback.md',
+  size_bytes: 150,
+  mime_type: 'text/markdown',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  target_contribution_id: null,
+};
+
 // #endregion
 
 // Helper to create a mostly empty but type-compliant ActionHandlers mock
-const createMockHandlers = (overrides?: Partial<ActionHandlers>): ActionHandlers => {
+const createMockHandlers = (overrides?: Partial<ActionHandlers> & { getStageRecipe?: (...args: any[]) => Promise<{ data?: unknown; error?: { message: string }; status?: number }> }): ActionHandlers => {
     return {
-        createProject: overrides?.createProject || (() => Promise.resolve({ data: mockProject as any, status: 201 })),
+        createProject: overrides?.createProject || (() => Promise.resolve({ data: { id: 'mock-project-id', user_id: 'mock-user-id', project_name: 'mock-project-name', initial_user_prompt: 'mock-initial-user-prompt', selected_domain_id: 'mock-domain-id', repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), initial_prompt_resource_id: null, selected_domain_overlay_id: null, process_template_id: null, user_domain_overlay_values: null }, status: 201 })),
         listAvailableDomains: overrides?.listAvailableDomains || (() => Promise.resolve([])),
-        updateProjectDomain: overrides?.updateProjectDomain || (() => Promise.resolve({ data: mockProject as any })),
-        getProjectDetails: overrides?.getProjectDetails || (() => Promise.resolve({ data: mockProject as any })),
+        updateProjectDomain: overrides?.updateProjectDomain || (() => Promise.resolve({ data: mockProject })),
+        getProjectDetails: overrides?.getProjectDetails || (() => Promise.resolve({ data: mockProject })),
+        getSessionDetails: overrides?.getSessionDetails || (() => Promise.resolve({ data: { session: mockSession, currentStageDetails: null } })),
         getContributionContentHandler: overrides?.getContributionContentHandler || (() => Promise.resolve({ data: { content: 'mock content', mimeType: 'text/plain', fileName: 'mock.txt', sizeBytes: 123 }})),
-        startSession: overrides?.startSession || (() => Promise.resolve({ data: mockSession as any })),
+        startSession: overrides?.startSession || (() => Promise.resolve({ data: mockSession })),
         generateContributions: overrides?.generateContributions || (() => Promise.resolve({ success: false, error: { message: "Not implemented" } })),
-        listProjects: overrides?.listProjects || (() => Promise.resolve({ data: [mockProject] as any })),
+        listProjects: overrides?.listProjects || (() => Promise.resolve({ data: [mockProject] })),
         listAvailableDomainOverlays: overrides?.listAvailableDomainOverlays || (() => Promise.resolve([])),
         deleteProject: overrides?.deleteProject || (() => Promise.resolve({ status: 200 })),
-        cloneProject: overrides?.cloneProject || (() => Promise.resolve({ data: mockProject as any, error: null, status: 201 })),
+        cloneProject: overrides?.cloneProject || (() => Promise.resolve({ data: mockProject, error: null, status: 201 })),
         exportProject: overrides?.exportProject || (() => Promise.resolve({ data: { export_url: '' }})),
         getProjectResourceContent: overrides?.getProjectResourceContent || (() => Promise.resolve({ data: { fileName: '', mimeType: '', content: '' }})),
-        saveContributionEdit: overrides?.saveContributionEdit || (() => Promise.resolve({ data: {} as any, status: 200 })),
-        submitStageResponses: overrides?.submitStageResponses || (() => Promise.resolve({ data: {} as any, status: 200 })),
+        saveContributionEdit: overrides?.saveContributionEdit || (() => Promise.resolve({ data: { storage_bucket: 'mock-bucket', storage_path: 'mock-path', id: 'mock-contribution-id', session_id: 'mock-session-id', user_id: 'mock-user-id', stage: 'mock-stage', content: 'mock-content', mime_type: 'text/plain', file_name: 'mock.txt', size_bytes: 123, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), iteration_number: 1, model_id: 'mock-model-id', model_name: 'mock-model-name', prompt_template_id_used: 'mock-prompt-template-id', seed_prompt_url: 'mock-seed-prompt-url', edit_version: 1, is_latest_edit: true, original_model_contribution_id: 'mock-original-model-contribution-id', raw_response_storage_path: 'mock-raw-response-storage-path', target_contribution_id: 'mock-target-contribution-id', tokens_used_input: 10, tokens_used_output: 20, processing_time_ms: 100, error: null, citations: [], contribution_type: 'thesis' }, status: 200 })),
+        submitStageResponses: overrides?.submitStageResponses || (() => Promise.resolve({ data: { message: 'mock-message', updatedSession: mockSession, feedbackRecords: [] }, status: 200 })),
         listDomains: overrides?.listDomains || (() => Promise.resolve({ data: [] })),
-        fetchProcessTemplate: overrides?.fetchProcessTemplate || (() => Promise.resolve({ data: {} as any, status: 200 })),
-        updateSessionModels: overrides?.updateSessionModels || (() => Promise.resolve({ data: mockSession as any, status: 200 })),
+        fetchProcessTemplate: overrides?.fetchProcessTemplate || (() => Promise.resolve({ data: { created_at: new Date().toISOString(), description: 'mock-description', id: 'mock-id', name: 'mock-name', starting_stage_id: 'mock-starting-stage-id' }, status: 200 })),
+        updateSessionModels: overrides?.updateSessionModels || (() => Promise.resolve({ data: mockSession, status: 200 })),
+        getStageRecipe: overrides?.getStageRecipe || (() => Promise.resolve({ data: { stageSlug: '', instanceId: '', steps: [] }, status: 200 })),
+        listStageDocuments: overrides?.listStageDocuments || (() => Promise.resolve({ data: { documents: [] }, status: 200 })),
+        submitStageDocumentFeedback: overrides?.submitStageDocumentFeedback || (() => Promise.resolve({ data: mockFeedbackRow })),
         ...overrides,
-    } as ActionHandlers;
+    };
 };
 
 // Wrapper for tests that need Supabase env vars
@@ -126,7 +150,7 @@ Deno.test("isValidDomainDefaultFn - Unit Tests", async (t) => {
   
   await t.step("should return true if domain is null", async () => {
     mockSupabase = createMockSupabaseClient();
-    const result = await isValidDomainDefaultFn(mockSupabase.client as any, null as unknown as string);
+    const result = await isValidDomainDefaultFn(mockSupabase.client as unknown as SupabaseClient<Database>, null as unknown as string);
     assertEquals(result, true);
   });
 
@@ -138,7 +162,7 @@ Deno.test("isValidDomainDefaultFn - Unit Tests", async (t) => {
         },
       },
     });
-    const result = await isValidDomainDefaultFn(mockSupabase.client as any, "test");
+    const result = await isValidDomainDefaultFn(mockSupabase.client as unknown as SupabaseClient<Database>, "test");
     assertEquals(result, true);
   });
 
@@ -150,7 +174,7 @@ Deno.test("isValidDomainDefaultFn - Unit Tests", async (t) => {
         },
       },
     });
-    const result = await isValidDomainDefaultFn(mockSupabase.client as any, "nonexistent");
+    const result = await isValidDomainDefaultFn(mockSupabase.client as unknown as SupabaseClient<Database>, "nonexistent");
     assertEquals(result, false);
   });
 
@@ -162,7 +186,7 @@ Deno.test("isValidDomainDefaultFn - Unit Tests", async (t) => {
         },
       },
     });
-    const result = await isValidDomainDefaultFn(mockSupabase.client as any, "test");
+    const result = await isValidDomainDefaultFn(mockSupabase.client as unknown as SupabaseClient<Database>, "test");
     assertEquals(result, false);
   });
 });
@@ -177,7 +201,7 @@ Deno.test("createSignedUrlDefaultFn - Unit Tests", async (t) => {
         createSignedUrlResult: { data: { signedUrl: mockSignedUrl }, error: null }
       }
     });
-    const { signedUrl, error } = await createSignedUrlDefaultFn(mockSupabase.client as any, "bucket", "path", 3600);
+    const { signedUrl, error } = await createSignedUrlDefaultFn(mockSupabase.client as unknown as SupabaseClient<Database>, "bucket", "path", 3600);
     assertEquals(signedUrl, mockSignedUrl);
     assertEquals(error, null);
   });
@@ -188,7 +212,7 @@ Deno.test("createSignedUrlDefaultFn - Unit Tests", async (t) => {
         createSignedUrlResult: { data: null, error: new Error("Storage error") }
       }
     });
-    const { signedUrl, error } = await createSignedUrlDefaultFn(mockSupabase.client as any, "bucket", "path", 3600);
+    const { signedUrl, error } = await createSignedUrlDefaultFn(mockSupabase.client as unknown as SupabaseClient<Database>, "bucket", "path", 3600);
     assertEquals(signedUrl, null);
     assertExists(error);
   });
@@ -1371,3 +1395,196 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
         assertEquals(specificErrorSpy.calls.length, 1); 
     });
 }); 
+
+withSupabaseEnv("handleRequest - getStageRecipe routing", async (t) => {
+  await t.step("dispatches to handler and returns normalized payload", async () => {
+    const stageSlug = "synthesis";
+    const expected = { stageSlug, instanceId: "instance-123", steps: [] };
+    const getStageRecipeSpy = spy(() => Promise.resolve({ data: expected, status: 200 }));
+
+    const mockHandlers = createMockHandlers({ getStageRecipe: getStageRecipeSpy });
+
+    const { client: mockUserClient } = createMockSupabaseClient();
+    const { client: mockAdminClient } = createMockSupabaseClient();
+
+    const req = createJsonRequest("getStageRecipe", { stageSlug });
+    const response = await handleRequest(
+      req,
+      mockHandlers,
+      mockUserClient as unknown as SupabaseClient<Database>,
+      mockAdminClient as unknown as SupabaseClient<Database>
+    );
+
+    assertEquals(response.status, 200);
+    const body = await response.json();
+    assertEquals(body.stageSlug, stageSlug);
+    assertEquals(getStageRecipeSpy.calls.length, 1);
+  });
+
+  await t.step("propagates error status and message from handler", async () => {
+    const getStageRecipeSpy = spy(() => Promise.resolve({ error: { message: "Stage not found" }, status: 404 }));
+
+    const mockHandlers = createMockHandlers({ getStageRecipe: getStageRecipeSpy });
+
+    const { client: mockUserClient } = createMockSupabaseClient();
+    const { client: mockAdminClient } = createMockSupabaseClient();
+
+    const req = createJsonRequest("getStageRecipe", { stageSlug: "missing-stage" });
+    const response = await handleRequest(
+      req,
+      mockHandlers,
+      mockUserClient as unknown as SupabaseClient<Database>,
+      mockAdminClient as unknown as SupabaseClient<Database>
+    );
+
+    assertEquals(response.status, 404);
+    const body = await response.json();
+    assertEquals(body.error, "Stage not found");
+    assertEquals(getStageRecipeSpy.calls.length, 1);
+  });
+});
+
+withSupabaseEnv("handleRequest - listStageDocuments", async (t) => {
+    const payload: ListStageDocumentsPayload = {
+        sessionId: 'sess-123',
+        stageSlug: 'test-stage',
+        iterationNumber: 1,
+        userId: 'user-123',
+        projectId: 'proj-123',
+    };
+
+    await t.step("should call listStageDocuments and return 200 on success", async () => {
+        const mockResponse: ListStageDocumentsResponse = { documents: [{ documentKey: 'doc1', modelId: 'model-a', lastRenderedResourceId: 'res-1' }] };
+        const listSpy = spy(() => Promise.resolve({ data: mockResponse, status: 200 }));
+        const mockHandlers = createMockHandlers({ listStageDocuments: listSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("listStageDocuments", payload, mockToken);
+        const response = await handleRequest(
+          req,
+          mockHandlers,
+          mockUserClient as unknown as SupabaseClient<Database>,
+          mockAdminClient as unknown as SupabaseClient<Database>
+        );
+        
+        assertEquals(response.status, 200);
+        const body = await response.json();
+        assertEquals(body.documents[0].documentKey, 'doc1');
+        assertEquals(listSpy.calls.length, 1);
+    });
+
+    await t.step("should return error if listStageDocuments fails", async () => {
+        const error: ServiceError = { message: "DB Error", status: 500 };
+        const listSpy = spy(() => Promise.resolve({ error, status: 500 }));
+        const mockHandlers = createMockHandlers({ listStageDocuments: listSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("listStageDocuments", payload, mockToken);
+        const response = await handleRequest(
+          req,
+          mockHandlers,
+          mockUserClient as unknown as SupabaseClient<Database>,
+          mockAdminClient as unknown as SupabaseClient<Database>
+        );
+        
+        assertEquals(response.status, 500);
+        const body = await response.json();
+        assertEquals(body.error, error.message);
+        assertEquals(listSpy.calls.length, 1);
+    });
+
+    await t.step("should return 401 if not authenticated", async () => {
+        const listSpy = spy(() => Promise.resolve({ data: { documents: [] }, status: 200 }));
+        const mockHandlers = createMockHandlers({ listStageDocuments: listSpy });
+
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: null }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("listStageDocuments", payload); // No token
+        const response = await handleRequest(
+          req,
+          mockHandlers,
+          mockUserClient as unknown as SupabaseClient<Database>,
+          mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(response.status, 401);
+        assertEquals(listSpy.calls.length, 0);
+    });
+});
+
+withSupabaseEnv("handleRequest - submitStageDocumentFeedback", async (t) => {
+    const payload: SubmitStageDocumentFeedbackPayload = {
+        sessionId: 'sess-123',
+        stageSlug: 'test-stage',
+        iterationNumber: 1,
+        documentKey: 'doc1',
+        modelId: 'model-a',
+        feedbackContent: 'This is great!',
+        feedbackType: 'user_edit',
+        userId: 'user-123',
+        projectId: 'proj-123',
+    };
+
+    await t.step("should call submitStageDocumentFeedback and return 200 on success", async () => {
+        const mockResponse: DialecticServiceResponse<DialecticFeedbackRow> = { data: mockFeedbackRow };
+        const submitSpy = spy(() => Promise.resolve(mockResponse));
+        const mockHandlers = createMockHandlers({ submitStageDocumentFeedback: submitSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("submitStageDocumentFeedback", payload, mockToken);
+        const response = await handleRequest(
+          req,
+          mockHandlers,
+          mockUserClient as unknown as SupabaseClient<Database>,
+          mockAdminClient as unknown as SupabaseClient<Database>
+        );
+        
+        assertEquals(response.status, 200);
+        const body = await response.json();
+        assertEquals(body.id, 'fb-123');
+        assertEquals(submitSpy.calls.length, 1);
+    });
+
+    await t.step("should return error if submitStageDocumentFeedback fails", async () => {
+        const error: ServiceError = { message: "Upload failed", status: 500 };
+        const submitSpy = spy(() => Promise.resolve({ error: { message: "Upload failed" } }));
+        const mockHandlers = createMockHandlers({ submitStageDocumentFeedback: submitSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("submitStageDocumentFeedback", payload, mockToken);
+        const response = await handleRequest(
+          req,
+          mockHandlers,
+          mockUserClient as unknown as SupabaseClient<Database>,
+          mockAdminClient as unknown as SupabaseClient<Database>
+        );
+        
+        assertEquals(response.status, 500);
+        const body = await response.json();
+        assertEquals(body.error, error.message);
+        assertEquals(submitSpy.calls.length, 1);
+    });
+});

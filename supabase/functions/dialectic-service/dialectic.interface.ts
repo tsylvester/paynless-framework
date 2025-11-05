@@ -1,28 +1,177 @@
 import { type ChatMessage, type ILogger } from '../_shared/types.ts';
-import type { Database, Json } from '../types_db.ts';
+import type { Database, Json, Tables } from '../types_db.ts';
 import {
   downloadFromStorage,
 } from '../_shared/supabase_storage_utils.ts';
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
 import type { Logger } from '../_shared/logger.ts';
-import type { IFileManager, CanonicalPathParams } from '../_shared/types/file_manager.types.ts';
+import type { 
+  IFileManager, 
+  CanonicalPathParams, 
+  ModelContributionFileTypes,
+} from '../_shared/types/file_manager.types.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import type { DeleteStorageResult, DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import type {
   FinishReason,
   FactoryDependencies,
-  AiProviderAdapterInstance
+  AiProviderAdapterInstance,
+  AiProviderAdapter
 } from '../_shared/types.ts';
 import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
 import type { IRagService } from '../_shared/services/rag_service.interface.ts';
 import type { Messages, AiModelExtendedConfig, ChatApiRequest } from '../_shared/types.ts';
 import type { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
-import type { IPromptAssembler } from '../_shared/prompt-assembler.interface.ts';
+import type { IPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
 import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
 import type { debitTokens } from '../chat/debitTokens.ts';
 import { ICompressionStrategy } from '../_shared/utils/vector_utils.ts';
 import type { ServiceError } from "../_shared/types.ts";
+import type { IDocumentRenderer } from '../_shared/services/document_renderer.interface.ts';
+import type { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
+
+export type DialecticStageRecipeEdge = Database['public']['Tables']['dialectic_stage_recipe_edges']['Row'];
+export type DialecticStageRecipeInstance = Database['public']['Tables']['dialectic_stage_recipe_instances']['Row'];
+
+// Explicit function type definitions for worker processors (no implementation imports)
+export type ProcessSimpleJobFn = (
+  dbClient: SupabaseClient<Database>,
+  job: DialecticJobRow & { payload: DialecticExecuteJobPayload },
+  projectOwnerUserId: string,
+  deps: IDialecticJobDeps,
+  authToken: string,
+) => Promise<void>;
+
+export type ProcessComplexJobFn = (
+  dbClient: SupabaseClient<Database>,
+  job: DialecticJobRow & { payload: DialecticPlanJobPayload },
+  projectOwnerUserId: string,
+  deps: IDialecticJobDeps,
+  authToken: string,
+) => Promise<void>;
+
+export type ProcessRenderJobFn = (
+  dbClient: SupabaseClient<Database>,
+  job: DialecticJobRow,
+  projectOwnerUserId: string,
+  deps: IDialecticJobDeps,
+  authToken: string,
+) => Promise<void>;
+
+export type PlanComplexStageFn = (
+  dbClient: SupabaseClient<Database>,
+  parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
+  deps: IDialecticJobDeps,
+  recipeStep: DialecticRecipeStep,
+  authToken: string,
+) => Promise<DialecticJobRow[]>;
+
+export interface IJobProcessors {
+  processSimpleJob: ProcessSimpleJobFn;
+  processComplexJob: ProcessComplexJobFn;
+  planComplexStage: PlanComplexStageFn;
+  processRenderJob: ProcessRenderJobFn;
+}
+
+export interface IRenderJobDeps {
+  documentRenderer: IDocumentRenderer;
+  logger: ILogger;
+  downloadFromStorage: DownloadFromStorageFn;
+  fileManager: IFileManager;
+  notificationService: NotificationServiceType;
+}
+
+export type JobType = 'PLAN' | 'EXECUTE' | 'RENDER';
+export type PromptType = 'Seed' | 'Planner' | 'Turn' | 'Continuation';
+export type GranularityStrategy =
+  | 'per_source_document'
+  | 'pairwise_by_origin'
+  | 'per_source_group'
+  | 'all_to_one'
+  | 'per_source_document_by_lineage'
+  | 'per_model';
+
+export type DialecticRecipeTemplateStep =
+  & Omit<
+    Tables<'dialectic_recipe_template_steps'>,
+    'job_type' | 'prompt_type' | 'granularity_strategy' | 'inputs_required' | 'inputs_relevance' | 'outputs_required' | 'output_type'
+  >
+  & {
+    job_type: JobType;
+    prompt_type: PromptType;
+    granularity_strategy: GranularityStrategy;
+    inputs_required: InputRule[];
+    inputs_relevance: RelevanceRule[];
+    outputs_required: OutputRule[];
+    output_type: ModelContributionFileTypes;
+  };
+
+export type DialecticStageRecipeStep =
+  & Omit<
+    Tables<'dialectic_stage_recipe_steps'>,
+    'job_type' | 'prompt_type' | 'granularity_strategy' | 'inputs_required' | 'inputs_relevance' | 'outputs_required' | 'output_type'
+  >
+  & {
+    job_type: JobType;
+    prompt_type: PromptType;
+    granularity_strategy: GranularityStrategy;
+    inputs_required: InputRule[];
+    inputs_relevance: RelevanceRule[];
+    outputs_required: OutputRule[];
+    output_type: ModelContributionFileTypes;
+  };
+
+// DTOs for Stage Recipe responses (instance-first; template-ready)
+// Normalized view tailored for frontend consumption; avoids leaking DB-only columns.
+export interface StageRecipeStepDto {
+  id: string;
+  step_key: string;
+  step_slug: string;
+  step_name: string;
+  execution_order: number;
+  parallel_group?: number | null;
+  branch_key?: BranchKey | null;
+  job_type: JobType;
+  prompt_type: PromptType;
+  prompt_template_id?: string | null;
+  output_type: OutputType; // Mapped from ModelContributionFileTypes
+  granularity_strategy: GranularityStrategy;
+  inputs_required: InputRule[];
+  inputs_relevance?: RelevanceRule[];
+  outputs_required?: OutputRule[];
+}
+
+export interface StageRecipeResponse {
+  stageSlug: string;
+  instanceId: string;
+  steps: StageRecipeStepDto[];
+}
+
+// Reserved for future template responses (CoW DAG support without refactor)
+export interface TemplateRecipeStepDto extends StageRecipeStepDto {}
+
+export type SeedPromptRecipeStep = {
+  prompt_type: 'Seed';
+  step_number: 1; 
+  step_name: 'Assemble Seed Prompt'; 
+  granularity_strategy?: null;
+  branch_key?: null;
+  parallel_group?: null;
+  output_type?: 'seed_prompt';
+  description?: 'Assemble the seed prompt for the session.';
+  inputs_required?: [];
+  outputs_required?: [];
+  inputs_relevance?: [];
+  prompt_template_id?: null;
+  job_type?: null;
+};
+
+export type DialecticRecipeStep = DialecticRecipeTemplateStep | DialecticStageRecipeStep | SeedPromptRecipeStep;
+
+export type StageWithRecipeSteps = Tables<'dialectic_stages'> & {
+  steps: DialecticRecipeStep[];
+};
 
 export type DialecticProjectRow = Database['public']['Tables']['dialectic_projects']['Row'];
 export type DialecticProjectInsert = Database['public']['Tables']['dialectic_projects']['Insert'];
@@ -104,7 +253,6 @@ export type ContributionType =
   | 'paralysis'
   | 'pairwise_synthesis_chunk'
   | 'reduced_synthesis'
-  | 'final_synthesis'
   | 'rag_context_summary';
 
 
@@ -186,6 +334,23 @@ export interface GetSessionDetailsPayload { // Export if it might be used extern
 }
 type GetSessionDetailsAction = { action: 'getSessionDetails', payload: GetSessionDetailsPayload };
 
+export interface GetStageRecipePayload {
+  stageSlug: string;
+}
+type GetStageRecipeAction = { action: 'getStageRecipe', payload: GetStageRecipePayload };
+
+export interface ListStageDocumentsPayload {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+  userId: string;
+  projectId: string;
+}
+type ListStageDocumentsAction = {
+  action: 'listStageDocuments';
+  payload: ListStageDocumentsPayload;
+};
+
 // The main union type for all possible JSON requests to the service.
 export type DialecticServiceRequest =
   | ListProjectsAction
@@ -205,9 +370,43 @@ export type DialecticServiceRequest =
   | ListAvailableDomainOverlaysAction
   | FetchProcessTemplateAction
   | UpdateSessionModelsAction
-  | GetSessionDetailsAction; // Add the new action to the union
+  | GetSessionDetailsAction
+  | GetStageRecipeAction
+  | ListStageDocumentsAction
+  | SubmitStageDocumentFeedbackAction;
 
 // --- END: Discriminated Union ---
+
+export interface SubmitStageDocumentFeedbackPayload {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+  documentKey: string;
+  modelId: string;
+  feedbackContent: string;
+  userId: string;
+  projectId: string;
+  feedbackId?: string;
+  feedbackType: string;
+}
+type SubmitStageDocumentFeedbackAction = {
+  action: 'submitStageDocumentFeedback';
+  payload: SubmitStageDocumentFeedbackPayload;
+};
+
+// --- START: DTOs for listStageDocuments ---
+
+export interface StageDocumentDescriptorDto {
+  documentKey: string;
+  modelId: string;
+  lastRenderedResourceId: string | null;
+}
+
+export interface ListStageDocumentsResponse {
+  documents: StageDocumentDescriptorDto[];
+}
+
+// --- END: DTOs for listStageDocuments ---
 
 export interface CreateProjectPayload {
   projectName: string;
@@ -334,11 +533,82 @@ export interface GenerateContributionsPayload {
 }
 
 /**
+ * Defines the canonical structure for the "Header Context"
+ * produced by a PLANNER job. This object provides the shared context
+ * for all subsequent document generation jobs within a stage.
+ */
+export interface SystemMaterials {
+  progress_update?: string; // This is optional and a remnant of the old monolithic stage generation feature where we had to tell the model what documents they'd already generated.
+  stage_rationale: string;
+  executive_summary: string; // This is the primary means of the agent communicating its intent to itself through different documents, to keep the generation aligned across documents.
+  input_artifacts_summary: string; // This is how we detail what artifacts the agent will use to generate the documents.
+  files_to_generate: {
+    from_document_key: string; // We tell the agent in the prompt "generate this list of documents", the agent's response must include that list so we know it's generating the right documents.
+    template_filename: string; // Each document has specific inclusions that we expect the agent to generate, in addition to whatever the agent decides to add to the document.
+  }[];
+  // Optional, for model self-correction and introspection
+  diversity_rubric?: { [key: string]: string }; // This is how the agent is directed to decide whether to use standard or non-standard approaches.
+  quality_standards?: string[]; // These are quality standards that the agent should follow when generating the documents.
+  validation_checkpoint?: string[]; // This is how the agent self-evaluates whether it's generated what it's been asked to generate. 
+}
+
+export enum BranchKey {
+
+  // Thesis
+  business_case = 'business_case',
+  feature_spec = 'feature_spec',
+  technical_approach = 'technical_approach',
+  success_metrics = 'success_metrics',
+
+  // Antithesis
+  business_case_critique = 'business_case_critique',
+  technical_feasibility_assessment = 'technical_feasibility_assessment',
+  risk_register = 'risk_register',
+  non_functional_requirements = 'non_functional_requirements',
+  dependency_map = 'dependency_map',
+  comparison_vector = 'comparison_vector',
+
+  // Synthesis
+  synthesis_pairwise_business_case = 'synthesis_pairwise_business_case',
+  synthesis_pairwise_feature_spec = 'synthesis_pairwise_feature_spec',
+  synthesis_pairwise_technical_approach = 'synthesis_pairwise_technical_approach',
+  synthesis_pairwise_success_metrics = 'synthesis_pairwise_success_metrics',
+  synthesis_document_business_case = 'synthesis_document_business_case',
+  synthesis_document_feature_spec = 'synthesis_document_feature_spec',
+  synthesis_document_technical_approach = 'synthesis_document_technical_approach',
+  synthesis_document_success_metrics = 'synthesis_document_success_metrics',
+  prd = 'prd',
+  system_architecture_overview = 'system_architecture_overview',
+  tech_stack_recommendations = 'tech_stack_recommendations',
+
+  // Parenthesis
+  trd = 'trd',
+  master_plan = 'master_plan',
+  milestone_schema = 'milestone_schema',
+
+  // Paralysis
+  actionable_checklist = 'actionable_checklist',
+  updated_master_plan = 'updated_master_plan',
+  advisor_recommendations = 'advisor_recommendations',
+}
+
+export enum OutputType {
+  RenderedDocument = 'RenderedDocument',
+  HeaderContext = 'HeaderContext',
+  AssembledDocumentJson = 'AssembledDocumentJson',
+}
+
+/**
  * Tracks the progress of a multi-step job.
  */
-export interface DialecticStepInfo {
-    current_step: number;
-    total_steps: number;
+export interface DialecticStepPlannerMetadata {
+    recipe_template_id?: string;
+    recipe_step_id?: string;
+    stage_slug?: string;
+    description?: string;
+    dependencies?: readonly string[];
+    parallel_successors?: readonly string[];
+    [key: string]: unknown;
 }
 
 /**
@@ -359,8 +629,7 @@ export interface DialecticSimpleJobPayload extends DialecticBaseJobPayload {
  * The payload for a parent job that plans steps based on a recipe.
  */
 export interface DialecticPlanJobPayload extends DialecticBaseJobPayload {
-    job_type: 'plan';
-    step_info: DialecticStepInfo;
+    job_type: JobType;
 }
 
 /**
@@ -382,14 +651,17 @@ export type DocumentRelationships = {
  */
 export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
     job_type: 'execute';
-    step_info: DialecticStepInfo; // Pass down for context
-    prompt_template_name?: string;
-    output_type: ContributionType; // The type of artifact this job will produce
+    prompt_template_id: string;
+    output_type: ModelContributionFileTypes; // The type of artifact this job will produce
     canonicalPathParams: CanonicalPathParams; // The new formal contract for path context
     inputs: {
         // Key-value store for resource_ids needed by the prompt
         [key: string]: string | string[];
     };
+    document_key?: string | null;
+    branch_key?: string | null;
+    parallel_group?: number | null;
+    planner_metadata?: DialecticStepPlannerMetadata | null;
     document_relationships?: DocumentRelationships | null;
     isIntermediate?: boolean;
     user_jwt?: string;
@@ -406,6 +678,7 @@ export interface PromptConstructionPayload {
   conversationHistory: Messages[];
   resourceDocuments: SourceDocument[];
   currentUserPrompt: Prompt;
+  source_prompt_resource_id?: string;
 }
 
 export interface GenerateContributionsSuccessResponse {
@@ -583,8 +856,6 @@ export interface SubmitStageResponsesPayload {
 export interface SubmitStageResponsesResponse {
   message: string;
   updatedSession: DialecticSession;
-  feedbackRecords: DialecticFeedback[];
-  nextStageSeedPromptPath: string | null;
 }
 
 // Add new types for handling artifact assembly rules
@@ -616,6 +887,7 @@ export interface SubmitStageResponsesDependencies {
     downloadFromStorage: typeof downloadFromStorage;
     logger: ILogger;
     fileManager: IFileManager;
+    promptAssembler?: IPromptAssembler;
     indexingService: IIndexingService;
     embeddingClient: IEmbeddingClient;
 }
@@ -668,18 +940,6 @@ export interface ProgressReporting {
   message_template: string;
 }
 
-export type ProcessingStrategyType = 'task_isolation';
-export type ProcessingGranularity =
-  | 'per_thesis_contribution'
-  | 'per_pairwise_synthesis';
-
-export interface ProcessingStrategy {
-  type: ProcessingStrategyType;
-  granularity: ProcessingGranularity;
-  description: string;
-  progress_reporting: ProgressReporting;
-}
-
 export interface DialecticServiceError {
   message: string;
   details?: string;
@@ -721,6 +981,9 @@ export type SourceDocument = Omit<DialecticContributionRow, 'document_relationsh
   content: string;
   document_relationships?: DocumentRelationships | null;
   attempt_count?: number; // The attempt_count of the source document itself, derived from its filename
+  document_key?: string; 
+  type?: string;
+  stage_slug?: string;
 };
 
 export type SourceFeedback = Omit<DialecticFeedback, 'resource_description'> & { 
@@ -739,6 +1002,8 @@ export interface ExecuteModelCallAndSaveParams {
   promptConstructionPayload: PromptConstructionPayload;
   sessionData: DialecticSession;
   compressionStrategy: ICompressionStrategy;
+  inputsRelevance?: RelevanceRule[];
+  inputsRequired?: InputRule[];
 }
 export interface IDialecticJobDeps extends GenerateContributionsDeps {
   getSeedPromptForStage: (
@@ -768,13 +1033,7 @@ export interface IDialecticJobDeps extends GenerateContributionsDeps {
   notificationService: NotificationServiceType;
   executeModelCallAndSave: (params: ExecuteModelCallAndSaveParams) => Promise<void>;
   // Properties from the former IPlanComplexJobDeps
-        planComplexStage?: (
-          dbClient: SupabaseClient<Database>,
-          parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
-          deps: IDialecticJobDeps, // Self-reference
-          recipeStep: DialecticRecipeStep,
-          authToken: string,
-      ) => Promise<(DialecticJobRow)[]>;
+        planComplexStage?: PlanComplexStageFn;
   getGranularityPlanner?: (strategyId: string) => GranularityPlannerFn | undefined;
   ragService?: IRagService;
   countTokens?: (deps: CountTokensDeps, payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number;
@@ -784,6 +1043,7 @@ export interface IDialecticJobDeps extends GenerateContributionsDeps {
   promptAssembler?: IPromptAssembler;
   getAiProviderAdapter?: (deps: FactoryDependencies) => AiProviderAdapterInstance | null;
   tokenWalletService?: ITokenWalletService;
+  documentRenderer: IDocumentRenderer;
   debitTokens?: typeof debitTokens;
 }
 export type RecipeStep = {
@@ -806,36 +1066,60 @@ export type GranularityPlannerFn = (
 export type GranularityStrategyMap = Map<string, GranularityPlannerFn>;
 
 /**
- * Describes a single step within a multi-step job recipe.
+ * Describes a single step within a multi-step job recipe, aligning with the
+ * `dialectic_recipe_template_steps` and `dialectic_stage_recipe_steps` table schemas.
  */
-export interface DialecticRecipeStep {
-    step: number;
-    name: string;
-    prompt_template_name: string;
-    inputs_required: {
-        type: string;
-        stage_slug?: string; // e.g., 'thesis' for antithesis inputs
-    }[];
-    granularity_strategy: 
-    'per_source_document' | 
-    'pairwise_by_origin' | 
-    'per_source_group' | 
-    'all_to_one' | 
-    'per_source_document_by_lineage' |
-    'per_model';
-    output_type: ContributionType; // e.g., 'pairwise_synthesis_chunk'
+
+/**
+ * Defines the structure for an item in the `inputs_required` JSONB array, specifying one
+ * required input artifact for a recipe step.
+ */
+export interface InputRule {
+    /** The type of artifact to be used as an input. */
+    type: 'document' | 'feedback' | 'header_context' | 'seed_prompt';
+    /** The slug of the stage from which to draw the artifact (e.g., 'thesis'). */
+    stage_slug?: string;
+    /** The specific key of the document to use, or '*' to use all documents from the specified stage. */
+    document_key?: string | '*';
+    /** Whether this input is mandatory for the step to proceed. */
+    required?: boolean;
+    /** Whether multiple artifacts of this type can be provided. */
+    multiple?: boolean;
+    /** A markdown header to prepend before this artifact's content in the assembled prompt. */
+    section_header?: string;
+    /** A description of the artifact's purpose in the context of the prompt. */
+    purpose?: string;
 }
 
 /**
- * Describes the complete recipe for a complex, multi-step stage.
+ * Defines the structure for an item in the `inputs_relevance` JSONB array, used to
+ * prioritize artifacts during RAG (Retrieval-Augmented Generation).
  */
-export interface DialecticStageRecipe {
-    processing_strategy: {
-        type: 'task_isolation';
-    };
-    steps: DialecticRecipeStep[];
+export interface RelevanceRule {
+    /** The key of the document to which this relevance score applies. */
+    document_key: string;
+    /** The type of the document (e.g., 'document', 'feedback'). */
+    type: string;
+    /** A normalized float from 0.0 to 1.0 indicating the priority of this artifact. */
+    relevance: number;
+    stage_slug?: string;
 }
 
+/**
+ * Defines the structure for an item in the `outputs_required` JSONB array, describing
+ * an artifact that is expected to be generated by a recipe step.
+ */
+export interface OutputRule {
+    /** The type of output to be generated (e.g., 'header_context'). */
+    type: 'header_context' | string;
+    /** The unique key that will be assigned to the output document. */
+    document_key: string;
+    /** For header contexts, this specifies which subsequent documents this header provides context for. */
+    context_for_documents?: {
+        document_key: string;
+        content_to_include: Record<string, unknown>;
+    }[];
+}
 
 export interface StartSessionDeps {
   logger: ILogger;
@@ -860,3 +1144,28 @@ export type ExportProjectFailure = {
 };
 
 export type ExportProjectResponse = ExportProjectSuccess | ExportProjectFailure;
+
+export type JobInsert = {
+  payload: {
+      model_id: string;
+      selectedModelIds?: string[];
+      [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
+// A more specific type guard for the job insert payload with the new recipe-aware fields.
+export type PlanJobInsert = JobInsert & {
+  payload: {
+      job_type: JobType;
+  }
+}
+export interface StartSessionDeps {
+  logger: ILogger;
+  fileManager: IFileManager;
+  promptAssembler: IPromptAssembler;
+  randomUUID: () => string;
+  getAiProviderAdapter: (deps: FactoryDependencies) => AiProviderAdapterInstance | null;
+  providerMap?: Record<string, AiProviderAdapter>;
+  embeddingApiKey?: string;
+}

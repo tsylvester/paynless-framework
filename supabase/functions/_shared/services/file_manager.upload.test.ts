@@ -12,10 +12,18 @@ import {
   type IMockStorageFileOptions,
 } from '../supabase.mock.ts'
 import { FileManagerService } from './file_manager.ts'
-import { UploadContext, PathContext, FileType } from '../types/file_manager.types.ts'
+import {
+  UploadContext,
+  ModelContributionUploadContext,
+  ResourceUploadContext,
+  FileType,
+  ContributionMetadata,
+  PathContext,
+} from '../types/file_manager.types.ts'
 import { constructStoragePath } from '../utils/path_constructor.ts'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json } from '../../types_db.ts'
+import { isRecord } from '../utils/type_guards.ts'
 
 Deno.test('FileManagerService', async (t) => {
   let setup: MockSupabaseClientSetup
@@ -114,7 +122,7 @@ Deno.test('FileManagerService', async (t) => {
         const expectedPathParts = constructStoragePath(context.pathContext);
         const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
 
-        const postgrestStyleError = { message: 'insert failed', code: 'PGRST116', details: 'constraint violation on resource_description' } as unknown as Error;
+        const postgrestStyleError = { name: 'PostgrestError', message: 'insert failed', code: 'PGRST116', details: 'constraint violation on resource_description' };
 
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
@@ -234,7 +242,7 @@ Deno.test('FileManagerService', async (t) => {
       try {
         const projectId = 'project-uuid-zip';
         const originalZipName = 'My Export.zip';
-        const context: UploadContext = {
+        const zipContext: UploadContext = {
           ...baseUploadContext,
           pathContext: {
             fileType: FileType.ProjectExportZip,
@@ -247,7 +255,7 @@ Deno.test('FileManagerService', async (t) => {
           description: 'Project export archive',
         };
 
-        const expectedPathParts = constructStoragePath(context.pathContext);
+        const expectedPathParts = constructStoragePath(zipContext.pathContext);
         const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
 
         const config: MockSupabaseDataConfig = {
@@ -268,7 +276,7 @@ Deno.test('FileManagerService', async (t) => {
         };
         beforeEach(config);
 
-        const { record, error } = await fileManager.uploadAndRegisterFile(context);
+        const { record, error } = await fileManager.uploadAndRegisterFile(zipContext);
 
         assertEquals(error, null);
         assertExists(record);
@@ -282,7 +290,7 @@ Deno.test('FileManagerService', async (t) => {
         assertEquals(insertData.storage_path, expectedPathParts.storagePath);
         assertEquals(insertData.file_name, expectedPathParts.fileName);
         assertEquals(insertData.mime_type, 'application/zip');
-        const upsertOptions = upsertArgs[1] as { onConflict?: string } | undefined;
+        const upsertOptions: { onConflict?: string } | undefined = upsertArgs[1];
         assertExists(upsertOptions);
         assertEquals(upsertOptions?.onConflict, 'storage_bucket,storage_path,file_name');
 
@@ -298,26 +306,151 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile should register a contribution correctly (no collision)',
     async () => {
       try {
-        const pathContextAttempt0: PathContext = {
-            fileType: FileType.ModelContributionMain,
+        const resourceFileName = 'test.pdf';
+        const resourceContextPath = 'projects/project-uuid-123/general_resource'; // As per constructStoragePath logic
+
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            dialectic_project_resources: {
+              insert: { data: [{ 
+                id: 'resource-123', 
+                project_id: 'project-uuid-123', 
+                user_id: 'user-uuid-789', 
+                file_name: resourceFileName, 
+                mime_type: 'application/pdf', 
+                size_bytes: 12345, 
+                storage_bucket: 'test-bucket', 
+                storage_path: resourceContextPath, // This is the directory path
+                resource_description: 'A test PDF file.' 
+              }], error: null },
+            },
+          },
+        }
+        beforeEach(config)
+
+        const context: UploadContext = {
+          ...baseUploadContext,
+          pathContext: {
+            fileType: FileType.GeneralResource,
+            projectId: 'project-uuid-123',
+            originalFileName: resourceFileName,
+            // sessionId and iteration are not strictly used by 'general_resource' path construction 
+            // but are part of baseUploadContext.pathContext, let's keep them for consistency of the mock context
+            sessionId: 'session-for-proj-res',
+            iteration: 0,
+          },
+          description: 'A test PDF file.',
+        }
+
+        const { record, error } = await fileManager.uploadAndRegisterFile(context)
+
+        assertEquals(error, null)
+        assertExists(record)
+        assertEquals(record?.id, 'resource-123')
+
+        assertEquals(setup.spies.fromSpy.calls[0].args[0], 'dialectic_project_resources')
+        const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert
+        assertExists(insertSpy);
+        const insertData = insertSpy.calls[0].args[0];
+        assertEquals(insertData.project_id, 'project-uuid-123')
+        
+        // constructStoragePath now returns an object
+        const expectedPathParts = constructStoragePath(context.pathContext);
+        assertEquals(insertData.storage_path, expectedPathParts.storagePath);
+        assertEquals(insertData.file_name, expectedPathParts.fileName);
+        assertEquals(insertData.resource_description, JSON.stringify({ type: context.pathContext.fileType, originalDescription: context.description }));
+      } finally {
+        afterEach()
+      }
+    },
+  )
+
+  await t.step('uploadAndRegisterFile should register a project export zip at project root',
+    async () => {
+      try {
+        const projectId = 'project-uuid-zip';
+        const originalZipName = 'My Export.zip';
+        const zipContext: UploadContext = {
+          ...baseUploadContext,
+          pathContext: {
+            fileType: FileType.ProjectExportZip,
+            projectId,
+            originalFileName: originalZipName,
+          },
+          fileContent: 'zip-bytes',
+          mimeType: 'application/zip',
+          sizeBytes: 45678,
+          description: 'Project export archive',
+        };
+
+        const expectedPathParts = constructStoragePath(zipContext.pathContext);
+        const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            dialectic_project_resources: {
+              upsert: { data: [{ id: 'zip-res-123' }], error: null },
+            },
+          },
+          storageMock: {
+            uploadResult: (bucketId: string, path: string, _body: unknown, options?: IMockStorageFileOptions) => {
+              assertEquals(bucketId, 'test-bucket');
+              assertEquals(path, expectedFullPath);
+              // Ensure storage upload uses upsert: true for overwrite semantics
+              assertEquals(options?.upsert, true);
+              return Promise.resolve({ data: { path }, error: null });
+            },
+          },
+        };
+        beforeEach(config);
+
+        const { record, error } = await fileManager.uploadAndRegisterFile(zipContext);
+
+        assertEquals(error, null);
+        assertExists(record);
+        assertEquals(setup.spies.fromSpy.calls[0].args[0], 'dialectic_project_resources');
+
+        const upsertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.upsert;
+        assertExists(upsertSpy);
+        const upsertArgs = upsertSpy.calls[0].args;
+        const insertData = upsertArgs[0];
+        assertEquals(insertData.project_id, projectId);
+        assertEquals(insertData.storage_path, expectedPathParts.storagePath);
+        assertEquals(insertData.file_name, expectedPathParts.fileName);
+        assertEquals(insertData.mime_type, 'application/zip');
+        const upsertOptions: { onConflict?: string } | undefined = upsertArgs[1];
+        assertExists(upsertOptions);
+        assertEquals(upsertOptions?.onConflict, 'storage_bucket,storage_path,file_name');
+
+        const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
+        assertExists(uploadSpy);
+        assertEquals(uploadSpy.calls[0].args[0], expectedFullPath);
+      } finally {
+        afterEach();
+      }
+    },
+  );
+
+  await t.step('uploadAndRegisterFile for business_case should register a contribution correctly (no collision)',
+    async () => {
+      try {
+        const pathContextAttempt0: ModelContributionUploadContext['pathContext'] = {
+            fileType: FileType.business_case,
             projectId: 'project-uuid-123',
             sessionId: 'session-uuid-456',
             iteration: 2,
             stageSlug: '2_antithesis',
             modelSlug: 'claude-3-sonnet',
-            originalFileName: 'claude_contribution.md', // This might not be directly used by model_contribution_main path construction
-            attemptCount: 0
+            attemptCount: 0,
+            documentKey: 'business_case',
         };
         const expectedPathPartsAttempt0 = constructStoragePath(pathContextAttempt0);
         const expectedFullUploadPathAttempt0 = `${expectedPathPartsAttempt0.storagePath}/${expectedPathPartsAttempt0.fileName}`;
 
-        const pathContextRawAttempt0: PathContext = {
+        const pathContextRawAttempt0: ModelContributionUploadContext['pathContext'] = {
             ...pathContextAttempt0,
             fileType: FileType.ModelContributionRawJson,
-            // originalFileName for raw is derived inside file_manager.ts from the main contribution's finalFileName
-            // So, for constructStoragePath here, we might need to simulate that derivation if we want a precise match
-            // or accept that this specific call to constructStoragePath is for testing its own logic primarily.
-            originalFileName: expectedPathPartsAttempt0.fileName.replace(/(\.\w+)$/, '_raw.json') 
+            documentKey: 'business_case',
         };
         const expectedRawPathPartsAttempt0 = constructStoragePath(pathContextRawAttempt0);
         const expectedFullRawUploadPathAttempt0 = `${expectedRawPathPartsAttempt0.storagePath}/${expectedRawPathPartsAttempt0.fileName}`;
@@ -343,6 +476,7 @@ Deno.test('FileManagerService', async (t) => {
             bucket.upload = async (path: string, content: unknown, options?: IMockStorageFileOptions) => {
                 if (path === expectedFullRawUploadPathAttempt0) {
                     rawJsonUploadCalledCorrectly = true;
+                    assertEquals(options?.contentType, 'application/json');
                     return { data: { path: expectedFullRawUploadPathAttempt0 }, error: null };
                 }
                 if (path === expectedFullUploadPathAttempt0 && options?.contentType !== 'application/json') {
@@ -353,26 +487,21 @@ Deno.test('FileManagerService', async (t) => {
             return bucket;
         };
 
-        const context: UploadContext = {
+        const contributionMetadata: ContributionMetadata = {
+          iterationNumber: 2,
+          modelIdUsed: 'model-id-sonnet',
+          modelNameDisplay: 'Claude 3 Sonnet',
+          sessionId: 'session-uuid-456',
+          stageSlug: '2_antithesis',
+          rawJsonResponseContent: '{"raw":"mock raw json response"}',
+        };
+
+        const context: ModelContributionUploadContext = {
           ...baseUploadContext,
-          pathContext: {
-            fileType: FileType.ModelContributionMain,
-            projectId: 'project-uuid-123',
-            sessionId: 'session-uuid-456',
-            iteration: 2,
-            stageSlug: '2_antithesis',
-            modelSlug: 'claude-3-sonnet',
-            originalFileName: 'claude_contribution.md', // main context still has this
-          },
-          contributionMetadata: {
-            iterationNumber: 2,
-            modelIdUsed: 'model-id-sonnet',
-            modelNameDisplay: 'Claude 3 Sonnet',
-            sessionId: 'session-uuid-456',
-            stageSlug: '2_antithesis',
-            rawJsonResponseContent: '{"raw":"mock raw json response"}',
-            seedPromptStoragePath: 'projects/project-uuid-123/sessions/session-uuid-456/iteration_2/2_antithesis/seed_prompt.md',
-          },
+          pathContext: pathContextAttempt0,
+          fileContent: '# Business Case Content',
+          mimeType: 'text/markdown',
+          contributionMetadata,
         }
 
         const { record, error } = await fileManager.uploadAndRegisterFile(context)
@@ -380,6 +509,7 @@ Deno.test('FileManagerService', async (t) => {
         assertEquals(error, null)
         assertExists(record)
         assertEquals(record?.id, 'contrib-123')
+
         assertEquals(setup.spies.fromSpy.calls[0].args[0], 'dialectic_contributions')
         
         assert(rawJsonUploadCalledCorrectly, "Raw JSON upload was not called with the correct path");
@@ -403,7 +533,7 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile should place intermediate files in a _work directory',
     async () => {
       try {
-        const pathContext: PathContext = {
+        const pathContext: ModelContributionUploadContext['pathContext'] = {
           fileType: FileType.PairwiseSynthesisChunk,
           projectId: 'project-intermediate',
           sessionId: 'session-intermediate',
@@ -427,19 +557,20 @@ Deno.test('FileManagerService', async (t) => {
         };
         beforeEach(config);
 
+        const contributionMetadata: ContributionMetadata = {
+          iterationNumber: 1,
+          modelIdUsed: 'model-id-123',
+          modelNameDisplay: 'Test Model',
+          sessionId: 'session-intermediate',
+          stageSlug: 'synthesis',
+          rawJsonResponseContent: '{}',
+          document_relationships: { derived_from: ['id-a', 'id-b'] },
+        };
+
         const context: UploadContext = {
           ...baseUploadContext,
           pathContext,
-          contributionMetadata: {
-            iterationNumber: 1,
-            modelIdUsed: 'model-id-123',
-            modelNameDisplay: 'Test Model',
-            sessionId: 'session-intermediate',
-            stageSlug: 'synthesis',
-            rawJsonResponseContent: '{}',
-            seedPromptStoragePath: 'path/to/seed',
-            document_relationships: { derived_from: ['id-a', 'id-b'] },
-          },
+          contributionMetadata,
         };
         
         const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
@@ -458,28 +589,27 @@ Deno.test('FileManagerService', async (t) => {
     },
   );
 
-  await t.step('uploadAndRegisterFile for model_contribution_main should handle filename collision and retry',
+  await t.step('uploadAndRegisterFile for business_case should handle filename collision and retry',
     async () => {
       try {
-        const baseRetryPathContext: PathContext = {
-          fileType: FileType.ModelContributionMain,
+        const baseRetryPathContext: ModelContributionUploadContext['pathContext'] = {
+          fileType: FileType.business_case,
           projectId: 'project-retry-proj',
           sessionId: 'session-retry-sess',
           iteration: 1,
-          // stageSlug will be mapped by mapStageSlugToDirName, ensure consistency
-          stageSlug: 'thesis', // Raw slug, path_constructor will map it to '1_thesis'
+          stageSlug: 'thesis',
           modelSlug: 'claude-opus',
-          originalFileName: 'opus_contribution.md', // Used by file_manager for raw JSON derivation
+          documentKey: 'business_case',
         };
 
-        const failedAttempt0PathContext: PathContext = {
+        const failedAttempt0PathContext: ModelContributionUploadContext['pathContext'] = {
           ...baseRetryPathContext,
           attemptCount: 0,
         };
         const expectedFailedPathParts0 = constructStoragePath(failedAttempt0PathContext);
         const expectedFullFailedPath0 = `${expectedFailedPathParts0.storagePath}/${expectedFailedPathParts0.fileName}`;
 
-        const successAttempt1PathContext: PathContext = {
+        const successAttempt1PathContext: ModelContributionUploadContext['pathContext'] = {
           ...baseRetryPathContext,
           attemptCount: 1,
         };
@@ -487,14 +617,11 @@ Deno.test('FileManagerService', async (t) => {
         const expectedFullSuccessfulMainPath1 = `${expectedSuccessfulPathParts1.storagePath}/${expectedSuccessfulPathParts1.fileName}`;
         const expectedSuccessfulMainFileName1 = expectedSuccessfulPathParts1.fileName;
 
-        // rawJsonResponseContent uses the *successful* main file's attemptCount
-        const successRawJsonPathContextAttempt1: PathContext = {
-          ...baseRetryPathContext, // Use base, then override attemptCount and fileType
-          attemptCount: 1, // Matches successful main file
+        const successRawJsonPathContextAttempt1: ModelContributionUploadContext['pathContext'] = {
+          ...baseRetryPathContext,
+          attemptCount: 1, 
           fileType: FileType.ModelContributionRawJson,
-          // originalFileName for raw is derived inside file_manager.ts from the main contribution's *final* (successful) fileName
-          // So, for constructStoragePath here, we use the fileName from the successful main attempt (1)
-          originalFileName: expectedSuccessfulMainFileName1.replace(/(\.\w+)$/, '_raw.json'),
+          documentKey: 'business_case',
         };
         const expectedRawJsonPathParts1 = constructStoragePath(successRawJsonPathContextAttempt1);
         const expectedFullSuccessfulRawJsonPath1 = `${expectedRawJsonPathParts1.storagePath}/${expectedRawJsonPathParts1.fileName}`;
@@ -532,19 +659,22 @@ Deno.test('FileManagerService', async (t) => {
           return bucket;
         };
 
-        const context: UploadContext = {
+        const contributionMetadata: ContributionMetadata = {
+          iterationNumber: 1,
+          modelIdUsed: 'model-id-opus',
+          modelNameDisplay: 'Claude Opus',
+          sessionId: 'session-retry-sess',
+          stageSlug: 'thesis',
+          rawJsonResponseContent: '{"raw":"mock for retry"}',
+        };
+
+        const context: ModelContributionUploadContext = {
           ...baseUploadContext,
           pathContext: baseRetryPathContext, // Use the base for the initial call, attemptCount is handled internally by FileManagerService
           mimeType: 'text/markdown',
-          contributionMetadata: {
-            iterationNumber: 1,
-            modelIdUsed: 'model-id-opus',
-            modelNameDisplay: 'Claude Opus',
-            sessionId: 'session-retry-sess',
-            stageSlug: 'thesis',
-            rawJsonResponseContent: '{"raw":"mock for retry"}',
-            seedPromptStoragePath: 'projects/project-retry-proj/sessions/session-retry-sess/iteration_1/thesis/seed_prompt.md',
-          },
+          fileContent: '# continuation without link',
+          contributionMetadata,
+          userId: 'user-missing-link',
         };
 
         const { record, error } = await fileManager.uploadAndRegisterFile(context);
@@ -582,6 +712,7 @@ Deno.test('FileManagerService', async (t) => {
           }
         };
         beforeEach(config);
+
 
         const context: UploadContext = {
           ...baseUploadContext,
@@ -662,7 +793,7 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile should handle DB insert errors and attempt cleanup',
     async () => {
       try {
-        const context: UploadContext = {
+        const dbErrorContext: UploadContext = {
           ...baseUploadContext,
           pathContext: { // Using simpler initial_user_prompt for this DB error test
             fileType: FileType.InitialUserPrompt,
@@ -672,7 +803,7 @@ Deno.test('FileManagerService', async (t) => {
           description: "DB error test",
         };
 
-        const expectedPathParts = constructStoragePath(context.pathContext);
+        const expectedPathParts = constructStoragePath(dbErrorContext.pathContext);
         const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
 
         const config: MockSupabaseDataConfig = {
@@ -695,6 +826,16 @@ Deno.test('FileManagerService', async (t) => {
           },
         };
         beforeEach(config);
+
+        const context: UploadContext = {
+          ...baseUploadContext,
+          pathContext: {
+            fileType: FileType.InitialUserPrompt,
+            projectId: 'project-db-error',
+            originalFileName: 'db_error_test.txt',
+          },
+          description: "DB error test",
+        };
 
         const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
@@ -722,8 +863,8 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile should reject continuation without target_contribution_id and cleanup uploaded files',
     async () => {
       try {
-        const pathContext: PathContext = {
-          fileType: FileType.ModelContributionMain,
+        const pathContext: ModelContributionUploadContext['pathContext'] = {
+          fileType: FileType.business_case,
           projectId: 'project-missing-link',
           sessionId: 'session-missing-link',
           iteration: 1,
@@ -744,26 +885,27 @@ Deno.test('FileManagerService', async (t) => {
         const constructStoragePathSpy = spy(constructStoragePath);
         fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath: constructStoragePathSpy });
 
-        const context: UploadContext = {
+        const contributionMetadata: ContributionMetadata = {
+          // Missing target_contribution_id on purpose to trigger the cleanup path
+          isContinuation: true,
+          iterationNumber: 1,
+          modelIdUsed: 'model-id-test',
+          modelNameDisplay: 'Test Model',
+          sessionId: 'session-missing-link',
+          stageSlug: 'thesis',
+          rawJsonResponseContent: '{}',
+        };
+
+        const missingLinkContext: UploadContext = {
           ...baseUploadContext,
           pathContext,
           mimeType: 'text/markdown',
           fileContent: '# continuation without link',
-          contributionMetadata: {
-            // Missing target_contribution_id on purpose to trigger the cleanup path
-            isContinuation: true,
-            iterationNumber: 1,
-            modelIdUsed: 'model-id-test',
-            modelNameDisplay: 'Test Model',
-            sessionId: 'session-missing-link',
-            stageSlug: 'thesis',
-            rawJsonResponseContent: '{}',
-            seedPromptStoragePath: 'any/path/to/seed.md', // Path doesn't need to be precise for this test
-          },
+          contributionMetadata,
           userId: 'user-missing-link',
         };
 
-        const { record, error } = await fileManager.uploadAndRegisterFile(context);
+        const { record, error } = await fileManager.uploadAndRegisterFile(missingLinkContext);
 
         assertExists(error, 'Expected an error for missing target_contribution_id');
         assertEquals(record, null);
@@ -807,11 +949,24 @@ Deno.test('FileManagerService', async (t) => {
       };
 
       // 2. Setup: Create the context for the fileManager call
+      const contributionMetadata: ContributionMetadata = {
+        target_contribution_id: 'anchor-contrib-id-123', // This triggers the continuation logic
+        iterationNumber: 1,
+        modelIdUsed: 'model-id-opus',
+        modelNameDisplay: 'Claude Opus',
+        sessionId: 'session-chunk-test',
+        stageSlug: '1_thesis',
+        contributionType: 'thesis',
+        rawJsonResponseContent: '{"content": "This is the new content."}',
+        // New metadata for chunking
+        isContinuation: true,
+        turnIndex: 1,
+      };
       const continuationContext: UploadContext = {
         ...baseUploadContext,
         fileContent: 'This is the new content.',
         pathContext: { // This context is for metadata, the path logic is what we test
-          fileType: FileType.ModelContributionMain,
+          fileType: FileType.business_case,
           projectId: 'project-chunk-test',
           sessionId: 'session-chunk-test',
           stageSlug: '1_thesis',
@@ -819,42 +974,29 @@ Deno.test('FileManagerService', async (t) => {
           modelSlug: 'Claude Opus', // Correctly provide modelSlug in the base path context
           contributionType: 'thesis', // Correctly provide contributionType in the base path context
         },
-        contributionMetadata: {
-          target_contribution_id: 'anchor-contrib-id-123', // This triggers the continuation logic
-          iterationNumber: 1,
-          modelIdUsed: 'model-id-opus',
-          modelNameDisplay: 'Claude Opus',
-          sessionId: 'session-chunk-test',
-          stageSlug: '1_thesis',
-          contributionType: 'thesis',
-          rawJsonResponseContent: '{"content": "This is the new content."}',
-          seedPromptStoragePath: 'projects/project-chunk-test/sessions/session-chunk-test/iteration_1/1_thesis/claude-opus_1_thesis_20250101T000000Z.md',
-          // New metadata for chunking
-          isContinuation: true,
-          turnIndex: 1,
-        },
+        contributionMetadata,
         userId: 'user-chunk-test-id'
       };
 
       // 3. Setup: Define the expected path for the NEW chunk file.
       // This is what we WANT, but the current code doesn't produce it.
-      const expectedChunkPathContext: PathContext = {
-        fileType: FileType.ModelContributionMain,
+      const expectedChunkPathContext: ModelContributionUploadContext['pathContext'] = {
+        fileType: FileType.business_case,
         projectId: 'project-chunk-test',
         sessionId: 'session-chunk-test',
         iteration: 1,
         stageSlug: '1_thesis',
-        modelSlug: continuationContext.contributionMetadata?.modelNameDisplay, // Align with implementation
+        modelSlug: contributionMetadata.modelNameDisplay, // Align with implementation
         attemptCount: 0,
-        isContinuation: continuationContext.contributionMetadata?.isContinuation,
-        turnIndex: continuationContext.contributionMetadata?.turnIndex,
+        isContinuation: contributionMetadata.isContinuation,
+        turnIndex: contributionMetadata.turnIndex,
       };
       // The path_constructor does not yet support these new flags, but we write the test
       // as if it does, to prove that the overall system fails. The expected path
       // should contain `_work` and the `_continuation_1` suffix.
       const expectedPathParts = constructStoragePath({
         ...expectedChunkPathContext,
-        contributionType: continuationContext.contributionMetadata?.contributionType,
+        contributionType: contributionMetadata.contributionType,
       });
       const expectedChunkFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
 
@@ -895,8 +1037,8 @@ Deno.test('FileManagerService', async (t) => {
       assertExists(updateHistory, "Expected to track updates to dialectic_contributions");
       assert(updateHistory!.callCount >= 1, 'Expected an update to clear prior latest edit on parent contribution');
       const updatedLatestFalse = updateHistory!.callsArgs.some(args => {
-        const updatePayload = args[0] as Record<string, unknown>;
-        return updatePayload && (updatePayload as { is_latest_edit?: boolean }).is_latest_edit === false;
+        const updatePayload = args[0];
+        return isRecord(updatePayload) && 'is_latest_edit' in updatePayload && updatePayload.is_latest_edit === false;
       });
       assert(updatedLatestFalse, 'Expected an update setting is_latest_edit=false for the parent contribution');
 
@@ -905,6 +1047,397 @@ Deno.test('FileManagerService', async (t) => {
       const eqHasParentId = eqHistory!.callsArgs.some(args => args[0] === 'id' && args[1] === 'anchor-contrib-id-123');
       assert(eqHasParentId, 'Expected eq("id", parentId) for clearing parent latest edit');
 
+    } finally {
+      afterEach();
+    }
+  });
+
+  await t.step('should handle PlannerPrompt correctly', async () => {
+    try {
+      const fileType: FileType = FileType.PlannerPrompt;
+      if (!fileType) {
+        throw new Error('fileType is null');
+      }
+      const stepName = 'generate_plan';
+      const pathContext: ResourceUploadContext['pathContext'] = {
+        fileType: FileType.PlannerPrompt,
+        projectId: 'project-doc-centric',
+        sessionId: 'session-doc-centric',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'test-model',
+        stepName,
+      };
+
+      const expectedPathParts = {
+        storagePath: `projects/project-doc-centric/sessions/session-doc-centric/iteration_1/1_thesis`,
+        fileName: `${FileType.PlannerPrompt}_test.json`,
+      };
+
+      let passedContext: PathContext | undefined;
+      const mockConstructStoragePath = (context: PathContext) => {
+        passedContext = context;
+        return expectedPathParts;
+      };
+
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_project_resources: {
+            insert: { data: [{ id: `contrib-${fileType}` }], error: null },
+          },
+        },
+      };
+
+      // Custom setup for spy injection
+      originalEnvGet = Deno.env.get.bind(Deno.env);
+      envStub = stub(Deno.env, 'get', (key: string): string | undefined => {
+        if (key === 'SB_CONTENT_STORAGE_BUCKET') return 'test-bucket';
+        return originalEnvGet(key);
+      });
+      setup = createMockSupabaseClient('test-user-id', config);
+      fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, {
+        constructStoragePath: mockConstructStoragePath,
+      });
+
+      const contributionMetadata: ContributionMetadata = {
+        iterationNumber: 1,
+        modelIdUsed: 'model-id-123',
+        modelNameDisplay: 'Test Model',
+        sessionId: 'session-doc-centric',
+        stageSlug: 'thesis',
+        rawJsonResponseContent: '{}',
+      };
+
+      const plannerContext: ResourceUploadContext = {
+        ...baseUploadContext,
+        pathContext: {
+          ...pathContext,
+          fileType: FileType.PlannerPrompt,
+        },
+        fileContent: '{}',
+        mimeType: 'application/json',
+        description: `Test for ${fileType}`,
+      };
+
+      const { record, error } = await fileManager.uploadAndRegisterFile(plannerContext);
+
+      assertEquals(error, null, `Upload failed for ${fileType}: ${error?.message}`);
+      assertExists(record, `Record should be created for ${fileType}`);
+      
+      assertEquals(record.id, `contrib-${fileType}`);
+
+      // 2. Verify the correct DB table was targeted
+      const fromSpyCalls = setup.spies.fromSpy.calls;
+      const contributionTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_project_resources');
+      assertExists(contributionTableCall, `'dialectic_project_resources' table was not targeted for ${fileType}`);
+    } finally {
+      afterEach();
+    }
+  });
+
+  await t.step('should handle TurnPrompt correctly', async () => {
+    try {
+      const fileType = FileType.TurnPrompt;
+      const documentKey = 'business_case';
+      const pathContext: ResourceUploadContext['pathContext'] = {
+        fileType,
+        projectId: 'project-doc-centric',
+        sessionId: 'session-doc-centric',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'test-model',
+        documentKey,
+      };
+  
+      const expectedPathParts = {
+        storagePath: `projects/project-doc-centric/sessions/session-doc-centric/iteration_1/1_thesis`,
+        fileName: `${fileType}_test.json`,
+      };
+  
+      let passedContext: PathContext | undefined;
+      const mockConstructStoragePath = (context: PathContext) => {
+        passedContext = context;
+        return expectedPathParts;
+      };
+  
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_project_resources: {
+            insert: { data: [{ id: `contrib-${fileType}` }], error: null },
+          },
+        },
+      };
+  
+      // Custom setup for spy injection
+      originalEnvGet = Deno.env.get.bind(Deno.env);
+      envStub = stub(Deno.env, 'get', (key: string): string | undefined => {
+        if (key === 'SB_CONTENT_STORAGE_BUCKET') return 'test-bucket';
+        return originalEnvGet(key);
+      });
+      setup = createMockSupabaseClient('test-user-id', config);
+      fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, {
+        constructStoragePath: mockConstructStoragePath,
+      });
+  
+      const contributionMetadata: ContributionMetadata = {
+        iterationNumber: 1,
+        modelIdUsed: 'model-id-123',
+        modelNameDisplay: 'Test Model',
+        sessionId: 'session-doc-centric',
+        stageSlug: 'thesis',
+        rawJsonResponseContent: '{}',
+      };
+
+      const turnContext: ResourceUploadContext = {
+        ...baseUploadContext,
+        pathContext: {
+          ...pathContext,
+          fileType: FileType.TurnPrompt,
+        },
+        fileContent: '{}',
+        mimeType: 'application/json',
+        description: `Test for ${fileType}`,
+      };
+  
+      const { record, error } = await fileManager.uploadAndRegisterFile(turnContext);
+  
+      assertEquals(error, null, `Upload failed for ${fileType}: ${error?.message}`);
+      assertExists(record, `Record should be created for ${fileType}`);
+      assertEquals(record.id, `contrib-${fileType}`);
+  
+      const fromSpyCalls = setup.spies.fromSpy.calls;
+      const contributionTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_project_resources');
+      assertExists(contributionTableCall, `'dialectic_project_resources' table was not targeted for ${fileType}`);
+    } finally {
+      afterEach();
+    }
+  });
+  
+  await t.step('should handle HeaderContext correctly', async () => {
+    try {
+      const fileType = FileType.HeaderContext;
+      const pathContext: ModelContributionUploadContext['pathContext'] = {
+        fileType,
+        projectId: 'project-doc-centric',
+        sessionId: 'session-doc-centric',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'test-model',
+      };
+  
+      const expectedPathParts = {
+        storagePath: `projects/project-doc-centric/sessions/session-doc-centric/iteration_1/1_thesis/_work`,
+        fileName: `${fileType}_test.json`,
+      };
+  
+      let passedContext: PathContext | undefined;
+      const mockConstructStoragePath = (context: PathContext) => {
+        passedContext = context;
+        return expectedPathParts;
+      };
+  
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            insert: { data: [{ id: `contrib-${fileType}` }], error: null },
+          },
+        },
+      };
+  
+      originalEnvGet = Deno.env.get.bind(Deno.env);
+      envStub = stub(Deno.env, 'get', (key: string): string | undefined => {
+        if (key === 'SB_CONTENT_STORAGE_BUCKET') return 'test-bucket';
+        return originalEnvGet(key);
+      });
+      setup = createMockSupabaseClient('test-user-id', config);
+      fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, {
+        constructStoragePath: mockConstructStoragePath,
+      });
+  
+      const contributionMetadata: ContributionMetadata = {
+        iterationNumber: 1,
+        modelIdUsed: 'model-id-123',
+        modelNameDisplay: 'Test Model',
+        sessionId: 'session-doc-centric',
+        stageSlug: 'thesis',
+        rawJsonResponseContent: '{}',
+      };
+
+      const headerContext: ModelContributionUploadContext = {
+        ...baseUploadContext,
+        pathContext: {
+          ...pathContext,
+          fileType: FileType.HeaderContext,
+        },
+        fileContent: '{}',
+        mimeType: 'application/json',
+        description: `Test for ${fileType}`,
+        contributionMetadata,
+      };
+  
+      const { record, error } = await fileManager.uploadAndRegisterFile(headerContext);
+  
+      assertEquals(error, null, `Upload failed for ${fileType}: ${error?.message}`);
+      assertExists(record, `Record should be created for ${fileType}`);
+      assertEquals(record.id, `contrib-${fileType}`);
+  
+      const fromSpyCalls = setup.spies.fromSpy.calls;
+      const contributionTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_contributions');
+      assertExists(contributionTableCall, `'dialectic_contributions' table was not targeted for ${fileType}`);
+    } finally {
+      afterEach();
+    }
+  });
+  
+  await t.step('should handle AssembledDocumentJson correctly', async () => {
+    try {
+      const fileType = FileType.AssembledDocumentJson;
+      const documentKey = 'feature_spec';
+      const pathContext: ResourceUploadContext['pathContext'] = {
+        fileType,
+        projectId: 'project-doc-centric',
+        sessionId: 'session-doc-centric',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'test-model',
+        documentKey,
+      };
+  
+      const expectedPathParts = {
+        storagePath: `projects/project-doc-centric/sessions/session-doc-centric/iteration_1/1_thesis/_work`,
+        fileName: `${fileType}_test.json`,
+      };
+  
+      let passedContext: PathContext | undefined;
+      const mockConstructStoragePath = (context: PathContext) => {
+        passedContext = context;
+        return expectedPathParts;
+      };
+  
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_project_resources: {
+            insert: { data: [{ id: `contrib-${fileType}` }], error: null },
+          },
+        },
+      };
+  
+      originalEnvGet = Deno.env.get.bind(Deno.env);
+      envStub = stub(Deno.env, 'get', (key: string): string | undefined => {
+        if (key === 'SB_CONTENT_STORAGE_BUCKET') return 'test-bucket';
+        return originalEnvGet(key);
+      });
+      setup = createMockSupabaseClient('test-user-id', config);
+      fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, {
+        constructStoragePath: mockConstructStoragePath,
+      });
+  
+      const contributionMetadata: ContributionMetadata = {
+        iterationNumber: 1,
+        modelIdUsed: 'model-id-123',
+        modelNameDisplay: 'Test Model',
+        sessionId: 'session-doc-centric',
+        stageSlug: 'thesis',
+        rawJsonResponseContent: '{}',
+      };
+
+      const assembledJsonContext: ResourceUploadContext = {
+        ...baseUploadContext,
+        pathContext: {
+          ...pathContext,
+          fileType: FileType.AssembledDocumentJson,
+        },
+        fileContent: '{}',
+        mimeType: 'application/json',
+        description: `Test for ${fileType}`,
+      };
+  
+      const { record, error } = await fileManager.uploadAndRegisterFile(assembledJsonContext);
+  
+      assertEquals(error, null, `Upload failed for ${fileType}: ${error?.message}`);
+      assertExists(record, `Record should be created for ${fileType}`);
+      assertEquals(record.id, `contrib-${fileType}`);
+  
+      const fromSpyCalls = setup.spies.fromSpy.calls;
+      const contributionTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_project_resources');
+      assertExists(contributionTableCall, `'dialectic_project_resources' table was not targeted for ${fileType}`);
+    } finally {
+      afterEach();
+    }
+  });
+  
+  await t.step('should handle RenderedDocument correctly', async () => {
+    try {
+      const fileType = FileType.RenderedDocument;
+      const documentKey = 'technical_approach';
+      const pathContext: ResourceUploadContext['pathContext'] = {
+        fileType,
+        projectId: 'project-doc-centric',
+        sessionId: 'session-doc-centric',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'test-model',
+        documentKey,
+      };
+  
+      const expectedPathParts = {
+        storagePath: `projects/project-doc-centric/sessions/session-doc-centric/iteration_1/1_thesis`,
+        fileName: `${fileType}_test.json`,
+      };
+  
+      let passedContext: PathContext | undefined;
+      const mockConstructStoragePath = (context: PathContext) => {
+        passedContext = context;
+        return expectedPathParts;
+      };
+  
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_project_resources: {
+            insert: { data: [{ id: `contrib-${fileType}` }], error: null },
+          },
+        },
+      };
+  
+      originalEnvGet = Deno.env.get.bind(Deno.env);
+      envStub = stub(Deno.env, 'get', (key: string): string | undefined => {
+        if (key === 'SB_CONTENT_STORAGE_BUCKET') return 'test-bucket';
+        return originalEnvGet(key);
+      });
+      setup = createMockSupabaseClient('test-user-id', config);
+      fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, {
+        constructStoragePath: mockConstructStoragePath,
+      });
+  
+      const contributionMetadata: ContributionMetadata = {
+        iterationNumber: 1,
+        modelIdUsed: 'model-id-123',
+        modelNameDisplay: 'Test Model',
+        sessionId: 'session-doc-centric',
+        stageSlug: 'thesis',
+        rawJsonResponseContent: '{}',
+      };
+
+      const renderedDocContext: ResourceUploadContext = {
+        ...baseUploadContext,
+        pathContext: {
+          ...pathContext,
+          fileType: FileType.RenderedDocument,
+        },
+        fileContent: '{}',
+        mimeType: 'application/json',
+        description: `Test for ${fileType}`,
+      };
+  
+      const { record, error } = await fileManager.uploadAndRegisterFile(renderedDocContext);
+  
+      assertEquals(error, null, `Upload failed for ${fileType}: ${error?.message}`);
+      assertExists(record, `Record should be created for ${fileType}`);
+      assertEquals(record.id, `contrib-${fileType}`);
+  
+      const fromSpyCalls = setup.spies.fromSpy.calls;
+      const contributionTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_project_resources');
+      assertExists(contributionTableCall, `'dialectic_project_resources' table was not targeted for ${fileType}`);
     } finally {
       afterEach();
     }
@@ -923,11 +1456,25 @@ Deno.test('FileManagerService', async (t) => {
       };
       beforeEach(config);
 
-      const context: UploadContext = {
+      const contributionMetadata: ContributionMetadata = {
+        // Critical: continuation parent reference present, but isContinuation is false/omitted
+        target_contribution_id: parentId,
+        iterationNumber: 1,
+        modelIdUsed: 'model-id-final',
+        modelNameDisplay: 'Final Model',
+        sessionId: 'sess-final-ctn',
+        stageSlug: 'thesis',
+        contributionType: 'thesis',
+        rawJsonResponseContent: '{}',
+        // Explicitly ensure isContinuation is not true
+        isContinuation: false,
+      };
+
+      const finalContinuationContext: ModelContributionUploadContext = {
         ...baseUploadContext,
         fileContent: 'final continuation content',
         pathContext: {
-          fileType: FileType.ModelContributionMain,
+          fileType: FileType.business_case,
           projectId: 'proj-final-ctn',
           sessionId: 'sess-final-ctn',
           iteration: 1,
@@ -935,32 +1482,19 @@ Deno.test('FileManagerService', async (t) => {
           modelSlug: 'final-model',
           attemptCount: 0,
         },
+        contributionMetadata,
         mimeType: 'text/markdown',
-        contributionMetadata: {
-          // Critical: continuation parent reference present, but isContinuation is false/omitted
-          target_contribution_id: parentId,
-          iterationNumber: 1,
-          modelIdUsed: 'model-id-final',
-          modelNameDisplay: 'Final Model',
-          sessionId: 'sess-final-ctn',
-          stageSlug: 'thesis',
-          contributionType: 'thesis',
-          rawJsonResponseContent: '{}',
-          seedPromptStoragePath: 'projects/proj-final-ctn/sessions/sess-final-ctn/iteration_1/thesis/seed.md',
-          // Explicitly ensure isContinuation is not true
-          isContinuation: false,
-        },
         userId: 'user-final-ctn',
       };
 
-      await fileManager.uploadAndRegisterFile(context);
+      await fileManager.uploadAndRegisterFile(finalContinuationContext);
 
       // Assert: parent latest edit should be cleared even when isContinuation is false
       const updateHistory = setup.spies.getHistoricQueryBuilderSpies('dialectic_contributions', 'update');
       assertExists(updateHistory, 'Expected an update on dialectic_contributions to clear parent latest-edit');
       const clearedLatest = updateHistory!.callsArgs.some((args) => {
-        const payload = args[0] as Record<string, unknown>;
-        return payload && (payload as { is_latest_edit?: boolean }).is_latest_edit === false;
+        const payload = args[0];
+        return isRecord(payload) && 'is_latest_edit' in payload && payload.is_latest_edit === false;
       });
       assert(clearedLatest, 'Expected is_latest_edit=false update for parent contribution');
 
@@ -1004,8 +1538,8 @@ Deno.test('FileManagerService', async (t) => {
       fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath: mockConstructStoragePath });
 
       // 1. Base context with STALE turn-specific data and a different modelSlug to test preservation
-      const basePathContext: PathContext = {
-        fileType: FileType.ModelContributionMain,
+      const basePathContext: ModelContributionUploadContext['pathContext'] = {
+        fileType: FileType.business_case,
         projectId: 'project-merge-test',
         sessionId: 'session-merge-test',
         stageSlug: 'test-stage',
@@ -1016,27 +1550,28 @@ Deno.test('FileManagerService', async (t) => {
         attemptCount: 5,       // Stale value
       };
 
+      const contributionMetadata: ContributionMetadata = {
+        isContinuation: true, // Fresh value
+        turnIndex: 1,         // Fresh value
+        modelNameDisplay: 'metadata-model-slug', // This should NOT be used to overwrite the base
+        stageSlug: 'metadata-stage-slug',         // This should NOT be used
+        contributionType: 'synthesis', // This should NOT be used. Use a valid enum member.
+        iterationNumber: 1,
+        modelIdUsed: 'model-id-123',
+        sessionId: 'session-merge-test',
+        rawJsonResponseContent: '{}', // Add missing required property
+      };
+
       // 2. UploadContext with FRESH turn-specific data in metadata
-      const uploadContext: UploadContext = {
+      const mergeContext: UploadContext = {
         ...baseUploadContext,
         pathContext: basePathContext,
-        contributionMetadata: {
-          isContinuation: true, // Fresh value
-          turnIndex: 1,         // Fresh value
-          modelNameDisplay: 'metadata-model-slug', // This should NOT be used to overwrite the base
-          stageSlug: 'metadata-stage-slug',         // This should NOT be used
-          contributionType: 'synthesis', // This should NOT be used. Use a valid enum member.
-          iterationNumber: 1,
-          modelIdUsed: 'model-id-123',
-          sessionId: 'session-merge-test',
-          seedPromptStoragePath: 'path/to/seed',
-          rawJsonResponseContent: '{}', // Add missing required property
-        },
+        contributionMetadata,
         userId: 'user-merge-test',
       };
 
       // 4. Call the function
-      await fileManager.uploadAndRegisterFile(uploadContext);
+      await fileManager.uploadAndRegisterFile(mergeContext);
 
       // 5. Assert the context passed to the mock
       assertExists(passedContext, "constructStoragePath was not called");
@@ -1079,4 +1614,60 @@ Deno.test('FileManagerService', async (t) => {
       afterEach();
     }
   });
+
+  await t.step('uploadAndRegisterFile should ignore deprecated seedPromptStoragePath', async () => {
+    try {
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            insert: { data: [{ id: 'contrib-deprecation-test' }], error: null },
+          },
+        },
+      };
+      beforeEach(config);
+
+      const contributionMetadata: ContributionMetadata = {
+        iterationNumber: 1,
+        modelIdUsed: 'model-id-123',
+        modelNameDisplay: 'Test Model',
+        sessionId: 'session-deprecation-test',
+        stageSlug: 'test-stage',
+        rawJsonResponseContent: '{}',
+        // Include the new property
+        source_prompt_resource_id: 'new-resource-uuid-123',
+      };
+
+      const context = {
+        ...baseUploadContext,
+        pathContext: {
+          fileType: FileType.business_case,
+          projectId: 'project-deprecation-test',
+          sessionId: 'session-deprecation-test',
+          iteration: 1,
+          stageSlug: 'test-stage',
+          modelSlug: 'test-model',
+        },
+        contributionMetadata: {
+          ...contributionMetadata,
+          ['seedPromptStoragePath']: 'path/to/a/',
+        },
+      } as UploadContext;
+
+      await fileManager.uploadAndRegisterFile(context);
+
+      const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_contributions')?.insert;
+      assertExists(insertSpy, "Insert spy for 'dialectic_contributions' should exist");
+      
+      const insertData = insertSpy.calls[0].args[0];
+      
+      // This is the failing assertion.
+      // We expect seed_prompt_url to be null or undefined because seedPromptStoragePath is deprecated.
+      // The current implementation will incorrectly populate it.
+      assertEquals(insertData.seed_prompt_url, undefined, "seed_prompt_url should be undefined as it is populated by a deprecated property");
+      
+    } finally {
+      afterEach();
+    }
+  });
+
 });

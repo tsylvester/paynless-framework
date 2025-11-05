@@ -3,6 +3,7 @@ import type {
     DialecticProject, 
     CreateProjectPayload, 
     ApiResponse, 
+    DialecticStageRecipe,
     GetContributionContentDataResponse,
     StartSessionPayload, 
     DialecticSession, 
@@ -25,12 +26,18 @@ import type {
     DialecticProcessTemplate,
     UpdateSessionModelsPayload,
     GetSessionDetailsResponse,
+    GetStageDocumentFeedbackPayload,
+    StageDocumentFeedback,
+    SubmitStageDocumentFeedbackPayload,
+    ListStageDocumentsPayload,
+    ListStageDocumentsResponse,
 } from '@paynless/types'; 
 
 // --- Dialectic Client Mock Setup ---
 export type MockDialecticApiClient = {
     listAvailableDomains: ReturnType<typeof vi.fn<[], Promise<ApiResponse<{ data: DomainDescriptor[] }>>>>;
     listAvailableDomainOverlays: ReturnType<typeof vi.fn<[payload: { stageAssociation: string }], Promise<ApiResponse<DomainOverlayDescriptor[]>>>>;
+    fetchStageRecipe: ReturnType<typeof vi.fn<[stageSlug: string], Promise<ApiResponse<DialecticStageRecipe>>>>;
     createProject: ReturnType<typeof vi.fn<[payload: CreateProjectPayload], Promise<ApiResponse<DialecticProject>>>>;
     listProjects: ReturnType<typeof vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>>;
     getContributionContentData: ReturnType<typeof vi.fn<[contributionId: string], Promise<ApiResponse<GetContributionContentDataResponse | null>>>>;
@@ -51,6 +58,9 @@ export type MockDialecticApiClient = {
     fetchProcessTemplate: ReturnType<typeof vi.fn<[templateId: string], Promise<ApiResponse<DialecticProcessTemplate>>>>;
     updateSessionModels: ReturnType<typeof vi.fn<[payload: UpdateSessionModelsPayload], Promise<ApiResponse<DialecticSession>>>>;
     getSessionDetails: ReturnType<typeof vi.fn<[sessionId: string], Promise<ApiResponse<GetSessionDetailsResponse>>>>;
+    getStageDocumentFeedback: ReturnType<typeof vi.fn<[payload: GetStageDocumentFeedbackPayload], Promise<ApiResponse<StageDocumentFeedback[]>>>>;
+    submitStageDocumentFeedback: ReturnType<typeof vi.fn<[payload: SubmitStageDocumentFeedbackPayload], Promise<ApiResponse<{ success: boolean }>>>>;
+    listStageDocuments: ReturnType<typeof vi.fn<[payload: ListStageDocumentsPayload], Promise<ApiResponse<ListStageDocumentsResponse>>>>;
 };
 
 // Factory function to create a new mock instance
@@ -58,6 +68,7 @@ export function createMockDialecticClient(): MockDialecticApiClient {
     return {
         listAvailableDomains: vi.fn<[], Promise<ApiResponse<{ data: DomainDescriptor[] }>>>(),
         listAvailableDomainOverlays: vi.fn<[{ stageAssociation: string }], Promise<ApiResponse<DomainOverlayDescriptor[]>>>(),
+        fetchStageRecipe: vi.fn<[string], Promise<ApiResponse<DialecticStageRecipe>>>(),
         createProject: vi.fn<[CreateProjectPayload], Promise<ApiResponse<DialecticProject>>>(),
         listProjects: vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>(),
         getContributionContentData: vi.fn<[string], Promise<ApiResponse<GetContributionContentDataResponse | null>>>(),
@@ -78,6 +89,9 @@ export function createMockDialecticClient(): MockDialecticApiClient {
         fetchProcessTemplate: vi.fn<[string], Promise<ApiResponse<DialecticProcessTemplate>>>(),
         updateSessionModels: vi.fn<[UpdateSessionModelsPayload], Promise<ApiResponse<DialecticSession>>>(),
         getSessionDetails: vi.fn<[string], Promise<ApiResponse<GetSessionDetailsResponse>>>(),
+        getStageDocumentFeedback: vi.fn<[GetStageDocumentFeedbackPayload], Promise<ApiResponse<StageDocumentFeedback[]>>>(),
+        submitStageDocumentFeedback: vi.fn<[SubmitStageDocumentFeedbackPayload], Promise<ApiResponse<{ success: boolean }>>>(),
+        listStageDocuments: vi.fn<[ListStageDocumentsPayload], Promise<ApiResponse<ListStageDocumentsResponse>>>(),
     };
 }
 
@@ -85,7 +99,7 @@ export function resetMockDialecticClient(instance: MockDialecticApiClient) {
     for (const key in instance) {
         const prop = instance[key as keyof MockDialecticApiClient];
         if (typeof prop === 'function' && 'mockReset' in prop) {
-            (prop as ReturnType<typeof vi.fn>).mockReset();
+            (prop).mockReset();
         }
     }
 }

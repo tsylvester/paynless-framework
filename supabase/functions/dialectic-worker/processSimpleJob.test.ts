@@ -18,21 +18,30 @@ import type {
     DialecticContributionRow, 
     IDialecticJobDeps, 
     SelectedAiProvider, 
-    SourceDocument, 
     DialecticJobPayload, 
 } from '../dialectic-service/dialectic.interface.ts';
 import type { AiModelExtendedConfig } from '../_shared/types.ts';
 import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
-import { getAiProviderConfig } from './processComplexJob.ts';
 import { getGranularityPlanner } from './strategies/granularity.strategies.ts';
-import { planComplexStage } from './task_isolator.ts';
 import { IndexingService, LangchainTextSplitter, EmbeddingClient } from '../_shared/services/indexing_service.ts';
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
-import { PromptAssembler } from '../_shared/prompt-assembler.ts';
-import type { AssemblerSourceDocument } from '../_shared/prompt-assembler.interface.ts';
 import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
+import { MockPromptAssembler, MOCK_ASSEMBLED_PROMPT } from '../_shared/prompt-assembler/prompt-assembler.mock.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
+// Helper: wrap a PromptAssembler to forbid direct calls to legacy methods
+function wrapAssemblerForbidLegacy<T extends object>(assembler: T): T {
+  const forbidden = new Set(['gatherContext', 'render', 'gatherInputsForStage', 'gatherContinuationInputs']);
+  return new Proxy(assembler, {
+    get(target, prop, receiver) {
+      if (typeof prop === 'string' && forbidden.has(prop)) {
+        throw new Error(`Forbidden direct call to promptAssembler.${prop}`);
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
 
 const mockPayload: Json = {
   projectId: 'project-abc',
@@ -42,7 +51,9 @@ const mockPayload: Json = {
   iterationNumber: 1,
   continueUntilComplete: false,
   walletId: 'wallet-ghi',
-  user_jwt: 'jwt.token.here'
+  user_jwt: 'jwt.token.here',
+  // Provide a resolvable recipe step by default so assembler is reached
+  planner_metadata: { recipe_step_id: 'step-1', recipe_template_id: 'template-123' },
 };
 
 if (!isDialecticJobPayload(mockPayload)) {
@@ -68,6 +79,8 @@ const mockJob: DialecticJobRow = {
   started_at: null,
   target_contribution_id: null,
   prerequisite_job_id: null,
+  is_test_job: false,
+  job_type: 'PLAN',
 };
 
 const mockSessionData: DialecticSession = {
@@ -120,6 +133,8 @@ const mockContribution: DialecticContributionRow = {
     updated_at: new Date().toISOString(),
     user_id: 'user-789',
     document_relationships: null,
+    is_header: false,
+    source_prompt_resource_id: null,
 };
 
 const mockNotificationService: NotificationServiceType = {
@@ -132,6 +147,7 @@ const mockNotificationService: NotificationServiceType = {
     sendContributionGenerationContinuedEvent: async () => {},
     sendContributionGenerationCompleteEvent: async () => {},
     sendDialecticProgressUpdateEvent: async () => {},
+    sendDocumentCentricNotification: async () => {},
   };
 
 const setupMockClient = (configOverrides: Record<string, any> = {}) => {
@@ -163,12 +179,13 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
         created_at: new Date().toISOString(),
         default_system_prompt_id: 'prompt-123',
         description: null,
-        expected_output_artifacts: null,
-        input_artifact_rules: null,
+        expected_output_template_ids: [],
         system_prompts: {
             id: 'prompt-123',
             prompt_text: 'This is the base system prompt for the test stage.',
         },
+        active_recipe_instance_id: null,
+        recipe_template_id: 'template-123',
     };
     
     return createMockSupabaseClient('user-789', {
@@ -204,12 +221,50 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
                     error: null,
                 }),
             },
+            // Provide default template step rows for recipe resolution by ID or by (template_id, step_slug)
+            dialectic_recipe_template_steps: {
+                select: (state: any) => {
+                    const defaultStep = {
+                        id: 'step-1',
+                        template_id: 'template-123',
+                        step_number: 1,
+                        step_key: 'seed',
+                        step_slug: 'seed',
+                        step_name: 'Assemble Seed Prompt',
+                        step_description: 'Test seed step',
+                        job_type: 'EXECUTE',
+                        prompt_type: 'Seed',
+                        prompt_template_id: 'prompt-123',
+                        output_type: 'model_contribution_main',
+                        granularity_strategy: 'per_source_document',
+                        inputs_required: [],
+                        inputs_relevance: [],
+                        outputs_required: [],
+                        parallel_group: null,
+                        branch_key: null,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                    };
+                    // Match by id
+                    const hasIdEq = Array.isArray(state?.filters) && state.filters.some((f: any) => f.type === 'eq' && f.column === 'id' && f.value === 'step-1');
+                    if (hasIdEq) {
+                        return Promise.resolve({ data: [defaultStep], error: null });
+                    }
+                    // Match by template_id and step_slug
+                    const hasTemplate = Array.isArray(state?.filters) && state.filters.some((f: any) => f.type === 'eq' && f.column === 'template_id' && f.value === 'template-123');
+                    const hasSlug = Array.isArray(state?.filters) && state.filters.some((f: any) => f.type === 'eq' && f.column === 'step_slug' && typeof f.value === 'string');
+                    if (hasTemplate && hasSlug) {
+                        return Promise.resolve({ data: [defaultStep], error: null });
+                    }
+                    return Promise.resolve({ data: [], error: null });
+                },
+            },
             ...configOverrides,
         },
     });
 };
 
-const getMockDeps = (): IDialecticJobDeps => {
+const getMockDeps = (): { deps: IDialecticJobDeps, promptAssembler: MockPromptAssembler } => {
     const mockSupabaseClient = createMockSupabaseClient().client as unknown as SupabaseClient<Database>;
     const mockModelConfig: AiModelExtendedConfig = {
         api_identifier: 'mock-embedding-model',
@@ -244,8 +299,10 @@ const getMockDeps = (): IDialecticJobDeps => {
     const textSplitter = new LangchainTextSplitter();
     const mockWallet = createMockTokenWalletService();
     const indexingService = new IndexingService(mockSupabaseClient, logger, textSplitter, embeddingClient, mockWallet.instance);
+    const fileManager = new MockFileManagerService();
+    const promptAssembler = new MockPromptAssembler(mockSupabaseClient, fileManager);
     
-    return {
+    const deps: IDialecticJobDeps = {
       logger: logger,
       downloadFromStorage: async (): Promise<DownloadStorageResult> => ({
         data: new ArrayBuffer(0),
@@ -262,7 +319,7 @@ const getMockDeps = (): IDialecticJobDeps => {
       // Provide a fresh instance per test run to avoid cross-test spy conflicts
       notificationService: { ...mockNotificationService },
       callUnifiedAIModel: async () => ({ content: '', finish_reason: 'stop' }),
-      fileManager: new MockFileManagerService(),
+      fileManager: fileManager,
       getExtensionFromMimeType: () => '.txt',
       randomUUID: () => 'random-uuid',
       deleteFromStorage: async () => ({ data: null, error: null }),
@@ -270,51 +327,111 @@ const getMockDeps = (): IDialecticJobDeps => {
       executeModelCallAndSave: async () => {},
       ragService: new MockRagService(),
       countTokens: () => 100,
-      getAiProviderConfig: getAiProviderConfig,
+      getAiProviderConfig: async () => mockModelConfig,
       getGranularityPlanner: getGranularityPlanner,
       planComplexStage: async () => await Promise.resolve([]),
       indexingService,
       embeddingClient,
-      promptAssembler: new PromptAssembler(mockSupabaseClient),
+      promptAssembler: promptAssembler,
+      documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
     }
-};
-
-// Local test helper: make PromptAssembler deterministic in tests
-const stubAssembler = (deps: IDialecticJobDeps, renderedOutput: string = 'RENDERED: Test prompt') => {
-    const s1 = stub(deps.promptAssembler!, 'gatherInputsForStage', () => Promise.resolve([]));
-    const s2 = stub(deps.promptAssembler!, 'render', () => renderedOutput);
-    return { restore: () => { s1.restore(); s2.restore(); } };
+    return { deps, promptAssembler };
 };
 
 Deno.test('processSimpleJob - Happy Path', async (t) => {
     const { client: dbClient, clearAllStubs } = setupMockClient();
-    const deps = getMockDeps();
+    const { deps, promptAssembler } = getMockDeps();
 
     const executeSpy = spy(deps, 'executeModelCallAndSave');
     
     await t.step('should call the executor function with correct parameters', async () => {
-        const asm = stubAssembler(deps, 'RENDERED: Test prompt');
-
         await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', deps, 'auth-token');
 
+        assertEquals(promptAssembler.assemble.calls.length, 1, 'Expected promptAssembler.assemble to be called once');
+        const [assembleOptions] = promptAssembler.assemble.calls[0].args;
+        assertExists(assembleOptions.job);
+        assertEquals(assembleOptions.job.id, mockJob.id);
+        // Ensure AssemblePromptOptions shape is correct
+        assertExists(assembleOptions.project);
+        assertExists(assembleOptions.session);
+        assertExists(assembleOptions.stage);
+        // stage.system_prompts and overlays should exist
+        // Use 'in' checks to avoid type casting
+        const stageVal = assembleOptions.stage;
+        const hasRecipeStep = 'recipe_step' in stageVal;
+        assertEquals(hasRecipeStep, true, 'StageContext must include recipe_step as required by the assembler contract');
+        
         assertEquals(executeSpy.calls.length, 1, 'Expected executeModelCallAndSave to be called once');
         const [executorParams] = executeSpy.calls[0].args;
         
         assertEquals(executorParams.job.id, mockJob.id);
         assertEquals(executorParams.providerDetails.id, mockProviderData.id);
-        // Expected correct behavior: systemInstruction is pass-through-only; not synthesized here
-        assertEquals(executorParams.promptConstructionPayload.systemInstruction, undefined);
-        assertEquals(executorParams.promptConstructionPayload.currentUserPrompt, 'RENDERED: Test prompt');
-        assertEquals(executorParams.promptConstructionPayload.resourceDocuments.length, 0);
-        asm.restore();
+        
+        assertEquals(executorParams.promptConstructionPayload.currentUserPrompt, MOCK_ASSEMBLED_PROMPT.promptContent);
+        assertEquals(executorParams.promptConstructionPayload.source_prompt_resource_id, MOCK_ASSEMBLED_PROMPT.source_prompt_resource_id);
     });
+
+    clearAllStubs?.();
+});
+
+Deno.test('processSimpleJob - emits document_started at EXECUTE job start', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient();
+  const { deps } = getMockDeps();
+
+  const docStartedSpy = spy(deps.notificationService, 'sendDocumentCentricNotification');
+
+  const executeJob: typeof mockJob = { ...mockJob, job_type: 'EXECUTE' };
+
+  await processSimpleJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    { ...executeJob, payload: mockPayload },
+    'user-789',
+    deps,
+    'auth-token',
+  );
+
+  assertEquals(docStartedSpy.calls.length, 1, 'Expected document_started event to be emitted once');
+  const [payloadArg, targetUserId] = docStartedSpy.calls[0].args;
+  assertEquals(payloadArg.type, 'document_started');
+  assertEquals(payloadArg.sessionId, executeJob.session_id);
+  assertEquals(payloadArg.stageSlug, executeJob.stage_slug);
+  assertEquals(payloadArg.job_id, executeJob.id);
+  assertEquals(payloadArg.document_key, 'model_contribution_main');
+  assertEquals(payloadArg.modelId, 'model-def');
+  assertEquals(payloadArg.iterationNumber, 1);
+  assertEquals(targetUserId, 'user-789');
+
+  clearAllStubs?.();
+});
+
+Deno.test('processSimpleJob - does not call legacy promptAssembler methods directly', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient();
+    const { deps, promptAssembler } = getMockDeps();
+    // Forbid direct access to legacy assembler methods; only assemble may be used
+    const wrappedAssembler = wrapAssemblerForbidLegacy(promptAssembler);
+    deps.promptAssembler = wrappedAssembler;
+
+    let threw = false;
+    try {
+        await processSimpleJob(
+            dbClient as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload: mockPayload },
+            'user-789',
+            deps,
+            'auth-token',
+        );
+    } catch (_e) {
+        threw = true;
+    }
+    // Intended green behavior: should not attempt to call forbidden legacy methods
+    assertEquals(threw, false, 'processSimpleJob must not invoke legacy assembler methods directly');
 
     clearAllStubs?.();
 });
 
 Deno.test('processSimpleJob - Failure with Retries Remaining', async (t) => {
     const { client: dbClient, clearAllStubs } = setupMockClient();
-    const deps = getMockDeps();
+    const { deps } = getMockDeps();
 
     const executorStub = stub(deps, 'executeModelCallAndSave', () => {
         return Promise.reject(new Error('Executor failed'));
@@ -334,7 +451,7 @@ Deno.test('processSimpleJob - Failure with Retries Remaining', async (t) => {
 
 Deno.test('processSimpleJob - Failure with No Retries Remaining', async (t) => {
     const { client: dbClient, spies, clearAllStubs } = setupMockClient();
-    const deps = getMockDeps();
+    const { deps } = getMockDeps();
 
     const executorStub = stub(deps, 'executeModelCallAndSave', () => {
         return Promise.reject(new Error('Executor failed consistently'));
@@ -362,9 +479,53 @@ Deno.test('processSimpleJob - Failure with No Retries Remaining', async (t) => {
     executorStub.restore();
 });
 
+Deno.test('processSimpleJob - emits job_failed document-centric notification on terminal failure', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient();
+  const { deps } = getMockDeps();
+
+  // Force executor to fail so job reaches terminal failure path
+  const executorStub = stub(deps, 'executeModelCallAndSave', () => {
+    return Promise.reject(new Error('Executor failed consistently'));
+  });
+
+  const docEventSpy = spy(deps.notificationService, 'sendDocumentCentricNotification');
+
+  const jobWithNoRetries: DialecticJobRow = { ...mockJob, attempt_count: 3, max_retries: 3 };
+
+  let threw = false;
+  try {
+    await processSimpleJob(
+      dbClient as unknown as SupabaseClient<Database>,
+      { ...jobWithNoRetries, payload: mockPayload },
+      'user-789',
+      deps,
+      'auth-token',
+    );
+  } catch (_e) {
+    threw = true;
+  }
+
+  // Expect a single document-centric job_failed event
+  assertEquals(docEventSpy.calls.length, 1, 'Expected job_failed notification to be emitted');
+  const [payloadArg, targetUserId] = docEventSpy.calls[0].args;
+  assert(isRecord(payloadArg));
+  assertEquals(payloadArg.type, 'job_failed');
+  assertEquals(payloadArg.sessionId, mockPayload.sessionId);
+  assertEquals(payloadArg.stageSlug, mockPayload.stageSlug);
+  assertEquals(payloadArg.job_id, jobWithNoRetries.id);
+  assertEquals(typeof payloadArg.document_key, 'string');
+  assertEquals(payloadArg.modelId, mockPayload.model_id);
+  assertEquals(payloadArg.iterationNumber, mockPayload.iterationNumber);
+  assertEquals(targetUserId, 'user-789');
+
+  docEventSpy.restore();
+  executorStub.restore();
+  clearAllStubs?.();
+});
+
 Deno.test('processSimpleJob - emits internal and user-facing failure notifications when retries are exhausted', async (t) => {
     const { client: dbClient, clearAllStubs } = setupMockClient();
-    const deps = getMockDeps();
+    const { deps } = getMockDeps();
 
     const executorStub = stub(deps, 'executeModelCallAndSave', () => {
         return Promise.reject(new Error('Executor failed consistently'));
@@ -399,7 +560,7 @@ Deno.test('processSimpleJob - emits internal and user-facing failure notificatio
 
 Deno.test('processSimpleJob - ContextWindowError Handling', async (t) => {
     const { client: dbClient, spies, clearAllStubs } = setupMockClient();
-    const deps = getMockDeps();
+    const { deps } = getMockDeps();
 
     const executorStub = stub(deps, 'executeModelCallAndSave', () => {
         return Promise.reject(new ContextWindowError('Token limit exceeded during execution.'));
@@ -427,9 +588,7 @@ Deno.test('processSimpleJob - ContextWindowError Handling', async (t) => {
 
 Deno.test('processSimpleJob - renders prompt template and omits systemInstruction when not provided (non-continuation)', async () => {
     const { client: dbClient, clearAllStubs } = setupMockClient();
-    const deps = getMockDeps();
-
-    const asm = stubAssembler(deps, 'RENDERED: <user+domain>');
+    const { deps, promptAssembler } = getMockDeps();
 
     const executeSpy = spy(deps, 'executeModelCallAndSave');
 
@@ -442,21 +601,21 @@ Deno.test('processSimpleJob - renders prompt template and omits systemInstructio
     );
 
     // Assert desired behavior for new contract
+    assertEquals(promptAssembler.assemble.calls.length, 1);
     assertEquals(executeSpy.calls.length, 1, 'Expected executeModelCallAndSave to be called once');
     const [executorParams] = executeSpy.calls[0].args;
     assertEquals(
         executorParams.promptConstructionPayload.currentUserPrompt,
-        'RENDERED: <user+domain>',
-        'currentUserPrompt should be set to the rendered template output',
+        MOCK_ASSEMBLED_PROMPT.promptContent,
+        'currentUserPrompt should be set to the content from the assembled prompt',
     );
     assertEquals(
-        executorParams.promptConstructionPayload.systemInstruction,
-        undefined,
-        'systemInstruction should be omitted when no upstream value is provided',
+        executorParams.promptConstructionPayload.source_prompt_resource_id,
+        MOCK_ASSEMBLED_PROMPT.source_prompt_resource_id,
+        'source_prompt_resource_id should be passed through from the assembled prompt',
     );
 
     clearAllStubs?.();
-    asm.restore();
 });
 
 Deno.test('processSimpleJob - should call gatherContinuationInputs for a continuation job', async () => {    
@@ -475,7 +634,7 @@ Deno.test('processSimpleJob - should call gatherContinuationInputs for a continu
             select: { data: [mockContinuationChunk], error: null }
         }
     });
-    const deps = getMockDeps();
+    const { deps, promptAssembler } = getMockDeps();
 
     const continuationPayload: DialecticJobPayload = {
         ...mockPayload,
@@ -493,8 +652,6 @@ Deno.test('processSimpleJob - should call gatherContinuationInputs for a continu
         target_contribution_id: continuationChunkId,
     };
 
-    const continuationSpy = spy(deps.promptAssembler!, 'gatherContinuationInputs');
-
     // The current implementation will throw an error because the mock for executeModelCallAndSave is not set up
     // to handle the return from gatherContinuationInputs. This is acceptable for the RED state,
     // as the primary assertion on the spy call will fail first.
@@ -510,39 +667,36 @@ Deno.test('processSimpleJob - should call gatherContinuationInputs for a continu
         // Silently catch the expected error to allow the spy assertion to proceed.
     }
 
-    assertEquals(continuationSpy.calls.length, 1, "Expected gatherContinuationInputs to be called once for a continuation job.");
-    assertEquals(continuationSpy.calls[0].args[0], trueRootId, "The prompt assembler must be called with the true root ID discovered from the target chunk.");
+    assertEquals(promptAssembler.assemble.calls.length, 1, "Expected assemble to be called once for a continuation job.");
+    const [assembleOptions] = promptAssembler.assemble.calls[0].args;
+    assertExists(assembleOptions.job);
+    assertEquals(assembleOptions.continuationContent, "Please continue.");
 
     clearAllStubs?.();
 });
 
 Deno.test('processSimpleJob - should dispatch a correctly formed PromptConstructionPayload', async () => {
     const { client: dbClient, clearAllStubs } = setupMockClient();
-    const deps = getMockDeps();
+    const { deps, promptAssembler } = getMockDeps();
     
     // Arrange
     const executeSpy = spy(deps, 'executeModelCallAndSave');
-    const expectedSystemInstruction = undefined;
-    const expectedCurrentUserPrompt = 'RENDERED: <user+domain>';
-
-    const asm = stubAssembler(deps, expectedCurrentUserPrompt);
-
 
     // Act
     await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', deps, 'auth-token');
 
     // Assert
+    assertEquals(promptAssembler.assemble.calls.length, 1);
     assertEquals(executeSpy.calls.length, 1);
     const [executorParams] = executeSpy.calls[0].args;
     
     const payload = executorParams.promptConstructionPayload;
-    assertEquals(payload.systemInstruction, expectedSystemInstruction);
-    assertEquals(payload.currentUserPrompt, expectedCurrentUserPrompt);
-    // resourceDocuments are not implemented/synthesized
+    assertEquals(payload.currentUserPrompt, MOCK_ASSEMBLED_PROMPT.promptContent);
+    assertEquals(payload.source_prompt_resource_id, MOCK_ASSEMBLED_PROMPT.source_prompt_resource_id);
+    // resourceDocuments are not implemented/synthesized in this job type
     assertEquals(payload.resourceDocuments.length, 0);
 
     clearAllStubs?.();
-    asm.restore();
 });
 
 Deno.test('processSimpleJob - uses file-backed initial prompt when column empty', async () => {
@@ -591,7 +745,7 @@ Deno.test('processSimpleJob - uses file-backed initial prompt when column empty'
       },
     });
   
-    const deps = getMockDeps();
+    const { deps, promptAssembler } = getMockDeps();
   
     // Stub storage download to return a proper ArrayBuffer and mimeType
     const blob = new Blob([fileBackedContent], { type: 'text/markdown' });
@@ -599,8 +753,6 @@ Deno.test('processSimpleJob - uses file-backed initial prompt when column empty'
     const downloadStub = stub(deps, 'downloadFromStorage', () =>
       Promise.resolve({ data: arrayBuffer, mimeType: blob.type, error: null })
     );
-  
-    const asm = stubAssembler(deps, `RENDERED: ${fileBackedContent}`);
   
     const executeSpy = spy(deps, 'executeModelCallAndSave');
   
@@ -615,13 +767,12 @@ Deno.test('processSimpleJob - uses file-backed initial prompt when column empty'
     const [executorParams] = executeSpy.calls[0].args;
     assertEquals(
       executorParams.promptConstructionPayload.currentUserPrompt,
-      'RENDERED: Hello from file',
-      'currentUserPrompt should be the rendered template output from the file-backed initial prompt',
+        MOCK_ASSEMBLED_PROMPT.promptContent,
+      'currentUserPrompt should be the content from the assembled prompt',
     );
   
     downloadStub.restore();
     clearAllStubs?.();
-    asm.restore();
   });
 
 Deno.test('processSimpleJob - fails when stage overlays are missing (no render, no model call)', async () => {
@@ -631,7 +782,7 @@ Deno.test('processSimpleJob - fails when stage overlays are missing (no render, 
       select: () => Promise.resolve({ data: [], error: null }),
     },
   });
-  const deps = getMockDeps();
+  const { deps } = getMockDeps();
 
   // We do not stub the assembler; we expect failure before render
   const executeSpy = spy(deps, 'executeModelCallAndSave');
@@ -707,9 +858,7 @@ Deno.test('processSimpleJob - fails when no initial prompt exists', async () => 
     },
   });
 
-  const deps = getMockDeps();
-
-  const asm = stubAssembler(deps, 'RENDERED: test');
+  const { deps, promptAssembler } = getMockDeps();
 
   // Spy on executor to ensure it is NOT called when prompt is missing
   const executeSpy = spy(deps, 'executeModelCallAndSave');
@@ -765,7 +914,6 @@ Deno.test('processSimpleJob - fails when no initial prompt exists', async () => 
   userFailSpy.restore();
 
   clearAllStubs?.();
-  asm.restore();
 });
 
 // =============================================================
@@ -773,10 +921,9 @@ Deno.test('processSimpleJob - fails when no initial prompt exists', async () => 
 // =============================================================
 Deno.test('processSimpleJob - preserves payload.user_jwt when transforming plan to execute', async () => {
   const { client: dbClient, clearAllStubs } = setupMockClient();
-  const deps = getMockDeps();
+  const { deps } = getMockDeps();
 
   const executeSpy = spy(deps, 'executeModelCallAndSave');
-  const asm = stubAssembler(deps, 'RENDERED: prompt');
 
   const planPayloadWithJwt = {
     ...mockPayload,
@@ -809,13 +956,12 @@ Deno.test('processSimpleJob - preserves payload.user_jwt when transforming plan 
   assertEquals(preserved, true);
   assertEquals(preservedValue, 'jwt.token.here');
 
-  asm.restore();
   clearAllStubs?.();
 });
 
 Deno.test('processSimpleJob - missing user_jwt fails early and does not call executor', async () => {
   const { client: dbClient, clearAllStubs } = setupMockClient();
-  const deps = getMockDeps();
+  const { deps } = getMockDeps();
   const executeSpy = spy(deps, 'executeModelCallAndSave');
 
   const planPayloadNoJwt = {
@@ -852,7 +998,7 @@ Deno.test('processSimpleJob - missing user_jwt fails early and does not call exe
 
 Deno.test('processSimpleJob - Wallet missing is immediate failure (no retry)', async () => {
   const { client: dbClient, spies, clearAllStubs } = setupMockClient();
-  const deps = getMockDeps();
+  const { deps } = getMockDeps();
 
   // Arrange: executor surfaces wallet-required error
   const executorStub = stub(deps, 'executeModelCallAndSave', () => {
@@ -916,7 +1062,7 @@ Deno.test('processSimpleJob - Wallet missing is immediate failure (no retry)', a
 
 Deno.test('processSimpleJob - Preflight dependency missing is immediate failure (no retry)', async () => {
   const { client: dbClient, spies, clearAllStubs } = setupMockClient();
-  const deps = getMockDeps();
+  const { deps } = getMockDeps();
 
   // Arrange: executor surfaces preflight dependency error
   const executorStub = stub(deps, 'executeModelCallAndSave', () => {
@@ -977,5 +1123,79 @@ Deno.test('processSimpleJob - Preflight dependency missing is immediate failure 
   userFailSpy.restore();
   retryJobSpy.restore();
   executorStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test('processSimpleJob - forwards recipe_step inputs_relevance and inputs_required to executor', async () => {
+  // Arrange: override recipe step to include non-empty inputs_required and inputs_relevance
+  const customStep = {
+    id: 'step-1',
+    template_id: 'template-123',
+    step_number: 1,
+    step_key: 'seed',
+    step_slug: 'seed',
+    step_name: 'Assemble Seed Prompt',
+    step_description: 'Test seed step with inputs',
+    job_type: 'EXECUTE',
+    prompt_type: 'Seed',
+    prompt_template_id: 'prompt-123',
+    output_type: 'document',
+    granularity_strategy: 'per_source_document',
+    inputs_required: [
+      { type: 'document' },
+      { document_key: 'header_context' },
+    ],
+    inputs_relevance: [
+      { type: 'document', stage_slug: 'test-stage', relevance: 3 },
+      { document_key: 'header_context', relevance: 2 },
+    ],
+    outputs_required: [],
+    parallel_group: null,
+    branch_key: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const { client: dbClient, clearAllStubs } = setupMockClient({
+    dialectic_recipe_template_steps: {
+      select: () => Promise.resolve({ data: [customStep], error: null }),
+    },
+  });
+  const { deps } = getMockDeps();
+
+  const executeSpy = spy(deps, 'executeModelCallAndSave');
+
+  // Act
+  await processSimpleJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    { ...mockJob, payload: mockPayload },
+    'user-789',
+    deps,
+    'auth-token',
+  );
+
+  // Assert
+  const [executorParams] = executeSpy.calls[0].args;
+  assert('inputsRelevance' in executorParams && Array.isArray((executorParams).inputsRelevance));
+  assert('inputsRequired' in executorParams && Array.isArray((executorParams).inputsRequired));
+
+  const inputsRelevanceUnknown = (executorParams).inputsRelevance;
+  const inputsRequiredUnknown = (executorParams).inputsRequired;
+
+  // Verify lengths
+  assert(Array.isArray(inputsRelevanceUnknown) && inputsRelevanceUnknown.length === 2);
+  assert(Array.isArray(inputsRequiredUnknown) && inputsRequiredUnknown.length === 2);
+
+  // Verify selected identity fields are preserved verbatim
+  const r0 = inputsRelevanceUnknown[0];
+  const r1 = inputsRelevanceUnknown[1];
+  assert(isRecord(r0) && r0.type === 'document' && r0.stage_slug === 'test-stage');
+  assert(isRecord(r1) && r1.document_key === 'header_context');
+
+  const req0 = inputsRequiredUnknown[0];
+  const req1 = inputsRequiredUnknown[1];
+  assert(isRecord(req0) && req0.type === 'document');
+  assert(isRecord(req1) && req1.document_key === 'header_context');
+
   clearAllStubs?.();
 });

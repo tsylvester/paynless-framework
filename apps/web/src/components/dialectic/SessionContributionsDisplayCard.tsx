@@ -1,21 +1,19 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  useDialecticStore, 
-  selectIsStageReadyForSessionIteration,
+import React, { useMemo, useEffect, useState } from 'react';
+import {
+  useDialecticStore,
   selectIsLoadingProjectDetail,
   selectContributionGenerationStatus,
   selectProjectDetailError,
   selectFeedbackForStageIteration,
   selectCurrentProjectDetail,
   selectActiveStageSlug,
-  selectSortedStages
+  selectSortedStages,
+  selectStageProgressSummary,
 } from '@paynless/store';
 import { 
-  DialecticContribution, 
   ApiError, 
   DialecticFeedback, 
   SubmitStageResponsesPayload,
-  AIModelCatalogEntry
 } from '@paynless/types';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -37,13 +35,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 import { cn } from '@/lib/utils';
 import { ExportProjectButton } from './ExportProjectButton';
+import { useStageRunProgressHydration } from '../../hooks/useStageRunProgressHydration';
 
 const isApiError = (error: unknown): error is ApiError => {
   return (
     typeof error === 'object' &&
     error !== null &&
     'message' in error &&
-    typeof (error as ApiError).message === 'string'
+    typeof error.message === 'string'
   );
 };
 
@@ -73,15 +72,18 @@ export const SessionContributionsDisplayCard: React.FC = () => {
   const processTemplate = useDialecticStore(state => state.currentProcessTemplate);
   const sortedStages = useDialecticStore(selectSortedStages);
   const setActiveStage = useDialecticStore(state => state.setActiveStage);
+  const selectedModelIds = useDialecticStore(state => state.selectedModelIds) ?? [];
 
   const activeStage = useMemo(() => {
     return processTemplate?.stages?.find(s => s.slug === activeStageSlug) || null;
   }, [processTemplate, activeStageSlug]);
   
+  useStageRunProgressHydration();
+
   // Determine if the active stage is the terminal stage in the process template
   const isFinalStageInProcess = useMemo(() => {
     if (!processTemplate || !activeStage) return false;
-    const transitions = (processTemplate as unknown as { transitions?: { source_stage_id: string; target_stage_id: string }[] }).transitions;
+    const transitions = processTemplate.transitions;
     if (!Array.isArray(transitions) || transitions.length === 0) return false;
     // A final stage has no outgoing transition from its stage id
     return transitions.every(t => t.source_stage_id !== activeStage.id);
@@ -106,16 +108,20 @@ export const SessionContributionsDisplayCard: React.FC = () => {
   const clearCurrentFeedbackFileContent = useDialecticStore(state => state.clearCurrentFeedbackFileContent);
   const resetFetchFeedbackFileContentError = useDialecticStore(state => state.resetFetchFeedbackFileContentError);
 
-  const isStageReady = useDialecticStore(state =>
-    project && session && activeStage ? 
-    selectIsStageReadyForSessionIteration(
-        state,
-        project.id,
-        session.id,
-        activeStage.slug,
-        session.iteration_count
-    ) : false
-  );
+  const stageProgressSummary = useDialecticStore((state) => {
+    if (!session || !activeStage || typeof session.iteration_count !== 'number') {
+      return undefined;
+    }
+
+    return selectStageProgressSummary(
+      state,
+      session.id,
+      activeStage.slug,
+      session.iteration_count,
+    );
+  });
+
+  const canSubmitStageResponses = stageProgressSummary?.isComplete === true;
 
   // Select feedback metadata for the current stage and iteration
   const feedbacksForStageIterationArray = useDialecticStore(state => 
@@ -125,130 +131,17 @@ export const SessionContributionsDisplayCard: React.FC = () => {
   );
   const feedbackForStageIteration: DialecticFeedback | undefined = feedbacksForStageIterationArray?.[0];
 
-  const [stageResponses, setStageResponses] = useState<Record<string, string>>({});
   const [submissionSuccessMessage, setSubmissionSuccessMessage] = useState<string | null>(null);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   // ADDED: State for controlling feedback content modal
   const [showFeedbackContentModal, setShowFeedbackContentModal] = useState(false);
 
   useEffect(() => {
-    setStageResponses({});
     setSubmissionSuccessMessage(null);
     if (submissionError) {
         resetSubmitError?.();
     }
   }, [activeStage, resetSubmitError, submissionError]);
-
-  const displayedContributions = useMemo(() => {
-    if (!session || !session.iteration_count || !activeStage || !session.dialectic_contributions) {
-      return [];
-    }
-    const isGenerating = contributionGenerationStatus === 'generating';
-    const state = useDialecticStore.getState();
-    const selectedModelIds = state.selectedModelIds;
-    const modelCatalog = state.modelCatalog;
-
-    const contributionsForStageAndIteration = session.dialectic_contributions.filter(
-      (c) => c.stage === activeStage.slug && c.iteration_number === session.iteration_count
-    );
-
-    const latestEditsMap = new Map<string, DialecticContribution>();
-
-    for (const contrib of contributionsForStageAndIteration) {
-      const originalId = contrib.original_model_contribution_id || contrib.id;
-      const existing = latestEditsMap.get(originalId);
-      if (!existing || contrib.edit_version > existing.edit_version) {
-        latestEditsMap.set(originalId, contrib);
-      } else if (contrib.edit_version === existing.edit_version && contrib.is_latest_edit) {
-        latestEditsMap.set(originalId, contrib);
-      }
-    }
-    for (const contrib of contributionsForStageAndIteration) {
-      const originalId = contrib.original_model_contribution_id || contrib.id;
-      if (!latestEditsMap.has(originalId)) {
-        latestEditsMap.set(originalId, contrib);
-      } else {
-        const currentInMap = latestEditsMap.get(originalId)!;
-        if (!currentInMap.is_latest_edit && contrib.id === originalId && contrib.is_latest_edit) {
-          latestEditsMap.set(originalId, contrib);
-        }
-      }
-    }
-
-    const finalContributions: DialecticContribution[] = [];
-    const originalIdsWithAnyLatestEdit = new Set<string>();
-
-    contributionsForStageAndIteration.forEach((c) => {
-      if (c.is_latest_edit) {
-        originalIdsWithAnyLatestEdit.add(c.original_model_contribution_id || c.id);
-        finalContributions.push(c);
-      }
-    });
-
-    latestEditsMap.forEach((value, key) => {
-      if (!originalIdsWithAnyLatestEdit.has(key)) {
-        finalContributions.push(value);
-      }
-    });
-
-    const uniqueFinalContributions = Array.from(new Map(finalContributions.map((c) => [c.id, c])).values());
-
-    // --- Placeholder Logic ---
-    if (isGenerating && selectedModelIds.length > 0) {
-      const placeholders: DialecticContribution[] = [];
-      const receivedModelIds = new Set(uniqueFinalContributions.map(c => c.model_id));
-
-      selectedModelIds.forEach(modelId => {
-        if (!receivedModelIds.has(modelId)) {
-          const modelInfo = modelCatalog.find((m: AIModelCatalogEntry) => m.id === modelId);
-          placeholders.push({
-            id: `placeholder-${session.id}-${modelId}-${session.iteration_count}`,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            session_id: session.id,
-            stage: activeStage.slug,
-            iteration_number: session.iteration_count,
-            model_id: modelId,
-            model_name: modelInfo?.model_name || null,
-            status: 'pending', // This is the key for the placeholder
-            // --- These fields are non-essential for a placeholder but satisfy the type ---
-            is_latest_edit: true,
-            edit_version: 0,
-            user_id: null,
-            prompt_template_id_used: null,
-            seed_prompt_url: null,
-            raw_response_storage_path: null,
-            original_model_contribution_id: null,
-            target_contribution_id: null,
-            tokens_used_input: null,
-            tokens_used_output: null,
-            processing_time_ms: null,
-            error: null,
-            citations: null,
-            contribution_type: null,
-            file_name: null,
-            storage_bucket: null,
-            storage_path: null,
-            size_bytes: null,
-            mime_type: null,
-          });
-        }
-      });
-       // Combine unique real contributions with placeholders
-       const combined = [...uniqueFinalContributions, ...placeholders];
-       return combined.sort((a,b) => (a.model_name || '').localeCompare(b.model_name || ''));
-    }
-
-    return uniqueFinalContributions.sort((a, b) => (a.model_name || '').localeCompare(b.model_name || ''));
-  }, [session, activeStage, contributionGenerationStatus]);
-
-  const handleResponseChange = (originalModelContributionId: string, responseText: string) => {
-    setStageResponses(prev => ({ ...prev, [originalModelContributionId]: responseText }));
-    setSubmissionSuccessMessage(null);
-    if (submissionError) {
-        resetSubmitError?.();
-    }
-  };
 
   const proceedWithSubmission = async () => {
     if (!session || !session.iteration_count || !activeStage || !project) return;
@@ -257,37 +150,17 @@ export const SessionContributionsDisplayCard: React.FC = () => {
         resetSubmitError?.();
     }
 
-    // CONSOLIDATE feedback into Markdown
-    let consolidatedMarkdown = "";
-    let hasAnyResponses = false;
-    displayedContributions.forEach(contrib => {
-      const originalId = contrib.original_model_contribution_id || contrib.id;
-      const responseText = stageResponses[originalId];
-      if (responseText && responseText.trim() !== "") {
-        hasAnyResponses = true;
-        consolidatedMarkdown += `## Feedback for Contribution by ${contrib.model_name || 'Unknown Model'} (ID: ${originalId.substring(0,8)}...)\n\n`;
-        consolidatedMarkdown += `${responseText.trim()}\n\n---\n\n`;
-      }
-    });
-
     const payload: SubmitStageResponsesPayload = {
       sessionId: session.id,
       currentIterationNumber: session.iteration_count,
       projectId: project.id,
       stageSlug: activeStage.slug,
-      responses: [], // Send empty array as feedback is in the file
+      responses: [], // This is legacy, the store action will handle drafts
     };
 
-    if (hasAnyResponses) {
-      payload.userStageFeedback = {
-        content: consolidatedMarkdown,
-        feedbackType: "StageContributionResponses_v1",
-        // resourceDescription could be added here if needed in the future
-      };
-    }
-
     try {
-      // Use the constructed payload
+      // The store action is now responsible for finding and submitting all drafts
+      // before advancing the stage.
       const result = await submitStageResponses(payload);
 
       if (result?.error) {
@@ -321,29 +194,23 @@ export const SessionContributionsDisplayCard: React.FC = () => {
   };
   
   const handleSubmitResponses = async () => {
-    // Check if any responses have been entered
-    const hasAnyResponses = Object.values(stageResponses).some(text => text && text.trim() !== "");
-
-    if (hasAnyResponses) {
-      // If there are responses, show the confirmation modal
-      setShowConfirmationModal(true);
-    } else {
-      // If there are no responses, proceed directly with submission
-      await proceedWithSubmission();
-    }
+    // The confirmation modal is shown to prevent accidental submission.
+    setShowConfirmationModal(true);
   };
 
   const renderSubmitButton = () => (
-    <Button 
-        onClick={handleSubmitResponses} 
-        disabled={isSubmitting || !isStageReady}
-        className={cn({ 'animate-pulse': !isSubmitting && isStageReady })}
+    <Button
+      onClick={handleSubmitResponses}
+      disabled={isSubmitting || !canSubmitStageResponses}
+      className={cn({ 'animate-pulse': !isSubmitting && canSubmitStageResponses })}
     >
-        {isSubmitting ? (
-            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
-        ) : (
-            'Submit Responses & Advance Stage'
-        )}
+      {isSubmitting ? (
+        <>
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...
+        </>
+      ) : (
+        'Submit Responses & Advance Stage'
+      )}
     </Button>
   );
 
@@ -382,43 +249,25 @@ export const SessionContributionsDisplayCard: React.FC = () => {
     );
   }
 
-  // Handle case where there is no active session
-  if (!session) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Session Not Active</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p>Please select a session to view its contributions.</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Handle case where there is no active stage
-  if (!activeStage) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Stage Not Selected</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p>Please select a stage to view its contributions.</p>
-        </CardContent>
-      </Card>
-    );
-  }
-  
   const isGenerating = contributionGenerationStatus === 'generating';
+  const iterationLabel = typeof session?.iteration_count === 'number' ? session.iteration_count : null;
+  const stageDisplayName = activeStage?.display_name ?? 'Stage';
   
   return (
     <Card className="w-full">
-      <CardHeader>
+      <CardHeader data-testid="card-header">
         <div className="flex justify-between items-center">
           <CardTitle>
-            Contributions for: <span className="font-bold text-primary">{activeStage.display_name}</span>
-            <span className="text-sm text-muted-foreground ml-2">(Iteration {session.iteration_count})</span>
+            {activeStage ? (
+              <>
+                Contributions for: <span className="font-bold text-primary">{stageDisplayName}</span>
+                {typeof iterationLabel === 'number' && (
+                  <span className="text-sm text-muted-foreground ml-2">(Iteration {iterationLabel})</span>
+                )}
+              </>
+            ) : (
+              'Contributions'
+            )}
           </CardTitle>
           <div className="flex items-center space-x-2">
             {project && (
@@ -426,12 +275,12 @@ export const SessionContributionsDisplayCard: React.FC = () => {
                 projectId={project.id}
                 variant={isFinalStageInProcess ? 'default' : 'outline'}
                 size="sm"
-                className={cn({ 'animate-pulse': isFinalStageInProcess && !isSubmitting && isStageReady })}
+                className={cn({ 'animate-pulse': isFinalStageInProcess && !isSubmitting && canSubmitStageResponses })}
               >
                 Export Project
               </ExportProjectButton>
             )}
-            {displayedContributions.length > 0 && !isFinalStageInProcess && renderSubmitButton()}
+            {selectedModelIds.length > 0 && !isFinalStageInProcess && renderSubmitButton()}
           </div>
         </div>
         {isGenerating && (
@@ -448,43 +297,61 @@ export const SessionContributionsDisplayCard: React.FC = () => {
         )}
       </CardHeader>
       <CardContent>
-        {displayedContributions.length === 0 && !isGenerating && (
-          <div className="text-center text-muted-foreground py-8">
-            <p>No contributions available for this stage yet.</p>
-            <p className="text-sm">Click "Generate" to create new contributions.</p>
-          </div>
-        )}
-        {isGenerating && displayedContributions.length === 0 && (
-          // Show skeletons when generating for the first time
-          Array.from({ length: 2 }).map((_, index) => <GeneratedContributionCardSkeleton key={index} />)
-        )}
-        {displayedContributions.map(contribution => (
-          <GeneratedContributionCard 
-            key={contribution.id}
-            contributionId={contribution.id}
-            initialResponseText={stageResponses[contribution.original_model_contribution_id || contribution.id] || ''}
-            onResponseChange={handleResponseChange}
-            originalModelContributionIdForResponse={contribution.original_model_contribution_id || contribution.id}
-          />
-        ))}
+        <div className="flex flex-col gap-6 lg:flex-row">
+          <div className="flex-1 space-y-4">
+            {!session ? (
+              <div className="text-sm text-muted-foreground">Please select a session to view its contributions.</div>
+            ) : !activeStage ? (
+              <div className="text-sm text-muted-foreground">Please select a stage to view its contributions.</div>
+            ) : (
+              <>
+                {selectedModelIds.length === 0 && !isGenerating && (
+                  <div className="text-center text-muted-foreground py-8">
+                    <p>No contributions available for this stage yet.</p>
+                    <p className="text-sm">Click "Generate" to create new contributions.</p>
+                  </div>
+                )}
+                {isGenerating && selectedModelIds.length === 0 &&
+                  Array.from({ length: 2 }).map((_, index) => (
+                    <GeneratedContributionCardSkeleton key={`skeleton-${index}`} />
+                  ))}
+                {selectedModelIds.map(modelId => (
+                  <GeneratedContributionCard
+                    key={modelId}
+                    modelId={modelId}
+                  />
+                ))}
 
-        {feedbackForStageIteration && (
-          <div className="mt-6 border-t pt-4">
-            <h4 className="text-lg font-semibold mb-2">Past Feedback</h4>
-            <div className="flex items-center justify-between p-3 bg-muted rounded-md">
-                <div>
-                  <p className="text-sm font-medium">Feedback for Iteration {feedbackForStageIteration.iteration_number}</p>
-                  <p className="text-xs text-muted-foreground">Submitted on: {new Date(feedbackForStageIteration.created_at).toLocaleString()}</p>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => handleShowFeedbackContent(feedbackForStageIteration)}>
-                  View Feedback
-                </Button>
-            </div>
+                {feedbackForStageIteration && (
+                  <div className="mt-6 border-t pt-4">
+                    <h4 className="text-lg font-semibold mb-2">Past Feedback</h4>
+                    <div className="flex items-center justify-between p-3 bg-muted rounded-md">
+                      <div>
+                        <p className="text-sm font-medium">
+                          Feedback for Iteration {feedbackForStageIteration.iteration_number}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Submitted on: {new Date(feedbackForStageIteration.created_at).toLocaleString()}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleShowFeedbackContent(feedbackForStageIteration)}
+                      >
+                        View Feedback
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
-        )}
+          {/* The StageRunChecklist is now rendered inside each GeneratedContributionCard */}
+        </div>
       </CardContent>
-      {displayedContributions.length > 0 && (
-        <CardFooter className="flex justify-end space-x-2">
+      {selectedModelIds.length > 0 && (
+        <CardFooter className="flex justify-end space-x-2" data-testid="card-footer">
             {submissionSuccessMessage && (
                 <div className="text-green-600 mr-auto transition-opacity duration-300">
                     {submissionSuccessMessage}
@@ -503,7 +370,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
                 projectId={project.id}
                 variant="default"
                 size="sm"
-                className={cn({ 'animate-pulse': !isSubmitting && isStageReady })}
+                className={cn({ 'animate-pulse': !isSubmitting && canSubmitStageResponses })}
               >
                 Export Project
               </ExportProjectButton>

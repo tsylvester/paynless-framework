@@ -96,12 +96,10 @@ export async function getSessionDetails(
           display_name: dialectic_stages.display_name,
           description: dialectic_stages.description, 
           default_system_prompt_id: dialectic_stages.default_system_prompt_id,
-          expected_output_artifacts: dialectic_stages.expected_output_artifacts,
-          input_artifact_rules: dialectic_stages.input_artifact_rules,
+          expected_output_template_ids: dialectic_stages.expected_output_template_ids,
+          active_recipe_instance_id: dialectic_stages.active_recipe_instance_id,
+          recipe_template_id: dialectic_stages.recipe_template_id,
           created_at: dialectic_stages.created_at,
-          // Ensure all properties from DialecticStage (Database['public']['Tables']['dialectic_stages']['Row']) are mapped here
-          // For example, if there are other non-nullable fields in the DB type not covered by the linter error message,
-          // they should be explicitly mapped from dialectic_stages.propertyName
         }
       : null;
 

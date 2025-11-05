@@ -1,5 +1,6 @@
 // supabase/functions/dialectic-worker/strategies/planners/planPerSourceDocumentByLineage.test.ts
 import { assertEquals, assertExists, assert } from 'https://deno.land/std@0.192.0/testing/asserts.ts';
+import { FileType } from '../../../_shared/types/file_manager.types.ts';
 import type { DialecticJobRow, DialecticPlanJobPayload, DialecticRecipeStep, SourceDocument } from '../../../dialectic-service/dialectic.interface.ts';
 import { planPerSourceDocumentByLineage } from './planPerSourceDocumentByLineage.ts';
 
@@ -36,6 +37,8 @@ Deno.test('planPerSourceDocumentByLineage', async (t) => {
         size_bytes: 100,
         mime_type: 'text/plain',
         document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
+        is_header: false,
+        source_prompt_resource_id: null,
     });
 
     const getMockParentJob = (): DialecticJobRow & { payload: DialecticPlanJobPayload } => ({
@@ -59,23 +62,34 @@ Deno.test('planPerSourceDocumentByLineage', async (t) => {
             projectId: 'proj-id',
             sessionId: 'sess-id',
             stageSlug: 'synthesis', // Add the missing stageSlug
-            job_type: 'plan',
+            job_type: 'PLAN',
             model_id: 'model-a-id',
-            step_info: {
-                current_step: 1,
-                total_steps: 3,
-            },
             walletId: 'wallet-default',
         },
+        is_test_job: false,
+        job_type: 'PLAN',
     });
 
     const getMockRecipeStep = (): DialecticRecipeStep => ({
-        step: 2,
-        name: 'test-step',
-        prompt_template_name: 'test_prompt',
-        output_type: 'reduced_synthesis',
+        id: 'recipe-step-id-123',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        template_id: 'template-id-abc',
+        step_key: 'test-step-key-1',
+        step_slug: 'test-step-slug-1',
+        step_description: 'Mock description 1',
+        step_number: 2,
+        step_name: 'test-step',
+        prompt_template_id: 'tmpl-12345',
+        output_type: FileType.ReducedSynthesis,
         granularity_strategy: 'per_source_document_by_lineage',
-        inputs_required: [{ type: 'pairwise_synthesis_chunk' }],
+        inputs_required: [{ type: 'document' }],
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        branch_key: null,
+        parallel_group: null,
+        inputs_relevance: [],
+        outputs_required: [],
     });
 
     await t.step('should create one job per source group, inheriting model_id from the parent job', () => {
@@ -99,6 +113,12 @@ Deno.test('planPerSourceDocumentByLineage', async (t) => {
         // Assert that the model_id is inherited from the PARENT, not the source doc.
         assertEquals(payloadForA.model_id, mockParentJob.payload.model_id);
         assertEquals(payloadForB.model_id, mockParentJob.payload.model_id);
+
+        // NEW ASSERTIONS for modern contract
+        assertExists(payloadForA.prompt_template_id, "prompt_template_id should exist on the new payload.");
+        assertEquals(payloadForA.prompt_template_id, 'tmpl-12345');
+        assertEquals((payloadForA as any).prompt_template_name, undefined, "prompt_template_name should be undefined.");
+        assertEquals(payloadForA.output_type, FileType.ReducedSynthesis);
     });
 
     await t.step('should return an empty array when sourceDocs is empty', () => {
@@ -221,6 +241,8 @@ Deno.test('planPerSourceDocumentByLineage should treat a doc without a source_gr
         size_bytes: 100,
         mime_type: 'text/plain',
         document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
+        is_header: false,
+        source_prompt_resource_id: null,
     });
 
     const getMockParentJob = (): DialecticJobRow & { payload: DialecticPlanJobPayload } => ({
@@ -244,23 +266,34 @@ Deno.test('planPerSourceDocumentByLineage should treat a doc without a source_gr
             projectId: 'proj-id',
             sessionId: 'sess-id',
             stageSlug: 'antithesis',
-            job_type: 'plan',
+            job_type: 'PLAN',
             model_id: 'model-a-id',
-            step_info: {
-                current_step: 0,
-                total_steps: 1,
-            },
             walletId: 'wallet-default',
         },
+        is_test_job: false,
+        job_type: 'PLAN',
     });
 
     const getMockRecipeStep = (): DialecticRecipeStep => ({
-        step: 1,
-        name: 'antithesis-step',
-        prompt_template_name: 'antithesis_prompt',
-        output_type: 'antithesis',
+        id: 'recipe-step-id-789',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        template_id: 'template-id-def',
+        step_key: 'test-step-key-2',
+        step_slug: 'test-step-slug-2',
+        step_description: 'Mock description 2',
+        step_number: 1,
+        step_name: 'antithesis-step',
+        prompt_template_id: 'tmpl-antithesis-54321',
+        output_type: FileType.business_case_critique,
         granularity_strategy: 'per_source_document_by_lineage',
-        inputs_required: [{ type: 'thesis' }],
+        inputs_required: [{ type: 'document' }],
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        branch_key: null,
+        parallel_group: null,
+        inputs_relevance: [],
+        outputs_required: [],
     });
 
     await t.step('should create a new lineage group using doc ID if source_group is missing', () => {
@@ -289,5 +322,11 @@ Deno.test('planPerSourceDocumentByLineage should treat a doc without a source_gr
         assertExists(childPayload.inputs, "Inputs should exist for the new payload.");
         assertExists(childPayload.inputs.thesis_ids, "The correct input type ('thesis_ids') should exist.");
         assertEquals(childPayload.inputs.thesis_ids, [sourceDocWithoutLineage.id]);
+        
+        // NEW ASSERTIONS for modern contract
+        assertExists(childPayload.prompt_template_id, "prompt_template_id should exist on the new payload.");
+        assertEquals(childPayload.prompt_template_id, 'tmpl-antithesis-54321');
+        assertEquals((childPayload as any).prompt_template_name, undefined, "prompt_template_name should be undefined.");
+        assertEquals(childPayload.output_type, FileType.business_case_critique);
     });
 });

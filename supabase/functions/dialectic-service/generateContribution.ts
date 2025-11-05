@@ -1,13 +1,13 @@
-// deno-lint-ignore-file no-explicit-any
 import {
     GenerateContributionsPayload,
     GenerateContributionsDeps,
+    JobType,
   } from "./dialectic.interface.ts";
-import type { Database, Json } from "../types_db.ts";
+import type { Database, Json, TablesInsert } from "../types_db.ts";
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { logger } from "../_shared/logger.ts";
 import { User } from "npm:@supabase/supabase-js@2";
-import { hasStepsRecipe } from "../_shared/utils/type_guards.ts";
+import { hasStepsRecipe } from "../_shared/utils/type-guards/type_guards.dialectic.ts";
   
 export async function generateContributions(
     dbClient: SupabaseClient<Database>,
@@ -92,7 +92,7 @@ export async function generateContributions(
         // 1. Fetch the recipe for the stage
         const { data: stageDef, error: recipeError } = await dbClient
             .from('dialectic_stages')
-            .select('*')
+            .select('*, steps:dialectic_stage_recipe_steps(*)')
             .eq('slug', stageSlug)
             .single();
 
@@ -105,42 +105,42 @@ export async function generateContributions(
         console.log('[generateContributions] Result of hasStepsRecipe:', hasStepsRecipe(stageDef));
 
         // 2. Calculate total steps from the recipe
-        const totalSteps = hasStepsRecipe(stageDef) ? stageDef.input_artifact_rules.steps.length : 1;
-        
+        const totalSteps = stageDef.steps.length;
         const jobIds: string[] = [];
         for (const modelId of selectedModelIds) {
             // 3. Create a formal 'plan' payload for each job
+            const jobType: JobType = 'PLAN';
             const jobPayload: Json = {
                 ...payload,
                 model_id: modelId,
                 user_jwt: authToken,
-                job_type: 'plan',
-                step_info: {
-                    current_step: 1,
-                    total_steps: totalSteps,
-                    status: 'pending',
-                }
+                job_type: jobType,
+                total_steps: totalSteps,
             };
-            
-            // Explicitly preserve the is_test_job flag to prevent accidental override
-            if (payload.is_test_job) {
-                jobPayload.is_test_job = true;
-            }
-            
+
+
             console.log(`[generateContributions] Final jobPayload for model ${modelId}:`, JSON.stringify(jobPayload, null, 2));
 
 
+            const jobToInsert: TablesInsert<'dialectic_generation_jobs'> = {
+                session_id: sessionId,
+                user_id: user.id,
+                stage_slug: stageSlug,
+                iteration_number: iterationNumber,
+                payload: jobPayload,
+                status: 'pending',
+                max_retries: maxRetries,
+                job_type: jobType, // Add the mandatory top-level job_type
+            };
+
+            if (payload.is_test_job === true) {
+                jobToInsert.is_test_job = true;
+                delete jobPayload.is_test_job;
+            }
+
             const { data: job, error: insertError } = await dbClient
                 .from('dialectic_generation_jobs')
-                .insert({
-                    session_id: sessionId,
-                    user_id: user.id,
-                    stage_slug: stageSlug,
-                    iteration_number: iterationNumber,
-                    payload: jobPayload,
-                    status: 'pending',
-                    max_retries: maxRetries,
-                })
+                .insert(jobToInsert)
                 .select('id')
                 .single();
         

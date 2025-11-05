@@ -1,6 +1,8 @@
 // supabase/functions/dialectic-worker/strategies/planners/planPerSourceDocumentByLineage.ts
 import type { DialecticExecuteJobPayload, GranularityPlannerFn } from '../../../dialectic-service/dialectic.interface.ts';
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
+import { FileType } from '../../../_shared/types/file_manager.types.ts';
+import { isContributionType } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 
 /**
  * Groups source documents by their `document_relationships.source_group` property.
@@ -11,6 +13,20 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
     parentJob,
     recipeStep
 ) => {
+    if (!recipeStep.output_type) {
+        throw new Error('planPerSourceDocumentByLineage requires a recipe step with a defined output_type.');
+    }
+    if (!recipeStep.prompt_template_id) {
+        throw new Error('planPerSourceDocumentByLineage requires a recipe step with a defined prompt_template_id.');
+    }
+
+    const stageSlug = parentJob.payload.stageSlug;
+    if (!stageSlug || !isContributionType(stageSlug)) {
+        throw new Error(
+            `planPerSourceDocumentByLineage requires a valid ContributionType stageSlug, but received: ${stageSlug}`
+        );
+    }
+
     const childPayloads: DialecticExecuteJobPayload[] = [];
     const groups: Record<string, typeof sourceDocs> = {};
 
@@ -40,7 +56,7 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
 
         // Use the first document as the anchor for canonical path generation.
         const anchorDoc = groupDocs[0];
-        const canonicalPathParams = createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorDoc);
+        const canonicalPathParams = createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorDoc, stageSlug);
 
         const newPayload: DialecticExecuteJobPayload = {
             projectId: parentJob.payload.projectId,
@@ -48,11 +64,10 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
             stageSlug: parentJob.payload.stageSlug, // Propagate stageSlug
             iterationNumber: parentJob.payload.iterationNumber,
             job_type: 'execute',
-            prompt_template_name: recipeStep.prompt_template_name,
+            prompt_template_id: recipeStep.prompt_template_id,
             output_type: recipeStep.output_type,
-            isIntermediate: recipeStep.output_type !== 'final_synthesis',
+            isIntermediate: recipeStep.output_type !== FileType.Synthesis,
             model_id: parentJob.payload.model_id, // Inherit model from the parent planner job
-            step_info: parentJob.payload.step_info,
             canonicalPathParams,
             inputs: {
                 // Pass all document IDs from the group as an array

@@ -12,14 +12,17 @@ import {
     isRecord,
     isChatApiRequest,
 } from '../_shared/utils/type_guards.ts';
-  import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
-  import type { 
+import { isModelContributionContext } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
+import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
+import type { 
     DialecticJobRow, 
     UnifiedAIResponse, 
     ExecuteModelCallAndSaveParams, 
     DialecticJobPayload,
     DialecticExecuteJobPayload,
     IDialecticJobDeps,
+    DialecticContributionRow,
+    ContributionType,
 } from '../dialectic-service/dialectic.interface.ts';
 
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
@@ -38,10 +41,56 @@ import {
     buildExecuteParams,
 } from './executeModelCallAndSave.test.ts';
 
-import { FileType, DocumentRelationships } from '../_shared/types/file_manager.types.ts';
+import { FileType, DocumentRelationships, ModelContributionFileTypes } from '../_shared/types/file_manager.types.ts';
 import type { Messages } from '../_shared/types.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { withMockEnv, getStorageSpies } from '../_shared/supabase.mock.ts';
+
+// Copied from executeModelCallAndSave.test.ts to make this test file self-contained
+export const createMockUnifiedAIResponse = (overrides: Partial<UnifiedAIResponse> = {}): UnifiedAIResponse => ({
+  content: '{"content": "Default AI response"}',
+  contentType: 'application/json',
+  inputTokens: 10,
+  outputTokens: 20,
+  processingTimeMs: 100,
+  rawProviderResponse: { mock: 'response' },
+  finish_reason: 'stop',
+  ...overrides,
+});
+
+export const createMockContribution = (overrides: Partial<DialecticContributionRow> = {}): DialecticContributionRow => ({
+  id: 'contrib-id-123',
+  session_id: 'session-id-456',
+  stage: 'test-stage',
+  iteration_number: 1,
+  model_id: 'model-def-456',
+  edit_version: 1,
+  is_latest_edit: true,
+  citations: null,
+  contribution_type: 'model_contribution_main',
+  created_at: new Date().toISOString(),
+  error: null,
+  file_name: 'test.md',
+  mime_type: 'text/markdown',
+  model_name: 'Mock AI Model',
+  original_model_contribution_id: null,
+  processing_time_ms: 120,
+  prompt_template_id_used: null,
+  raw_response_storage_path: null,
+  seed_prompt_url: null,
+  size_bytes: 200,
+  storage_bucket: 'test-bucket',
+  storage_path: 'test/path/to/contribution',
+  target_contribution_id: null,
+  tokens_used_input: 15,
+  tokens_used_output: 25,
+  updated_at: new Date().toISOString(),
+  user_id: 'user-id-789',
+  document_relationships: null,
+  is_header: false,
+  source_prompt_resource_id: null,
+  ...overrides,
+});
   
 Deno.test('executeModelCallAndSave - missing payload.user_jwt causes immediate failure before adapter call', async () => {
   const { client: dbClient } = setupMockClient({
@@ -70,7 +119,6 @@ Deno.test('executeModelCallAndSave - missing payload.user_jwt causes immediate f
     target_contribution_id: null,
     payload: {
       job_type: 'execute',
-      step_info: { current_step: 1, total_steps: 1 },
       prompt_template_name: 'test-prompt',
       inputs: {},
       output_type: 'thesis',
@@ -84,6 +132,8 @@ Deno.test('executeModelCallAndSave - missing payload.user_jwt causes immediate f
       canonicalPathParams: { contributionType: 'thesis' },
       // intentionally no user_jwt
     },
+    is_test_job: false,
+    job_type: 'PLAN',
   };
 
   let threw = false;
@@ -149,9 +199,10 @@ Deno.test('executeModelCallAndSave - Continuation Enqueued', async (t) => {
     const continueJobStub = stub(deps, 'continueJob', async () => ({ enqueued: true }));
 
     const callUnifiedAIModelStub = stub(deps, 'callUnifiedAIModel', async (): Promise<UnifiedAIResponse> => ({
-        content: 'Partial content',
+        content: '{"content": "Partial content"}',
         finish_reason: 'length',
-        contentType: 'text/plain',
+        contentType: 'application/json',
+        rawProviderResponse: { mock: 'response' },
     }));
     
     const continuationPayload: DialecticJobPayload = { ...testPayload, continueUntilComplete: true };
@@ -240,9 +291,10 @@ Deno.test('executeModelCallAndSave - Notifications', async (t) => {
         const deps: IDialecticJobDeps = getMockDeps();
 
         stub(deps, 'callUnifiedAIModel', async (): Promise<UnifiedAIResponse> => ({
-            content: 'Partial content',
+            content: '{"content": "Partial content"}',
             finish_reason: 'length',
-            contentType: 'text/plain',
+            contentType: 'application/json',
+            rawProviderResponse: { mock: 'response' },
         }));
 
         const sendContinuedSpy = spy(deps.notificationService, 'sendContributionGenerationContinuedEvent');
@@ -288,12 +340,13 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
 
   // Mock callUnifiedAIModel to return a response that needs continuation
   deps.callUnifiedAIModel = async () => ({
-    content: 'Partial AI response content',
-    contentType: 'text/plain',
+    content: '{"content": "Partial AI response content"}',
+    contentType: 'application/json',
     inputTokens: 10,
     outputTokens: 20,
     processingTimeMs: 100,
     finish_reason: 'max_tokens', // Correctly use finish_reason to match implementation
+    rawProviderResponse: { mock: 'response' },
   });
 
   await t.step('should save the first chunk correctly when a job is continued by the model', async () => {
@@ -319,6 +372,9 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
     // Assert first save is NOT a continuation for storage (root save), aligning with invariant:
     assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
     const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+    if (!isModelContributionContext(uploadContext)) {
+        throw new Error("Test setup error: uploadContext was not of type ModelContributionUploadContext");
+    }
     assertEquals(uploadContext.pathContext.isContinuation, false, 'First chunk must not be marked as continuation for storage');
 
     if (!uploadContext.contributionMetadata) {
@@ -347,57 +403,50 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
     const deps = getMockDeps();
     deps.fileManager = fileManager;
     deps.callUnifiedAIModel = async () => ({
-        content: 'This is the new chunk.',
-        contentType: 'text/plain',
+        content: '{"content": "This is the new chunk."}',
+        contentType: 'application/json',
         inputTokens: 5,
         outputTokens: 5,
         processingTimeMs: 50,
         finish_reason: 'max_tokens',
+        rawProviderResponse: { mock: 'response' },
       });
 
     const stageSlug = 'thesis';
     const documentRelationship: DocumentRelationships = { [stageSlug]: 'thesis-id-abc' };
-    const mockContinuationJob: DialecticJobRow = {
-      id: 'job-id-456',
-      payload: {
+
+    const contributionType: ContributionType = 'thesis';
+    if (!contributionType) {
+        throw new Error('contributionType is null');
+    }
+    const continuationPayload: DialecticExecuteJobPayload = {
         projectId: 'proj-123',
         sessionId: 'sess-123',
-        iteration: 1,
+        iterationNumber: 1,
         stageSlug,
-        modelId: 'model-def',
+        model_id: 'model-def',
         walletId: 'wallet-ghi',
         user_jwt: 'jwt.token.here',
-        // --- Properties to satisfy the type guard ---
         job_type: 'execute',
-        prompt_template_name: 'test-prompt',
-        output_type: 'markdown',
+        prompt_template_id: 'test-prompt',
+        output_type: FileType.HeaderContext,
         inputs: {},
         canonicalPathParams: {
-          contributionType: 'synthesis',
+          contributionType: contributionType,
+          stageSlug,
         },
-        // --- Properties for continuation logic ---
-        contributionType: 'synthesis',
-        previousContent: 'This was the first chunk.',
         continuation_count: 1,
-        target_contribution_id: 'prev-chunk-id-123', // This is the chunk we are continuing.
+        target_contribution_id: 'prev-chunk-id-123',
         document_relationships: documentRelationship,
-      },
-      status: 'pending',
-      created_at: new Date().toISOString(),
-      user_id: 'user-789',
-      session_id: 'sess-123',
-      attempt_count: 0,
-      completed_at: null,
-      error_details: null,
-      iteration_number: 1,
-      max_retries: 3,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      stage_slug: stageSlug,
-      started_at: null,
-      target_contribution_id: null,
     };
+
+    const mockContinuationJob: DialecticJobRow = createMockJob(
+        continuationPayload,
+        {
+            id: 'job-id-456',
+            stage_slug: stageSlug,
+        }
+    );
 
     // 2. Execute
     await executeModelCallAndSave({
@@ -419,10 +468,13 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
 
     // 3. Assert
     const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+    if (!isModelContributionContext(uploadContext)) {
+        throw new Error("Test setup error: uploadContext was not of type ModelContributionUploadContext");
+    }
 
     assertEquals(
       uploadContext.fileContent,
-      'This is the new chunk.',
+      '{"content": "This is the new chunk."}',
       'Should only save the new content, not concatenated content.',
     );
 
@@ -463,12 +515,13 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
     deps.fileManager = fileManager;
     // This is the critical part of the mock: the model signals it is finished.
     deps.callUnifiedAIModel = async () => ({
-        content: 'This is the final chunk.',
-        contentType: 'text/plain',
+        content: '{"content": "This is the final chunk."}',
+        contentType: 'application/json',
         inputTokens: 5,
         outputTokens: 5,
         processingTimeMs: 50,
         finish_reason: 'stop', 
+        rawProviderResponse: { mock: 'response' },
     });
 
 
@@ -502,6 +555,8 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
       stage_slug: 'thesis',
       started_at: null,
       target_contribution_id: null,
+      is_test_job: false,
+      job_type: 'PLAN',
     };
 
     // 2. Execute
@@ -570,6 +625,9 @@ Deno.test('executeModelCallAndSave - forwards target_contribution_id and preserv
   assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
   const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
 
+  if (!isModelContributionContext(uploadContext)) {
+    throw new Error("Test setup error: uploadContext was not of type ModelContributionUploadContext");
+  }
   assertExists(uploadContext.contributionMetadata, 'Contribution metadata should exist');
   assertEquals(uploadContext.contributionMetadata.target_contribution_id, rootId, 'target_contribution_id was not forwarded');
 
@@ -597,8 +655,8 @@ deps.fileManager = fileManager;
 const callSpy = spy(deps, 'callUnifiedAIModel');
 // Replace implementation to simulate max_tokens partial
 (deps.callUnifiedAIModel) = async () => ({
-  content: 'Partial content.',
-  contentType: 'text/markdown',
+  content: '{"content": "Partial content."}',
+  contentType: 'application/json',
   inputTokens: 100,
   outputTokens: 100,
   processingTimeMs: 10,
@@ -624,8 +682,11 @@ await executeModelCallAndSave(params);
 // Assert first save treated as non-continuation (no target_contribution_id present)
 assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected uploadAndRegisterFile to be called');
 const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+if (!isModelContributionContext(uploadContext)) {
+    throw new Error("Test setup error: uploadContext was not of type ModelContributionUploadContext");
+}
 assertExists(uploadContext.contributionMetadata, 'Expected contributionMetadata');
-assert(uploadContext.pathContext.isContinuation === false, 'First chunk must not be marked as continuation for storage');
+assertEquals(uploadContext.pathContext.isContinuation, false, 'First chunk must not be marked as continuation for storage');
 assert(
   !('target_contribution_id' in uploadContext.contributionMetadata) || !uploadContext.contributionMetadata.target_contribution_id,
   'First chunk must not carry target_contribution_id',
@@ -663,12 +724,13 @@ Deno.test('executeModelCallAndSave - final assembly triggers using SAVED relatio
 
   // Ensure the AI response is a final chunk
   const stopStub = stub(deps, 'callUnifiedAIModel', async () => ({
-    content: 'Final chunk',
-    contentType: 'text/markdown',
+    content: '{"content": "Final chunk"}',
+    contentType: 'application/json',
     inputTokens: 1,
     outputTokens: 1,
     processingTimeMs: 1,
     finish_reason: 'stop',
+    rawProviderResponse: { mock: 'response' },
   }));
 
   await t.step('should call assembleAndSaveFinalDocument with root id from SAVED record', async () => {
@@ -878,107 +940,58 @@ Deno.test('executeModelCallAndSave - continuation uses gathered history and does
   clearAllStubs?.();
 });
 
-Deno.test("executeModelCallAndSave saves final model_contribution_main to stage root after continuation exhaustion", async () => {
-  // Use mock Supabase client so executeModelCallAndSave can query ai_providers
-  const { client: dbClient } = setupMockClient({
-    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
-  });
-  const uploads: { fullDir: string; isContinuation: boolean; fileType: string }[] = [];
+Deno.test("should trigger final document assembly when continuations are exhausted", async () => {
+    // Arrange
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        },
+    });
 
-  const deps: any = {
-    logger: { info: () => {}, error: () => {} },
-    countTokens: () => 1,
-    tokenWalletService: {
-      getBalance: async () => "999999",
-      recordTransaction: async () => {},
-    },
-    fileManager: {
-      uploadAndRegisterFile: async (ctx: any) => {
-        const isContinuation = Boolean(ctx.contributionMetadata && ctx.contributionMetadata.isContinuation === true);
-        uploads.push({
-          fullDir: isContinuation ? `${ctx.pathContext.stageSlug}/_work` : ctx.pathContext.stageSlug,
-          isContinuation,
-          fileType: ctx.pathContext.fileType,
-        });
-        return { record: {
-          id: crypto.randomUUID(),
-          session_id: ctx.pathContext.sessionId,
-          storage_bucket: "bucket",
-          storage_path: isContinuation ? `${ctx.pathContext.projectId}/session_${ctx.pathContext.sessionId}/iteration_${ctx.pathContext.iteration}/${ctx.pathContext.stageSlug}/_work` : `${ctx.pathContext.projectId}/session_${ctx.pathContext.sessionId}/iteration_${ctx.pathContext.iteration}/${ctx.pathContext.stageSlug}`,
-          file_name: ctx.pathContext.originalFileName || "file.md",
-          mime_type: ctx.mimeType,
-          size_bytes: ctx.sizeBytes,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          edit_version: 1,
-          is_latest_edit: true,
-          iteration_number: ctx.pathContext.iteration,
-          stage: ctx.pathContext.stageSlug,
-        }, error: null };
-      },
-      assembleAndSaveFinalDocument: async () => ({ finalPath: "ok", error: null }),
-    },
-    continueJob: async () => ({ enqueued: false }),
-    callUnifiedAIModel: async () => ({ content: "chunk", finish_reason: "max_tokens" }),
-    notificationService: { sendContributionReceivedEvent: async () => {}, sendContributionGenerationCompleteEvent: async () => {}, sendContributionGenerationContinuedEvent: async () => {} },
-  };
+    const fileManager = new MockFileManagerService();
+    const deps = getMockDeps();
+    deps.fileManager = fileManager;
 
-  const stageSlug = 'thesis';
-  const rootId = 'root-id';
-  const docRel: DocumentRelationships = { [stageSlug]: rootId };
-  const stageSlug2 = 'thesis';
-  const rootId2 = 'root-id';
-  const rel2: DocumentRelationships = { [stageSlug2]: rootId2 };
-  const job: any = {
-    id: crypto.randomUUID(),
-    attempt_count: 0,
-    payload: {
-      job_type: 'execute',
-      iterationNumber: 1,
-      stageSlug: stageSlug2,
-      projectId: 'proj',
-      model_id: 'model-1',
-      sessionId: 'sess',
-      walletId: 'wallet',
-      user_jwt: 'jwt.token.here',
-      output_type: 'thesis',
-      canonicalPathParams: {
-        projectId: 'proj',
-        fileType: FileType.ModelContributionMain,
-        sessionId: 'sess',
-        iteration: 1,
-        stageSlug: stageSlug2,
-        modelSlug: 'gpt-4',
-        attemptCount: 0,
-        contributionType: 'thesis',
-      },
-      inputs: {},
-      document_relationships: rel2,
-      continueUntilComplete: true,
-      continuation_count: 0,
-    },
-  };
+    // Simulate a model response that indicates it is finished
+    deps.callUnifiedAIModel = async () => createMockUnifiedAIResponse({ finish_reason: 'stop' });
 
-  const provider = { id: 'model-1', name: 'GPT-4', api_identifier: 'openai-gpt-4' };
+    const stageSlug = 'thesis';
+    const rootId = 'root-id-123';
+    const relationships: DocumentRelationships = { [stageSlug]: rootId };
 
-  await executeModelCallAndSave({
-    dbClient: dbClient as unknown as SupabaseClient<Database>,
-    deps,
-    authToken: 'jwt',
-    job,
-    projectOwnerUserId: 'user',
-    providerDetails: { id: 'model-1', name: 'GPT-4', api_identifier: 'openai-gpt-4', provider: 'openai' },
-    promptConstructionPayload: { systemInstruction: '', conversationHistory: [], resourceDocuments: [], currentUserPrompt: 'hi' },
-    sessionData: { id: 'sess' } as any,
-    compressionStrategy: async () => [],
-  });
+    // This job represents the final step in a continuation chain
+    const finalContinuationJob = createMockJob({
+        ...testPayload,
+        stageSlug,
+        document_relationships: relationships,
+        continuation_count: 2, // Signifies it's part of a chain
+    }, {
+        target_contribution_id: 'previous-chunk-id-456', // Linked to previous chunk
+    });
+    
+    // Ensure the returned record from fileManager contains the necessary relationships for assembly logic
+    fileManager.setUploadAndRegisterFileResponse({
+      ...mockContribution,
+      document_relationships: relationships,
+    }, null);
 
-  // First save should be non-continuation at the stage root (no _work)
-  const anyNonContinuationAtRoot = uploads.some(u => !u.isContinuation && !u.fullDir.includes('/_work'));
-  assert(anyNonContinuationAtRoot, 'Expected first save to be non-continuation at stage root');
-  // Ensure no non-continuation upload goes under _work
-  const nonContinuationToWork = uploads.some(u => !u.isContinuation && u.fullDir.includes('/_work'));
-  assert(!nonContinuationToWork, 'Non-continuation model_contribution_main must not be saved under _work');
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        job: finalContinuationJob,
+        promptConstructionPayload: buildPromptPayload({ currentUserPrompt: 'Please continue.' }),
+    });
+
+    // Act
+    await executeModelCallAndSave(params);
+
+    // Assert
+    assertEquals(fileManager.assembleAndSaveFinalDocument.calls.length, 1, 'assembleAndSaveFinalDocument should be called once');
+    assertEquals(
+        fileManager.assembleAndSaveFinalDocument.calls[0].args[0],
+        rootId,
+        'Should be called with the root id from the SAVED contribution relationships.'
+    );
+
+    clearAllStubs?.();
 });
 
 // Reject continuation save when document_relationships are missing or invalid (unit scope)
@@ -992,7 +1005,7 @@ Deno.test('executeModelCallAndSave - rejects continuation without relationships 
   deps.fileManager = fileManager;
 
   // Minimal AI response; continuation signaled
-  deps.callUnifiedAIModel = async () => ({ content: 'cont-chunk', contentType: 'text/plain', finish_reason: 'max_tokens' });
+  deps.callUnifiedAIModel = async () => ({ content: '{"content": "cont-chunk"}', contentType: 'application/json', finish_reason: 'max_tokens', rawProviderResponse: { mock: 'response' } });
 
   const stageSlug = 'thesis';
   const rootId = 'prev-id-123';
@@ -1025,9 +1038,9 @@ Deno.test('executeModelCallAndSave - three-chunk finalization uses saved root id
   const cont2Id = 'cont-002';
   const relationships = { [stageSlug]: rootId };
 
-  const expectedRoot = 'ROOT.';
-  const expectedC1 = 'CHUNK1.';
-  const expectedC2 = 'CHUNK2.';
+  const expectedRoot = '{"content":"ROOT."}';
+  const expectedC1 = '{"content":"CHUNK1."}';
+  const expectedC2 = '{"content":"CHUNK2."}';
 
   const uploadedContents: string[] = [];
   const fileManager = new MockFileManagerService();
@@ -1041,7 +1054,17 @@ Deno.test('executeModelCallAndSave - three-chunk finalization uses saved root id
       content === expectedC1 ? cont1Id :
       content === expectedC2 ? cont2Id :
       crypto.randomUUID();
-    const rec = { ...mockContribution, id, stage: stageSlug, document_relationships: null };
+
+    const relationships = isModelContributionContext(ctx) ? ctx.contributionMetadata?.document_relationships ?? null : null;
+    const targetContributionId = isModelContributionContext(ctx) ? ctx.contributionMetadata?.target_contribution_id ?? null : null;
+    
+    const rec = { 
+        ...mockContribution, 
+        id, 
+        stage: stageSlug, 
+        document_relationships: relationships,
+        target_contribution_id: targetContributionId,
+    };
     return { record: rec, error: null };
   });
 
@@ -1051,11 +1074,12 @@ Deno.test('executeModelCallAndSave - three-chunk finalization uses saved root id
   // 1) Initial/root chunk: partial (max_tokens); no target_contribution_id; no relationships required
   deps.callUnifiedAIModel = async () => ({
     content: expectedRoot,
-    contentType: 'text/markdown',
+    contentType: 'application/json',
     inputTokens: 1,
     outputTokens: 1,
     processingTimeMs: 1,
     finish_reason: 'max_tokens',
+    rawProviderResponse: { mock: 'response' },
   });
   await executeModelCallAndSave(buildExecuteParams(
     dbClient as unknown as SupabaseClient<Database>,
@@ -1069,11 +1093,12 @@ Deno.test('executeModelCallAndSave - three-chunk finalization uses saved root id
   // 2) Continuation 1: partial; carries relationships to root, and links to root via target_contribution_id
   deps.callUnifiedAIModel = async () => ({
     content: expectedC1,
-    contentType: 'text/markdown',
+    contentType: 'application/json',
     inputTokens: 1,
     outputTokens: 1,
     processingTimeMs: 1,
     finish_reason: 'max_tokens',
+    rawProviderResponse: { mock: 'response' },
   });
   await executeModelCallAndSave(buildExecuteParams(
     dbClient as unknown as SupabaseClient<Database>,
@@ -1087,11 +1112,12 @@ Deno.test('executeModelCallAndSave - three-chunk finalization uses saved root id
   // 3) Continuation 2: final; same relationships; links to cont1 via target_contribution_id
   deps.callUnifiedAIModel = async () => ({
     content: expectedC2,
-    contentType: 'text/markdown',
+    contentType: 'application/json',
     inputTokens: 1,
     outputTokens: 1,
     processingTimeMs: 1,
     finish_reason: 'stop',
+    rawProviderResponse: { mock: 'response' },
   });
   await executeModelCallAndSave(buildExecuteParams(
     dbClient as unknown as SupabaseClient<Database>,
@@ -1110,6 +1136,10 @@ Deno.test('executeModelCallAndSave - three-chunk finalization uses saved root id
   // - verify upload ordering and lineage metadata sufficient for assembly
   assert(uploadedContents.length === 3, 'expected three uploads (root + 2 continuations)');
   const [u0, u1, u2] = fileManager.uploadAndRegisterFile.calls.map(c => c.args[0]);
+
+  if (!isModelContributionContext(u0) || !isModelContributionContext(u1) || !isModelContributionContext(u2)) {
+    throw new Error('Test setup error: one of the uploads was not a ModelContributionUploadContext');
+  }
 
   // Root upload: not a continuation; no target_contribution_id
   assertEquals(u0.fileContent, expectedRoot);
@@ -1172,6 +1202,9 @@ Deno.test('executeModelCallAndSave - continuation jobs should populate pathConte
   assertEquals(fileManager.uploadAndRegisterFile.calls.length, 1, "uploadAndRegisterFile should be called once");
   const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
   
+  if (!isModelContributionContext(uploadContext)) {
+    throw new Error("Test setup error: uploadContext was not of type ModelContributionUploadContext");
+  }
   assertEquals(uploadContext.pathContext.isContinuation, true, "isContinuation flag should be set to true in pathContext");
   assertEquals(uploadContext.pathContext.turnIndex, 2, "turnIndex should be set to 2 in pathContext");
 });
@@ -1201,6 +1234,7 @@ Deno.test('executeModelCallAndSave - should continue when content contains conti
     inputTokens: 10,
     outputTokens: 20,
     processingTimeMs: 100,
+    rawProviderResponse: { mock: 'response' },
   });
 
   const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job: jobWithContinuation });
@@ -1214,7 +1248,7 @@ Deno.test('executeModelCallAndSave - should continue when content contains conti
 
 Deno.test('executeModelCallAndSave - does not inject spacer messages when history is already alternating', async () => {
   // Arrange
-  const { client: dbClient } = setupMockClient({
+  const { client: dbClient, clearAllStubs } = setupMockClient({
     'ai_providers': {
       select: { data: [mockFullProviderData], error: null }
     }
@@ -1255,4 +1289,123 @@ Deno.test('executeModelCallAndSave - does not inject spacer messages when histor
   const expectedMessages = perfectlyAlternatingHistory.map(m => ({ role: m.role, content: m.content }));
   
   assertEquals(sentMessages, expectedMessages, 'The message history sent to the model should not contain the current user prompt.');
+
+  callUnifiedAISpy.restore();
+  clearAllStubs?.();
 });
+
+
+Deno.test('executeModelCallAndSave - comprehensive continuation triggers', async (t) => {
+  const testCases = [
+    // --- POSITIVE CASES (SHOULD CONTINUE) ---
+
+    // Category 2: Provider-Signaled `finish_reason`
+    { name: 'should continue when finish_reason is "length"', response: { finish_reason: 'length' as const }, shouldContinue: true },
+    { name: 'should continue when finish_reason is "max_tokens"', response: { finish_reason: 'max_tokens' as const }, shouldContinue: true },
+    { name: 'should continue when finish_reason is "content_truncated"', response: { finish_reason: 'content_truncated' as const }, shouldContinue: true },
+    { name: 'should continue when finish_reason is "next_document"', response: { finish_reason: 'next_document' as const }, shouldContinue: true },
+    { name: 'should continue when finish_reason is "unknown"', response: { finish_reason: 'unknown' as const }, shouldContinue: true },
+    { name: 'should continue when finish_reason is "tool_calls"', response: { finish_reason: 'tool_calls' as const }, shouldContinue: true },
+    { name: 'should continue when finish_reason is "function_call"', response: { finish_reason: 'function_call' as const }, shouldContinue: true },
+    { name: 'should continue when finish_reason is "content_filter"', response: { finish_reason: 'content_filter' as const }, shouldContinue: true },
+
+    // Category 3: Application-Signaled In-Band JSON Flags
+    { name: 'should continue when content contains "continuation_needed": true', response: { content: '{"continuation_needed": true}', finish_reason: 'stop' as const }, shouldContinue: true },
+    { name: 'should continue when content contains "stop_reason": "continuation"', response: { content: '{"stop_reason": "continuation"}', finish_reason: 'stop' as const }, shouldContinue: true },
+    { name: 'should continue when content contains "stop_reason": "token_limit"', response: { content: '{"stop_reason": "token_limit"}', finish_reason: 'stop' as const }, shouldContinue: true },
+    
+    // --- NEGATIVE CASES (SHOULD NOT CONTINUE) ---
+    { name: 'should NOT continue for normal "stop" reason with no flags', response: { content: '{"result": "complete"}', finish_reason: 'stop' as const }, shouldContinue: false },
+    { name: 'should NOT continue if continueUntilComplete is false, even with a continue reason', response: { finish_reason: 'length' as const }, continueUntilComplete: false, shouldContinue: false },
+  ];
+
+  for (const tc of testCases) {
+    await t.step(tc.name, async () => {
+      // Arrange
+      const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } }
+      });
+
+      const deps = getMockDeps();
+      const continueJobSpy = spy(deps, 'continueJob');
+      const fileManager = new MockFileManagerService();
+      fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+      deps.fileManager = fileManager;
+
+      deps.callUnifiedAIModel = async () => createMockUnifiedAIResponse({
+        content: tc.response.content ?? '{"content": "Default AI response"}',
+        ...tc.response,
+      });
+
+      const jobPayload: DialecticExecuteJobPayload = {
+        ...testPayload,
+        // Default to true unless explicitly set to false for a negative test case
+        continueUntilComplete: tc.continueUntilComplete !== false,
+      };
+      const job = createMockJob(jobPayload);
+
+      const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+      // Act
+      await executeModelCallAndSave(params);
+
+      // Assert
+      const expectedCalls = tc.shouldContinue ? 1 : 0;
+      assertEquals(continueJobSpy.calls.length, expectedCalls, `continueJob should be called ${expectedCalls} time(s)`);
+
+      clearAllStubs?.();
+    });
+  }
+});
+
+Deno.test('executeModelCallAndSave - comprehensive retry triggers', async (t) => {
+    const testCases = [
+      {
+        name: 'should trigger retry on malformed JSON response',
+        response: { content: '{"bad json:', finish_reason: 'stop' as const },
+        shouldRetry: true,
+      },
+      { 
+        name: 'should trigger retry when finish_reason is "error"', 
+        response: { finish_reason: 'error' as const }, 
+        shouldRetry: true 
+      },
+    ];
+  
+    for (const tc of testCases) {
+      await t.step(tc.name, async () => {
+        // Arrange
+        const { client: dbClient, clearAllStubs } = setupMockClient({
+          'ai_providers': { select: { data: [mockFullProviderData], error: null } }
+        });
+  
+        const deps = getMockDeps();
+        const retryJobSpy = spy(deps, 'retryJob');
+        const continueJobSpy = spy(deps, 'continueJob');
+        const fileManager = new MockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+        deps.fileManager = fileManager;
+  
+        deps.callUnifiedAIModel = async () => createMockUnifiedAIResponse({
+          content: tc.response.content ?? '{"content": "Default AI response"}',
+          ...tc.response
+        });
+  
+        const job = createMockJob(testPayload);
+        const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+  
+        // Act
+        await executeModelCallAndSave(params);
+  
+        // Assert
+        const expectedCalls = tc.shouldRetry ? 1 : 0;
+        assertEquals(retryJobSpy.calls.length, expectedCalls, `retryJob should be called ${expectedCalls} time(s)`);
+        assertEquals(continueJobSpy.calls.length, 0, 'continueJob should never be called for a retryable error');
+        assertEquals(fileManager.uploadAndRegisterFile.calls.length, 0, 'uploadAndRegisterFile should not be called for a retryable error');
+
+        clearAllStubs?.();
+      });
+    }
+  });
+
+

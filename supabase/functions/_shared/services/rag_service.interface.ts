@@ -5,6 +5,7 @@ import type { Database } from '../../types_db.ts';
 import { IEmbeddingClient, IIndexingService } from './indexing_service.interface.ts';
 import type { ITokenWalletService } from '../types/tokenWallet.types.ts';
 import type { AiModelExtendedConfig } from '../types.ts';
+import type { RelevanceRule } from '../../dialectic-service/dialectic.interface.ts';
 
 /**
  * @interface IRagServiceDependencies
@@ -48,5 +49,6 @@ export interface IRagService {
         modelConfig: AiModelExtendedConfig,
         sessionId: string,
         stageSlug: string,
+        inputsRelevance: RelevanceRule[],
     ): Promise<IRagContextResult>;
 }

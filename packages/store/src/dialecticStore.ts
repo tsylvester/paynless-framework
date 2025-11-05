@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
+import type { Draft } from 'immer';
 import { 
   type ApiError, 
   type ApiResponse, 
@@ -21,6 +22,7 @@ import {
   type GenerateContributionsResponse,
   type DialecticProjectRow,
   type DialecticLifecycleEvent,
+  type StageDocumentCompositeKey,
   type ContributionGenerationStartedPayload,
   type DialecticContributionStartedPayload,
   type ContributionGenerationRetryingPayload,
@@ -30,15 +32,51 @@ import {
   type ContributionGenerationContinuedPayload,
   type DialecticProgressUpdatePayload,
   type ProgressData,
+  type PlannerStartedPayload,
+  type DocumentStartedPayload,
+  type DocumentChunkCompletedPayload,
+	type RenderCompletedPayload,
+	type JobFailedPayload,
+	type SetFocusedStageDocumentPayload,
+	type ClearFocusedStageDocumentPayload,
   isContributionStatus,
   ExportProjectResponse,
+  StageDocumentVersionInfo,
+  StageDocumentContentState,
+  type SubmitStageDocumentFeedbackPayload,
+  type ListStageDocumentsPayload,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { useWalletStore } from './walletStore';
 import { useAiStore } from './aiStore';
 import { selectActiveChatWalletInfo } from './walletStore.selectors';
 import { logger } from '@paynless/utils';
+import {
+	ensureStageDocumentContentLogic,
+	flushStageDocumentDraftLogic,
+	reapplyDraftToNewBaselineLogic,
+	recordStageDocumentDraftLogic,
+	upsertStageDocumentVersionLogic,
+	beginStageDocumentEditLogic,
+	updateStageDocumentDraftLogic,
+	flushStageDocumentDraftActionLogic,
+	clearStageDocumentDraftLogic,
+	fetchStageDocumentContentLogic,
+	handlePlannerStartedLogic,
+	handleDocumentStartedLogic,
+	handleDocumentChunkCompletedLogic,
+	handleRenderCompletedLogic,
+	handleJobFailedLogic,
+	fetchStageDocumentFeedbackLogic,
+	submitStageDocumentFeedbackLogic,
+	selectStageDocumentFeedbackLogic,
+	hydrateStageProgressLogic,
+} from './dialecticStore.documents';
 
+type FocusedDocumentKeyParams = Pick<SetFocusedStageDocumentPayload, 'sessionId' | 'stageSlug' | 'modelId'>;
+
+const buildFocusedDocumentKey = ({ sessionId, stageSlug, modelId }: FocusedDocumentKeyParams): string =>
+	`${sessionId}:${stageSlug}:${modelId}`;
 
 export const initialDialecticStateValues: DialecticStateValues = {
 	domains: [],
@@ -129,7 +167,19 @@ export const initialDialecticStateValues: DialecticStateValues = {
 
   activeDialecticWalletId: null,
 
-  sessionProgress: {},
+	sessionProgress: {},
+
+	// Recipe hydration and per-stage-run progress
+	recipesByStageSlug: {},
+	stageRunProgress: {},
+	focusedStageDocument: {},
+	stageDocumentContent: {},
+	stageDocumentVersions: {},
+	stageDocumentFeedback: {},
+	isLoadingStageDocumentFeedback: false,
+	stageDocumentFeedbackError: null,
+	isSubmittingStageDocumentFeedback: false,
+	submitStageDocumentFeedbackError: null,
 };
 
 export type DialecticState = DialecticStateValues & DialecticStore;
@@ -139,10 +189,56 @@ export const selectGeneratingSessionsForSession = (state: DialecticState, sessio
 };
 
 export const useDialecticStore = create<DialecticStore>()(
-  immer((set, get) => ({
-    ...initialDialecticStateValues,
-    
-    _handleProgressUpdate: (event: DialecticProgressUpdatePayload) => {
+  immer((set, get) => {
+
+
+    const getStageDocumentKey = (key: StageDocumentCompositeKey): string =>
+      `${key.sessionId}:${key.stageSlug}:${key.iterationNumber}:${key.modelId}:${key.documentKey}`;
+
+    const upsertStageDocumentVersion = (
+			state: Draft<DialecticStateValues>,
+			key: StageDocumentCompositeKey,
+			info: StageDocumentVersionInfo,
+		): void => {
+			upsertStageDocumentVersionLogic(state, key, info);
+		};
+
+		const ensureStageDocumentContent = (
+			state: Draft<DialecticStateValues>,
+			key: StageDocumentCompositeKey,
+			seed?: { baselineMarkdown?: string; version?: StageDocumentVersionInfo },
+		): StageDocumentContentState => {
+			return ensureStageDocumentContentLogic(state, key, seed);
+		};
+
+		const recordStageDocumentDraft = (
+			state: Draft<DialecticStateValues>,
+			key: StageDocumentCompositeKey,
+			draftMarkdown: string,
+		): void => {
+			recordStageDocumentDraftLogic(state, key, draftMarkdown);
+		};
+
+		const flushStageDocumentDraft = (
+			state: Draft<DialecticStateValues>,
+			key: StageDocumentCompositeKey,
+		): void => {
+			flushStageDocumentDraftLogic(state, key);
+		};
+
+		const reapplyDraftToNewBaseline = (
+			state: Draft<DialecticStateValues>,
+			key: StageDocumentCompositeKey,
+			newBaseline: string,
+			newVersion: StageDocumentVersionInfo,
+		) => {
+			reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion);
+		};
+
+    return {
+      ...initialDialecticStateValues,
+
+      _handleProgressUpdate: (event: DialecticProgressUpdatePayload) => {
         logger.info(`[DialecticStore] Handling progress update for session ${event.sessionId}`, { event });
         set(state => {
           const progress: ProgressData = {
@@ -1163,7 +1259,85 @@ export const useDialecticStore = create<DialecticStore>()(
     }
   },
 
-	reset: () => {
+	beginStageDocumentEdit: (
+		key: StageDocumentCompositeKey,
+		initialDraftMarkdown: string,
+	) => {
+		beginStageDocumentEditLogic(
+			get,
+			set,
+			{
+				ensureStageDocumentContent,
+				recordStageDocumentDraft,
+				upsertStageDocumentVersion,
+				reapplyDraftToNewBaseline,
+			},
+			key,
+			initialDraftMarkdown,
+		);
+	},
+
+	updateStageDocumentDraft: (
+		key: StageDocumentCompositeKey,
+		draftMarkdown: string,
+	) => {
+		updateStageDocumentDraftLogic(
+			set,
+			{
+				ensureStageDocumentContent,
+				recordStageDocumentDraft,
+				upsertStageDocumentVersion,
+				reapplyDraftToNewBaseline,
+			},
+			key,
+			draftMarkdown,
+		);
+	},
+
+	flushStageDocumentDraft: (key: StageDocumentCompositeKey) => {
+		flushStageDocumentDraftActionLogic(set, { flushStageDocumentDraft }, key);
+	},
+
+	clearStageDocumentDraft: (key: StageDocumentCompositeKey) => {
+		clearStageDocumentDraftLogic(set, key);
+	},
+
+	fetchStageDocumentContent: async (
+		key: StageDocumentCompositeKey,
+		resourceId: string,
+	) => {
+		await fetchStageDocumentContentLogic(
+			set,
+			{
+				ensureStageDocumentContent,
+				recordStageDocumentDraft,
+				upsertStageDocumentVersion,
+				reapplyDraftToNewBaseline,
+			},
+			key,
+			resourceId,
+		);
+	},
+
+	fetchStageDocumentFeedback: async (key: StageDocumentCompositeKey) => {
+		await fetchStageDocumentFeedbackLogic(set, key);
+	},
+
+	submitStageDocumentFeedback: async (
+		payload: SubmitStageDocumentFeedbackPayload,
+	): Promise<ApiResponse<{ success: boolean }>> => {
+		return await submitStageDocumentFeedbackLogic(set, payload);
+	},
+
+	resetSubmitStageDocumentFeedbackError: () => {
+		set({ submitStageDocumentFeedbackError: null });
+	},
+
+	selectStageDocumentFeedback: (key: StageDocumentCompositeKey) => {
+		return selectStageDocumentFeedbackLogic(get, key);
+	},
+
+    reset: () => {
 		logger.info("[DialecticStore] Resetting store to initial state", {
 			storeKeys: Object.keys(initialDialecticStateValues),
 		});
@@ -1215,12 +1389,40 @@ export const useDialecticStore = create<DialecticStore>()(
         case 'dialectic_progress_update':
             handlers._handleProgressUpdate(payload);
             break;
+        case 'planner_started':
+            handlers._handlePlannerStarted(payload);
+            break;
+        case 'document_started':
+            handlers._handleDocumentStarted(payload);
+            break;
+        case 'document_chunk_completed':
+            handlers._handleDocumentChunkCompleted(payload);
+            break;
+        case 'render_completed':
+            handlers._handleRenderCompleted(payload);
+            break;
+        case 'job_failed':
+            handlers._handleJobFailed(payload);
+            break;
         default:
             logger.warn('[DialecticStore] Received unhandled dialectic lifecycle event', { payload });
     }
   },
 
   // --- Private Handlers for Lifecycle Events ---
+  _handlePlannerStarted: (event: PlannerStartedPayload) => handlePlannerStartedLogic(get, set, event),
+
+  _handleDocumentStarted: (event: DocumentStartedPayload) =>
+		handleDocumentStartedLogic(get, set, event),
+
+	_handleDocumentChunkCompleted: (event: DocumentChunkCompletedPayload) =>
+		handleDocumentChunkCompletedLogic(get, set, event),
+
+	_handleRenderCompleted: (event: RenderCompletedPayload) =>
+		handleRenderCompletedLogic(get, set, event),
+
+	_handleJobFailed: (event: JobFailedPayload) => handleJobFailedLogic(get, set, event),
+
   _handleContributionGenerationStarted: (event: ContributionGenerationStartedPayload) => {
     set({
       contributionGenerationStatus: 'generating',
@@ -1615,13 +1817,101 @@ export const useDialecticStore = create<DialecticStore>()(
 		payload: SubmitStageResponsesPayload,
 	): Promise<ApiResponse<SubmitStageResponsesResponse>> => {
 		set({ isSubmittingStageResponses: true, submitStageResponsesError: null });
-		logger.info("[DialecticStore] Submitting stage responses...", { payload });
+		logger.info("[DialecticStore] Orchestrating final submission for stage...", {
+			payload,
+		});
+
+		const { stageDocumentContent } = get();
+		const dirtyDocuments = Object.entries(stageDocumentContent).filter(
+			([_, content]) => content.isDirty,
+		);
+
+		if (dirtyDocuments.length > 0) {
+			logger.info(
+				`[DialecticStore] Found ${dirtyDocuments.length} unsaved document drafts. Saving before advancing stage.`,
+			);
+			const submissionPromises = dirtyDocuments.map(
+				([key, content]) => {
+					const [sessionId, stageSlug, iterationStr, modelId, documentKey] =
+						key.split(":");
+					const iterationNumber = parseInt(iterationStr, 10);
+					return get().submitStageDocumentFeedback({
+						sessionId,
+						stageSlug,
+						iterationNumber,
+						modelId,
+						documentKey,
+						feedback: content.currentDraftMarkdown,
+					});
+				},
+			);
+
+			try {
+				const submissionResults = await Promise.all(submissionPromises);
+				const firstErrorResult = submissionResults.find((res) => res.error);
+
+				if (firstErrorResult?.error) {
+					const submissionError: ApiError = {
+						message:
+							firstErrorResult.error.message ||
+							"An unknown error occurred while submitting document feedback",
+						code: firstErrorResult.error.code || "SUBMISSION_FAILED",
+					};
+					logger.error(
+						"[DialecticStore] Failed to submit one or more document drafts:",
+						{ error: submissionError },
+					);
+					set({
+						isSubmittingStageResponses: false,
+						submitStageResponsesError: submissionError,
+					});
+					return {
+						data: undefined,
+						error: submissionError,
+						status: firstErrorResult.status || 0,
+					};
+				}
+
+				logger.info(
+					"[DialecticStore] All unsaved drafts have been successfully submitted.",
+				);
+			} catch (error: unknown) {
+				const submissionError: ApiError = {
+					message:
+						error instanceof Error
+							? error.message
+							: "An unknown network error occurred while submitting document feedback",
+					code: "SUBMISSION_FAILED",
+				};
+				logger.error(
+					"[DialecticStore] A network or promise rejection error occurred while submitting document drafts:",
+					{ error: submissionError },
+				);
+				set({
+					isSubmittingStageResponses: false,
+					submitStageResponsesError: submissionError,
+				});
+				return { data: undefined, error: submissionError, status: 0 };
+			}
+		} else {
+			logger.info(
+				"[DialecticStore] No unsaved drafts found. Proceeding directly to advance stage.",
+			);
+		}
 
 		try {
-			const response = await api.dialectic().submitStageResponses(payload);
+			const advancePayload: SubmitStageResponsesPayload = {
+				projectId: payload.projectId,
+				sessionId: payload.sessionId,
+				stageSlug: payload.stageSlug,
+				currentIterationNumber: payload.currentIterationNumber,
+			};
+			const response = await api
+				.dialectic()
+				.submitStageResponses(advancePayload);
 
 			if (response.error) {
-				logger.error("[DialecticStore] Error submitting stage responses:", {
+				logger.error("[DialecticStore] Error advancing stage:", {
 					error: response.error,
 				});
 				set({
@@ -1629,17 +1919,16 @@ export const useDialecticStore = create<DialecticStore>()(
 					submitStageResponsesError: response.error,
 				});
 			} else {
-				logger.info(
-					"[DialecticStore] Successfully submitted stage responses.",
-					{ response: response.data },
-				);
+				logger.info("[DialecticStore] Successfully advanced stage.", {
+					response: response.data,
+				});
 				set({
 					isSubmittingStageResponses: false,
 					submitStageResponsesError: null,
 				});
 
 				logger.info(
-					`[DialecticStore] Stage responses submitted for project ${payload.projectId}. Refetching project details.`,
+					`[DialecticStore] Stage advanced for project ${payload.projectId}. Refetching project details.`,
 				);
 				await get().fetchDialecticProjectDetails(payload.projectId);
 			}
@@ -1649,10 +1938,10 @@ export const useDialecticStore = create<DialecticStore>()(
 				message:
 					error instanceof Error
 						? error.message
-						: "A network error occurred while submitting responses",
+						: "A network error occurred while advancing the stage",
 				code: "NETWORK_ERROR",
 			};
-			logger.error("[DialecticStore] Network error submitting responses:", {
+			logger.error("[DialecticStore] Network error advancing stage:", {
 				error: networkError,
 			});
 			set({
@@ -1934,4 +2223,121 @@ export const useDialecticStore = create<DialecticStore>()(
     logger.info(`[DialecticStore] Setting active stage slug to: ${slug}`);
     set({ activeStageSlug: slug });
   },
-})));
+
+	setFocusedStageDocument: ({ sessionId, stageSlug, modelId, documentKey, iterationNumber }: SetFocusedStageDocumentPayload) => {
+		const focusKey = buildFocusedDocumentKey({ sessionId, stageSlug, modelId });
+		logger.info('[DialecticStore] Setting focused stage document', {
+			sessionId,
+			stageSlug,
+			modelId,
+			documentKey,
+			iterationNumber,
+		});
+		set(state => {
+			if (!state.focusedStageDocument) {
+				state.focusedStageDocument = {};
+			}
+			state.focusedStageDocument[focusKey] = { modelId, documentKey };
+		});
+
+		const compositeKey: StageDocumentCompositeKey = {
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			modelId,
+			documentKey,
+		};
+		const serializedKey = getStageDocumentKey(compositeKey);
+		const existingEntry = get().stageDocumentContent[serializedKey];
+		const initialDraft = existingEntry ? existingEntry.currentDraftMarkdown : '';
+		get().beginStageDocumentEdit(compositeKey, initialDraft);
+	},
+
+	clearFocusedStageDocument: ({ sessionId, stageSlug, modelId }: ClearFocusedStageDocumentPayload) => {
+		const focusKey = buildFocusedDocumentKey({ sessionId, stageSlug, modelId });
+		logger.info('[DialecticStore] Clearing focused stage document', {
+			sessionId,
+			stageSlug,
+			modelId,
+		});
+		const snapshot = get();
+		const focusedEntry = snapshot.focusedStageDocument?.[focusKey] ?? null;
+		if (focusedEntry) {
+			let iterationNumber: number | null = null;
+			for (const [progressKey, progress] of Object.entries(snapshot.stageRunProgress)) {
+				const [sessionKey, stageKey, iterationValue] = progressKey.split(':');
+				if (sessionKey === sessionId && stageKey === stageSlug && progress.documents[focusedEntry.documentKey]) {
+					const parsed = Number(iterationValue);
+					if (!Number.isNaN(parsed)) {
+						iterationNumber = parsed;
+						break;
+					}
+				}
+			}
+			if (iterationNumber !== null) {
+				get().clearStageDocumentDraft({
+					sessionId,
+					stageSlug,
+					iterationNumber,
+					modelId,
+					documentKey: focusedEntry.documentKey,
+				});
+			}
+		}
+		set(state => {
+			if (!state.focusedStageDocument) {
+				return;
+			}
+			state.focusedStageDocument[focusKey] = null;
+		});
+	},
+
+  // --- Recipes & Stage Run Progress ---
+  fetchStageRecipe: async (stageSlug: string): Promise<void> => {
+    try {
+      const response = await api.dialectic().fetchStageRecipe(stageSlug);
+      if (!response.error && response.data) {
+        set(state => {
+          state.recipesByStageSlug[stageSlug] = response.data!;
+        });
+      }
+    } catch (_e: unknown) {
+      // Swallow errors per store pattern; caller tests assert state on success path only
+    }
+  },
+
+  ensureRecipeForActiveStage: async (sessionId: string, stageSlug: string, iterationNumber: number): Promise<void> => {
+    const recipe = get().recipesByStageSlug[stageSlug];
+    if (!recipe) {
+      return; // Require hydration first; idempotent no-op
+    }
+    const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+    set(state => {
+      const existing = state.stageRunProgress[progressKey];
+      if (!existing) {
+        const stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed'> = {};
+        for (const step of recipe.steps) {
+          stepStatuses[step.step_key] = 'not_started';
+        }
+        state.stageRunProgress[progressKey] = {
+          documents: {},
+          stepStatuses,
+        };
+        return;
+      }
+      // Idempotent: add missing step keys as not_started; do not reset existing values
+      for (const step of recipe.steps) {
+        const key = step.step_key;
+        if (!(key in existing.stepStatuses)) {
+          existing.stepStatuses[key] = 'not_started';
+        }
+      }
+    });
+  },
+
+  hydrateStageProgress: async (payload: ListStageDocumentsPayload) => {
+    await hydrateStageProgressLogic(set, payload);
+  },
+    };
+  }),
+);

@@ -2,23 +2,24 @@
 import { assertEquals, assertExists, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import type { DialecticJobRow, DialecticRecipeStep, SourceDocument, DialecticPlanJobPayload, DocumentRelationships } from '../../../dialectic-service/dialectic.interface.ts';
 import { planPerSourceGroup } from './planPerSourceGroup.ts';
+import { FileType } from '../../../_shared/types/file_manager.types.ts';
 
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
     // The original thesis documents, which act as anchors
-    { id: 'thesis-1', content: '', contribution_type: 'thesis', document_relationships: null },
-    { id: 'thesis-2', content: '', contribution_type: 'thesis', document_relationships: null },
+    { id: 'thesis-1', content: '', contribution_type: 'thesis', document_relationships: null, is_header: false, source_prompt_resource_id: null },
+    { id: 'thesis-2', content: '', contribution_type: 'thesis', document_relationships: null, is_header: false, source_prompt_resource_id: null },
     // Group 1: Related to original thesis 'thesis-1'
-    { id: 'chunk-1a', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-1' } },
-    { id: 'chunk-1b', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-1' } },
-    { id: 'chunk-1c', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-1' } },
+    { id: 'chunk-1a', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-1' }, is_header: false, source_prompt_resource_id: null },
+    { id: 'chunk-1b', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-1' }, is_header: false, source_prompt_resource_id: null },
+    { id: 'chunk-1c', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-1' }, is_header: false, source_prompt_resource_id: null },
     // Group 2: Related to original thesis 'thesis-2'
-    { id: 'chunk-2a', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-2' } },
-    { id: 'chunk-2b', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-2' } },
+    { id: 'chunk-2a', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-2' }, is_header: false, source_prompt_resource_id: null },
+    { id: 'chunk-2b', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: 'thesis-2' }, is_header: false, source_prompt_resource_id: null },
     // A document with a null source_group, which should be ignored
-    { id: 'chunk-null', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: null } },
+    { id: 'chunk-null', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: { source_group: null }, is_header: false, source_prompt_resource_id: null },
     // A document with no relationships object, which should be ignored
-    { id: 'chunk-no-rel', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: null },
+    { id: 'chunk-no-rel', content: '', contribution_type: 'pairwise_synthesis_chunk', document_relationships: null, is_header: false, source_prompt_resource_id: null },
 ].map(d => ({
     ...d,
     citations: [],
@@ -57,25 +58,47 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
     stage_slug: 'synthesis',
     iteration_number: 1,
     payload: {
-        job_type: 'plan',
+        job_type: 'PLAN',
         projectId: 'project-xyz',
         sessionId: 'session-abc',
         stageSlug: 'synthesis',
         iterationNumber: 1,
         model_id: 'model-ghi',
-        step_info: { current_step: 2, total_steps: 3 },
         walletId: 'wallet-default',
+        is_test_job: false,
     },
-    attempt_count: 0, completed_at: null, created_at: '', error_details: null, max_retries: 3, parent_job_id: null, prerequisite_job_id: null, results: null, started_at: null, status: 'pending', target_contribution_id: null
+    attempt_count: 0, 
+    completed_at: null, 
+    created_at: '', 
+    error_details: null, 
+    max_retries: 3, 
+    parent_job_id: null, 
+    prerequisite_job_id: null, 
+    results: null, 
+    started_at: null, 
+    status: 'pending', target_contribution_id: null, is_test_job: false, job_type: 'PLAN'
 };
 
 const MOCK_RECIPE_STEP: DialecticRecipeStep = {
-    step: 2,
-    name: 'Consolidate Per-Thesis Syntheses',
-    prompt_template_name: 'synthesis_step2_combine',
+    id: 'recipe-step-id-123',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    template_id: 'template-id-abc',
+    step_key: 'test-step-key-1',
+    step_slug: 'test-step-slug-1',
+    step_description: 'Mock description 1',
+    step_number: 2,
+    step_name: 'Consolidate Per-Thesis Syntheses',
+    prompt_template_id: 'synthesis_step2_combine',
     granularity_strategy: 'per_source_group',
-    inputs_required: [{ type: 'pairwise_synthesis_chunk' }],
-    output_type: 'reduced_synthesis',
+    inputs_required: [{ type: 'document' }],
+    output_type: FileType.ReducedSynthesis,
+    job_type: 'EXECUTE',
+    prompt_type: 'Turn',
+    branch_key: null,
+    parallel_group: null,
+    inputs_relevance: [],
+    outputs_required: [],
 };
 
 Deno.test('planPerSourceGroup should create one child job for each group of related documents', () => {
@@ -87,7 +110,13 @@ Deno.test('planPerSourceGroup should create one child job for each group of rela
     const job1 = childJobs.find(j => j.document_relationships?.source_group === 'thesis-1');
     assertExists(job1, "Job for group 'thesis-1' should exist");
     assertEquals(job1.job_type, 'execute');
-    assertEquals(job1.prompt_template_name, 'synthesis_step2_combine');
+    
+    // UPDATED Assertions for modern contract
+    assertExists(job1.prompt_template_id, "prompt_template_id should exist on the new payload.");
+    assertEquals(job1.prompt_template_id, 'synthesis_step2_combine');
+    assertEquals((job1 as any).prompt_template_name, undefined, "prompt_template_name should be undefined.");
+    assertEquals(job1.output_type, FileType.ReducedSynthesis);
+
     const job1Inputs = job1.inputs?.document_ids;
     assert(Array.isArray(job1Inputs), "job1Inputs should be an array");
     assertEquals(job1Inputs?.length, 3);

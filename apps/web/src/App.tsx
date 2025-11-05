@@ -14,6 +14,7 @@ import { PlatformFeatureTester } from './components/debug/PlatformFeatureTester'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle } from 'lucide-react';
 import { isChatContextPreferences } from '@paynless/utils';
+import { useStageRunProgressHydration } from './hooks/useStageRunProgressHydration';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -40,6 +41,7 @@ export function NavigateInjector() {
 
 // NEW: Internal component to handle content rendering within PlatformProvider
 function AppContent() {
+  useStageRunProgressHydration();
   const profile = useAuthStore((state) => state.profile);
   const isAuthLoading = useAuthStore((state) => state.isLoading);
   const setShowWelcomeModal = useAuthStore((state) => state.setShowWelcomeModal);
