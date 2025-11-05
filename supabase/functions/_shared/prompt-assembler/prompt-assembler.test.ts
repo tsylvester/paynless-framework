@@ -31,6 +31,7 @@ import { FileManagerService } from "../services/file_manager.ts";
 import {
   DialecticJobRow,
   DialecticRecipeStep,
+  DialecticStageRecipeStep,
 } from "../../dialectic-service/dialectic.interface.ts";
 
 
@@ -102,7 +103,7 @@ const mockSession: SessionContext = {
   user_input_reference_url: null,
 };
 
-const mockRecipeStep: DialecticRecipeStep = {
+const mockRecipeStep: DialecticStageRecipeStep = {
   id: "recipe-step-id",
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
@@ -120,6 +121,7 @@ const mockRecipeStep: DialecticRecipeStep = {
   execution_order: 1,
   output_type: FileType.HeaderContext,
   parallel_group: null,
+  step_description: "test-step-description",
   step_key: "step-key",
   step_slug: "test-step",
   instance_id: "instance-id",

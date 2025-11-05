@@ -65,16 +65,10 @@ Deno.test("render", async (t) => {
   const defaultContext: DynamicContextVariables = {
     user_objective: "Test Project Objective",
     domain: "Software Development Domain",
-    agent_count: 2,
     context_description: "This is the initial user prompt content.",
-    original_user_request: null,
-    prior_stage_ai_outputs: "",
-    prior_stage_user_feedback: "",
-    deployment_context: null,
-    reference_documents: null,
-    constraint_boundaries: null,
-    stakeholder_considerations: null,
-    deliverable_format: "Standard markdown format.",
+    original_user_request: "",
+    recipeStep: mockSimpleRecipeStep,
+    sourceDocuments: [],
   };
 
   await t.step(
@@ -152,7 +146,12 @@ Deno.test("render", async (t) => {
     const renderArgs = lastRenderPromptArgs;
     assertEquals(renderArgs?.[0], stageSystemPromptText);
     assertEquals(renderArgs?.[1], defaultContext);
-    assertEquals(renderArgs?.[2], stageOverlayValues);
+    
+    const expectedOverlays = {
+        ...(isRecord(stageOverlayValues) ? stageOverlayValues : {}),
+        outputs_required: defaultContext.recipeStep.outputs_required,
+    };
+    assertEquals(renderArgs?.[2], expectedOverlays);
     assertEquals(renderArgs?.[3], null);
   });
 
@@ -424,7 +423,7 @@ Deno.test("render", async (t) => {
   );
 
   await t.step(
-    "does not include outputs_required when context.recipeStep is null or has empty outputs_required",
+    "does not include outputs_required when recipeStep has empty outputs_required",
     () => {
       const renderPromptMockFn: RenderPromptMock = (
         _base,
@@ -449,15 +448,6 @@ Deno.test("render", async (t) => {
       const stageWithoutArtifacts: StageContext = {
         ...defaultStage,
       };
-
-      // Test with no recipeStep in context
-      const result1 = render(
-        renderPromptMockFn,
-        stageWithoutArtifacts,
-        defaultContext,
-        null,
-      );
-      assertEquals(result1, "ok");
 
       // Test with recipeStep but empty outputs_required
       const contextWithEmptyOutputs: DynamicContextVariables = {

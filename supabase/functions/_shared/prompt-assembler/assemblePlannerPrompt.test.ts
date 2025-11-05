@@ -34,6 +34,35 @@ import { assertSpyCall, assertSpyCalls } from "jsr:@std/testing@0.225.1/mock";
 import { isRecord } from "../utils/type_guards.ts";
 import { assert } from "jsr:@std/assert@0.225.3";
 
+const defaultMockContext: DynamicContextVariables = {
+  user_objective: "mock user objective",
+  domain: "Software Development",
+  context_description: "A test context",
+  original_user_request: "The original request",
+  recipeStep: {
+    id: "step-id-123",
+    template_id: "rt-123",
+    step_number: 1,
+    step_key: "GeneratePlanKey",
+    step_slug: "generate-plan-slug",
+    step_name: "GeneratePlan",
+    job_type: "PLAN",
+    prompt_type: "Planner",
+    prompt_template_id: "spt-123",
+    output_type: FileType.HeaderContext,
+    granularity_strategy: "all_to_one",
+    inputs_required: [],
+    inputs_relevance: [],
+    outputs_required: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    parallel_group: null,
+    branch_key: null,
+    step_description: "A step for planning",
+  },
+  sourceDocuments: [],
+};
+
 Deno.test("assemblePlannerPrompt", async (t) => {
   let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
   let mockFileManager: MockFileManagerService;
@@ -42,27 +71,12 @@ Deno.test("assemblePlannerPrompt", async (t) => {
 
   const setup = (
     config: MockSupabaseDataConfig = {},
-    mockContext?: DynamicContextVariables,
+    mockContext: DynamicContextVariables,
   ) => {
     mockSupabaseSetup = createMockSupabaseClient(undefined, config);
     mockFileManager = createMockFileManagerService();
 
-    const fullMockDynamicContext: DynamicContextVariables = mockContext || {
-      user_objective: "mock user objective",
-      domain: "Software Development",
-      agent_count: 1,
-      context_description: "A test context",
-      original_user_request: "The original request",
-      prior_stage_ai_outputs: "",
-      prior_stage_user_feedback: "",
-      deployment_context: null,
-      reference_documents: null,
-      constraint_boundaries: null,
-      stakeholder_considerations: null,
-      deliverable_format: null,
-    };
-
-    mockGatherContextFn = spy(async () => fullMockDynamicContext);
+    mockGatherContextFn = spy(async () => mockContext);
     mockRenderFn = spy(() => "rendered planner prompt");
 
     return {
@@ -207,19 +221,8 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       };
 
       const mockDynamicContext: DynamicContextVariables = {
-        recipeStep: mockRecipeStep,
-        user_objective: "mock user objective",
-        domain: "Software Development",
-        agent_count: 1,
-        context_description: "A test context",
+        ...defaultMockContext,
         original_user_request: "The original request",
-        prior_stage_ai_outputs: "",
-        prior_stage_user_feedback: "",
-        deployment_context: null,
-        reference_documents: null,
-        constraint_boundaries: null,
-        stakeholder_considerations: null,
-        deliverable_format: null,
       };
 
       const config: MockSupabaseDataConfig = {
@@ -355,7 +358,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             }
           }
         },
-      });
+      }, defaultMockContext);
 
       const mockFileRecord: FileRecord = {
         id: "mock-planner-resource-id-456",
@@ -421,7 +424,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         },
       };
 
-      const { client, fileManager, gatherContextFn, renderFn } = setup(config);
+      const { client, fileManager, gatherContextFn, renderFn } = setup(config, defaultMockContext);
 
       const mockFileRecord: FileRecord = {
         id: "mock-planner-resource-id-456",
@@ -499,7 +502,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         fileManager,
         gatherContextFn,
         renderFn,
-      } = setup(config);
+      } = setup(config, defaultMockContext);
 
       const assembleFn = () =>
         assemblePlannerPrompt({
@@ -546,7 +549,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         fileManager,
         gatherContextFn,
         renderFn,
-      } = setup(config);
+      } = setup(config, defaultMockContext);
 
       const assembleFn = () =>
         assemblePlannerPrompt({
@@ -592,7 +595,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         fileManager,
         gatherContextFn,
         renderFn,
-      } = setup(config);
+      } = setup(config, defaultMockContext);
 
       fileManager.setUploadAndRegisterFileResponse(null, fileManagerError);
 
@@ -634,7 +637,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             }
           }
         },
-      });
+      }, defaultMockContext);
       const mockDeps = {
         gatherContext: () => Promise.reject(gatherError),
         render: spy(() => "should-not-be-called"),
@@ -671,25 +674,10 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           }
         }
       },
-    });
-
-    const fullMockDynamicContext: DynamicContextVariables = {
-      user_objective: "mock user objective",
-      domain: "Software Development",
-      agent_count: 1,
-      context_description: "A test context",
-      original_user_request: "The original request",
-      prior_stage_ai_outputs: "",
-      prior_stage_user_feedback: "",
-      deployment_context: null,
-      reference_documents: null,
-      constraint_boundaries: null,
-      stakeholder_considerations: null,
-      deliverable_format: null,
-    };
+    }, defaultMockContext);
 
     const mockDeps = {
-      gatherContext: spy(async () => fullMockDynamicContext),
+      gatherContext: spy(async () => defaultMockContext),
       render: () => {
         throw renderError;
       },
@@ -729,7 +717,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             }
           }
         }
-      });
+      }, defaultMockContext);
       const sessionWithNoModels: SessionContext = {
         ...defaultSession,
         selected_model_ids: [],
@@ -774,7 +762,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             }
           }
         }
-      });
+      }, defaultMockContext);
       
       const invalidJob: DialecticJobRow = {
         ...mockPlannerJob,
@@ -822,7 +810,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             }
           }
         },
-      });
+      }, defaultMockContext);
       
       const fullFileRecord: FileRecord = {
         id: "file-123",
@@ -845,21 +833,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       fileManager.setUploadAndRegisterFileResponse(fullFileRecord, null);
       
       const mockRenderFn: Spy<RenderFn> = spy(() => "rendered");
-      const fullMockDynamicContext: DynamicContextVariables = {
-        user_objective: "mock user objective",
-        domain: "Software Development",
-        agent_count: 1,
-        context_description: "A test context",
-        original_user_request: "The original request",
-        prior_stage_ai_outputs: "",
-        prior_stage_user_feedback: "",
-        deployment_context: null,
-        reference_documents: null,
-        constraint_boundaries: null,
-        stakeholder_considerations: null,
-        deliverable_format: null,
-      };
-      const mockGatherFn = spy(async () => (fullMockDynamicContext));
+      const mockGatherFn = spy(async () => (defaultMockContext));
       const mockDeps = { gatherContext: mockGatherFn, render: mockRenderFn };
 
       try {
@@ -901,25 +875,10 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           }
         }
       },
-    });
-
-    const fullMockDynamicContext: DynamicContextVariables = {
-      user_objective: "mock user objective",
-      domain: "Software Development",
-      agent_count: 1,
-      context_description: "A test context",
-      original_user_request: "The original request",
-      prior_stage_ai_outputs: "",
-      prior_stage_user_feedback: "",
-      deployment_context: null,
-      reference_documents: null,
-      constraint_boundaries: null,
-      stakeholder_considerations: null,
-      deliverable_format: null,
-    };
+    }, defaultMockContext);
 
     const mockDeps = {
-      gatherContext: spy(async () => fullMockDynamicContext),
+      gatherContext: spy(async () => defaultMockContext),
       render: () => { throw renderError; },
     };
 
@@ -952,7 +911,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             }
           }
         }
-      });
+      }, defaultMockContext);
       const jobWithoutModelSlug = {
         ...mockPlannerJob,
         payload: {
@@ -960,23 +919,8 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         },
       };
 
-      const fullMockDynamicContext: DynamicContextVariables = {
-        user_objective: "mock user objective",
-        domain: "Software Development",
-        agent_count: 1,
-        context_description: "A test context",
-        original_user_request: "The original request",
-        prior_stage_ai_outputs: "",
-        prior_stage_user_feedback: "",
-        deployment_context: null,
-        reference_documents: null,
-        constraint_boundaries: null,
-        stakeholder_considerations: null,
-        deliverable_format: null,
-      };
-
       const mockDeps = {
-        gatherContext: spy(async () => fullMockDynamicContext),
+        gatherContext: spy(async () => defaultMockContext),
         render: spy(() => "irrelevant"),
       };
 
@@ -1011,7 +955,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             }
           }
         }
-      });
+      }, defaultMockContext);
       // This is one of the two allowed exceptions for type casting, as we are intentionally
       // creating a malformed object to test graceful error handling.
       const stageWithoutRecipe: StageContext = {
@@ -1019,23 +963,8 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         recipe_step: null as unknown as DialecticRecipeStep,
       };
 
-      const fullMockDynamicContext: DynamicContextVariables = {
-        user_objective: "mock user objective",
-        domain: "Software Development",
-        agent_count: 1,
-        context_description: "A test context",
-        original_user_request: "The original request",
-        prior_stage_ai_outputs: "",
-        prior_stage_user_feedback: "",
-        deployment_context: null,
-        reference_documents: null,
-        constraint_boundaries: null,
-        stakeholder_considerations: null,
-        deliverable_format: null,
-      };
-
       const mockDeps = {
-        gatherContext: spy(async () => fullMockDynamicContext),
+        gatherContext: spy(async () => defaultMockContext),
         render: spy(() => "irrelevant"),
       };
 
@@ -1080,7 +1009,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             },
           },
         }
-      });
+      }, defaultMockContext);
 
       await assertRejects(
         () =>
@@ -1134,7 +1063,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       fileManager,
       gatherContextFn,
       renderFn,
-    } = setup(config);
+    } = setup(config, defaultMockContext);
 
     const mockFileRecord: FileRecord = {
       id: "mock-planner-resource-id-456",
@@ -1193,7 +1122,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           }
         }
       }
-    });
+    }, defaultMockContext);
     if(!isRecord(mockPlannerJob.payload)) {
       throw new Error("Job payload is not valid JSON");
     }
@@ -1239,7 +1168,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         }
       },
     };
-    const { client, fileManager, gatherContextFn, renderFn } = setup(config);
+    const { client, fileManager, gatherContextFn, renderFn } = setup(config, defaultMockContext);
 
     const mockFileRecord: FileRecord = {
       id: "mock-planner-resource-id-metadata",

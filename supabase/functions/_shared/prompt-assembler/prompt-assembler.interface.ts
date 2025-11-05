@@ -103,18 +103,18 @@ export type AssemblePromptOptions = {
 export type DynamicContextVariables = {
     user_objective: string,
     domain: string,
-    agent_count: number,
     context_description: string,
-    original_user_request: string | null;
-    prior_stage_ai_outputs: string,
-    prior_stage_user_feedback: string,
-    deployment_context: string | null,
-    reference_documents: string | null,
-    constraint_boundaries: string | null,
-    stakeholder_considerations: string | null,
-    deliverable_format: string | null,
-    recipeStep?: DialecticRecipeStep;
+    original_user_request: string;
+    deployment_context?: string,
+    reference_documents?: string,
+    constraint_boundaries?: string,
+    stakeholder_considerations?: string,
+    deliverable_format?: string,
+    recipeStep: DialecticRecipeStep;
+    sourceDocuments?: AssemblerSourceDocument[];
 }
+
+export type RenderContext = Record<string, unknown>;
 
 export type GatheredRecipeContext = {
     sourceDocuments: AssemblerSourceDocument[];

@@ -818,9 +818,9 @@ BEGIN
                 "omissions": [],
                 "discrepancies": [],
                 "areas_for_improvement": [],
-                "feasibility": ""
+                "feasibility": "",
                 "recommendations": [],
-                "notes": [],
+                "notes": []
               }
             }
           ],

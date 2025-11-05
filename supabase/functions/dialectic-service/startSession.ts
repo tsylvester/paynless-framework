@@ -22,6 +22,8 @@ import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
 import { defaultProviderMap } from '../_shared/ai_service/factory.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import { StartSessionDeps, SeedPromptRecipeStep } from './dialectic.interface.ts';
+import { gatherInputsForStage } from "../_shared/prompt-assembler/gatherInputsForStage.ts";
+import { renderPrompt } from "../_shared/prompt-renderer.ts";
 
 export async function startSession(
   user: User,
@@ -311,8 +313,8 @@ export async function startSession(
             projectInitialUserPrompt: initialPrompt.content,
             iterationNumber: 1,
             downloadFromStorageFn: (bucket: string, path: string) => downloadFromStorage(dbClient, bucket, path),
-            gatherInputsForStageFn: (_dbClient, _downloadFromStorageFn, _stage, _project, _session, _iterationNumber) => { throw new Error("Not implemented"); },
-            renderPromptFn: (_basePromptText, _dynamicContextVariables, _systemDefaultOverlayValues, _userProjectOverlayValues) => { throw new Error("Not implemented"); }
+            gatherInputsForStageFn: gatherInputsForStage,
+            renderPromptFn: renderPrompt
         });
 
         if (!assembledSeedPrompt) {

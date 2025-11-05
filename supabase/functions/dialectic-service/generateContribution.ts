@@ -2,12 +2,14 @@ import {
     GenerateContributionsPayload,
     GenerateContributionsDeps,
     JobType,
+    StageWithRecipeSteps,
   } from "./dialectic.interface.ts";
 import type { Database, Json, TablesInsert } from "../types_db.ts";
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { logger } from "../_shared/logger.ts";
 import { User } from "npm:@supabase/supabase-js@2";
-import { hasStepsRecipe } from "../_shared/utils/type-guards/type_guards.dialectic.ts";
+import { isDatabaseRecipeSteps } from '../_shared/utils/type-guards/type_guards.dialectic.ts';
+import { mapToStageWithRecipeSteps } from '../_shared/utils/mappers.ts';
   
 export async function generateContributions(
     dbClient: SupabaseClient<Database>,
@@ -92,7 +94,7 @@ export async function generateContributions(
         // 1. Fetch the recipe for the stage
         const { data: stageDef, error: recipeError } = await dbClient
             .from('dialectic_stages')
-            .select('*, steps:dialectic_stage_recipe_steps(*)')
+            .select('*, dialectic_stage_recipe_instances!inner(*, dialectic_stage_recipe_steps!inner(*))')
             .eq('slug', stageSlug)
             .single();
 
@@ -100,15 +102,28 @@ export async function generateContributions(
             logger.error(`[generateContributions] Could not find recipe for stage ${stageSlug}.`, { error: recipeError });
             return { success: false, error: { message: `Could not find recipe for stage ${stageSlug}.`, status: 500 } };
         }
-        
-        console.log('[generateContributions] Fetched stageDef:', JSON.stringify(stageDef, null, 2));
-        console.log('[generateContributions] Result of hasStepsRecipe:', hasStepsRecipe(stageDef));
 
-        // 2. Calculate total steps from the recipe
-        const totalSteps = stageDef.steps.length;
+        if (!isDatabaseRecipeSteps(stageDef)) {
+            const message = `Stage '${stageSlug}' has an invalid recipe structure.`;
+            logger.error(`[generateContributions] ${message}`, { stageDef });
+            return { success: false, error: { message, status: 500 } };
+        }
+
+        const stageDto: StageWithRecipeSteps = mapToStageWithRecipeSteps(stageDef);
+        
+        // 2. Extract steps from the nested structure
+        const steps = stageDto.dialectic_stage_recipe_steps;
+        if (!steps || steps.length === 0) {
+            const message = `Stage '${stageSlug}' has no recipe steps defined.`;
+            logger.error(`[generateContributions] ${message}`, { stageDef });
+            return { success: false, error: { message, status: 404 } };
+        }
+
+        // 3. Calculate total steps from the recipe
+        const totalSteps = steps.length;
         const jobIds: string[] = [];
         for (const modelId of selectedModelIds) {
-            // 3. Create a formal 'plan' payload for each job
+            // 4. Create a formal 'plan' payload for each job
             const jobType: JobType = 'PLAN';
             const jobPayload: Json = {
                 ...payload,

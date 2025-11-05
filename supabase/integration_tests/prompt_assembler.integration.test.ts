@@ -45,6 +45,7 @@ import {
   type StartSessionPayload,
   type StartSessionSuccessResponse,
   type StageWithRecipeSteps,
+  type DatabaseRecipeSteps,
 } from '../functions/dialectic-service/dialectic.interface.ts';
 import { type Database, type Tables, type Json } from '../functions/types_db.ts';
 import { createProject } from '../functions/dialectic-service/createProject.ts';
@@ -52,6 +53,8 @@ import { startSession } from '../functions/dialectic-service/startSession.ts';
 import { getSeedPromptForStage } from '../functions/_shared/utils/dialectic_utils.ts';
 import { NotificationService } from '../functions/_shared/utils/notification.service.ts';
 import { isRecord } from '../functions/_shared/utils/type_guards.ts';
+import { mapToStageWithRecipeSteps } from '../functions/_shared/utils/mappers.ts';
+import { IDocumentRenderer } from '../functions/_shared/services/document_renderer.interface.ts';
 
 describe('PromptAssembler Integration Test Suite', () => {
   let adminClient: SupabaseClient<Database>;
@@ -72,6 +75,21 @@ describe('PromptAssembler Integration Test Suite', () => {
     fileManager = new FileManagerService(adminClient, { constructStoragePath });
     promptAssembler = new PromptAssembler(adminClient, fileManager);
 
+    const mockDocumentRenderer: IDocumentRenderer = {
+      renderDocument: () => Promise.resolve({
+        pathContext: {
+          fileType: FileType.HeaderContext,
+          projectId: '',
+          sessionId: '',
+          iteration: 0,
+          stageSlug: '',
+          modelSlug: '',
+        },
+        renderedBytes: new Uint8Array(),
+        error: null,
+      }),
+    };
+
     testDeps = {
       logger: testLogger,
       fileManager: fileManager,
@@ -87,18 +105,22 @@ describe('PromptAssembler Integration Test Suite', () => {
       retryJob: () => Promise.resolve({}),
       notificationService: new NotificationService(adminClient),
       executeModelCallAndSave: () => Promise.resolve(),
+      documentRenderer: mockDocumentRenderer,
     };
 
-    const { data: stageData, error } = await adminClient
+    const { data: stageDbData, error } = await adminClient
       .from('dialectic_stages')
-      .select('*, steps:dialectic_stage_recipe_steps(*)');
+      .select(
+        '*, dialectic_stage_recipe_instances!inner(*, dialectic_stage_recipe_steps!inner(*))',
+      );
 
     if (error) {
       throw new Error(
         `Could not fetch stages and recipes for test setup: ${error.message}`,
       );
     }
-    stagesWithRecipes = stageData;
+    const dbStages: DatabaseRecipeSteps[] = stageDbData;
+    stagesWithRecipes = dbStages.map(mapToStageWithRecipeSteps);
 
     testingPrompt = await Deno.readTextFile(
       '../../docs/implementations/Current/Documentation/testing_prompt.md',
@@ -191,7 +213,7 @@ describe('PromptAssembler Integration Test Suite', () => {
       modelSlug: 'manual-tester', // Hardcoded for this test
       attemptCount: 1,
       documentKey: documentKey,
-      stepName: stage.recipe_step.step_slug,
+      stepName: stage.recipe_step.step_name,
       branchKey: stage.recipe_step.branch_key,
       parallelGroup: stage.recipe_step.parallel_group,
     };
@@ -200,12 +222,13 @@ describe('PromptAssembler Integration Test Suite', () => {
     const { record: resource, error: uploadError } = await fileManager
       .uploadAndRegisterFile({
         fileContent: JSON.stringify(content, null, 2),
-        pathContext: pathContext,
+        pathContext: { ...pathContext, fileType: FileType.GeneralResource },
         mimeType: 'application/json',
         sizeBytes: JSON.stringify(content, null, 2).length,
         userId: testUser.id,
         description:
-          `Manual response for stage ${stage.slug}, step ${stage.recipe_step.step_slug}`,
+          `Manual response for stage ${stage.slug}, step ${'step_slug' in stage.recipe_step ? stage.recipe_step.step_slug : ''}`,
+        resourceTypeForDb: fileType,
       });
 
     if (uploadError || !resource) {
@@ -238,7 +261,7 @@ describe('PromptAssembler Integration Test Suite', () => {
     }
 
     console.log(
-      `\n--- [ARTIFACT SAVED] for step: ${stage.recipe_step.step_slug} ---\n`,
+      `\n--- [ARTIFACT SAVED] for step: ${'step_slug' in stage.recipe_step ? stage.recipe_step.step_slug : ''} ---\n`,
     );
   };
 
@@ -415,8 +438,9 @@ describe('PromptAssembler Integration Test Suite', () => {
       current_stage_id: session.current_stage_id,
     };
 
-    for (const stageData of stagesWithRecipes) {
-      const stageRecipe = stageData.steps;
+    for (const stageDto of stagesWithRecipes) {
+      const stageData = stageDto.dialectic_stage;
+      const stageRecipe = stageDto.dialectic_stage_recipe_steps;
       if (!stageRecipe || stageRecipe.length === 0) {
         console.log(
           `\n\n--- NO RECIPE FOR STAGE: ${stageData.display_name} (${stageData.slug}) ---\n`,
@@ -434,9 +458,8 @@ describe('PromptAssembler Integration Test Suite', () => {
         console.warn(`Could not fetch system prompt for stage ${stageData.slug}: ${spError.message}`);
       }
 
-      const stageBase: StageContext = {
+      const stageBase: Omit<StageContext, 'recipe_step'> = {
         ...stageData,
-        recipe_step: stageRecipe[0],
         system_prompts: system_prompts,
         domain_specific_prompt_overlays: [],
       };
@@ -452,7 +475,7 @@ describe('PromptAssembler Integration Test Suite', () => {
           fileManager: fileManager,
           project: projectContext,
           session: sessionContext,
-          stage: stageBase,
+          stage: { ...stageBase, recipe_step: stageRecipe[0] },
           projectInitialUserPrompt: testingPrompt,
           iterationNumber: 1,
           downloadFromStorageFn: (bucket, path) =>

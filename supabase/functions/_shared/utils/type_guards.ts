@@ -9,7 +9,6 @@ export {
 export { 
     hasModelResultWithContributionId, 
     hasProcessingStrategy, 
-    hasStepsRecipe, 
     isCitationsArray, 
     isContinuablePayload, 
     isContributionType, 

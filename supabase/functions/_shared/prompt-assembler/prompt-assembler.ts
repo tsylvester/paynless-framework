@@ -8,7 +8,6 @@ import {
     SessionContext,
     StageContext,
     RenderPromptFunctionType,
-    ContributionOverride,
     AssemblePromptOptions,
     AssembledPrompt,
     AssembleSeedPromptDeps,
@@ -164,7 +163,6 @@ export class PromptAssembler implements IPromptAssembler {
         stage: StageContext,
         projectInitialUserPrompt: string,
         iterationNumber: number,
-        overrideContributions?: ContributionOverride[]
     ): Promise<DynamicContextVariables> {
         return this.gatherContextFn(
             this.dbClient,
@@ -175,7 +173,6 @@ export class PromptAssembler implements IPromptAssembler {
             stage,
             projectInitialUserPrompt,
             iterationNumber,
-            overrideContributions
         );
     }
 

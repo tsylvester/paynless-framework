@@ -20,11 +20,6 @@ export async function assembleSeedPrompt(
     iterationNumber,
   }: AssembleSeedPromptDeps,
 ): Promise<AssembledPrompt> {
-  if (!session.selected_model_ids || session.selected_model_ids.length === 0) {
-    throw new Error(
-      "PRECONDITION_FAILED: Session must have at least one selected model.",
-    );
-  }
 
   const context = await gatherContext(
     dbClient,
@@ -35,7 +30,6 @@ export async function assembleSeedPrompt(
     stage,
     projectInitialUserPrompt,
     iterationNumber,
-    undefined,
   );
 
   const renderedPrompt = render(

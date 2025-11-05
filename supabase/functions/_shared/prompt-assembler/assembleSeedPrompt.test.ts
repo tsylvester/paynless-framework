@@ -232,17 +232,10 @@ Deno.test("assembleSeedPrompt", async (t) => {
         const expectedDynamicVars: DynamicContextVariables = {
           user_objective: "Test Project Objective",
           domain: "Software Development Domain",
-          agent_count: 2,
           context_description: "This is the initial user prompt content.",
-          original_user_request: null,
-          prior_stage_ai_outputs: "",
-          prior_stage_user_feedback: "",
-          deployment_context: null,
-          reference_documents: null,
-          constraint_boundaries: null,
-          stakeholder_considerations: null,
-          deliverable_format: "Standard markdown format.",
+          original_user_request: "",
           recipeStep: defaultStage.recipe_step,
+          sourceDocuments: [],
         };
         assertEquals(renderArgs?.[1], expectedDynamicVars);
         assertEquals(renderArgs?.[2], stageOverlayValues);
@@ -453,16 +446,6 @@ Deno.test("assembleSeedPrompt", async (t) => {
         assert(
           capturedDynamicVars,
           "Dynamic variables were not passed to the renderer",
-        );
-        assertEquals(
-          capturedDynamicVars.prior_stage_ai_outputs,
-          "",
-          "Prior stage AI outputs should be empty for a seed prompt",
-        );
-        assertEquals(
-          capturedDynamicVars.prior_stage_user_feedback,
-          "",
-          "Prior stage user feedback should be empty for a seed prompt",
         );
       } finally {
         teardown();
@@ -771,58 +754,4 @@ Deno.test("assembleSeedPrompt", async (t) => {
       teardown();
     }
   });
-
-  await t.step("should throw an error if session has no selected models", async () => {
-      const { client, fileManager } = setup();
-      fileManager.setUploadAndRegisterFileResponse({ 
-        id: "mock-id", 
-        created_at: new Date().toISOString(),
-        file_name: "mock-file.md",
-        iteration_number: 1,
-        mime_type: "text/markdown",
-        project_id: "mock-project-id",
-        resource_description: { test: "test" },
-        resource_type: "test",
-        size_bytes: 100,
-        storage_bucket: "test-bucket",
-        storage_path: "path/to/mock/",
-        user_id: "mock-user-id",
-        session_id: "mock-session-id",
-        source_contribution_id: "mock-source-contribution-id",
-        stage_slug: "mock-stage-slug",
-        updated_at: new Date().toISOString(),
-      }, null);
-
-      const downloadFn = (bucket: string, path: string) =>
-        downloadFromStorage(client, bucket, path);
-      const sessionWithNoModels: SessionContext = {
-        ...defaultSession,
-        selected_model_ids: [],
-      };
-
-      try {
-        await assertRejects(
-          async () => {
-            await assembleSeedPrompt({
-              dbClient: client,
-              downloadFromStorageFn: downloadFn,
-              gatherInputsForStageFn: gatherInputsForStage,
-              renderPromptFn: renderPrompt,
-              fileManager,
-              project: defaultProject,
-              session: sessionWithNoModels,
-              stage: defaultStage,
-              projectInitialUserPrompt: defaultProject.initial_user_prompt,
-              iterationNumber: 1,
-            });
-          },
-          Error,
-          "PRECONDITION_FAILED: Session must have at least one selected model.",
-        );
-      } finally {
-        teardown();
-      }
-    },
-  );
-
 });

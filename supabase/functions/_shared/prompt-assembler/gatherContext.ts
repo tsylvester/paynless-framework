@@ -5,7 +5,6 @@ import {
   ProjectContext,
   SessionContext,
   StageContext,
-  ContributionOverride,
   GatheredRecipeContext,
 } from "./prompt-assembler.interface.ts";
 import { hasProcessingStrategy } from "../utils/type_guards.ts";
@@ -24,7 +23,6 @@ export type GatherContextFn = (
   stage: StageContext,
   projectInitialUserPrompt: string,
   iterationNumber: number,
-  overrideContributions?: ContributionOverride[],
 ) => Promise<DynamicContextVariables>;
 
 export async function gatherContext(
@@ -39,88 +37,75 @@ export async function gatherContext(
   stage: StageContext,
   projectInitialUserPrompt: string,
   iterationNumber: number,
-  overrideContributions?: ContributionOverride[],
 ): Promise<DynamicContextVariables> {
-    if (!session.selected_model_ids || session.selected_model_ids.length === 0) {
-        throw new Error("PRECONDITION_FAILED: Session must have at least one selected model.");
+  try {
+    const gatheredContext: GatheredRecipeContext = await gatherInputsForStageFn(
+      dbClient,
+      downloadFromStorageFn,
+      stage,
+      project,
+      session,
+      iterationNumber,
+    );
+
+    const dynamicContextVariables: DynamicContextVariables = {
+      user_objective: project.project_name,
+      domain: project.dialectic_domains.name,
+      context_description: projectInitialUserPrompt,
+      original_user_request: hasProcessingStrategy(stage.recipe_step)
+        ? projectInitialUserPrompt
+        : "",
+      recipeStep: gatheredContext.recipeStep,
+      sourceDocuments: gatheredContext.sourceDocuments,
+    };
+
+    // Merge overlay values from project and stage, with stage-specific values taking precedence
+    const mergedOverlays: Record<string, unknown> = {};
+    if (project.user_domain_overlay_values) {
+      Object.assign(mergedOverlays, project.user_domain_overlay_values);
     }
-
-  let priorStageContributions = "";
-  let priorStageFeedback = "";
-  let recipeStep = stage.recipe_step;
-
-  if (overrideContributions) {
-    for (const contrib of overrideContributions) {
-      priorStageContributions +=
-        `#### Contribution from AI Model\n${contrib.content}\n\n`;
-    }
-  } else {
-    try {
-      const gatheredContext: GatheredRecipeContext = await gatherInputsForStageFn(
-        dbClient,
-        downloadFromStorageFn,
-        stage,
-        project,
-        session,
-        iterationNumber,
-      );
-      recipeStep = gatheredContext.recipeStep;
-
-      // If under limit, format the documents normally
-      for (const doc of gatheredContext.sourceDocuments) {
-        if (doc.type === "document") {
-          const blockHeader = doc.metadata.header
-            ? `${doc.metadata.header}\n\n`
-            : `### Contributions from ${doc.metadata.displayName} Stage\n\n`;
-          priorStageContributions += blockHeader;
-          priorStageContributions +=
-            `#### Contribution from ${
-              doc.metadata.modelName || "AI Model"
-            }\n${doc.content}\n\n`;
-        } else if (doc.type === "feedback") {
-          const blockHeader = doc.metadata.header
-            ? `${doc.metadata.header}\n---\n\n`
-            : `### User Feedback on Previous Stage: ${doc.metadata.displayName}\n---\n\n`;
-          priorStageFeedback += `${blockHeader}${doc.content}\n\n---\n`;
+    if (stage.domain_specific_prompt_overlays) {
+      for (const overlay of stage.domain_specific_prompt_overlays) {
+        if (overlay.overlay_values) {
+          Object.assign(mergedOverlays, overlay.overlay_values);
         }
       }
-    } catch (inputError) {
-      console.error(
-        `[gatherContext] Error during input gathering: ${
-          (inputError instanceof Error) ? inputError.message : String(inputError)
-        }`,
-        {
-          error: inputError,
-          stageSlug: stage.slug,
-          projectId: project.id,
-          sessionId: session.id,
-        },
-      );
-      throw new Error(
-        `Failed to gather inputs for prompt assembly: ${
-          (inputError instanceof Error) ? inputError.message : String(inputError)
-        }`,
-      );
     }
+
+    // Conditionally add optional properties from the merged overlays
+    if (mergedOverlays.deployment_context && typeof mergedOverlays.deployment_context === 'string') {
+      dynamicContextVariables.deployment_context = mergedOverlays.deployment_context;
+    }
+    if (mergedOverlays.reference_documents && typeof mergedOverlays.reference_documents === 'string') {
+      dynamicContextVariables.reference_documents = mergedOverlays.reference_documents;
+    }
+    if (mergedOverlays.constraint_boundaries && typeof mergedOverlays.constraint_boundaries === 'string') {
+      dynamicContextVariables.constraint_boundaries = mergedOverlays.constraint_boundaries;
+    }
+    if (mergedOverlays.stakeholder_considerations && typeof mergedOverlays.stakeholder_considerations === 'string') {
+      dynamicContextVariables.stakeholder_considerations = mergedOverlays.stakeholder_considerations;
+    }
+    if (mergedOverlays.deliverable_format && typeof mergedOverlays.deliverable_format === 'string') {
+      dynamicContextVariables.deliverable_format = mergedOverlays.deliverable_format;
+    }
+
+    return dynamicContextVariables;
+  } catch (inputError) {
+    console.error(
+      `[gatherContext] Error during input gathering: ${
+        (inputError instanceof Error) ? inputError.message : String(inputError)
+      }`,
+      {
+        error: inputError,
+        stageSlug: stage.slug,
+        projectId: project.id,
+        sessionId: session.id,
+      },
+    );
+    throw new Error(
+      `Failed to gather inputs for prompt assembly: ${
+        (inputError instanceof Error) ? inputError.message : String(inputError)
+      }`,
+    );
   }
-
-  const dynamicContextVariables: DynamicContextVariables = {
-    user_objective: project.project_name,
-    domain: project.dialectic_domains.name,
-    agent_count: session.selected_model_ids?.length ?? 1,
-    context_description: projectInitialUserPrompt,
-    original_user_request: hasProcessingStrategy(stage.recipe_step)
-      ? projectInitialUserPrompt
-      : null,
-    prior_stage_ai_outputs: priorStageContributions,
-    prior_stage_user_feedback: priorStageFeedback,
-    deployment_context: null,
-    reference_documents: null,
-    constraint_boundaries: null,
-    stakeholder_considerations: null,
-    deliverable_format: "Standard markdown format.",
-    recipeStep: recipeStep,
-  };
-
-  return dynamicContextVariables;
 }

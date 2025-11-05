@@ -30,6 +30,7 @@ import { ICompressionStrategy } from '../_shared/utils/vector_utils.ts';
 import type { ServiceError } from "../_shared/types.ts";
 import type { IDocumentRenderer } from '../_shared/services/document_renderer.interface.ts';
 import type { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
 
 export type DialecticStageRecipeEdge = Database['public']['Tables']['dialectic_stage_recipe_edges']['Row'];
 export type DialecticStageRecipeInstance = Database['public']['Tables']['dialectic_stage_recipe_instances']['Row'];
@@ -83,7 +84,10 @@ export interface IRenderJobDeps {
 }
 
 export type JobType = 'PLAN' | 'EXECUTE' | 'RENDER';
+export const JobTypes: readonly JobType[] = ['PLAN', 'EXECUTE', 'RENDER'];
 export type PromptType = 'Seed' | 'Planner' | 'Turn' | 'Continuation';
+export const PromptTypes: readonly PromptType[] = ['Seed', 'Planner', 'Turn', 'Continuation'];
+
 export type GranularityStrategy =
   | 'per_source_document'
   | 'pairwise_by_origin'
@@ -91,6 +95,14 @@ export type GranularityStrategy =
   | 'all_to_one'
   | 'per_source_document_by_lineage'
   | 'per_model';
+export const GranularityStrategies: readonly GranularityStrategy[] = [
+  'per_source_document',
+  'pairwise_by_origin',
+  'per_source_group',
+  'all_to_one',
+  'per_source_document_by_lineage',
+  'per_model'
+];
 
 export type DialecticRecipeTemplateStep =
   & Omit<
@@ -119,7 +131,7 @@ export type DialecticStageRecipeStep =
     inputs_required: InputRule[];
     inputs_relevance: RelevanceRule[];
     outputs_required: OutputRule[];
-    output_type: ModelContributionFileTypes;
+    output_type: FileType;
   };
 
 // DTOs for Stage Recipe responses (instance-first; template-ready)
@@ -169,8 +181,16 @@ export type SeedPromptRecipeStep = {
 
 export type DialecticRecipeStep = DialecticRecipeTemplateStep | DialecticStageRecipeStep | SeedPromptRecipeStep;
 
-export type StageWithRecipeSteps = Tables<'dialectic_stages'> & {
-  steps: DialecticRecipeStep[];
+export type StageWithRecipeSteps = {
+  dialectic_stage: Tables<'dialectic_stages'>;
+  dialectic_stage_recipe_instances: Tables<'dialectic_stage_recipe_instances'>;
+  dialectic_stage_recipe_steps: DialecticStageRecipeStep[];
+};
+
+export type DatabaseRecipeSteps = Tables<'dialectic_stages'> & {
+  dialectic_stage_recipe_instances: (Tables<'dialectic_stage_recipe_instances'> & {
+    dialectic_stage_recipe_steps: Tables<'dialectic_stage_recipe_steps'>[];
+  })[];
 };
 
 export type DialecticProjectRow = Database['public']['Tables']['dialectic_projects']['Row'];

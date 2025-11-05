@@ -1,52 +1,78 @@
 import { assertEquals, assertExists, assertObjectMatch, fail } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy } from "jsr:@std/testing@0.225.1/mock";
 import { generateContributions } from "./generateContribution.ts";
-import { type GenerateContributionsPayload, type GenerateContributionsDeps, type DialecticRecipeStep, type StageWithRecipeSteps } from "./dialectic.interface.ts";
+import {
+    type GenerateContributionsPayload,
+    type GenerateContributionsDeps,
+    type StageWithRecipeSteps,
+    type DatabaseRecipeSteps,
+} from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
-import { isPlanJobInsert } from "../_shared/utils/type-guards/type_guards.dialectic.ts";
+import { isPlanJobInsert, isDatabaseRecipeSteps } from "../_shared/utils/type-guards/type_guards.dialectic.ts";
 import { createMockSupabaseClient, type MockQueryBuilderState } from "../_shared/supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { FileType } from "../_shared/types/file_manager.types.ts";
+import type { Tables } from "../types_db.ts";
+import { mapToStageWithRecipeSteps } from '../_shared/utils/mappers.ts';
 
-const mockStep: DialecticRecipeStep = {
-    id: 'step-id-1',
-    instance_id: 'ari-1', // CORRECTED: This now matches the stage's instance ID
-    step_key: 'key',
-    step_slug: 'slug',
-    step_name: 'name',
-    output_type: FileType.Synthesis,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    is_skipped: false,
-    config_override: {},
-    object_filter: {},
-    output_overrides: {},
-    job_type: 'EXECUTE',
-    prompt_type: 'Turn',
-    granularity_strategy: 'all_to_one',
-    inputs_required: [],
-    inputs_relevance: [],
-    outputs_required: [],
-    branch_key: null,
-    execution_order: null,
-    parallel_group: null,
-    prompt_template_id: null,
-    template_step_id: null,
-    step_description: 'A test description',
-};
+const createMockDbResponse = (stepCount: number): DatabaseRecipeSteps => {
+    const stage: Tables<'dialectic_stages'> = {
+        id: 'stage-id-1',
+        slug: 'thesis',
+        created_at: new Date().toISOString(),
+        default_system_prompt_id: 'prompt-1',
+        description: 'Test stage',
+        display_name: 'Thesis',
+        expected_output_template_ids: [],
+        recipe_template_id: 'rt-1',
+        active_recipe_instance_id: 'ari-1',
+    };
 
-const mockSingleStepStage: StageWithRecipeSteps = {
-    id: 'stage-1-single-step',
-    slug: 'thesis',
-    steps: [mockStep],
-    created_at: new Date().toISOString(),
-    default_system_prompt_id: 'prompt-1',
-    description: 'Test stage single step',
-    display_name: 'Thesis',
-    expected_output_template_ids: [],
-    recipe_template_id: 'rt-1',
-    active_recipe_instance_id: 'ari-1',
+    const instance: Tables<'dialectic_stage_recipe_instances'> = {
+        id: 'ari-1',
+        stage_id: 'stage-id-1',
+        template_id: 'rt-1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_cloned: false,
+        cloned_at: null,
+    };
+
+    const steps: Tables<'dialectic_stage_recipe_steps'>[] = Array.from({ length: stepCount }, (_, i) => ({
+        id: `step-id-${i + 1}`,
+        instance_id: 'ari-1',
+        step_key: `key-${i + 1}`,
+        step_slug: `slug-${i + 1}`,
+        step_name: `name-${i + 1}`,
+        output_type: FileType.Synthesis,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_skipped: false,
+        config_override: {},
+        object_filter: {},
+        output_overrides: {},
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        granularity_strategy: 'all_to_one',
+        inputs_required: [],
+        inputs_relevance: [],
+        outputs_required: [],
+        branch_key: null,
+        execution_order: null,
+        parallel_group: null,
+        prompt_template_id: null,
+        template_step_id: null,
+        step_description: `A test description ${i + 1}`,
+    }));
+
+    return {
+        ...stage,
+        dialectic_stage_recipe_instances: [{
+            ...instance,
+            dialectic_stage_recipe_steps: steps,
+        }],
+    };
 };
 
 
@@ -61,18 +87,8 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
     const mockJobIds = ["new-job-id-A", "new-job-id-B"];
     let insertCallCount = 0;
 
-    const mockStage: StageWithRecipeSteps = {
-        id: 'stage-1',
-        slug: 'thesis',
-        steps: [mockStep, mockStep], // 2-step recipe
-        created_at: new Date().toISOString(),
-        default_system_prompt_id: 'prompt-1',
-        description: 'Test stage',
-        display_name: 'Thesis',
-        expected_output_template_ids: [],
-        recipe_template_id: 'rt-1',
-        active_recipe_instance_id: 'ari-1',
-    };
+    const mockDbResponse = createMockDbResponse(2); // 2-step recipe
+    assertEquals(isDatabaseRecipeSteps(mockDbResponse), true, "The mock DB response should be a valid DatabaseRecipeSteps object");
 
     const mockPayload: GenerateContributionsPayload = {
         sessionId: mockSessionId,
@@ -98,7 +114,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
             },
             'dialectic_stages': {
                 select: {
-                    data: [mockStage],
+                    data: [mockDbResponse],
                     error: null
                 }
             },
@@ -180,18 +196,8 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
     const mockModelId = "model-id-happy";
     const mockJobId = "new-job-id-happy";
 
-    const mockStage: StageWithRecipeSteps = {
-        id: 'stage-1',
-        slug: 'thesis',
-        steps: [mockStep, mockStep, mockStep], // 3-step recipe
-        created_at: new Date().toISOString(),
-        default_system_prompt_id: 'prompt-1',
-        description: 'Test stage',
-        display_name: 'Thesis',
-        expected_output_template_ids: [],
-        recipe_template_id: 'rt-1',
-        active_recipe_instance_id: 'ari-1',
-    };
+    const mockDbResponse = createMockDbResponse(3); // 3-step recipe
+    assertEquals(isDatabaseRecipeSteps(mockDbResponse), true, "The mock DB response should be a valid DatabaseRecipeSteps object");
 
     const mockPayload: GenerateContributionsPayload = {
         sessionId: mockSessionId,
@@ -217,7 +223,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
             },
             'dialectic_stages': {
                 select: {
-                    data: [mockStage],
+                    data: [mockDbResponse],
                     error: null
                 }
             },
@@ -353,6 +359,9 @@ Deno.test("generateContributions - Failure Path: Fails to enqueue a job", async 
 
     const dbError = { name: 'DBError', message: "Database permission denied", details: "RLS policy violation", code: "42501" };
 
+    const mockDbResponse = createMockDbResponse(1);
+    assertEquals(isDatabaseRecipeSteps(mockDbResponse), true, "The mock DB response should be a valid DatabaseRecipeSteps object");
+
     const mockSupabase = createMockSupabaseClient(undefined, {
         genericMockResults: {
             'dialectic_sessions': {
@@ -368,7 +377,7 @@ Deno.test("generateContributions - Failure Path: Fails to enqueue a job", async 
             },
             'dialectic_stages': {
                 select: {
-                    data: [mockSingleStepStage], // Use a valid stage with one step
+                    data: [mockDbResponse], // Use a valid stage with one step
                     error: null
                 }
             },
@@ -581,6 +590,9 @@ Deno.test("generateContributions - Validation: Fails if walletId is missing (man
         // walletId intentionally omitted
     } as GenerateContributionsPayload;
 
+    const mockDbResponse = createMockDbResponse(1);
+    assertEquals(isDatabaseRecipeSteps(mockDbResponse), true, "The mock DB response should be a valid DatabaseRecipeSteps object");
+
     const mockSupabase = createMockSupabaseClient(undefined, {
         genericMockResults: {
             'dialectic_sessions': {
@@ -596,7 +608,7 @@ Deno.test("generateContributions - Validation: Fails if walletId is missing (man
             },
             'dialectic_stages': {
                 select: {
-                    data: [mockStep],
+                    data: [mockDbResponse],
                     error: null
                 }
             },
@@ -632,10 +644,6 @@ Deno.test("generateContributions - Validation: Fails if walletId is missing (man
     assertEquals(insertSpy?.callCount ?? 0, 0);
 });
 
-// =============================================================
-// auth token contract for initial plan jobs
-// =============================================================
-
 Deno.test("generateContributions - Fails when authToken is missing and does not insert jobs", async () => {
     const mockSessionId = "sess-missing-auth";
     const mockProjectId = "proj-missing-auth";
@@ -649,6 +657,9 @@ Deno.test("generateContributions - Fails when authToken is missing and does not 
         projectId: mockProjectId,
         walletId: 'wallet-1',
     };
+
+    const mockDbResponse = createMockDbResponse(1);
+    assertEquals(isDatabaseRecipeSteps(mockDbResponse), true, "The mock DB response should be a valid DatabaseRecipeSteps object");
 
     const mockSupabase = createMockSupabaseClient(undefined, {
         genericMockResults: {
@@ -665,7 +676,7 @@ Deno.test("generateContributions - Fails when authToken is missing and does not 
             },
             'dialectic_stages': {
                 select: {
-                    data: [mockStep],
+                    data: [mockDbResponse],
                     error: null
                 }
             },
@@ -718,6 +729,9 @@ Deno.test("generateContributions - plan jobs carry payload.user_jwt equal to pro
         continueUntilComplete: true,
     };
 
+    const mockDbResponse = createMockDbResponse(2); // 2-step recipe
+    assertEquals(isDatabaseRecipeSteps(mockDbResponse), true, "The mock DB response should be a valid DatabaseRecipeSteps object");
+
     const mockSupabase = createMockSupabaseClient(undefined, {
         genericMockResults: {
             'dialectic_sessions': {
@@ -733,7 +747,7 @@ Deno.test("generateContributions - plan jobs carry payload.user_jwt equal to pro
             },
             'dialectic_stages': {
                 select: {
-                    data: [mockSingleStepStage],
+                    data: [mockDbResponse],
                     error: null
                 }
             },
@@ -806,6 +820,9 @@ Deno.test("should create jobs with a top-level 'is_test_job' flag when specified
         is_test_job: true,
     };
 
+    const mockDbResponse = createMockDbResponse(1);
+    assertEquals(isDatabaseRecipeSteps(mockDbResponse), true, "The mock DB response should be a valid DatabaseRecipeSteps object");
+
     const mockSupabase = createMockSupabaseClient(undefined, {
         genericMockResults: {
             'dialectic_sessions': {
@@ -821,7 +838,7 @@ Deno.test("should create jobs with a top-level 'is_test_job' flag when specified
             },
             'dialectic_stages': {
                 select: {
-                    data: [mockSingleStepStage], // Simple 1-step recipe
+                    data: [mockDbResponse], // Simple 1-step recipe
                     error: null
                 }
             },
@@ -881,4 +898,129 @@ Deno.test("should create jobs with a top-level 'is_test_job' flag when specified
     } finally {
         mockSupabase.clearAllStubs?.();
     }
+});
+
+Deno.test("generateContributions successfully enqueues jobs given a valid and correctly structured stage recipe", async () => {
+    // 1. Mocks are defined using the exact types from the database schema.
+    const mockSessionId = "test-session-stateless";
+    const mockProjectId = "test-project-stateless";
+    const mockUserId = "test-user-stateless";
+    const mockModelIds = ["model-stateless"];
+    const mockJobId = "new-job-id-stateless";
+
+    const mockPayload: GenerateContributionsPayload = {
+        sessionId: mockSessionId,
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        projectId: mockProjectId,
+        continueUntilComplete: true,
+        walletId: 'test-wallet-id',
+    };
+
+    // The mock data represents the correct, nested data structure as defined by the database schema.
+    // The query to fetch this data joins from 'dialectic_stages' through 'dialectic_stage_recipe_instances' to 'dialectic_stage_recipe_steps'.
+
+    const dialecticStage: Tables<'dialectic_stages'> = {
+        id: 'stage-id-correct',
+        slug: 'thesis',
+        created_at: new Date().toISOString(),
+        default_system_prompt_id: 'prompt-1',
+        description: 'A correctly structured stage object',
+        display_name: 'Thesis',
+        expected_output_template_ids: [],
+        recipe_template_id: 'rt-1',
+        active_recipe_instance_id: 'ari-1',
+    };
+
+    const dialecticStageRecipeInstance: Tables<'dialectic_stage_recipe_instances'> = {
+        id: 'ari-1',
+        stage_id: 'stage-id-correct',
+        template_id: 'rt-1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_cloned: false,
+        cloned_at: null,
+    };
+
+    const dialecticStageRecipeStep: Tables<'dialectic_stage_recipe_steps'> = {
+        id: 'step-id-1',
+        instance_id: 'ari-1',
+        step_key: 'key',
+        step_slug: 'slug',
+        step_name: 'name',
+        output_type: FileType.Synthesis,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_skipped: false,
+        config_override: {},
+        object_filter: {},
+        output_overrides: {},
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        granularity_strategy: 'all_to_one',
+        inputs_required: [],
+        inputs_relevance: [],
+        outputs_required: [],
+        branch_key: null,
+        execution_order: null,
+        parallel_group: null,
+        prompt_template_id: null,
+        template_step_id: null,
+        step_description: 'A step for planning',
+    };
+
+    const mockCorrectDbStageResponse: DatabaseRecipeSteps = {
+        ...dialecticStage,
+        dialectic_stage_recipe_instances: [{
+            ...dialecticStageRecipeInstance,
+            dialectic_stage_recipe_steps: [dialecticStageRecipeStep],
+        }],
+    }
+    assertEquals(isDatabaseRecipeSteps(mockCorrectDbStageResponse), true, "The mock DB response should be a valid DatabaseRecipeSteps object");
+
+
+    // 2. The mock Supabase client provides a perfect, correct environment for the function.
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_sessions': {
+                select: { data: [{ project_id: mockProjectId, selected_model_ids: mockModelIds, iteration_count: 1, current_stage: { slug: 'thesis' }}], error: null }
+            },
+            'dialectic_stages': {
+                select: {
+                    data: [mockCorrectDbStageResponse],
+                    error: null
+                }
+            },
+            'dialectic_generation_jobs': {
+                insert: { data: [{ id: mockJobId }], error: null }
+            },
+        },
+    });
+
+    const mockDeps: GenerateContributionsDeps = {
+      callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
+      downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(100), error: null }),
+      getExtensionFromMimeType: () => 'txt',
+      logger: logger,
+      randomUUID: () => '123',
+      fileManager: {
+        uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
+        assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
+       },
+      deleteFromStorage: () => Promise.resolve({ error: null }),
+    };
+
+    // 3. Execute the function.
+    const result = await generateContributions(
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockPayload,
+        { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
+        mockDeps,
+        'jwt.token.here'
+    );
+
+    // 4. Assertions verify the function achieves the successful outcome.
+    assertEquals(result.success, true, "The function should succeed in creating jobs.");
+    assertExists(result.data, "Successful result should contain a data object.");
+    assertEquals(result.data?.job_ids[0], mockJobId, "The correct job ID should be returned.");
 });

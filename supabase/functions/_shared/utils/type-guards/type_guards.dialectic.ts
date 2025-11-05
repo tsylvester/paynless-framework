@@ -1,5 +1,5 @@
 // supabase/functions/_shared/utils/type_guards.ts
-import type { Tables, Json, Database } from "../../../types_db.ts";
+import type { Tables, Json } from "../../../types_db.ts";
 import { Constants } from "../../../types_db.ts";
 import { 
     DialecticContributionRow, 
@@ -18,6 +18,16 @@ import {
     BranchKey,
     StageWithRecipeSteps,
     DialecticRecipeStep,
+    DatabaseRecipeSteps,
+    PromptType,
+    PromptTypes,
+    GranularityStrategy,
+    GranularityStrategies,
+    InputRule,
+    RelevanceRule,
+    OutputRule,
+    DialecticStageRecipeStep,
+    JobType,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { isPlainObject, isRecord } from './type_guards.common.ts';
 import { FileType } from '../../types/file_manager.types.ts';
@@ -232,41 +242,69 @@ function isDialecticRecipeStep(step: unknown): step is DialecticRecipeStep {
     return hasTemplateKeys || hasInstanceKeys;
 }
 
+function isDialecticStage(record: unknown): record is Tables<'dialectic_stages'> {
+    if (!isRecord(record)) return false;
+    const requiredKeys: (keyof Tables<'dialectic_stages'>)[] = [
+        'id', 'slug', 'display_name', 'created_at', 'expected_output_template_ids'
+    ];
+    return requiredKeys.every(key => key in record);
+}
+
+function isDialecticStageRecipeInstance(record: unknown): record is Tables<'dialectic_stage_recipe_instances'> {
+    if (!isRecord(record)) return false;
+    const requiredKeys: (keyof Tables<'dialectic_stage_recipe_instances'>)[] = [
+        'id', 'stage_id', 'template_id', 'created_at', 'updated_at'
+    ];
+    return requiredKeys.every(key => key in record);
+}
+
+function isDbDialecticStageRecipeStep(record: unknown): record is Tables<'dialectic_stage_recipe_steps'> {
+    if (!isRecord(record)) return false;
+    const requiredKeys: (keyof Tables<'dialectic_stage_recipe_steps'>)[] = [
+        'id', 'instance_id', 'job_type', 'step_key', 'created_at', 'updated_at', 'granularity_strategy', 'output_type'
+    ];
+    return requiredKeys.every(key => key in record);
+}
+
 /**
  * A true type guard that checks if a stage has a valid, non-empty array of recipe steps
  * that are logically linked to the stage itself.
  * @param data The unknown object to check.
  * @returns boolean indicating if the object is a valid StageWithRecipeSteps.
  */
-export function hasStepsRecipe(data: unknown): data is StageWithRecipeSteps {
+export function isStageWithRecipeSteps(data: unknown): data is StageWithRecipeSteps {
     if (!isRecord(data)) return false;
 
-    // 1. Check for base stage properties
-    const stageKeys: (keyof Tables<'dialectic_stages'>)[] = ['id', 'slug', 'display_name', 'created_at'];
-    if (!stageKeys.every(key => key in data && typeof data[key] === 'string')) {
+    if (!('dialectic_stage' in data) || !isDialecticStage(data.dialectic_stage)) {
         return false;
     }
 
-    // 2. Check for the 'steps' property
-    if (!('steps' in data) || !Array.isArray(data.steps) || data.steps.length === 0) {
+    if (!('dialectic_stage_recipe_instances' in data) || !isDialecticStageRecipeInstance(data.dialectic_stage_recipe_instances)) {
         return false;
     }
 
-    // 3. Check each step and enforce the logical link
-    for (const step of data.steps) {
-        if (!isDialecticRecipeStep(step)) return false;
+    if (!('dialectic_stage_recipe_steps' in data) || !Array.isArray(data.dialectic_stage_recipe_steps) || !data.dialectic_stage_recipe_steps.every(isDialecticStageRecipeStep)) {
+        return false;
+    }
 
-        // Enforce logical link by safely checking properties
-        const isTemplateStep = 'template_id' in step && typeof step.template_id === 'string';
-        const isInstanceStep = 'instance_id' in step && typeof step.instance_id === 'string';
-        const stageRecipeTemplateId = 'recipe_template_id' in data && typeof data.recipe_template_id === 'string' ? data.recipe_template_id : null;
-        const stageActiveRecipeInstanceId = 'active_recipe_instance_id' in data && typeof data.active_recipe_instance_id === 'string' ? data.active_recipe_instance_id : null;
+    return true;
+}
 
-        if (isTemplateStep && step.template_id !== stageRecipeTemplateId) {
-            return false; // Mismatched template ID
+export function isDatabaseRecipeSteps(data: unknown): data is DatabaseRecipeSteps {
+    if (!isRecord(data) || !isDialecticStage(data)) {
+        return false;
+    }
+
+    if (!('dialectic_stage_recipe_instances' in data) || !Array.isArray(data.dialectic_stage_recipe_instances)) {
+        return false;
+    }
+
+    for (const instance of data.dialectic_stage_recipe_instances) {
+        if (!isDialecticStageRecipeInstance(instance)) {
+            return false;
         }
-        if (isInstanceStep && step.instance_id !== stageActiveRecipeInstanceId) {
-            return false; // Mismatched instance ID
+        if (!('dialectic_stage_recipe_steps' in instance) || !Array.isArray(instance.dialectic_stage_recipe_steps) || !instance.dialectic_stage_recipe_steps.every(isDbDialecticStageRecipeStep)) {
+            return false;
         }
     }
 
@@ -278,8 +316,65 @@ export function hasStepsRecipe(data: unknown): data is StageWithRecipeSteps {
  * @param value The string to check.
  * @returns boolean indicating if the string is a valid job type enum.
  */
-function isJobTypeEnum(value: string): value is Database["public"]["Enums"]["dialectic_job_type_enum"] {
+export function isJobTypeEnum(value: string): value is JobType {
     return Constants.public.Enums.dialectic_job_type_enum.some(enumValue => enumValue === value);
+}
+
+export function isPromptType(value: unknown): value is PromptType {
+    if (typeof value !== 'string') return false;
+    return PromptTypes.some(v => v === value);
+}
+
+export function isGranularityStrategy(value: unknown): value is GranularityStrategy {
+    if (typeof value !== 'string') return false;
+    return GranularityStrategies.some(v => v === value);
+}
+
+export function isInputRule(value: unknown): value is InputRule {
+    if (!isRecord(value)) return false;
+
+    const documentKey = value.document_key;
+    if (typeof documentKey !== 'string') return false;
+
+    return (
+        'type' in value && typeof value.type === 'string' &&
+        (documentKey === '*' || isFileType(documentKey)) &&
+        'purpose' in value && typeof value.purpose === 'string' &&
+        'required' in value && typeof value.required === 'boolean'
+    );
+}
+
+export function isInputRuleArray(value: unknown): value is InputRule[] {
+    return Array.isArray(value) && value.every(isInputRule);
+}
+
+export function isRelevanceRule(value: unknown): value is RelevanceRule {
+    if (!isRecord(value)) return false;
+
+    const documentKey = value.document_key;
+    if (typeof documentKey !== 'string') return false;
+
+    return (
+        'type' in value && typeof value.type === 'string' &&
+        isFileType(documentKey) &&
+        'relevance' in value && typeof value.relevance === 'number'
+    );
+}
+
+export function isRelevanceRuleArray(value: unknown): value is RelevanceRule[] {
+    return Array.isArray(value) && value.every(isRelevanceRule);
+}
+
+export function isOutputRule(value: unknown): value is OutputRule {
+    if (!isRecord(value)) return false;
+    return (
+        'type' in value && typeof value.type === 'string' &&
+        'document_key' in value && typeof value.document_key === 'string'
+    );
+}
+
+export function isOutputRuleArray(value: unknown): value is OutputRule[] {
+    return Array.isArray(value) && value.every(isOutputRule);
 }
 
 /**
@@ -428,6 +523,29 @@ export function isDialecticContribution(record: unknown): record is DialecticCon
 
   console.log('[isDialecticContribution] PASSED: All checks passed.');
   return true;
+}
+
+export function isDialecticStageRecipeStep(record: unknown): record is DialecticStageRecipeStep {
+    if (!isRecord(record)) return false;
+
+    const requiredStringKeys: (keyof DialecticStageRecipeStep)[] = ['id', 'created_at', 'updated_at', 'instance_id', 'step_key', 'step_slug', 'step_name'];
+    for (const key of requiredStringKeys) {
+        if (typeof record[key] !== 'string') return false;
+    }
+
+    if (typeof record.execution_order !== 'number') return false;
+    if (typeof record.is_skipped !== 'boolean') return false;
+
+    if (typeof record.job_type !== 'string' || !isJobTypeEnum(record.job_type)) return false;
+    if (!isPromptType(record.prompt_type)) return false;
+    if (!isGranularityStrategy(record.granularity_strategy)) return false;
+    if (typeof record.output_type !== 'string' || !isFileType(record.output_type)) return false;
+
+    if (!isInputRuleArray(record.inputs_required)) return false;
+    if (!isRelevanceRuleArray(record.inputs_relevance)) return false;
+    if (!isOutputRuleArray(record.outputs_required)) return false;
+
+    return true;
 }
 
 export function isDialecticExecuteJobPayload(payload: unknown): payload is DialecticExecuteJobPayload {
