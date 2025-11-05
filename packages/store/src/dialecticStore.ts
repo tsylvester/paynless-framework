@@ -44,6 +44,7 @@ import {
   StageDocumentVersionInfo,
   StageDocumentContentState,
   type SubmitStageDocumentFeedbackPayload,
+  type ListStageDocumentsPayload,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { useWalletStore } from './walletStore';
@@ -69,6 +70,7 @@ import {
 	fetchStageDocumentFeedbackLogic,
 	submitStageDocumentFeedbackLogic,
 	selectStageDocumentFeedbackLogic,
+	hydrateStageProgressLogic,
 } from './dialecticStore.documents';
 
 type FocusedDocumentKeyParams = Pick<SetFocusedStageDocumentPayload, 'sessionId' | 'stageSlug' | 'modelId'>;
@@ -1321,11 +1323,10 @@ export const useDialecticStore = create<DialecticStore>()(
 		await fetchStageDocumentFeedbackLogic(set, key);
 	},
 
-	submitStageDocumentFeedback: async (payload: SubmitStageDocumentFeedbackPayload) => {
-		return submitStageDocumentFeedbackLogic(set, {
-			...payload,
-			feedbackMarkdown: payload.feedback,
-		});
+	submitStageDocumentFeedback: async (
+		payload: SubmitStageDocumentFeedbackPayload,
+	): Promise<ApiResponse<{ success: boolean }>> => {
+		return await submitStageDocumentFeedbackLogic(set, payload);
 	},
 
 	resetSubmitStageDocumentFeedbackError: () => {
@@ -1816,13 +1817,101 @@ export const useDialecticStore = create<DialecticStore>()(
 		payload: SubmitStageResponsesPayload,
 	): Promise<ApiResponse<SubmitStageResponsesResponse>> => {
 		set({ isSubmittingStageResponses: true, submitStageResponsesError: null });
-		logger.info("[DialecticStore] Submitting stage responses...", { payload });
+		logger.info("[DialecticStore] Orchestrating final submission for stage...", {
+			payload,
+		});
+
+		const { stageDocumentContent } = get();
+		const dirtyDocuments = Object.entries(stageDocumentContent).filter(
+			([_, content]) => content.isDirty,
+		);
+
+		if (dirtyDocuments.length > 0) {
+			logger.info(
+				`[DialecticStore] Found ${dirtyDocuments.length} unsaved document drafts. Saving before advancing stage.`,
+			);
+			const submissionPromises = dirtyDocuments.map(
+				([key, content]) => {
+					const [sessionId, stageSlug, iterationStr, modelId, documentKey] =
+						key.split(":");
+					const iterationNumber = parseInt(iterationStr, 10);
+					return get().submitStageDocumentFeedback({
+						sessionId,
+						stageSlug,
+						iterationNumber,
+						modelId,
+						documentKey,
+						feedback: content.currentDraftMarkdown,
+					});
+				},
+			);
+
+			try {
+				const submissionResults = await Promise.all(submissionPromises);
+				const firstErrorResult = submissionResults.find((res) => res.error);
+
+				if (firstErrorResult?.error) {
+					const submissionError: ApiError = {
+						message:
+							firstErrorResult.error.message ||
+							"An unknown error occurred while submitting document feedback",
+						code: firstErrorResult.error.code || "SUBMISSION_FAILED",
+					};
+					logger.error(
+						"[DialecticStore] Failed to submit one or more document drafts:",
+						{ error: submissionError },
+					);
+					set({
+						isSubmittingStageResponses: false,
+						submitStageResponsesError: submissionError,
+					});
+					return {
+						data: undefined,
+						error: submissionError,
+						status: firstErrorResult.status || 0,
+					};
+				}
+
+				logger.info(
+					"[DialecticStore] All unsaved drafts have been successfully submitted.",
+				);
+			} catch (error: unknown) {
+				const submissionError: ApiError = {
+					message:
+						error instanceof Error
+							? error.message
+							: "An unknown network error occurred while submitting document feedback",
+					code: "SUBMISSION_FAILED",
+				};
+				logger.error(
+					"[DialecticStore] A network or promise rejection error occurred while submitting document drafts:",
+					{ error: submissionError },
+				);
+				set({
+					isSubmittingStageResponses: false,
+					submitStageResponsesError: submissionError,
+				});
+				return { data: undefined, error: submissionError, status: 0 };
+			}
+		} else {
+			logger.info(
+				"[DialecticStore] No unsaved drafts found. Proceeding directly to advance stage.",
+			);
+		}
 
 		try {
-			const response = await api.dialectic().submitStageResponses(payload);
+			const advancePayload: SubmitStageResponsesPayload = {
+				projectId: payload.projectId,
+				sessionId: payload.sessionId,
+				stageSlug: payload.stageSlug,
+				currentIterationNumber: payload.currentIterationNumber,
+			};
+			const response = await api
+				.dialectic()
+				.submitStageResponses(advancePayload);
 
 			if (response.error) {
-				logger.error("[DialecticStore] Error submitting stage responses:", {
+				logger.error("[DialecticStore] Error advancing stage:", {
 					error: response.error,
 				});
 				set({
@@ -1830,17 +1919,16 @@ export const useDialecticStore = create<DialecticStore>()(
 					submitStageResponsesError: response.error,
 				});
 			} else {
-				logger.info(
-					"[DialecticStore] Successfully submitted stage responses.",
-					{ response: response.data },
-				);
+				logger.info("[DialecticStore] Successfully advanced stage.", {
+					response: response.data,
+				});
 				set({
 					isSubmittingStageResponses: false,
 					submitStageResponsesError: null,
 				});
 
 				logger.info(
-					`[DialecticStore] Stage responses submitted for project ${payload.projectId}. Refetching project details.`,
+					`[DialecticStore] Stage advanced for project ${payload.projectId}. Refetching project details.`,
 				);
 				await get().fetchDialecticProjectDetails(payload.projectId);
 			}
@@ -1850,10 +1938,10 @@ export const useDialecticStore = create<DialecticStore>()(
 				message:
 					error instanceof Error
 						? error.message
-						: "A network error occurred while submitting responses",
+						: "A network error occurred while advancing the stage",
 				code: "NETWORK_ERROR",
 			};
-			logger.error("[DialecticStore] Network error submitting responses:", {
+			logger.error("[DialecticStore] Network error advancing stage:", {
 				error: networkError,
 			});
 			set({
@@ -2245,6 +2333,10 @@ export const useDialecticStore = create<DialecticStore>()(
         }
       }
     });
+  },
+
+  hydrateStageProgress: async (payload: ListStageDocumentsPayload) => {
+    await hydrateStageProgressLogic(set, payload);
   },
     };
   }),

@@ -505,7 +505,9 @@ export interface DialecticActions {
   clearStageDocumentDraft: (key: StageDocumentCompositeKey) => void;
   fetchStageDocumentContent: (key: StageDocumentCompositeKey, resourceId: string) => Promise<void>;
 
-  fetchStageDocumentFeedback: (payload: GetStageDocumentFeedbackPayload) => Promise<void>;
+  hydrateStageProgress: (payload: ListStageDocumentsPayload) => Promise<void>;
+
+  fetchStageDocumentFeedback: (key: StageDocumentCompositeKey) => Promise<void>;
   submitStageDocumentFeedback: (payload: SubmitStageDocumentFeedbackPayload) => Promise<ApiResponse<{ success: boolean }>>;
   resetSubmitStageDocumentFeedbackError: () => void;
 
@@ -814,6 +816,7 @@ export interface DialecticApiClient {
   getProjectResourceContent(payload: GetProjectResourceContentPayload): Promise<ApiResponse<GetProjectResourceContentResponse>>;
   getStageDocumentFeedback(payload: GetStageDocumentFeedbackPayload): Promise<ApiResponse<StageDocumentFeedback[]>>;
   submitStageDocumentFeedback(payload: SubmitStageDocumentFeedbackPayload): Promise<ApiResponse<{ success: boolean }>>;
+  listStageDocuments(payload: ListStageDocumentsPayload): Promise<ApiResponse<ListStageDocumentsResponse>>;
 }
 
 
@@ -846,6 +849,14 @@ export interface GenerateContributionsResponse {
   job_ids?: string[];
   successfulContributions: DialecticContribution[];
   failedAttempts: FailedAttemptError[];
+}
+
+export type ListStageDocumentsResponse = StageDocumentChecklistEntry[];
+
+export interface ListStageDocumentsPayload {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
 }
 
 export interface ContributionContentSignedUrlResponse {
@@ -944,6 +955,10 @@ export type DialecticServiceActionPayload = {
   action: 'submitStageDocumentFeedback';
   payload: SubmitStageDocumentFeedbackPayload;
 }
+| {
+  action: 'listStageDocuments';
+  payload: ListStageDocumentsPayload;
+}
 
 export interface DialecticServiceResponsePayload {
   // ... existing code ...
@@ -979,17 +994,9 @@ export interface SubmitStageResponsesPayload {
   projectId: string;
   stageSlug: DialecticStage['slug'];
   currentIterationNumber: number;
-  responses: SubmitStageResponseItem[];
-  userStageFeedback?: { 
-    content: string; 
-    feedbackType: string; 
-    resourceDescription?: Record<string, unknown>; 
-  };
 }
   
 export interface SubmitStageResponsesResponse { 
-    userFeedbackStoragePath: string;
-    nextStageSeedPromptStoragePath: string;
     updatedSession: DialecticSession;
     message?: string;
 }

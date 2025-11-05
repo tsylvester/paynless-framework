@@ -32,6 +32,8 @@ import type {
     GetStageDocumentFeedbackPayload,
     StageDocumentFeedback,
     SubmitStageDocumentFeedbackPayload,
+    ListStageDocumentsPayload,
+    ListStageDocumentsResponse,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -485,10 +487,10 @@ export class DialecticApiClient {
         }
     }
 
-    async submitStageResponses(payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>> {
-        logger.info('Submitting stage responses and preparing next seed', { sessionId: payload.sessionId, projectId: payload.projectId });
+    async submitStageResponses(payload: Omit<SubmitStageResponsesPayload, 'responses'>): Promise<ApiResponse<SubmitStageResponsesResponse>> {
+        logger.info('Advancing stage and preparing next seed', { sessionId: payload.sessionId, projectId: payload.projectId });
         try {
-            const response = await this.apiClient.post<SubmitStageResponsesResponse, { action: string; payload: SubmitStageResponsesPayload }>(
+            const response = await this.apiClient.post<SubmitStageResponsesResponse, { action: string; payload: Omit<SubmitStageResponsesPayload, 'responses'> }>(
                 'dialectic-service',
                 {
                     action: 'submitStageResponses',
@@ -619,6 +621,34 @@ export class DialecticApiClient {
           status: 0,
         };
       }
+    }
+
+    async listStageDocuments(payload: ListStageDocumentsPayload): Promise<ApiResponse<ListStageDocumentsResponse>> {
+        logger.info('Listing stage documents', { ...payload });
+        try {
+            const response = await this.apiClient.post<ListStageDocumentsResponse, DialecticServiceActionPayload>(
+                'dialectic-service',
+                {
+                    action: 'listStageDocuments',
+                    payload,
+                }
+            );
+    
+            if (response.error) {
+                logger.error('Error listing stage documents:', { error: response.error, ...payload });
+            } else {
+                logger.info('Successfully listed stage documents', { ...payload });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in listStageDocuments:', { errorMessage: message, errorObject: error, ...payload });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
     }
 
     /**

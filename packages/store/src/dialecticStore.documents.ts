@@ -12,6 +12,8 @@ import type {
 	DocumentChunkCompletedPayload,
 	RenderCompletedPayload,
 	JobFailedPayload,
+	ListStageDocumentsPayload,
+	SubmitStageDocumentFeedbackPayload,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
@@ -741,7 +743,7 @@ export const fetchStageDocumentFeedbackLogic = async (
 
 export const submitStageDocumentFeedbackLogic = async (
 	set: (fn: (draft: Draft<DialecticStateValues>) => void) => void,
-	payload: StageDocumentCompositeKey & { feedbackMarkdown: string },
+	payload: SubmitStageDocumentFeedbackPayload,
 ): Promise<ApiResponse<{ success: boolean }>> => {
 	set(state => {
 		state.isSubmittingStageDocumentFeedback = true;
@@ -749,11 +751,15 @@ export const submitStageDocumentFeedbackLogic = async (
 	});
 
 	try {
-		const response = await api.dialectic().submitStageDocumentFeedback({
-			...payload,
-			feedback: payload.feedbackMarkdown,
-		});
+		const response = await api.dialectic().submitStageDocumentFeedback(payload);
 		if (response.error) {
+			logger.error(
+				'[submitStageDocumentFeedback] Failed to submit document feedback',
+				{
+					error: response.error,
+					key: getStageDocumentKey(payload),
+				},
+			);
 			set(state => {
 				state.isSubmittingStageDocumentFeedback = false;
 				state.submitStageDocumentFeedbackError = response.error;
@@ -762,6 +768,15 @@ export const submitStageDocumentFeedbackLogic = async (
 			set(state => {
 				state.isSubmittingStageDocumentFeedback = false;
 				state.submitStageDocumentFeedbackError = null;
+				// On success, flush the draft
+				const key: StageDocumentCompositeKey = {
+					sessionId: payload.sessionId,
+					stageSlug: payload.stageSlug,
+					iterationNumber: payload.iterationNumber,
+					modelId: payload.modelId,
+					documentKey: payload.documentKey,
+				};
+				flushStageDocumentDraftLogic(state, key);
 			});
 		}
 		return response;
@@ -785,3 +800,68 @@ export const selectStageDocumentFeedbackLogic = (
 	const serializedKey = getStageDocumentKey(key);
 	return get().stageDocumentFeedback[serializedKey];
 };
+
+export const hydrateStageProgressLogic = async (
+	set: (fn: (draft: Draft<DialecticStateValues>) => void) => void,
+	payload: ListStageDocumentsPayload,
+) => {
+	const { sessionId, stageSlug, iterationNumber } = payload;
+	const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+	try {
+		const response = await api.dialectic().listStageDocuments(payload);
+
+		if (response.error || !response.data) {
+			const error = response.error || {
+				message: 'No documents found for this stage.',
+				code: 'NOT_FOUND',
+			};
+			logger.error('[hydrateStageProgress] Failed to list stage documents', {
+				error,
+				...payload,
+			});
+			// Optionally set an error state here if the store is designed to track it
+			return;
+		}
+
+		set((state) => {
+			if (!state.stageRunProgress[progressKey]) {
+				state.stageRunProgress[progressKey] = {
+					documents: {},
+					stepStatuses: {},
+				};
+			}
+
+			const progress = state.stageRunProgress[progressKey];
+			response.data?.forEach((doc) => {
+				const { documentKey, modelId, status, jobId, latestRenderedResourceId } =
+					doc;
+				
+				const versionInfo = createVersionInfo(latestRenderedResourceId);
+
+				if (!jobId) {
+					logger.warn('[hydrateStageProgress] Job ID missing for document', { documentKey, modelId, status, latestRenderedResourceId });
+					return;
+				}
+				progress.documents[documentKey] = {
+					status,
+					job_id: jobId,
+					latestRenderedResourceId,
+					modelId,
+					versionHash: versionInfo.versionHash,
+					lastRenderedResourceId: latestRenderedResourceId,
+					lastRenderAtIso: versionInfo.updatedAt,
+				};
+			});
+		});
+	} catch (err: unknown) {
+		const error: ApiError = {
+			message:
+				err instanceof Error ? err.message : 'An unknown network error occurred.',
+			code: 'NETWORK_ERROR',
+		};
+		logger.error('[hydrateStageProgress] Network error', { error, ...payload });
+		// Optionally set an error state here
+	}
+};
+

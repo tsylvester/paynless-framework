@@ -10,6 +10,9 @@ import type {
 	ApiError,
 	RenderCompletedPayload,
 	DialecticStageRecipe,
+	ListStageDocumentsResponse,
+	StageDocumentChecklistEntry,
+	SubmitStageDocumentFeedbackPayload,
 } from '@paynless/types';
 import {
 	handleRenderCompletedLogic,
@@ -20,16 +23,94 @@ import {
 	resetApiMock,
 	getMockDialecticClient,
 } from '@paynless/api/mocks';
+import { logger } from '@paynless/utils';
 
+const mockDialecticClient = getMockDialecticClient();
 vi.mock('@paynless/api', async () => {
-	const { api, resetApiMock, getMockDialecticClient } = await import(
-		'@paynless/api/mocks'
+	const actualApi = await vi.importActual<typeof import('@paynless/api')>(
+		'@paynless/api',
 	);
 	return {
-		api,
-		resetApiMock,
-		getMockDialecticClient,
+		...actualApi,
+		api: {
+			...actualApi.api,
+			dialectic: () => mockDialecticClient,
+		},
 	};
+});
+
+describe('Stage Progress Hydration', () => {
+	const sessionId = 'session-1';
+	const stageSlug = 'synthesis';
+	const iterationNumber = 1;
+	const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		resetApiMock();
+		useDialecticStore.setState(initialDialecticStateValues);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('hydrateStageProgress should call the API and populate the stageRunProgress map', async () => {
+		const mockApiResponse: ListStageDocumentsResponse = [
+			{
+				documentKey: 'doc_a',
+				modelId: 'model-a',
+				status: 'completed',
+				jobId: 'job-a',
+				latestRenderedResourceId: 'res-a',
+			},
+			{
+				documentKey: 'doc_b',
+				modelId: 'model-b',
+				status: 'generating',
+				jobId: 'job-b',
+				latestRenderedResourceId: 'res-b',
+			},
+		];
+
+		const listStageDocumentsSpy = vi
+			.spyOn(mockDialecticClient, 'listStageDocuments')
+			.mockResolvedValue({
+				data: mockApiResponse,
+				status: 200,
+			});
+
+		expect(useDialecticStore.getState().stageRunProgress[progressKey]).toBeUndefined();
+
+		await useDialecticStore.getState().hydrateStageProgress({
+			sessionId,
+			stageSlug,
+			iterationNumber,
+		});
+
+		expect(listStageDocumentsSpy).toHaveBeenCalledWith({
+			sessionId,
+			stageSlug,
+			iterationNumber,
+		});
+
+		const state = useDialecticStore.getState();
+		const progress = state.stageRunProgress[progressKey];
+		expect(progress).toBeDefined();
+		expect(Object.keys(progress.documents).length).toBe(2);
+		expect(progress.documents['doc_a']).toEqual(
+			expect.objectContaining({
+				status: 'completed',
+				modelId: 'model-a',
+			}),
+		);
+		expect(progress.documents['doc_b']).toEqual(
+			expect.objectContaining({
+				status: 'generating',
+				modelId: 'model-b',
+			}),
+		);
+	});
 });
 
 describe('Dialectic store document refresh behaviour', () => {
@@ -55,7 +136,7 @@ describe('Dialectic store document refresh behaviour', () => {
 
 	it('records render metadata and requests document content on first completion', async () => {
 		const getProjectResourceContentSpy = vi
-			.spyOn(getMockDialecticClient(), 'getProjectResourceContent')
+			.spyOn(mockDialecticClient, 'getProjectResourceContent')
 			.mockResolvedValue({
 				data: {
 					content: 'Test content',
@@ -132,7 +213,7 @@ describe('Dialectic store document refresh behaviour', () => {
 		const newResourceId = 'resource/new';
 
 		const getProjectResourceContentSpy = vi.spyOn(
-			getMockDialecticClient(),
+			mockDialecticClient,
 			'getProjectResourceContent',
 		);
 
@@ -230,7 +311,7 @@ describe('Dialectic store document refresh behaviour', () => {
 		});
 
 		const getProjectResourceContentSpy = vi.spyOn(
-			getMockDialecticClient(),
+			mockDialecticClient,
 			'getProjectResourceContent',
 		);
 
@@ -357,7 +438,7 @@ describe('Surface document content & feedback accessors', () => {
 			fileName: 'feedback.md',
 			createdAt: new Date().toISOString(),
 		}];
-		getMockDialecticClient().getStageDocumentFeedback.mockResolvedValue({
+		mockDialecticClient.getStageDocumentFeedback.mockResolvedValue({
 			data: mockFeedback,
 			error: undefined,
 			status: 200,
@@ -379,7 +460,7 @@ describe('Surface document content & feedback accessors', () => {
 			message: 'Not found',
 			code: '404',
 		};
-		getMockDialecticClient().getStageDocumentFeedback.mockResolvedValue({
+		mockDialecticClient.getStageDocumentFeedback.mockResolvedValue({
 			data: undefined,
 			error: apiError,
 			status: 404,
@@ -395,7 +476,7 @@ describe('Surface document content & feedback accessors', () => {
 
 	it('submits feedback for a document and updates state', async () => {
 		const feedbackContent = 'This is new feedback to submit.';
-		getMockDialecticClient().submitStageDocumentFeedback.mockResolvedValue({
+		mockDialecticClient.submitStageDocumentFeedback.mockResolvedValue({
 			data: { success: true },
 			error: undefined,
 			status: 200,
@@ -532,3 +613,68 @@ describe('Dialectic store document clear focused stage document', () => {
 	});
 });
 
+describe('submitStageDocumentFeedback', () => {
+	it('should call the API with the correct payload and optimistically update the store', async () => {
+		const feedbackPayload: SubmitStageDocumentFeedbackPayload = {
+			sessionId: 'test-session-id',
+			stageSlug: 'synthesis',
+			iterationNumber: 1,
+			modelId: 'model-a',
+			documentKey: 'document_1',
+			feedback: 'This is a test feedback.',
+		};
+
+		const spy = vi
+			.spyOn(mockDialecticClient, 'submitStageDocumentFeedback')
+			.mockResolvedValue({
+				data: { success: true },
+				error: undefined,
+				status: 200,
+			});
+
+		await useDialecticStore.getState().submitStageDocumentFeedback(
+			feedbackPayload,
+		);
+
+		expect(spy).toHaveBeenCalledWith(feedbackPayload);
+	});
+
+	it('should log an error if the API call fails', async () => {
+		const feedbackPayload: SubmitStageDocumentFeedbackPayload = {
+			sessionId: 'test-session-id',
+			stageSlug: 'synthesis',
+			iterationNumber: 1,
+			modelId: 'model-a',
+			documentKey: 'document_1',
+			feedback: 'This is a test feedback.',
+		};
+
+		const apiError: ApiError = {
+			message: 'Failed to submit feedback',
+			details: 'Server error',
+			code: '500',
+		};
+
+		vi.spyOn(
+			mockDialecticClient,
+			'submitStageDocumentFeedback',
+		).mockResolvedValue({
+			data: undefined,
+			error: apiError,
+			status: 500,
+		});
+		const loggerSpy = vi.spyOn(logger, 'error');
+
+		await useDialecticStore.getState().submitStageDocumentFeedback(
+			feedbackPayload,
+		);
+
+		expect(loggerSpy).toHaveBeenCalledWith(
+			'[submitStageDocumentFeedback] Failed to submit document feedback',
+			{
+				error: apiError,
+				key: 'test-session-id:synthesis:1:model-a:document_1',
+			},
+		);
+	});
+});

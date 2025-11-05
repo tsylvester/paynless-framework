@@ -449,7 +449,7 @@ graph LR
 
 ## `[DEPLOY]` Epic: Transition to Document-Centric Generation
 
-### `[ ]` 1. Phase: Foundational Observability
+### `[✅]` 1. Phase: Foundational Observability
 *   **Objective:** Establish the foundational backend schema and routing needed for the new architecture, and build the UI hooks to observe these new events, setting the stage for the document-centric view.
 *   `[✅]` 1.a. `[BE]` **Backend Milestone:** Notification Contracts and Emissions.
     *   `[✅]` 1.a.i. `[BE]` Update `notification.service.types.ts` to define/extend types for required events.
@@ -723,7 +723,7 @@ graph LR
             *   iv. The main "Submit Responses & Advance Stage" button and its logic for aggregating all feedback from all documents across all models will remain in this parent component.
             *   v. Ensure all tests from the previous step now pass.
 
-#### `[ ]` 2. Phase: Implement Backend Services and Data Layer
+### `[✅]` 2. Phase: Implement Backend Services and Data Layer
 *   **Objective:** To implement the foundational backend services and client-side data layer required for the document-centric UI. This phase creates the server-side handlers for fetching stage progress, managing feedback, and advancing stages, and then wires them into the API client and state management store.
 *   `[✅]` 2.a. `[BE]` **Backend Milestone:** Implement `listStageDocuments` Handler for Initial UI Hydration.
     *   `[✅]` 2.a.i. `[TEST-UNIT]` In `supabase/functions/dialectic-service/`, create `listStageDocuments.test.ts`. Write failing unit tests that mock the database client and assert a new `listStageDocuments` function correctly queries `dialectic_generation_jobs` and `dialectic_project_resources` for a given session, stage, and iteration to return a list of documents narrowed by the user, project, session, and stage.
@@ -737,21 +737,22 @@ graph LR
     *   `[✅]` 2.c.i. `[TEST-UNIT]` In `supabase/functions/dialectic-service/submitStageResponses.test.ts`, rewrite the tests. Remove all assertions related to saving feedback. The tests should now only validate that the function determines the correct next stage, checks that all conditions are satisfied for the next stage to begin (the inputs_required documents exist, any artifacts required to generate the first prompt exist), and updates the `dialectic_sessions` table with the new `current_stage_id` and status.
     *   `[✅]` 2.c.ii. `[BE]` In `supabase/functions/dialectic-service/submitStageResponses.ts`, refactor the function. Delete all logic blocks related to processing `payload.responses` and saving feedback files. The function's sole responsibility is now to transition the session state.
 *   `[ ]` 2.d. `[API]` **API Client Milestone:** Update `DialecticApiClient` for New Backend Services.
-    *   `[ ]` 2.d.i. `[TEST-UNIT]` In `packages/api/src/dialectic.api.test.ts`, add failing tests for the new methods: `listStageDocuments`, `submitStageDocumentFeedback`, and the refactored `submitStageResponses`. The tests must assert that each method calls the `apiClient.post` with the correct `action` and payload.
-    *   `[ ]` 2.d.ii. `[API]` In `packages/api/src/dialectic.api.ts`, implement the new and refactored methods in the `DialecticApiClient` to make the tests pass.
+    *   `[✅]` 2.d.i. `[TEST-UNIT]` In `packages/api/src/dialectic.api.*.test.ts` files, add failing tests for the new methods: `listStageDocuments`, `submitStageDocumentFeedback`, and the refactored `submitStageResponses`. The tests must assert that each method calls the `apiClient.post` with the correct `action` and payload.
+    *   `[✅]` 2.d.ii. `[API]` In `packages/api/src/dialectic.api.ts`, implement the new and refactored methods in the `DialecticApiClient` to make the tests pass.
 *   `[ ]` 2.e. `[STORE]` **Store Milestone:** Implement State Orchestration Logic.
-    *   `[ ]` 2.e.i. `[TEST-UNIT]` In `packages/store/src/dialecticStore.documents.test.ts` (or a new test file), write a failing test for a new `hydrateStageProgress` action that proves it calls the `api.dialectic().listStageDocuments()` method and populates the `stageRunProgress` map.
-    *   `[ ]` 2.e.ii. `[STORE]` In `packages/store/src/dialecticStore.documents.ts`, implement the `hydrateStageProgress` action.
-    *   `[ ]` 2.e.iii. `[TEST-UNIT]` In `packages/store/src/dialecticStore.documents.test.ts`, write failing tests for the `submitStageDocumentFeedback` action, asserting it calls the corresponding API method.
-    *   `[ ]` 2.e.iv. `[STORE]` In `packages/store/src/dialecticStore.documents.ts`, implement the `submitStageDocumentFeedback` store action.
-    *   `[ ]` 2.e.v. `[TEST-UNIT]` In `packages/store/src/dialecticStore.recipes.test.ts` (or similar), rewrite the tests for the main `submitStageResponses` action. The tests must now prove that the action first identifies any unsaved feedback drafts in the store's state, calls `submitStageDocumentFeedback` for each, and only then calls the final, refactored `api.dialectic().submitStageResponses()` method.
-    *   `[ ]` 2.e.vi. `[STORE]` In `packages/store/src/dialecticStore.ts`, refactor the `submitStageResponses` action to implement the "Save All on Advance" orchestration logic.
+    *   `[✅]` 2.e.i. `[TEST-UNIT]` In `packages/store/src/dialecticStore.documents.test.ts`, write a failing test for a new `hydrateStageProgress` action that proves it calls the `api.dialectic().listStageDocuments()` method and populates the `stageRunProgress` map.
+    *   `[✅]` 2.e.ii. `[TEST-UNIT]` In `packages/store/src/dialecticStore.documents.test.ts`, write failing tests for the `submitStageDocumentFeedback` action, asserting it calls the corresponding API method.
+    *   `[✅]` 2.e.iii. `[STORE]` In `packages/store/src/dialecticStore.documents.ts`, implement the `hydrateStageProgress` action.
+    *   `[✅]` 2.e.iv. `[STORE]` In `packages/store/src/dialecticStore.documents.ts`, implement the `submitStageDocumentFeedback` store action.
+    *   `[✅]` 2.e.v. `[TEST-UNIT]` In `packages/store/src/dialecticStore.contribution.test.ts` (or similar), rewrite the tests for the main `submitStageResponses` action. The tests must now prove that the action first identifies any unsaved feedback drafts in the store's state, calls `submitStageDocumentFeedback` for each, and only then calls the final, refactored `api.dialectic().submitStageResponses()` method.
+    *   `[✅]` 2.e.vi. `[STORE]` In `packages/store/src/dialecticStore.ts`, refactor the `submitStageResponses` action to implement the "Save All on Advance" orchestration logic.
 *   `[ ]` 2.f. `[COMMIT]` feat(backend): Implement document-centric backend services and data layer.
 
-#### `[ ]` 6. Phase: Final Polish and Cleanup
-*   `[ ]` 6.a. `[UI]` **UI Milestone:** Filter User-Facing Prompt Selector.
-    *   `[ ]` 6.a.i. Update the API endpoint that fetches prompts for the user chat window to filter on `is_user_selectable = true`.
-    *   `[ ]` 6.a.ii. Verify that the `PromptSelector` component in the chat UI now only displays prompts intended for direct user interaction.
-*   `[ ]` 6.b. `[COMMIT]` fix(ui): Isolate system-level prompts from user-facing chat prompt selector.
+#### `[✅]` 6. Phase: Final Polish and Cleanup
+*   `[✅]` 6.a. `[UNIT-TEST]` Filter User-Facing Prompt Selector.
+    *   `[✅]` 6.a.i. Write a test for `system-prompts/index.ts` to prove the function filters on `is_user_selectable = true`.
+*   `[✅]` 6.b. `[BE]` Filter User-Facing Prompt Selector.
+    *   `[✅]` 6.b.i. Update `system-prompts/index.ts` to filter on `is_user_selectable = true`.
+*   `[✅]` 6.b. `[COMMIT]` fix(be): Isolate system-level prompts from user-facing chat prompt selector.
 
 ---
