@@ -6,7 +6,7 @@ import {
 	useWalletStore,
 } from "@paynless/store";
 import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import {
 	Card,
 	CardContent,
@@ -24,15 +24,13 @@ import {
 	TrendingUp,
 	Users,
 	Wallet,
-	Clock,
-	Activity,
 	ChevronRight,
 	Sparkles,
 	Target,
 	Zap,
 } from "lucide-react";
-import { ChatHistoryList } from "../components/ai/ChatHistoryList";
-import { DialecticProjectCard } from "../components/dialectic/DialecticProjectCard";
+//import { ChatHistoryList } from "../components/ai/ChatHistoryList";
+//import { DialecticProjectCard } from "../components/dialectic/DialecticProjectCard";
 import {
 	selectDialecticProjects,
 	selectIsLoadingProjects,
@@ -58,7 +56,9 @@ export function DashboardPage() {
 	const isLoadingProjects = useDialecticStore(selectIsLoadingProjects);
 
 	// Wallet/Token data
-	const activeChatWalletInfo = useWalletStore(selectActiveChatWalletInfo);
+	const { activeChatWalletInfo } = useWalletStore((state) => ({
+		activeChatWalletInfo: selectActiveChatWalletInfo(state, "personal"),
+	}));
 	const tokenBalance = activeChatWalletInfo?.balance || 0;
 	const maxTokens = 100000; // Default free tier limit
 
@@ -74,7 +74,11 @@ export function DashboardPage() {
 		return (
 			<div className="min-h-screen bg-background">
 				<div className="flex justify-center items-center py-12">
-					<div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
+					<div
+						className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"
+						role="progressbar"
+					>
+					</div>
 				</div>
 			</div>
 		);
@@ -86,7 +90,7 @@ export function DashboardPage() {
 
 	const recentChats = chats.slice(0, 5);
 	const recentProjects = dialecticProjects.slice(0, 4);
-	const tokenUsagePercentage = (tokenBalance / maxTokens) * 100;
+	const tokenUsagePercentage = (Number(tokenBalance) / Number(maxTokens)) * 100;
 
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
@@ -94,7 +98,7 @@ export function DashboardPage() {
 				{/* Header */}
 				<div className="mb-8">
 					<h1 className="text-3xl font-bold text-foreground mb-2">
-						Welcome back, {profile?.name || user.email?.split("@")[0] || "User"}
+						Welcome back, {profile?.first_name || user.email?.split("@")[0] || "User"}
 					</h1>
 					<p className="text-muted-foreground">
 						Here's what's happening with your projects and conversations
@@ -113,7 +117,7 @@ export function DashboardPage() {
 						</CardHeader>
 						<CardContent>
 							<div className="text-2xl font-bold">
-								{tokenBalance.toLocaleString()}
+								{Number(tokenBalance).toLocaleString()}
 							</div>
 							<div className="mt-2">
 								<Progress value={tokenUsagePercentage} className="h-2" />
@@ -170,6 +174,33 @@ export function DashboardPage() {
 						</CardContent>
 					</Card>
 				</div>
+				{/* Getting Started Section */}
+				<Card className="my-8 border-border/50 bg-gradient-to-r from-primary/5 to-primary/10 backdrop-blur-sm">
+					<CardHeader className="text-center">
+						<CardTitle className="flex items-center justify-center gap-2 text-xl">
+							<Target className="h-6 w-6 text-primary" />
+							From Idea to Plan in Minutes
+						</CardTitle>
+						<CardDescription className="text-base">
+							Our Project Workflow orchestrates multiple AI models to build
+							robust, battle-tested implementation plans for your software
+							projects.
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="text-center">
+						<div className="flex flex-col sm:flex-row gap-4 justify-center">
+							<Button asChild size="lg">
+								<Link to="/dialectic/new">
+									<Plus className="h-4 w-4 mr-2" />
+									Start New Project
+								</Link>
+							</Button>
+							<Button variant="outline" size="lg" asChild>
+								<Link to="/docs">Learn More</Link>
+							</Button>
+						</div>
+					</CardContent>
+				</Card>
 
 				{/* Quick Actions */}
 				<Card className="mb-8 border-border/50 bg-card/50 backdrop-blur-sm">
@@ -340,34 +371,6 @@ export function DashboardPage() {
 						</CardContent>
 					</Card>
 				</div>
-
-				{/* Getting Started Section */}
-				<Card className="mt-8 border-border/50 bg-gradient-to-r from-primary/5 to-primary/10 backdrop-blur-sm">
-					<CardHeader className="text-center">
-						<CardTitle className="flex items-center justify-center gap-2 text-xl">
-							<Target className="h-6 w-6 text-primary" />
-							From Idea to Plan in Seconds
-						</CardTitle>
-						<CardDescription className="text-base">
-							Our Dialectic Engine orchestrates multiple AI models to build
-							robust, battle-tested implementation plans for your software
-							projects.
-						</CardDescription>
-					</CardHeader>
-					<CardContent className="text-center">
-						<div className="flex flex-col sm:flex-row gap-4 justify-center">
-							<Button asChild size="lg">
-								<Link to="/dialectic/new">
-									<Plus className="h-4 w-4 mr-2" />
-									Start New Project
-								</Link>
-							</Button>
-							<Button variant="outline" size="lg" asChild>
-								<Link to="/docs">Learn More</Link>
-							</Button>
-						</div>
-					</CardContent>
-				</Card>
 			</div>
 		</div>
 	);
