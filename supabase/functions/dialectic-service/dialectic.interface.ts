@@ -339,6 +339,18 @@ export interface GetStageRecipePayload {
 }
 type GetStageRecipeAction = { action: 'getStageRecipe', payload: GetStageRecipePayload };
 
+export interface ListStageDocumentsPayload {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+  userId: string;
+  projectId: string;
+}
+type ListStageDocumentsAction = {
+  action: 'listStageDocuments';
+  payload: ListStageDocumentsPayload;
+};
+
 // The main union type for all possible JSON requests to the service.
 export type DialecticServiceRequest =
   | ListProjectsAction
@@ -359,9 +371,42 @@ export type DialecticServiceRequest =
   | FetchProcessTemplateAction
   | UpdateSessionModelsAction
   | GetSessionDetailsAction
-  | GetStageRecipeAction; // Add the new action to the union
+  | GetStageRecipeAction
+  | ListStageDocumentsAction
+  | SubmitStageDocumentFeedbackAction;
 
 // --- END: Discriminated Union ---
+
+export interface SubmitStageDocumentFeedbackPayload {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+  documentKey: string;
+  modelId: string;
+  feedbackContent: string;
+  userId: string;
+  projectId: string;
+  feedbackId?: string;
+  feedbackType: string;
+}
+type SubmitStageDocumentFeedbackAction = {
+  action: 'submitStageDocumentFeedback';
+  payload: SubmitStageDocumentFeedbackPayload;
+};
+
+// --- START: DTOs for listStageDocuments ---
+
+export interface StageDocumentDescriptorDto {
+  documentKey: string;
+  modelId: string;
+  lastRenderedResourceId: string | null;
+}
+
+export interface ListStageDocumentsResponse {
+  documents: StageDocumentDescriptorDto[];
+}
+
+// --- END: DTOs for listStageDocuments ---
 
 export interface CreateProjectPayload {
   projectName: string;
@@ -811,7 +856,6 @@ export interface SubmitStageResponsesPayload {
 export interface SubmitStageResponsesResponse {
   message: string;
   updatedSession: DialecticSession;
-  feedbackRecords: DialecticFeedback[];
 }
 
 // Add new types for handling artifact assembly rules

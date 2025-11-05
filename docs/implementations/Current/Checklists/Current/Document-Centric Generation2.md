@@ -666,7 +666,7 @@ graph LR
     *   `[✅]` 1.o.g. `[STORE]` In `packages/store/src/dialecticStore.documents.ts`, implement the logic for the `fetchStageDocumentFeedback` and `submitStageDocumentFeedback` actions. These implementations will call the corresponding methods on the `api.dialectic()` client that were added in step `1.o.c`.
     *   `[✅]` 1.o.h. `[TEST-UNIT][STORE]` Run the tests for `packages/store` and confirm that the tests in `dialecticStore.documents.test.ts` for feedback handling now pass.
 
-*   `[ ]` 1.p. `[REFACTOR]` Refactor StageRunChecklist and Consumers for Per-Model Display
+*   `[✅]` 1.p. `[REFACTOR]` Refactor StageRunChecklist and Consumers for Per-Model Display
     *   **Objective:** To refactor the singleton `StageRunChecklist` into a reusable component that can display a filtered view of documents for a single model. This will enable the `SessionContributionsDisplayCard` to render a separate checklist and document view for each active model, allowing for flexible side-by-side comparison and interaction.
     *   `[✅]` 1.p.a. `[TYPES]` Update the `StageRunChecklistProps` type to accept a `modelId`.
         *   **File:** `packages/types/src/dialectic.types.ts`
@@ -723,28 +723,19 @@ graph LR
             *   iv. The main "Submit Responses & Advance Stage" button and its logic for aggregating all feedback from all documents across all models will remain in this parent component.
             *   v. Ensure all tests from the previous step now pass.
 
-*   `[ ]` 1.q. `[TEST-UNIT]` Session details shell
-    *   `[ ]` 1.q.a. Extend `apps/web/src/components/dialectic/DialecticSessionDetails.test.tsx` to ensure the checklist renders when a stage is active, the focused document selection persists across stage switches, and hydration triggers appropriately.
-    *   `[ ]` 1.q.b. `[UI]` Update `DialecticSessionDetails.tsx` to render the checklist container, pass identifiers required by the hydration hook, and preserve the user's focused document while navigating between models.
-*   `[ ]` 1.r. `[COMMIT]` feat(ui/store): interactive stage checklist + document-scoped feedback pipeline.
-*   `[ ]` 1.o. `[TEST-UNIT]` Session details shell
-    *   `[ ]` 1.o.a. Extend `apps/web/src/components/dialectic/DialecticSessionDetails.test.tsx` to ensure the checklist renders when a stage is active and hydration triggers on stage switches.
-    *   `[ ]` 1.o.b. `[UI]` Update `DialecticSessionDetails.tsx` to render the checklist container and pass identifiers required by the hydration hook.
-*   `[ ]` 1.x. `[COMMIT]` feat(ui/store): realtime stage checklist + SSOT gating.
-
 #### `[ ]` 2. Phase: Implement Backend Services and Data Layer
 *   **Objective:** To implement the foundational backend services and client-side data layer required for the document-centric UI. This phase creates the server-side handlers for fetching stage progress, managing feedback, and advancing stages, and then wires them into the API client and state management store.
-*   `[ ]` 2.a. `[BE]` **Backend Milestone:** Implement `listStageDocuments` Handler for Initial UI Hydration.
-    *   `[ ]` 2.a.i. `[TEST-UNIT]` In `supabase/functions/dialectic-service/`, create `listStageDocuments.test.ts`. Write failing unit tests that mock the database client and assert a new `listStageDocuments` function correctly queries `dialectic_generation_jobs` and `dialectic_project_resources` for a given session, stage, and iteration to return a complete list of document statuses.
-    *   `[ ]` 2.a.ii. `[BE]` Create `supabase/functions/dialectic-service/listStageDocuments.ts`. Implement the `listStageDocuments` function to satisfy the tests, ensuring it correctly joins across tables to construct the required payload.
+*   `[✅]` 2.a. `[BE]` **Backend Milestone:** Implement `listStageDocuments` Handler for Initial UI Hydration.
+    *   `[✅]` 2.a.i. `[TEST-UNIT]` In `supabase/functions/dialectic-service/`, create `listStageDocuments.test.ts`. Write failing unit tests that mock the database client and assert a new `listStageDocuments` function correctly queries `dialectic_generation_jobs` and `dialectic_project_resources` for a given session, stage, and iteration to return a list of documents narrowed by the user, project, session, and stage.
+    *   `[✅]` 2.a.ii. `[BE]` Create `supabase/functions/dialectic-service/listStageDocuments.ts`. Implement the `listStageDocuments` function to satisfy the tests, ensuring it correctly joins across tables to construct the required payload.
 *   `[ ]` 2.b. `[BE]` **Backend Milestone:** Implement `submitStageDocumentFeedback` Handler for Atomic Saves.
-    *   `[ ]` 2.b.i. `[TEST-UNIT]` In `supabase/functions/dialectic-service/`, create `submitStageDocumentFeedback.test.ts`. Write failing unit tests that assert a new `submitStageDocumentFeedback` function correctly calls the `fileManager` to upload feedback content and then creates or updates a record in the `dialectic_feedback` table.
-    *   `[ ]` 2.b.ii. `[BE]` Create `supabase/functions/dialectic-service/submitStageDocumentFeedback.ts`. Implement the `submitStageDocumentFeedback` function to make the tests pass.
-    *   `[ ]` 2.b.iii. `[BE]` In `supabase/functions/dialectic-service/index.test.ts`, add new tests to the main router that invokes the `listStageDocuments` handler when the `action` is `listStageDocuments`, and for the `submitStageDocumentFeedback` action.
-    *   `[ ]` 2.b.iv. `[BE]` In `supabase/functions/dialectic-service/index.test.ts`, add new actions to the main router that invokes the `listStageDocuments` handler when the `action` is `listStageDocuments`, and for the `submitStageDocumentFeedback` action.
-*   `[ ]` 2.c. `[BE]` **Backend Milestone:** Refactor `submitStageResponses` Handler to Finalize Stage.
-    *   `[ ]` 2.c.i. `[TEST-UNIT]` In `supabase/functions/dialectic-service/submitStageResponses.test.ts`, rewrite the tests. Remove all assertions related to saving feedback. The tests should now only validate that the function determines the correct next stage, checks that all conditions are satisfied for the next stage to begin (the inputs_required documents exist, any artifacts required to generate the first prompt exist), and updates the `dialectic_sessions` table with the new `current_stage_id` and status.
-    *   `[ ]` 2.c.ii. `[BE]` In `supabase/functions/dialectic-service/submitStageResponses.ts`, refactor the function. Delete all logic blocks related to processing `payload.responses` and saving feedback files. The function's sole responsibility is now to transition the session state.
+    *   `[✅]` 2.b.i. `[TEST-UNIT]` In `supabase/functions/dialectic-service/`, create `submitStageDocumentFeedback.test.ts`. Write failing unit tests that assert a new `submitStageDocumentFeedback` function correctly calls the `fileManager` to upload feedback content and then creates or updates a record in the `dialectic_feedback` table.
+    *   `[✅]` 2.b.ii. `[BE]` Create `supabase/functions/dialectic-service/submitStageDocumentFeedback.ts`. Implement the `submitStageDocumentFeedback` function to make the tests pass.
+    *   `[✅]` 2.b.iii. `[TEST-UNIT]` In `supabase/functions/dialectic-service/index.test.ts`, add new tests to the main router that invokes the `listStageDocuments` handler when the `action` is `listStageDocuments`, and for the `submitStageDocumentFeedback` action.
+    *   `[✅ ]` 2.b.iv. `[BE]` In `supabase/functions/dialectic-service/index.ts`, add new actions to the main router that invokes the `listStageDocuments` handler when the `action` is `listStageDocuments`, and for the `submitStageDocumentFeedback` action.
+*   `[✅]` 2.c. `[BE]` **Backend Milestone:** Refactor `submitStageResponses` Handler to Finalize Stage.
+    *   `[✅]` 2.c.i. `[TEST-UNIT]` In `supabase/functions/dialectic-service/submitStageResponses.test.ts`, rewrite the tests. Remove all assertions related to saving feedback. The tests should now only validate that the function determines the correct next stage, checks that all conditions are satisfied for the next stage to begin (the inputs_required documents exist, any artifacts required to generate the first prompt exist), and updates the `dialectic_sessions` table with the new `current_stage_id` and status.
+    *   `[✅]` 2.c.ii. `[BE]` In `supabase/functions/dialectic-service/submitStageResponses.ts`, refactor the function. Delete all logic blocks related to processing `payload.responses` and saving feedback files. The function's sole responsibility is now to transition the session state.
 *   `[ ]` 2.d. `[API]` **API Client Milestone:** Update `DialecticApiClient` for New Backend Services.
     *   `[ ]` 2.d.i. `[TEST-UNIT]` In `packages/api/src/dialectic.api.test.ts`, add failing tests for the new methods: `listStageDocuments`, `submitStageDocumentFeedback`, and the refactored `submitStageResponses`. The tests must assert that each method calls the `apiClient.post` with the correct `action` and payload.
     *   `[ ]` 2.d.ii. `[API]` In `packages/api/src/dialectic.api.ts`, implement the new and refactored methods in the `DialecticApiClient` to make the tests pass.
