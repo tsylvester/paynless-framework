@@ -138,7 +138,7 @@ const StageCard: React.FC<StageCardProps> = ({ stage }) => {
 			key={stage.id}
 			data-testid={`stage-tab-${stage.slug}`}
 			className={cn(
-				"group w-full text-left py-4 px-4 rounded-xl transition-all duration-200 text-sm relative overflow-hidden",
+				"group w-full text-left py-4 px-4 rounded-xl transition-all duration-200 text-sm relative overflow-hidden border",
 				isActiveStage
 					? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-600/25 font-medium"
 					: "text-muted-foreground hover:text-foreground hover:bg-muted/50 hover:shadow-md",
@@ -153,27 +153,31 @@ const StageCard: React.FC<StageCardProps> = ({ stage }) => {
 			{isActiveStage && (
 				<div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 to-blue-700/10 animate-pulse" />
 			)}
-			
+
 			<div className="flex items-center justify-between relative z-10">
 				<div className="flex items-center gap-3">
-					<div className={cn(
-						"w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors duration-200",
-						isActiveStage 
-							? "bg-white/20 text-white" 
-							: "bg-muted text-muted-foreground group-hover:bg-muted-foreground/20"
-					)}>
+					<div
+						className={cn(
+							"w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors duration-200",
+							isActiveStage
+								? "bg-white/20 text-white"
+								: "bg-muted text-muted-foreground group-hover:bg-muted-foreground/20",
+						)}
+					>
 						{stageIndex + 1}
 					</div>
 					<span className="font-medium">{getDisplayName(stage)}</span>
 				</div>
-				
+
 				{contributionsForStageExist && (
-					<div className={cn(
-						"w-5 h-5 rounded-full flex items-center justify-center text-xs transition-colors duration-200",
-						isActiveStage 
-							? "bg-white/20 text-white" 
-							: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
-					)}>
+					<div
+						className={cn(
+							"w-5 h-5 rounded-full flex items-center justify-center text-xs transition-colors duration-200",
+							isActiveStage
+								? "bg-white/20 text-white"
+								: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400",
+						)}
+					>
 						✓
 					</div>
 				)}
