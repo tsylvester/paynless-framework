@@ -82,31 +82,45 @@ const StageCard: React.FC<StageCardProps> = ({ stage }) => {
       setActiveStage(stage.slug);
     }
   };
+  const stageIndex = stages.findIndex((s) => s.id === stage.id);
 
-  return (
-    <Card
-      key={stage.id}
-      data-testid={`stage-tab-${stage.slug}`}
-      className={cn(
-        "flex flex-col cursor-pointer transition-all duration-150 ease-in-out hover:shadow-md justify-center p-2",
-        isActiveStage ? "border-2 border-primary shadow-lg" : "border bg-card hover:bg-muted/50",
-      )}
-      onClick={handleCardClick}
-      role="tab"
-      aria-selected={isActiveStage}
-      aria-controls={`stage-content-${stage.display_name}`}
-      tabIndex={isActiveStage ? 0 : -1}
-    >
-      <div className="flex items-baseline justify-center gap-x-1.5">
-        <CardTitle className="text-base">
-          {stage.display_name}
-        </CardTitle>
-      </div>
-      {stage.description && (
-        <p className="text-xs text-muted-foreground text-center">{stage.description}</p>
-      )}
-    </Card>
-  );
+	return (
+		<button
+			key={stage.id}
+			data-testid={`stage-tab-${stage.slug}`}
+			className={cn(
+				"group w-full text-left py-4 px-4 rounded-xl transition-all duration-200 text-sm relative overflow-hidden",
+				isActiveStage
+					? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-600/25 font-medium"
+					: "text-muted-foreground hover:text-foreground hover:bg-muted/50 hover:shadow-md",
+			)}
+			onClick={handleCardClick}
+			role="tab"
+			aria-selected={isActiveStage}
+			aria-controls={`stage-content-${getDisplayName(stage)}`}
+			tabIndex={isActiveStage ? 0 : -1}
+		>
+			{/* Active stage indicator */}
+			{isActiveStage && (
+				<div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 to-blue-700/10 animate-pulse" />
+			)}
+			
+			<div className="flex items-center justify-between relative z-10">
+				<div className="flex items-center gap-3">
+					<div className={cn(
+						"w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors duration-200",
+						isActiveStage 
+							? "bg-white/20 text-white" 
+							: "bg-muted text-muted-foreground group-hover:bg-muted-foreground/20"
+					)}>
+						{stageIndex + 1}
+					</div>
+					<span className="font-medium">{getDisplayName(stage)}</span>
+				</div>
+				
+			</div>
+		</button>
+	);
 };
 
 export const StageTabCard: React.FC = () => {

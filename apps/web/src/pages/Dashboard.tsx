@@ -184,7 +184,10 @@ export function DashboardPage() {
 					</CardHeader>
 					<CardContent>
 						<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-							<Button asChild className="h-auto flex-col p-6 gap-2 hover:scale-105 transition-all duration-200 hover:shadow-lg">
+							<Button
+								asChild
+								className="h-auto flex-col p-6 gap-2 hover:scale-105 transition-all duration-200 hover:shadow-lg"
+							>
 								<Link to="/chat">
 									<MessageSquare className="h-6 w-6 transition-transform duration-200 group-hover:scale-110" />
 									<span className="font-medium">Start Chat</span>
