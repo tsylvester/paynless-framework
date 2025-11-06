@@ -1,5 +1,4 @@
 import {
-    assertEquals,
     assert,
     assertThrows,
 } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
@@ -36,8 +35,12 @@ import {
     isRelevanceRule,
     isRelevanceRuleArray,
     isOutputRule,
-    isOutputRuleArray,
     isDialecticStageRecipeStep,
+    isSystemMaterials,
+    isHeaderContextArtifact,
+    isContextForDocument,
+    isRenderedDocumentArtifact,
+    isAssembledJsonArtifact,
 } from './type_guards.dialectic.ts';
 import { 
     BranchKey, 
@@ -59,10 +62,14 @@ import {
     RelevanceRule,
     OutputRule,
     DialecticStageRecipeStep,
+    SystemMaterials,
+    HeaderContextArtifact,
+    ContextForDocument,
+    RenderedDocumentArtifact,
+    AssembledJsonArtifact,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 import { ContinueReason, FinishReason } from '../../types.ts';
-import { isPlainObject, isRecord } from './type_guards.common.ts';
 
 Deno.test('Type Guard: hasModelResultWithContributionId', async (t) => {
     await t.step('should return true for a valid object', () => {
@@ -1378,7 +1385,17 @@ Deno.test('Type Guard: isStageWithRecipeSteps', async (t) => {
         object_filter: {},
         output_overrides: {},
         output_type: FileType.HeaderContext,
-        outputs_required: [],
+        outputs_required: {
+            system_materials: {
+                stage_rationale: "rationale",
+                executive_summary: "summary",
+                input_artifacts_summary: "inputs",
+                progress_update: "progress",
+                validation_checkpoint: ["check"],
+                quality_standards: ["standard"],
+                diversity_rubric: { prefer: "standards" },
+            },
+        },
         parallel_group: null,
         prompt_template_id: 'template-planner-a',
         prompt_type: 'Planner',
@@ -1770,7 +1787,7 @@ Deno.test('Type Guard: isHeaderContext', async (t) => {
         },
         header_context_artifact: {
             type: 'header_context',
-            document_key: 'header_context',
+            document_key: FileType.HeaderContext,
             artifact_class: 'header_context',
             file_type: 'json'
         },
@@ -1889,8 +1906,8 @@ Deno.test('Type Guard: isGranularityStrategy', async (t) => {
 Deno.test('Type Guard: isInputRule and isInputRuleArray', async (t) => {
     const validInputRule: InputRule = {
         type: 'document',
+        slug: 'thesis', // Corrected: Use a stage slug, not a document key
         document_key: FileType.business_case,
-        purpose: 'The business case document.',
         required: true,
     };
 
@@ -1898,23 +1915,79 @@ Deno.test('Type Guard: isInputRule and isInputRuleArray', async (t) => {
         assert(isInputRule(validInputRule));
     });
 
+    await t.step('isInputRule: should return true for type "seed_prompt"', () => {
+        const rule: InputRule = { ...validInputRule, type: 'seed_prompt', slug: 'thesis', document_key: FileType.SeedPrompt };
+        assert(isInputRule(rule));
+    });
+
+    await t.step('isInputRule: should return true for type "header_context"', () => {
+        const rule: InputRule = { ...validInputRule, type: 'header_context', slug: 'synthesis', document_key: FileType.HeaderContext };
+        assert(isInputRule(rule));
+    });
+
+    await t.step('isInputRule: should return true for type "feedback"', () => {
+        const rule: InputRule = { ...validInputRule, type: 'feedback', slug: 'antithesis', document_key: FileType.business_case_critique };
+        assert(isInputRule(rule));
+    });
+
+    await t.step('isInputRule: should return true for type "project_resource"', () => {
+        const rule: InputRule = { ...validInputRule, type: 'project_resource', slug: 'paralysis', document_key: FileType.InitialUserPrompt };
+        assert(isInputRule(rule));
+    });
+
+    await t.step('isInputRule: should return true when required is missing (defaults to false)', () => {
+        const ruleWithoutRequired = { 
+            type: 'document',
+            slug: 'thesis',
+            document_key: FileType.business_case,
+        };
+        assert(isInputRule(ruleWithoutRequired));
+    });
+
+    await t.step('isInputRule: should return false if type is invalid', () => {
+        const invalidRule = { ...validInputRule, type: 'invalid_type' };
+        assert(!isInputRule(invalidRule));
+    });
+
     await t.step('isInputRule: should return false if document_key is invalid', () => {
         const invalidRule = { ...validInputRule, document_key: 'invalid_key' };
         assert(!isInputRule(invalidRule));
     });
 
-    await t.step('isInputRule: should return false if purpose is not a string', () => {
-        const invalidRule = { ...validInputRule, purpose: 123 };
+    await t.step('isInputRule: should return false if slug is missing', () => {
+        const invalidRule = { ...validInputRule };
+        delete (invalidRule as Partial<InputRule>).slug;
         assert(!isInputRule(invalidRule));
     });
 
-    await t.step('isInputRule: should return false if required is not a boolean', () => {
+    await t.step('isInputRule: should return false if slug is not a string', () => {
+        const invalidRule = { ...validInputRule, slug: 123 };
+        assert(!isInputRule(invalidRule));
+    });
+
+    await t.step('isInputRule: should return false if required is present but not a boolean', () => {
         const invalidRule = { ...validInputRule, required: 'true' };
         assert(!isInputRule(invalidRule));
     });
 
+    await t.step('isInputRule: should return true for a valid InputRule with the optional multiple property', () => {
+        const ruleWithMultiple = { ...validInputRule, multiple: true };
+        assert(isInputRule(ruleWithMultiple));
+    });
+
+    await t.step('isInputRule: should return false if multiple is present but not a boolean', () => {
+        const invalidRule = { ...validInputRule, multiple: 'yes' };
+        assert(!isInputRule(invalidRule));
+    });
+
     await t.step('isInputRuleArray: should return true for a valid array of InputRule objects', () => {
-        assert(isInputRuleArray([validInputRule, { type: 'document', document_key: FileType.system_architecture_overview, purpose: 'Tech guideline', required: false }]));
+        assert(isInputRuleArray([validInputRule, { 
+            type: 'document', 
+            slug: 'synthesis', 
+            document_key: FileType.system_architecture_overview, 
+            required: false, 
+            multiple: true 
+        }]));
     });
 
     await t.step('isInputRuleArray: should return true for an empty array', () => {
@@ -1929,17 +2002,40 @@ Deno.test('Type Guard: isInputRule and isInputRuleArray', async (t) => {
 
 Deno.test('Type Guard: isRelevanceRule and isRelevanceRuleArray', async (t) => {
     const validRelevanceRule: RelevanceRule = {
-        type: 'document',
         document_key: FileType.business_case,
         relevance: 0.8,
     };
 
-    await t.step('isRelevanceRule: should return true for a valid RelevanceRule object', () => {
+    await t.step('isRelevanceRule: should return true for a valid RelevanceRule object without optional properties', () => {
         assert(isRelevanceRule(validRelevanceRule));
     });
 
+    await t.step('isRelevanceRule: should return true for a valid RelevanceRule object with a type property', () => {
+        const ruleWithType = { ...validRelevanceRule, type: 'document' };
+        assert(isRelevanceRule(ruleWithType));
+    });
+
+    await t.step('isRelevanceRule: should return true for a valid RelevanceRule object with a slug property', () => {
+        const ruleWithSlug = { ...validRelevanceRule, slug: 'thesis' };
+        assert(isRelevanceRule(ruleWithSlug));
+    });
+
+    await t.step('isRelevanceRule: should return true for a valid RelevanceRule object with all optional properties', () => {
+        const ruleWithAllOptionals = {
+            ...validRelevanceRule,
+            type: 'document',
+            slug: 'thesis',
+        };
+        assert(isRelevanceRule(ruleWithAllOptionals));
+    });
+
     await t.step('isRelevanceRule: should return false if document_key is invalid', () => {
-        const invalidRule = { ...validRelevanceRule, document_key: 'invalid' };
+        const invalidRule = { ...validRelevanceRule, document_key: 'invalid_key' };
+        assert(!isRelevanceRule(invalidRule));
+    });
+
+    await t.step('isRelevanceRule: should return false if relevance is missing', () => {
+        const invalidRule = { document_key: FileType.business_case };
         assert(!isRelevanceRule(invalidRule));
     });
 
@@ -1947,44 +2043,267 @@ Deno.test('Type Guard: isRelevanceRule and isRelevanceRuleArray', async (t) => {
         const invalidRule = { ...validRelevanceRule, relevance: 'high' };
         assert(!isRelevanceRule(invalidRule));
     });
+
+    await t.step('isRelevanceRule: should return false if type is present but not a string', () => {
+        const invalidRule = { ...validRelevanceRule, type: 123 };
+        assert(!isRelevanceRule(invalidRule));
+    });
     
+    await t.step('isRelevanceRule: should return false if slug is present but not a string', () => {
+        const invalidRule = { ...validRelevanceRule, slug: 123 };
+        assert(!isRelevanceRule(invalidRule));
+    });
+
     await t.step('isRelevanceRuleArray: should return true for a valid array', () => {
-        assert(isRelevanceRuleArray([validRelevanceRule]));
+        assert(isRelevanceRuleArray([validRelevanceRule, { document_key: FileType.system_architecture_overview, type: 'document', relevance: 0.5, slug: 'synthesis' }]));
+    });
+
+    await t.step('isRelevanceRuleArray: should return true for an empty array', () => {
+        assert(isRelevanceRuleArray([]));
     });
 
     await t.step('isRelevanceRuleArray: should return false for an array with invalid items', () => {
-        const invalidArray = [validRelevanceRule, { document_key: 'invalid' }];
+        const invalidArray = [validRelevanceRule, { document_key: 'invalid_key', relevance: 0.5 }];
         assert(!isRelevanceRuleArray(invalidArray));
+    });
+
+    await t.step('isRelevanceRule: should return true when optional type is null', () => {
+        const ruleWithNullType = { ...validRelevanceRule, type: null };
+        assert(isRelevanceRule(ruleWithNullType));
+    });
+
+    await t.step('isRelevanceRule: should return true when optional slug is null', () => {
+        const ruleWithNullSlug = { ...validRelevanceRule, slug: null };
+        assert(isRelevanceRule(ruleWithNullSlug));
     });
 });
 
-Deno.test('Type Guard: isOutputRule and isOutputRuleArray', async (t) => {
-    const validOutputRule: OutputRule = {
-        type: 'header_context',
-        document_key: 'header_context',
-    };
-
-    await t.step('isOutputRule: should return true for a valid OutputRule object', () => {
-        assert(isOutputRule(validOutputRule));
+Deno.test('Type Guard: isOutputRule', async (t) => {
+    await t.step('should return true for a valid "PLAN" output rule', () => {
+        const planOutputRule: OutputRule = {
+            system_materials: {
+                stage_rationale: "Test rationale for planning.",
+                executive_summary: "Plan summary.",
+                input_artifacts_summary: "Summary of inputs for the plan.",
+                progress_update: "Planning is starting.",
+                validation_checkpoint: ["Plan validation"],
+                quality_standards: ["High quality plan"],
+                diversity_rubric: { plan: "diverse" }
+            },
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: FileType.HeaderContext,
+                artifact_class: 'header_context',
+                file_type: 'json'
+            },
+            context_for_documents: [{
+                document_key: FileType.business_case,
+                content_to_include: { "section_a": "details" }
+            }]
+        };
+        assert(isOutputRule(planOutputRule));
     });
 
-    await t.step('isOutputRule: should return false if document_key is invalid', () => {
-        const invalidRule = { ...validOutputRule, document_key: 123 };
+    await t.step('should return true for a valid "PLAN" output rule with files_to_generate', () => {
+        const planOutputRule: OutputRule = {
+            system_materials: {
+                stage_rationale: "Test rationale for planning.",
+                executive_summary: "Plan summary.",
+                input_artifacts_summary: "Summary of inputs for the plan.",
+                progress_update: "Planning is starting.",
+                validation_checkpoint: ["Plan validation"],
+                quality_standards: ["High quality plan"],
+                diversity_rubric: { plan: "diverse" }
+            },
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: FileType.HeaderContext,
+                artifact_class: 'header_context',
+                file_type: 'json'
+            },
+            context_for_documents: [{
+                document_key: FileType.business_case,
+                content_to_include: { "section_a": "details" }
+            }],
+            files_to_generate: [{
+                from_document_key: FileType.business_case,
+                template_filename: "business_case_template.md"
+            }]
+        };
+        assert(isOutputRule(planOutputRule));
+    });
+
+    await t.step('should return true for a valid "EXECUTE" output rule', () => {
+        const executeOutputRule: OutputRule = {
+            documents: [{
+                document_key: FileType.business_case,
+                template_filename: 'business_case_template.md',
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                content_to_include: {
+                  "executive_summary": "",
+                }
+            }],
+            files_to_generate: [{ 
+                from_document_key: FileType.business_case, 
+                template_filename: "business_case_template.md" 
+            }],
+        };
+        assert(isOutputRule(executeOutputRule));
+    });
+
+    await t.step('should return true for a valid "EXECUTE" output rule with both documents and assembled_json', () => {
+        const executeOutputRule: OutputRule = {
+            documents: [{
+                document_key: FileType.trd,
+                template_filename: 'parenthesis_trd.md',
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                content_to_include: {
+                  "executive_summary": "",
+                }
+            }],
+            files_to_generate: [{ 
+                from_document_key: FileType.trd, 
+                template_filename: "parenthesis_trd.md" 
+            }],
+            assembled_json: [{
+                document_key: FileType.trd,
+                artifact_class: 'assembled_document_json',
+                fields: ["subsystems[].name", "subsystems[].objective"],
+            }],
+        };
+        assert(isOutputRule(executeOutputRule));
+    });
+
+    await t.step('should return true for an empty OutputRule object', () => {
+        assert(isOutputRule({}));
+    });
+
+    await t.step('should return false if system_materials is invalid', () => {
+        const invalidRule = { system_materials: { executive_summary: 'e' } };
         assert(!isOutputRule(invalidRule));
     });
 
-    await t.step('isOutputRule: should return false if type is not a string', () => {
-        const invalidRule = { ...validOutputRule, type: 123 };
+    await t.step('should return false if header_context_artifact is invalid', () => {
+        const invalidRule = { header_context_artifact: { type: 'wrong' } };
         assert(!isOutputRule(invalidRule));
     });
 
-    await t.step('isOutputRuleArray: should return true for a valid array', () => {
-        assert(isOutputRuleArray([validOutputRule]));
+    await t.step('should return false if documents is not an array', () => {
+        const invalidRule = { documents: {} };
+        assert(!isOutputRule(invalidRule));
     });
 
-    await t.step('isOutputRuleArray: should return false for an array with invalid items', () => {
-        const invalidArray = [validOutputRule, { document_key: 'invalid' }];
-        assert(!isOutputRuleArray(invalidArray));
+    await t.step('should return false if assembled_json is not an array', () => {
+        const invalidRule = { assembled_json: {} };
+        assert(!isOutputRule(invalidRule));
+    });
+
+    await t.step('should return true for a valid "EXECUTE" output rule with complex content_to_include', () => {
+        const executeOutputRule: OutputRule = {
+            documents: [{
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                document_key: FileType.business_case,
+                template_filename: 'business_case_template.md',
+                content_to_include: {
+                    "executive_summary": "",
+                    "market_opportunity": "",
+                    "user_problem_validation": "",
+                  }
+            }],
+            context_for_documents: [
+                {
+                    document_key: FileType.feature_spec,
+                    content_to_include: [
+                        {
+                            feature_name: "Test Feature",
+                            user_stories: [
+                                "As a user, I can do X.",
+                                "As an admin, I can do Y."
+                            ]
+                        }
+                    ]
+                },
+                {
+                    document_key: FileType.technical_approach,
+                    content_to_include: {
+                        overview: "Technical overview",
+                        components: [
+                            { name: "Component A", technology: "React" },
+                            { name: "Component B", technology: "Node.js" }
+                        ]
+                    }
+                }
+            ]
+        };
+        assert(isOutputRule(executeOutputRule));
+    });
+
+    await t.step('should return true for a valid output rule with assembled_json', () => {
+        const assembledJsonOutputRule: OutputRule = {
+            assembled_json: [{
+                artifact_class: 'assembled_document_json',
+                document_key: FileType.trd,
+                fields: ["subsystems[].name", "subsystems[].objective"],
+            }],
+        };
+        assert(isOutputRule(assembledJsonOutputRule));
+    });
+
+    await t.step('should return true for a valid "PLAN" output rule with files_to_generate and review_metadata', () => {
+        const planOutputRule: OutputRule = {
+            system_materials: {
+                stage_rationale: "Test rationale for planning.",
+                executive_summary: "Plan summary.",
+                input_artifacts_summary: "Summary of inputs for the plan.",
+                progress_update: "Planning is starting.",
+                validation_checkpoint: ["Plan validation"],
+                quality_standards: ["High quality plan"],
+                diversity_rubric: { plan: "diverse" }
+            },
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: FileType.HeaderContext,
+                artifact_class: 'header_context',
+                file_type: 'json'
+            },
+            context_for_documents: [{
+                document_key: FileType.business_case,
+                content_to_include: { "section_a": "details" }
+            }],
+            review_metadata: {
+                proposal_identifier: { lineage_key: "test", source_model_slug: "test" },
+                proposal_summary: "Test summary",
+                review_focus: ["feasibility"],
+                user_constraints: [],
+                normalization_guidance: { scoring_scale: "1-5", required_dimensions: ["feasibility"] }
+            }
+        };
+        assert(isOutputRule(planOutputRule));
+    });
+
+    await t.step('should return true for a valid "EXECUTE" output rule where a document is an AssembledJsonArtifact', () => {
+        const executeOutputRule: OutputRule = {
+            documents: [{
+                document_key: FileType.comparison_vector,
+                template_filename: 'antithesis_comparison_vector.json',
+                artifact_class: 'assembled_document_json',
+                file_type: 'json',
+                content_to_include: {
+                  "proposal": {
+                    "lineage_key": "",
+                    "source_model_slug": ""
+                  }
+                }
+            }],
+            files_to_generate: [{ 
+                from_document_key: FileType.comparison_vector, 
+                template_filename: "antithesis_comparison_vector.json" 
+            }],
+        };
+        assert(isOutputRule(executeOutputRule));
     });
 });
 
@@ -2003,9 +2322,31 @@ Deno.test('Type Guard: isDialecticStageRecipeStep', async (t) => {
         prompt_type: 'Planner',
         granularity_strategy: 'all_to_one',
         output_type: FileType.system_architecture_overview,
-        inputs_required: [{ type: 'document', document_key: FileType.business_case, purpose: 'desc', required: true }],
-        inputs_relevance: [{ type: 'document', document_key: FileType.system_architecture_overview, relevance: 0.5 }],
-        outputs_required: [{ type: 'header_context', document_key: 'header_context' }],
+        inputs_required: [{ type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true }],
+        inputs_relevance: [{ document_key: FileType.system_architecture_overview, slug: 'thesis', relevance: 0.5 }],
+        outputs_required: {
+            system_materials: {
+                stage_rationale: "rationale",
+                executive_summary: "summary",
+                input_artifacts_summary: "inputs",
+                progress_update: "progress",
+                validation_checkpoint: ["check"],
+                quality_standards: ["standard"],
+                diversity_rubric: { prefer: "standards" },
+            },
+            header_context_artifact: {
+                type: "header_context",
+                document_key: FileType.HeaderContext,
+                artifact_class: "header_context",
+                file_type: "json",
+            },
+            context_for_documents: [
+                {
+                    document_key: FileType.business_case,
+                    content_to_include: {},
+                },
+            ],
+        },
         prompt_template_id: 'prompt-1',
         is_skipped: false,
         branch_key: null,
@@ -2031,7 +2372,7 @@ Deno.test('Type Guard: isDialecticStageRecipeStep', async (t) => {
     });
 
     await t.step('should return false if inputs_required is not a valid InputRule array', () => {
-        const invalidStep = { ...validStep, inputs_required: [{ document_key: 'invalid' }] as InputRule[] };
+        const invalidStep = { ...validStep, inputs_required: [{ document_key: 'invalid' } as unknown as InputRule] };
         assert(!isDialecticStageRecipeStep(invalidStep));
     });
 
@@ -2039,5 +2380,303 @@ Deno.test('Type Guard: isDialecticStageRecipeStep', async (t) => {
         const invalidStep = { ...validStep };
         delete (invalidStep as Partial<DialecticStageRecipeStep>).step_key;
         assert(!isDialecticStageRecipeStep(invalidStep));
+    });
+
+    await t.step('should return false when inputs_required is null', () => {
+        const stepWithNullInputs = { ...validStep, inputs_required: null };
+        assert(!isDialecticStageRecipeStep(stepWithNullInputs));
+    });
+
+    await t.step('should return false when inputs_relevance is null', () => {
+        const stepWithNullRelevance = { ...validStep, inputs_relevance: null };
+        assert(!isDialecticStageRecipeStep(stepWithNullRelevance));
+    });
+
+    await t.step('should return false when outputs_required is null', () => {
+        const stepWithNullOutputs = { ...validStep, outputs_required: null };
+        assert(!isDialecticStageRecipeStep(stepWithNullOutputs));
+    });
+});
+
+Deno.test('Type Guard: isSystemMaterials', async (t) => {
+    const validSystemMaterials: SystemMaterials = {
+        stage_rationale: 'Test rationale',
+        executive_summary: 'Test summary',
+        input_artifacts_summary: 'Test input summary',
+        progress_update: 'Test progress update',
+        diversity_rubric: { key: 'value' },
+        quality_standards: ['standard1'],
+        validation_checkpoint: ['checkpoint1'],
+    };
+
+    const comprehensiveSystemMaterials: SystemMaterials = {
+        ...validSystemMaterials,
+        decision_criteria: ['criteria1', 'criteria2'],
+        milestones: ['M1', 'M2'],
+        dependency_rules: ['rule1'],
+        status_preservation_rules: { completed_status: '[✅]' },
+        generation_limits: { max_steps: 100 },
+        document_order: ['doc1', 'doc2'],
+        current_document: 'doc1',
+        iteration_metadata: { iteration_number: 1 },
+        exhaustiveness_requirement: 'high',
+        trd_outline_inputs: { subsystems: [] },
+    };
+
+    await t.step('should return true for a valid SystemMaterials object', () => {
+        assert(isSystemMaterials(validSystemMaterials));
+    });
+
+    await t.step('should return true for a comprehensive SystemMaterials object with all optional fields', () => {
+        assert(isSystemMaterials(comprehensiveSystemMaterials));
+    });
+
+    await t.step('should return true for an object with only required fields', () => {
+        const minimalSystemMaterials = {
+            stage_rationale: 'Minimal rationale',
+            executive_summary: 'Minimal summary',
+            input_artifacts_summary: 'Minimal input summary',
+            progress_update: 'Minimal progress update',
+            diversity_rubric: {},
+            quality_standards: [],
+            validation_checkpoint: [],
+        };
+        assert(isSystemMaterials(minimalSystemMaterials));
+    });
+
+    await t.step('should return false if stage_rationale is missing', () => {
+        const invalid = { ...validSystemMaterials };
+        delete (invalid as Partial<SystemMaterials>).stage_rationale;
+        assert(!isSystemMaterials(invalid));
+    });
+
+    await t.step('should return false if a required string property has the wrong type', () => {
+        const invalid = { ...validSystemMaterials, executive_summary: 123 };
+        assert(!isSystemMaterials(invalid));
+    });
+
+    await t.step('should return false if an array property has the wrong type', () => {
+        const invalid = { ...validSystemMaterials, quality_standards: 'not-an-array' };
+        assert(!isSystemMaterials(invalid));
+    });
+
+    await t.step('should return false if an object property has the wrong type', () => {
+        const invalid = { ...validSystemMaterials, diversity_rubric: 'not-an-object' };
+        assert(!isSystemMaterials(invalid));
+    });
+
+    await t.step('should return false if files_to_generate contains invalid items', () => {
+        const invalid = { ...validSystemMaterials, files_to_generate: [{ invalid_key: 'value' }] };
+        assert(!isSystemMaterials(invalid));
+    });
+});
+
+Deno.test('Type Guard: isHeaderContextArtifact', async (t) => {
+    const validArtifact: HeaderContextArtifact = {
+        type: 'header_context',
+        document_key: FileType.HeaderContext,
+        artifact_class: 'header_context',
+        file_type: 'json',
+    };
+
+    await t.step('should return true for a valid HeaderContextArtifact object', () => {
+        assert(isHeaderContextArtifact(validArtifact));
+    });
+
+    await t.step('should return false if type is not "header_context"', () => {
+        const invalid = { ...validArtifact, type: 'wrong_type' };
+        assert(!isHeaderContextArtifact(invalid));
+    });
+});
+
+Deno.test('Type Guard: isContextForDocument', async (t) => {
+    const validContext: ContextForDocument = {
+        document_key: FileType.business_case,
+        content_to_include: { some: 'data' },
+    };
+
+    await t.step('should return true for a valid ContextForDocument object', () => {
+        assert(isContextForDocument(validContext));
+    });
+
+    await t.step('should return true when content_to_include is an array', () => {
+        const contextWithArray: ContextForDocument = {
+            document_key: FileType.feature_spec,
+            content_to_include: [{ feature_name: "", user_stories: [] }],
+        };
+        assert(isContextForDocument(contextWithArray));
+    });
+
+    await t.step('should return false if document_key is missing', () => {
+        const invalid = { ...validContext };
+        delete (invalid as Partial<ContextForDocument>).document_key;
+        assert(!isContextForDocument(invalid));
+    });
+
+    await t.step('should return false if content_to_include is missing', () => {
+        const invalid = { ...validContext };
+        delete (invalid as Partial<ContextForDocument>).content_to_include;
+        assert(!isContextForDocument(invalid));
+    });
+});
+
+Deno.test('Type Guard: isRenderedDocumentArtifact', async (t) => {
+    const validArtifact: RenderedDocumentArtifact = {
+        document_key: FileType.business_case,
+        template_filename: 'template.txt',
+        artifact_class: 'rendered_document',
+        file_type: 'markdown',
+        content_to_include: { summary: "This is a summary." }
+    };
+
+    await t.step('should return true when content_to_include is missing', () => {
+        const artifactWithoutContentToInclude: Omit<RenderedDocumentArtifact, 'content_to_include'> = {
+            document_key: FileType.business_case,
+            template_filename: 'template.txt',
+            artifact_class: 'rendered_document',
+            file_type: 'markdown',
+        };
+        assert(isRenderedDocumentArtifact(artifactWithoutContentToInclude));
+    });
+
+    await t.step('should return true for a valid RenderedDocumentArtifact object', () => {
+        assert(isRenderedDocumentArtifact(validArtifact));
+    });
+
+    await t.step('should return true for a valid RenderedDocumentArtifact with optional properties', () => {
+        const artifactWithOptionals: RenderedDocumentArtifact = {
+            ...validArtifact,
+            lineage_key: 'lineage-abc',
+            source_model_slug: 'model-xyz',
+        };
+        assert(isRenderedDocumentArtifact(artifactWithOptionals));
+    });
+
+    await t.step('should return true when content_to_include is an array', () => {
+        const artifactWithArrayContent: RenderedDocumentArtifact = {
+            document_key: FileType.risk_register,
+            template_filename: 'template.txt',
+            artifact_class: 'rendered_document',
+            file_type: 'markdown',
+            content_to_include: [
+                {
+                    risk: "some risk",
+                    impact: "high",
+                    likelihood: "medium",
+                    mitigation: "do something"
+                }
+            ]
+        };
+        assert(isRenderedDocumentArtifact(artifactWithArrayContent));
+    });
+
+    await t.step('should return false if artifact_class is not "rendered_document"', () => {
+        const invalid = { ...validArtifact, artifact_class: 'wrong_type' };
+        assert(!isRenderedDocumentArtifact(invalid));
+    });
+
+    await t.step('should return false if document_key is missing', () => {
+        const invalid = { ...validArtifact };
+        delete (invalid as Partial<RenderedDocumentArtifact>).document_key;
+        assert(!isRenderedDocumentArtifact(invalid));
+    });
+
+    await t.step('should return false if template_filename is missing', () => {
+        const invalid = { ...validArtifact };
+        delete (invalid as Partial<RenderedDocumentArtifact>).template_filename;
+        assert(!isRenderedDocumentArtifact(invalid));
+    });
+
+    await t.step('should return false if document_key is of the wrong type', () => {
+        const invalid = { ...validArtifact, document_key: 123 };
+        assert(!isRenderedDocumentArtifact(invalid));
+    });
+
+    await t.step('should return false if template_filename is of the wrong type', () => {
+        const invalid = { ...validArtifact, template_filename: 123 };
+        assert(!isRenderedDocumentArtifact(invalid));
+    });
+
+    await t.step('should return false if content_to_include is not an object or array', () => {
+        const invalid = { ...validArtifact, content_to_include: "a string" };
+        assert(!isRenderedDocumentArtifact(invalid));
+    });
+});
+
+Deno.test('Type Guard: isAssembledJsonArtifact', async (t) => {
+    const validArtifactWithFields: AssembledJsonArtifact = {
+        document_key: FileType.trd,
+        artifact_class: 'assembled_document_json',
+        fields: [
+            "subsystems[].name",
+            "subsystems[].objective",
+        ],
+    };
+
+    const validArtifactAsDocument: AssembledJsonArtifact = {
+        document_key: FileType.synthesis_document_business_case,
+        artifact_class: 'assembled_json',
+        template_filename: 'synthesis_document_business_case_template.json',
+        file_type: 'json',
+        content_to_include: {
+            "executive_summary": "",
+            "synthesis_of_key_points": "",
+            "final_recommendation": ""
+        }
+    };
+
+    await t.step('should return true for a valid artifact with a fields property', () => {
+        assert(isAssembledJsonArtifact(validArtifactWithFields));
+    });
+
+    await t.step('should return true for a valid artifact structured as a document', () => {
+        assert(isAssembledJsonArtifact(validArtifactAsDocument));
+    });
+    
+    await t.step('should return true for an artifact with optional properties', () => {
+        const artifactWithOptionals: AssembledJsonArtifact = {
+            ...validArtifactWithFields,
+            lineage_key: 'lineage-abc',
+            source_model_slug: 'model-xyz',
+        };
+        assert(isAssembledJsonArtifact(artifactWithOptionals));
+    });
+
+    await t.step('should return true for artifact with class "assembled_json"', () => {
+        const artifactWithClass = { ...validArtifactWithFields, artifact_class: 'assembled_json' };
+        assert(isAssembledJsonArtifact(artifactWithClass));
+    });
+
+    await t.step('should return false if artifact_class is invalid', () => {
+        const invalid = { ...validArtifactWithFields, artifact_class: 'wrong_type' };
+        assert(!isAssembledJsonArtifact(invalid));
+    });
+
+    await t.step('should return false if document_key is missing', () => {
+        const invalid = { ...validArtifactWithFields };
+        delete (invalid as Partial<AssembledJsonArtifact>).document_key;
+        assert(!isAssembledJsonArtifact(invalid));
+    });
+
+    await t.step('should return false if fields array contains non-string values', () => {
+        const invalid = {
+            ...validArtifactWithFields,
+            fields: ['valid_field', 123],
+        };
+        assert(!isAssembledJsonArtifact(invalid));
+    });
+
+    await t.step('should return false if it has both fields and template_filename', () => {
+        const invalid = {
+            ...validArtifactWithFields,
+            template_filename: 'some_template.json',
+        };
+        assert(!isAssembledJsonArtifact(invalid));
+    });
+
+    await t.step('should return false if document structure is missing template_filename', () => {
+        const invalid = { ...validArtifactAsDocument };
+        delete (invalid as Partial<AssembledJsonArtifact>).template_filename;
+        assert(!isAssembledJsonArtifact(invalid));
     });
 });

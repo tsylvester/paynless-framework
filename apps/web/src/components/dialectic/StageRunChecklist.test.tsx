@@ -108,7 +108,7 @@ const buildDraftStep = (): DialecticStageRecipeStep => {
         inputs_required: draftInputs,
         outputs_required: draftOutputs,
         output_type: 'AssembledDocumentJson',
-        granularity_strategy: 'one_to_one',
+        granularity_strategy: 'per_source_document',
     };
 };
 
@@ -836,7 +836,7 @@ describe('StageRunChecklist', () => {
                 },
             ],
             output_type: 'AssembledDocumentJson',
-            granularity_strategy: 'one_to_one',
+            granularity_strategy: 'per_source_document',
         };
 
         const recipe = createRecipe([metadataFreeStep]);

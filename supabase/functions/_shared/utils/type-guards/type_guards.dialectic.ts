@@ -28,6 +28,12 @@ import {
     OutputRule,
     DialecticStageRecipeStep,
     JobType,
+    SystemMaterials,
+    HeaderContextArtifact,
+    ContextForDocument,
+    RenderedDocumentArtifact,
+    AssembledJsonArtifact,
+    ReviewMetadata,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { isPlainObject, isRecord } from './type_guards.common.ts';
 import { FileType } from '../../types/file_manager.types.ts';
@@ -107,28 +113,15 @@ function isHeaderContextDocuments(value: unknown): value is Array<{
     return true;
 }
 
-function isHeaderContextArtifact(value: unknown): value is {
-    type: string;
-    document_key: string;
-    artifact_class: string;
-    file_type: string;
-} {
+export function isHeaderContextArtifact(value: unknown): value is HeaderContextArtifact {
     if (!isRecord(value)) return false;
 
-    const requiredKeys: Array<{ key: string; typeCheck: (v: unknown) => boolean }> = [
-        { key: 'type', typeCheck: (v) => v === 'header_context' },
-        { key: 'document_key', typeCheck: (v) => v === 'header_context' },
-        { key: 'artifact_class', typeCheck: (v) => typeof v === 'string' && v.length > 0 },
-        { key: 'file_type', typeCheck: (v) => typeof v === 'string' && v.length > 0 },
-    ];
-
-    for (const { key, typeCheck } of requiredKeys) {
-        if (!(key in value) || !typeCheck(value[key])) {
-            return false;
-        }
-    }
-
-    return true;
+    return (
+        'type' in value && value.type === 'header_context' &&
+        'document_key' in value && value.document_key === 'header_context' &&
+        'artifact_class' in value && value.artifact_class === 'header_context' &&
+        'file_type' in value && value.file_type === 'json'
+    );
 }
 
 function isHeaderContextSystemMaterials(value: unknown): value is {
@@ -295,11 +288,15 @@ export function isDatabaseRecipeSteps(data: unknown): data is DatabaseRecipeStep
         return false;
     }
 
-    if (!('dialectic_stage_recipe_instances' in data) || !Array.isArray(data.dialectic_stage_recipe_instances)) {
+    if (!('dialectic_stage_recipe_instances' in data)) {
         return false;
     }
 
-    for (const instance of data.dialectic_stage_recipe_instances) {
+    const instances = Array.isArray(data.dialectic_stage_recipe_instances) 
+        ? data.dialectic_stage_recipe_instances 
+        : [data.dialectic_stage_recipe_instances];
+
+    for (const instance of instances) {
         if (!isDialecticStageRecipeInstance(instance)) {
             return false;
         }
@@ -333,15 +330,14 @@ export function isGranularityStrategy(value: unknown): value is GranularityStrat
 export function isInputRule(value: unknown): value is InputRule {
     if (!isRecord(value)) return false;
 
-    const documentKey = value.document_key;
-    if (typeof documentKey !== 'string') return false;
+    if (typeof value.slug !== 'string') return false;
+    if (typeof value.type !== 'string' || !['document', 'feedback', 'header_context', 'seed_prompt', 'project_resource'].includes(value.type)) return false;
 
-    return (
-        'type' in value && typeof value.type === 'string' &&
-        (documentKey === '*' || isFileType(documentKey)) &&
-        'purpose' in value && typeof value.purpose === 'string' &&
-        'required' in value && typeof value.required === 'boolean'
-    );
+    if ('document_key' in value && value.document_key !== '*' && (typeof value.document_key !== 'string' || !isFileType(value.document_key))) return false;
+    if ('required' in value && typeof value.required !== 'boolean') return false;
+    if ('multiple' in value && typeof value.multiple !== 'boolean') return false;
+
+    return true;
 }
 
 export function isInputRuleArray(value: unknown): value is InputRule[] {
@@ -351,30 +347,189 @@ export function isInputRuleArray(value: unknown): value is InputRule[] {
 export function isRelevanceRule(value: unknown): value is RelevanceRule {
     if (!isRecord(value)) return false;
 
-    const documentKey = value.document_key;
-    if (typeof documentKey !== 'string') return false;
+    if (typeof value.document_key !== 'string' || !isFileType(value.document_key)) {
+        return false;
+    }
 
-    return (
-        'type' in value && typeof value.type === 'string' &&
-        isFileType(documentKey) &&
-        'relevance' in value && typeof value.relevance === 'number'
-    );
+    if (typeof value.relevance !== 'number') {
+        return false;
+    }
+
+    if ('type' in value && value.type !== null && typeof value.type !== 'string') {
+        return false;
+    }
+
+    if ('slug' in value && value.slug !== null && typeof value.slug !== 'string') {
+        return false;
+    }
+
+    if ('stage_slug' in value && typeof value.stage_slug !== 'string') {
+        return false;
+    }
+
+    return true;
 }
 
 export function isRelevanceRuleArray(value: unknown): value is RelevanceRule[] {
     return Array.isArray(value) && value.every(isRelevanceRule);
 }
 
-export function isOutputRule(value: unknown): value is OutputRule {
+export function isReviewMetadata(value: unknown): value is ReviewMetadata {
     if (!isRecord(value)) return false;
+
+    if (!isRecord(value.proposal_identifier) || typeof value.proposal_identifier.lineage_key !== 'string' || typeof value.proposal_identifier.source_model_slug !== 'string') {
+        return false;
+    }
+    if (typeof value.proposal_summary !== 'string') return false;
+    if (!Array.isArray(value.review_focus) || !value.review_focus.every(item => typeof item === 'string')) {
+        return false;
+    }
+    if (!Array.isArray(value.user_constraints) || !value.user_constraints.every(item => typeof item === 'string')) {
+        return false;
+    }
+    if (!isRecord(value.normalization_guidance) || typeof value.normalization_guidance.scoring_scale !== 'string' || !Array.isArray(value.normalization_guidance.required_dimensions) || !value.normalization_guidance.required_dimensions.every(item => typeof item === 'string')) {
+        return false;
+    }
+
+    return true;
+}
+
+export function isSystemMaterials(value: unknown): value is SystemMaterials {
+    if (!isRecord(value)) return false;
+
+    const requiredKeys: Array<[string, (v: unknown) => boolean]> = [
+        ['stage_rationale', (v) => typeof v === 'string'],
+        ['executive_summary', (v) => typeof v === 'string'],
+        ['input_artifacts_summary', (v) => typeof v === 'string'],
+    ];
+
+    for (const [key, check] of requiredKeys) {
+        if (!(key in value) || !check(value[key])) {
+            return false;
+        }
+    }
+    
+    if ('files_to_generate' in value && value.files_to_generate !== undefined) {
+        const files = value.files_to_generate;
+        if (!Array.isArray(files) || !files.every(file => isRecord(file) && typeof file.template_filename === 'string' && typeof file.from_document_key === 'string')) {
+            return false;
+        }
+    }
+
+    if ('validation_checkpoint' in value && value.validation_checkpoint !== undefined && (!Array.isArray(value.validation_checkpoint) || !value.validation_checkpoint.every(item => typeof item === 'string'))) {
+        return false;
+    }
+
+    if ('quality_standards' in value && value.quality_standards !== undefined && (!Array.isArray(value.quality_standards) || !value.quality_standards.every(item => typeof item === 'string'))) {
+        return false;
+    }
+
+    if ('diversity_rubric' in value && value.diversity_rubric !== undefined) {
+        const rubric = value.diversity_rubric;
+        if (!isRecord(rubric)) {
+            return false;
+        }
+        for (const rubricKey in rubric) {
+            if (typeof rubric[rubricKey] !== 'string') {
+                return false;
+            }
+        }
+    }
+
+    if ('progress_update' in value && value.progress_update !== undefined && typeof value.progress_update !== 'string') {
+        return false;
+    }
+
+    return true;
+}
+
+export function isContextForDocument(value: unknown): value is ContextForDocument {
+    if (!isRecord(value)) return false;
+
     return (
-        'type' in value && typeof value.type === 'string' &&
-        'document_key' in value && typeof value.document_key === 'string'
+        'document_key' in value && isFileType(value.document_key) &&
+        'content_to_include' in value && (isRecord(value.content_to_include) || Array.isArray(value.content_to_include))
+    );
+}
+export function isContextForDocumentArray(value: unknown): value is ContextForDocument[] {
+    return Array.isArray(value) && value.every(isContextForDocument);
+}
+
+export function isRenderedDocumentArtifact(value: unknown): value is RenderedDocumentArtifact {
+    if (!isRecord(value)) return false;
+
+    return (
+        'artifact_class' in value && value.artifact_class === 'rendered_document' &&
+        'document_key' in value && (isFileType(value.document_key) || typeof value.document_key === 'string') &&
+        'template_filename' in value && typeof value.template_filename === 'string' &&
+        (!('content_to_include' in value) || (isRecord(value.content_to_include) || Array.isArray(value.content_to_include)))
     );
 }
 
-export function isOutputRuleArray(value: unknown): value is OutputRule[] {
-    return Array.isArray(value) && value.every(isOutputRule);
+export function isRenderedDocumentArtifactArray(value: unknown): value is RenderedDocumentArtifact[] {
+    return Array.isArray(value) && value.every(isRenderedDocumentArtifact);
+}
+
+export function isAssembledJsonArtifact(value: unknown): value is AssembledJsonArtifact {
+    if (!isRecord(value)) return false;
+
+    if (!('artifact_class' in value) || (value.artifact_class !== 'assembled_document_json' && value.artifact_class !== 'assembled_json')) {
+        return false;
+    }
+
+    if (!('document_key' in value) || !(isFileType(value.document_key) || typeof value.document_key === 'string')) {
+        return false;
+    }
+
+    const hasFields = 'fields' in value && Array.isArray(value.fields) && value.fields.every(item => typeof item === 'string');
+    const hasTemplate = 'template_filename' in value && typeof value.template_filename === 'string' && 'content_to_include' in value && 'file_type' in value && value.file_type === 'json';
+
+    if (hasFields && hasTemplate) return false;
+    
+    if(hasFields) {
+        return !('template_filename' in value) && !('content_to_include' in value) && !('file_type' in value);
+    }
+
+    if(hasTemplate) {
+        return !('fields' in value);
+    }
+
+    return false;
+}
+
+export function isAssembledJsonArtifactArray(value: unknown): value is AssembledJsonArtifact[] {
+    return Array.isArray(value) && value.every(isAssembledJsonArtifact);
+}
+
+export function isOutputRule(value: unknown): value is OutputRule {
+    if (!isRecord(value)) return false;
+
+    if ('system_materials' in value && value.system_materials !== undefined && !isSystemMaterials(value.system_materials)) {
+        return false;
+    }
+
+    if ('header_context_artifact' in value && value.header_context_artifact !== undefined && !isHeaderContextArtifact(value.header_context_artifact)) {
+        return false;
+    }
+
+    if ('context_for_documents' in value && value.context_for_documents !== undefined && !isContextForDocumentArray(value.context_for_documents)) {
+        return false;
+    }
+
+    if ('documents' in value && value.documents !== undefined) {
+        if (!Array.isArray(value.documents)) return false;
+        if (!value.documents.every(doc => isRenderedDocumentArtifact(doc) || isAssembledJsonArtifact(doc))) return false;
+    }
+
+    if ('assembled_json' in value && value.assembled_json !== undefined && !isAssembledJsonArtifactArray(value.assembled_json)) {
+        return false;
+    }
+
+    if ('review_metadata' in value && value.review_metadata !== undefined && !isReviewMetadata(value.review_metadata)) {
+        return false;
+    }
+
+    return true;
 }
 
 /**
@@ -533,7 +688,14 @@ export function isDialecticStageRecipeStep(record: unknown): record is Dialectic
         if (typeof record[key] !== 'string') return false;
     }
 
-    if (typeof record.execution_order !== 'number') return false;
+    // --- Nullable properties from DB schema ---
+    if (record.branch_key !== null && typeof record.branch_key !== 'string') return false;
+    if (record.execution_order !== null && typeof record.execution_order !== 'number') return false;
+    if (record.parallel_group !== null && typeof record.parallel_group !== 'number') return false;
+    if (record.prompt_template_id !== null && typeof record.prompt_template_id !== 'string') return false;
+    if (record.step_description !== null && typeof record.step_description !== 'string') return false;
+    if (record.template_step_id !== null && typeof record.template_step_id !== 'string') return false;
+    
     if (typeof record.is_skipped !== 'boolean') return false;
 
     if (typeof record.job_type !== 'string' || !isJobTypeEnum(record.job_type)) return false;
@@ -543,7 +705,12 @@ export function isDialecticStageRecipeStep(record: unknown): record is Dialectic
 
     if (!isInputRuleArray(record.inputs_required)) return false;
     if (!isRelevanceRuleArray(record.inputs_relevance)) return false;
-    if (!isOutputRuleArray(record.outputs_required)) return false;
+    if (!isOutputRule(record.outputs_required)) return false;
+
+    // Check for existence of other Json properties inherited from the DB type
+    if (!('config_override' in record)) return false;
+    if (!('object_filter' in record)) return false;
+    if (!('output_overrides' in record)) return false;
 
     return true;
 }
@@ -915,3 +1082,5 @@ export function isDialecticContinueReason(reason: unknown): reason is DialecticC
 
     return false;
 }
+
+

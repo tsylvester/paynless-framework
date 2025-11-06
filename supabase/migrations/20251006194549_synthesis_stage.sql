@@ -368,7 +368,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 2, 2, 'synthesis_pairwise_business_case', 'synthesis_pairwise_business_case', 'pairwise-synthesis-business-case', 'Pairwise Synthesis – Business Case', 'Combine the thesis business case with critiques and comparison vector signals into a resolved narrative.',
-        'EXECUTE', 'Turn', v_pairwise_business_prompt_id, 'AssembledDocumentJson', 'one_to_one',
+        'EXECUTE', 'Turn', v_pairwise_business_prompt_id, 'AssembledDocumentJson', 'per_source_document',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context_pairwise", "required": true },
             { "type": "document", "slug": "thesis", "document_key": "business_case", "required": true },
@@ -419,7 +419,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 2, 2, 'synthesis_pairwise_feature_spec', 'synthesis_pairwise_feature_spec', 'pairwise-synthesis-feature-spec', 'Pairwise Synthesis – Feature Spec', 'Merge feature scope with feasibility, non-functional insights, and comparison signals.',
-        'EXECUTE', 'Turn', v_pairwise_feature_prompt_id, 'AssembledDocumentJson', 'one_to_one',
+        'EXECUTE', 'Turn', v_pairwise_feature_prompt_id, 'AssembledDocumentJson', 'per_source_document',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context_pairwise", "required": true },
             { "type": "document", "slug": "thesis", "document_key": "feature_spec", "required": true },
@@ -479,7 +479,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 2, 2, 'synthesis_pairwise_technical_approach', 'synthesis_pairwise_technical_approach', 'pairwise-synthesis-technical-approach', 'Pairwise Synthesis – Technical Approach', 'Combine thesis technical approach with antithesis risk and dependency findings.',
-        'EXECUTE', 'Turn', v_pairwise_technical_prompt_id, 'AssembledDocumentJson', 'one_to_one',
+        'EXECUTE', 'Turn', v_pairwise_technical_prompt_id, 'AssembledDocumentJson', 'per_source_document',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context_pairwise", "required": true },
             { "type": "document", "slug": "thesis", "document_key": "technical_approach", "required": true },
@@ -527,7 +527,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 2, 2, 'synthesis_pairwise_success_metrics', 'synthesis_pairwise_success_metrics', 'pairwise-synthesis-success-metrics', 'Pairwise Synthesis – Success Metrics', 'Combine thesis success metrics with antithesis critique signals into a resolved set of measurable outcomes.',
-        'EXECUTE', 'Turn', v_pairwise_metrics_prompt_id, 'AssembledDocumentJson', 'one_to_one',
+        'EXECUTE', 'Turn', v_pairwise_metrics_prompt_id, 'AssembledDocumentJson', 'per_source_document',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context_pairwise", "required": true },
             { "type": "document", "slug": "thesis", "document_key": "success_metrics", "required": true },

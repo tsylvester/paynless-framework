@@ -55,7 +55,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
     prompt_type: 'Turn',
     prompt_template_id: 'pt-b',
     output_type: 'AssembledDocumentJson',
-    granularity_strategy: 'one_to_one',
+    granularity_strategy: 'per_source_document',
     inputs_required: [{ type: 'document', document_key: 'feature_spec', required: true, slug: 'feature_spec' }],
     inputs_relevance: [{ document_key: 'feature_spec', relevance: 1, type: 'feedback', slug: 'feature_spec' }],
     outputs_required: [{ document_key: 'header_ctx_b', artifact_class: 'header_context', file_type: 'json' }],

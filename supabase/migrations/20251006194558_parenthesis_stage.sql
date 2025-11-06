@@ -617,7 +617,7 @@ DECLARE
         'Turn',
         v_trd_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
           {"type":"document","slug":"synthesis","document_key":"system_architecture_overview","required":true},
@@ -759,7 +759,7 @@ DECLARE
         'Turn',
         v_trd_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
           {"type":"document","slug":"synthesis","document_key":"system_architecture_overview","required":true},
@@ -896,7 +896,7 @@ DECLARE
         'Turn',
         v_master_plan_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
           {"type":"document","slug":"parenthesis","document_key":"trd","required":true},
@@ -1045,7 +1045,7 @@ DECLARE
         'Turn',
         v_master_plan_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
           {"type":"document","slug":"parenthesis","document_key":"trd","required":true},
@@ -1189,7 +1189,7 @@ DECLARE
         'Turn',
         v_milestone_schema_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
           {"type":"document","slug":"parenthesis","document_key":"master_plan","required":true},
@@ -1346,7 +1346,7 @@ DECLARE
         'Turn',
         v_milestone_schema_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
           {"type":"document","slug":"parenthesis","document_key":"master_plan","required":true},

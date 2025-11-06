@@ -13,6 +13,7 @@ import { stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { type Database } from "../../types_db.ts";
 import { createMockSupabaseClient } from "../supabase.mock.ts";
+import { FileType } from "../types/file_manager.types.ts";
 
 
 Deno.test("cosineSimilarity: calculates similarity for basic vectors", () => {
@@ -135,6 +136,25 @@ const deps: ExecuteModelCallAndSaveParams['deps'] = { embeddingClient: mockEmbed
   path: '',
   fileName: '',
 }),
+documentRenderer: {
+  renderDocument: () => Promise.resolve({
+    content: '',
+    fullPath: '',
+    bucket: '',
+    path: '',
+    fileName: '',
+    pathContext: {
+      projectId: '',
+      sessionId: '',
+      iteration: 0,
+      stageSlug: '',
+      documentKey: '',
+      fileType: FileType.RenderedDocument,
+      modelSlug: '',
+    },
+    renderedBytes: new Uint8Array(),
+  }),
+},
 continueJob: () => Promise.resolve({
   error: undefined,
   enqueued: true,
@@ -144,6 +164,7 @@ retryJob: () => Promise.resolve({
   enqueued: true,
 }),
 notificationService: {
+  sendDocumentCentricNotification: () => Promise.resolve(),
   sendContributionStartedEvent: () => Promise.resolve(),
   sendDialecticContributionStartedEvent: () => Promise.resolve(),
   sendContributionReceivedEvent: () => Promise.resolve(),

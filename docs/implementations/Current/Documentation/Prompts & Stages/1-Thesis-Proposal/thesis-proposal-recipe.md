@@ -306,7 +306,7 @@
     { "document_key": "seed_prompt", "relevance": 0.7 }
   ],
   "output_type": "RenderedDocument",
-  "granularity_strategy": "one_to_one"
+  "granularity_strategy": "per_source_document"
 }
 ```
 
@@ -370,7 +370,7 @@
     { "document_key": "seed_prompt", "relevance": 0.65 }
   ],
   "output_type": "RenderedDocument",
-  "granularity_strategy": "one_to_one"
+  "granularity_strategy": "per_source_document"
 }
 ```
 
@@ -436,7 +436,7 @@
     { "document_key": "seed_prompt", "relevance": 0.6 }
   ],
   "output_type": "RenderedDocument",
-  "granularity_strategy": "one_to_one"
+  "granularity_strategy": "per_source_document"
 }
 ```
 
@@ -501,7 +501,7 @@
     { "document_key": "seed_prompt", "relevance": 0.8 }
   ],
   "output_type": "RenderedDocument",
-  "granularity_strategy": "one_to_one"
+  "granularity_strategy": "per_source_document"
 }
 ```
 
@@ -544,22 +544,22 @@
 *   `[✅]` 2. [PROMPT] Create turn prompt template `thesis_business_case_turn_v1`
     *   `[✅]` 2.a. Author template file `docs/prompts/thesis/thesis_business_case_turn_v1.md`.
     *   `[✅]` 2.b. Add `system_prompts` row for `thesis_business_case_turn_v1`.
-    *   `[✅]` 2.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'business_case'` with `step_number = 2`, `step_slug = 'generate-business-case'`, `job_type = 'EXECUTE'`, `name = 'Generate Business Case'`, `prompt_template_id = system_prompts.id('thesis_business_case_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'one_to_one'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` using the schema shown above.
+    *   `[✅]` 2.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'business_case'` with `step_number = 2`, `step_slug = 'generate-business-case'`, `job_type = 'EXECUTE'`, `name = 'Generate Business Case'`, `prompt_template_id = system_prompts.id('thesis_business_case_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'per_source_document'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` using the schema shown above.
 
 *   `[✅]` 3. [PROMPT] Create turn prompt template `thesis_feature_spec_turn_v1`
     *   `[✅]` 3.a. Author template file `docs/prompts/thesis/thesis_feature_spec_turn_v1.md`.
     *   `[✅]` 3.b. Add `system_prompts` row for `thesis_feature_spec_turn_v1`.
-    *   `[✅]` 3.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'feature_spec'` with `step_number = 2`, `step_slug = 'generate-feature-spec'`, `job_type = 'EXECUTE'`, `name = 'Generate Feature Spec'`, `prompt_template_id = system_prompts.id('thesis_feature_spec_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'one_to_one'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` for the `feature_spec` document key.
+    *   `[✅]` 3.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'feature_spec'` with `step_number = 2`, `step_slug = 'generate-feature-spec'`, `job_type = 'EXECUTE'`, `name = 'Generate Feature Spec'`, `prompt_template_id = system_prompts.id('thesis_feature_spec_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'per_source_document'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` for the `feature_spec` document key.
 
 *   `[✅]` 4. [PROMPT] Create turn prompt template `thesis_technical_approach_turn_v1`
     *   `[✅]` 4.a. Author template file `docs/prompts/thesis/thesis_technical_approach_turn_v1.md`, using the standardized turn prompt structure (role + style excerpt, HeaderContext injection, shared JSON-return instructions) with the `technical_approach` `content_to_include` contract injected into the content block.
     *   `[✅]` 4.b. Add `system_prompts` row for `thesis_technical_approach_turn_v1`.
-    *   `[✅]` 4.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'technical_approach'` with `step_number = 2`, `step_slug = 'generate-technical-approach'`, `job_type = 'EXECUTE'`, `name = 'Generate Technical Approach'`, `prompt_template_id = system_prompts.id('thesis_technical_approach_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'one_to_one'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` for the `technical_approach` document key.
+    *   `[✅]` 4.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'technical_approach'` with `step_number = 2`, `step_slug = 'generate-technical-approach'`, `job_type = 'EXECUTE'`, `name = 'Generate Technical Approach'`, `prompt_template_id = system_prompts.id('thesis_technical_approach_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'per_source_document'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` for the `technical_approach` document key.
 
 *   `[✅]` 5. [PROMPT] Create turn prompt template `thesis_success_metrics_turn_v1`
     *   `[✅]` 5.a. Author template file `docs/prompts/thesis/thesis_success_metrics_turn_v1.md`, following the standardized turn prompt format (role + style excerpt, HeaderContext injection, shared JSON-return instructions) with the `success_metrics` `content_to_include` contract injected into the content block.
     *   `[✅]` 5.b. Add `system_prompts` row for `thesis_success_metrics_turn_v1`.
-    *   `[✅]` 5.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'success_metrics'` with `step_number = 2`, `step_slug = 'generate-success-metrics'`, `job_type = 'EXECUTE'`, `name = 'Generate Success Metrics'`, `prompt_template_id = system_prompts.id('thesis_success_metrics_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'one_to_one'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` for the `success_metrics` document key.
+    *   `[✅]` 5.c. Insert the Step 2 `dialectic_stage_recipes` row for `branch_key = 'success_metrics'` with `step_number = 2`, `step_slug = 'generate-success-metrics'`, `job_type = 'EXECUTE'`, `name = 'Generate Success Metrics'`, `prompt_template_id = system_prompts.id('thesis_success_metrics_turn_v1')`, `prompt_type = 'Turn'`, `parallel_group = 2`, `output_type = 'RenderedDocument'`, `granularity_strategy = 'per_source_document'`, and an `inputs_required` array that consumes the Thesis `header_context`. Persist the rendered document contract in `outputs_required` for the `success_metrics` document key.
 
 *  `[✅]` 6. [DB] Populate the dialectic_stage_recipe_edges for each document edge. 
     *   `[✅]` 6.a. Populate `dialectic_stage_recipe_edges` so the Step 1 planner row is the parent for every Step 2 branch row, mirroring the PLAN job that waits for its child EXECUTE jobs described in `Document-Centric Generation.md`.

@@ -336,7 +336,7 @@ DECLARE
         'Turn',
         v_actionable_checklist_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[
           {"type":"header_context","slug":"paralysis","document_key":"header_context","required":true},
           {"type":"document","slug":"parenthesis","document_key":"trd","required":true},
@@ -419,7 +419,7 @@ DECLARE
         'Turn',
         v_updated_master_plan_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[
           {"type":"header_context","slug":"paralysis","document_key":"header_context","required":true},
           {"type":"document","slug":"parenthesis","document_key":"master_plan","required":true},
@@ -497,7 +497,7 @@ DECLARE
         'Turn',
         v_advisor_recommendations_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[
           {"type":"project_resource","slug":"project","document_key":"initial_user_prompt","required":true},
           {"type":"document","slug":"synthesis","document_key":"prd","required":true,"multiple":true},

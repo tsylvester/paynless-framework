@@ -184,7 +184,7 @@ export type PromptTemplate = Omit<SystemPromptsRow, 'variables_required'> & {
 export type RecipeJobType = 'PLAN' | 'EXECUTE' | 'RENDER';
 export type RecipePromptType = 'Planner' | 'Turn';
 export type RecipeOutputType = 'HeaderContext' | 'AssembledDocumentJson' | 'RenderedDocument';
-export type RecipeGranularity = 'all_to_one' | 'one_to_one' | 'one_to_many' | 'many_to_one';
+export type RecipeGranularity = 'all_to_one' | 'per_source_document' | 'one_to_many' | 'many_to_one';
 
 export interface InputRequirement {
   type: 'seed_prompt' | 'document' | 'header_context' | 'feedback';

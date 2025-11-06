@@ -36,7 +36,7 @@ Deno.test('Type Guard: isDialecticRecipeTemplateStep', async (t) => {
     granularity_strategy: 'all_to_one',
     inputs_required: [],
     inputs_relevance: [],
-    outputs_required: [],
+    outputs_required: {},
     parallel_group: 1,
     branch_key: 'business_case',
     prompt_template_id: 'uuid-template-123',
@@ -104,7 +104,7 @@ Deno.test('Type Guard: isDialecticStageRecipeStep', async (t) => {
     granularity_strategy: 'all_to_one',
     inputs_required: [],
     inputs_relevance: [],
-    outputs_required: [],
+    outputs_required: {},
     parallel_group: 1,
     branch_key: 'business_case',
     prompt_template_id: 'uuid-template-456',
@@ -152,7 +152,7 @@ Deno.test('Type Guard: isDialecticRecipeStep (Union)', async (t) => {
         granularity_strategy: 'all_to_one',
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
         parallel_group: 1,
         branch_key: 'business_case',
         prompt_template_id: 'uuid-template-123',
@@ -173,7 +173,7 @@ Deno.test('Type Guard: isDialecticRecipeStep (Union)', async (t) => {
         granularity_strategy: 'all_to_one',
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
         parallel_group: 1,
         branch_key: 'business_case',
         prompt_template_id: 'uuid-template-456',
@@ -201,8 +201,8 @@ Deno.test('Type Guard: isDialecticRecipeStep (Union)', async (t) => {
 Deno.test('Type Guard: isInputRule', async (t) => {
     const validInputRule: InputRule = {
         type: 'document',
-        stage_slug: 'thesis',
-        document_key: 'business_case',
+        slug: 'thesis',
+        document_key: FileType.business_case,
         required: true,
         multiple: false,
     };
@@ -228,7 +228,7 @@ Deno.test('Type Guard: isInputRule', async (t) => {
 
 Deno.test('Type Guard: isRelevanceRule', async (t) => {
     const validRelevanceRule: RelevanceRule = {
-        document_key: 'business_case',
+        document_key: FileType.business_case,
         type: 'document',
         relevance: 0.9,
     };
@@ -247,32 +247,38 @@ Deno.test('Type Guard: isRelevanceRule', async (t) => {
         assertEquals(isRelevanceRule(invalid as any), false);
     });
     
+    await t.step('should return true for a valid rule where the optional `type` is omitted', () => {
+        const ruleWithoutType = { ...validRelevanceRule };
+        delete ruleWithoutType.type;
+        assertEquals(isRelevanceRule(ruleWithoutType), true);
+    });
+
     await t.step('should return false for a plain empty object', () => {
         assertEquals(isRelevanceRule({}), false);
     });
 });
 
 Deno.test('Type Guard: isOutputRule', async (t) => {
-    const validOutputRule: OutputRule = {
-        type: 'header_context',
-        document_key: 'header_context',
-    };
+  const validOutputRule: OutputRule = {
+    files_to_generate: [{
+      from_document_key: 'business_case',
+      template_filename: 'template.md',
+    }],
+  };
 
-    await t.step('should return true for a valid OutputRule object', () => {
-        assertEquals(isOutputRule(validOutputRule), true);
-    });
+  await t.step('should return true for a valid OutputRule object', () => {
+    assertEquals(isOutputRule(validOutputRule), true);
+  });
 
-    await t.step('should return false if type is missing', () => {
-        const invalid = { ...validOutputRule, type: undefined };
-        assertEquals(isOutputRule(invalid), false);
-    });
+  await t.step('should return true for an empty object because all properties are optional', () => {
+    assertEquals(isOutputRule({}), true);
+  });
 
-    await t.step('should return false if document_key is not a string', () => {
-        const invalid = { ...validOutputRule, document_key: 123 };
-        assertEquals(isOutputRule(invalid as any), false);
-    });
-    
-    await t.step('should return false for a plain empty object', () => {
-        assertEquals(isOutputRule({}), false);
-    });
+  await t.step('should return false for non-record objects', () => {
+    assertEquals(isOutputRule(null), false);
+    assertEquals(isOutputRule(undefined), false);
+    assertEquals(isOutputRule([]), false);
+    assertEquals(isOutputRule('string'), false);
+    assertEquals(isOutputRule(123), false);
+  });
 });

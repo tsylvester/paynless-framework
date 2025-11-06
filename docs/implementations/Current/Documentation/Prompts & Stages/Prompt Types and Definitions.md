@@ -140,7 +140,7 @@ The JSON stubs mirror the shape expected by the database so we can directly tran
     }
   ],
   "output_type": "<HeaderContext|RenderedDocument|AssembledDocumentJson>",
-  "granularity_strategy": "<all_to_one|one_to_one>"
+  "granularity_strategy": "<all_to_one|per_source_document>"
 }
 ```
 

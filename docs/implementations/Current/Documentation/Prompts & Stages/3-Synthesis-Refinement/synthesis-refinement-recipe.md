@@ -359,7 +359,7 @@
     { "document_key": "business_case_critique", "stage_slug": "antithesis", "type": "feedback", "relevance": 0.8 }
   ],
   "output_type": "AssembledDocumentJson",
-  "granularity_strategy": "one_to_one"
+  "granularity_strategy": "per_source_document"
 }
 ```
 
@@ -445,7 +445,7 @@
     { "document_key": "comparison_vector", "stage_slug": "antithesis", "type": "feedback", "relevance": 0.7 }
   ],
   "output_type": "AssembledDocumentJson",
-  "granularity_strategy": "one_to_one"
+  "granularity_strategy": "per_source_document"
 }
 ```
 
@@ -528,7 +528,7 @@
     { "document_key": "dependency_map", "stage_slug": "antithesis", "type": "feedback", "relevance": 0.74 }
   ],
   "output_type": "AssembledDocumentJson",
-  "granularity_strategy": "one_to_one"
+  "granularity_strategy": "per_source_document"
 }
 ```
 
@@ -603,7 +603,7 @@
     { "document_key": "comparison_vector", "stage_slug": "antithesis", "relevance": 0.75, "type": "feedback"  }
   ],
   "output_type": "AssembledDocumentJson",
-  "granularity_strategy": "one_to_one"
+  "granularity_strategy": "per_source_document"
 }
 ```
 
@@ -1379,7 +1379,7 @@
 *   `[✅]` 2. [PROMPT] Create pairwise turn templates for Step 2 branches.
     *   `[✅]` 2.a. Author turn templates `synthesis_pairwise_business_case_turn_v1.md`, `synthesis_pairwise_feature_spec_turn_v1.md`, `synthesis_pairwise_technical_approach_turn_v1.md`, and `synthesis_pairwise_success_metrics_turn_v1.md` under `docs/prompts/synthesis/` using the JSON schemas provided in Step 2a–2d.
     *   `[✅]` 2.b. Seed corresponding `system_prompts` rows for each turn template.
-    *   `[✅]` 2.c. Insert the Step 2 `dialectic_stage_recipes` rows (`step_number=2`, `parallel_group=2`, `branch_key` per document) by copying the full `inputs_required` and `inputs_relevance` arrays from the Target definitions—include every Thesis document, all Antithesis documents referenced (e.g., critiques, feasibility assessments, NFRs, risk registers, dependency maps, comparison vectors), and the matching Antithesis feedback entries—so the runtime dependencies match the header context contracts while still emitting `output_type='AssembledDocumentJson'`, `granularity_strategy='one_to_one'`, and the documented `outputs_required` payloads (including the `match_keys` array that captures reviewer lineage or reviewer combinations).
+    *   `[✅]` 2.c. Insert the Step 2 `dialectic_stage_recipes` rows (`step_number=2`, `parallel_group=2`, `branch_key` per document) by copying the full `inputs_required` and `inputs_relevance` arrays from the Target definitions—include every Thesis document, all Antithesis documents referenced (e.g., critiques, feasibility assessments, NFRs, risk registers, dependency maps, comparison vectors), and the matching Antithesis feedback entries—so the runtime dependencies match the header context contracts while still emitting `output_type='AssembledDocumentJson'`, `granularity_strategy='per_source_document'`, and the documented `outputs_required` payloads (including the `match_keys` array that captures reviewer lineage or reviewer combinations).
     *   `[✅]` 2.d. Register `dialectic_stage_recipe_edges` from Step 1 planner to each Step 2 branch.
     *   `[✅]` 2.e. `[PROMPT]` For each pairwise document key (`synthesis_pairwise_business_case`, `synthesis_pairwise_feature_spec`, `synthesis_pairwise_technical_approach`, `synthesis_pairwise_success_metrics`), author the corresponding `.json` template file in `docs/templates/synthesis/` (naming matches the filenames in the target schema) and seed `dialectic_document_templates` rows pointing to those files, ensuring the template schema exposes the `match_keys` array alongside `lineage_key` / `source_model_slug`. Call out in code review that runtime persistence must store and carry `match_keys` forward so downstream consolidations keep reviewer lineage intact.
 

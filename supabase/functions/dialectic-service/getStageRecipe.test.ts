@@ -139,7 +139,7 @@ Deno.test("getStageRecipe - Error: malformed step rows are rejected", async () =
       prompt_type: "Turn",
       prompt_template_id: null,
       output_type: "AssembledDocumentJson",
-      granularity_strategy: "one_to_one",
+      granularity_strategy: "per_source_document",
       // Malformed: inputs_required should be an array
       inputs_required: null,
       inputs_relevance: [],

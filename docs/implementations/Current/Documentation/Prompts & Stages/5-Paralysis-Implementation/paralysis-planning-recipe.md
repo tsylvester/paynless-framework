@@ -339,7 +339,7 @@
     { "document_key": "milestone_schema", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.55 }
   ],
   "output_type": "RenderedDocument",
-  "granularity_strategy": "one_to_one",
+  "granularity_strategy": "per_source_document",
   "outputs_required": {
     "documents": [
       {
@@ -465,7 +465,7 @@
     { "document_key": "master_plan", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.6 }
   ],
   "output_type": "RenderedDocument",
-  "granularity_strategy": "one_to_one",
+  "granularity_strategy": "per_source_document",
   "outputs_required": {
     "documents": [
       {
@@ -645,7 +645,7 @@
     { "document_key": "advisor_recommendations", "stage_slug": "paralysis", "type": "feedback", "relevance": 0.4 }
   ],
   "output_type": "RenderedDocument",
-  "granularity_strategy": "one_to_one",
+  "granularity_strategy": "per_source_document",
   "outputs_required": {
     "documents": [
       {

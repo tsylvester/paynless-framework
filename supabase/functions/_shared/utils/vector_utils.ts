@@ -203,8 +203,8 @@ export async function getSortedCompressionCandidates(
     const relevanceMap: Record<string, number> = {};
     if (inputsRelevance && Array.isArray(inputsRelevance)) {
         for (const rule of inputsRelevance) {
-            const key = rule.stage_slug
-                ? `${rule.type}:${rule.document_key}:${rule.stage_slug}`
+            const key = rule.slug
+                ? `${rule.type}:${rule.document_key}:${rule.slug}`
                 : `${rule.type}:${rule.document_key}`;
             // If multiple rules map to same key, keep the max relevance (normalized 0..1)
             relevanceMap[key] = Math.max(

@@ -398,7 +398,7 @@ When this step is executed for subsequent iterations, provide the most recent `t
     { "document_key": "trd", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.83 }
   ],
   "output_type": "RenderedDocument",
-  "granularity_strategy": "one_to_one",
+  "granularity_strategy": "per_source_document",
   "outputs_required": {
     "documents": [
       {
@@ -520,7 +520,7 @@ Present the previously generated Master Plan and feedback during iterative runs 
     { "document_key": "prd", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.70 }
   ],
   "output_type": "RenderedDocument",
-  "granularity_strategy": "one_to_one",
+  "granularity_strategy": "per_source_document",
   "outputs_required": {
     "documents": [
       {
@@ -671,7 +671,7 @@ Provide the previous milestone schema and related feedback on subsequent executi
     { "document_key": "milestone_schema", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.85 }
   ],
   "output_type": "RenderedDocument",
-  "granularity_strategy": "one_to_one",
+  "granularity_strategy": "per_source_document",
   "outputs_required": {
     "documents": [
       {
@@ -783,7 +783,7 @@ Provide the previous milestone schema and related feedback on subsequent executi
 
 *   `[ ]` 2. `[DB]` Seed `dialectic_stage_recipes` rows and execution graph.
     *   `[✅]` 2.a. Insert the Step 1 planner row (`step_number=1`, `step_slug='build-planning-header'`, `job_type='PLAN'`, `prompt_type='Planner'`, `granularity_strategy='all_to_one'`) along with the exact `inputs_required` and `inputs_relevance` values from the target state (seed prompt, Synthesis deliverables/feedback, optional prior master plan + feedback, header context schema).
-    *   `[✅]` 2.b. Insert Step 2, Step 3, and Step 4 turn rows for `trd`, `master_plan`, and `milestone_schema` (`job_type='EXECUTE'`, `prompt_type='Turn'`, `granularity_strategy='one_to_one'`, `branch_key` set to the document key) capturing all required inputs (header context, Synthesis artifacts, optional prior Parenthesis documents + feedback), relevance weights, markdown/JSON outputs, and continuation policies.
+    *   `[✅]` 2.b. Insert Step 2, Step 3, and Step 4 turn rows for `trd`, `master_plan`, and `milestone_schema` (`job_type='EXECUTE'`, `prompt_type='Turn'`, `granularity_strategy='per_source_document'`, `branch_key` set to the document key) capturing all required inputs (header context, Synthesis artifacts, optional prior Parenthesis documents + feedback), relevance weights, markdown/JSON outputs, and continuation policies.
     *   `[✅]` 2.c. Populate `dialectic_stage_recipe_edges` so Step 1 → Step 2 → Step 3 → Step 4, ensuring orchestration waits for each dependency before scheduling the next step.
 
 *   `[✅]` 3. `[DB]` Update Parenthesis stage configuration.

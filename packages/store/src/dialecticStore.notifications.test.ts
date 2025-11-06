@@ -141,7 +141,7 @@ describe('Dialectic Store Notification Handlers', () => {
       job_type: 'EXECUTE',
       prompt_type: 'Turn',
       output_type: 'AssembledDocumentJson',
-      granularity_strategy: 'one_to_one',
+      granularity_strategy: 'per_source_document',
       inputs_required: [],
     };
     const renderStep: DialecticStageRecipeStep = {
@@ -153,7 +153,7 @@ describe('Dialectic Store Notification Handlers', () => {
       job_type: 'RENDER',
       prompt_type: 'Turn',
       output_type: 'RenderedDocument',
-      granularity_strategy: 'one_to_one',
+      granularity_strategy: 'per_source_document',
       inputs_required: [],
     };
 

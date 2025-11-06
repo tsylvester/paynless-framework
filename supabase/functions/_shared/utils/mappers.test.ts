@@ -5,6 +5,7 @@ import type { DatabaseRecipeSteps, DialecticStageRecipeStep, StageWithRecipeStep
 import type { Tables } from '../../types_db.ts';
 import { isDialecticStageRecipeStep } from './type-guards/type_guards.dialectic.ts';
 import { FileType } from '../types/file_manager.types.ts';
+import { InputRule, RelevanceRule } from '../../dialectic-service/dialectic.interface.ts';
 
 describe('mapToStageWithRecipeSteps', () => {
   it('should flatten the nested recipe steps structure into a StageWithRecipeSteps DTO', () => {
@@ -102,7 +103,7 @@ describe('mapToStageWithRecipeSteps', () => {
         output_type: FileType.HeaderContext,
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
     };
 
     const expectedStep2: DialecticStageRecipeStep = {
@@ -113,7 +114,7 @@ describe('mapToStageWithRecipeSteps', () => {
         output_type: FileType.AssembledDocumentJson,
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
     };
 
     const expected: StageWithRecipeSteps = {
@@ -129,5 +130,72 @@ describe('mapToStageWithRecipeSteps', () => {
     actual.dialectic_stage_recipe_steps.forEach(step => {
         assert(isDialecticStageRecipeStep(step), `Step ${step.id} should be a valid DialecticStageRecipeStep`);
     });
+  });
+
+  it('should correctly handle PascalCase output_type from the database', () => {
+    const mockRecipeStep: Tables<'dialectic_stage_recipe_steps'> = {
+      branch_key: null,
+      config_override: {},
+      created_at: '2025-11-05T12:00:00.000Z',
+      execution_order: 1,
+      granularity_strategy: 'all_to_one',
+      id: 'step-1',
+      inputs_relevance: '[]',
+      inputs_required: '[]',
+      instance_id: 'instance-1',
+      is_skipped: false,
+      job_type: 'PLAN',
+      object_filter: {},
+      output_overrides: {},
+      output_type: 'HeaderContext' as any, // Simulate raw DB value
+      outputs_required: '[]',
+      parallel_group: null,
+      prompt_template_id: 'template-planner-a',
+      prompt_type: 'Planner',
+      step_description: 'First step',
+      step_key: 'planner_a',
+      step_name: 'Planner A',
+      step_slug: 'planner_a',
+      template_step_id: null,
+      updated_at: '2025-11-05T12:00:00.000Z',
+    };
+
+    const mockStageData: Tables<'dialectic_stages'> = {
+        active_recipe_instance_id: 'instance-1',
+        created_at: '2025-11-05T11:58:00.000Z',
+        default_system_prompt_id: 'default-prompt',
+        description: 'Test stage for casing.',
+        display_name: 'Casing Test Stage',
+        expected_output_template_ids: [],
+        id: 'stage-casing',
+        recipe_template_id: 'template-casing',
+        slug: 'casing-test',
+    };
+
+    const mockInstanceData: Tables<'dialectic_stage_recipe_instances'> = {
+        cloned_at: null,
+        created_at: '2025-11-05T11:59:00.000Z',
+        id: 'instance-casing',
+        is_cloned: false,
+        stage_id: 'stage-casing',
+        template_id: 'template-casing',
+        updated_at: '2025-11-05T11:59:00.000Z',
+    };
+
+    const mockDbResponse: DatabaseRecipeSteps = {
+      ...mockStageData,
+      dialectic_stage_recipe_instances: [
+        {
+          ...mockInstanceData,
+          dialectic_stage_recipe_steps: [mockRecipeStep],
+        },
+      ],
+    };
+
+    const result = mapToStageWithRecipeSteps(mockDbResponse);
+    const transformedStep = result.dialectic_stage_recipe_steps[0];
+
+    assertEquals(transformedStep.output_type, FileType.HeaderContext);
+    assert(isDialecticStageRecipeStep(transformedStep), 'Transformed step should be valid');
   });
 });

@@ -125,7 +125,7 @@ const buildRecipeSteps = (): DialecticStageRecipeStep[] => [
       },
     ],
     output_type: 'AssembledDocumentJson',
-    granularity_strategy: 'one_to_one',
+    granularity_strategy: 'per_source_document',
   },
   {
     id: 'step-render',

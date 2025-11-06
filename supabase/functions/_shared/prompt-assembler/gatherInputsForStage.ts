@@ -64,9 +64,10 @@ export async function gatherInputsForStage(
   );
 
   const stageSlugsForDisplayName = stageSpecificRules
-    .map((rule: { stage_slug: string }) => rule.stage_slug)
+    .map((rule: InputRule) => rule.slug)
     .filter(
-      (slug: string, index: number, self: string[]) => self.indexOf(slug) === index,
+      (slug: string, index: number, self: string[]) =>
+        self.indexOf(slug) === index,
     );
 
   const { data: stagesData, error: stagesError } = await dbClient
@@ -93,12 +94,12 @@ export async function gatherInputsForStage(
     if (criticalError) break;
 
     if (rule.type === "document" || rule.type === "feedback") {
-      if (!rule.stage_slug) {
-        console.warn("[gatherInputsForStage] Skipping rule due to missing stage_slug:", rule);
+      if (!rule.slug) {
+        console.warn("[gatherInputsForStage] Skipping rule due to missing slug:", rule);
         continue;
       }
-      const displayName = displayNameMap.get(rule.stage_slug) ||
-        (rule.stage_slug.charAt(0).toUpperCase() + rule.stage_slug.slice(1));
+      const displayName = displayNameMap.get(rule.slug) ||
+        (rule.slug.charAt(0).toUpperCase() + rule.slug.slice(1));
 
       if (rule.type === "document") {
         const { data: aiContributions, error: aiContribError } = await dbClient
@@ -106,7 +107,7 @@ export async function gatherInputsForStage(
           .select("*")
           .eq("session_id", session.id)
           .eq("iteration_number", iterationNumber)
-          .eq("stage", rule.stage_slug)
+          .eq("stage", rule.slug)
           .eq("is_latest_edit", true);
 
         if (aiContribError) {
@@ -189,7 +190,7 @@ export async function gatherInputsForStage(
           .from("dialectic_feedback")
           .select("id, storage_bucket, storage_path, file_name")
           .eq("session_id", session.id)
-          .eq("stage_slug", rule.stage_slug)
+          .eq("stage_slug", rule.slug)
           .eq("iteration_number", targetIteration)
           .eq("user_id", project.user_id)
           .limit(1)

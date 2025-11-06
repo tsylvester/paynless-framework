@@ -553,7 +553,7 @@
     { "document_key": "success_metrics", "type": "feedback", "relevance": 0.6 }
   ],
   "output_type": "RenderedDocument",
-  "granularity_strategy": "one_to_one"
+  "granularity_strategy": "per_source_document"
 }
 ```
 
@@ -682,7 +682,7 @@
     { "document_key": "success_metrics", "type": "feedback", "relevance": 0.45 }
   ],
   "output_type": "RenderedDocument",
-  "granularity_strategy": "one_to_one"
+  "granularity_strategy": "per_source_document"
 }
 ```
 
@@ -831,7 +831,7 @@
     { "document_key": "business_case", "type": "feedback", "relevance": 0.5 }
   ],
   "output_type": "RenderedDocument",
-  "granularity_strategy": "one_to_one"
+  "granularity_strategy": "per_source_document"
 }
 ```
 
@@ -964,7 +964,7 @@
     { "document_key": "business_case", "type": "feedback", "relevance": 0.45 }
   ],
   "output_type": "RenderedDocument",
-  "granularity_strategy": "one_to_one"
+  "granularity_strategy": "per_source_document"
 }
 ```
 
@@ -1097,7 +1097,7 @@
     { "document_key": "success_metrics", "type": "feedback", "relevance": 0.35 }
   ],
   "output_type": "RenderedDocument",
-  "granularity_strategy": "one_to_one"
+  "granularity_strategy": "per_source_document"
 }
 ```
 
@@ -1226,7 +1226,7 @@
     { "document_key": "success_metrics", "type": "feedback", "relevance": 0.65 }
   ],
   "output_type": "AssembledDocumentJson",
-  "granularity_strategy": "one_to_one"
+  "granularity_strategy": "per_source_document"
 }
 ```
 

@@ -323,7 +323,7 @@ BEGIN
         'Turn',
         v_business_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.7}]'::jsonb,
         '{
@@ -471,7 +471,7 @@ BEGIN
         'Turn',
         v_feature_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.65}]'::jsonb,
         '{
@@ -629,7 +629,7 @@ BEGIN
         'Turn',
         v_technical_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.6}]'::jsonb,
         '{
@@ -786,7 +786,7 @@ BEGIN
         'Turn',
         v_success_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.8}]'::jsonb,
         '{
@@ -1045,7 +1045,7 @@ BEGIN
         'Turn',
         v_business_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.7}]'::jsonb,
         '{
@@ -1117,7 +1117,7 @@ BEGIN
         'Turn',
         v_feature_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.65}]'::jsonb,
         '{
@@ -1185,7 +1185,7 @@ BEGIN
         'Turn',
         v_technical_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.6}]'::jsonb,
         '{
@@ -1252,7 +1252,7 @@ BEGIN
         'Turn',
         v_success_prompt_id,
         'RenderedDocument',
-        'one_to_one',
+        'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.8}]'::jsonb,
         '{

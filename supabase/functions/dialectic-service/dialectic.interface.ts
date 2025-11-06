@@ -115,7 +115,7 @@ export type DialecticRecipeTemplateStep =
     granularity_strategy: GranularityStrategy;
     inputs_required: InputRule[];
     inputs_relevance: RelevanceRule[];
-    outputs_required: OutputRule[];
+    outputs_required: OutputRule;
     output_type: ModelContributionFileTypes;
   };
 
@@ -130,7 +130,7 @@ export type DialecticStageRecipeStep =
     granularity_strategy: GranularityStrategy;
     inputs_required: InputRule[];
     inputs_relevance: RelevanceRule[];
-    outputs_required: OutputRule[];
+    outputs_required: OutputRule;
     output_type: FileType;
   };
 
@@ -562,14 +562,20 @@ export interface SystemMaterials {
   stage_rationale: string;
   executive_summary: string; // This is the primary means of the agent communicating its intent to itself through different documents, to keep the generation aligned across documents.
   input_artifacts_summary: string; // This is how we detail what artifacts the agent will use to generate the documents.
-  files_to_generate: {
-    from_document_key: string; // We tell the agent in the prompt "generate this list of documents", the agent's response must include that list so we know it's generating the right documents.
-    template_filename: string; // Each document has specific inclusions that we expect the agent to generate, in addition to whatever the agent decides to add to the document.
-  }[];
   // Optional, for model self-correction and introspection
   diversity_rubric?: { [key: string]: string }; // This is how the agent is directed to decide whether to use standard or non-standard approaches.
   quality_standards?: string[]; // These are quality standards that the agent should follow when generating the documents.
   validation_checkpoint?: string[]; // This is how the agent self-evaluates whether it's generated what it's been asked to generate. 
+  decision_criteria?: string[]; // This is the standard the agent uses to decide which approach to take as defined by the rubric.
+  milestones?: string[]; // This is the list of milestones the agent will use to track its progress.
+  dependency_rules?: string[]; // This is the list of dependency rules the agent will use to determine which documents to generate.
+  status_preservation_rules?: { [key: string]: string }; // This is the list of status preservation rules the agent will use to determine which documents to generate.
+  generation_limits?: { max_steps: number }; // This is the maximum number of steps the agent will take to generate the documents.
+  document_order?: string[]; // This is the order in which the agent will generate the documents.
+  current_document?: string; // This is the current document the agent is working on.
+  iteration_metadata?: { iteration_number: number }; // This is the iteration number the agent is working on.
+  exhaustiveness_requirement?: string; // This is the exhaustiveness requirement the agent will use to determine which documents to generate.
+  trd_outline_inputs?: { subsystems: string[] }; // This is the list of subsystems the agent will use to generate the documents.
 }
 
 export enum BranchKey {
@@ -1096,9 +1102,9 @@ export type GranularityStrategyMap = Map<string, GranularityPlannerFn>;
  */
 export interface InputRule {
     /** The type of artifact to be used as an input. */
-    type: 'document' | 'feedback' | 'header_context' | 'seed_prompt';
+    type: 'document' | 'feedback' | 'header_context' | 'seed_prompt' | 'project_resource';
     /** The slug of the stage from which to draw the artifact (e.g., 'thesis'). */
-    stage_slug?: string;
+    slug: string;
     /** The specific key of the document to use, or '*' to use all documents from the specified stage. */
     document_key?: string | '*';
     /** Whether this input is mandatory for the step to proceed. */
@@ -1107,8 +1113,6 @@ export interface InputRule {
     multiple?: boolean;
     /** A markdown header to prepend before this artifact's content in the assembled prompt. */
     section_header?: string;
-    /** A description of the artifact's purpose in the context of the prompt. */
-    purpose?: string;
 }
 
 /**
@@ -1119,26 +1123,82 @@ export interface RelevanceRule {
     /** The key of the document to which this relevance score applies. */
     document_key: string;
     /** The type of the document (e.g., 'document', 'feedback'). */
-    type: string;
+    type?: string;
     /** A normalized float from 0.0 to 1.0 indicating the priority of this artifact. */
     relevance: number;
-    stage_slug?: string;
+    slug?: string;
 }
+
+export interface HeaderContextArtifact {
+    type: 'header_context';
+    document_key: 'header_context';
+    artifact_class: 'header_context';
+    file_type: 'json';
+}
+
+export interface ReviewMetadata {
+  proposal_identifier: {
+    lineage_key: string;
+    source_model_slug: string;
+  };
+  proposal_summary: string;
+  review_focus: string[];
+  user_constraints: string[];
+  normalization_guidance: {
+    scoring_scale: string;
+    required_dimensions: string[];
+  };
+}
+
+export interface ContextForDocument {
+    document_key: FileType;
+    content_to_include: Record<string, unknown> | Record<string, unknown>[];
+}
+
+export interface RenderedDocumentArtifact {
+    artifact_class: 'rendered_document';
+    file_type: 'markdown' | 'json';
+    document_key: FileType;
+    template_filename: string;
+    content_to_include?: Record<string, unknown> | Record<string, unknown>[];
+    lineage_key?: string;
+    source_model_slug?: string;
+}
+
+
+export type AssembledJsonArtifact = {
+    artifact_class: 'assembled_document_json' | 'assembled_json';
+    document_key: FileType;
+    lineage_key?: string;
+    source_model_slug?: string;
+} & ({
+    fields: string[];
+    template_filename?: never;
+    content_to_include?: never;
+    file_type?: never;
+} | {
+    fields?: never;
+    template_filename: string;
+    content_to_include: Record<string, unknown> | Record<string, unknown>[];
+    file_type: 'json';
+});
+
 
 /**
  * Defines the structure for an item in the `outputs_required` JSONB array, describing
  * an artifact that is expected to be generated by a recipe step.
  */
 export interface OutputRule {
-    /** The type of output to be generated (e.g., 'header_context'). */
-    type: 'header_context' | string;
-    /** The unique key that will be assigned to the output document. */
-    document_key: string;
-    /** For header contexts, this specifies which subsequent documents this header provides context for. */
-    context_for_documents?: {
-        document_key: string;
-        content_to_include: Record<string, unknown>;
+    system_materials?: SystemMaterials;
+    header_context_artifact?: HeaderContextArtifact;
+    context_for_documents?: ContextForDocument[];
+    documents?: (RenderedDocumentArtifact | AssembledJsonArtifact)[];
+    assembled_json?: AssembledJsonArtifact[];
+    files_to_generate?: {
+      from_document_key: string;
+      template_filename: string;
     }[];
+    review_metadata?: ReviewMetadata;
 }
 
 export interface StartSessionDeps {

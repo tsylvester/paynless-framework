@@ -126,7 +126,7 @@ describe('DialecticStore (integration) - readiness notifications', () => {
     job_type: 'EXECUTE',
     prompt_type: 'Turn',
     output_type: 'AssembledDocumentJson',
-    granularity_strategy: 'one_to_one',
+    granularity_strategy: 'per_source_document',
     inputs_required: [
       {
         type: 'header_context',

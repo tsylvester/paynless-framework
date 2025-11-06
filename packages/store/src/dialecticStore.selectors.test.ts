@@ -1002,7 +1002,7 @@ describe('selectIsStageReadyForSessionIteration', () => {
                 prompt_type: 'Turn',
                 prompt_template_id: 'prompt-2',
                 output_type: 'AssembledDocumentJson',
-                granularity_strategy: 'one_to_one',
+                granularity_strategy: 'per_source_document',
                 inputs_required: [
                     { type: 'document', document_key: 'business_case', required: true, slug: 'thesis.business_case' },
                     { type: 'feedback', document_key: 'business_case', required: true, slug: 'thesis.feedback.business_case' },

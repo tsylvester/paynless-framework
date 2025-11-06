@@ -5,9 +5,8 @@ import {
     StageWithRecipeSteps,
   } from "./dialectic.interface.ts";
 import type { Database, Json, TablesInsert } from "../types_db.ts";
-import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import { logger } from "../_shared/logger.ts";
-import { User } from "npm:@supabase/supabase-js@2";
 import { isDatabaseRecipeSteps } from '../_shared/utils/type-guards/type_guards.dialectic.ts';
 import { mapToStageWithRecipeSteps } from '../_shared/utils/mappers.ts';
   
@@ -94,7 +93,7 @@ export async function generateContributions(
         // 1. Fetch the recipe for the stage
         const { data: stageDef, error: recipeError } = await dbClient
             .from('dialectic_stages')
-            .select('*, dialectic_stage_recipe_instances!inner(*, dialectic_stage_recipe_steps!inner(*))')
+            .select('*, dialectic_stage_recipe_instances!dialectic_stage_recipe_instances_stage_id_fkey!inner(*, dialectic_stage_recipe_steps!inner(*))')
             .eq('slug', stageSlug)
             .single();
 

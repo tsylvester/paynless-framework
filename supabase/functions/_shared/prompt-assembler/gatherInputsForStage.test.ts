@@ -36,7 +36,7 @@ const createMockRecipeStep = (inputs: DialecticRecipeTemplateStep['inputs_requir
     granularity_strategy: 'all_to_one',
     inputs_required: inputs,
     inputs_relevance: [],
-    outputs_required: [],
+    outputs_required: {},
     parallel_group: null,
     branch_key: null,
     prompt_template_id: null,
@@ -317,7 +317,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     recipe_step: createMockRecipeStep([
                         {
                             type: "document",
-                            stage_slug: docStageSlug,
+                            slug: docStageSlug,
                             document_key: '*', // Assuming '*' fetches any document from that stage
                             required: true,
                             multiple: false,
@@ -452,7 +452,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     recipe_step: createMockRecipeStep([
                         { 
                             type: "feedback", 
-                            stage_slug: feedbackStageSlug,
+                            slug: feedbackStageSlug,
                             required: true,
                             multiple: false
                         }
@@ -620,14 +620,14 @@ Deno.test("gatherInputsForStage", async (t) => {
                     recipe_step: createMockRecipeStep([
                         { 
                             type: "document", 
-                            stage_slug: contribSlug,
+                            slug: contribSlug,
                             required: true,
                             multiple: false,
                             section_header: "Contributions from contrib-slug-for-both stage",
                         },
                         { 
                             type: "feedback", 
-                            stage_slug: feedbackSlug,
+                            slug: feedbackSlug,
                             required: true,
                             multiple: false,
                             section_header: "Feedback from feedback-slug-for-both stage",
@@ -800,14 +800,14 @@ Deno.test("gatherInputsForStage", async (t) => {
                     recipe_step: createMockRecipeStep([
                         { 
                             type: "document", 
-                            stage_slug: contribSlug, 
+                            slug: contribSlug, 
                             section_header: customContribHeader,
                             required: true,
                             multiple: false,
                         },
                         { 
                             type: "feedback", 
-                            stage_slug: feedbackSlug, 
+                            slug: feedbackSlug, 
                             section_header: customFeedbackHeader, 
                             required: true, 
                             multiple: false,
@@ -926,7 +926,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     recipe_step: createMockRecipeStep([
                         { 
                             type: "feedback", 
-                            stage_slug: optionalFeedbackSlug, 
+                            slug: optionalFeedbackSlug, 
                             required: false,
                             multiple: false,
                         }
@@ -1036,7 +1036,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     recipe_step: createMockRecipeStep([
                         { 
                             type: "feedback", 
-                            stage_slug: requiredFeedbackSlug, 
+                            slug: requiredFeedbackSlug, 
                             required: true,
                             multiple: false,
                         }
@@ -1094,7 +1094,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     id: "stage-db-err-req", 
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null,
                     recipe_step: createMockRecipeStep([
-                        { type: "document", stage_slug: contribStageSlug, required: true, multiple: false }
+                        { type: "document", slug: contribStageSlug, required: true, multiple: false }
                     ]),
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
@@ -1147,7 +1147,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     id: "stage-ms-opt", 
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null,
                     recipe_step: createMockRecipeStep([
-                        { type: "document", stage_slug: contribStageSlug, required: false, multiple: false, section_header: "Optional Contributions Missing Storage" }
+                        { type: "document", slug: contribStageSlug, required: false, multiple: false, section_header: "Optional Contributions Missing Storage" }
                     ]),
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
@@ -1215,7 +1215,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     id: "stage-cdl-err-req", 
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null,
                     recipe_step: createMockRecipeStep([
-                        { type: "document", stage_slug: contribStageSlug, required: true, multiple: false }
+                        { type: "document", slug: contribStageSlug, required: true, multiple: false }
                     ]),
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
@@ -1292,7 +1292,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     id: "stage-cdl-err-opt", 
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null,
                     recipe_step: createMockRecipeStep([
-                        { type: "document", stage_slug: contribStageSlug, required: false, multiple: false, section_header: sectionHeader }
+                        { type: "document", slug: contribStageSlug, required: false, multiple: false, section_header: sectionHeader }
                     ]),
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
@@ -1357,7 +1357,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     id: "stage-ms-req", 
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null,
                     recipe_step: createMockRecipeStep([
-                        { type: "document", stage_slug: contribStageSlug, required: true, multiple: false }
+                        { type: "document", slug: contribStageSlug, required: true, multiple: false }
                     ]),
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
@@ -1427,7 +1427,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     id: "stage-ms-opt", 
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null,
                     recipe_step: createMockRecipeStep([
-                        { type: "document", stage_slug: contribStageSlug, required: false, multiple: false, section_header: sectionHeader }
+                        { type: "document", slug: contribStageSlug, required: false, multiple: false, section_header: sectionHeader }
                     ]),
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
