@@ -1,13 +1,11 @@
 import React, { useEffect } from "react";
 import type { DialecticStage } from "@paynless/types";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
 	useDialecticStore,
 	selectSessionById,
 	selectActiveContextSessionId,
 	selectCurrentProjectDetail,
-	selectIsStageReadyForSessionIteration,
 	selectSortedStages,
 	selectActiveStageSlug,
   selectStageProgressSummary
@@ -95,8 +93,6 @@ const StageCard: React.FC<StageCardProps> = ({ stage }) => {
 		}
 	};
   const stageIndex = stages.findIndex((s) => s.id === stage.id);
-
-	const stageIndex = stages.findIndex((s) => s.id === stage.id);
 
 	return (
 		<button
