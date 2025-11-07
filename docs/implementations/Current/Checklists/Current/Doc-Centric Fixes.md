@@ -239,5 +239,21 @@
     * [✅] 10.i.i. Derive `modelId` and `documentKey` from the stage document payload (failing fast if either is missing) and rebuild the memoized focus/draft keys so they match the selectors and checklist contract.
     * [✅] 10.i.ii. Remove any dormant contribution-era dependencies (e.g., unused checklist imports), keep the diagnostic logging, and harden the draft-update/save handlers against missing document context while preserving the current editing UX.
 
+* [ ] 10.j. [DOCS] Catalog legacy Document-Centric Generation2 references for regression audit
+    * [✅] 10.j.i. StageRunChecklist
+        * [✅] 10.j.i.1. `packages/types/src/dialectic.types.ts` — StageRunChecklistProps `modelId` contract (Generation2 1.p.a)
+        * [✅] 10.j.i.2. `packages/store/src/dialecticStore.selectors.recipes.test.ts` — Model-filtered document checklist coverage (Generation2 1.p.b)
+        * [✅] 10.j.i.3. `packages/store/src/dialecticStore.selectors.ts` — Model-filtered checklist implementation (Generation2 1.p.c)
+        * [✅ ] 10.j.i.4. `apps/web/src/components/dialectic/StageRunChecklist.test.tsx` — Model-specific interaction tests (Generation2 1.m.a, 1.p.d)
+        * [✅] 10.j.i.5. `apps/web/src/components/dialectic/StageRunChecklist.tsx` — Model-specific checklist UI (Generation2 1.m.b, 1.p.e)
+    * [✅] 10.j.ii. SessionContributionsDisplayCard
+        * [✅] 10.j.ii.1. `apps/web/src/components/dialectic/SessionContributionsDisplayCard.test.tsx` — Multi-model document workflow tests (Generation2 1.p.f)
+        * [✅] 10.j.ii.2. `apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx` — Multi-model container implementation (Generation2 1.p.h)
+    * [✅] 10.j.iii. GeneratedContributionCard
+        * [✅] 10.j.iii.1. `apps/web/src/components/dialectic/GeneratedContributionCard.test.tsx` — Model-scoped feedback editor tests (Generation2 1.p.g.i)
+        * [✅] 10.j.iii.2. `apps/web/src/components/dialectic/GeneratedContributionCard.tsx` — Model-scoped container implementation (Generation2 1.p.g.ii)
+    * [✅] 10.j.iv. DialecticSessionDetails
+        * [✅] 10.j.iv.1. No explicit legacy references captured in Document-Centric Generation2; confirm scope during audit.
+
 * Fix all recipe mappers
 * Change Submit Responses button to detect when in the last stage and instead provide Export and Iterate from Plan
