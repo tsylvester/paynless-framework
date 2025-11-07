@@ -820,4 +820,131 @@ describe('DialecticApiClient', () => {
             expect(result.data).toBeUndefined();
         });
     });      
+
+    describe('fetchStageRecipe', () => {
+        const endpoint = 'dialectic-service';
+        const stageSlug = 'synthesis';
+        const requestBody = { action: 'getStageRecipe', payload: { stageSlug } };
+
+        it('should call apiClient.post with the correct endpoint and body', async () => {
+            type StageRecipeResponse = {
+                stageSlug: string;
+                instanceId: string;
+                steps: Array<{
+                    id: string;
+                    step_key: string;
+                    step_slug: string;
+                    step_name: string;
+                    execution_order: number;
+                    parallel_group?: number | null;
+                    branch_key?: string | null;
+                    job_type: string;
+                    prompt_type: string;
+                    prompt_template_id?: string | null;
+                    output_type: string;
+                    granularity_strategy: string;
+                    inputs_required: Array<{ type: string; document_key: string; required: boolean; stage_slug?: string }>;
+                    inputs_relevance?: Array<{ document_key: string; relevance: number; type?: string; stage_slug?: string }>;
+                    outputs_required?: Array<{ type: string; document_key: string }>;
+                }>;
+            };
+
+            const backendResponse: ApiResponse<StageRecipeResponse> = {
+                status: 200,
+                data: {
+                    stageSlug,
+                    instanceId: 'instance-123',
+                    // Two steps intentionally out of order to assert ordering in returned payload
+                    steps: [
+                        {
+                            id: 'step-b', step_key: 'b_key', step_slug: 'b-slug', step_name: 'B',
+                            execution_order: 2, parallel_group: 2, branch_key: 'branch_b',
+                            job_type: 'EXECUTE', prompt_type: 'Turn', prompt_template_id: 'pt-b',
+                            output_type: 'AssembledDocumentJson', granularity_strategy: 'per_source_document',
+                            inputs_required: [{ type: 'document', document_key: 'feature_spec', required: true, stage_slug: 'thesis' }],
+                            inputs_relevance: [{ document_key: 'feature_spec', relevance: 1, type: 'document', stage_slug: 'thesis' }],
+                            outputs_required: [{ type: 'header_context', document_key: 'header_ctx_b' }],
+                        },
+                        {
+                            id: 'step-a', step_key: 'a_key', step_slug: 'a-slug', step_name: 'A',
+                            execution_order: 1, parallel_group: 1, branch_key: 'branch_a',
+                            job_type: 'PLAN', prompt_type: 'Planner', prompt_template_id: 'pt-a',
+                            output_type: 'HeaderContext', granularity_strategy: 'all_to_one',
+                            inputs_required: [{ type: 'seed_prompt', document_key: 'seed_prompt', required: true }],
+                            inputs_relevance: [],
+                            outputs_required: [{ type: 'header_context', document_key: 'header_ctx_a' }],
+                        },
+                    ],
+                },
+            };
+            mockApiClientPost.mockResolvedValueOnce(backendResponse);
+
+            await dialecticApiClient.fetchStageRecipe(stageSlug);
+
+            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+        });
+
+        it('should return normalized DialecticStageRecipe with steps sorted and fields preserved', async () => {
+            const backendResponse: ApiResponse<any> = {
+                status: 200,
+                data: {
+                    stageSlug,
+                    instanceId: 'instance-123',
+                    steps: [
+                        {
+                            id: 'step-b', step_key: 'b_key', step_slug: 'b-slug', step_name: 'B',
+                            execution_order: 2, parallel_group: 2, branch_key: 'branch_b',
+                            job_type: 'EXECUTE', prompt_type: 'Turn', prompt_template_id: 'pt-b',
+                            output_type: 'AssembledDocumentJson', granularity_strategy: 'per_source_document',
+                            inputs_required: [{ type: 'document', document_key: 'feature_spec', required: true, stage_slug: 'thesis' }],
+                            inputs_relevance: [{ document_key: 'feature_spec', relevance: 1, type: 'document', stage_slug: 'thesis' }],
+                            outputs_required: [{ type: 'header_context', document_key: 'header_ctx_b' }],
+                        },
+                        {
+                            id: 'step-a', step_key: 'a_key', step_slug: 'a-slug', step_name: 'A',
+                            execution_order: 1, parallel_group: 1, branch_key: 'branch_a',
+                            job_type: 'PLAN', prompt_type: 'Planner', prompt_template_id: 'pt-a',
+                            output_type: 'HeaderContext', granularity_strategy: 'all_to_one',
+                            inputs_required: [{ type: 'seed_prompt', document_key: 'seed_prompt', required: true }],
+                            inputs_relevance: [],
+                            outputs_required: [{ type: 'header_context', document_key: 'header_ctx_a' }],
+                        },
+                    ],
+                },
+            };
+            mockApiClientPost.mockResolvedValueOnce(backendResponse);
+
+            const result = await dialecticApiClient.fetchStageRecipe(stageSlug);
+
+            expect(result.status).toBe(200);
+            expect(result.error).toBeUndefined();
+            expect(result.data?.stageSlug).toBe(stageSlug);
+            expect(result.data?.instanceId).toBe('instance-123');
+            // Assert sorted order: step-a (1) then step-b (2)
+            expect(result.data?.steps[0].step_key).toBe('a_key');
+            expect(result.data?.steps[0].parallel_group).toBe(1);
+            expect(result.data?.steps[0].branch_key).toBe('branch_a');
+            expect(result.data?.steps[1].step_key).toBe('b_key');
+            expect(result.data?.steps[1].parallel_group).toBe(2);
+            expect(result.data?.steps[1].branch_key).toBe('branch_b');
+            // Inputs/outputs preserved
+            expect(result.data?.steps[1].inputs_required?.[0].document_key).toBe('feature_spec');
+            expect(result.data?.steps[1].outputs_required?.[0].document_key).toBe('header_ctx_b');
+        });
+
+        it('should propagate backend error status and message', async () => {
+            const backendError: ApiResponse<any> = {
+                status: 404,
+                error: { code: 'NOT_FOUND', message: 'Stage not found' },
+            };
+            mockApiClientPost.mockResolvedValueOnce(backendError);
+
+            const result = await dialecticApiClient.fetchStageRecipe('missing-stage');
+
+            expect(result.status).toBe(404);
+            expect(result.error?.message).toBe('Stage not found');
+            expect(result.data).toBeUndefined();
+        });
+    });
 }); 

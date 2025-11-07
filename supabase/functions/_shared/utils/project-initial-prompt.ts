@@ -1,6 +1,6 @@
 import type { Database } from '../../types_db.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { ProjectContext } from '../prompt-assembler.interface.ts';
+import type { ProjectContext } from '../prompt-assembler/prompt-assembler.interface.ts';
 import type { ILogger } from '../types.ts';
 import type { DownloadFromStorageFn } from '../../_shared/supabase_storage_utils.ts';
 

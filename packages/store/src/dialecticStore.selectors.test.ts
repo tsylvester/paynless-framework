@@ -60,7 +60,8 @@ import type {
     DialecticContribution,
     DialecticProjectResource,
     DialecticFeedback,
-    DialecticStageTransition
+    DialecticStageTransition,
+    DialecticStageRecipe
 } from '@paynless/types';
 
 const mockThesisStage: DialecticStage = {
@@ -70,8 +71,9 @@ const mockThesisStage: DialecticStage = {
     description: 'Mock thesis stage',
     created_at: new Date().toISOString(),
     default_system_prompt_id: 'sp-1',
-    input_artifact_rules: null,
-    expected_output_artifacts: null,
+    expected_output_template_ids: [],
+    recipe_template_id: null,
+    active_recipe_instance_id: null,
 };
 
 const mockSynthesisStage: DialecticStage = {
@@ -95,8 +97,8 @@ describe('Dialectic Store Selectors', () => {
     ];
     const mockOverlayError: ApiError = { code: 'OVERLAY_ERR', message: 'Test Overlay Error' };
     const mockDomains: DialecticDomain[] = [
-        { id: 'dom1', name: 'Domain 1', description: 'Test domain 1', parent_domain_id: null },
-        { id: 'dom2', name: 'Domain 2', description: 'Test domain 2', parent_domain_id: null },
+        { id: 'dom1', name: 'Domain 1', description: 'Test domain 1', parent_domain_id: null, is_enabled: true },
+        { id: 'dom2', name: 'Domain 2', description: 'Test domain 2', parent_domain_id: null, is_enabled: true },
     ];
     const mockDomainsError: ApiError = { code: 'DOMAIN_ERR', message: 'Test Domain Error' };
     const mockStage1: DialecticStage = { 
@@ -106,8 +108,9 @@ describe('Dialectic Store Selectors', () => {
         description: 'First mock stage',
         created_at: new Date().toISOString(),
         default_system_prompt_id: 'sp-1',
-        input_artifact_rules: null,
-        expected_output_artifacts: null,
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
     };
     const mockStage2: DialecticStage = { 
         id: 'stage-def', 
@@ -116,8 +119,9 @@ describe('Dialectic Store Selectors', () => {
         description: 'Second mock stage',
         created_at: new Date().toISOString(),
         default_system_prompt_id: 'sp-2',
-        input_artifact_rules: null,
-        expected_output_artifacts: null,
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
     };
     const mockProcessTemplate: DialecticProcessTemplate = {
         id: 'pt-1',
@@ -127,7 +131,7 @@ describe('Dialectic Store Selectors', () => {
         starting_stage_id: 'stage-abc',
         stages: [mockStage1, mockStage2],
         transitions: [
-            { id: 't1', process_template_id: 'pt-1', source_stage_id: 'stage-abc', target_stage_id: 'stage-def', created_at: new Date().toISOString() }
+            { id: 't1', process_template_id: 'pt-1', source_stage_id: 'stage-abc', target_stage_id: 'stage-def', created_at: new Date().toISOString(), condition_description: null }
         ]
     };
     const mockProcessTemplateError: ApiError = { code: 'TEMPLATE_ERR', message: 'Test Template Error' };
@@ -789,9 +793,9 @@ describe('Dialectic Store Selectors', () => {
     });
 
     describe('selectSortedStages', () => {
-        const stage1: DialecticStage = { id: '1', display_name: 'Thesis', slug: 'thesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_artifacts: null, input_artifact_rules: null };
-        const stage2: DialecticStage = { id: '2', display_name: 'Antithesis', slug: 'antithesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_artifacts: null, input_artifact_rules: null };
-        const stage3: DialecticStage = { id: '3', display_name: 'Synthesis', slug: 'synthesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_artifacts: null, input_artifact_rules: null };
+        const stage1: DialecticStage = { id: '1', display_name: 'Thesis', slug: 'thesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null };
+        const stage2: DialecticStage = { id: '2', display_name: 'Antithesis', slug: 'antithesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null };
+        const stage3: DialecticStage = { id: '3', display_name: 'Synthesis', slug: 'synthesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null };
     
         const transitions: DialecticStageTransition[] = [
           { id: 't1', process_template_id: 'p1', source_stage_id: '1', target_stage_id: '2', created_at: new Date().toISOString(), condition_description: null },
@@ -883,13 +887,29 @@ describe('selectIsStageReadyForSessionIteration', () => {
         updated_at: new Date().toISOString(),
     };
 
+    const mockHeaderContextResource: DialecticProjectResource = {
+        id: 'resource-2',
+        project_id: projectId,
+        storage_path: 'path/to/header_context.json',
+        file_name: 'header_context.json',
+        mime_type: 'application/json',
+        size_bytes: 250,
+        resource_description: JSON.stringify({
+            type: 'header_context',
+            stage_slug: stageSlug,
+            document_key: 'global_header',
+            iteration: iterationNumber,
+        }),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
     const mockProcessTemplate: DialecticProcessTemplate = {
         id: 'pt-1',
         name: 'Test Template',
         description: 'A template for testing',
         starting_stage_id: 'stage-thesis',
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
         stages: [{
             id: 'stage-thesis',
             slug: 'thesis',
@@ -897,13 +917,10 @@ describe('selectIsStageReadyForSessionIteration', () => {
             description: 'The first stage',
             default_system_prompt_id: null,
             created_at: new Date().toISOString(),
-            input_artifact_rules: {
-                sources: [{
-                    type: 'seed_prompt',
-                    required: true
-                }]
-            },
-        } as DialecticStage],
+            expected_output_template_ids: [],
+            recipe_template_id: null,
+            active_recipe_instance_id: null,
+        }],
     };
 
     const projectWithResource: DialecticProject = {
@@ -918,7 +935,22 @@ describe('selectIsStageReadyForSessionIteration', () => {
         status: 'active',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        dialectic_sessions: [{ id: sessionId, iteration_count: iterationNumber } as DialecticSession], // Simplified
+        dialectic_sessions: [{
+            id: sessionId,
+            iteration_count: iterationNumber,
+            dialectic_contributions: [],
+            feedback: [],
+            project_id: projectId,
+            session_description: 'Test session',
+            user_input_reference_url: null,
+            selected_model_ids: [],
+            status: 'active',
+            associated_chat_id: null,
+            dialectic_session_models: [],
+            current_stage_id: 'stage-thesis',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        }],
         resources: [mockSeedPromptResource],
         process_template_id: 'pt-1',
         dialectic_process_templates: mockProcessTemplate, // Simplified
@@ -933,20 +965,72 @@ describe('selectIsStageReadyForSessionIteration', () => {
         saveContributionEditError: null,
     };
 
+    const requiredSeedPromptRecipe: DialecticStageRecipe = {
+        stageSlug,
+        instanceId: 'instance-1',
+        steps: [
+            {
+                id: 'step-seed',
+                step_key: 'seed_step',
+                step_slug: 'seed-step',
+                step_name: 'Seed Step',
+                execution_order: 1,
+                parallel_group: 1,
+                branch_key: 'branch-seed',
+                job_type: 'PLAN',
+                prompt_type: 'Planner',
+                prompt_template_id: 'prompt-1',
+                output_type: 'HeaderContext',
+                granularity_strategy: 'all_to_one',
+                inputs_required: [
+                    { type: 'seed_prompt', document_key: 'seed_prompt', required: true, slug: 'seed_prompt' },
+                ],
+                inputs_relevance: [],
+                outputs_required: [
+                    { document_key: 'global_header', artifact_class: 'header_context', file_type: 'json' },
+                ],
+            },
+            {
+                id: 'step-doc',
+                step_key: 'doc_step',
+                step_slug: 'doc-step',
+                step_name: 'Document Step',
+                execution_order: 2,
+                parallel_group: 2,
+                branch_key: 'branch-doc',
+                job_type: 'EXECUTE',
+                prompt_type: 'Turn',
+                prompt_template_id: 'prompt-2',
+                output_type: 'AssembledDocumentJson',
+                granularity_strategy: 'per_source_document',
+                inputs_required: [
+                    { type: 'document', document_key: 'business_case', required: true, slug: 'thesis.business_case' },
+                    { type: 'feedback', document_key: 'business_case', required: true, slug: 'thesis.feedback.business_case' },
+                    { type: 'header_context', document_key: 'global_header', required: true, slug: 'thesis.header.global' },
+                ],
+                inputs_relevance: [],
+                outputs_required: [],
+            },
+        ],
+    };
+
+    const buildState = (overrides: Partial<DialecticStateValues> = {}): DialecticStateValues => ({
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithResource,
+        currentProcessTemplate: mockProcessTemplate,
+        recipesByStageSlug: { [stageSlug]: requiredSeedPromptRecipe },
+        ...overrides,
+    });
+
     it('should return true if project, session, stage, and matching seed prompt resource exist', () => {
-        const state: DialecticStateValues = {
-            ...initialDialecticStateValues,
-            currentProjectDetail: projectWithResource,
-            currentProcessTemplate: mockProcessTemplate,
-        };
+        const state = buildState();
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(true);
     });
 
     it('should return false if currentProjectDetail is null', () => {
-        const state: DialecticStateValues = {
-            ...initialDialecticStateValues,
+        const state = buildState({
             currentProjectDetail: null,
-        };
+        });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
 
@@ -955,10 +1039,9 @@ describe('selectIsStageReadyForSessionIteration', () => {
             ...projectWithResource,
             resources: null as any, // Testing null case
         };
-        const state: DialecticStateValues = {
-            ...initialDialecticStateValues,
+        const state = buildState({
             currentProjectDetail: projectWithoutResources,
-        };
+        });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
     
@@ -967,10 +1050,9 @@ describe('selectIsStageReadyForSessionIteration', () => {
             ...projectWithResource,
             resources: [], 
         };
-        const state: DialecticStateValues = {
-            ...initialDialecticStateValues,
+        const state = buildState({
             currentProjectDetail: projectWithEmptyResources,
-        };
+        });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
 
@@ -984,10 +1066,9 @@ describe('selectIsStageReadyForSessionIteration', () => {
             ...projectWithResource,
             resources: [resourceWithUnparseableDesc],
         };
-        const state: DialecticStateValues = {
-            ...initialDialecticStateValues,
+        const state = buildState({
             currentProjectDetail: projectWithBadResource,
-        };
+        });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
 
@@ -1001,10 +1082,9 @@ describe('selectIsStageReadyForSessionIteration', () => {
             ...projectWithResource,
             resources: [resourceWithNullDesc],
         };
-        const state: DialecticStateValues = {
-            ...initialDialecticStateValues,
+        const state = buildState({
             currentProjectDetail: projectWithNullDescResource,
-        };
+        });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
     
@@ -1018,10 +1098,9 @@ describe('selectIsStageReadyForSessionIteration', () => {
             ...projectWithResource,
             resources: [resourceWithWrongType],
         };
-        const state: DialecticStateValues = {
-            ...initialDialecticStateValues,
+        const state = buildState({
             currentProjectDetail: projectWithWrongTypeResource,
-        };
+        });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
 
@@ -1035,10 +1114,9 @@ describe('selectIsStageReadyForSessionIteration', () => {
             ...projectWithResource,
             resources: [resourceWithWrongSession],
         };
-        const state: DialecticStateValues = {
-            ...initialDialecticStateValues,
+        const state = buildState({
             currentProjectDetail: projectWithWrongSessionResource,
-        };
+        });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
 
@@ -1052,10 +1130,9 @@ describe('selectIsStageReadyForSessionIteration', () => {
             ...projectWithResource,
             resources: [resourceWithWrongStage],
         };
-        const state: DialecticStateValues = {
-            ...initialDialecticStateValues,
+        const state = buildState({
             currentProjectDetail: projectWithWrongStageResource,
-        };
+        });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
 
@@ -1069,10 +1146,9 @@ describe('selectIsStageReadyForSessionIteration', () => {
             ...projectWithResource,
             resources: [resourceWithWrongIteration],
         };
-        const state: DialecticStateValues = {
-            ...initialDialecticStateValues,
+        const state = buildState({
             currentProjectDetail: projectWithWrongIterationResource,
-        };
+        });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
     
@@ -1081,20 +1157,10 @@ describe('selectIsStageReadyForSessionIteration', () => {
             ...projectWithResource,
             dialectic_sessions: [],
         };
-        const state: DialecticStateValues = {
-            ...initialDialecticStateValues,
+        const state = buildState({
             currentProjectDetail: projectWithNoSessions,
-        };
-        // This test might seem redundant given the true case requires a session,
-        // but it ensures robustness if the selector logic changes.
-        // The current plan implies the selector doesn't directly use session from project.dialectic_sessions
-        // but it's good to be aware if that changes.
-        // For now, based on the plan, the selector only looks at project.resources and currentProjectDetail.
-        // The sessionId parameter is used to match against resource_description.
+        });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
-        // Correcting the expectation based on the idea that the project and its resources are the primary source of truth.
-        // If the `sessionId` passed to the selector matches a `resource_description`'s `session_id`, it should still find it.
-        // The `dialectic_sessions` array on the project isn't directly queried by the selector according to the plan.
     });
 
     it('should return true even if multiple resources exist, as long as one matches', () => {
@@ -1108,11 +1174,227 @@ describe('selectIsStageReadyForSessionIteration', () => {
             ...projectWithResource,
             resources: [otherResource, mockSeedPromptResource],
         };
-        const state: DialecticStateValues = {
-            ...initialDialecticStateValues,
+        const state = buildState({
             currentProjectDetail: projectWithMultipleResources,
-            currentProcessTemplate: mockProcessTemplate,
+        });
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(true);
+    });
+
+    it('should return false when required document contribution is missing', () => {
+        const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+        const state = buildState({
+            stageRunProgress: {
+                [progressKey]: {
+                    stepStatuses: {
+                        seed_step: 'completed',
+                        doc_step: 'not_started',
+                    },
+                    documents: {},
+                },
+            },
+        });
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
+    });
+
+    it('should return false when required feedback is missing', () => {
+        const sessionWithDocumentOnly: DialecticSession = {
+            ...projectWithResource.dialectic_sessions![0],
+            dialectic_contributions: [{
+                id: 'contrib-1',
+                session_id: sessionId,
+                user_id: null,
+                stage: 'thesis',
+                iteration_number: iterationNumber,
+                model_id: null,
+                model_name: null,
+                prompt_template_id_used: null,
+                seed_prompt_url: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                original_model_contribution_id: null,
+                raw_response_storage_path: null,
+                target_contribution_id: null,
+                tokens_used_input: null,
+                tokens_used_output: null,
+                processing_time_ms: null,
+                error: null,
+                citations: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                contribution_type: 'business_case',
+                file_name: null,
+                storage_bucket: null,
+                storage_path: null,
+                size_bytes: null,
+                mime_type: null,
+            }],
+            feedback: [],
         };
+
+        const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+        const state = buildState({
+            currentProjectDetail: {
+                ...projectWithResource,
+                dialectic_sessions: [sessionWithDocumentOnly],
+            },
+            stageRunProgress: {
+                [progressKey]: {
+                    stepStatuses: {
+                        seed_step: 'completed',
+                        doc_step: 'not_started',
+                    },
+                    documents: {},
+                },
+            },
+        });
+
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
+    });
+
+    it('should return false when header context exists but producing step is not completed', () => {
+        const sessionWithDocAndFeedback: DialecticSession = {
+            ...(projectWithResource.dialectic_sessions![0]),
+            dialectic_contributions: [{
+                id: 'contrib-1',
+                session_id: sessionId,
+                user_id: null,
+                stage: 'thesis',
+                iteration_number: iterationNumber,
+                model_id: null,
+                model_name: null,
+                prompt_template_id_used: null,
+                seed_prompt_url: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                original_model_contribution_id: null,
+                raw_response_storage_path: null,
+                target_contribution_id: null,
+                tokens_used_input: null,
+                tokens_used_output: null,
+                processing_time_ms: null,
+                error: null,
+                citations: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                contribution_type: 'business_case',
+                file_name: null,
+                storage_bucket: null,
+                storage_path: null,
+                size_bytes: null,
+                mime_type: null,
+            }],
+            feedback: [{
+                id: 'feedback-1',
+                session_id: sessionId,
+                project_id: projectId,
+                user_id: 'user-1',
+                stage_slug: 'thesis',
+                iteration_number: iterationNumber,
+                storage_bucket: 'bucket',
+                storage_path: 'path',
+                file_name: 'feedback.md',
+                mime_type: 'text/markdown',
+                size_bytes: 512,
+                feedback_type: 'business_case',
+                resource_description: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            }],
+        };
+
+        const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+        const state = buildState({
+            currentProjectDetail: {
+                ...projectWithResource,
+                dialectic_sessions: [sessionWithDocAndFeedback],
+                resources: [mockSeedPromptResource, mockHeaderContextResource],
+            },
+            stageRunProgress: {
+                [progressKey]: {
+                    stepStatuses: {
+                        seed_step: 'in_progress',
+                        doc_step: 'not_started',
+                    },
+                    documents: {},
+                },
+            },
+        });
+
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
+    });
+
+    it('should return true when document, feedback, and completed header context are present', () => {
+        const sessionSatisfied: DialecticSession = {
+            ...(projectWithResource.dialectic_sessions![0]),
+            dialectic_contributions: [{
+                id: 'contrib-1',
+                session_id: sessionId,
+                user_id: null,
+                stage: 'thesis',
+                iteration_number: iterationNumber,
+                model_id: null,
+                model_name: null,
+                prompt_template_id_used: null,
+                seed_prompt_url: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                original_model_contribution_id: null,
+                raw_response_storage_path: null,
+                target_contribution_id: null,
+                tokens_used_input: null,
+                tokens_used_output: null,
+                processing_time_ms: null,
+                error: null,
+                citations: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                contribution_type: 'business_case',
+                file_name: null,
+                storage_bucket: null,
+                storage_path: null,
+                size_bytes: null,
+                mime_type: null,
+            }],
+            feedback: [{
+                id: 'feedback-1',
+                session_id: sessionId,
+                project_id: projectId,
+                user_id: 'user-1',
+                stage_slug: 'thesis',
+                iteration_number: iterationNumber,
+                storage_bucket: 'bucket',
+                storage_path: 'path',
+                file_name: 'feedback.md',
+                mime_type: 'text/markdown',
+                size_bytes: 512,
+                feedback_type: 'business_case',
+                resource_description: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            }],
+        };
+
+        const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+        const state = buildState({
+            currentProjectDetail: {
+                ...projectWithResource,
+                dialectic_sessions: [sessionSatisfied],
+                resources: [mockSeedPromptResource, mockHeaderContextResource],
+            },
+            stageRunProgress: {
+                [progressKey]: {
+                    stepStatuses: {
+                        seed_step: 'completed',
+                        doc_step: 'not_started',
+                    },
+                    documents: {},
+                },
+            },
+        });
+
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(true);
     });
 }); 
+

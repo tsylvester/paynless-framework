@@ -13,7 +13,9 @@ import {
     isJson,
     isRecord,
     isChatApiRequest,
+    isDialecticJobRow,
 } from '../_shared/utils/type_guards.ts';
+import { isModelContributionContext } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
   import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
   import type { 
     DialecticJobRow, 
@@ -27,7 +29,7 @@ import {
     PromptConstructionPayload,
     SourceDocument
 } from '../dialectic-service/dialectic.interface.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
+import { FileType, UploadContext } from '../_shared/types/file_manager.types.ts';
 import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 import type { LogMetadata, Messages } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
@@ -56,6 +58,7 @@ export const buildExecuteParams = (dbClient: SupabaseClient<Database>, deps: IDi
   sessionData: mockSessionData,
   promptConstructionPayload: buildPromptPayload(),
   compressionStrategy: getSortedCompressionCandidates,
+  inputsRelevance: [],
   ...overrides,
 });
 
@@ -85,6 +88,8 @@ export function createMockJob(payload: DialecticJobPayload, overrides: Partial<D
         started_at: null,
         target_contribution_id: null,
         payload: payload,
+        is_test_job: false,
+        job_type: 'PLAN',
         ...overrides,
     };
   
@@ -93,10 +98,9 @@ export function createMockJob(payload: DialecticJobPayload, overrides: Partial<D
 
 export const testPayload: DialecticExecuteJobPayload = {
     job_type: 'execute',
-    step_info: { current_step: 1, total_steps: 1 },
-    prompt_template_name: 'test-prompt',
+    prompt_template_id: 'test-prompt',
     inputs: {},
-    output_type: 'thesis',
+    output_type: FileType.HeaderContext,
     projectId: 'project-abc',
     sessionId: 'session-456',
     stageSlug: 'test-stage',
@@ -107,6 +111,7 @@ export const testPayload: DialecticExecuteJobPayload = {
     user_jwt: 'jwt.token.here',
     canonicalPathParams: {
         contributionType: 'thesis',
+        stageSlug: 'test-stage',
     }
   };
   
@@ -179,6 +184,8 @@ export const mockContribution: DialecticContributionRow = {
       updated_at: new Date().toISOString(),
       user_id: 'user-789',
       document_relationships: null,
+      is_header: false,
+      source_prompt_resource_id: null,
   };
   
 export  const mockNotificationService: NotificationServiceType = {
@@ -191,6 +198,7 @@ export  const mockNotificationService: NotificationServiceType = {
       sendDialecticProgressUpdateEvent: async () => {},
       sendContributionFailedNotification: async () => {},
       sendContributionGenerationFailedEvent: async () => {},
+      sendDocumentCentricNotification: async () => {},
     };
   
 export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
@@ -210,11 +218,12 @@ export const getMockDeps = (
       
       return {
         callUnifiedAIModel: async () => ({
-          content: 'AI response content',
-          contentType: 'text/plain',
+          content: '{"content": "AI response content"}',
+          contentType: 'application/json',
           inputTokens: 10,
           outputTokens: 20,
           processingTimeMs: 100,
+          rawProviderResponse: { mock: 'response' },
         }),
         getExtensionFromMimeType: () => '.txt',
         logger: logger,
@@ -232,6 +241,7 @@ export const getMockDeps = (
         tokenWalletService: tokenWalletServiceOverride || createMockTokenWalletService({ getBalance: () => Promise.resolve('1000000') }).instance,
         embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) },
         countTokens: () => 0, // Default to 0, tests that need it will stub this.
+        documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
       }
   };
   
@@ -247,11 +257,12 @@ Deno.test('executeModelCallAndSave - Happy Path', async (t) => {
 
     const deps: IDialecticJobDeps = {
       callUnifiedAIModel: async () => ({
-        content: 'AI response content',
-        contentType: 'text/plain',
+        content: '{"content": "AI response content"}',
+        contentType: 'application/json',
         inputTokens: 10,
         outputTokens: 20,
         processingTimeMs: 100,
+        rawProviderResponse: { mock: 'response' },
       }),
       getExtensionFromMimeType: () => '.txt',
       logger: logger,
@@ -266,6 +277,7 @@ Deno.test('executeModelCallAndSave - Happy Path', async (t) => {
       executeModelCallAndSave: async () => {},
       tokenWalletService: createMockTokenWalletService({ getBalance: () => Promise.resolve('1000000') }).instance,
       countTokens: () => 0, // Default to 0, tests that need specific counts will stub this.
+      documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
     };
     
     await t.step('should run to completion successfully', async () => {
@@ -284,6 +296,7 @@ Deno.test('executeModelCallAndSave - Happy Path', async (t) => {
             },
             sessionData: mockSessionData,
             compressionStrategy: getSortedCompressionCandidates,
+            inputsRelevance: [],
         };
         await executeModelCallAndSave(params);
 
@@ -314,7 +327,7 @@ Deno.test("executeModelCallAndSave - should send '__none__' as promptId in ChatA
         dbClient: dbClient as unknown as SupabaseClient<Database>,
         deps,
         authToken: 'auth-token',
-        job: createMockJob({ ...testPayload, prompt_template_name: 'some-template-name' }),
+        job: createMockJob({ ...testPayload, prompt_template_id: 'some-template-id' }),
         projectOwnerUserId: 'user-789',
         providerDetails: mockProviderData,
         sessionData: mockSessionData,
@@ -325,6 +338,7 @@ Deno.test("executeModelCallAndSave - should send '__none__' as promptId in ChatA
             currentUserPrompt: 'User prompt',
         },
         compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
     };
 
     await executeModelCallAndSave(params);
@@ -349,11 +363,12 @@ Deno.test('executeModelCallAndSave - Intermediate Flag', async (t) => {
 
     const deps: IDialecticJobDeps = {
       callUnifiedAIModel: async () => ({
-        content: 'AI response content',
-        contentType: 'text/plain',
+        content: '{"content": "AI response content"}',
+        contentType: 'application/json',
         inputTokens: 10,
         outputTokens: 20,
         processingTimeMs: 100,
+        rawProviderResponse: { mock: 'response' },
       }),
       getExtensionFromMimeType: () => '.txt',
       logger: logger,
@@ -368,6 +383,7 @@ Deno.test('executeModelCallAndSave - Intermediate Flag', async (t) => {
       executeModelCallAndSave: async () => {},
       tokenWalletService: createMockTokenWalletService({ getBalance: () => Promise.resolve('1000000') }).instance,
       countTokens: () => 0, // Default to 0, tests that need specific counts will stub this.
+      documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
     };
 
     await t.step('should pass isIntermediate flag to fileManager', async () => {
@@ -387,13 +403,17 @@ Deno.test('executeModelCallAndSave - Intermediate Flag', async (t) => {
             },
             sessionData: mockSessionData,
             compressionStrategy: getSortedCompressionCandidates,
+            inputsRelevance: [],
         };
         await executeModelCallAndSave(params);
 
         assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
         
         const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
-        assertEquals(uploadContext.contributionMetadata?.isIntermediate, true, "isIntermediate flag was not passed correctly to the file manager");
+        if (!isModelContributionContext(uploadContext)) {
+            throw new Error("Test setup error: uploadContext was not of type ModelContributionUploadContext");
+        }
+        assertEquals(uploadContext.contributionMetadata.isIntermediate, true, "isIntermediate flag was not passed correctly to the file manager");
     });
 
     clearAllStubs?.();
@@ -411,11 +431,12 @@ Deno.test('executeModelCallAndSave - Final Artifact Flag', async (t) => {
 
     const deps: IDialecticJobDeps = {
       callUnifiedAIModel: async () => ({
-        content: 'AI response content',
-        contentType: 'text/plain',
+        content: '{"content": "AI response content"}',
+        contentType: 'application/json',
         inputTokens: 10,
         outputTokens: 20,
         processingTimeMs: 100,
+        rawProviderResponse: { mock: 'response' },
       }),
       getExtensionFromMimeType: () => '.txt',
       logger: logger,
@@ -430,6 +451,7 @@ Deno.test('executeModelCallAndSave - Final Artifact Flag', async (t) => {
       executeModelCallAndSave: async () => {},
       tokenWalletService: createMockTokenWalletService().instance,
       countTokens: () => 0, // Default to 0, tests that need specific counts will stub this.
+      documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
     };
   
     await t.step('should pass isIntermediate: false to fileManager when explicitly set', async () => {
@@ -449,12 +471,16 @@ Deno.test('executeModelCallAndSave - Final Artifact Flag', async (t) => {
             },
             sessionData: mockSessionData,
             compressionStrategy: getSortedCompressionCandidates,
+            inputsRelevance: [],
         };
         await executeModelCallAndSave(params);
   
         assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
         const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
-        assertEquals(uploadContext.contributionMetadata?.isIntermediate, false, "isIntermediate flag should be false");
+        if (!isModelContributionContext(uploadContext)) {
+            throw new Error("Test setup error: uploadContext was not of type ModelContributionUploadContext");
+        }
+        assertEquals(uploadContext.contributionMetadata.isIntermediate, false, "isIntermediate flag should be false");
     });
   
     await t.step('should default isIntermediate to false if not present on payload', async () => {
@@ -476,12 +502,16 @@ Deno.test('executeModelCallAndSave - Final Artifact Flag', async (t) => {
             },
             sessionData: mockSessionData,
             compressionStrategy: getSortedCompressionCandidates,
+            inputsRelevance: [],
         };
         await executeModelCallAndSave(params);
   
         assert(fileManager.uploadAndRegisterFile.calls.length > 1, 'Expected fileManager.uploadAndRegisterFile to be called a second time');
         const uploadContext = fileManager.uploadAndRegisterFile.calls[1].args[0]; // Check the second call
-        assertEquals(uploadContext.contributionMetadata?.isIntermediate, false, "isIntermediate flag should default to false");
+        if (!isModelContributionContext(uploadContext)) {
+            throw new Error("Test setup error: uploadContext was not of type ModelContributionUploadContext");
+        }
+        assertEquals(uploadContext.contributionMetadata.isIntermediate, false, "isIntermediate flag should default to false");
     });
   
     clearAllStubs?.();
@@ -499,36 +529,29 @@ Deno.test('executeModelCallAndSave - Throws on AI Error', async (t) => {
         content: null,
         error: 'AI response was empty.',
     }));
+    const retryJobSpy = spy(deps, 'retryJob');
 
-    await t.step('should throw an error if the model returns an error', async () => {
-        let errorThrown = false;
-        try {
-            const params: ExecuteModelCallAndSaveParams = {
-                dbClient: dbClient as unknown as SupabaseClient<Database>,
-                deps,
-                authToken: 'auth-token',
-                job: createMockJob(testPayload),
-                projectOwnerUserId: 'user-789',
-                providerDetails: mockProviderData,
-                promptConstructionPayload: {
-                    systemInstruction: 'System instruction',
-                    conversationHistory: [],
-                    resourceDocuments: [],
-                    currentUserPrompt: 'User prompt',
-                },
-                sessionData: mockSessionData,
-                compressionStrategy: getSortedCompressionCandidates,
-            };
-            await executeModelCallAndSave(params);
-        } catch (e: unknown) {
-            errorThrown = true;
-            if (e instanceof Error) {
-                assert(e.message.includes('AI response was empty'), "Expected error message to match AI failure.");
-            } else {
-                assert(false, "Threw something that was not an Error");
-            }
-        }
-        assert(errorThrown, "Expected executeModelCallAndSave to throw an error.");
+    await t.step('should trigger a retry if the model returns an error', async () => {
+        const params: ExecuteModelCallAndSaveParams = {
+            dbClient: dbClient as unknown as SupabaseClient<Database>,
+            deps,
+            authToken: 'auth-token',
+            job: createMockJob(testPayload),
+            projectOwnerUserId: 'user-789',
+            providerDetails: mockProviderData,
+            promptConstructionPayload: {
+                systemInstruction: 'System instruction',
+                conversationHistory: [],
+                resourceDocuments: [],
+                currentUserPrompt: 'User prompt',
+            },
+            sessionData: mockSessionData,
+            compressionStrategy: getSortedCompressionCandidates,
+            inputsRelevance: [],
+        };
+        await executeModelCallAndSave(params);
+
+        assertEquals(retryJobSpy.calls.length, 1, "Expected retryJob to be called on AI error.");
     });
 
     clearAllStubs?.();
@@ -547,6 +570,16 @@ Deno.test('executeModelCallAndSave - Database Error on Update', async (t) => {
         });
         const deps: IDialecticJobDeps = getMockDeps();
         
+        // Ensure the mock response is valid JSON to prevent premature exit
+        stub(deps, 'callUnifiedAIModel', () => Promise.resolve({
+            content: '{"content": "valid json"}',
+            contentType: 'application/json',
+            inputTokens: 10,
+            outputTokens: 5,
+            processingTimeMs: 50,
+            rawProviderResponse: { finish_reason: 'stop' }, 
+        }));
+
         let criticalErrorLogged = false;
         const originalErrorLogger = deps.logger.error;
         deps.logger.error = (message: string | Error, metadata?: LogMetadata) => {
@@ -573,6 +606,7 @@ Deno.test('executeModelCallAndSave - Database Error on Update', async (t) => {
             },
             sessionData: mockSessionData,
             compressionStrategy: getSortedCompressionCandidates,
+            inputsRelevance: [],
         };
         await executeModelCallAndSave(params);
 
@@ -603,7 +637,25 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
     const { client: dbClient, clearAllStubs } = setupMockClient({
         'ai_providers': {
             select: { data: [mockLimitedProvider], error: null }
-        }
+        },
+        // Provide a large matching document so executor gathers it (not assembler)
+        'dialectic_contributions': {
+            select: {
+                data: [
+                    {
+                        id: 'doc-oversize',
+                        content: 'X'.repeat(2000),
+                        stage: 'test-stage',
+                        type: 'document',
+                        created_at: new Date().toISOString(),
+                        // Provide separate directory path and file name so identity can be parsed
+                        storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+                        file_name: 'modelA_1_large_doc.md.json',
+                    }
+                ],
+                error: null,
+            },
+        },
     });
     const deps: IDialecticJobDeps = getMockDeps();
 
@@ -643,6 +695,8 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
                     storage_path: 'test/path',
                     tokens_used_input: 10,
                     tokens_used_output: 20,
+                    is_header: false,
+                    source_prompt_resource_id: null,
                 }],
                 currentUserPrompt: "This is a test prompt.",
             };
@@ -663,9 +717,14 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
                 job: createMockJob(testPayload),
                 projectOwnerUserId: 'user-789',
                 providerDetails: mockProviderData,
-                promptConstructionPayload: largePromptConstructionPayload,
+                // Assembler docs are ignored; executor gathers via inputsRequired
+                promptConstructionPayload: { ...largePromptConstructionPayload, resourceDocuments: [] },
                 sessionData: mockSessionData,
                 compressionStrategy: getSortedCompressionCandidates,
+                inputsRelevance: [],
+                inputsRequired: [
+                    { type: 'document', stage_slug: 'test-stage', document_key: 'large_doc.md', required: true },
+                ],
             };
             await executeModelCallAndSave(params);
         } catch (e: unknown) {
@@ -681,7 +740,7 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
     clearAllStubs?.();
 });
 
-Deno.test('executeModelCallAndSave - Document Relationships', async (t) => {
+Deno.test('executeModelCallAndSave - Document Relationships - should pass document_relationships to the fileManager', async () => {
     const { client: dbClient, spies, clearAllStubs } = setupMockClient({
         'ai_providers': {
             select: { data: [mockFullProviderData], error: null }
@@ -693,43 +752,87 @@ Deno.test('executeModelCallAndSave - Document Relationships', async (t) => {
     const deps = getMockDeps();
     deps.fileManager = fileManager;
 
-    await t.step('should pass document_relationships to the fileManager', async () => {
-        const relationshipsPayload: DialecticExecuteJobPayload = {
-            ...testPayload,
-            output_type: 'pairwise_synthesis_chunk',
-            document_relationships: {
-                source_group: 'thesis-1',
-                thesis: 'thesis-1',
-                antithesis: 'antithesis-A',
-            },
-        };
+    const relationshipsPayload: DialecticExecuteJobPayload = {
+        ...testPayload,
+        output_type: FileType.PairwiseSynthesisChunk,
+        document_relationships: {
+            source_group: 'thesis-1',
+            thesis: 'thesis-1',
+            antithesis: 'antithesis-A',
+        },
+    };
 
-        const params: ExecuteModelCallAndSaveParams = {
-            dbClient: dbClient as unknown as SupabaseClient<Database>,
-            deps,
-            authToken: 'auth-token',
-            job: createMockJob(relationshipsPayload),
-            projectOwnerUserId: 'user-789',
-            providerDetails: mockProviderData,
-            promptConstructionPayload: {
-                systemInstruction: 'System instruction',
-                conversationHistory: [],
-                resourceDocuments: [],
-                currentUserPrompt: 'User prompt',
-            },
-            sessionData: mockSessionData,
-            compressionStrategy: getSortedCompressionCandidates,
-        };
+    const params: ExecuteModelCallAndSaveParams = {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        deps,
+        authToken: 'auth-token',
+        job: createMockJob(relationshipsPayload),
+        projectOwnerUserId: 'user-789',
+        providerDetails: mockProviderData,
+        promptConstructionPayload: {
+            systemInstruction: 'System instruction',
+            conversationHistory: [],
+            resourceDocuments: [],
+            currentUserPrompt: 'User prompt',
+        },
+        sessionData: mockSessionData,
+        compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
+    };
 
-        await executeModelCallAndSave(params);
+    await executeModelCallAndSave(params);
 
-        assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
-        
-        const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
-        assertExists(uploadContext.contributionMetadata, "Contribution metadata should exist");
-        
-        assertEquals(uploadContext.contributionMetadata.document_relationships, relationshipsPayload.document_relationships, "document_relationships object was not passed correctly to the file manager");
+    assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
+    
+    const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+    assert(isModelContributionContext(uploadContext));
+    assertExists(uploadContext.contributionMetadata, "Contribution metadata should exist");
+    
+    assertEquals(uploadContext.contributionMetadata.document_relationships, relationshipsPayload.document_relationships, "document_relationships object was not passed correctly to the file manager");
+
+    clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - Document Relationships - should default document_relationships to null if not provided', async () => {
+    const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        }
     });
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    const deps = getMockDeps();
+    deps.fileManager = fileManager;
+
+    const params: ExecuteModelCallAndSaveParams = {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        deps,
+        authToken: 'auth-token',
+        job: createMockJob(testPayload), // testPayload does not have document_relationships
+        projectOwnerUserId: 'user-789',
+        providerDetails: mockProviderData,
+        promptConstructionPayload: {
+            systemInstruction: 'System instruction',
+            conversationHistory: [],
+            resourceDocuments: [],
+            currentUserPrompt: 'User prompt',
+        },
+        sessionData: mockSessionData,
+        compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
+    };
+
+    await executeModelCallAndSave(params);
+
+    assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
+    
+    const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+    assert(isModelContributionContext(uploadContext));
+    assertExists(uploadContext.contributionMetadata, "Contribution metadata should exist");
+    
+    logger.info('uploadContext.contributionMetadata.document_relationships', { document_relationships: uploadContext.contributionMetadata.document_relationships });
+    assertEquals(uploadContext.contributionMetadata.document_relationships, null, "document_relationships should default to null");
 
     clearAllStubs?.();
 });
@@ -775,6 +878,8 @@ Deno.test('executeModelCallAndSave - should accept PromptConstructionPayload and
         tokens_used_input: 10,
         tokens_used_output: 20,
         stage: 'test-stage',
+        is_header: false,
+        source_prompt_resource_id: null,
     };
 
     const promptConstructionPayload: PromptConstructionPayload = buildPromptPayload({
@@ -829,6 +934,115 @@ Deno.test('executeModelCallAndSave - includes rendered template as first user me
   assertEquals(firstArg.systemInstruction, undefined);
   assertEquals(firstArg.messages.length, 0, 'messages should be empty when no history/resources');
 
+  clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - emits document_completed when finish_reason is stop', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient({
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+  });
+
+  const deps = getMockDeps();
+  const sendDocEventSpy = spy(deps.notificationService, 'sendDocumentCentricNotification');
+
+  // Stub call to return finish_reason: stop
+  const callUnifiedAISpy = stub(deps, 'callUnifiedAIModel', async () => ({
+    content: '{"ok": true}',
+    contentType: 'application/json',
+    inputTokens: 10,
+    outputTokens: 5,
+    processingTimeMs: 50,
+    rawProviderResponse: { finish_reason: 'stop' },
+  }));
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob(testPayload),
+    projectOwnerUserId: 'user-789',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: buildPromptPayload(),
+    sessionData: mockSessionData,
+    compressionStrategy: getSortedCompressionCandidates,
+    inputsRelevance: [],
+  };
+
+  await executeModelCallAndSave(params);
+
+  assertEquals(sendDocEventSpy.calls.length, 1, 'Expected a document_completed event emission');
+  const [payloadArg, targetUserId] = sendDocEventSpy.calls[0].args;
+  assert(isRecord(payloadArg));
+  assertEquals(payloadArg.type, 'document_completed');
+  assertEquals(payloadArg.sessionId, testPayload.sessionId);
+  assertEquals(payloadArg.stageSlug, testPayload.stageSlug);
+  assertEquals(payloadArg.job_id, 'job-id-123');
+  assertEquals(payloadArg.document_key, String(testPayload.output_type));
+  assertEquals(payloadArg.modelId, testPayload.model_id);
+  assertEquals(payloadArg.iterationNumber, testPayload.iterationNumber);
+  assertEquals(targetUserId, 'user-789');
+
+  callUnifiedAISpy.restore();
+  sendDocEventSpy.restore();
+  clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - emits document_chunk_completed for continuation chunks', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient({
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+  });
+
+  const deps = getMockDeps();
+  const sendDocEventSpy = spy(deps.notificationService, 'sendDocumentCentricNotification');
+
+  // Continuation job payload with required document_relationships
+  const continuationPayload = {
+    ...testPayload,
+    target_contribution_id: 'root-123',
+    continuation_count: 2,
+    document_relationships: { thesis: 'root-123', isContinuation: true, turnIndex: 2 },
+  };
+
+  // Stub model to return a non-final finish_reason (requires continuation), but we only assert chunk event
+  const callUnifiedAISpy = stub(deps, 'callUnifiedAIModel', async () => ({
+    content: '{"ok": true}',
+    contentType: 'application/json',
+    inputTokens: 10,
+    outputTokens: 5,
+    processingTimeMs: 50,
+    rawProviderResponse: { finish_reason: 'length' },
+  }));
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob(continuationPayload),
+    projectOwnerUserId: 'user-789',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: buildPromptPayload(),
+    sessionData: mockSessionData,
+    compressionStrategy: getSortedCompressionCandidates,
+    inputsRelevance: [],
+  };
+
+  await executeModelCallAndSave(params);
+
+  // One call expected: document_chunk_completed (no document_completed because finish_reason != stop)
+  assertEquals(sendDocEventSpy.calls.length, 1, 'Expected a document_chunk_completed event emission');
+  const [payloadArg, targetUserId] = sendDocEventSpy.calls[0].args;
+  assert(isRecord(payloadArg));
+  assertEquals(payloadArg.type, 'document_chunk_completed');
+  assertEquals(payloadArg.sessionId, testPayload.sessionId);
+  assertEquals(payloadArg.stageSlug, testPayload.stageSlug);
+  assertEquals(payloadArg.job_id, 'job-id-123');
+  assertEquals(payloadArg.document_key, String(testPayload.output_type));
+  assertEquals(payloadArg.modelId, testPayload.model_id);
+  assertEquals(payloadArg.iterationNumber, testPayload.iterationNumber);
+  assertEquals(targetUserId, 'user-789');
+
+  callUnifiedAISpy.restore();
+  sendDocEventSpy.restore();
   clearAllStubs?.();
 });
 
@@ -890,6 +1104,22 @@ Deno.test('executeModelCallAndSave - sets and forwards max_tokens_to_generate us
 Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are forwarded unchanged (distinct from messages)', async () => {
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    'dialectic_contributions': {
+      select: {
+        data: [
+          {
+            id: 'doc-r1',
+            content: 'Doc X content',
+            stage: 'test-stage',
+            type: 'document',
+            created_at: new Date().toISOString(),
+            storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+            file_name: 'modelA_1_docx.md.json',
+          },
+        ],
+        error: null,
+      },
+    },
   });
 
   const deps = getMockDeps();
@@ -969,16 +1199,21 @@ Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are f
     tokens_used_input: 0,
     tokens_used_output: 0,
     stage: 'test-stage',
+    is_header: false,
+    source_prompt_resource_id: null,
   };
 
   const promptConstructionPayload: PromptConstructionPayload = {
     systemInstruction: 'SYS',
     conversationHistory: [{ role: 'user', content: 'HIST' }],
-    resourceDocuments: [doc],
+    resourceDocuments: [],
     currentUserPrompt: 'CURR',
   };
 
-  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { promptConstructionPayload });
+  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+    promptConstructionPayload,
+    inputsRequired: [ { type: 'document', stage_slug: 'test-stage', document_key: 'docx.md', required: true } ],
+  });
 
   await executeModelCallAndSave(params);
 
@@ -1002,9 +1237,23 @@ Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are f
 
 Deno.test('executeModelCallAndSave - builds full ChatApiRequest including resourceDocuments and walletId', async () => {
   const { client: dbClient } = setupMockClient({
-    'ai_providers': {
-      select: { data: [mockFullProviderData], error: null }
-    }
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    'dialectic_contributions': {
+      select: {
+        data: [
+          {
+            id: 'doc-xyz',
+            content: 'Doc content for sizing and send',
+            stage: 'test-stage',
+            type: 'document',
+            created_at: new Date().toISOString(),
+            storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+            file_name: 'modelB_1_docxyz.md.json',
+          },
+        ],
+        error: null,
+      },
+    },
   });
 
   const deps = getMockDeps();
@@ -1024,6 +1273,8 @@ Deno.test('executeModelCallAndSave - builds full ChatApiRequest including resour
     citations: [],
     contribution_type: 'source_document',
     edit_version: 1,
+    is_header: false,
+    source_prompt_resource_id: null,
     error: null,
     file_name: 'doc.txt',
     is_latest_edit: true,
@@ -1045,11 +1296,14 @@ Deno.test('executeModelCallAndSave - builds full ChatApiRequest including resour
   const promptConstructionPayload: PromptConstructionPayload = buildPromptPayload({
     systemInstruction: 'System goes here',
     conversationHistory: [{ role: 'assistant', content: 'Hi' }],
-    resourceDocuments: [mockResourceDocument],
+    resourceDocuments: [],
     currentUserPrompt: 'User says hello',
   });
 
-  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { promptConstructionPayload });
+  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+    promptConstructionPayload,
+    inputsRequired: [ { type: 'document', stage_slug: 'test-stage', document_key: 'docxyz.md', required: true } ],
+  });
 
   await executeModelCallAndSave(params);
 
@@ -1110,6 +1364,8 @@ Deno.test('executeModelCallAndSave - identity: sized payload equals sent request
     tokens_used_input: 10,
     tokens_used_output: 20,
     stage: 'test-stage',
+    is_header: false,
+    source_prompt_resource_id: null,
   };
 
   const promptConstructionPayload: PromptConstructionPayload = buildPromptPayload({
@@ -1160,9 +1416,23 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
     },
   };
   const { client: dbClient } = setupMockClient({
-    'ai_providers': {
-      select: { data: [limitedProvider], error: null }
-    }
+    'ai_providers': { select: { data: [limitedProvider], error: null } },
+    'dialectic_contributions': {
+      select: {
+        data: [
+          {
+            id: 'doc-for-compress',
+            content: 'Some longish content to be summarized',
+            stage: 'test-stage',
+            document_key: 'doc.txt',
+            type: 'document',
+            created_at: new Date().toISOString(),
+            storage_path: 'bucket/path/qqq_doc.txt.json',
+          },
+        ],
+        error: null,
+      },
+    },
   });
 
   const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('10') }).instance);
@@ -1212,6 +1482,8 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
         tokens_used_input: 10,
         tokens_used_output: 20,
         stage: 'test-stage',
+        is_header: false,
+        source_prompt_resource_id: null,
       },
     ],
     currentUserPrompt: 'User for compression identity',
@@ -1226,7 +1498,13 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
     return callIdx === 1 ? 100 : 40; // first pass oversized, then fits
   });
 
-  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { promptConstructionPayload });
+  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+    promptConstructionPayload,
+    // Ensure executor gathers this doc and compression can operate
+    inputsRequired: [ { type: 'document', stage_slug: 'test-stage', document_key: 'doc.txt', required: true } ],
+    // Provide a simple compression strategy that yields a candidate so loop runs
+    compressionStrategy: async () => [ { id: 'doc-for-compress', sourceType: 'resource', content: 'Some longish content to be summarized', score: 1 } as unknown as any ],
+  });
   await executeModelCallAndSave(params);
 
   assertEquals(callUnifiedAISpy.calls.length, 1, 'callUnifiedAIModel should be called once');
@@ -1247,6 +1525,45 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
 
   assertEquals({ systemInstruction: sent.systemInstruction, message: sent.message, messages: sent.messages, resourceDocuments: sent.resourceDocuments }, expectedFour, 'Final sized payload must equal sent request on the four fields');
 });
+
+Deno.test('executeModelCallAndSave - should correctly pass source_prompt_resource_id to fileManager', async () => {
+    // Arrange
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        }
+    });
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    const deps = getMockDeps();
+    deps.fileManager = fileManager;
+
+    const sourcePromptResourceId = 'resource-id-for-prompt-123';
+
+    const promptPayloadWithSourceId: PromptConstructionPayload = buildPromptPayload({
+        source_prompt_resource_id: sourcePromptResourceId,
+    });
+
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        promptConstructionPayload: promptPayloadWithSourceId,
+    });
+
+    // Act
+    await executeModelCallAndSave(params);
+
+    // Assert
+    assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
+    
+    const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+    assert(isModelContributionContext(uploadContext));
+    assertExists(uploadContext.contributionMetadata, "Contribution metadata should exist");
+    
+    assertEquals(uploadContext.contributionMetadata.source_prompt_resource_id, sourcePromptResourceId, "source_prompt_resource_id was not passed correctly to the file manager");
+
+    clearAllStubs?.();
+});
+
 
 Deno.test('executeModelCallAndSave - rendering hygiene: final message has no placeholders; systemInstruction is passthrough only', async () => {
   const { client: dbClient } = setupMockClient({
@@ -1283,3 +1600,291 @@ Deno.test('executeModelCallAndSave - rendering hygiene: final message has no pla
   assertEquals(firstArg.systemInstruction, undefined, 'systemInstruction should be undefined when not provided (no synthesis)');
 });
 
+Deno.test('when the model produces malformed JSON, it should trigger a retry, not a continuation', async () => {
+    // Arrange
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        }
+    });
+    
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+
+    const deps = getMockDeps();
+    deps.fileManager = fileManager;
+    
+    stub(deps, 'callUnifiedAIModel', () => Promise.resolve({
+        content: '{"key": "value", "incomplete', // Malformed JSON
+        contentType: 'application/json',
+        inputTokens: 10,
+        outputTokens: 5,
+        processingTimeMs: 50,
+        rawProviderResponse: { finish_reason: 'stop' }, 
+    }));
+
+    const continueJobSpy = spy(deps, 'continueJob');
+    const retryJobSpy = spy(deps, 'retryJob');
+
+    const job = createMockJob(testPayload);
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+    // Act
+    await executeModelCallAndSave(params);
+
+    // Assert
+    assertEquals(fileManager.uploadAndRegisterFile.calls.length, 0, "Should not save the malformed artifact.");
+    assertEquals(continueJobSpy.calls.length, 0, "Should NOT call continueJob for a parsing failure.");
+    assertEquals(retryJobSpy.calls.length, 1, "Should call retryJob to recover from the error.");
+
+    const retryArgs = retryJobSpy.calls[0].args;
+    assertEquals(retryArgs[2].id, job.id, "Should retry the correct job.");
+    assertEquals(retryArgs[3], job.attempt_count + 1, "Should increment the attempt count.");
+    assert(retryArgs[4][0].error.includes('Malformed JSON'), "Should include the correct error reason in the retry details.");
+
+    clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - gathers artifacts across contributions/resources/feedback (non-oversized), preserves order, not merged into messages, empty inputsRelevance deterministic', async () => {
+  const { client: dbClient } = setupMockClient({
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    'dialectic_contributions': {
+      select: (_state: any) => {
+        const mk = (id: string, content: string, key: string) => ({
+          id,
+          content,
+          stage: 'thesis',
+          type: 'document',
+          created_at: new Date().toISOString(),
+          storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
+          file_name: `model-collect_1_${key}.json`,
+        });
+        const data = [
+          mk('c1', 'C1', 'business_case.md'),
+          mk('c2', 'C2', 'feature_spec.md'),
+        ];
+        return { data, error: null };
+      },
+    },
+    'dialectic_project_resources': {
+      select: (_state: any) => {
+        const mk = (id: string, content: string, key: string) => ({
+          id,
+          content,
+          stage_slug: 'thesis',
+          type: 'document',
+          created_at: new Date().toISOString(),
+          storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
+          file_name: `model-collect_1_${key}.json`,
+        });
+        const data = [mk('r1', 'R1', 'seed_prompt.md')];
+        return { data, error: null };
+      },
+    },
+    'dialectic_feedback': {
+      select: (_state: any) => {
+        const mk = (id: string, content: string, key: string) => ({
+          id,
+          content,
+          stage_slug: 'thesis',
+          type: 'feedback',
+          created_at: new Date().toISOString(),
+          storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
+          file_name: `model-collect_1_${key}.json`,
+        });
+        const data = [mk('f1', 'F1', 'business_case.md')];
+        return { data, error: null };
+      },
+    },
+  });
+
+  const deps = getMockDeps();
+  deps.countTokens = () => 10; // non-oversized
+  const callUnifiedAISpy = spy(deps, 'callUnifiedAIModel');
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob(testPayload),
+    projectOwnerUserId: 'user-789',
+    providerDetails: mockProviderData,
+    sessionData: mockSessionData,
+    promptConstructionPayload: {
+      systemInstruction: 'SYS',
+      conversationHistory: [{ role: 'user', content: 'hello' }],
+      resourceDocuments: [], // executor should gather, not rely on assembler input
+      currentUserPrompt: 'CURR',
+    },
+    compressionStrategy: getSortedCompressionCandidates,
+    inputsRelevance: [],
+    inputsRequired: [
+      { type: 'document', stage_slug: 'thesis', document_key: 'business_case.md', required: true },
+      { type: 'document', stage_slug: 'thesis', document_key: 'feature_spec.md', required: true },
+      { type: 'document', stage_slug: 'thesis', document_key: 'seed_prompt.md', required: true },
+      { type: 'feedback', stage_slug: 'thesis', document_key: 'business_case.md', required: false },
+    ],
+  };
+
+  await executeModelCallAndSave(params);
+
+  assertEquals(callUnifiedAISpy.calls.length, 1);
+  const sent = callUnifiedAISpy.calls[0].args[0];
+  assert(isChatApiRequest(sent));
+
+  // Order preserved: C1, C2, R1, F1
+  const contents = Array.isArray(sent.resourceDocuments)
+    ? sent.resourceDocuments.map(d => (isRecord(d) && typeof d['content'] === 'string') ? d['content'] : '')
+    : [];
+  assertEquals(contents, ['C1', 'C2', 'R1', 'F1']);
+
+  // Ensure docs not merged into messages
+  const msgContents = Array.isArray(sent.messages)
+    ? sent.messages.map(m => (isRecord(m) && typeof m['content'] === 'string') ? m['content'] : '')
+    : [];
+  for (const c of contents) {
+    assert(!msgContents.includes(c), 'resource doc content must not be merged into messages');
+  }
+
+  // Identity-rich fields are preserved for compression candidates, not for the
+  // sent ChatApiRequest.resourceDocuments (which carry only id/content).
+});
+
+Deno.test('executeModelCallAndSave - scoped selection includes only artifacts matching inputsRequired', async () => {
+  const { client: dbClient } = setupMockClient({
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    'dialectic_contributions': {
+      select: (_state: any) => {
+        const mk = (id: string, content: string, key: string, stage: string) => ({
+          id,
+          content,
+          stage,
+          type: 'document',
+          created_at: new Date().toISOString(),
+          storage_path: `project-abc/session_session-456/iteration_1/${stage}/documents`,
+          file_name: `modelM_1_${key}.json`,
+        });
+        const data = [
+          mk('c-match', 'CM', 'business_case.md', 'thesis'),
+          mk('c-skip', 'CS', 'risk_register.md', 'antithesis'),
+        ];
+        return { data, error: null };
+      },
+    },
+    'dialectic_project_resources': {
+      select: (_state: any) => {
+        return { data: [], error: null };
+      },
+    },
+    'dialectic_feedback': {
+      select: (_state: any) => {
+        const mk = (id: string, content: string, key: string) => ({
+          id,
+          content,
+          stage_slug: 'thesis',
+          type: 'feedback',
+          created_at: new Date().toISOString(),
+          storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
+          file_name: `modelM_1_${key}.json`,
+        });
+        const data = [mk('f-match', 'FM', 'business_case.md')];
+        return { data, error: null };
+      },
+    },
+  });
+
+  const deps = getMockDeps();
+  deps.countTokens = () => 10;
+  const callUnifiedAISpy = spy(deps, 'callUnifiedAIModel');
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob(testPayload),
+    projectOwnerUserId: 'user-789',
+    providerDetails: mockProviderData,
+    sessionData: mockSessionData,
+    promptConstructionPayload: {
+      systemInstruction: 'SYS',
+      conversationHistory: [],
+      resourceDocuments: [],
+      currentUserPrompt: 'CURR',
+    },
+    compressionStrategy: getSortedCompressionCandidates,
+    inputsRelevance: [],
+    inputsRequired: [
+      { type: 'document', stage_slug: 'thesis', document_key: 'business_case.md', required: true },
+      { type: 'feedback', stage_slug: 'thesis', document_key: 'business_case.md', required: false },
+    ],
+  };
+
+  await executeModelCallAndSave(params);
+
+  assertEquals(callUnifiedAISpy.calls.length, 1);
+  const sent = callUnifiedAISpy.calls[0].args[0];
+  assert(isChatApiRequest(sent));
+
+  const ids = Array.isArray(sent.resourceDocuments)
+    ? sent.resourceDocuments.map(d => (isRecord(d) && typeof d['id'] === 'string') ? d['id'] : '')
+    : [];
+
+  assert(ids.includes('c-match'), 'Expected c-match to be included');
+  assert(ids.includes('f-match'), 'Expected f-match to be included');
+  assert(!ids.includes('c-skip') && !ids.includes('r-skip'), 'Non-matching artifacts must be excluded');
+});
+
+// On successful EXECUTE completion, insert a RENDER job with correct payload
+Deno.test('executeModelCallAndSave - schedules RENDER job after success with renderer identity payload', async () => {
+  const { client: dbClient, spies } = setupMockClient({
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+  });
+
+  // Ensure saved contribution carries a true-root identity
+  const fileManager = new MockFileManagerService();
+  const savedWithIdentity = { ...mockContribution, document_relationships: { thesis: 'doc-root-abc' } };
+  fileManager.setUploadAndRegisterFileResponse(savedWithIdentity, null);
+
+  const deps = getMockDeps();
+  deps.fileManager = fileManager;
+
+  const job = createMockJob(testPayload);
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job,
+    projectOwnerUserId: 'user-789',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: buildPromptPayload(),
+    sessionData: mockSessionData,
+    compressionStrategy: getSortedCompressionCandidates,
+  };
+
+  await executeModelCallAndSave(params);
+
+  // Assert a single INSERT into jobs for the follow-up RENDER job
+  const insertCalls = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+  assertExists(insertCalls, 'Expected to track insert calls for dialectic_generation_jobs');
+  assertEquals(insertCalls.callCount, 1, 'Expected a single insert for the scheduled RENDER job');
+
+  const insertedArg = insertCalls.callsArgs[0][0];
+  const inserted = Array.isArray(insertedArg) ? (insertedArg[0]) : (insertedArg);
+  assert(isRecord(inserted), 'Inserted payload must be an object');
+
+  // job_type must be RENDER
+  assertEquals(inserted['job_type'], 'RENDER');
+
+  // Parent must associate to the just-completed EXECUTE job
+  assertEquals(inserted['parent_job_id'], job.id, 'Parent job id must point to completed EXECUTE job');
+
+  // Payload must include required renderer identity fields; no step_info allowed
+  const pl = inserted['payload'];
+  assert(isRecord(pl), 'Inserted payload.payload must be an object');
+  assertEquals(pl['projectId'], testPayload.projectId);
+  assertEquals(pl['sessionId'], testPayload.sessionId);
+  assertEquals(pl['iterationNumber'], testPayload.iterationNumber);
+  assertEquals(pl['stageSlug'], testPayload.stageSlug);
+  assertEquals(pl['documentIdentity'], 'doc-root-abc');
+  assert(!('step_info' in pl), 'Payload must not include deprecated step_info');
+});

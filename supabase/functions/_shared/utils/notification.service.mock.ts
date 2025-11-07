@@ -11,7 +11,8 @@ import type {
     DialecticProgressUpdatePayload,
     ContributionGenerationFailedPayload,
     ContributionGenerationFailedInternalPayload,
-    ApiError
+    ApiError,
+    DocumentCentricNotificationEvent
 } from '../types/notification.service.types.ts';
 
 export type MockNotificationService = {
@@ -29,6 +30,7 @@ function createMockService(): MockNotificationService {
         sendDialecticProgressUpdateEvent: spy(() => Promise.resolve()),
         sendContributionGenerationFailedEvent: spy(() => Promise.resolve()),
         sendContributionFailedNotification: spy(() => Promise.resolve()),
+        sendDocumentCentricNotification: spy(() => Promise.resolve()),
     };
 }
 
@@ -86,6 +88,8 @@ export const mockContributionRow: DialecticContributionRow = {
     size_bytes: 1234,
     mime_type: 'text/markdown',
     document_relationships: null,
+    is_header: false,
+    source_prompt_resource_id: null,
     };
 
     export const mockDialecticContributionReceivedPayload: DialecticContributionReceivedPayload = {
@@ -150,4 +154,14 @@ export const mockContributionGenerationFailedInternalPayload: ContributionGenera
     sessionId: 'session-uuid-456',
     job_id: 'job-uuid-123',
     error: mockContributionGenerationFailedApiError,
+  };
+
+export const mockDocumentCentricNotificationPayload: DocumentCentricNotificationEvent = {
+    type: 'planner_started',
+    sessionId: 'session-uuid-456',
+    stageSlug: 'thesis',
+    job_id: 'job-uuid-123',
+    document_key: 'business_case',
+    modelId: 'model-uuid-abc',
+    iterationNumber: 1,
   };

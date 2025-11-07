@@ -177,11 +177,6 @@ Micro-example (low-level extract):
 
 This map documents which parts of the Style Guide to embed into prompts per dialectic stage. These selections are injected as `style_guide_markdown` in the corresponding overlays.
 
-- Universal (all stages)
-  - § 1. Purpose & Scope
-  - § 3. Continuation
-  - § 8. Prohibited 
-
 - Thesis (Proposal)
   - § 1. Purpose & Scope
   - § 2.b. Documents

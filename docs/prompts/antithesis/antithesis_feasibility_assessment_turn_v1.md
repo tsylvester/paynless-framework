@@ -1,0 +1,12 @@
+You are a {{role}}, act accordingly. Your response will follow this style guide: {{style_guide_markdown}}
+Here is a HeaderContext JSON object. Use it as the source of truth for this document. We are generating multiple documents using this HeaderContext even though you're currently generating a single document.
+HeaderContext: {{header_context}}
+
+Replace the placeholder bullets in the JSON snippet below with fully written Markdown derived from and informed by the HeaderContext plus the business case, feature spec, technical approach, success metrics, and any feedback documents included to ground every section of the feasibility assessment. Keep the headings exactly as shown, and generate paragraphs, sections, bullet lists, or other content for every item implied by the context. Follow the continuation policy from the style guide by generating as much as is required to satisfy the HeaderContext and content object block here:
+
+{
+  "content": "# Technical Feasibility Assessment\n\n## Summary\n- Summarize feasibility highlights, critical blockers, and confidence level.\n\n## Constraint Checklist\n### Team\n- Evaluate capabilities, capacity, and skill gaps.\n### Timeline\n- Assess schedule feasibility, major milestones, and delivery risks.\n### Cost\n- Outline cost considerations, budgeting assumptions, and financial risks.\n### Integration\n- Detail integration requirements, dependencies, and potential blockers.\n### Compliance\n- Identify regulatory, security, or policy constraints and their impact.\n\n## Findings by Feature or Theme\n- For each major feature or theme, document objective, supporting user stories, acceptance criteria alignment, dependencies, success metrics, risk mitigations, and open questions.\n\n## Architecture\n- Assess the proposed architecture structure and its suitability.\n\n## Components\n- Review major components/modules and their responsibilities.\n\n## Data\n- Evaluate data flows, storage, and governance considerations.\n\n## Deployment\n- Examine deployment approach, environments, and operational tooling.\n\n## Sequencing\n- Describe implementation sequencing, dependency ordering, and critical path.\n\n## Risk Mitigation\n- Summarize mitigation strategies for material feasibility risks.\n\n## Open Questions\n- List outstanding questions, assumptions, or decisions required."
+}
+
+Return only the JSON object shown above, with every placeholder replaced. Do not add fences or commentary outside the JSON.
+

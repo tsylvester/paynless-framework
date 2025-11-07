@@ -28,8 +28,13 @@ import {
   DeleteProjectPayload,
   CloneProjectPayload,
   ExportProjectPayload,
-  StorageError
+  StorageError,
+  StageRecipeResponse,
+  ListStageDocumentsPayload,
+  ListStageDocumentsResponse,
+  SubmitStageDocumentFeedbackPayload,
 } from "./dialectic.interface.ts";
+import { getStageRecipe } from "./getStageRecipe.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import {
   handleCorsPreflightRequest,
@@ -68,12 +73,15 @@ import { listDomains, type DialecticDomain } from './listDomains.ts';
 import { fetchProcessTemplate } from './fetchProcessTemplate.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { handleUpdateSessionModels } from './updateSessionModels.ts';
+import { listStageDocuments } from './listStageDocuments.ts';
+import { submitStageDocumentFeedback, type SubmitStageDocumentFeedbackDeps } from './submitStageDocumentFeedback.ts';
 import { callUnifiedAIModel } from './callModel.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
 import type { SaveContributionEditDeps } from './saveContributionEdit.ts';
+import type { DialecticServiceResponse, DialecticFeedbackRow } from './dialectic.interface.ts';
 
 
 console.log("dialectic-service function started");
@@ -174,6 +182,9 @@ export interface ActionHandlers {
   listDomains: (dbClient: SupabaseClient) => Promise<{ data?: DialecticDomain[]; error?: ServiceError }>;
   fetchProcessTemplate: (dbClient: SupabaseClient, payload: FetchProcessTemplatePayload) => Promise<{ data?: DialecticProcessTemplate; error?: ServiceError; status?: number }>;
   updateSessionModels: (dbClient: SupabaseClient, payload: UpdateSessionModelsPayload, userId: string) => Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }>;
+  getStageRecipe: (payload: { stageSlug: string }, dbClient: SupabaseClient) => Promise<{ data?: StageRecipeResponse; error?: ServiceError; status?: number }>;
+  listStageDocuments: (payload: ListStageDocumentsPayload, dbClient: SupabaseClient) => Promise<{ status: number; data?: ListStageDocumentsResponse; error?: { message: string } }>;
+  submitStageDocumentFeedback: (payload: SubmitStageDocumentFeedbackPayload, dbClient: SupabaseClient, deps: SubmitStageDocumentFeedbackDeps) => Promise<DialecticServiceResponse<DialecticFeedbackRow>>;
 }
 
 export async function handleRequest(
@@ -246,7 +257,9 @@ export async function handleRequest(
         'deleteProject', 'cloneProject', 'exportProject', 'getProjectResourceContent',
         'saveContributionEdit', 'submitStageResponses', 'fetchProcessTemplate',
         'updateSessionModels',
-        'getSessionDetails'
+        'getSessionDetails',
+        'listStageDocuments',
+        'submitStageDocumentFeedback',
       ];
 
       let userForJson: User | null = null;
@@ -288,6 +301,17 @@ export async function handleRequest(
         case "fetchProcessTemplate": {
           const payload: FetchProcessTemplatePayload = requestBody.payload;
           const { data, error, status } = await handlers.fetchProcessTemplate(userClient, payload);
+          if (error) {
+            return createErrorResponse(error.message, status || 500, req, error);
+          }
+          return createSuccessResponse(data, status || 200, req);
+        }
+        case "getStageRecipe": {
+          const payload: { stageSlug: string } = requestBody.payload;
+          if (!payload || typeof payload.stageSlug !== 'string' || payload.stageSlug.length === 0) {
+            return createErrorResponse("stageSlug is required", 400, req, { message: "stageSlug is required", status: 400 });
+          }
+          const { data, error, status } = await handlers.getStageRecipe({ stageSlug: payload.stageSlug }, userClient);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
@@ -492,6 +516,26 @@ export async function handleRequest(
           }
           return createSuccessResponse(data, status || 200, req);
         }
+        case "listStageDocuments": {
+          const payload: ListStageDocumentsPayload = requestBody.payload;
+          const result = await handlers.listStageDocuments(payload, adminClient);
+          if (result.error) {
+            return createErrorResponse(result.error.message, result.status, req, result.error);
+          }
+          return createSuccessResponse(result.data, result.status, req);
+        }
+        case "submitStageDocumentFeedback": {
+          const payload: SubmitStageDocumentFeedbackPayload = requestBody.payload;
+          const deps: SubmitStageDocumentFeedbackDeps = {
+            fileManager: fileManager,
+            logger: logger,
+          };
+          const { data, error } = await handlers.submitStageDocumentFeedback(payload, adminClient, deps);
+          if (error) {
+            return createErrorResponse(error.message, 500, req, error);
+          }
+          return createSuccessResponse(data, 200, req);
+        }
         default: {
           const errorMessage = `Unknown action for application/json.`;
           logger.warn(errorMessage, { action });
@@ -536,6 +580,9 @@ export const defaultHandlers: ActionHandlers = {
   listDomains,
   fetchProcessTemplate,
   updateSessionModels: handleUpdateSessionModels,
+  getStageRecipe,
+  listStageDocuments,
+  submitStageDocumentFeedback,
 };
 
 export function createDialecticServiceHandler(

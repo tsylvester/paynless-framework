@@ -10,6 +10,7 @@ export interface NotificationServiceType {
     sendContributionGenerationContinuedEvent(payload: ContributionGenerationContinuedPayload, targetUserId: string): Promise<void>;
     sendDialecticProgressUpdateEvent(payload: DialecticProgressUpdatePayload, targetUserId: string): Promise<void>;
     sendContributionGenerationFailedEvent(payload: ContributionGenerationFailedInternalPayload, targetUserId: string): Promise<void>;
+    sendDocumentCentricNotification(payload: DocumentCentricNotificationEvent, targetUserId: string): Promise<void>;
 }
 
 export interface RpcNotification<T> {
@@ -132,3 +133,48 @@ export interface ContributionGenerationStartedPayload {
   | ContributionGenerationContinuedPayload
   | ContributionGenerationCompletePayload
   | DialecticProgressUpdatePayload;
+
+// ------------------------------
+// Document-centric notification payloads (Step 1.a.i)
+// Ensure common fields + document-scoped fields per checklist
+
+export interface DocumentPayload {
+  sessionId: string;
+  stageSlug: string;
+  job_id: string;
+  document_key: string;
+  modelId: string;
+  iterationNumber: number;
+}
+export interface PlannerStartedPayload extends DocumentPayload {
+  type: 'planner_started';
+}
+
+export interface DocumentStartedPayload extends DocumentPayload {
+  type: 'document_started';
+}
+
+export interface DocumentChunkCompletedPayload extends DocumentPayload {
+  type: 'document_chunk_completed';
+}
+
+export interface DocumentCompletedPayload extends DocumentPayload {
+  type: 'document_completed';
+}
+
+export interface RenderCompletedPayload extends DocumentPayload {
+  type: 'render_completed';
+}
+
+export interface JobFailedPayload extends DocumentPayload {
+  type: 'job_failed';
+  error: ApiError;
+}
+
+export type DocumentCentricNotificationEvent =
+  | PlannerStartedPayload
+  | DocumentStartedPayload
+  | DocumentChunkCompletedPayload
+  | DocumentCompletedPayload
+  | RenderCompletedPayload
+  | JobFailedPayload;

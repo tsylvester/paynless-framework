@@ -180,6 +180,58 @@ export type PromptTemplate = Omit<SystemPromptsRow, 'variables_required'> & {
   variables_required?: Record<string, PromptTemplateVariable['type']> | PromptTemplateVariable[];
 };
 
+// Stage Recipe Contracts (Frontend)
+export type RecipeJobType = 'PLAN' | 'EXECUTE' | 'RENDER';
+export type RecipePromptType = 'Planner' | 'Turn';
+export type RecipeOutputType = 'HeaderContext' | 'AssembledDocumentJson' | 'RenderedDocument';
+export type RecipeGranularity = 'all_to_one' | 'per_source_document' | 'one_to_many' | 'many_to_one';
+
+export interface InputRequirement {
+  type: 'seed_prompt' | 'document' | 'header_context' | 'feedback';
+  slug: string;
+  document_key: string;
+  required: boolean;
+  multiple?: boolean;
+}
+
+export interface InputsRelevanceItem {
+  document_key: string;
+  slug: string;
+  relevance: number;
+  type?: 'feedback';
+}
+
+export interface OutputRequirement {
+  document_key: string;
+  artifact_class: 'header_context' | 'assembled_json' | 'rendered_document';
+  file_type: 'json' | 'markdown';
+  template_filename?: string;
+}
+
+export interface DialecticStageRecipeStep {
+  id: string;
+  step_key: string;
+  step_slug: string;
+  step_name: string;
+  execution_order: number;
+  parallel_group?: number | null;
+  branch_key?: string | null;
+  job_type: RecipeJobType;
+  prompt_type: RecipePromptType;
+  prompt_template_id?: string | null;
+  output_type: RecipeOutputType;
+  granularity_strategy: RecipeGranularity;
+  inputs_required: InputRequirement[];
+  inputs_relevance?: InputsRelevanceItem[];
+  outputs_required?: OutputRequirement[];
+}
+
+export interface DialecticStageRecipe {
+  stageSlug: string;
+  instanceId: string;
+  steps: DialecticStageRecipeStep[];
+}
+
 export interface DomainDescriptor {
   id: string; // Corresponds to domain_specific_prompt_overlays.id
   domain_name: string;
@@ -290,6 +342,78 @@ export interface DialecticStateValues {
   activeDialecticWalletId: string | null;
 
   sessionProgress: { [sessionId: string]: ProgressData };
+  
+  // Recipe hydration and per-stage-run progress
+  recipesByStageSlug: Record<string, DialecticStageRecipe>;
+  stageRunProgress: Record<string, StageRunProgressSnapshot>;
+  focusedStageDocument: Record<string, FocusedStageDocumentState | null>;
+  stageDocumentContent: Record<string, StageDocumentContentState>;
+  stageDocumentVersions: Record<string, StageDocumentVersionInfo>;
+  stageDocumentFeedback: Record<string, StageDocumentFeedback[]>;
+  isLoadingStageDocumentFeedback: boolean;
+  stageDocumentFeedbackError: ApiError | null;
+  isSubmittingStageDocumentFeedback: boolean;
+  submitStageDocumentFeedbackError: ApiError | null;
+}
+
+export type StageRunProgressEntry = NonNullable<DialecticStateValues['stageRunProgress'][string]>;
+export type StageRunDocuments = StageRunProgressEntry['documents'];
+export type StageRunDocumentEntry = StageRunDocuments[string];
+export type DocumentStatus = StageRunDocumentEntry['status'];
+
+export type StageDocumentChecklistEntry = {
+  documentKey: string;
+  status: DocumentStatus;
+  jobId: StageRunDocumentDescriptor['job_id'] | undefined;
+  latestRenderedResourceId: StageRunDocumentDescriptor['latestRenderedResourceId'];
+  modelId: StageRunDocumentDescriptor['modelId'];
+};
+export type StageRunDocumentStatus =
+  | 'idle'
+  | 'generating'
+  | 'retrying'
+  | 'failed'
+  | 'completed'
+  | 'continuing';
+
+export interface StageDocumentCompositeKey {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+  modelId: string;
+  documentKey: string;
+}
+
+export interface StageDocumentVersionInfo {
+  resourceId: string;
+  versionHash: string;
+  updatedAt: string;
+}
+
+export interface StageDocumentContentState {
+  baselineMarkdown: string;
+  currentDraftMarkdown: string;
+  isDirty: boolean;
+  isLoading: boolean;
+  error: ApiError | null;
+  lastBaselineVersion: StageDocumentVersionInfo | null;
+  pendingDiff: string | null;
+  lastAppliedVersionHash: string | null;
+}
+
+export interface StageRunDocumentDescriptor {
+  status: StageRunDocumentStatus;
+  job_id: string;
+  latestRenderedResourceId: string;
+  modelId: string;
+  versionHash: string;
+  lastRenderedResourceId: string;
+  lastRenderAtIso: string;
+}
+
+export interface StageRunProgressSnapshot {
+  stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed'>;
+  documents: Record<string, StageRunDocumentDescriptor>;
 }
 
 export interface InitialPromptCacheEntry {
@@ -306,6 +430,39 @@ export interface ContributionCacheEntry {
   mimeType?: string;
   sizeBytes?: number | null;
   fileName?: string | null;
+}
+
+export interface FocusedStageDocumentState {
+  modelId: string;
+  documentKey: string;
+}
+
+
+export interface SetFocusedStageDocumentPayload {
+  sessionId: string;
+  stageSlug: string;
+  modelId: string;
+  documentKey: string;
+  stepKey: string;
+  iterationNumber: number;
+}
+
+export type StageDocumentSelectionHandler = (
+  payload: SetFocusedStageDocumentPayload,
+) => void;
+
+export type StageDocumentEntry = StageDocumentChecklistEntry;
+
+export interface StageRunChecklistProps {
+  focusedStageDocumentMap?: Record<string, FocusedStageDocumentState | null>;
+  onDocumentSelect: StageDocumentSelectionHandler;
+  modelId: string;
+}
+
+export interface ClearFocusedStageDocumentPayload {
+  sessionId: string;
+  stageSlug: string;
+  modelId: string;
 }
 
 export interface DialecticActions {
@@ -342,6 +499,18 @@ export interface DialecticActions {
   // New action for fetching initial prompt file content
   fetchInitialPromptContent: (resourceId: string) => Promise<void>;
 
+  beginStageDocumentEdit: (key: StageDocumentCompositeKey, initialDraftMarkdown: string) => void;
+  updateStageDocumentDraft: (key: StageDocumentCompositeKey, draftMarkdown: string) => void;
+  flushStageDocumentDraft: (key: StageDocumentCompositeKey) => void;
+  clearStageDocumentDraft: (key: StageDocumentCompositeKey) => void;
+  fetchStageDocumentContent: (key: StageDocumentCompositeKey, resourceId: string) => Promise<void>;
+
+  hydrateStageProgress: (payload: ListStageDocumentsPayload) => Promise<void>;
+
+  fetchStageDocumentFeedback: (key: StageDocumentCompositeKey) => Promise<void>;
+  submitStageDocumentFeedback: (payload: SubmitStageDocumentFeedbackPayload) => Promise<ApiResponse<{ success: boolean }>>;
+  resetSubmitStageDocumentFeedbackError: () => void;
+
   // Action for generating contributions
   generateContributions: (payload: GenerateContributionsPayload) => Promise<ApiResponse<GenerateContributionsResponse>>;
   
@@ -363,6 +532,8 @@ export interface DialecticActions {
   setActiveContextStage: (stage: DialecticStage | null) => void;
   setActiveDialecticContext: (context: { projectId: string | null; sessionId: string | null; stage: DialecticStage | null }) => void;
   setActiveStage: (slug: string | null) => void;
+  setFocusedStageDocument: (payload: SetFocusedStageDocumentPayload) => void;
+  clearFocusedStageDocument: (payload: ClearFocusedStageDocumentPayload) => void;
 
   // ADDED: Actions for fetching feedback file content
   fetchFeedbackFileContent: (payload: { projectId: string; storagePath: string }) => Promise<void>;
@@ -390,8 +561,18 @@ export interface DialecticActions {
   _handleContributionGenerationComplete: (event: ContributionGenerationCompletePayload) => void;
   _handleContributionGenerationContinued: (event: ContributionGenerationContinuedPayload) => void;
   _handleProgressUpdate: (event: DialecticProgressUpdatePayload) => void;
+  _handlePlannerStarted: (event: PlannerStartedPayload) => void;
+  _handleDocumentStarted: (event: DocumentStartedPayload) => void;
+  _handleDocumentChunkCompleted: (event: DocumentChunkCompletedPayload) => void;
+  _handleRenderCompleted: (event: RenderCompletedPayload) => void;
+  _handleJobFailed: (event: JobFailedPayload) => void;
+  
   
   reset: () => void;
+
+  // Recipe hydration and per-stage-run progress
+  fetchStageRecipe: (stageSlug: string) => Promise<void>;
+  ensureRecipeForActiveStage: (sessionId: string, stageSlug: string, iterationNumber: number) => Promise<void>;
 }
 
 export type DialecticStore = DialecticStateValues & DialecticActions;
@@ -438,7 +619,6 @@ export type ContributionType =
   | 'paralysis'
   | 'pairwise_synthesis_chunk'
   | 'reduced_synthesis'
-  | 'final_synthesis'
   | 'rag_context_summary';
   
 export type DialecticNotificationTypes = 
@@ -449,7 +629,12 @@ export type DialecticNotificationTypes =
   | 'contribution_generation_failed'
   | 'contribution_generation_complete'
   | 'dialectic_progress_update'
-  | 'contribution_generation_continued';
+  | 'contribution_generation_continued'
+  | 'planner_started'
+  | 'document_started'
+  | 'document_chunk_completed'
+  | 'render_completed'
+  | 'job_failed';
 export interface ContributionGenerationStartedPayload {
   // This is the overall contribution generation for the entire session stage. 
   type: 'contribution_generation_started';
@@ -530,6 +715,41 @@ export interface ProgressData {
   message: string;
 }
 
+export interface DocumentLifecyclePayload {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+  job_id: string;
+  document_key: string;
+  modelId: string;
+  step_key?: string;
+  latestRenderedResourceId?: string | null;
+}
+
+export interface PlannerStartedPayload extends DocumentLifecyclePayload {
+  type: 'planner_started';
+}
+
+export interface DocumentStartedPayload extends DocumentLifecyclePayload {
+  type: 'document_started';
+}
+
+export interface DocumentChunkCompletedPayload extends DocumentLifecyclePayload {
+  type: 'document_chunk_completed';
+  isFinalChunk?: boolean;
+  continuationNumber?: number;
+}
+
+export interface RenderCompletedPayload extends DocumentLifecyclePayload {
+  type: 'render_completed';
+  latestRenderedResourceId: string;
+}
+
+export interface JobFailedPayload extends DocumentLifecyclePayload {
+  type: 'job_failed';
+  error: ApiError;
+}
+
 export type DialecticLifecycleEvent = 
 ContributionGenerationStartedPayload 
 | DialecticContributionStartedPayload 
@@ -538,7 +758,12 @@ ContributionGenerationStartedPayload
 | ContributionGenerationFailedPayload 
 | ContributionGenerationContinuedPayload
 | ContributionGenerationCompletePayload
-| DialecticProgressUpdatePayload;
+| DialecticProgressUpdatePayload
+| PlannerStartedPayload
+| DocumentStartedPayload
+| DocumentChunkCompletedPayload
+| RenderCompletedPayload
+| JobFailedPayload;
 
 export interface DialecticFeedback {
   id: string;
@@ -559,6 +784,7 @@ export interface DialecticFeedback {
 }
 
 export interface DialecticApiClient {
+  fetchStageRecipe(stageSlug: string): Promise<ApiResponse<DialecticStageRecipe>>;
   listAvailableDomains(): Promise<ApiResponse<{ data: DomainDescriptor[] }>>;
   listAvailableDomainOverlays(payload: { stageAssociation: string }): Promise<ApiResponse<DomainOverlayDescriptor[]>>;
   createProject(payload: FormData): Promise<ApiResponse<DialecticProject>>;
@@ -588,6 +814,9 @@ export interface DialecticApiClient {
   getIterationInitialPromptContent(payload: GetIterationInitialPromptPayload): Promise<ApiResponse<IterationInitialPromptData>>;
 
   getProjectResourceContent(payload: GetProjectResourceContentPayload): Promise<ApiResponse<GetProjectResourceContentResponse>>;
+  getStageDocumentFeedback(payload: GetStageDocumentFeedbackPayload): Promise<ApiResponse<StageDocumentFeedback[]>>;
+  submitStageDocumentFeedback(payload: SubmitStageDocumentFeedbackPayload): Promise<ApiResponse<{ success: boolean }>>;
+  listStageDocuments(payload: ListStageDocumentsPayload): Promise<ApiResponse<ListStageDocumentsResponse>>;
 }
 
 
@@ -620,6 +849,14 @@ export interface GenerateContributionsResponse {
   job_ids?: string[];
   successfulContributions: DialecticContribution[];
   failedAttempts: FailedAttemptError[];
+}
+
+export type ListStageDocumentsResponse = StageDocumentChecklistEntry[];
+
+export interface ListStageDocumentsPayload {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
 }
 
 export interface ContributionContentSignedUrlResponse {
@@ -711,6 +948,17 @@ export type DialecticServiceActionPayload = {
   action: 'updateSessionModels';
   payload: UpdateSessionModelsPayload;
 }
+| {
+  action: 'getStageDocumentFeedback';
+  payload: GetStageDocumentFeedbackPayload;
+} | {
+  action: 'submitStageDocumentFeedback';
+  payload: SubmitStageDocumentFeedbackPayload;
+}
+| {
+  action: 'listStageDocuments';
+  payload: ListStageDocumentsPayload;
+}
 
 export interface DialecticServiceResponsePayload {
   // ... existing code ...
@@ -746,17 +994,9 @@ export interface SubmitStageResponsesPayload {
   projectId: string;
   stageSlug: DialecticStage['slug'];
   currentIterationNumber: number;
-  responses: SubmitStageResponseItem[];
-  userStageFeedback?: { 
-    content: string; 
-    feedbackType: string; 
-    resourceDescription?: Record<string, unknown>; 
-  };
 }
   
 export interface SubmitStageResponsesResponse { 
-    userFeedbackStoragePath: string;
-    nextStageSeedPromptStoragePath: string;
     updatedSession: DialecticSession;
     message?: string;
 }
@@ -791,4 +1031,27 @@ export interface SubmitStageResponseItem {
 }
 
 // END: New type definitions
+
+export interface GetStageDocumentFeedbackPayload {
+	sessionId: string;
+	stageSlug: string;
+	iterationNumber: number;
+	modelId: string;
+	documentKey: string;
+}
+
+export interface StageDocumentFeedback {
+	id: string;
+	content: string;
+	createdAt: string;
+}
+
+export interface SubmitStageDocumentFeedbackPayload {
+	sessionId: string;
+	stageSlug: string;
+	iterationNumber: number;
+	modelId: string;
+	documentKey: string;
+	feedback: string;
+}
 

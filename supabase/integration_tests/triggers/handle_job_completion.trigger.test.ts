@@ -179,7 +179,6 @@ describe("`handle_job_completion` Trigger Integration Tests", () => {
     it("Scenario 1: Parent job should move to 'completed' after final step's children finish", async () => {
         const parentPayload = {
             job_type: 'plan',
-            step_info: { current_step: 2, total_steps: 2 },
             model_id: 'test-model',
             sessionId: createdSessionId,
             projectId: createdProjectId,
@@ -196,7 +195,6 @@ describe("`handle_job_completion` Trigger Integration Tests", () => {
     it("Scenario 2: Parent job should move to 'pending_next_step' after intermediate step's children finish", async () => {
         const parentPayload = {
             job_type: 'plan',
-            step_info: { current_step: 1, total_steps: 2 },
             model_id: 'test-model',
             sessionId: createdSessionId,
             projectId: createdProjectId,
@@ -213,7 +211,6 @@ describe("`handle_job_completion` Trigger Integration Tests", () => {
     it("Scenario 3: Parent job should move to 'failed' if any child job fails", async () => {
         const parentPayload = {
             job_type: 'plan',
-            step_info: { current_step: 1, total_steps: 2 },
             model_id: 'test-model',
             sessionId: createdSessionId,
             projectId: createdProjectId,

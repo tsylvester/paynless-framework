@@ -13,6 +13,7 @@ import type {
   DialecticProgressUpdatePayload,
   ContributionGenerationFailedPayload,
   ContributionGenerationFailedInternalPayload,
+  DocumentCentricNotificationEvent,
 } from '../types/notification.service.types.ts';
 
 export class NotificationService implements NotificationServiceType {
@@ -161,6 +162,18 @@ export class NotificationService implements NotificationServiceType {
 
   public async sendContributionGenerationFailedEvent(
     payload: ContributionGenerationFailedInternalPayload,
+    targetUserId: string,
+  ): Promise<void> {
+    await this._sendNotification({
+      target_user_id: targetUserId, 
+      notification_type: payload.type,
+      is_internal_event: true,
+      notification_data: payload,
+    });
+  }
+
+  public async sendDocumentCentricNotification(
+    payload: DocumentCentricNotificationEvent,
     targetUserId: string,
   ): Promise<void> {
     await this._sendNotification({

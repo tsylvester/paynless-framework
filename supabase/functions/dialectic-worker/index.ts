@@ -5,12 +5,13 @@ import {
   type IDialecticJobDeps,
   type DialecticJobPayload,
   type ExecuteModelCallAndSaveParams,
+  type IJobProcessors,
 } from '../dialectic-service/dialectic.interface.ts';
 import { isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
-import { processJob, type IJobProcessors } from './processJob.ts';
+import { processJob } from './processJob.ts';
 import { logger } from '../_shared/logger.ts';
 import { processSimpleJob } from './processSimpleJob.ts';
-import { getAiProviderConfig, processComplexJob } from './processComplexJob.ts';
+import { processComplexJob } from './processComplexJob.ts';
 import { planComplexStage } from './task_isolator.ts';
 import { getSeedPromptForStage } from '../_shared/utils/dialectic_utils.ts';
 import { continueJob } from './continueJob.ts';
@@ -25,7 +26,7 @@ import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { createSupabaseAdminClient, } from '../_shared/auth.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
-import { PromptAssembler } from '../_shared/prompt-assembler.ts';
+import { PromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.ts';
 import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
 import { getGranularityPlanner } from './strategies/granularity.strategies.ts';
 import { RagService } from '../_shared/services/rag_service.ts';
@@ -35,6 +36,9 @@ import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
 import { defaultProviderMap } from '../_shared/ai_service/factory.ts';
 import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
+import { processRenderJob } from './processRenderJob.ts';
+import { isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
+import { renderDocument } from '../_shared/services/document_renderer.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -42,6 +46,16 @@ const processors: IJobProcessors = {
   processSimpleJob,
   processComplexJob,
   planComplexStage,
+  processRenderJob: async (dbClient, job, projectOwnerUserId, deps, authToken) => {
+    const renderDeps = {
+      documentRenderer: deps.documentRenderer,
+      logger: deps.logger,
+      downloadFromStorage: (supabase: SupabaseClient<Database>, bucket: string, path: string) => deps.downloadFromStorage(bucket, path),
+      fileManager: deps.fileManager,
+      notificationService: deps.notificationService,
+    };
+    await processRenderJob(dbClient, job, projectOwnerUserId, renderDeps, authToken);
+  },
 };
 
 // Factory to create fully-wired worker dependencies
@@ -83,7 +97,8 @@ export async function createDialecticWorkerDeps(
   const tokenWalletService = new TokenWalletService(adminClient, adminClient);
   const indexingService = new IndexingService(adminClient, logger, textSplitter, embeddingClient, tokenWalletService);
   const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient, tokenWalletService });
-  const promptAssembler = new PromptAssembler(adminClient);
+  const promptAssembler = new PromptAssembler(adminClient, fileManager);
+  const documentRenderer = { renderDocument };
 
   const deps: IDialecticJobDeps = {
     logger,
@@ -104,7 +119,20 @@ export async function createDialecticWorkerDeps(
       }),
     ragService,
     countTokens: countTokens,
-    getAiProviderConfig: (dbClient: SupabaseClient<Database>, modelId: string) => getAiProviderConfig(dbClient, modelId),
+    getAiProviderConfig: async (dbClient: SupabaseClient<Database>, modelId: string) => {
+      const { data, error } = await dbClient
+        .from('ai_providers')
+        .select('*')
+        .eq('id', modelId)
+        .single();
+      if (error || !data) {
+        throw new Error('Failed to fetch AI provider config');
+      }
+      if (!isAiModelExtendedConfig(data.config)) {
+        throw new Error('Failed to fetch AI provider config');
+      }
+      return data.config;
+    },
     getGranularityPlanner,
     planComplexStage,
     indexingService,
@@ -113,6 +141,7 @@ export async function createDialecticWorkerDeps(
     getAiProviderAdapter,
     // Use admin client for both contexts in worker environment
     tokenWalletService,
+    documentRenderer,
   };
 
   return deps;

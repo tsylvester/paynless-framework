@@ -169,7 +169,7 @@ export const mockSubmitStageResponsesError = (
 // --- Job Processors Mock ---
 
 // Import types for the processor functions
-import type { IJobProcessors } from '../dialectic-worker/processJob.ts';
+import type { IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
 
 // Dummy implementation class for job processors
 class _JobProcessorsDummyImpl implements IJobProcessors {
@@ -178,6 +178,8 @@ class _JobProcessorsDummyImpl implements IJobProcessors {
     // deno-lint-ignore no-explicit-any
     processComplexJob = async (..._args: any[]): Promise<void> => { /* dummy */ }
     // deno-lint-ignore no-explicit-any
+    processRenderJob = async (..._args: any[]): Promise<void> => { /* dummy */ }
+    // deno-lint-ignore no-explicit-any
     planComplexStage = async (..._args: any[]): Promise<any> => { /* dummy */ }
 }
 
@@ -185,6 +187,7 @@ class _JobProcessorsDummyImpl implements IJobProcessors {
 export type MockJobProcessorsSpies = {
     processSimpleJob: Spy<_JobProcessorsDummyImpl, Parameters<typeof _JobProcessorsDummyImpl.prototype.processSimpleJob>, ReturnType<typeof _JobProcessorsDummyImpl.prototype.processSimpleJob>>;
     processComplexJob: Spy<_JobProcessorsDummyImpl, Parameters<typeof _JobProcessorsDummyImpl.prototype.processComplexJob>, ReturnType<typeof _JobProcessorsDummyImpl.prototype.processComplexJob>>;
+    processRenderJob: Spy<_JobProcessorsDummyImpl, Parameters<typeof _JobProcessorsDummyImpl.prototype.processRenderJob>, ReturnType<typeof _JobProcessorsDummyImpl.prototype.processRenderJob>>;
     planComplexStage: Spy<_JobProcessorsDummyImpl, Parameters<typeof _JobProcessorsDummyImpl.prototype.planComplexStage>, ReturnType<typeof _JobProcessorsDummyImpl.prototype.planComplexStage>>;
 };
 
@@ -198,6 +201,7 @@ export function createMockJobProcessors(): {
     const spies = {
         processSimpleJob: spy(dummyInstance, "processSimpleJob"),
         processComplexJob: spy(dummyInstance, "processComplexJob"),
+        processRenderJob: spy(dummyInstance, "processRenderJob"),
         planComplexStage: spy(dummyInstance, "planComplexStage"),
     };
 

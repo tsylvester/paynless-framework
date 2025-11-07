@@ -2,26 +2,28 @@ import {
   type UnifiedAIResponse,
   type ModelProcessingResult,
   type ExecuteModelCallAndSaveParams,
+  type SourceDocument,
 } from '../dialectic-service/dialectic.interface.ts';
-import { UploadContext, FileType } from '../_shared/types/file_manager.types.ts';
+import { ModelContributionFileTypes, ModelContributionUploadContext } from '../_shared/types/file_manager.types.ts';
 import { 
     isDialecticContribution, 
     isAiModelExtendedConfig, 
     isDialecticExecuteJobPayload, 
     isContributionType, 
-    isFileType, 
     isApiChatMessage, 
-    isContinueReason, 
+    isDialecticContinueReason, 
     isRecord, 
     isFinishReason, 
-    isDocumentRelationships 
+    isDocumentRelationships,
+    isJson,
 } from "../_shared/utils/type_guards.ts";
 import { AiModelExtendedConfig, ChatApiRequest, Messages, FinishReason } from '../_shared/types.ts';
 import { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { ResourceDocuments } from "../_shared/types.ts";
 import { getMaxOutputTokens } from '../_shared/utils/affordability_utils.ts';
-
+import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
+import { TablesInsert } from '../types_db.ts';  
 export async function executeModelCallAndSave(
     params: ExecuteModelCallAndSaveParams,
 ) {
@@ -96,9 +98,203 @@ export async function executeModelCallAndSave(
     const {
         systemInstruction,
         conversationHistory,
-        resourceDocuments,
         currentUserPrompt,
     } = promptConstructionPayload;
+
+    // 8.h.i: Gather prior artifacts from contributions, resources, and feedback
+    type IdentityDoc = { id: string; content: string } & Record<string, unknown>;
+    const gatherArtifacts = async (): Promise<IdentityDoc[]> => {
+        // Require explicit inputsRequired; if absent, gather nothing
+        const rulesUnknown = (params && Array.isArray(params.inputsRequired)) ? params.inputsRequired : [];
+        if (rulesUnknown.length === 0) return [];
+
+        const gathered: IdentityDoc[] = [];
+
+        // Helper: pick latest by created_at
+        const pickLatest = <T extends Record<string, unknown>>(rows: T[]): T | undefined => {
+            let latest: T | undefined = undefined;
+            let bestTs = -Infinity;
+            for (const row of rows) {
+                const tsRaw = typeof row['created_at'] === 'string' ? row['created_at'] : undefined;
+                const ts = tsRaw ? Date.parse(tsRaw) : NaN;
+                const score = Number.isFinite(ts) ? ts : -Infinity;
+                if (score > bestTs) { bestTs = score; latest = row; }
+            }
+            return latest;
+        };
+
+        for (const ru of rulesUnknown) {
+            const rType = isRecord(ru) && typeof ru['type'] === 'string' ? ru['type'] : undefined; // 'document' | 'feedback'
+            const rStage = isRecord(ru) && typeof ru['stage_slug'] === 'string' ? ru['stage_slug'] : undefined;
+            const rKey = isRecord(ru) && typeof ru['document_key'] === 'string' ? ru['document_key'] : undefined;
+            if (!rType || !rStage || !rKey) continue;
+
+            try {
+                if (rType === 'document') {
+                    // From dialectic_contributions (stage column normalized to stage_slug)
+                    {
+                        const { data, error } = await dbClient
+                            .from('dialectic_contributions')
+                            .select('*')
+                            .eq('project_id', projectId)
+                            .eq('session_id', sessionId)
+                            .eq('iteration_number', iterationNumber)
+                            .eq('stage', rStage);
+                        if (!error && Array.isArray(data) && data.length > 0) {
+                            const filtered = (data).filter((row) => {
+                                const fileName = isRecord(row) && typeof row['file_name'] === 'string' ? row['file_name'] : '';
+                                const storageDir = isRecord(row) && typeof row['storage_path'] === 'string' ? row['storage_path'] : '';
+                                const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
+                                const rowStage = (isRecord(row) && typeof row['stage'] === 'string') ? row['stage']
+                                    : (typeof parsed.stageSlug === 'string' ? parsed.stageSlug : undefined);
+                                const parsedKey = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
+                                return rowStage === rStage && parsedKey === rKey;
+                            });
+                            const latest = pickLatest(filtered);
+                            if (latest && isRecord(latest)) {
+                                const u: unknown = latest;
+                                const id = isRecord(u) && typeof u['id'] === 'string' ? u['id'] : undefined;
+                                const fileName = isRecord(u) && typeof u['file_name'] === 'string' ? u['file_name'] : '';
+                                const storageDir = isRecord(u) && typeof u['storage_path'] === 'string' ? u['storage_path'] : '';
+                                const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
+                                const stageSlugEff = isRecord(u) && typeof u['stage'] === 'string' ? u['stage'] : (parsed.stageSlug || undefined);
+                                const docKeyEff = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
+                                const content = isRecord(u) && typeof u['content'] === 'string' ? u['content'] : '';
+                                if (id && stageSlugEff && docKeyEff) {
+                                    gathered.push({ id, content, document_key: docKeyEff, stage_slug: stageSlugEff, type: 'document' });
+                                }
+                            }
+                        }
+                    }
+                    // From dialectic_project_resources (already stage_slug)
+                    {
+                        const { data, error } = await dbClient
+                            .from('dialectic_project_resources')
+                            .select('*')
+                            .eq('project_id', projectId)
+                            .eq('session_id', sessionId)
+                            .eq('iteration_number', iterationNumber)
+                            .eq('stage_slug', rStage);
+                        if (!error && Array.isArray(data) && data.length > 0) {
+                            const filtered = (data).filter((row) => {
+                                const fileName = isRecord(row) && typeof row['file_name'] === 'string' ? row['file_name'] : '';
+                                const storageDir = isRecord(row) && typeof row['storage_path'] === 'string' ? row['storage_path'] : '';
+                                const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
+                                const rowStage = (isRecord(row) && typeof row['stage_slug'] === 'string') ? row['stage_slug']
+                                    : (typeof parsed.stageSlug === 'string' ? parsed.stageSlug : undefined);
+                                const parsedKey = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
+                                return rowStage === rStage && parsedKey === rKey;
+                            });
+                            const latest = pickLatest(filtered);
+                            if (latest && isRecord(latest)) {
+                                const u: unknown = latest;
+                                const id = isRecord(u) && typeof u['id'] === 'string' ? u['id'] : undefined;
+                                const fileName = isRecord(u) && typeof u['file_name'] === 'string' ? u['file_name'] : '';
+                                const storageDir = isRecord(u) && typeof u['storage_path'] === 'string' ? u['storage_path'] : '';
+                                const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
+                                const stageSlugEff = isRecord(u) && typeof u['stage_slug'] === 'string' ? u['stage_slug'] : (parsed.stageSlug || undefined);
+                                const docKeyEff = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
+                                const content = isRecord(u) && typeof u['content'] === 'string' ? u['content'] : '';
+                                if (id && stageSlugEff && docKeyEff) {
+                                    gathered.push({ id, content, document_key: docKeyEff, stage_slug: stageSlugEff, type: 'document' });
+                                }
+                            }
+                        }
+                    }
+                }
+                if (rType === 'feedback') {
+                    const { data, error } = await dbClient
+                        .from('dialectic_feedback')
+                        .select('*')
+                        .eq('project_id', projectId)
+                        .eq('session_id', sessionId)
+                        .eq('iteration_number', iterationNumber)
+                        .eq('stage_slug', rStage);
+                    if (!error && Array.isArray(data) && data.length > 0) {
+                        const filtered = (data).filter((row) => {
+                            const fileName = isRecord(row) && typeof row['file_name'] === 'string' ? row['file_name'] : '';
+                            const storageDir = isRecord(row) && typeof row['storage_path'] === 'string' ? row['storage_path'] : '';
+                            const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
+                            const rowStage = (isRecord(row) && typeof row['stage_slug'] === 'string') ? row['stage_slug']
+                                : (typeof parsed.stageSlug === 'string' ? parsed.stageSlug : undefined);
+                            const parsedKey = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
+                            return rowStage === rStage && parsedKey === rKey;
+                        });
+                        const latest = pickLatest(filtered);
+                        if (latest && isRecord(latest)) {
+                            const u: unknown = latest;
+                            const id = isRecord(u) && typeof u['id'] === 'string' ? u['id'] : undefined;
+                            const fileName = isRecord(u) && typeof u['file_name'] === 'string' ? u['file_name'] : '';
+                            const storageDir = isRecord(u) && typeof u['storage_path'] === 'string' ? u['storage_path'] : '';
+                            const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
+                            const stageSlugEff = isRecord(u) && typeof u['stage_slug'] === 'string' ? u['stage_slug'] : (parsed.stageSlug || undefined);
+                            const docKeyEff = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
+                            const content = isRecord(u) && typeof u['content'] === 'string' ? u['content'] : '';
+                            if (id && stageSlugEff && docKeyEff) {
+                                gathered.push({ id, content, document_key: docKeyEff, stage_slug: stageSlugEff, type: 'feedback' });
+                            }
+                        }
+                    }
+                }
+            } catch { /* non-fatal */ }
+        }
+
+        // Dedupe by id across sources
+        const unique = new Map<string, IdentityDoc>();
+        for (const d of gathered) {
+            const rec: unknown = d;
+            const id = isRecord(rec) && typeof rec['id'] === 'string' ? rec['id'] : undefined;
+            if (id && !unique.has(id)) unique.set(id, d);
+        }
+        return Array.from(unique.values());
+    };
+
+    // 8.h.ii: Scope selection strictly to inputsRequired
+    const applyInputsRequiredScope = (docs: IdentityDoc[]): IdentityDoc[] => {
+        const rulesUnknown = (params && Array.isArray(params.inputsRequired)) ? params.inputsRequired : undefined;
+        if (!rulesUnknown || rulesUnknown.length === 0) return [];
+        const filtered: IdentityDoc[] = [];
+        for (const d of docs) {
+            const rec: unknown = d;
+            const dk = isRecord(rec) && typeof rec['document_key'] === 'string' ? rec['document_key'] : undefined;
+            const ss = isRecord(rec) && typeof rec['stage_slug'] === 'string' ? rec['stage_slug'] : undefined;
+            const tp = isRecord(rec) && typeof rec['type'] === 'string' ? rec['type'] : undefined;
+            if (!dk || !ss || !tp) continue;
+            let match = false;
+            for (const ru of rulesUnknown) {
+                const ruUnknown: unknown = ru;
+                const rType = isRecord(ruUnknown) && typeof ruUnknown['type'] === 'string' ? ruUnknown['type'] : undefined;
+                const rStage = isRecord(ruUnknown) && typeof ruUnknown['stage_slug'] === 'string' ? ruUnknown['stage_slug'] : undefined;
+                const rKey = isRecord(ruUnknown) && typeof ruUnknown['document_key'] === 'string' ? ruUnknown['document_key'] : undefined;
+                if (rType && rStage && rKey && rType === tp && rStage === ss && rKey === dk) {
+                    match = true;
+                    break;
+                }
+            }
+            if (match) filtered.push(d);
+        }
+        return filtered;
+    };
+
+    const gatheredDocs = await gatherArtifacts();
+    const scopedDocs = applyInputsRequiredScope(gatheredDocs);
+    // Build identity-rich view required for compression and an id/content-only view for sizing/send
+    type IdentitySourceDoc = { id: string; content: string; document_key: string; stage_slug: string; type: string };
+    const identityRichDocs: IdentitySourceDoc[] = [];
+    for (const d of scopedDocs) {
+        const rec: unknown = d;
+        const id = isRecord(rec) && typeof rec['id'] === 'string' ? rec['id'] : undefined;
+        const content = isRecord(rec) && typeof rec['content'] === 'string' ? rec['content'] : undefined;
+        const dk = isRecord(rec) && typeof rec['document_key'] === 'string' ? rec['document_key'] : undefined;
+        const ss = isRecord(rec) && typeof rec['stage_slug'] === 'string' ? rec['stage_slug'] : undefined;
+        const tp = isRecord(rec) && typeof rec['type'] === 'string' ? rec['type'] : undefined;
+        if (typeof id === 'string' && id !== '' && typeof content === 'string' && typeof dk === 'string' && dk !== '' && typeof ss === 'string' && ss !== '' && typeof tp === 'string' && tp !== '') {
+            identityRichDocs.push({ id, content, document_key: dk, stage_slug: ss, type: tp });
+        }
+    }
+    const idContentDocs: ResourceDocuments = identityRichDocs.map(d => ({ id: d.id, content: d.content }));
+    // 8.h.iv/8.h.ix: Always use executor-gathered + inputsRequired-scoped documents; no assembler fallback
+    const initialResourceDocuments: ResourceDocuments = [...idContentDocs];
 
     const {
         countTokens,
@@ -131,7 +327,7 @@ export async function executeModelCallAndSave(
 
     // Track the single source of truth for what we size and what we send
     let currentAssembledMessages: Messages[] = initialAssembledMessages;
-    let currentResourceDocuments: ResourceDocuments = [...resourceDocuments];
+    let currentResourceDocuments: ResourceDocuments = [...initialResourceDocuments];
 
     // Build normalized messages for initial sizing
     const initialEffectiveMessages: { role: 'system'|'user'|'assistant'; content: string }[] = initialAssembledMessages
@@ -288,7 +484,55 @@ export async function executeModelCallAndSave(
         );
 
         const workingHistory = [...conversationHistory];
-        const workingResourceDocs = [...resourceDocuments];
+        // For compression scoring, use identity-rich documents gathered/scoped from the database (mapped to full SourceDocument shape)
+        const workingResourceDocsSourceFull: SourceDocument[] = identityRichDocs.map((d) => ({
+            id: d.id,
+            session_id: job.session_id,
+            user_id: null,
+            stage: d.stage_slug,
+            iteration_number: job.iteration_number,
+            model_id: null,
+            model_name: null,
+            prompt_template_id_used: null,
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            is_header: false,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: null,
+            tokens_used_output: null,
+            processing_time_ms: null,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: null,
+            file_name: null,
+            storage_bucket: '',
+            storage_path: '',
+            size_bytes: null,
+            mime_type: '',
+            source_prompt_resource_id: null,
+            // Identity and content
+            content: d.content,
+            document_key: d.document_key,
+            type: d.type,
+            stage_slug: d.stage_slug,
+            document_relationships: null,
+        }));
+        // For sizing and sending, maintain a simple list of id/content paired to the above
+        const workingResourceDocs: ResourceDocuments = [...idContentDocs];
+        // Validation before compression: all identity fields must be present and non-empty
+        for (const doc of workingResourceDocsSourceFull) {
+            const hasDocKey = typeof doc.document_key === 'string' && doc.document_key !== '';
+            const hasType = typeof doc.type === 'string' && doc.type !== '';
+            const hasStage = typeof doc.stage_slug === 'string' && doc.stage_slug !== '';
+            if (!(hasDocKey && hasType && hasStage)) {
+                throw new Error('Compression requires document identity: document_key, type, and stage_slug must be present.');
+            }
+        }
         let currentTokenCount = initialTokenCount;
 
         // --- Preflight: estimate if we can compress to a feasible target and still afford final call ---
@@ -383,7 +627,7 @@ export async function executeModelCallAndSave(
                 : Infinity;
         };
         
-        const candidates = await compressionStrategy(dbClient, deps, workingResourceDocs, workingHistory, currentUserPrompt);
+        const candidates = await compressionStrategy(dbClient, deps, workingResourceDocsSourceFull, workingHistory, currentUserPrompt, params.inputsRelevance);
         console.log(`[DEBUG] Number of compression candidates found: ${candidates.length}`);
 
         // Prefetch which candidates are already indexed so we don't re-index them during compression
@@ -420,11 +664,15 @@ export async function executeModelCallAndSave(
                 continue;
             }
 
+            if (!params.inputsRelevance) {
+                throw new Error('inputsRelevance is required');
+            }
             const ragResult = await ragService.getContextForModel(
                 [{ id: victim.id, content: victim.content || '' }], 
                 extendedModelConfig, 
                 sessionId, 
-                stageSlug
+                stageSlug,
+                params.inputsRelevance
             );
             
             if (ragResult.error) throw ragResult.error;
@@ -471,6 +719,8 @@ export async function executeModelCallAndSave(
             } else {
                 const docIndex = workingResourceDocs.findIndex(d => d.id === victim.id);
                 if (docIndex > -1) workingResourceDocs[docIndex].content = newContent;
+                const srcIdx = workingResourceDocsSourceFull.findIndex(d => d.id === victim.id);
+                if (srcIdx > -1) workingResourceDocsSourceFull[srcIdx].content = newContent;
             }
             
             // Enforce strict user/assistant alternation after each compression
@@ -661,12 +911,49 @@ export async function executeModelCallAndSave(
 
     deps.logger.info(`[executeModelCallAndSave] DIAGNOSTIC: Full AI Response for job ${job.id}:`, { aiResponse });
 
-    if (!aiResponse) {
-        throw new Error('No response from AI adapter');
+    if (aiResponse.error || !aiResponse.content) {
+        // This handles cases where the AI provider itself returned an error.
+        // This is a candidate for a retry.
+        await deps.retryJob(
+            { logger: deps.logger, notificationService: deps.notificationService },
+            dbClient,
+            job,
+            job.attempt_count + 1,
+            [{
+                modelId: providerDetails.id,
+                api_identifier: providerDetails.api_identifier,
+                error: aiResponse.error || 'AI response was empty.',
+                processingTimeMs: processingTimeMs,
+            }],
+            projectOwnerUserId
+        );
+        return;
     }
 
-    if (aiResponse.error || !aiResponse.content) {
-        throw new Error(aiResponse.error || 'AI response was empty.');
+    // Unconditionally validate the response is parsable JSON before any other logic.
+    let parsedContent: unknown;
+    try {
+        parsedContent = JSON.parse(aiResponse.content);
+    } catch (e) {
+        // This handles a malformed JSON response, which is a retryable failure.
+        deps.logger.warn(`[executeModelCallAndSave] Malformed JSON response for job ${job.id}. Triggering retry.`, { error: e instanceof Error ? e.message : String(e) });
+        
+        await deps.retryJob(
+            { logger: deps.logger, notificationService: deps.notificationService },
+            dbClient,
+            job,
+            job.attempt_count + 1,
+            [{
+                modelId: providerDetails.id,
+                api_identifier: providerDetails.api_identifier,
+                error: `Malformed JSON response: ${e instanceof Error ? e.message : String(e)}`,
+                processingTimeMs: processingTimeMs,
+            }],
+            projectOwnerUserId
+        );
+        
+        // Halt processing immediately.
+        return;
     }
 
     // Determine finish reason from either top-level or raw provider response
@@ -676,18 +963,34 @@ export async function executeModelCallAndSave(
     } else if (isRecord(aiResponse.rawProviderResponse) && isFinishReason(aiResponse.rawProviderResponse['finish_reason'])) {
         resolvedFinish = aiResponse.rawProviderResponse['finish_reason'];
     }
-    let shouldContinue = isContinueReason(resolvedFinish);
+
+    if (resolvedFinish === 'error') {
+        await deps.retryJob(
+            { logger: deps.logger, notificationService: deps.notificationService },
+            dbClient,
+            job,
+            job.attempt_count + 1,
+            [{
+                modelId: providerDetails.id,
+                api_identifier: providerDetails.api_identifier,
+                error: 'AI provider signaled error via finish_reason.',
+                processingTimeMs: processingTimeMs,
+            }],
+            projectOwnerUserId
+        );
+        return;
+    }
+
+    let shouldContinue = isDialecticContinueReason(resolvedFinish);
 
     // Check the content for a continuation flag if the finish_reason doesn't already indicate it.
-    if (!shouldContinue && aiResponse.content) {
-        try {
-            const contentJson = JSON.parse(aiResponse.content);
-            if (isRecord(contentJson) && contentJson.continuation_needed === true) {
-                shouldContinue = true;
-            }
-        } catch (e) {
-            // Not a JSON response, so we can't check for the flag. Ignore error.
-            deps.logger.debug(`[executeModelCallAndSave] Could not parse AI response content as JSON for continuation check. Content starts with: "${aiResponse.content.slice(0, 100)}"`);
+    if (!shouldContinue && isRecord(parsedContent)) {
+        if (
+            parsedContent.continuation_needed === true ||
+            parsedContent.stop_reason === 'continuation' ||
+            parsedContent.stop_reason === 'token_limit'
+        ) {
+            shouldContinue = true;
         }
     }
 
@@ -697,15 +1000,11 @@ export async function executeModelCallAndSave(
     // directly from the job payload. The structural link for continuations is
     // handled by the `target_contribution_id` field on the contribution record,
     // not by adding a non-standard property to this JSON blob.
-    const document_relationships = job.payload.document_relationships;
+    const document_relationships = job.payload.document_relationships ?? null;
 
-    const fileType: FileType = isFileType(output_type) 
-        ? output_type
-        : FileType.ModelContributionMain;
+    const fileType: ModelContributionFileTypes = output_type; 
 
-    const description = fileType === FileType.ModelContributionMain
-        ? `Contribution for stage '${stageSlug}' by model ${providerDetails.name}`
-        : `Intermediate artifact '${output_type}' for stage '${stageSlug}' by model ${providerDetails.name}`;
+    const description = `${output_type} for stage '${stageSlug}' by model ${providerDetails.name}`;
 
     const {
         contributionType: rawContributionType,
@@ -733,13 +1032,15 @@ export async function executeModelCallAndSave(
         }
     }
 
-    const uploadContext: UploadContext = {
+    if (!aiResponse.rawProviderResponse || !isJson(aiResponse.rawProviderResponse)) {
+        throw new Error('Raw provider response is required');
+    }
+    const uploadContext: ModelContributionUploadContext = {
         pathContext: {
             projectId: job.payload.projectId,
             fileType: fileType,
             sessionId,
             iteration: iterationNumber,
-            stageSlug,
             modelSlug: providerDetails.api_identifier,
             attemptCount: job.attempt_count,
             ...restOfCanonicalPathParams,
@@ -752,7 +1053,6 @@ export async function executeModelCallAndSave(
         sizeBytes: contentForStorage.length, 
         userId: projectOwnerUserId,
         description,
-        resourceTypeForDb: job.payload.output_type || stageSlug,
         contributionMetadata: {
             sessionId, 
             modelIdUsed: providerDetails.id, 
@@ -760,13 +1060,13 @@ export async function executeModelCallAndSave(
             stageSlug, 
             iterationNumber, 
             contributionType: contributionType,
-            rawJsonResponseContent: JSON.stringify(aiResponse.rawProviderResponse || {}),
+            rawJsonResponseContent: aiResponse.rawProviderResponse,
             tokensUsedInput: aiResponse.inputTokens, 
             tokensUsedOutput: aiResponse.outputTokens,
-            processingTimeMs: aiResponse.processingTimeMs, 
-            seedPromptStoragePath: 'file/location',
+            processingTimeMs: aiResponse.processingTimeMs,
+            source_prompt_resource_id: promptConstructionPayload.source_prompt_resource_id,
             target_contribution_id: targetContributionId,
-            document_relationships: document_relationships,
+            document_relationships,
             isIntermediate: 'isIntermediate' in job.payload && job.payload.isIntermediate,
         },
     };
@@ -778,6 +1078,19 @@ export async function executeModelCallAndSave(
     }
 
     const contribution = savedResult.record;
+
+    // Emit chunk completion for continuation jobs immediately after save
+    if (projectOwnerUserId && isContinuationForStorage) {
+        await deps.notificationService.sendDocumentCentricNotification({
+            type: 'document_chunk_completed',
+            sessionId: sessionId,
+            stageSlug: stageSlug,
+            job_id: jobId,
+            document_key: String(output_type),
+            modelId: model_id,
+            iterationNumber: iterationNumber,
+        }, projectOwnerUserId);
+    }
 
     // Persist full document_relationships for continuation saves to avoid initializer self-map
     const payloadRelationships = job.payload.document_relationships;
@@ -851,6 +1164,19 @@ export async function executeModelCallAndSave(
     const isFinalChunk = resolvedFinish === 'stop';
 
     if (isFinalChunk) {
+        // Emit document_completed for final chunk
+        if (projectOwnerUserId) {
+            await deps.notificationService.sendDocumentCentricNotification({
+                type: 'document_completed',
+                sessionId: sessionId,
+                stageSlug: stageSlug,
+                job_id: jobId,
+                document_key: String(output_type),
+                modelId: model_id,
+                iterationNumber: iterationNumber,
+            }, projectOwnerUserId);
+        }
+
         let rootIdFromSaved: string | undefined = undefined;
         const savedRelationships = contribution.document_relationships;
         if (isRecord(savedRelationships)) {
@@ -894,7 +1220,59 @@ export async function executeModelCallAndSave(
                 job_id: jobId,
             }, projectOwnerUserId);
         }
+
+        // Programmatically schedule a RENDER job after successful EXECUTE completion
+        try {
+            // Derive a stable document identity from relationships when present; fallback to contribution.id
+            let documentIdentity: string = contribution.id;
+            if (isRecord(contribution.document_relationships)) {
+                const relObj = contribution.document_relationships;
+                for (const k of Object.keys(relObj)) {
+                    const v = relObj[k];
+                    if (typeof v === 'string' && v.trim() !== '') {
+                        documentIdentity = v;
+                        break;
+                    }
+                }
+            }
+
+            const renderPayload = {
+                projectId,
+                sessionId,
+                iterationNumber,
+                stageSlug,
+                documentIdentity,
+            };
+
+            const insertObj: TablesInsert<'dialectic_generation_jobs'> = {
+                job_type: 'RENDER',
+                session_id: job.session_id,
+                stage_slug: stageSlug,
+                iteration_number: iterationNumber,
+                parent_job_id: jobId,
+                payload: renderPayload,
+                is_test_job: job.is_test_job ?? false,
+                status: 'pending',
+                user_id: projectOwnerUserId,
+            };
+
+            const { data: renderInsertData, error: renderInsertError } = await dbClient
+                .from('dialectic_generation_jobs')
+                .insert(insertObj)
+                .select('*')
+                .single();
+
+            if (renderInsertError) {
+                deps.logger.error('[executeModelCallAndSave] Failed to enqueue RENDER job', { renderInsertError, insertObj });
+            } else {
+                const newId = isRecord(renderInsertData) && typeof renderInsertData['id'] === 'string' ? renderInsertData['id'] : undefined;
+                deps.logger.info('[executeModelCallAndSave] Enqueued RENDER job', { parent_job_id: jobId, render_job_id: newId });
+            }
+        } catch (e) {
+            deps.logger.error('[executeModelCallAndSave] CRITICAL: Exception while scheduling RENDER job', { error: e instanceof Error ? e.message : String(e) });
+        }
     }
 
     deps.logger.info(`[dialectic-worker] [executeModelCallAndSave] Job ${jobId} finished successfully. Results: ${JSON.stringify(modelProcessingResult)}. Final Status: completed`);
 }
+

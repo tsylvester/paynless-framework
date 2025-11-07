@@ -19,3 +19,10 @@ export class RagServiceError extends Error {
         this.name = 'RagServiceError';
     }
 }
+
+export class NotImplementedError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'NotImplementedError';
+    }
+}

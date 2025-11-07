@@ -1,390 +1,403 @@
-import React, { useState, useEffect } from "react";
-import { useDialecticStore, selectContributionById } from "@paynless/store";
-import { ApiError, DialecticContribution, ApiResponse } from "@paynless/types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Skeleton } from "@/components/ui/skeleton";
-import { TextInputArea } from "@/components/common/TextInputArea";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, XCircle, Save } from "lucide-react";
-import { toast } from "sonner";
+import React, { useCallback, useEffect, useMemo } from 'react';
+import {
+  useDialecticStore,
+  selectActiveContextSessionId,
+  selectActiveStageSlug,
+  selectStageRunProgress,
+  selectFocusedStageDocument,
+} from '@paynless/store';
+import type {
+  ApiError,
+  ApiResponse,
+  StageDocumentCompositeKey,
+  StageDocumentContentState,
+  SetFocusedStageDocumentPayload,
+} from '@paynless/types';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
+import { TextInputArea } from '@/components/common/TextInputArea';
+import { Badge } from '@/components/ui/badge';
+import { Loader2, XCircle, Save } from 'lucide-react';
+import { toast } from 'sonner';
+import { StageRunChecklist } from './StageRunChecklist';
 
-interface GeneratedContributionCardProps {
-	contributionId: string;
-	originalModelContributionIdForResponse: string;
-	initialResponseText?: string;
-	onResponseChange: (
-		originalModelContributionIdForResponse: string,
-		responseText: string,
-	) => void;
-}
+type GeneratedContributionCardProps = React.PropsWithChildren<{
+  modelId: string;
+}>;
 
-export const GeneratedContributionCard: React.FC<
-	GeneratedContributionCardProps
-> = ({
-	contributionId,
-	originalModelContributionIdForResponse,
-	initialResponseText = "",
-	onResponseChange,
-}) => {
-	console.log(
-		`[GeneratedContributionCard] Rendering with contributionId: ${contributionId}`,
-	);
+const buildStageDocumentKey = (key: StageDocumentCompositeKey): string => `${key.sessionId}:${key.stageSlug}:${key.iterationNumber}:${key.modelId}:${key.documentKey}`;
 
-	const contribution: DialecticContribution | undefined = useDialecticStore(
-		(state) => selectContributionById(state, contributionId),
-	);
-	console.log(
-		`[GeneratedContributionCard] For contributionId ${contributionId}, selected contribution metadata:`,
-		contribution,
-	);
+export const GeneratedContributionCard: React.FC<GeneratedContributionCardProps> = ({ modelId }) => {
+  console.log(`[GeneratedContributionCard] Rendering for modelId: ${modelId}`);
 
-	const projectId = useDialecticStore(
-		(state) => state.currentProjectDetail?.id,
-	);
+  const activeSessionId = useDialecticStore(selectActiveContextSessionId);
+  const activeStageSlug = useDialecticStore(selectActiveStageSlug);
+  const activeSessionDetail = useDialecticStore((state) => state.activeSessionDetail);
+  const iterationNumber = activeSessionDetail?.iteration_count;
 
-	const contentCacheEntry = useDialecticStore((state) =>
-		contribution?.id
-			? state.contributionContentCache?.[contribution.id]
-			: undefined,
-	);
-	console.log(
-		`[GeneratedContributionCard] For contributionId ${contributionId}, contentCacheEntry:`,
-		contentCacheEntry,
-	);
+  const focusedStageDocument = useDialecticStore((state) => (
+    activeSessionId && activeStageSlug
+      ? selectFocusedStageDocument(state, activeSessionId, activeStageSlug, modelId)
+      : null
+  ));
 
-	const fetchContributionContent = useDialecticStore(
-		(state) => state.fetchContributionContent,
-	);
-	const saveContributionEdit = useDialecticStore(
-		(state) => state.saveContributionEdit,
-	);
-	const isSavingEdit = useDialecticStore(
-		(state) => state.isSavingContributionEdit,
-	);
-	const saveEditError: ApiError | null = useDialecticStore(
-		(state) => state.saveContributionEditError,
-	);
-	const resetSaveEditError = useDialecticStore(
-		(state) => state.resetSaveContributionEditError,
-	);
+  const focusedStageDocumentMap = useDialecticStore((state) => state.focusedStageDocument ?? {});
 
-	const [isEditing, setIsEditing] = useState(false);
-	const [editedContentText, setEditedContentText] = useState("");
-	const [currentResponseText, setCurrentResponseText] =
-		useState(initialResponseText);
+  const stageRunProgress = useDialecticStore((state) => (
+    activeSessionId && activeStageSlug && typeof iterationNumber === 'number'
+      ? selectStageRunProgress(state, activeSessionId, activeStageSlug, iterationNumber)
+      : undefined
+  ));
 
-	const displayContent = contentCacheEntry?.content || "";
-	const isLoadingContent = contentCacheEntry?.isLoading || false;
-	const contentError = contentCacheEntry?.error || null;
+  const setFocusedStageDocument = useDialecticStore((state) => state.setFocusedStageDocument);
+  const updateStageDocumentDraft = useDialecticStore((state) => state.updateStageDocumentDraft);
+  const flushStageDocumentDraft = useDialecticStore((state) => state.flushStageDocumentDraft);
+  const submitStageDocumentFeedback = useDialecticStore((state) => state.submitStageDocumentFeedback);
+  const resetSubmitStageDocumentFeedbackError = useDialecticStore((state) => state.resetSubmitStageDocumentFeedbackError);
+  const fetchStageDocumentContent = useDialecticStore((state) => state.fetchStageDocumentContent);
 
-	useEffect(() => {
-		setCurrentResponseText(initialResponseText);
-	}, [initialResponseText]);
+  const isSubmittingStageDocumentFeedback = useDialecticStore((state) => state.isSubmittingStageDocumentFeedback);
+  const submitStageDocumentFeedbackError: ApiError | null = useDialecticStore((state) => state.submitStageDocumentFeedbackError);
 
-	useEffect(() => {
-		if (
-			contributionId &&
-			contribution &&
-			(!contentCacheEntry ||
-				(!contentCacheEntry.content && !contentCacheEntry.isLoading))
-		) {
-			fetchContributionContent(contributionId);
-		}
-	}, [
-		contributionId,
-		contribution,
-		contentCacheEntry,
-		fetchContributionContent,
-	]);
+  const compositeKey = useMemo<StageDocumentCompositeKey | null>(() => {
+    if (
+      !activeSessionId ||
+      !activeStageSlug ||
+      typeof iterationNumber !== 'number' ||
+      !focusedStageDocument
+    ) {
+      return null;
+    }
 
-	useEffect(() => {
-		if (isEditing) {
-			setEditedContentText(displayContent);
-		}
-	}, [isEditing, displayContent]);
+    return {
+      sessionId: activeSessionId,
+      stageSlug: activeStageSlug,
+      iterationNumber,
+      modelId,
+      documentKey: focusedStageDocument.documentKey,
+    };
+  }, [activeSessionId, activeStageSlug, iterationNumber, focusedStageDocument, modelId]);
 
-	useEffect(() => {
-		return () => {
-			if (saveEditError && resetSaveEditError) resetSaveEditError();
-		};
-	}, [saveEditError, resetSaveEditError]);
+  const serializedCompositeKey = useMemo(() => (
+    compositeKey ? buildStageDocumentKey(compositeKey) : null
+  ), [compositeKey]);
 
-	const handleSaveEdit = async () => {
-		if (!contribution || !projectId || isSavingEdit) {
-			if (!projectId)
-				toast.error("Cannot save edit: Project context is missing.");
-			return;
-		}
-		if (saveEditError && resetSaveEditError) resetSaveEditError();
+  const stageDocumentContentEntry: StageDocumentContentState | undefined = useDialecticStore((state) => {
+    if (!serializedCompositeKey) {
+      return undefined;
+    }
+    return state.stageDocumentContent[serializedCompositeKey];
+  });
 
-		try {
-			const result: ApiResponse<DialecticContribution> =
-				await saveContributionEdit({
-					projectId: projectId,
-					sessionId: contribution.session_id,
-					originalModelContributionId:
-						contribution.original_model_contribution_id || contribution.id,
-					responseText: editedContentText,
-					originalContributionIdToEdit: contribution.id,
-					editedContentText,
-				});
-			if (result?.data || !result?.error) {
-				toast.success("Edit Saved", {
-					description: "Your changes to the contribution have been saved.",
-				});
-				setIsEditing(false);
-			} else {
-				const errorPayload: ApiError = result.error;
-				toast.error("Failed to Save Edit", {
-					description:
-						errorPayload?.message ||
-						saveEditError?.message ||
-						"An unexpected error occurred.",
-				});
-			}
-		} catch (e: unknown) {
-			const errorMessage =
-				e instanceof Error
-					? e.message
-					: "A client-side error occurred while saving.";
-			toast.error("Save Error", { description: errorMessage });
-		}
-	};
+  console.log(`[GeneratedContributionCard] Focused document for modelId ${modelId}:`, focusedStageDocument);
+  console.log(`[GeneratedContributionCard] Stage document content entry for modelId ${modelId}:`, stageDocumentContentEntry);
 
-	const handleResponseChangeInternal = (text: string) => {
-		setCurrentResponseText(text);
-		onResponseChange(originalModelContributionIdForResponse, text);
-	};
+  const stageDocumentDescriptor = useMemo(() => {
+    if (!focusedStageDocument || !stageRunProgress) {
+      return undefined;
+    }
+    return stageRunProgress.documents[focusedStageDocument.documentKey];
+  }, [focusedStageDocument, stageRunProgress]);
 
-	if (!contribution) {
-		// Render a skeleton loader if the contribution object is not found in the store
-		return (
-			<Card
-				className="animate-pulse flex flex-col gap-6 rounded-xl border py-6 shadow-sm"
-				data-testid="skeleton-card"
-			>
-				<CardHeader>
-					<Skeleton className="h-5 w-3/4" />
-				</CardHeader>
-				<CardContent>
-					<Skeleton className="h-20 w-full" />
-				</CardContent>
-			</Card>
-		);
-	}
+  useEffect(() => {
+    if (!compositeKey || !stageDocumentDescriptor) {
+      return;
+    }
 
-	const status = contribution.status;
+    const resourceId = stageDocumentDescriptor.latestRenderedResourceId;
+    if (!resourceId) {
+      return;
+    }
 
-	if (
-		status &&
-		["pending", "generating", "retrying", "continuing"].includes(status)
-	) {
-		const getStatusMessage = () => {
-			switch (status) {
-				case "pending":
-					return `Contribution from ${contribution.model_name} is pending in the queue...`;
-				case "generating":
-					return `Generating contribution with ${contribution.model_name}...`;
-				case "retrying":
-					return `An issue occurred. Retrying generation for ${contribution.model_name}...`;
-				case "continuing":
-					return `Receiving response from ${contribution.model_name}...`;
-				default:
-					return "Loading...";
-			}
-		};
+    if (
+      !stageDocumentContentEntry ||
+      (!stageDocumentContentEntry.baselineMarkdown && !stageDocumentContentEntry.isLoading)
+    ) {
+      void fetchStageDocumentContent(compositeKey, resourceId);
+    }
+  }, [compositeKey, stageDocumentDescriptor, stageDocumentContentEntry, fetchStageDocumentContent]);
 
-		return (
-			<Card className="flex flex-col h-full">
-				<CardHeader>
-					<CardTitle className="text-lg">{contribution.model_name}</CardTitle>
-				</CardHeader>
-				<CardContent className="flex flex-col items-center justify-center flex-grow py-8">
-					<Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-					<p className="mt-4 text-muted-foreground">{getStatusMessage()}</p>
-					{status === "retrying" && contribution.error && (
-						<p className="mt-2 text-xs text-destructive text-center">
-							{contribution.error.message}
-						</p>
-					)}
-					{/* Show partial content if continuing */}
-					{status === "continuing" && displayContent && (
-						<div className="w-full mt-4 p-4 border rounded-md bg-muted/50 max-h-48 overflow-y-auto">
-							<p className="text-sm text-muted-foreground whitespace-pre-wrap">
-								{displayContent}
-							</p>
-						</div>
-					)}
-				</CardContent>
-			</Card>
-		);
-	}
+  useEffect(() => () => {
+    if (submitStageDocumentFeedbackError) {
+      resetSubmitStageDocumentFeedbackError();
+    }
+  }, [resetSubmitStageDocumentFeedbackError, submitStageDocumentFeedbackError]);
 
-	if (status === "failed") {
-		return (
-			<Card className="flex flex-col h-full border-destructive">
-				<CardHeader>
-					<CardTitle className="text-lg">{contribution.model_name}</CardTitle>
-				</CardHeader>
-				<CardContent className="flex-grow py-4">
-					<Alert variant="destructive">
-						<AlertTitle>Generation Failed</AlertTitle>
-						<AlertDescription>
-							{contribution.error?.message ||
-								"An unexpected error occurred and the contribution could not be generated."}
-						</AlertDescription>
-					</Alert>
-				</CardContent>
-			</Card>
-		);
-	}
+  const handleDocumentSelect = useCallback(
+    (payload: SetFocusedStageDocumentPayload) => {
+      setFocusedStageDocument(payload);
+    },
+    [setFocusedStageDocument],
+  );
 
-	const isUserEdited = contribution.edit_version > 1 && contribution.user_id;
+  const handleFeedbackChange = useCallback(
+    (value: string) => {
+      if (!compositeKey) {
+        return;
+      }
+      updateStageDocumentDraft(compositeKey, value);
+    },
+    [compositeKey, updateStageDocumentDraft],
+  );
 
-	return (
-		<Card className="flex flex-col h-full">
-			<CardHeader>
-				<div className="flex justify-between items-start">
-					<div>
-						<CardTitle className="text-lg flex items-center gap-5">
-							<div>{contribution.model_name}</div>
-							{isUserEdited ? (
-								<Badge
-									variant="outline"
-									className="border-amber-500 text-amber-600 mx-2"
-								>
-									Edited by User
-								</Badge>
-							) : (
-								<Badge variant="outline">AI Generated</Badge>
-							)}
-							<div className="text-xs text-gray-400">
-								version {contribution.edit_version}
-							</div>
-						</CardTitle>
-					</div>
-				</div>
-			</CardHeader>
-			{/* Main content area with responsive layout */}
-			<div className="flex-grow flex flex-col lg:flex-row gap-4 mx-6">
-				{/* Display Section */}
-				<div className="flex-1 min-w-0">
-					<div className="mb-2">
-						<h4 className="text-sm font-medium text-muted-foreground">
-							Content
-						</h4>
-					</div>
-					{isLoadingContent && (
-						<div data-testid="content-loading-skeleton">
-							<Skeleton className="h-24 w-full" />
-						</div>
-					)}
-					{contentError && (
-						<Alert variant="destructive">
-							<AlertDescription>{contentError.message}</AlertDescription>
-						</Alert>
-					)}
-					{!isLoadingContent && !contentError && (
-						<div style={isEditing ? { width: "100%" } : undefined}>
-							<TextInputArea
-								label=""
-								value={
-									isEditing
-										? editedContentText
-										: displayContent || "No content available"
-								}
-								onChange={setEditedContentText}
-								disabled={!isEditing}
-								placeholder={isEditing ? "Enter edited content..." : ""}
-								showPreviewToggle={true}
-								showFileUpload={false}
-								initialPreviewMode={!isEditing}
-								onPreviewModeChange={(isPreview) => {
-									if (!isSavingEdit) {
-										setIsEditing(!isPreview);
-										if (!isPreview) {
-											setEditedContentText(displayContent);
-										}
-										if (saveEditError && resetSaveEditError)
-											resetSaveEditError();
-									}
-								}}
-								textAreaClassName={
-									isEditing
-										? "!w-full [field-sizing:normal]"
-										: "pointer-events-none"
-								}
-							/>
-						</div>
-					)}
-					{isEditing && (
-						<div className="mt-2 space-y-2">
-							<p className="text-xs text-muted-foreground px-1">
-								Recommended for significant corrections. For substantive
-								dialogue, use the response area.
-							</p>
-							<div className="flex justify-end gap-2 w-full">
-								<Button
-									variant="outline"
-									onClick={() => {
-										setIsEditing(false);
-										setEditedContentText(displayContent);
-										if (saveEditError && resetSaveEditError)
-											resetSaveEditError();
-									}}
-									size="sm"
-									disabled={isSavingEdit}
-								>
-									<XCircle className="mr-1.5 h-4 w-4" /> Discard
-								</Button>
-								<Button
-									onClick={handleSaveEdit}
-									size="sm"
-									disabled={
-										isSavingEdit || editedContentText === displayContent
-									}
-								>
-									{isSavingEdit ? (
-										<Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-									) : (
-										<Save className="mr-1.5 h-4 w-4" />
-									)}
-									{isSavingEdit ? "Saving..." : "Save Edit"}
-								</Button>
-							</div>
-						</div>
-					)}
-					{saveEditError && isEditing && (
-						<Alert variant="destructive" className="mt-2">
-							<AlertTitle>Save Error</AlertTitle>
-							<AlertDescription>
-								{saveEditError.message || "Could not save your edit."}
-							</AlertDescription>
-						</Alert>
-					)}
-				</div>
+  const handleDiscardFeedback = useCallback(() => {
+    if (!compositeKey) {
+      return;
+    }
+    flushStageDocumentDraft(compositeKey);
+    if (submitStageDocumentFeedbackError) {
+      resetSubmitStageDocumentFeedbackError();
+    }
+  }, [compositeKey, flushStageDocumentDraft, resetSubmitStageDocumentFeedbackError, submitStageDocumentFeedbackError]);
 
-				{/* Response Section */}
-				<div className="flex-1 min-w-0">
-					<div className="mb-2">
-						<h4 className="text-sm font-medium text-muted-foreground">
-							Your Response
-						</h4>
-					</div>
-					<div className="w-full space-y-1.5">
-						<TextInputArea
-							id={`response-${contribution.id}`}
-							value={currentResponseText}
-							onChange={handleResponseChangeInternal}
-							placeholder={`Enter your response for ${contribution.model_name}. Notes, criticism, requests, or other feedback. Anything you add will be used by the model for the next stage.`}
-							showPreviewToggle={true}
-							showFileUpload={false}
-						/>
-					</div>
-				</div>
-			</div>
-		</Card>
-	);
+  const handleSaveFeedback = useCallback(async () => {
+    if (!compositeKey) {
+      toast.error('Cannot save feedback: No document selected.');
+      return;
+    }
+
+    const draftFeedback = stageDocumentContentEntry?.currentDraftMarkdown;
+    if (typeof draftFeedback !== 'string') {
+      toast.error('Could not save feedback.');
+      return;
+    }
+
+    if (submitStageDocumentFeedbackError) {
+      resetSubmitStageDocumentFeedbackError();
+    }
+
+    try {
+      const result: ApiResponse<{ success: boolean }> = await submitStageDocumentFeedback({
+        ...compositeKey,
+        feedback: draftFeedback,
+      });
+
+      if (!result.error) {
+        toast.success('Feedback saved successfully.');
+        return;
+      }
+
+      const errorPayload: ApiError = result.error;
+      toast.error('Failed to save feedback.', {
+        description: errorPayload.message,
+      });
+    } catch (error) {
+      const description = error instanceof Error ? error.message : 'An unexpected error occurred.';
+      toast.error('Failed to save feedback.', { description });
+    }
+  }, [compositeKey, resetSubmitStageDocumentFeedbackError, stageDocumentContentEntry, submitStageDocumentFeedback, submitStageDocumentFeedbackError]);
+
+  const hasFocusedDocument = focusedStageDocument !== null;
+  const isLoadingContent = stageDocumentContentEntry?.isLoading ?? false;
+  const contentError: ApiError | null = stageDocumentContentEntry?.error ?? null;
+  const isFeedbackDirty = stageDocumentContentEntry?.isDirty ?? false;
+  const contentDisplay = stageDocumentContentEntry?.baselineMarkdown ?? '';
+  const feedbackDraft = stageDocumentContentEntry?.currentDraftMarkdown ?? '';
+  const stageStatus = stageDocumentDescriptor?.status ?? null;
+  const modelDisplayName = stageDocumentDescriptor?.modelId ?? modelId;
+
+  const getStatusMessage = () => {
+    switch (stageStatus) {
+      case 'idle':
+        return `Document generation for ${modelDisplayName} is queued...`;
+      case 'generating':
+        return `Generating document with ${modelDisplayName}...`;
+      case 'retrying':
+        return `An issue occurred. Retrying generation for ${modelDisplayName}...`;
+      case 'continuing':
+        return `Receiving response from ${modelDisplayName}...`;
+      default:
+        return 'Loading...';
+    }
+  };
+
+  if (!stageDocumentContentEntry && !focusedStageDocument) {
+    return (
+      <Card
+        className="animate-pulse flex flex-col gap-6 rounded-xl border py-6 shadow-sm"
+        data-testid="skeleton-card"
+      >
+        <CardHeader>
+          <Skeleton className="h-5 w-3/4" />
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-20 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (
+    stageStatus &&
+    ['idle', 'generating', 'retrying', 'continuing'].includes(stageStatus)
+  ) {
+    return (
+      <Card className="flex flex-col h-full">
+        <CardHeader>
+          <CardTitle className="text-lg">{modelDisplayName}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center flex-grow py-8">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="mt-4 text-muted-foreground">{getStatusMessage()}</p>
+          {stageStatus === 'retrying' && stageDocumentDescriptor?.status === 'retrying' && (
+            <p className="mt-2 text-xs text-destructive text-center">
+              The document encountered an error and is being retried.
+            </p>
+          )}
+          {stageStatus === 'continuing' && contentDisplay && (
+            <div className="w-full mt-4 p-4 border rounded-md bg-muted/50 max-h-48 overflow-y-auto">
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{contentDisplay}</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (stageStatus === 'failed') {
+    return (
+      <Card className="flex flex-col h-full border-destructive">
+        <CardHeader>
+          <CardTitle className="text-lg">{modelDisplayName}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex-grow py-4">
+          <Alert variant="destructive">
+            <AlertTitle>Generation Failed</AlertTitle>
+            <AlertDescription>
+              The document could not be generated. Please retry your request or adjust the inputs.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="flex flex-col h-full">
+      <CardHeader>
+        <div className="flex flex-col gap-2">
+          <CardTitle className="text-lg">
+            {modelDisplayName}
+          </CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">Document Feedback</Badge>
+            {typeof iterationNumber === 'number' && (
+              <Badge variant="outline">Iteration {iterationNumber}</Badge>
+            )}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <StageRunChecklist
+          focusedStageDocumentMap={focusedStageDocumentMap}
+          onDocumentSelect={handleDocumentSelect}
+          modelId={modelId}
+        />
+
+        <div className="flex flex-col lg:flex-row gap-6">
+          <div className="flex-1 min-w-0 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium text-muted-foreground">Content</h4>
+              {focusedStageDocument && (
+                <Badge variant="outline" className="font-mono text-xs">
+                  {focusedStageDocument.documentKey}
+                </Badge>
+              )}
+            </div>
+
+            {!hasFocusedDocument && (
+              <p className="text-sm text-muted-foreground">
+                Select a document to view its content and provide feedback.
+              </p>
+            )}
+
+            {hasFocusedDocument && isLoadingContent && (
+              <div data-testid="content-loading-skeleton">
+                <Skeleton className="h-24 w-full" />
+              </div>
+            )}
+
+            {focusedStageDocument && !isLoadingContent && !contentError && (
+              <TextInputArea
+                id={`document-content-${modelId}`}
+                value={contentDisplay}
+                onChange={() => undefined}
+                disabled
+                showPreviewToggle={false}
+                showFileUpload={false}
+              />
+            )}
+
+            {contentError && (
+              <Alert variant="destructive">
+                <AlertTitle>Content Unavailable</AlertTitle>
+                <AlertDescription>{contentError.message}</AlertDescription>
+              </Alert>
+            )}
+          </div>
+
+          <div className="flex-1 min-w-0 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium text-muted-foreground">Your Feedback</h4>
+              {stageDocumentDescriptor?.status && (
+                <Badge>{stageDocumentDescriptor.status}</Badge>
+              )}
+            </div>
+
+            {!hasFocusedDocument && (
+              <p className="text-sm text-muted-foreground">
+                Select a document to view its content and provide feedback.
+              </p>
+            )}
+
+            {focusedStageDocument && (
+              <TextInputArea
+                id={`feedback-${modelId}`}
+                value={feedbackDraft}
+                onChange={handleFeedbackChange}
+                placeholder={`Enter feedback for ${focusedStageDocument.documentKey}`}
+                showPreviewToggle={false}
+                showFileUpload={false}
+              />
+            )}
+
+            {submitStageDocumentFeedbackError && (
+              <Alert variant="destructive">
+                <AlertTitle>Feedback Error</AlertTitle>
+                <AlertDescription>{submitStageDocumentFeedbackError.message}</AlertDescription>
+              </Alert>
+            )}
+
+            {focusedStageDocument && (
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDiscardFeedback}
+                  disabled={isSubmittingStageDocumentFeedback}
+                >
+                  <XCircle className="mr-1.5 h-4 w-4" />
+                  Discard
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSaveFeedback}
+                  disabled={!isFeedbackDirty || isSubmittingStageDocumentFeedback}
+                >
+                  {isSubmittingStageDocumentFeedback ? (
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-1.5 h-4 w-4" />
+                  )}
+                  {isSubmittingStageDocumentFeedback ? 'Saving...' : 'Save Feedback'}
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
 };

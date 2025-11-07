@@ -19,6 +19,13 @@ import {
     mockSetIsChatContextHydrated,
 } from './mocks/aiStore.mock';
 import { useAiStore } from '@paynless/store';
+import { useStageRunProgressHydration } from './hooks/useStageRunProgressHydration';
+
+vi.mock('./hooks/useStageRunProgressHydration', () => ({
+    useStageRunProgressHydration: vi.fn(),
+}));
+
+const useStageRunProgressHydrationMock = vi.mocked(useStageRunProgressHydration);
 
 // --- Mocks ---
 
@@ -35,6 +42,7 @@ describe('App Component', () => {
         vi.resetAllMocks();
         resetAuthStoreMock();
         resetAiStoreMock();
+        useStageRunProgressHydrationMock.mockClear();
 
         // Reset global mocks
         vi.stubGlobal('matchMedia', vi.fn().mockImplementation(query => ({ 
@@ -88,6 +96,7 @@ describe('App Component', () => {
             openConsentModal: vi.fn(),
             closeConsentModal: vi.fn(),
             _handleWalletUpdateNotification: vi.fn(),
+            setCurrentChatWalletDecision: vi.fn(),
             // Ensure selectCurrentWalletBalance is available if it were a direct method (it's not, but good to be aware)
             // For selector-based access, the selector itself is applied to this state.
         };
@@ -176,11 +185,27 @@ describe('App Component', () => {
         act(() => {
             mockSetAuthProfile(mockProfile);
         });
-        rerender(<App />); // Force re-render to pick up the new state from the mock
+        await act(async () => {
+            rerender(<App />);
+        }); // Force re-render to pick up the new state from the mock
 
         // Assert
         await waitFor(() => {
             expect(mockedUseAuthStoreHookLogic.getState().showWelcomeModal).toBe(true);
+        });
+    });
+
+    it('invokes useStageRunProgressHydration when the app renders', async () => {
+        mockSetAuthIsLoading(false);
+        mockSetAuthUser(null);
+        mockSetAuthSession(null);
+
+        await act(async () => {
+            render(<App />);
+        });
+
+        await waitFor(() => {
+            expect(useStageRunProgressHydrationMock).toHaveBeenCalled();
         });
     });
 });

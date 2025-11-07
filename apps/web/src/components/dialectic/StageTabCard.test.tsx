@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { StageTabCard } from './StageTabCard';
 import { 
@@ -26,8 +26,9 @@ const mockStages: DialecticStage[] = [
     description: 'Formulate a hypothesis.',
     created_at: new Date().toISOString(),
     default_system_prompt_id: 'd-1',
-    expected_output_artifacts: null,
-    input_artifact_rules: null,
+    expected_output_template_ids: [],
+    recipe_template_id: null,
+    active_recipe_instance_id: null,
   },
   {
     id: 'stage-2',
@@ -36,8 +37,9 @@ const mockStages: DialecticStage[] = [
     description: 'Analyze the results.',
     created_at: new Date().toISOString(),
     default_system_prompt_id: 'd-2',
-    expected_output_artifacts: null,
-    input_artifact_rules: null,
+    expected_output_template_ids: [],
+    recipe_template_id: null,
+    active_recipe_instance_id: null,
   },
 ];
 
@@ -89,6 +91,23 @@ const mockProject: DialecticProject = {
   submitStageResponsesError: null,
   isSavingContributionEdit: false,
   saveContributionEditError: null,
+};
+
+type StageRunProgressEntry = NonNullable<DialecticStateValues['stageRunProgress'][string]>;
+type StageRunDocumentStatus = StageRunProgressEntry['documents'][string]['status'];
+
+const createStageRunProgressEntry = (
+  documentStatuses: Record<string, StageRunDocumentStatus>,
+  stepStatuses: StageRunProgressEntry['stepStatuses'] = {}
+): StageRunProgressEntry => {
+  const documents: StageRunProgressEntry['documents'] = {};
+  for (const [documentKey, status] of Object.entries(documentStatuses)) {
+    documents[documentKey] = { status };
+  }
+  return {
+    documents,
+    stepStatuses,
+  };
 };
 
 vi.mock('@paynless/store', async () => {
@@ -159,5 +178,59 @@ describe('StageTabCard', () => {
     fireEvent.click(analysisCard);
     
     expect(setActiveStageMock).toHaveBeenCalledWith('analysis');
+  });
+
+  it('shows completed label and document totals when all documents are finished', () => {
+    const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
+    setupStore({
+      stageRunProgress: {
+        [progressKey]: createStageRunProgressEntry({
+          'document-one': 'completed',
+          'document-two': 'completed',
+        }),
+      },
+    });
+
+    renderComponent();
+
+    const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
+    expect(within(hypothesisCard).getByText('Completed')).toBeInTheDocument();
+    expect(within(hypothesisCard).getByText('2 / 2 documents')).toBeInTheDocument();
+  });
+
+  it('omits completed label when any document is still generating', () => {
+    const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
+    setupStore({
+      stageRunProgress: {
+        [progressKey]: createStageRunProgressEntry({
+          'document-one': 'completed',
+          'document-two': 'generating',
+        }),
+      },
+    });
+
+    renderComponent();
+
+    const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
+    expect(within(hypothesisCard).queryByText('Completed')).toBeNull();
+    expect(within(hypothesisCard).getByText('1 / 2 documents')).toBeInTheDocument();
+  });
+
+  it('omits completed label when any document has failed', () => {
+    const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
+    setupStore({
+      stageRunProgress: {
+        [progressKey]: createStageRunProgressEntry({
+          'document-one': 'completed',
+          'document-two': 'failed',
+        }),
+      },
+    });
+
+    renderComponent();
+
+    const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
+    expect(within(hypothesisCard).queryByText('Completed')).toBeNull();
+    expect(within(hypothesisCard).getByText('1 / 2 documents')).toBeInTheDocument();
   });
 });

@@ -65,6 +65,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
+    "immer": "^10.1.1",
     "input-otp": "^1.4.2",
     "js-tiktoken": "^1.0.20",
     "jwt-decode": "^4.0.0",

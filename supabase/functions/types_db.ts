@@ -235,6 +235,7 @@ export type Database = {
           error: string | null
           file_name: string | null
           id: string
+          is_header: boolean
           is_latest_edit: boolean
           iteration_number: number
           mime_type: string
@@ -247,6 +248,7 @@ export type Database = {
           seed_prompt_url: string | null
           session_id: string
           size_bytes: number | null
+          source_prompt_resource_id: string | null
           stage: string
           storage_bucket: string
           storage_path: string
@@ -265,6 +267,7 @@ export type Database = {
           error?: string | null
           file_name?: string | null
           id?: string
+          is_header?: boolean
           is_latest_edit?: boolean
           iteration_number?: number
           mime_type?: string
@@ -277,6 +280,7 @@ export type Database = {
           seed_prompt_url?: string | null
           session_id: string
           size_bytes?: number | null
+          source_prompt_resource_id?: string | null
           stage: string
           storage_bucket?: string
           storage_path: string
@@ -295,6 +299,7 @@ export type Database = {
           error?: string | null
           file_name?: string | null
           id?: string
+          is_header?: boolean
           is_latest_edit?: boolean
           iteration_number?: number
           mime_type?: string
@@ -307,6 +312,7 @@ export type Database = {
           seed_prompt_url?: string | null
           session_id?: string
           size_bytes?: number | null
+          source_prompt_resource_id?: string | null
           stage?: string
           storage_bucket?: string
           storage_path?: string
@@ -350,6 +356,60 @@ export type Database = {
             columns: ["model_id"]
             isOneToOne: false
             referencedRelation: "ai_providers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_source_prompt_resource_id"
+            columns: ["source_prompt_resource_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_project_resources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_document_templates: {
+        Row: {
+          created_at: string
+          description: string | null
+          domain_id: string
+          file_name: string | null
+          id: string
+          is_active: boolean
+          name: string
+          storage_bucket: string | null
+          storage_path: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          domain_id: string
+          file_name?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          storage_bucket?: string | null
+          storage_path?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          domain_id?: string
+          file_name?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          storage_bucket?: string | null
+          storage_path?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_document_templates_domain_id_fkey"
+            columns: ["domain_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_domains"
             referencedColumns: ["id"]
           },
         ]
@@ -407,6 +467,7 @@ export type Database = {
           stage_slug: string
           storage_bucket: string
           storage_path: string
+          target_contribution_id: string | null
           updated_at: string
           user_id: string
         }
@@ -424,6 +485,7 @@ export type Database = {
           stage_slug: string
           storage_bucket: string
           storage_path: string
+          target_contribution_id?: string | null
           updated_at?: string
           user_id: string
         }
@@ -441,6 +503,7 @@ export type Database = {
           stage_slug?: string
           storage_bucket?: string
           storage_path?: string
+          target_contribution_id?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -459,6 +522,13 @@ export type Database = {
             referencedRelation: "dialectic_sessions"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "fk_target_contribution_id"
+            columns: ["target_contribution_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_contributions"
+            referencedColumns: ["id"]
+          },
         ]
       }
       dialectic_generation_jobs: {
@@ -468,7 +538,11 @@ export type Database = {
           created_at: string
           error_details: Json | null
           id: string
+          is_test_job: boolean
           iteration_number: number
+          job_type:
+            | Database["public"]["Enums"]["dialectic_job_type_enum"]
+            | null
           max_retries: number
           parent_job_id: string | null
           payload: Json
@@ -487,7 +561,11 @@ export type Database = {
           created_at?: string
           error_details?: Json | null
           id?: string
+          is_test_job?: boolean
           iteration_number: number
+          job_type?:
+            | Database["public"]["Enums"]["dialectic_job_type_enum"]
+            | null
           max_retries?: number
           parent_job_id?: string | null
           payload: Json
@@ -506,7 +584,11 @@ export type Database = {
           created_at?: string
           error_details?: Json | null
           id?: string
+          is_test_job?: boolean
           iteration_number?: number
+          job_type?:
+            | Database["public"]["Enums"]["dialectic_job_type_enum"]
+            | null
           max_retries?: number
           parent_job_id?: string | null
           payload?: Json
@@ -635,10 +717,15 @@ export type Database = {
           created_at: string
           file_name: string
           id: string
+          iteration_number: number | null
           mime_type: string
           project_id: string
           resource_description: Json | null
+          resource_type: string | null
+          session_id: string | null
           size_bytes: number
+          source_contribution_id: string | null
+          stage_slug: string | null
           storage_bucket: string
           storage_path: string
           updated_at: string
@@ -648,10 +735,15 @@ export type Database = {
           created_at?: string
           file_name: string
           id?: string
+          iteration_number?: number | null
           mime_type: string
           project_id: string
           resource_description?: Json | null
+          resource_type?: string | null
+          session_id?: string | null
           size_bytes: number
+          source_contribution_id?: string | null
+          stage_slug?: string | null
           storage_bucket?: string
           storage_path: string
           updated_at?: string
@@ -661,10 +753,15 @@ export type Database = {
           created_at?: string
           file_name?: string
           id?: string
+          iteration_number?: number | null
           mime_type?: string
           project_id?: string
           resource_description?: Json | null
+          resource_type?: string | null
+          session_id?: string | null
           size_bytes?: number
+          source_contribution_id?: string | null
+          stage_slug?: string | null
           storage_bucket?: string
           storage_path?: string
           updated_at?: string
@@ -676,6 +773,20 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "dialectic_projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_session_id"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_source_contribution_id"
+            columns: ["source_contribution_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_contributions"
             referencedColumns: ["id"]
           },
         ]
@@ -757,6 +868,169 @@ export type Database = {
           },
         ]
       }
+      dialectic_recipe_template_edges: {
+        Row: {
+          created_at: string
+          from_step_id: string
+          id: string
+          template_id: string
+          to_step_id: string
+        }
+        Insert: {
+          created_at?: string
+          from_step_id: string
+          id?: string
+          template_id: string
+          to_step_id: string
+        }
+        Update: {
+          created_at?: string
+          from_step_id?: string
+          id?: string
+          template_id?: string
+          to_step_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_recipe_template_edges_from_step_id_fkey"
+            columns: ["from_step_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_recipe_template_steps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_recipe_template_edges_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_recipe_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_recipe_template_edges_to_step_id_fkey"
+            columns: ["to_step_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_recipe_template_steps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_recipe_template_steps: {
+        Row: {
+          branch_key: string | null
+          created_at: string
+          granularity_strategy: string
+          id: string
+          inputs_relevance: Json
+          inputs_required: Json
+          job_type: string
+          output_type: string
+          outputs_required: Json
+          parallel_group: number | null
+          prompt_template_id: string | null
+          prompt_type: string
+          step_description: string | null
+          step_key: string
+          step_name: string
+          step_number: number
+          step_slug: string
+          template_id: string
+          updated_at: string
+        }
+        Insert: {
+          branch_key?: string | null
+          created_at?: string
+          granularity_strategy: string
+          id?: string
+          inputs_relevance?: Json
+          inputs_required?: Json
+          job_type: string
+          output_type: string
+          outputs_required?: Json
+          parallel_group?: number | null
+          prompt_template_id?: string | null
+          prompt_type: string
+          step_description?: string | null
+          step_key: string
+          step_name: string
+          step_number: number
+          step_slug: string
+          template_id: string
+          updated_at?: string
+        }
+        Update: {
+          branch_key?: string | null
+          created_at?: string
+          granularity_strategy?: string
+          id?: string
+          inputs_relevance?: Json
+          inputs_required?: Json
+          job_type?: string
+          output_type?: string
+          outputs_required?: Json
+          parallel_group?: number | null
+          prompt_template_id?: string | null
+          prompt_type?: string
+          step_description?: string | null
+          step_key?: string
+          step_name?: string
+          step_number?: number
+          step_slug?: string
+          template_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_recipe_template_steps_prompt_template_id_fkey"
+            columns: ["prompt_template_id"]
+            isOneToOne: false
+            referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_recipe_template_steps_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_recipe_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_recipe_templates: {
+        Row: {
+          created_at: string
+          description: string | null
+          display_name: string | null
+          domain_key: string | null
+          id: string
+          is_active: boolean
+          recipe_name: string
+          recipe_version: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          display_name?: string | null
+          domain_key?: string | null
+          id?: string
+          is_active?: boolean
+          recipe_name: string
+          recipe_version?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          display_name?: string | null
+          domain_key?: string | null
+          id?: string
+          is_active?: boolean
+          recipe_name?: string
+          recipe_version?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       dialectic_sessions: {
         Row: {
           associated_chat_id: string | null
@@ -814,6 +1088,200 @@ export type Database = {
           },
         ]
       }
+      dialectic_stage_recipe_edges: {
+        Row: {
+          created_at: string
+          from_step_id: string
+          id: string
+          instance_id: string
+          to_step_id: string
+        }
+        Insert: {
+          created_at?: string
+          from_step_id: string
+          id?: string
+          instance_id: string
+          to_step_id: string
+        }
+        Update: {
+          created_at?: string
+          from_step_id?: string
+          id?: string
+          instance_id?: string
+          to_step_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_stage_recipe_edges_from_step_id_fkey"
+            columns: ["from_step_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_stage_recipe_steps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_stage_recipe_edges_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_stage_recipe_instances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_stage_recipe_edges_to_step_id_fkey"
+            columns: ["to_step_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_stage_recipe_steps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_stage_recipe_instances: {
+        Row: {
+          cloned_at: string | null
+          created_at: string
+          id: string
+          is_cloned: boolean
+          stage_id: string
+          template_id: string
+          updated_at: string
+        }
+        Insert: {
+          cloned_at?: string | null
+          created_at?: string
+          id?: string
+          is_cloned?: boolean
+          stage_id: string
+          template_id: string
+          updated_at?: string
+        }
+        Update: {
+          cloned_at?: string | null
+          created_at?: string
+          id?: string
+          is_cloned?: boolean
+          stage_id?: string
+          template_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_stage_recipe_instances_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: true
+            referencedRelation: "dialectic_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_stage_recipe_instances_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_recipe_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_stage_recipe_steps: {
+        Row: {
+          branch_key: string | null
+          config_override: Json
+          created_at: string
+          execution_order: number | null
+          granularity_strategy: string
+          id: string
+          inputs_relevance: Json
+          inputs_required: Json
+          instance_id: string
+          is_skipped: boolean
+          job_type: string
+          object_filter: Json
+          output_overrides: Json
+          output_type: string
+          outputs_required: Json
+          parallel_group: number | null
+          prompt_template_id: string | null
+          prompt_type: string
+          step_description: string | null
+          step_key: string
+          step_name: string
+          step_slug: string
+          template_step_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          branch_key?: string | null
+          config_override?: Json
+          created_at?: string
+          execution_order?: number | null
+          granularity_strategy: string
+          id?: string
+          inputs_relevance?: Json
+          inputs_required?: Json
+          instance_id: string
+          is_skipped?: boolean
+          job_type: string
+          object_filter?: Json
+          output_overrides?: Json
+          output_type: string
+          outputs_required?: Json
+          parallel_group?: number | null
+          prompt_template_id?: string | null
+          prompt_type: string
+          step_description?: string | null
+          step_key: string
+          step_name: string
+          step_slug: string
+          template_step_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          branch_key?: string | null
+          config_override?: Json
+          created_at?: string
+          execution_order?: number | null
+          granularity_strategy?: string
+          id?: string
+          inputs_relevance?: Json
+          inputs_required?: Json
+          instance_id?: string
+          is_skipped?: boolean
+          job_type?: string
+          object_filter?: Json
+          output_overrides?: Json
+          output_type?: string
+          outputs_required?: Json
+          parallel_group?: number | null
+          prompt_template_id?: string | null
+          prompt_type?: string
+          step_description?: string | null
+          step_key?: string
+          step_name?: string
+          step_slug?: string
+          template_step_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_stage_recipe_steps_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_stage_recipe_instances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_stage_recipe_steps_prompt_template_id_fkey"
+            columns: ["prompt_template_id"]
+            isOneToOne: false
+            referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_stage_recipe_steps_template_step_id_fkey"
+            columns: ["template_step_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_recipe_template_steps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dialectic_stage_transitions: {
         Row: {
           condition_description: string | null
@@ -865,33 +1333,36 @@ export type Database = {
       }
       dialectic_stages: {
         Row: {
+          active_recipe_instance_id: string | null
           created_at: string
           default_system_prompt_id: string | null
           description: string | null
           display_name: string
-          expected_output_artifacts: Json | null
+          expected_output_template_ids: string[]
           id: string
-          input_artifact_rules: Json | null
+          recipe_template_id: string | null
           slug: string
         }
         Insert: {
+          active_recipe_instance_id?: string | null
           created_at?: string
           default_system_prompt_id?: string | null
           description?: string | null
           display_name: string
-          expected_output_artifacts?: Json | null
+          expected_output_template_ids?: string[]
           id?: string
-          input_artifact_rules?: Json | null
+          recipe_template_id?: string | null
           slug: string
         }
         Update: {
+          active_recipe_instance_id?: string | null
           created_at?: string
           default_system_prompt_id?: string | null
           description?: string | null
           display_name?: string
-          expected_output_artifacts?: Json | null
+          expected_output_template_ids?: string[]
           id?: string
-          input_artifact_rules?: Json | null
+          recipe_template_id?: string | null
           slug?: string
         }
         Relationships: [
@@ -901,6 +1372,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "system_prompts"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_stages_recipe_template_id_fkey"
+            columns: ["recipe_template_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_recipe_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_active_recipe_instance"
+            columns: ["id", "active_recipe_instance_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_stage_recipe_instances"
+            referencedColumns: ["stage_id", "id"]
           },
         ]
       }
@@ -1380,34 +1865,48 @@ export type Database = {
         Row: {
           created_at: string
           description: string | null
+          document_template_id: string | null
           id: string
           is_active: boolean
           name: string
           prompt_text: string
           updated_at: string
+          user_selectable: boolean
           version: number
         }
         Insert: {
           created_at?: string
           description?: string | null
+          document_template_id?: string | null
           id?: string
           is_active?: boolean
           name: string
           prompt_text: string
           updated_at?: string
+          user_selectable?: boolean
           version?: number
         }
         Update: {
           created_at?: string
           description?: string | null
+          document_template_id?: string | null
           id?: string
           is_active?: boolean
           name?: string
           prompt_text?: string
           updated_at?: string
+          user_selectable?: boolean
           version?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fk_document_template_id"
+            columns: ["document_template_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_document_templates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       token_wallet_transactions: {
         Row: {
@@ -1902,6 +2401,7 @@ export type Database = {
       }
     }
     Enums: {
+      dialectic_job_type_enum: "PLAN" | "EXECUTE" | "RENDER"
       dialectic_stage_enum:
         | "THESIS"
         | "ANTITHESIS"
@@ -2028,6 +2528,7 @@ export const Constants = {
   },
   public: {
     Enums: {
+      dialectic_job_type_enum: ["PLAN", "EXECUTE", "RENDER"],
       dialectic_stage_enum: [
         "THESIS",
         "ANTITHESIS",
