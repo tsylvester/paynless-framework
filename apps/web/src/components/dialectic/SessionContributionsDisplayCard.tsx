@@ -8,12 +8,17 @@ import {
 	selectCurrentProjectDetail,
 	selectActiveStageSlug,
 	selectSortedStages,
-	selectStageProgressSummary
+	selectStageProgressSummary,
+	selectStageDocumentChecklist,
+	selectStageRunProgress,
 } from "@paynless/store";
 import {
 	ApiError,
 	DialecticFeedback,
 	SubmitStageResponsesPayload,
+	StageDocumentChecklistEntry,
+	StageDocumentCompositeKey,
+	StageDocumentContentState,
 } from "@paynless/types";
 import {
 	Card,
@@ -35,13 +40,13 @@ import {
 
 } from "@/components/ui/alert-dialog";
 
-import { GeneratedContributionCard } from "./GeneratedContributionCard";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { cn } from "@/lib/utils";
 import { useStageRunProgressHydration } from '../../hooks/useStageRunProgressHydration';
+import { Badge } from "@/components/ui/badge";
 
 
 const isApiError = (error: unknown): error is ApiError => {
@@ -69,8 +74,7 @@ const getDisplayName = (stage: {
 	return stageNameMap[stage.slug] || stage.display_name;
 };
 
-// Enhanced skeleton component for GeneratedContributionCard
-const GeneratedContributionCardSkeleton: React.FC = () => (
+const DocumentWorkspaceSkeleton: React.FC = () => (
 	<div className="bg-card rounded-2xl shadow-sm border border-border/50 p-8 animate-pulse">
 		<div className="space-y-6">
 			<div className="space-y-3">
@@ -104,25 +108,15 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	);
 	const sortedStages = useDialecticStore(selectSortedStages);
 	const setActiveStage = useDialecticStore((state) => state.setActiveStage);
+	const updateStageDocumentDraft = useDialecticStore((state) => state.updateStageDocumentDraft);
+	const stageDocumentContent = useDialecticStore((state) => state.stageDocumentContent);
+	const modelCatalog = useDialecticStore((state) => state.modelCatalog);
 
   const activeStage = useMemo(() => {
 	return processTemplate?.stages?.find((s) => s.slug === activeStageSlug) || null;
   }, [processTemplate, activeStageSlug]);
   
   useStageRunProgressHydration();
-
-	// Determine if the active stage is the terminal stage in the process template
-	const isFinalStageInProcess = useMemo(() => {
-		if (!processTemplate || !activeStage) return false;
-		const transitions = (
-			processTemplate as unknown as {
-				transitions?: { source_stage_id: string; target_stage_id: string }[];
-			}
-		).transitions;
-		if (!Array.isArray(transitions) || transitions.length === 0) return false;
-		// A final stage has no outgoing transition from its stage id
-		return transitions.every((t) => t.source_stage_id !== activeStage.id);
-	}, [processTemplate, activeStage]);
 
 	const submitStageResponses = useDialecticStore(
 		(state) => state.submitStageResponses,
@@ -170,6 +164,55 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 		(state) => state.resetFetchFeedbackFileContentError,
 	);
 
+  const documentsByModel = useDialecticStore((state) => {
+    if (!session || !activeStage || typeof session.iteration_count !== 'number') {
+      return new Map<string, StageDocumentChecklistEntry[]>();
+    }
+
+    const progressKey = `${session.id}:${activeStage.slug}:${session.iteration_count}`;
+    const progress = selectStageRunProgress(
+      state,
+      session.id,
+      activeStage.slug,
+      session.iteration_count,
+    );
+
+    let resolvedModelIds =
+      state.selectedModelIds && state.selectedModelIds.length > 0
+        ? state.selectedModelIds
+        : session.selected_model_ids ?? [];
+
+    if ((!resolvedModelIds || resolvedModelIds.length === 0) && progress?.documents) {
+      resolvedModelIds = Object.values(progress.documents)
+        .map((entry) => entry?.modelId)
+        .filter((modelId): modelId is string => Boolean(modelId));
+    }
+
+    const uniqueModels = Array.from(new Set(resolvedModelIds ?? []));
+    const map = new Map<string, StageDocumentChecklistEntry[]>();
+
+    if (uniqueModels.length === 0 && progress?.documents) {
+      const fallbackModels = Array.from(
+        new Set(
+          Object.values(progress.documents)
+            .map((entry) => entry?.modelId)
+            .filter((modelId): modelId is string => Boolean(modelId)),
+        ),
+      );
+
+      fallbackModels.forEach((modelId) => {
+        map.set(modelId, selectStageDocumentChecklist(state, progressKey, modelId));
+      });
+      return map;
+    }
+
+    uniqueModels.forEach((modelId) => {
+      map.set(modelId, selectStageDocumentChecklist(state, progressKey, modelId));
+    });
+
+    return map;
+  });
+
   const stageProgressSummary = useDialecticStore((state) => {
     if (!session || !activeStage || typeof session.iteration_count !== 'number') {
       return undefined;
@@ -185,6 +228,55 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 
   const canSubmitStageResponses = stageProgressSummary?.isComplete === true;
 
+  const formatDocumentStatus = (status: string): string =>
+    status
+      .split('_')
+      .map((segment) =>
+        segment.length > 0 ? `${segment.charAt(0).toUpperCase()}${segment.slice(1)}` : segment,
+      )
+      .join(' ');
+
+  const buildCompositeKey = (modelId: string, documentKey: string): StageDocumentCompositeKey | null => {
+    if (!session || !activeStage || typeof session?.iteration_count !== 'number') {
+      return null;
+    }
+
+    return {
+      sessionId: session.id,
+      stageSlug: activeStage.slug,
+      iterationNumber: session.iteration_count,
+      modelId,
+      documentKey,
+    };
+  };
+
+  const serializeCompositeKey = (key: StageDocumentCompositeKey): string =>
+    `${key.sessionId}:${key.stageSlug}:${key.iterationNumber}:${key.modelId}:${key.documentKey}`;
+
+  const handleDocumentDraftChange = (modelId: string, documentKey: string, value: string) => {
+    const compositeKey = buildCompositeKey(modelId, documentKey);
+    if (!compositeKey) {
+      return;
+    }
+
+    updateStageDocumentDraft(compositeKey, value);
+  };
+
+  const resolveModelName = (modelId: string): string => {
+    const catalogEntry = modelCatalog?.find((model) => model.id === modelId) ?? null;
+    return catalogEntry?.model_name ?? modelId;
+  };
+
+  const documentGroups = useMemo(
+    () => Array.from(documentsByModel.entries()),
+    [documentsByModel],
+  );
+
+  const hasDocuments = useMemo(
+    () => documentGroups.some(([, documents]) => documents.length > 0),
+    [documentGroups],
+  );
+
 	// Select feedback metadata for the current stage and iteration
 	const feedbacksForStageIterationArray = useDialecticStore((state) =>
 		project && session && activeStage
@@ -199,9 +291,6 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	const feedbackForStageIteration: DialecticFeedback | undefined =
 		feedbacksForStageIterationArray?.[0];
 
-	const stageResponses = useDialecticStore((state) => {
-		return state.stageDocumentContent;
-	});
 	const [submissionSuccessMessage, setSubmissionSuccessMessage] = useState<
 		string | null
 	>(null);
@@ -309,7 +398,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 
 	// Loading state for the entire component
 	if (isLoadingCurrentProjectDetail) {
-		return <GeneratedContributionCardSkeleton />;
+		return <DocumentWorkspaceSkeleton />;
 	}
 
 	// Handle project-level errors
@@ -350,83 +439,194 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 		);
 	}
 
-	const isGenerating = contributionGenerationStatus === "generating";
+  const isGenerating = contributionGenerationStatus === "generating";
 
-	return (
-		<div className="space-y-8">
-			{/* Enhanced Header */}
-			<div className="space-y-4">
-				<div className="flex items-center justify-between">
-					<div className="space-y-2">
-						<h2 className="text-2xl font-light tracking-tight">{getDisplayName(activeStage)}</h2>
-						<p className="text-muted-foreground leading-relaxed">
-							{activeStage.description}
-						</p>
-					</div>
-				</div>
-			</div>
+  return (
+    <div className="space-y-8">
+      <div data-testid="card-header" className="space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-2">
+            <h2 className="text-2xl font-light tracking-tight">{getDisplayName(activeStage)}</h2>
+            <p className="text-muted-foreground leading-relaxed">{activeStage.description}</p>
+            {stageProgressSummary && (
+              <div className="text-sm text-muted-foreground">
+                Completed {stageProgressSummary.completedDocuments} of{' '}
+                {stageProgressSummary.totalDocuments} documents
+                {stageProgressSummary.outstandingDocuments.length > 0 && (
+                  <div className="text-xs">
+                    Outstanding: {stageProgressSummary.outstandingDocuments.join(', ')}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            {renderSubmitButton()}
+            {feedbackForStageIteration && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleShowFeedbackContent(feedbackForStageIteration)}
+              >
+                View Submitted Feedback
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
 
-			{/* Enhanced Status */}
-			{isGenerating && (
-				<div className="bg-blue-50 dark:bg-blue-950/20 rounded-xl px-6 py-4 border border-blue-200/50 dark:border-blue-800/50">
-					<div className="flex items-center gap-3">
-						<div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
-							<Loader2 className="h-5 w-5 animate-spin text-blue-600" />
-						</div>
-						<div>
-							<p className="font-medium text-blue-900 dark:text-blue-100">Generating contributions</p>
-							<p className="text-sm text-blue-700 dark:text-blue-300">Please wait while AI models process your request...</p>
-						</div>
-					</div>
-				</div>
-			)}
-			{generationError && (
-				<div className="bg-red-50 dark:bg-red-950/20 rounded-xl px-6 py-4 border border-red-200/50 dark:border-red-800/50">
-					<div className="flex items-center gap-3">
-						<div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
-							<div className="h-5 w-5 rounded-full bg-red-600 flex items-center justify-center">
-								<span className="text-white text-xs font-bold">!</span>
-							</div>
-						</div>
-						<div>
-							<p className="font-medium text-red-900 dark:text-red-100">Generation Error</p>
-							<p className="text-sm text-red-700 dark:text-red-300">{generationError.message}</p>
-						</div>
-					</div>
-				</div>
-			)}
+      {isGenerating && (
+        <div className="bg-blue-50 dark:bg-blue-950/20 rounded-xl px-6 py-4 border border-blue-200/50 dark:border-blue-800/50">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+              <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+            </div>
+            <div>
+              <p className="font-medium text-blue-900 dark:text-blue-100">Generating documents</p>
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                Please wait while AI models process your request...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      {generationError && (
+        <div className="bg-red-50 dark:bg-red-950/20 rounded-xl px-6 py-4 border border-red-200/50 dark:border-red-800/50">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
+              <div className="h-5 w-5 rounded-full bg-red-600 flex items-center justify-center">
+                <span className="text-white text-xs font-bold">!</span>
+              </div>
+            </div>
+            <div>
+              <p className="font-medium text-red-900 dark:text-red-100">Generation Error</p>
+              <p className="text-sm text-red-700 dark:text-red-300">{generationError.message}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
-			{/* Enhanced Footer */}
-			{(submissionSuccessMessage || submissionError) && (
-				<div className="space-y-4">
-					{submissionSuccessMessage && (
-						<div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-xl px-6 py-4 border border-emerald-200/50 dark:border-emerald-800/50">
-							<div className="flex items-center gap-3">
-								<div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg">
-									<div className="w-5 h-5 text-emerald-600">✅</div>
-								</div>
-								<div>
-									<p className="font-medium text-emerald-900 dark:text-emerald-100">Success!</p>
-									<p className="text-sm text-emerald-700 dark:text-emerald-300">{submissionSuccessMessage}</p>
-								</div>
-							</div>
-						</div>
-					)}
-					{submissionError && (
-						<div className="bg-red-50 dark:bg-red-950/20 rounded-xl px-6 py-4 border border-red-200/50 dark:border-red-800/50">
-							<div className="flex items-center gap-3">
-								<div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
-									<div className="w-5 h-5 text-red-600">❌</div>
-								</div>
-								<div>
-									<p className="font-medium text-red-900 dark:text-red-100">Submission Failed</p>
-									<p className="text-sm text-red-700 dark:text-red-300">{submissionError.message}</p>
-								</div>
-							</div>
-						</div>
-					)}
-				</div>
-			)}
+      <div className="space-y-6">
+        {hasDocuments ? (
+          documentGroups.map(([modelId, documents]) => {
+            if (!documents || documents.length === 0) {
+              return null;
+            }
+
+            const modelName = resolveModelName(modelId);
+
+            return (
+              <div key={modelId} className="space-y-4">
+                <h3 className="text-base font-semibold text-foreground">{modelName}</h3>
+                <div className="space-y-4">
+                  {documents.map((document) => {
+                    const compositeKey = buildCompositeKey(modelId, document.documentKey);
+                    const serializedKey =
+                      compositeKey !== null ? serializeCompositeKey(compositeKey) : null;
+                    const documentState: StageDocumentContentState | undefined =
+                      serializedKey !== null ? stageDocumentContent[serializedKey] : undefined;
+                    const draftValue = documentState?.currentDraftMarkdown ?? '';
+
+                    return (
+                      <Card
+                        key={`${modelId}-${document.documentKey}`}
+                        data-testid={`stage-document-card-${modelId}-${document.documentKey}`}
+                      >
+                        <CardHeader className="flex flex-col gap-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium text-foreground">{modelName}</p>
+                              <p className="font-mono text-xs text-muted-foreground">
+                                {document.documentKey}
+                              </p>
+                            </div>
+                            <Badge>{formatDocumentStatus(document.status ?? 'not_started')}</Badge>
+                          </div>
+                          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                            {document.jobId && (
+                              <span>
+                                Job:{' '}
+                                <span className="font-medium text-foreground">{document.jobId}</span>
+                              </span>
+                            )}
+                            {document.latestRenderedResourceId && (
+                              <span>
+                                Latest Render:{' '}
+                                <span className="font-medium text-foreground">
+                                  {document.latestRenderedResourceId}
+                                </span>
+                              </span>
+                            )}
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <label
+                            className="text-sm font-medium text-muted-foreground"
+                            htmlFor={`stage-document-feedback-${modelId}-${document.documentKey}`}
+                          >
+                            Document Feedback
+                          </label>
+                          <textarea
+                            id={`stage-document-feedback-${modelId}-${document.documentKey}`}
+                            data-testid={`stage-document-feedback-${modelId}-${document.documentKey}`}
+                            className="w-full min-h-[120px] resize-y rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                            value={draftValue}
+                            onChange={(event) =>
+                              handleDocumentDraftChange(
+                                modelId,
+                                document.documentKey,
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <p className="text-sm text-muted-foreground">No documents generated yet.</p>
+        )}
+      </div>
+
+      <div data-testid="card-footer" className="space-y-4">
+        {renderSubmitButton()}
+        {(submissionSuccessMessage || submissionError) && (
+          <div className="space-y-4">
+            {submissionSuccessMessage && (
+              <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-xl px-6 py-4 border border-emerald-200/50 dark:border-emerald-800/50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg">
+                    <div className="w-5 h-5 text-emerald-600">✅</div>
+                  </div>
+                  <div>
+                    <p className="font-medium text-emerald-900 dark:text-emerald-100">Success!</p>
+                    <p className="text-sm text-emerald-700 dark:text-emerald-300">
+                      {submissionSuccessMessage}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            {submissionError && (
+              <div className="bg-red-50 dark:bg-red-950/20 rounded-xl px-6 py-4 border border-red-200/50 dark:border-red-800/50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
+                    <div className="h-5 w-5 text-red-600">❌</div>
+                  </div>
+                  <div>
+                    <p className="font-medium text-red-900 dark:text-red-100">Submission Failed</p>
+                    <p className="text-sm text-red-700 dark:text-red-300">{submissionError.message}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
 			{/* Confirmation Modal */}
 			<AlertDialog

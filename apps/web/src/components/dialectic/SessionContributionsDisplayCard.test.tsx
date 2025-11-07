@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
@@ -10,59 +10,20 @@ import type {
   DialecticStageRecipeStep,
   DialecticStateValues,
   DialecticProcessTemplate,
+  StageDocumentContentState,
 } from '@paynless/types';
 
 import { SessionContributionsDisplayCard } from './SessionContributionsDisplayCard';
 
 import {
+  getDialecticStoreState,
   initializeMockDialecticState,
   setDialecticStateValues,
   selectIsStageReadyForSessionIteration,
-  submitStageDocumentFeedback,
 } from '../../mocks/dialecticStore.mock';
 import { useStageRunProgressHydration } from '../../hooks/useStageRunProgressHydration';
 
 vi.mock('@paynless/store', () => import('../../mocks/dialecticStore.mock'));
-
-vi.mock('./StageRunChecklist', () => ({
-  StageRunChecklist: vi.fn(({ modelId, onDocumentSelect }) => (
-    <div>
-      <h2
-        onClick={() =>
-          onDocumentSelect({
-            modelId,
-            documentKey: 'draft_document_outline',
-            stepKey: 'draft_document',
-          })
-        }
-      >
-        Stage Run Checklist for {modelId}
-      </h2>
-      <button
-        onClick={() =>
-          submitStageDocumentFeedback({
-            session_id: sessionId,
-            project_id: projectId,
-            stage_slug: stageSlug,
-            iteration_number: iterationNumber,
-            model_id: modelId,
-            document_key: 'draft_document_outline',
-            feedback_content: 'Test feedback',
-            feedback_type: 'user_provided_feedback_v1',
-          })
-        }
-      >
-        Save Feedback for {modelId}
-      </button>
-    </div>
-  )),
-}));
-
-vi.mock('./GeneratedContributionCard', () => ({
-  GeneratedContributionCard: vi.fn(({ modelId, children }) => (
-    <div data-testid={`generated-contribution-card-${modelId}`}>{children}</div>
-  )),
-}));
 
 vi.mock('./ExportProjectButton', () => ({
   ExportProjectButton: vi.fn(() => null),
@@ -266,6 +227,37 @@ const buildStageRunProgress = (
   documents,
 });
 
+const buildStageDocumentDescriptor = (
+  modelId: string,
+  overrides: Partial<StageRunDocuments[string]> = {},
+): StageRunDocuments[string] => ({
+  status: 'completed',
+  job_id: `${modelId}-job`,
+  latestRenderedResourceId: `${modelId}-resource`,
+  modelId,
+  versionHash: `${modelId}-hash`,
+  lastRenderedResourceId: `${modelId}-resource`,
+  lastRenderAtIso: isoTimestamp,
+  ...overrides,
+});
+
+const buildStageDocumentContent = (
+  overrides: Partial<StageDocumentContentState> = {},
+): StageDocumentContentState => ({
+  baselineMarkdown: 'Baseline draft content',
+  currentDraftMarkdown: 'Baseline draft content',
+  isDirty: false,
+  isLoading: false,
+  error: null,
+  lastBaselineVersion: null,
+  pendingDiff: null,
+  lastAppliedVersionHash: null,
+  ...overrides,
+});
+
+const buildStageDocumentKey = (modelId: string, documentKey: string): string =>
+  `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
+
 const renderSessionContributionsDisplayCard = () => render(<SessionContributionsDisplayCard />);
 
 beforeEach(() => {
@@ -305,30 +297,77 @@ describe('SessionContributionsDisplayCard', () => {
     });
   };
 
-  describe('Multi-model rendering', () => {
-    it('renders a GeneratedContributionCard for each selected model', async () => {
-      const progress = buildStageRunProgress({}, {});
-      seedBaseStore(progress);
+  describe('Document rendering', () => {
+    it('renders a stage document card for each model document', () => {
+      const progress = buildStageRunProgress(
+        {},
+        {
+          draft_document_outline_model_a: buildStageDocumentDescriptor('model-a'),
+          draft_document_outline_model_b: buildStageDocumentDescriptor('model-b'),
+        },
+      );
+
+      seedBaseStore(progress, {
+        stageDocumentContent: {
+          [buildStageDocumentKey('model-a', 'draft_document_outline_model_a')]:
+            buildStageDocumentContent(),
+          [buildStageDocumentKey('model-b', 'draft_document_outline_model_b')]:
+            buildStageDocumentContent(),
+        },
+      });
 
       renderSessionContributionsDisplayCard();
 
-      const { GeneratedContributionCard } = await import('./GeneratedContributionCard');
-      expect(GeneratedContributionCard).toHaveBeenCalledTimes(2);
-      expect(GeneratedContributionCard).toHaveBeenCalledWith(
-        expect.objectContaining({ modelId: 'model-a' }),
-        expect.anything(),
-      );
-      expect(GeneratedContributionCard).toHaveBeenCalledWith(
-        expect.objectContaining({ modelId: 'model-b' }),
-        expect.anything(),
+      expect(
+        screen.getByTestId('stage-document-card-model-a-draft_document_outline_model_a'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId('stage-document-card-model-b-draft_document_outline_model_b'),
+      ).toBeInTheDocument();
+
+      expect(screen.getByTestId('card-header')).toBeInTheDocument();
+      expect(screen.getByTestId('card-footer')).toBeInTheDocument();
+    });
+
+    it('routes document draft edits through updateStageDocumentDraft', () => {
+      const documentKey = 'draft_document_outline_model_a';
+      const progress = buildStageRunProgress(
+        {},
+        {
+          [documentKey]: buildStageDocumentDescriptor('model-a'),
+        },
       );
 
-      expect(screen.getByTestId('generated-contribution-card-model-a')).toBeInTheDocument();
-      expect(screen.getByTestId('generated-contribution-card-model-b')).toBeInTheDocument();
+      seedBaseStore(progress, {
+        stageDocumentContent: {
+          [buildStageDocumentKey('model-a', documentKey)]: buildStageDocumentContent(),
+        },
+      });
+
+      const { updateStageDocumentDraft } = getDialecticStoreState();
+
+      renderSessionContributionsDisplayCard();
+
+      const draftArea = screen.getByTestId(
+        `stage-document-feedback-model-a-${documentKey}`,
+      ) as HTMLTextAreaElement;
+
+      fireEvent.change(draftArea, { target: { value: 'Updated draft' } });
+
+      expect(updateStageDocumentDraft).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId,
+          stageSlug,
+          iterationNumber,
+          modelId: 'model-a',
+          documentKey,
+        }),
+        'Updated draft',
+      );
     });
   });
 
-  describe('Stage checklist integration', () => {
+  describe('Hydration', () => {
     it('invokes useStageRunProgressHydration with active session context', () => {
       const progress = buildStageRunProgress(
         {
@@ -372,24 +411,6 @@ describe('SessionContributionsDisplayCard', () => {
       renderSessionContributionsDisplayCard();
 
       expect(useStageRunProgressHydration).toHaveBeenCalledTimes(1);
-    });
-
-    it('renders a GeneratedContributionCard for each model, each containing a StageRunChecklist', async () => {
-      const progress = buildStageRunProgress(
-        {
-          planner_header: 'completed',
-          draft_document: 'completed',
-          render_document: 'completed',
-        },
-        {},
-      );
-
-      seedBaseStore(progress);
-
-      renderSessionContributionsDisplayCard();
-
-      expect(screen.getByTestId('generated-contribution-card-model-a')).toBeInTheDocument();
-      expect(screen.getByTestId('generated-contribution-card-model-b')).toBeInTheDocument();
     });
   });
 

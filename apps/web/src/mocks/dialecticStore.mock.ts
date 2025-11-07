@@ -25,6 +25,7 @@ import type {
   StageDocumentCompositeKey,
   StageDocumentContentState,
   StageDocumentVersionInfo,
+  ListStageDocumentsPayload,
 } from '@paynless/types';
 import {
   beginStageDocumentEditLogic,
@@ -34,6 +35,7 @@ import {
   flushStageDocumentDraftActionLogic,
   flushStageDocumentDraftLogic,
   handleRenderCompletedLogic,
+  hydrateStageProgressLogic,
   reapplyDraftToNewBaselineLogic,
   recordStageDocumentDraftLogic,
   updateStageDocumentDraftLogic,
@@ -547,6 +549,9 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
             );
         },
       ),
+      hydrateStageProgress: vi.fn().mockImplementation((payload: ListStageDocumentsPayload) => {
+        hydrateStageProgressLogic(set, { sessionId: payload.sessionId, stageSlug: payload.stageSlug, iterationNumber: payload.iterationNumber });
+      }),
       resetSubmitStageDocumentFeedbackError: vi.fn(() => set({ submitStageDocumentFeedbackError: null })),
     };
   }),

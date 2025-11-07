@@ -1,12 +1,14 @@
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { StageTabCard } from './StageTabCard';
-import { 
-  DialecticProject, 
-  DialecticSession, 
+import {
+  DialecticProject,
+  DialecticSession,
   DialecticStage,
   DialecticStateValues,
   DialecticProcessTemplate,
+  StageRunChecklistProps,
+  StageRunDocumentDescriptor,
 } from '@paynless/types';
 import { initializeMockDialecticState, getDialecticStoreState } from '../../mocks/dialecticStore.mock';
 
@@ -82,7 +84,7 @@ const mockProject: DialecticProject = {
   repo_url: null,
   dialectic_sessions: [mockSession],
   process_template_id: 'pt-1',
-  dialectic_process_templates: mockProcessTemplate as DialecticProcessTemplate,
+  dialectic_process_templates: mockProcessTemplate,
   isLoadingProcessTemplate: false,
   processTemplateError: null,
   contributionGenerationStatus: 'idle',
@@ -98,17 +100,56 @@ type StageRunDocumentStatus = StageRunProgressEntry['documents'][string]['status
 
 const createStageRunProgressEntry = (
   documentStatuses: Record<string, StageRunDocumentStatus>,
-  stepStatuses: StageRunProgressEntry['stepStatuses'] = {}
+  stepStatuses: StageRunProgressEntry['stepStatuses'] = {},
+  modelIdForDocuments = 'model-1'
 ): StageRunProgressEntry => {
   const documents: StageRunProgressEntry['documents'] = {};
+  const nowIso = new Date().toISOString();
   for (const [documentKey, status] of Object.entries(documentStatuses)) {
-    documents[documentKey] = { status };
+    const descriptor: StageRunDocumentDescriptor = {
+      status,
+      job_id: `job-${documentKey}`,
+      latestRenderedResourceId: `${documentKey}.latest`,
+      modelId: modelIdForDocuments,
+      versionHash: `version-${documentKey}`,
+      lastRenderedResourceId: `${documentKey}.resource`,
+      lastRenderAtIso: nowIso,
+    };
+    documents[documentKey] = descriptor;
   }
   return {
     documents,
     stepStatuses,
   };
 };
+
+const stageRunChecklistRenderMock = vi.fn((props: StageRunChecklistProps) => props);
+const recordedStageRunChecklistProps: StageRunChecklistProps[] = [];
+
+vi.mock('./StageRunChecklist', () => ({
+  StageRunChecklist: (props: StageRunChecklistProps) => {
+    stageRunChecklistRenderMock(props);
+    recordedStageRunChecklistProps.push(props);
+    return (
+      <button
+        type="button"
+        data-testid={`mock-stage-run-checklist-${props.modelId}`}
+        onClick={() =>
+          props.onDocumentSelect({
+            sessionId: mockSession.id,
+            stageSlug: mockStages[0].slug,
+            iterationNumber: mockSession.iteration_count,
+            modelId: props.modelId,
+            documentKey: 'draft_document_outline',
+            stepKey: 'draft_document',
+          })
+        }
+      >
+        StageRunChecklist {props.modelId}
+      </button>
+    );
+  },
+}));
 
 vi.mock('@paynless/store', async () => {
     const originalModule = await vi.importActual('@paynless/store');
@@ -127,16 +168,22 @@ describe('StageTabCard', () => {
             currentProjectDetail: mockProject,
             activeContextSessionId: mockSession.id,
             activeStageSlug: mockStages[0].slug,
-            currentProcessTemplate: mockProcessTemplate as DialecticProcessTemplate,
+            activeSessionDetail: mockSession,
+            currentProcessTemplate: mockProcessTemplate,
+            selectedModelIds: mockSession.selected_model_ids ?? [],
             ...overrides,
         };
         initializeMockDialecticState(initialState);
+        const storeActions = getDialecticStoreState();
+        storeActions.setActiveStage = vi.fn();
+        storeActions.setFocusedStageDocument = vi.fn();
+        return storeActions;
     };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    const storeActions = getDialecticStoreState();
-    storeActions.setActiveStage = vi.fn();
+    stageRunChecklistRenderMock.mockClear();
+    recordedStageRunChecklistProps.length = 0;
   });
 
   const renderComponent = () => {
@@ -146,13 +193,14 @@ describe('StageTabCard', () => {
   it('renders all stage tabs when stages are available', () => {
     setupStore();
     renderComponent();
-    expect(screen.getByText('Hypothesis')).toBeInTheDocument();
-    expect(screen.getByText('Analysis')).toBeInTheDocument();
+    const stageList = screen.getByTestId('stage-tab-list');
+    expect(within(stageList).getByText('Hypothesis')).toBeInTheDocument();
+    expect(within(stageList).getByText('Analysis')).toBeInTheDocument();
   });
 
   it('renders message when no stages are available', () => {
     setupStore({
-        currentProcessTemplate: { ...mockProcessTemplate, stages: [] } as DialecticProcessTemplate,
+        currentProcessTemplate: { ...mockProcessTemplate, stages: [] },
     });
     renderComponent();
     expect(screen.getByText('No stages available for this process.')).toBeInTheDocument();
@@ -165,19 +213,18 @@ describe('StageTabCard', () => {
     const activeCard = screen.getByTestId('stage-tab-analysis');
     const inactiveCard = screen.getByTestId('stage-tab-hypothesis');
     
-    expect(activeCard).toHaveClass('border-primary');
-    expect(inactiveCard).not.toHaveClass('border-primary');
+    expect(activeCard).toHaveAttribute('aria-selected', 'true');
+    expect(inactiveCard).toHaveAttribute('aria-selected', 'false');
   });
 
   it('calls setActiveStage when a card is clicked', () => {
-    setupStore();
-    const setActiveStageMock = getDialecticStoreState().setActiveStage;
+    const storeActions = setupStore();
     renderComponent();
     
     const analysisCard = screen.getByTestId('stage-tab-analysis');
     fireEvent.click(analysisCard);
     
-    expect(setActiveStageMock).toHaveBeenCalledWith('analysis');
+    expect(storeActions.setActiveStage).toHaveBeenCalledWith('analysis');
   });
 
   it('shows completed label and document totals when all documents are finished', () => {
@@ -194,8 +241,9 @@ describe('StageTabCard', () => {
     renderComponent();
 
     const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
-    expect(within(hypothesisCard).getByText('Completed')).toBeInTheDocument();
-    expect(within(hypothesisCard).getByText('2 / 2 documents')).toBeInTheDocument();
+    expect(within(hypothesisCard).getByTestId('stage-progress-summary-hypothesis')).toBeInTheDocument();
+    expect(within(hypothesisCard).getByTestId('stage-progress-label-hypothesis').textContent).toBe('Completed');
+    expect(within(hypothesisCard).getByTestId('stage-progress-count-hypothesis').textContent).toBe('2 / 2 documents');
   });
 
   it('omits completed label when any document is still generating', () => {
@@ -212,8 +260,8 @@ describe('StageTabCard', () => {
     renderComponent();
 
     const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
-    expect(within(hypothesisCard).queryByText('Completed')).toBeNull();
-    expect(within(hypothesisCard).getByText('1 / 2 documents')).toBeInTheDocument();
+    expect(within(hypothesisCard).queryByTestId('stage-progress-label-hypothesis')).toBeNull();
+    expect(within(hypothesisCard).getByTestId('stage-progress-count-hypothesis').textContent).toBe('1 / 2 documents');
   });
 
   it('omits completed label when any document has failed', () => {
@@ -230,7 +278,56 @@ describe('StageTabCard', () => {
     renderComponent();
 
     const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
-    expect(within(hypothesisCard).queryByText('Completed')).toBeNull();
-    expect(within(hypothesisCard).getByText('1 / 2 documents')).toBeInTheDocument();
+    expect(within(hypothesisCard).queryByTestId('stage-progress-label-hypothesis')).toBeNull();
+    expect(within(hypothesisCard).getByTestId('stage-progress-count-hypothesis').textContent).toBe('1 / 2 documents');
+  });
+
+  it('renders a StageRunChecklist for each selected model and forwards checklist selections', () => {
+    const multiModelSession: DialecticSession = {
+      ...mockSession,
+      selected_model_ids: ['model-1', 'model-2'],
+    };
+
+    const focusKeyModel1 = `${multiModelSession.id}:${mockStages[0].slug}:model-1`;
+    const focusKeyModel2 = `${multiModelSession.id}:${mockStages[0].slug}:model-2`;
+
+    const storeActions = setupStore({
+      activeSessionDetail: multiModelSession,
+      selectedModelIds: multiModelSession.selected_model_ids ?? [],
+      focusedStageDocument: {
+        [focusKeyModel1]: { modelId: 'model-1', documentKey: 'draft_document_outline' },
+        [focusKeyModel2]: { modelId: 'model-2', documentKey: 'draft_document_outline' },
+      },
+    });
+
+    renderComponent();
+
+    expect(stageRunChecklistRenderMock).toHaveBeenCalledTimes(2);
+    expect(recordedStageRunChecklistProps.map((props) => props.modelId)).toEqual([
+      'model-1',
+      'model-2',
+    ]);
+
+    const stageCard = screen.getByTestId('stage-card-hypothesis');
+    const accordion = within(stageCard).getByTestId('stage-checklist-accordion-hypothesis');
+    const toggle = within(stageCard).getByTestId('stage-checklist-toggle-hypothesis');
+
+    if (toggle.getAttribute('aria-expanded') === 'false') {
+      fireEvent.click(toggle);
+    }
+
+    expect(within(accordion).getByTestId('mock-stage-run-checklist-model-1')).toBeInTheDocument();
+    expect(within(accordion).getByTestId('mock-stage-run-checklist-model-2')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('mock-stage-run-checklist-model-2'));
+
+    expect(storeActions.setFocusedStageDocument).toHaveBeenCalledWith({
+      sessionId: multiModelSession.id,
+      stageSlug: mockStages[0].slug,
+      iterationNumber: multiModelSession.iteration_count,
+      modelId: 'model-2',
+      documentKey: 'draft_document_outline',
+      stepKey: 'draft_document',
+    });
   });
 });

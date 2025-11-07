@@ -7,6 +7,8 @@ import { toast } from 'sonner';
 import {
   type StageRunDocumentDescriptor,
   type StageDocumentCompositeKey,
+  type SetFocusedStageDocumentPayload,
+  type StageRunChecklistProps,
 } from '@paynless/types';
 
 // --- MOCKS ---
@@ -42,12 +44,18 @@ vi.mock('@/components/common/TextInputArea', () => ({
   )),
 }));
 
+const stageRunChecklistMock = vi.fn<[StageRunChecklistProps], void>();
+
 vi.mock('./StageRunChecklist', () => ({
-  StageRunChecklist: vi.fn(({ modelId }) => (
-    <div data-testid="stage-run-checklist" data-model-id={modelId}>
-      Stage Run Checklist for {modelId}
-    </div>
-  )),
+  StageRunChecklist: (props: StageRunChecklistProps) => {
+    stageRunChecklistMock(props);
+    const { modelId } = props;
+    return (
+      <div data-testid="stage-run-checklist" data-model-id={modelId}>
+        Stage Run Checklist for {modelId}
+      </div>
+    );
+  },
 }));
 
 // --- TEST SETUP ---
@@ -153,6 +161,10 @@ const setupStore = ({
       updated_at: '2023-01-01T00:00:00Z',
       dialectic_contributions: [],
     },
+    modelCatalog: [
+      { id: modelA, model_name: 'Model Alpha', provider_name: 'OpenAI', api_identifier: 'openai', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [] },
+      { id: modelB, model_name: 'Model Beta', provider_name: 'Anthropic', api_identifier: 'anthropic', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [] },
+    ],
     stageRunProgress: {
       [progressKey]: {
         stepStatuses: {},
@@ -166,73 +178,94 @@ const setupStore = ({
   });
 };
 
-const renderComponent = (modelId: string) => {
-  return render(
-    <GeneratedContributionCard
-      modelId={modelId}
-    />
-  );
-};
-
-
 describe('GeneratedContributionCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    stageRunChecklistMock.mockClear();
   });
 
-  it('renders the StageRunChecklist and passes the correct modelId to it', () => {
-    setupStore({});
-    renderComponent(modelA);
-
-    const checklist = screen.getByTestId('stage-run-checklist');
-    expect(checklist).toBeInTheDocument();
-    expect(checklist).toHaveAttribute('data-model-id', modelA);
-  });
-
-  it('displays a placeholder when no document is focused for its model', () => {
-    setupStore({ focusedDocument: { modelId: modelB, documentKey: docB1Key } }); // Focus on other model
-    renderComponent(modelA);
-    expect(screen.getByText(/Select a document to view its content and provide feedback./i)).toBeInTheDocument();
-  });
-
-  it('displays the content for the focused document of its model', async () => {
+  it('renders model and document metadata when its model has a focused document', async () => {
     setupStore({
       focusedDocument: { modelId: modelA, documentKey: docA1Key },
-      content: 'Content for document A1',
+      content: 'Document A1 baseline',
     });
 
-    renderComponent(modelA);
-    
-    const contentTextArea = await screen.findByDisplayValue('Content for document A1');
-    expect(contentTextArea).toBeInTheDocument();
+    render(<GeneratedContributionCard modelId={modelA} />);
+
+    expect(await screen.findByText(/Model Alpha/i)).toBeInTheDocument();
+    expect(screen.getByText(/Document: doc-a1/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Document A1 baseline')).toBeInTheDocument();
   });
 
-  it('does not display content for a document focused for a different model', () => {
+  it('displays a placeholder when its model has no focused document', () => {
     setupStore({
       focusedDocument: { modelId: modelB, documentKey: docB1Key },
-      content: 'Content for document B1',
     });
 
-    renderComponent(modelA);
+    render(<GeneratedContributionCard modelId={modelA} />);
 
-    expect(screen.queryByDisplayValue('Content for document B1')).not.toBeInTheDocument();
-    expect(screen.getByText(/Select a document to view its content and provide feedback./i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Select a document to view its content and provide feedback./i),
+    ).toBeInTheDocument();
   });
 
-  it('allows user to enter feedback and save it for the correct document', async () => {
+  it('passes focus state to StageRunChecklist and forwards selections', () => {
+    setupStore({
+      focusedDocument: { modelId: modelA, documentKey: docA1Key },
+    });
+    const { setFocusedStageDocument } = getDialecticStoreState();
+
+    render(<GeneratedContributionCard modelId={modelA} />);
+
+    expect(stageRunChecklistMock).toHaveBeenCalled();
+    const lastCall = stageRunChecklistMock.mock.calls.at(-1);
+    expect(lastCall).toBeDefined();
+    const checklistProps = lastCall![0];
+
+    expect(checklistProps.modelId).toBe(modelA);
+    expect(checklistProps.focusedStageDocumentMap).toEqual(
+      expect.objectContaining({
+        [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+      }),
+    );
+
+    const handleSelectPayload: SetFocusedStageDocumentPayload = {
+      sessionId: mockSessionId,
+      stageSlug: mockStageSlug,
+      iterationNumber,
+      modelId: modelA,
+      documentKey: docA2Key,
+      stepKey: 'draft_document',
+    };
+
+    checklistProps.onDocumentSelect(handleSelectPayload);
+
+    expect(setFocusedStageDocument).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: mockSessionId,
+        stageSlug: mockStageSlug,
+        iterationNumber,
+        modelId: modelA,
+        documentKey: docA2Key,
+      }),
+    );
+  });
+
+  it('updates the stage document draft when feedback changes', async () => {
     const user = userEvent.setup();
     setupStore({
       focusedDocument: { modelId: modelA, documentKey: docA1Key },
-      content: 'Content for A1',
-      feedback: 'This is my feedback for A1.',
+      content: 'Baseline content',
+      feedback: 'Existing feedback',
     });
-    const { submitStageDocumentFeedback, updateStageDocumentDraft } = getDialecticStoreState();
 
-    renderComponent(modelA);
+    const { updateStageDocumentDraft } = getDialecticStoreState();
+
+    render(<GeneratedContributionCard modelId={modelA} />);
 
     const feedbackTextarea = await screen.findByPlaceholderText(/Enter feedback for doc-a1/i);
-    await user.type(feedbackTextarea, ' This is new feedback.');
-    
+    await user.type(feedbackTextarea, ' - updated');
+
     const expectedKey: StageDocumentCompositeKey = {
       sessionId: mockSessionId,
       stageSlug: mockStageSlug,
@@ -244,7 +277,37 @@ describe('GeneratedContributionCard', () => {
     await waitFor(() => {
       expect(updateStageDocumentDraft).toHaveBeenCalledWith(
         expect.objectContaining(expectedKey),
-        'This is my feedback for A1. This is new feedback.'
+        'Existing feedback - updated',
+      );
+    });
+  });
+
+  it('allows user to enter feedback and save it for the correct document', async () => {
+    const user = userEvent.setup();
+    setupStore({
+      focusedDocument: { modelId: modelA, documentKey: docA1Key },
+      content: 'Content for A1',
+      feedback: 'This is my feedback for A1.',
+    });
+    const { submitStageDocumentFeedback, updateStageDocumentDraft } = getDialecticStoreState();
+
+    render(<GeneratedContributionCard modelId={modelA} />);
+
+    const feedbackTextarea = await screen.findByPlaceholderText(/Enter feedback for doc-a1/i);
+    await user.type(feedbackTextarea, ' This is new feedback.');
+
+    const expectedKey: StageDocumentCompositeKey = {
+      sessionId: mockSessionId,
+      stageSlug: mockStageSlug,
+      iterationNumber,
+      modelId: modelA,
+      documentKey: docA1Key,
+    };
+
+    await waitFor(() => {
+      expect(updateStageDocumentDraft).toHaveBeenCalledWith(
+        expect.objectContaining(expectedKey),
+        'This is my feedback for A1. This is new feedback.',
       );
     });
 
@@ -252,11 +315,13 @@ describe('GeneratedContributionCard', () => {
     await user.click(saveButton);
 
     await waitFor(() => {
-      expect(submitStageDocumentFeedback).toHaveBeenCalledWith(expect.objectContaining({
-        ...expectedKey,
-        feedback: 'This is my feedback for A1. This is new feedback.',
-      }));
+      expect(submitStageDocumentFeedback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ...expectedKey,
+          feedback: 'This is my feedback for A1. This is new feedback.',
+        }),
+      );
       expect(toast.success).toHaveBeenCalledWith('Feedback saved successfully.');
     });
   });
-}); 
+});
