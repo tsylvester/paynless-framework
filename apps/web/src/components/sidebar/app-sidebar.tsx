@@ -75,7 +75,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 				isActive: true,
 			},
 			{
-				title: "Dialectic",
+				title: "Planner",
 				url: "/dialectic",
 				icon: BookOpen,
 				isActive: true,
