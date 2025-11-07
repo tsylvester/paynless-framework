@@ -1,26 +1,28 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  useDialecticStore, 
-  selectIsStageReadyForSessionIteration,
-  selectIsLoadingProjectDetail,
-  selectContributionGenerationStatus,
-  selectProjectDetailError,
-  selectFeedbackForStageIteration,
-  selectCurrentProjectDetail,
-  selectActiveStageSlug,
-  selectSortedStages
-  selectedStageProgressSummary
-} from '@paynless/store';
-import { 
-  DialecticContribution, 
-  ApiError, 
-  DialecticFeedback, 
-  SubmitStageResponsesPayload,
-  AIModelCatalogEntry
-} from '@paynless/types';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import React, { useState, useMemo, useEffect } from "react";
+import {
+	useDialecticStore,
+	selectIsLoadingProjectDetail,
+	selectContributionGenerationStatus,
+	selectProjectDetailError,
+	selectFeedbackForStageIteration,
+	selectCurrentProjectDetail,
+	selectActiveStageSlug,
+	selectSortedStages,
+	selectStageProgressSummary
+} from "@paynless/store";
+import {
+	ApiError,
+	DialecticFeedback,
+	SubmitStageResponsesPayload,
+} from "@paynless/types";
+import {
+	Card,
+	CardContent,
+	CardHeader,
+	CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -30,21 +32,15 @@ import {
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogTitle,
+
 } from "@/components/ui/alert-dialog";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { GeneratedContributionCard } from './GeneratedContributionCard';
-import { Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
-import { Skeleton } from '@/components/ui/skeleton';
-import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
-import { cn } from '@/lib/utils';
-import { ExportProjectButton } from './ExportProjectButton';
+
+import { GeneratedContributionCard } from "./GeneratedContributionCard";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
+import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
+import { cn } from "@/lib/utils";
 import { useStageRunProgressHydration } from '../../hooks/useStageRunProgressHydration';
 
 
@@ -53,7 +49,7 @@ const isApiError = (error: unknown): error is ApiError => {
 		typeof error === "object" &&
 		error !== null &&
 		"message" in error &&
-		typeof error.message === "string"
+		typeof (error as ApiError).message === "string"
 	);
 };
 
@@ -203,9 +199,9 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	const feedbackForStageIteration: DialecticFeedback | undefined =
 		feedbacksForStageIterationArray?.[0];
 
-	const [stageResponses, setStageResponses] = useState<Record<string, string>>(
-		{},
-	);
+	const stageResponses = useDialecticStore((state) => {
+		return state.stageDocumentContent;
+	});
 	const [submissionSuccessMessage, setSubmissionSuccessMessage] = useState<
 		string | null
 	>(null);
@@ -311,136 +307,94 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 		resetFetchFeedbackFileContentError?.(); // Clear any errors
 	};
 
-  // Loading state for the entire component
-  if (isLoadingCurrentProjectDetail) {
-    return <GeneratedContributionCardSkeleton />;
-  }
-  
-  // Handle project-level errors
-  if (projectDetailError) {
-    return (
-      <Alert variant="destructive">
-        <AlertTitle>Error Loading Project</AlertTitle>
-        <AlertDescription>{projectDetailError.message}</AlertDescription>
-      </Alert>
-    );
-  }
+	// Loading state for the entire component
+	if (isLoadingCurrentProjectDetail) {
+		return <GeneratedContributionCardSkeleton />;
+	}
 
-  // Handle case where there is no active session
-  if (!session) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Session Not Active</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p>Please select a session to view its contributions.</p>
-        </CardContent>
-      </Card>
-    );
-  }
+	// Handle project-level errors
+	if (projectDetailError) {
+		return (
+			<Alert variant="destructive">
+				<AlertTitle>Error Loading Project</AlertTitle>
+				<AlertDescription>{projectDetailError.message}</AlertDescription>
+			</Alert>
+		);
+	}
 
-  // Handle case where there is no active stage
-  if (!activeStage) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Stage Not Selected</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p>Please select a stage to view its contributions.</p>
-        </CardContent>
-      </Card>
-    );
-  }
-  
-  const isGenerating = contributionGenerationStatus === 'generating';
-  
-  return (
-    <Card className="w-full">
-      <CardHeader>
-        <div className="flex justify-between items-center">
-          <CardTitle>
-            Contributions for: <span className="font-bold text-primary">{activeStage.display_name}</span>
-            <span className="text-sm text-muted-foreground ml-2">(Iteration {session.iteration_count})</span>
-          </CardTitle>
-          <div className="flex items-center space-x-2">
-            {project && (
-              <ExportProjectButton
-                projectId={project.id}
-                variant={isFinalStageInProcess ? 'default' : 'outline'}
-                size="sm"
-                className={cn({ 'animate-pulse': isFinalStageInProcess && !isSubmitting && canSubmitStageResponses })}
-              >
-                Export Project
-              </ExportProjectButton>
-            )}
-            {displayedContributions.length > 0 && !isFinalStageInProcess && renderSubmitButton()}
-          </div>
-        </div>
-        {isGenerating && (
-          <div className="flex items-center text-sm text-muted-foreground">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            <span>Generating new contributions...</span>
-          </div>
-        )}
-        {generationError && (
-          <Alert variant="destructive">
-            <AlertTitle>Generation Failed</AlertTitle>
-            <AlertDescription>{generationError.message}</AlertDescription>
-          </Alert>
-        )}
-      </CardHeader>
-      <CardContent>
-        {displayedContributions.length === 0 && !isGenerating && (
-          <div className="text-center text-muted-foreground py-8">
-            <p>No contributions available for this stage yet.</p>
-            <p className="text-sm">Click "Generate" to create new contributions.</p>
-          </div>
-        )}
-        {isGenerating && displayedContributions.length === 0 && (
-          // Show skeletons when generating for the first time
-          Array.from({ length: 2 }).map((_, index) => <GeneratedContributionCardSkeleton key={index} />)
-        )}
-        {displayedContributions.map(contribution => (
-          <GeneratedContributionCard 
-            key={contribution.id}
-            contributionId={contribution.id}
-            initialResponseText={stageResponses[contribution.original_model_contribution_id || contribution.id] || ''}
-            onResponseChange={handleResponseChange}
-            originalModelContributionIdForResponse={contribution.original_model_contribution_id || contribution.id}
-          />
-        ))}
+	// Handle case where there is no active session
+	if (!session) {
+		return (
+			<Card>
+				<CardHeader>
+					<CardTitle>Session Not Active</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<p>Please select a session to view its contributions.</p>
+				</CardContent>
+			</Card>
+		);
+	}
 
-				{feedbackForStageIteration && (
-					<div className="bg-amber-50 dark:bg-amber-950/20 rounded-xl px-6 py-4 border border-amber-200/50 dark:border-amber-800/50">
-						<div className="flex items-center justify-between">
-							<div className="flex items-center gap-3">
-								<div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg">
-									<div className="w-5 h-5 text-amber-600">📝</div>
-								</div>
-								<div>
-									<p className="font-medium text-amber-900 dark:text-amber-100">Previous Feedback Available</p>
-									<p className="text-sm text-amber-700 dark:text-amber-300">
-										Iteration {feedbackForStageIteration.iteration_number} • {" "}
-										{new Date(feedbackForStageIteration.created_at).toLocaleDateString()}
-									</p>
-								</div>
-							</div>
-							<Button
-								variant="outline"
-								size="sm"
-								className="border-amber-200 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-900/50"
-								onClick={() =>
-									handleShowFeedbackContent(feedbackForStageIteration)
-								}
-							>
-								View Feedback
-							</Button>
+	// Handle case where there is no active stage
+	if (!activeStage) {
+		return (
+			<Card>
+				<CardHeader>
+					<CardTitle>Stage Not Selected</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<p>Please select a stage to view its contributions.</p>
+				</CardContent>
+			</Card>
+		);
+	}
+
+	const isGenerating = contributionGenerationStatus === "generating";
+
+	return (
+		<div className="space-y-8">
+			{/* Enhanced Header */}
+			<div className="space-y-4">
+				<div className="flex items-center justify-between">
+					<div className="space-y-2">
+						<h2 className="text-2xl font-light tracking-tight">{getDisplayName(activeStage)}</h2>
+						<p className="text-muted-foreground leading-relaxed">
+							{activeStage.description}
+						</p>
+					</div>
+				</div>
+			</div>
+
+			{/* Enhanced Status */}
+			{isGenerating && (
+				<div className="bg-blue-50 dark:bg-blue-950/20 rounded-xl px-6 py-4 border border-blue-200/50 dark:border-blue-800/50">
+					<div className="flex items-center gap-3">
+						<div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+							<Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+						</div>
+						<div>
+							<p className="font-medium text-blue-900 dark:text-blue-100">Generating contributions</p>
+							<p className="text-sm text-blue-700 dark:text-blue-300">Please wait while AI models process your request...</p>
 						</div>
 					</div>
-				)}
-			</div>
+				</div>
+			)}
+			{generationError && (
+				<div className="bg-red-50 dark:bg-red-950/20 rounded-xl px-6 py-4 border border-red-200/50 dark:border-red-800/50">
+					<div className="flex items-center gap-3">
+						<div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
+							<div className="h-5 w-5 rounded-full bg-red-600 flex items-center justify-center">
+								<span className="text-white text-xs font-bold">!</span>
+							</div>
+						</div>
+						<div>
+							<p className="font-medium text-red-900 dark:text-red-100">Generation Error</p>
+							<p className="text-sm text-red-700 dark:text-red-300">{generationError.message}</p>
+						</div>
+					</div>
+				</div>
+			)}
 
 			{/* Enhanced Footer */}
 			{(submissionSuccessMessage || submissionError) && (

@@ -1,17 +1,17 @@
-import React, { useEffect } from 'react';
-import type { DialecticStage } from '@paynless/types';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
-import { 
-  useDialecticStore, 
-  selectSessionById, 
-  selectActiveContextSessionId, 
-  selectCurrentProjectDetail, 
-  selectIsStageReadyForSessionIteration,
-  selectSortedStages,
-  selectActiveStageSlug
+import React, { useEffect } from "react";
+import type { DialecticStage } from "@paynless/types";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import {
+	useDialecticStore,
+	selectSessionById,
+	selectActiveContextSessionId,
+	selectCurrentProjectDetail,
+	selectIsStageReadyForSessionIteration,
+	selectSortedStages,
+	selectActiveStageSlug,
   selectStageProgressSummary
-} from '@paynless/store';
+} from "@paynless/store";
 
 interface StageCardProps {
 	stage: DialecticStage;
@@ -64,25 +64,39 @@ const StageCard: React.FC<StageCardProps> = ({ stage }) => {
     );
   });
 
-  if (!project || !session) { // Ensure project is also checked here
-    return (
-      <Card className={cn("w-48 flex flex-col justify-center items-center opacity-50 cursor-not-allowed", isActiveStage ? "border-2 border-primary" : "border")}>
-        <CardHeader>
-          <CardTitle className="text-base text-center">{stage.display_name}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex-grow flex items-center justify-center">
-         <p className="text-xs text-muted-foreground">Context unavailable</p>
-        </CardContent>
-      </Card>
-    );
-  }
+	if (!project || !session) {
+		// Ensure project is also checked here
+		return (
+			<div
+				className={cn(
+					"relative flex items-center gap-3 p-3 rounded-lg opacity-50 cursor-not-allowed",
+					"border-l-4 border-l-transparent",
+				)}
+			>
+				<div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+					<span className="text-xs font-medium text-muted-foreground">
+						{stages.findIndex((s) => s.id === stage.id) + 1}
+					</span>
+				</div>
+				<div className="flex-1 min-w-0">
+					<div className="font-medium text-sm truncate">
+						{getDisplayName(stage)}
+					</div>
+					<div className="text-xs text-muted-foreground">Not available</div>
+				</div>
+			</div>
+		);
+	}
 
-  const handleCardClick = () => {
-    if (setActiveStage) {
-      setActiveStage(stage.slug);
-    }
-  };
+
+	const handleCardClick = () => {
+		if (setActiveStage) {
+			setActiveStage(stage.slug);
+		}
+	};
   const stageIndex = stages.findIndex((s) => s.id === stage.id);
+
+	const stageIndex = stages.findIndex((s) => s.id === stage.id);
 
 	return (
 		<button
