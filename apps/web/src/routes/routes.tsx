@@ -18,8 +18,8 @@ const SubscriptionSuccessPage = lazy(() => import('../pages/SubscriptionSuccess'
 const AiChatPage = lazy(() => import('../pages/AiChat')); // Default export
 const NotificationsPage = lazy(() => import('../pages/Notifications')); // Default export
 const AcceptInvitePage = lazy(() => import('../pages/AcceptInvitePage').then(module => ({ default: module.AcceptInvitePage })));
-const OrganizationHubPage = lazy(() => import('../pages/OrganizationHubPage').then(module => ({ default: module.OrganizationHubPage })));
-const OrganizationFocusedViewPage = lazy(() => import('../pages/OrganizationFocusedViewPage').then(module => ({ default: module.OrganizationFocusedViewPage })));
+//const OrganizationHubPage = lazy(() => import('../pages/OrganizationHubPage').then(module => ({ default: module.OrganizationHubPage })));
+//const OrganizationFocusedViewPage = lazy(() => import('../pages/OrganizationFocusedViewPage').then(module => ({ default: module.OrganizationFocusedViewPage })));
 const TransactionHistoryPage = lazy(() => import('../pages/TransactionHistory').then(module => ({ default: module.TransactionHistoryPage })));
 const HomePage = lazy(() => import('../pages/Home').then(module => ({ default: module.HomePage })));
 const DialecticProjectsPage = lazy(() => import('../pages/DialecticProjectsPage').then(module => ({ default: module.DialecticProjectsPage })));
