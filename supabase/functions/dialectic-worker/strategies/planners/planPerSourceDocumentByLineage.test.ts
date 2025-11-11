@@ -83,13 +83,13 @@ Deno.test('planPerSourceDocumentByLineage', async (t) => {
         prompt_template_id: 'tmpl-12345',
         output_type: FileType.ReducedSynthesis,
         granularity_strategy: 'per_source_document_by_lineage',
-        inputs_required: [{ type: 'document' }],
+        inputs_required: [{ type: 'document', slug: 'pairwise_synthesis_chunk', document_key: 'pairwise_synthesis_chunk', required: true }],
         job_type: 'EXECUTE',
         prompt_type: 'Turn',
         branch_key: null,
         parallel_group: null,
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: { documents: [], assembled_json: [], files_to_generate: [] },
     });
 
     await t.step('should create one job per source group, inheriting model_id from the parent job', () => {
@@ -287,13 +287,13 @@ Deno.test('planPerSourceDocumentByLineage should treat a doc without a source_gr
         prompt_template_id: 'tmpl-antithesis-54321',
         output_type: FileType.business_case_critique,
         granularity_strategy: 'per_source_document_by_lineage',
-        inputs_required: [{ type: 'document' }],
+        inputs_required: [{ type: 'document', slug: 'thesis', document_key: 'business_case', required: true }],
         job_type: 'EXECUTE',
         prompt_type: 'Turn',
         branch_key: null,
         parallel_group: null,
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: { documents: [], assembled_json: [], files_to_generate: [] },
     });
 
     await t.step('should create a new lineage group using doc ID if source_group is missing', () => {

@@ -163,10 +163,10 @@
 - **Prompt Template Name:** `paralysis_planner_header_v1`
 - **Input Source References:**
   - `seed_prompt` (type `seed_prompt`, stage `paralysis`, required)
-  - `trd` (type `document`, stage `parenthesis`, required)
+  - `technical_requirements` (type `document`, stage `parenthesis`, required)
   - `master_plan` (type `document`, stage `parenthesis`, required)
   - `milestone_schema` (type `document`, stage `parenthesis`, required)
-  - `trd` (type `feedback`, stage `parenthesis`, required=false)
+  - `technical_requirements` (type `feedback`, stage `parenthesis`, required=false)
   - `master_plan` (type `feedback`, stage `parenthesis`, required=false)
   - `milestone_schema` (type `feedback`, stage `parenthesis`, required=false)
   - `actionable_checklist` (type `document`, stage `paralysis`, required=false)
@@ -186,10 +186,10 @@
   "prompt_type": "Planner",
   "inputs_required": [
     { "type": "seed_prompt", "stage_slug": "paralysis", "document_key": "seed_prompt", "required": true },
-    { "type": "document", "stage_slug": "parenthesis", "document_key": "trd", "required": true },
+    { "type": "document", "stage_slug": "parenthesis", "document_key": "technical_requirements", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "master_plan", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": true },
-    { "type": "feedback", "stage_slug": "parenthesis", "document_key": "trd", "required": false },
+    { "type": "feedback", "stage_slug": "parenthesis", "document_key": "technical_requirements", "required": false },
     { "type": "feedback", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false },
     { "type": "feedback", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": false },
     { "type": "document", "stage_slug": "paralysis", "document_key": "actionable_checklist", "required": false },
@@ -199,10 +199,10 @@
   ],
   "inputs_relevance": [
     { "document_key": "seed_prompt", "stage_slug": "paralysis", "relevance": 0.6 },
-    { "document_key": "trd", "stage_slug": "parenthesis", "relevance": 1.0 },
+    { "document_key": "technical_requirements", "stage_slug": "parenthesis", "relevance": 1.0 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.98 },
     { "document_key": "milestone_schema", "stage_slug": "parenthesis", "relevance": 0.95 },
-    { "document_key": "trd", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.7 },
+    { "document_key": "technical_requirements", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.7 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.7 },
     { "document_key": "milestone_schema", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.65 },
     { "document_key": "actionable_checklist", "stage_slug": "paralysis", "relevance": 0.85 },
@@ -296,12 +296,12 @@
 - **Prompt Template Name:** `paralysis_actionable_checklist_turn_v1`
 - **Input Source References:**
   - `header_context` (type `header_context`, stage `paralysis`, required)
-  - `trd` (type `document`, stage `parenthesis`, required)
+  - `technical_requirements` (type `document`, stage `parenthesis`, required)
   - `master_plan` (type `document`, stage `parenthesis`, required)
   - `milestone_schema` (type `document`, stage `parenthesis`, required)
   - `actionable_checklist` (type `document`, stage `paralysis`, required=false — prior iteration checklist)
   - `actionable_checklist` (type `feedback`, stage `paralysis`, required=false)
-  - `trd` (type `feedback`, stage `parenthesis`, required=false)
+  - `technical_requirements` (type `feedback`, stage `parenthesis`, required=false)
   - `master_plan` (type `feedback`, stage `parenthesis`, required=false)
   - `milestone_schema` (type `feedback`, stage `parenthesis`, required=false)
 - **Output Artifact Description:** Markdown checklist plus assembled JSON capturing each step’s identifiers, dependencies, inputs, outputs, and validation instructions.
@@ -318,23 +318,23 @@
   "prompt_type": "Turn",
   "inputs_required": [
     { "type": "header_context", "stage_slug": "paralysis", "document_key": "header_context", "required": true },
-    { "type": "document", "stage_slug": "parenthesis", "document_key": "trd", "required": true },
+    { "type": "document", "stage_slug": "parenthesis", "document_key": "technical_requirements", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "master_plan", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": true },
     { "type": "document", "stage_slug": "paralysis", "document_key": "actionable_checklist", "required": false },
     { "type": "feedback", "stage_slug": "paralysis", "document_key": "actionable_checklist", "required": false },
-    { "type": "feedback", "stage_slug": "parenthesis", "document_key": "trd", "required": false },
+    { "type": "feedback", "stage_slug": "parenthesis", "document_key": "technical_requirements", "required": false },
     { "type": "feedback", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false },
     { "type": "feedback", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": false }
   ],
   "inputs_relevance": [
     { "document_key": "header_context", "stage_slug": "paralysis", "relevance": 1.0 },
-    { "document_key": "trd", "stage_slug": "parenthesis", "relevance": 0.95 },
+    { "document_key": "technical_requirements", "stage_slug": "parenthesis", "relevance": 0.95 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.93 },
     { "document_key": "milestone_schema", "stage_slug": "parenthesis", "relevance": 0.9 },
     { "document_key": "actionable_checklist", "stage_slug": "paralysis", "relevance": 0.8 },
     { "document_key": "actionable_checklist", "stage_slug": "paralysis", "type": "feedback", "relevance": 0.65 },
-    { "document_key": "trd", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.6 },
+    { "document_key": "technical_requirements", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.6 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.6 },
     { "document_key": "milestone_schema", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.55 }
   ],
@@ -390,10 +390,10 @@
         "steps": [
           {
             "status": "[<derived from the style guide legend>]",
-            "component_label": "<derived_from_trd.components[]_context>",
+            "component_label": "<derived_from_technical_requirements.components[]_context>",
             "numbering": "<derived_from_milestone_position>",
             "title": "<extracted_from_master_plan.milestone.title>",
-            "description": "<extracted_from_trd.technical_requirements>",
+            "description": "<extracted_from_technical_requirements.technical_requirements>",
             "inputs": "<extracted_from_milestone.acceptance_criteria>",
             "outputs": "<derived_from_step_purpose>",
             "validation": "<extracted_from_milestone_schema>",
@@ -612,7 +612,7 @@
 - **Prompt Template Name:** `paralysis_advisor_recommendations_turn_v1`
 - **Input Source References:**
   - `initial_user_prompt` (type `initial_user_prompt`, stage `project`, required)
-  - `prd` (type `document`, stage `synthesis`, required, multiple)
+  - `product_requirements` (type `document`, stage `synthesis`, required, multiple)
   - `updated_master_plan` (type `document`, stage `paralysis`, required, multiple)
   - `header_context` (type `header_context`, stage `paralysis`, required=false)
   - `advisor_recommendations` (type `document`, stage `paralysis`, required=false)
@@ -630,7 +630,7 @@
   "prompt_type": "Turn",
   "inputs_required": [
     { "type": "project_resource", "stage_slug": "project", "document_key": "initial_user_prompt", "required": true },
-    { "type": "document", "stage_slug": "synthesis", "document_key": "prd", "required": true, "multiple": true },
+    { "type": "document", "stage_slug": "synthesis", "document_key": "product_requirements", "required": true, "multiple": true },
     { "type": "document", "stage_slug": "paralysis", "document_key": "updated_master_plan", "required": true, "multiple": true },
     { "type": "header_context", "stage_slug": "paralysis", "document_key": "header_context", "required": false },
     { "type": "document", "stage_slug": "paralysis", "document_key": "advisor_recommendations", "required": false },
@@ -638,7 +638,7 @@
   ],
   "inputs_relevance": [
     { "document_key": "initial_user_prompt", "stage_slug": "project", "relevance": 1.0 },
-    { "document_key": "prd", "stage_slug": "synthesis", "relevance": 0.95 },
+    { "document_key": "product_requirements", "stage_slug": "synthesis", "relevance": 0.95 },
     { "document_key": "updated_master_plan", "stage_slug": "paralysis", "relevance": 0.95 },
     { "document_key": "header_context", "stage_slug": "paralysis", "relevance": 0.7 },
     { "document_key": "advisor_recommendations", "stage_slug": "paralysis", "relevance": 0.5 },
@@ -739,7 +739,7 @@
     *   `[✅]` 1.c. Update `dialectic_stages` to set `recipe_name = 'paralysis_v1'` and delete the legacy `input_artifact_rules` / `expected_output_artifacts` JSON so orchestration reads solely from the recipe table.
 
 *   `[✅]` 2. `[DB]` Normalize Parenthesis → Paralysis inputs and backfill artifacts.
-    *   `[✅]` 2.a. Confirm the Parenthesis stage writes documents using the exact keys consumed here (`trd`, `master_plan`, `milestone_schema`) and adjust prior migrations if any names deviate.
+    *   `[✅]` 2.a. Confirm the Parenthesis stage writes documents using the exact keys consumed here (`technical_requirements`, `master_plan`, `milestone_schema`) and adjust prior migrations if any names deviate.
     *   `[✅]` 2.b. Seed lookups/backfill scripts so existing paralysis artifacts map to `actionable_checklist`, `updated_master_plan`, and `advisor_recommendations`, copying files to the new storage paths when reruns depend on them.
     *   `[✅]` 2.c. Ensure optional feedback artifacts keep the `{document_key}_feedback.md` naming convention so recipe inputs resolve without code changes.
 

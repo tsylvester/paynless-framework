@@ -333,7 +333,13 @@ export function isInputRule(value: unknown): value is InputRule {
     if (typeof value.slug !== 'string') return false;
     if (typeof value.type !== 'string' || !['document', 'feedback', 'header_context', 'seed_prompt', 'project_resource'].includes(value.type)) return false;
 
-    if ('document_key' in value && value.document_key !== '*' && (typeof value.document_key !== 'string' || !isFileType(value.document_key))) return false;
+    if ('document_key' in value) {
+        // Recipe documents can introduce new keys at runtime; ensure we only enforce non-empty strings.
+        if (value.document_key !== '*' && (typeof value.document_key !== 'string' || value.document_key.length === 0)) {
+            return false;
+        }
+    }
+
     if ('required' in value && typeof value.required !== 'boolean') return false;
     if ('multiple' in value && typeof value.multiple !== 'boolean') return false;
 
@@ -347,7 +353,8 @@ export function isInputRuleArray(value: unknown): value is InputRule[] {
 export function isRelevanceRule(value: unknown): value is RelevanceRule {
     if (!isRecord(value)) return false;
 
-    if (typeof value.document_key !== 'string' || !isFileType(value.document_key)) {
+    // Relevance rules track recipe-driven document identifiers; treat them as opaque strings.
+    if (typeof value.document_key !== 'string' || value.document_key.length === 0) {
         return false;
     }
 
@@ -397,18 +404,19 @@ export function isReviewMetadata(value: unknown): value is ReviewMetadata {
 export function isSystemMaterials(value: unknown): value is SystemMaterials {
     if (!isRecord(value)) return false;
 
-    const requiredKeys: Array<[string, (v: unknown) => boolean]> = [
-        ['stage_rationale', (v) => typeof v === 'string'],
-        ['executive_summary', (v) => typeof v === 'string'],
-        ['input_artifacts_summary', (v) => typeof v === 'string'],
-    ];
-
-    for (const [key, check] of requiredKeys) {
-        if (!(key in value) || !check(value[key])) {
-            return false;
-        }
+    // Planner payloads often omit the prose fields that execution steps use; gate only on type correctness when present.
+    if ('stage_rationale' in value && typeof value.stage_rationale !== 'string') {
+        return false;
     }
-    
+
+    if ('executive_summary' in value && typeof value.executive_summary !== 'string') {
+        return false;
+    }
+
+    if ('input_artifacts_summary' in value && typeof value.input_artifacts_summary !== 'string') {
+        return false;
+    }
+
     if ('files_to_generate' in value && value.files_to_generate !== undefined) {
         const files = value.files_to_generate;
         if (!Array.isArray(files) || !files.every(file => isRecord(file) && typeof file.template_filename === 'string' && typeof file.from_document_key === 'string')) {
@@ -447,7 +455,8 @@ export function isContextForDocument(value: unknown): value is ContextForDocumen
     if (!isRecord(value)) return false;
 
     return (
-        'document_key' in value && isFileType(value.document_key) &&
+        // Document keys are dynamic per recipe; only require non-empty strings.
+        'document_key' in value && typeof value.document_key === 'string' && value.document_key.length > 0 &&
         'content_to_include' in value && (isRecord(value.content_to_include) || Array.isArray(value.content_to_include))
     );
 }
@@ -460,7 +469,8 @@ export function isRenderedDocumentArtifact(value: unknown): value is RenderedDoc
 
     return (
         'artifact_class' in value && value.artifact_class === 'rendered_document' &&
-        'document_key' in value && (isFileType(value.document_key) || typeof value.document_key === 'string') &&
+        // Rendered artifacts may target dynamic document identifiers; accept any non-empty string.
+        'document_key' in value && typeof value.document_key === 'string' && value.document_key.length > 0 &&
         'template_filename' in value && typeof value.template_filename === 'string' &&
         (!('content_to_include' in value) || (isRecord(value.content_to_include) || Array.isArray(value.content_to_include)))
     );
@@ -477,7 +487,8 @@ export function isAssembledJsonArtifact(value: unknown): value is AssembledJsonA
         return false;
     }
 
-    if (!('document_key' in value) || !(isFileType(value.document_key) || typeof value.document_key === 'string')) {
+    // Assembled JSON artifacts follow the same dynamic naming as the rendered counterparts.
+    if (!('document_key' in value) || typeof value.document_key !== 'string' || value.document_key.length === 0) {
         return false;
     }
 
@@ -701,7 +712,8 @@ export function isDialecticStageRecipeStep(record: unknown): record is Dialectic
     if (typeof record.job_type !== 'string' || !isJobTypeEnum(record.job_type)) return false;
     if (!isPromptType(record.prompt_type)) return false;
     if (!isGranularityStrategy(record.granularity_strategy)) return false;
-    if (typeof record.output_type !== 'string' || !isFileType(record.output_type)) return false;
+    // Output types are coupled to recipe document identifiers; accept any non-empty string.
+    if (typeof record.output_type !== 'string' || record.output_type.length === 0) return false;
 
     if (!isInputRuleArray(record.inputs_required)) return false;
     if (!isRelevanceRuleArray(record.inputs_relevance)) return false;

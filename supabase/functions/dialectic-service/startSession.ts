@@ -324,6 +324,16 @@ export async function startSession(
             log.info(`[startSession] Cleaned up session ${newSessionRecord.id} due to prompt assembly failure.`);
             return { error: { message: "Failed to assemble initial seed prompt for the session.", status: 500 } };
         }
+        
+        // Construct the success response by combining the session record and the assembled prompt.
+        const successResponse: StartSessionSuccessResponse = {
+            ...newSessionRecord,
+            seedPrompt: assembledSeedPrompt,
+        };
+
+        log.info(`[startSession] Session ${newSessionRecord.id} successfully set up with all resources created.`);
+        return { data: successResponse };
+
     } catch (e) {
         log.error(`[startSession] Exception during seed prompt assembly for project ${project.id}`, { error: (e as Error).message });
         await dbClient.from('dialectic_sessions').delete().eq('id', newSessionRecord.id);
@@ -331,13 +341,5 @@ export async function startSession(
         throw e; // Re-throw the original error
     }
     
-    // No longer updating dialectic_sessions with user_input_reference_url here as per user feedback.
-    // The relevant resources can be found via dialectic_project_resources table using projectId/sessionId.
 
-    log.info(`[startSession] Session ${newSessionRecord.id} successfully set up with all resources created.`);
-
-    // Construct the success response - which is the DialecticSession record itself
-    const successResponse: StartSessionSuccessResponse = newSessionRecord;
-
-    return { data: successResponse };
 }

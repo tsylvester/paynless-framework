@@ -127,9 +127,9 @@ const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
 	prompt_template_id: 'antithesis_step1_critique',
 	prompt_type: 'Turn',
 	job_type: 'EXECUTE',
-	inputs_required: [{ type: 'document', stage_slug: 'thesis' }],
+	inputs_required: [{ type: 'document', slug: 'thesis', document_key: 'business_case', required: true }],
 	inputs_relevance: [],
-	outputs_required: [],
+	outputs_required: { documents: [], assembled_json: [], files_to_generate: [] },	
 	granularity_strategy: 'per_source_document',
 	output_type: FileType.business_case_critique,
 	created_at: new Date().toISOString(),
@@ -458,7 +458,7 @@ Deno.test('planPerSourceDocument constructs child payloads with dynamic stage co
 	Object.defineProperty(parent, 'stage_slug', { value: expectedStage, configurable: true, enumerable: true, writable: true });
 	Object.defineProperty(parent.payload, 'stageSlug', { value: expectedStage, configurable: true, enumerable: true, writable: true });
 
-	const result = planPerSourceDocument(MOCK_SOURCE_DOCS, parent, { ...MOCK_RECIPE_STEP, output_type: FileType.trd }, 'ignored.jwt');
+	const result = planPerSourceDocument(MOCK_SOURCE_DOCS, parent, { ...MOCK_RECIPE_STEP, output_type: FileType.technical_requirements }, 'ignored.jwt');
 
 	assertEquals(result.length, MOCK_SOURCE_DOCS.length);
 	for (const child of result) {

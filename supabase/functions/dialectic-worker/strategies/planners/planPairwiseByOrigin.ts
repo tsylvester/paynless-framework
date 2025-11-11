@@ -7,6 +7,7 @@ import type {
 import { findRelatedContributions, groupSourceDocumentsByType } from '../helpers.ts';
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
 import { isContributionType } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
+import { isModelContributionFileType } from '../../../_shared/utils/type-guards/type_guards.file_manager.ts';
 
 export const planPairwiseByOrigin: GranularityPlannerFn = (
 	sourceDocs,
@@ -75,6 +76,9 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 			// Ensure source_group is correctly populated
 			document_relationships.source_group = thesisDoc.id;
 
+			if(!isModelContributionFileType(recipeStep.output_type)) {
+				throw new Error(`Invalid output_type for planPairwiseByOrigin: ${recipeStep.output_type}`);
+			}
 			const newPayload: DialecticExecuteJobPayload = {
 				// Inherit core context from the parent
 				projectId: parentJob.payload.projectId,

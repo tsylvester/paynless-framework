@@ -91,14 +91,14 @@ const MOCK_RECIPE_STEP: DialecticRecipeStep = {
     step_name: 'Consolidate Per-Thesis Syntheses',
     prompt_template_id: 'synthesis_step2_combine',
     granularity_strategy: 'per_source_group',
-    inputs_required: [{ type: 'document' }],
+    inputs_required: [{ type: 'document', slug: 'thesis', document_key: 'business_case', required: true }],
     output_type: FileType.ReducedSynthesis,
     job_type: 'EXECUTE',
     prompt_type: 'Turn',
     branch_key: null,
     parallel_group: null,
     inputs_relevance: [],
-    outputs_required: [],
+    outputs_required: { documents: [], assembled_json: [], files_to_generate: [] },
 };
 
 Deno.test('planPerSourceGroup should create one child job for each group of related documents', () => {

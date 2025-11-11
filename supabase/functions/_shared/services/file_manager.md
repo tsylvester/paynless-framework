@@ -76,12 +76,12 @@ export enum FileType {
   synthesis_document_technical_approach = 'synthesis_document_technical_approach',
   synthesis_document_success_metrics = 'synthesis_document_success_metrics',
   SynthesisHeaderContext = 'synthesis_header_context',
-  prd = 'prd',
-  system_architecture_overview = 'system_architecture',
-  tech_stack_recommendations = 'tech_stack',
+  product_requirements = 'product_requirements',
+  system_architecture = 'system_architecture',
+  tech_stack = 'tech_stack',
 
   // Parenthesis Document Keys
-  trd = 'trd',
+  technical_requirements = 'technical_requirements',
   master_plan = 'master_plan',
   milestone_schema = 'milestone_schema',
 

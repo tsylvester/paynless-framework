@@ -92,8 +92,8 @@
   },
   "documents": [
     {
-      "key": "trd",
-      "template_filename": "parenthesis_trd.md",
+      "key": "technical_requirements",
+      "template_filename": "parenthesis_technical_requirements.md",
       "content_to_include": {
         "subsystems": ["placeholder"],
         "apis": ["placeholder"],
@@ -140,7 +140,7 @@
     }
   ],
   "files_to_generate": [
-    { "template_filename": "parenthesis_trd.md", "from_document_key": "trd" },
+    { "template_filename": "parenthesis_technical_requirements.md", "from_document_key": "technical_requirements" },
     { "template_filename": "parenthesis_master_plan.md", "from_document_key": "master_plan" },
     { "template_filename": "parenthesis_milestone_schema.md", "from_document_key": "milestone_schema" }
   ]
@@ -168,12 +168,12 @@
 - **Prompt Template Name:** `parenthesis_planner_header_v1`
 - **Input Source References:**
   - `seed_prompt` (type `seed_prompt`, stage `parenthesis`, required)
-  - `prd` (type `document`, stage `synthesis`, required)
-  - `system_architecture_overview` (type `document`, stage `synthesis`, required)
-  - `tech_stack_recommendations` (type `document`, stage `synthesis`, required)
-  - `prd` (type `feedback`, stage `synthesis`, required=false)
-  - `system_architecture_overview` (type `feedback`, stage `synthesis`, required=false)
-  - `tech_stack_recommendations` (type `feedback`, stage `synthesis`, required=false)
+  - `product_requirements` (type `document`, stage `synthesis`, required)
+  - `system_architecture` (type `document`, stage `synthesis`, required)
+  - `tech_stack` (type `document`, stage `synthesis`, required)
+  - `product_requirements` (type `feedback`, stage `synthesis`, required=false)
+  - `system_architecture` (type `feedback`, stage `synthesis`, required=false)
+  - `tech_stack` (type `feedback`, stage `synthesis`, required=false)
   - `master_plan` (type `document`, stage `parenthesis`, required=false)
   - `master_plan` (type `feedback`, stage `parenthesis`, required=false)
 - **Output Artifact Description:** Header context JSON with milestone catalog, dependency graph, TRD outline inputs, continuation policy, and instructions for preserving `[✅]` milestones while marking the next milestones `[🚧]`.
@@ -189,23 +189,23 @@
   "prompt_type": "Planner",
   "inputs_required": [
     { "type": "seed_prompt", "stage_slug": "parenthesis", "document_key": "seed_prompt", "required": true },
-    { "type": "document", "stage_slug": "synthesis", "document_key": "prd", "required": true },
-    { "type": "document", "stage_slug": "synthesis", "document_key": "system_architecture_overview", "required": true },
-    { "type": "document", "stage_slug": "synthesis", "document_key": "tech_stack_recommendations", "required": true },
-    { "type": "feedback", "stage_slug": "synthesis", "document_key": "prd", "required": false },
-    { "type": "feedback", "stage_slug": "synthesis", "document_key": "system_architecture_overview", "required": false },
-    { "type": "feedback", "stage_slug": "synthesis", "document_key": "tech_stack_recommendations", "required": false },
+    { "type": "document", "stage_slug": "synthesis", "document_key": "product_requirements", "required": true },
+    { "type": "document", "stage_slug": "synthesis", "document_key": "system_architecture", "required": true },
+    { "type": "document", "stage_slug": "synthesis", "document_key": "tech_stack", "required": true },
+    { "type": "feedback", "stage_slug": "synthesis", "document_key": "product_requirements", "required": false },
+    { "type": "feedback", "stage_slug": "synthesis", "document_key": "system_architecture", "required": false },
+    { "type": "feedback", "stage_slug": "synthesis", "document_key": "tech_stack", "required": false },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false },
     { "type": "feedback", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false }
   ],
   "inputs_relevance": [
     { "document_key": "seed_prompt", "stage_slug": "parenthesis", "relevance": 0.6 },
-    { "document_key": "prd", "stage_slug": "synthesis", "relevance": 1.0 },
-    { "document_key": "system_architecture_overview", "stage_slug": "synthesis", "relevance": 0.95 },
-    { "document_key": "tech_stack_recommendations", "stage_slug": "synthesis", "relevance": 0.90 },
-    { "document_key": "prd", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.75 },
-    { "document_key": "system_architecture_overview", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.70 },
-    { "document_key": "tech_stack_recommendations", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.65 },
+    { "document_key": "product_requirements", "stage_slug": "synthesis", "relevance": 1.0 },
+    { "document_key": "system_architecture", "stage_slug": "synthesis", "relevance": 0.95 },
+    { "document_key": "tech_stack", "stage_slug": "synthesis", "relevance": 0.90 },
+    { "document_key": "product_requirements", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.75 },
+    { "document_key": "system_architecture", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.70 },
+    { "document_key": "tech_stack", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.65 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.99 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.85 }
   ],
@@ -225,7 +225,7 @@
       "in_progress_status": "[🚧]",
       "unstarted_status": "[ ]"
     },
-    "trd_outline_inputs": {
+    "technical_requirements_outline_inputs": {
       "subsystems": [],
       "apis": [],
       "schemas": [],
@@ -240,8 +240,8 @@
   },
   "context_for_documents": [
     {
-      "document_key": "trd",
-      "template_filename": "parenthesis_trd.md",
+      "document_key": "technical_requirements",
+      "template_filename": "parenthesis_technical_requirements.md",
       "content_to_include": {
         "subsystems": [],
         "apis": [],
@@ -350,60 +350,60 @@ Include the latest committed `master_plan` document and any feedback when rerunn
 ### Step 2: Generate Technical Requirements Document
 - **Objective:** Produce the updated TRD that aligns synthesized architecture with the planner’s milestone breakdown and captures deltas from any previous iteration.
 - **Prompt Type:** `Turn`
-- **Prompt Template Name:** `parenthesis_trd_turn_v1`
+- **Prompt Template Name:** `parenthesis_technical_requirements_turn_v1`
 - **Input Source References:**
   - `header_context_parenthesis` (type `header_context`, stage `parenthesis`, required)
-  - `system_architecture_overview` (type `document`, stage `synthesis`, required)
-  - `tech_stack_recommendations` (type `document`, stage `synthesis`, required)
-  - `prd` (type `document`, stage `synthesis`, required)
-  - `trd` (type `document`, stage `parenthesis`, required=false — include the prior TRD when this stage is rerun)
-  - `system_architecture_overview` (type `feedback`, stage `synthesis`, required=false)
-  - `tech_stack_recommendations` (type `feedback`, stage `synthesis`, required=false)
-  - `prd` (type `feedback`, stage `synthesis`, required=false)
-  - `trd` (type `feedback`, stage `parenthesis`, required=false — include the latest TRD feedback on iterative runs)
+  - `system_architecture` (type `document`, stage `synthesis`, required)
+  - `tech_stack` (type `document`, stage `synthesis`, required)
+  - `product_requirements` (type `document`, stage `synthesis`, required)
+  - `technical_requirements` (type `document`, stage `parenthesis`, required=false — include the prior TRD when this stage is rerun)
+  - `system_architecture` (type `feedback`, stage `synthesis`, required=false)
+  - `tech_stack` (type `feedback`, stage `synthesis`, required=false)
+  - `product_requirements` (type `feedback`, stage `synthesis`, required=false)
+  - `technical_requirements` (type `feedback`, stage `parenthesis`, required=false — include the latest TRD feedback on iterative runs)
 - **Output Artifact Description:** Markdown TRD plus assembled JSON capturing subsystems, APIs, schemas, file tree, and architecture rationale.
 
-When this step is executed for subsequent iterations, provide the most recent `trd` document and feedback so the turn prompt can describe deltas accurately.
+When this step is executed for subsequent iterations, provide the most recent `technical_requirements` document and feedback so the turn prompt can describe deltas accurately.
 
 **Recipe Step Definition JSON (target):**
 ```json
 {
   "step_number": 2,
-  "step_slug": "generate-trd",
+  "step_slug": "generate-technical_requirements",
   "job_type": "EXECUTE",
   "name": "Generate Technical Requirements Document",
-  "branch_key": "trd",
-  "prompt_template_id": "<system_prompts.id for parenthesis_trd_turn_v1>",
+  "branch_key": "technical_requirements",
+  "prompt_template_id": "<system_prompts.id for parenthesis_technical_requirements_turn_v1>",
   "prompt_type": "Turn",
   "inputs_required": [
     { "type": "header_context", "stage_slug": "parenthesis", "document_key": "header_context", "required": true },
-    { "type": "document", "stage_slug": "synthesis", "document_key": "system_architecture_overview", "required": true },
-    { "type": "document", "stage_slug": "synthesis", "document_key": "tech_stack_recommendations", "required": true },
-    { "type": "document", "stage_slug": "synthesis", "document_key": "prd", "required": true },
-    { "type": "document", "stage_slug": "parenthesis", "document_key": "trd", "required": false },
-    { "type": "feedback", "stage_slug": "synthesis", "document_key": "system_architecture_overview", "required": false },
-    { "type": "feedback", "stage_slug": "synthesis", "document_key": "tech_stack_recommendations", "required": false },
-    { "type": "feedback", "stage_slug": "synthesis", "document_key": "prd", "required": false },
-    { "type": "feedback", "stage_slug": "parenthesis", "document_key": "trd", "required": false }
+    { "type": "document", "stage_slug": "synthesis", "document_key": "system_architecture", "required": true },
+    { "type": "document", "stage_slug": "synthesis", "document_key": "tech_stack", "required": true },
+    { "type": "document", "stage_slug": "synthesis", "document_key": "product_requirements", "required": true },
+    { "type": "document", "stage_slug": "parenthesis", "document_key": "technical_requirements", "required": false },
+    { "type": "feedback", "stage_slug": "synthesis", "document_key": "system_architecture", "required": false },
+    { "type": "feedback", "stage_slug": "synthesis", "document_key": "tech_stack", "required": false },
+    { "type": "feedback", "stage_slug": "synthesis", "document_key": "product_requirements", "required": false },
+    { "type": "feedback", "stage_slug": "parenthesis", "document_key": "technical_requirements", "required": false }
   ],
   "inputs_relevance": [
     { "document_key": "header_context", "stage_slug": "parenthesis", "relevance": 1.0 },
-    { "document_key": "system_architecture_overview", "stage_slug": "synthesis", "relevance": 0.95 },
-    { "document_key": "tech_stack_recommendations", "stage_slug": "synthesis", "relevance": 0.9 },
-    { "document_key": "prd", "stage_slug": "synthesis", "relevance": 0.85 },
-    { "document_key": "trd", "stage_slug": "parenthesis", "relevance": 0.99 },
-    { "document_key": "system_architecture_overview", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.80 },
-    { "document_key": "tech_stack_recommendations", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.75 },
-    { "document_key": "prd", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.50 },
-    { "document_key": "trd", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.83 }
+    { "document_key": "system_architecture", "stage_slug": "synthesis", "relevance": 0.95 },
+    { "document_key": "tech_stack", "stage_slug": "synthesis", "relevance": 0.9 },
+    { "document_key": "product_requirements", "stage_slug": "synthesis", "relevance": 0.85 },
+    { "document_key": "technical_requirements", "stage_slug": "parenthesis", "relevance": 0.99 },
+    { "document_key": "system_architecture", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.80 },
+    { "document_key": "tech_stack", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.75 },
+    { "document_key": "product_requirements", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.50 },
+    { "document_key": "technical_requirements", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.83 }
   ],
   "output_type": "RenderedDocument",
   "granularity_strategy": "per_source_document",
   "outputs_required": {
     "documents": [
       {
-        "document_key": "trd",
-        "template_filename": "parenthesis_trd.md",
+        "document_key": "technical_requirements",
+        "template_filename": "parenthesis_technical_requirements.md",
         "artifact_class": "rendered_document",
         "file_type": "markdown",
         "content_to_include": {
@@ -420,11 +420,11 @@ When this step is executed for subsequent iterations, provide the most recent `t
       }
     ],
     "files_to_generate": [
-      { "template_filename": "parenthesis_trd.md", "from_document_key": "trd" }
+      { "template_filename": "parenthesis_technical_requirements.md", "from_document_key": "technical_requirements" }
     ],
     "assembled_json": [
       {
-        "document_key": "trd",
+        "document_key": "technical_requirements",
         "artifact_class": "assembled_document_json",
         "fields": [
           "subsystems[].name",
@@ -481,12 +481,12 @@ When this step is executed for subsequent iterations, provide the most recent `t
 - **Prompt Template Name:** `parenthesis_master_plan_turn_v1`
 - **Input Source References:**
   - `header_context_parenthesis` (type `header_context`, stage `parenthesis`, required)
-  - `trd` (type `document`, stage `parenthesis`, required)
+  - `technical_requirements` (type `document`, stage `parenthesis`, required)
   - `master_plan` (type `document`, stage `parenthesis`, required=false — supply the prior plan on later iterations)
-  - `prd` (type `document`, stage `synthesis`, required)
-  - `trd` (type `feedback`, stage `parenthesis`, required=false)
+  - `product_requirements` (type `document`, stage `synthesis`, required)
+  - `technical_requirements` (type `feedback`, stage `parenthesis`, required=false)
   - `master_plan` (type `feedback`, stage `parenthesis`, required=false — include status feedback when rerunning)
-  - `prd` (type `feedback`, stage `synthesis`, required=false)
+  - `product_requirements` (type `feedback`, stage `synthesis`, required=false)
 - **Output Artifact Description:** Markdown Master Plan plus JSON manifest enumerating phases, milestones, dependencies, acceptance criteria, and status markers.
 
 Present the previously generated Master Plan and feedback during iterative runs so the turn can preserve existing statuses and add `[🚧]` markers only where new work is detailed.
@@ -503,21 +503,21 @@ Present the previously generated Master Plan and feedback during iterative runs 
   "prompt_type": "Turn",
   "inputs_required": [
     { "type": "header_context", "stage_slug": "parenthesis", "document_key": "header_context", "required": true },
-    { "type": "document", "stage_slug": "parenthesis", "document_key": "trd", "required": true },
+    { "type": "document", "stage_slug": "parenthesis", "document_key": "technical_requirements", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false },
-    { "type": "document", "stage_slug": "synthesis", "document_key": "prd", "required": true },
-    { "type": "feedback", "stage_slug": "parenthesis", "document_key": "trd", "required": false },
+    { "type": "document", "stage_slug": "synthesis", "document_key": "product_requirements", "required": true },
+    { "type": "feedback", "stage_slug": "parenthesis", "document_key": "technical_requirements", "required": false },
     { "type": "feedback", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false },
-    { "type": "feedback", "stage_slug": "synthesis", "document_key": "prd", "required": false }
+    { "type": "feedback", "stage_slug": "synthesis", "document_key": "product_requirements", "required": false }
   ],
   "inputs_relevance": [
     { "document_key": "header_context", "stage_slug": "parenthesis", "relevance": 1.0 },
-    { "document_key": "trd", "stage_slug": "parenthesis", "relevance": 0.95 },
+    { "document_key": "technical_requirements", "stage_slug": "parenthesis", "relevance": 0.95 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.99 },
-    { "document_key": "prd", "stage_slug": "synthesis", "relevance": 0.75 },
-    { "document_key": "trd", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.85 },
+    { "document_key": "product_requirements", "stage_slug": "synthesis", "relevance": 0.75 },
+    { "document_key": "technical_requirements", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.85 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.90 },
-    { "document_key": "prd", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.70 }
+    { "document_key": "product_requirements", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.70 }
   ],
   "output_type": "RenderedDocument",
   "granularity_strategy": "per_source_document",
@@ -777,18 +777,18 @@ Provide the previous milestone schema and related feedback on subsequent executi
 
 *   `[ ]` 1. `[PROMPT]` Author and register Parenthesis planner/turn templates.
     *   `[✅]` 1.a. Create `docs/prompts/parenthesis/parenthesis_planner_header_v1.md` implementing the Step 1 header context schema (system_materials milestone rules, context_for_documents entries, continuation policy) using the overlay guidance for Parenthesis.
-    *   `[✅]` 1.b. Author `docs/prompts/parenthesis/parenthesis_trd_turn_v1.md`, `parenthesis_master_plan_turn_v1.md`, and `parenthesis_milestone_schema_turn_v1.md`, each matching the markdown + assembled JSON structures defined in Steps 2–4 (including delta summaries, status markers, iteration notes, validation rules).
+    *   `[✅]` 1.b. Author `docs/prompts/parenthesis/parenthesis_technical_requirements_turn_v1.md`, `parenthesis_master_plan_turn_v1.md`, and `parenthesis_milestone_schema_turn_v1.md`, each matching the markdown + assembled JSON structures defined in Steps 2–4 (including delta summaries, status markers, iteration notes, validation rules).
     *   `[✅]` 1.c. Insert new `system_prompts` rows for all four templates in a migration, documenting id/name/version/prompt_type/stage associations and storing file paths so they can be retrieved by the PromptAssembler.
     *   `[✅]` 1.d. Update the Parenthesis entry in `domain_specific_prompt_overlays` (Software Development domain) to add per-template overlay values (role, stage instructions, style-guide snippets, continuation wording). Remove the obsolete `expected_output_artifacts_json` payload and any other obsolete keys once the planner template supplies the contract to avoid duplicate definitions.
 
 *   `[ ]` 2. `[DB]` Seed `dialectic_stage_recipes` rows and execution graph.
     *   `[✅]` 2.a. Insert the Step 1 planner row (`step_number=1`, `step_slug='build-planning-header'`, `job_type='PLAN'`, `prompt_type='Planner'`, `granularity_strategy='all_to_one'`) along with the exact `inputs_required` and `inputs_relevance` values from the target state (seed prompt, Synthesis deliverables/feedback, optional prior master plan + feedback, header context schema).
-    *   `[✅]` 2.b. Insert Step 2, Step 3, and Step 4 turn rows for `trd`, `master_plan`, and `milestone_schema` (`job_type='EXECUTE'`, `prompt_type='Turn'`, `granularity_strategy='per_source_document'`, `branch_key` set to the document key) capturing all required inputs (header context, Synthesis artifacts, optional prior Parenthesis documents + feedback), relevance weights, markdown/JSON outputs, and continuation policies.
+    *   `[✅]` 2.b. Insert Step 2, Step 3, and Step 4 turn rows for `technical_requirements`, `master_plan`, and `milestone_schema` (`job_type='EXECUTE'`, `prompt_type='Turn'`, `granularity_strategy='per_source_document'`, `branch_key` set to the document key) capturing all required inputs (header context, Synthesis artifacts, optional prior Parenthesis documents + feedback), relevance weights, markdown/JSON outputs, and continuation policies.
     *   `[✅]` 2.c. Populate `dialectic_stage_recipe_edges` so Step 1 → Step 2 → Step 3 → Step 4, ensuring orchestration waits for each dependency before scheduling the next step.
 
 *   `[✅]` 3. `[DB]` Update Parenthesis stage configuration.
     *   `[✅]` 3.a. Set `dialectic_stages.recipe_template_id = v_template_id` to link the stage to the `parenthesis_v1` recipe template.
-    *   `[✅]` 3.b. Populate `expected_output_template_ids` with the template IDs for `parenthesis_trd.md`, `parenthesis_master_plan.md`, and `parenthesis_milestone_schema.md` so downstream stages can fetch canonical files by id.
+    *   `[✅]` 3.b. Populate `expected_output_template_ids` with the template IDs for `parenthesis_technical_requirements.md`, `parenthesis_master_plan.md`, and `parenthesis_milestone_schema.md` so downstream stages can fetch canonical files by id.
     *   `[✅]` 3.c. Record migration provenance for the stage configuration changes.
 
 *   `[✅]` 4. `[PROMPT]` Verify and seed Parenthesis document templates.

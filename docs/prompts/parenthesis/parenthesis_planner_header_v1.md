@@ -12,24 +12,24 @@
 - **Stage Instructions**: {{stage_instructions}}
 - **Style Guide Markdown**: {{style_guide_markdown}}
 - **Synthesis Documents**:
-  - PRD: {{synthesis_documents.prd}}
-  - System Architecture Overview: {{synthesis_documents.system_architecture_overview}}
-  - Tech Stack Recommendations: {{synthesis_documents.tech_stack_recommendations}}
+  - PRD: {{synthesis_documents.product_requirements}}
+  - System Architecture Overview: {{synthesis_documents.system_architecture}}
+  - Tech Stack Recommendations: {{synthesis_documents.tech_stack}}
 {{#section:synthesis_feedback}}
 - **Synthesis Feedback**:
-  - PRD Feedback: {{synthesis_feedback.prd}}
-  - System Architecture Feedback: {{synthesis_feedback.system_architecture_overview}}
-  - Tech Stack Feedback: {{synthesis_feedback.tech_stack_recommendations}}
+  - PRD Feedback: {{synthesis_feedback.product_requirements}}
+  - System Architecture Feedback: {{synthesis_feedback.system_architecture}}
+  - Tech Stack Feedback: {{synthesis_feedback.tech_stack}}
 {{/#section:synthesis_feedback}}
 {{#section:parenthesis_iteration}}
 - **Prior Parenthesis Documents (for iterative refinement)**:
   - Master Plan: {{parenthesis_documents.master_plan}}
-  - TRD: {{parenthesis_documents.trd}}
+  - TRD: {{parenthesis_documents.technical_requirements}}
 {{/#section:parenthesis_iteration}}
 {{#section:parenthesis_feedback}}
 - **Prior Parenthesis Feedback**:
   - Master Plan Feedback: {{parenthesis_feedback.master_plan}}
-  - TRD Feedback: {{parenthesis_feedback.trd}}
+  - TRD Feedback: {{parenthesis_feedback.technical_requirements}}
 {{/#section:parenthesis_feedback}}
 
 ## HeaderContext Schema
@@ -61,7 +61,7 @@
   },
   "context_for_documents": [
     {
-      "document_key": "trd",
+      "document_key": "technical_requirements",
       "content_to_include": {
         "subsystems": [],
         "apis": [],

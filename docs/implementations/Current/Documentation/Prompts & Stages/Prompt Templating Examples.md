@@ -323,16 +323,16 @@ The `synthesis_v1` recipe consists of five phases:
    - `synthesis_document_success_metrics_turn_v1` - Consolidate success metrics
 4. **Generate Final Synthesis Header** (`synthesis_final_header_planner_v1`) - Planner template for final deliverables
 5. **Final Deliverable Rendering** (3 parallel turns):
-   - `synthesis_prd_turn_v1` - Product Requirements Document
+   - `synthesis_product_requirements_turn_v1` - Product Requirements Document
    - `synthesis_system_architecture_turn_v1` - System Architecture Overview
    - `synthesis_tech_stack_turn_v1` - Tech Stack Recommendations
 
 ## Synthesis Artifacts
 
 The recipe produces three main final artifacts:
-- `prd` - Product Requirements Document with MVP, user stories, and features
-- `system_architecture_overview` - System architecture with services, data flows, and integrations
-- `tech_stack_recommendations` - Technology stack recommendations with component analysis
+- `product_requirements` - Product Requirements Document with MVP, user stories, and features
+- `system_architecture` - System architecture with services, data flows, and integrations
+- `tech_stack` - Technology stack recommendations with component analysis
 
 ## Overlay Configuration
 

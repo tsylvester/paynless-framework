@@ -1,4 +1,4 @@
-<!-- Template: parenthesis_trd.md -->
+<!-- Template: parenthesis_technical_requirements.md -->
 {{#section:index}}
 # Index
 {index}

@@ -116,15 +116,9 @@ export async function getStageRecipe(
       inputsRelevance.push(item);
     }
 
-    if (!Array.isArray(s.outputs_required)) {
-      return { status: 500, error: { message: `Malformed outputs_required (not array) for step_key=${s.step_key}` } };
-    }
     const outputsRequired: OutputRule[] = [];
-    for (let i = 0; i < s.outputs_required.length; i++) {
-      const item = s.outputs_required[i];
-      if (!isOutputRule(item)) return { status: 500, error: { message: `Malformed outputs_required[${i}] for step_key=${s.step_key}` } };
-      outputsRequired.push(item);
-    }
+    if (!isOutputRule(s.outputs_required)) return { status: 500, error: { message: `Malformed outputs_required for step_key=${s.step_key}` } };
+    outputsRequired.push(s.outputs_required);
 
     // Validate nullable simple fields
     if (!isNumOrNull(s.parallel_group)) {

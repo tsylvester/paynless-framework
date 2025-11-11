@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import type { SupabaseClient, User } from "npm:@supabase/supabase-js@2";
 import { logger } from "../_shared/logger.ts";
 import type { Database } from "../types_db.ts";

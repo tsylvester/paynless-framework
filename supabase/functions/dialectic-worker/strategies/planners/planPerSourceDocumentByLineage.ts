@@ -3,6 +3,7 @@ import type { DialecticExecuteJobPayload, GranularityPlannerFn } from '../../../
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
 import { isContributionType } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
+import { isModelContributionFileType } from '../../../_shared/utils/type-guards/type_guards.file_manager.ts';
 
 /**
  * Groups source documents by their `document_relationships.source_group` property.
@@ -58,6 +59,9 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
         const anchorDoc = groupDocs[0];
         const canonicalPathParams = createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorDoc, stageSlug);
 
+        if(!isModelContributionFileType(recipeStep.output_type)) {
+            throw new Error(`Invalid output_type for planPerSourceDocumentByLineage: ${recipeStep.output_type}`);
+        }
         const newPayload: DialecticExecuteJobPayload = {
             projectId: parentJob.payload.projectId,
             sessionId: parentJob.payload.sessionId,

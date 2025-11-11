@@ -6,6 +6,7 @@ import type {
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
 import { isContributionType } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
+import { isModelContributionFileType } from '../../../_shared/utils/type-guards/type_guards.file_manager.ts';
 
 export const planPerSourceDocument: GranularityPlannerFn = (
 	sourceDocs,
@@ -73,6 +74,9 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 			inputs[`${doc.contribution_type}_id`] = doc.id;
 		}
 
+		if(!isModelContributionFileType(recipeStep.output_type)) {
+			throw new Error(`Invalid output_type for planPerSourceDocument: ${recipeStep.output_type}`);
+		}
 		const newPayload: DialecticExecuteJobPayload = {
 			// Inherit core context from the parent
 			projectId: parentJob.payload.projectId,

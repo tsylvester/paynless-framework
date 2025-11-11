@@ -2,7 +2,7 @@
 DO $$
 DECLARE
     v_planner_prompt_id UUID;
-    v_trd_prompt_id UUID;
+    v_technical_requirements_prompt_id UUID;
     v_master_plan_prompt_id UUID;
     v_milestone_schema_prompt_id UUID;
     v_doc_template_id UUID;
@@ -11,14 +11,14 @@ DECLARE
     v_stage_id UUID;
     v_instance_id UUID;
     v_planner_step_id UUID;
-    v_trd_step_id UUID;
+    v_technical_requirements_step_id UUID;
     v_master_plan_step_id UUID;
     v_milestone_schema_step_id UUID;
     v_instance_planner_step_id UUID;
-    v_instance_trd_step_id UUID;
+    v_instance_technical_requirements_step_id UUID;
     v_instance_master_plan_step_id UUID;
     v_instance_milestone_schema_step_id UUID;
-    v_trd_doc_template_id UUID;
+    v_technical_requirements_doc_template_id UUID;
     v_master_plan_doc_template_id UUID;
     v_milestone_schema_doc_template_id UUID;
     BEGIN
@@ -63,7 +63,7 @@ DECLARE
 
     -- Upsert the document template for the TRD turn prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('parenthesis_trd_turn_v1 prompt', v_domain_id, 'Source document for parenthesis_trd_turn_v1 prompt', 'prompt-templates', 'docs/prompts/parenthesis/', 'parenthesis_trd_turn_v1.md')
+    VALUES ('parenthesis_technical_requirements_turn_v1 prompt', v_domain_id, 'Source document for parenthesis_technical_requirements_turn_v1 prompt', 'prompt-templates', 'docs/prompts/parenthesis/', 'parenthesis_technical_requirements_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -79,8 +79,8 @@ DECLARE
         document_template_id
     ) VALUES (
         gen_random_uuid(),
-        'parenthesis_trd_turn_v1',
-        $PROMPT$\path=docs/prompts/parenthesis/parenthesis_trd_turn_v1.md$PROMPT$,
+        'parenthesis_technical_requirements_turn_v1',
+        $PROMPT$\path=docs/prompts/parenthesis/parenthesis_technical_requirements_turn_v1.md$PROMPT$,
         true,
         1,
         'Parenthesis stage TRD generation turn template',
@@ -95,7 +95,7 @@ DECLARE
             user_selectable = EXCLUDED.user_selectable,
             document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
-    RETURNING id INTO v_trd_prompt_id;
+    RETURNING id INTO v_technical_requirements_prompt_id;
 
     -- Upsert the document template for the master plan prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
@@ -244,23 +244,23 @@ DECLARE
         'all_to_one',
         '[
           {"type":"seed_prompt","slug":"parenthesis","document_key":"seed_prompt","required":true},
-          {"type":"document","slug":"synthesis","document_key":"prd","required":true},
-          {"type":"document","slug":"synthesis","document_key":"system_architecture_overview","required":true},
-          {"type":"document","slug":"synthesis","document_key":"tech_stack_recommendations","required":true},
-          {"type":"feedback","slug":"synthesis","document_key":"prd","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"system_architecture_overview","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"tech_stack_recommendations","required":false},
+          {"type":"document","slug":"synthesis","document_key":"product_requirements","required":true},
+          {"type":"document","slug":"synthesis","document_key":"system_architecture","required":true},
+          {"type":"document","slug":"synthesis","document_key":"tech_stack","required":true},
+          {"type":"feedback","slug":"synthesis","document_key":"product_requirements","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"system_architecture","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"tech_stack","required":false},
           {"type":"document","slug":"parenthesis","document_key":"master_plan","required":false},
           {"type":"feedback","slug":"parenthesis","document_key":"master_plan","required":false}
         ]'::jsonb,
         '[
           {"document_key":"seed_prompt","slug":"parenthesis","relevance":0.6},
-          {"document_key":"prd","slug":"synthesis","relevance":1.0},
-          {"document_key":"system_architecture_overview","slug":"synthesis","relevance":0.95},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","relevance":0.90},
-          {"document_key":"prd","slug":"synthesis","type":"feedback","relevance":0.75},
-          {"document_key":"system_architecture_overview","slug":"synthesis","type":"feedback","relevance":0.70},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","type":"feedback","relevance":0.65},
+          {"document_key":"product_requirements","slug":"synthesis","relevance":1.0},
+          {"document_key":"system_architecture","slug":"synthesis","relevance":0.95},
+          {"document_key":"tech_stack","slug":"synthesis","relevance":0.90},
+          {"document_key":"product_requirements","slug":"synthesis","type":"feedback","relevance":0.75},
+          {"document_key":"system_architecture","slug":"synthesis","type":"feedback","relevance":0.70},
+          {"document_key":"tech_stack","slug":"synthesis","type":"feedback","relevance":0.65},
           {"document_key":"master_plan","slug":"parenthesis","relevance":0.99},
           {"document_key":"master_plan","slug":"parenthesis","type":"feedback","relevance":0.85}
         ]'::jsonb,
@@ -273,7 +273,7 @@ DECLARE
               "in_progress_status": "[🚧]",
               "unstarted_status": "[ ]"
             },
-            "trd_outline_inputs": {
+            "technical_requirements_outline_inputs": {
               "subsystems": [],
               "apis": [],
               "schemas": [],
@@ -289,7 +289,7 @@ DECLARE
           },
           "context_for_documents": [
             {
-              "document_key": "trd",
+              "document_key": "technical_requirements",
               "content_to_include": {
                 "subsystems": [],
                 "apis": [],
@@ -434,23 +434,23 @@ DECLARE
         'all_to_one',
         '[
           {"type":"seed_prompt","slug":"parenthesis","document_key":"seed_prompt","required":true},
-          {"type":"document","slug":"synthesis","document_key":"prd","required":true},
-          {"type":"document","slug":"synthesis","document_key":"system_architecture_overview","required":true},
-          {"type":"document","slug":"synthesis","document_key":"tech_stack_recommendations","required":true},
-          {"type":"feedback","slug":"synthesis","document_key":"prd","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"system_architecture_overview","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"tech_stack_recommendations","required":false},
+          {"type":"document","slug":"synthesis","document_key":"product_requirements","required":true},
+          {"type":"document","slug":"synthesis","document_key":"system_architecture","required":true},
+          {"type":"document","slug":"synthesis","document_key":"tech_stack","required":true},
+          {"type":"feedback","slug":"synthesis","document_key":"product_requirements","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"system_architecture","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"tech_stack","required":false},
           {"type":"document","slug":"parenthesis","document_key":"master_plan","required":false},
           {"type":"feedback","slug":"parenthesis","document_key":"master_plan","required":false}
         ]'::jsonb,
         '[
           {"document_key":"seed_prompt","slug":"parenthesis","relevance":0.6},
-          {"document_key":"prd","slug":"synthesis","relevance":1.0},
-          {"document_key":"system_architecture_overview","slug":"synthesis","relevance":0.95},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","relevance":0.90},
-          {"document_key":"prd","slug":"synthesis","type":"feedback","relevance":0.75},
-          {"document_key":"system_architecture_overview","slug":"synthesis","type":"feedback","relevance":0.70},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","type":"feedback","relevance":0.65},
+          {"document_key":"product_requirements","slug":"synthesis","relevance":1.0},
+          {"document_key":"system_architecture","slug":"synthesis","relevance":0.95},
+          {"document_key":"tech_stack","slug":"synthesis","relevance":0.90},
+          {"document_key":"product_requirements","slug":"synthesis","type":"feedback","relevance":0.75},
+          {"document_key":"system_architecture","slug":"synthesis","type":"feedback","relevance":0.70},
+          {"document_key":"tech_stack","slug":"synthesis","type":"feedback","relevance":0.65},
           {"document_key":"master_plan","slug":"parenthesis","relevance":0.99},
           {"document_key":"master_plan","slug":"parenthesis","type":"feedback","relevance":0.85}
         ]'::jsonb,
@@ -463,7 +463,7 @@ DECLARE
               "in_progress_status": "[🚧]",
               "unstarted_status": "[ ]"
             },
-            "trd_outline_inputs": {
+            "technical_requirements_outline_inputs": {
               "subsystems": [],
               "apis": [],
               "schemas": [],
@@ -479,7 +479,7 @@ DECLARE
           },
           "context_for_documents": [
             {
-              "document_key": "trd",
+              "document_key": "technical_requirements",
               "content_to_include": {
                 "subsystems": [],
                 "apis": [],
@@ -609,42 +609,42 @@ DECLARE
         gen_random_uuid(),
         v_template_id,
         2,
-        'generate-trd',
-        'generate-trd',
+        'generate-technical_requirements',
+        'generate-technical_requirements',
         'Generate Technical Requirements Document',
         'Produce the updated TRD that aligns synthesized architecture with the planner’s milestone breakdown.',
         'EXECUTE',
         'Turn',
-        v_trd_prompt_id,
+        v_technical_requirements_prompt_id,
         'RenderedDocument',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
-          {"type":"document","slug":"synthesis","document_key":"system_architecture_overview","required":true},
-          {"type":"document","slug":"synthesis","document_key":"tech_stack_recommendations","required":true},
-          {"type":"document","slug":"synthesis","document_key":"prd","required":true},
-          {"type":"document","slug":"parenthesis","document_key":"trd","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"system_architecture_overview","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"tech_stack_recommendations","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"prd","required":false},
-          {"type":"feedback","slug":"parenthesis","document_key":"trd","required":false}
+          {"type":"document","slug":"synthesis","document_key":"system_architecture","required":true},
+          {"type":"document","slug":"synthesis","document_key":"tech_stack","required":true},
+          {"type":"document","slug":"synthesis","document_key":"product_requirements","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"technical_requirements","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"system_architecture","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"tech_stack","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"product_requirements","required":false},
+          {"type":"feedback","slug":"parenthesis","document_key":"technical_requirements","required":false}
         ]'::jsonb,
         '[
           {"document_key":"header_context","slug":"parenthesis","relevance":1.0},
-          {"document_key":"system_architecture_overview","slug":"synthesis","relevance":0.95},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","relevance":0.9},
-          {"document_key":"prd","slug":"synthesis","relevance":0.85},
-          {"document_key":"trd","slug":"parenthesis","relevance":0.99},
-          {"document_key":"system_architecture_overview","slug":"synthesis","type":"feedback","relevance":0.80},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","type":"feedback","relevance":0.75},
-          {"document_key":"prd","slug":"synthesis","type":"feedback","relevance":0.50},
-          {"document_key":"trd","slug":"parenthesis","type":"feedback","relevance":0.83}
+          {"document_key":"system_architecture","slug":"synthesis","relevance":0.95},
+          {"document_key":"tech_stack","slug":"synthesis","relevance":0.9},
+          {"document_key":"product_requirements","slug":"synthesis","relevance":0.85},
+          {"document_key":"technical_requirements","slug":"parenthesis","relevance":0.99},
+          {"document_key":"system_architecture","slug":"synthesis","type":"feedback","relevance":0.80},
+          {"document_key":"tech_stack","slug":"synthesis","type":"feedback","relevance":0.75},
+          {"document_key":"product_requirements","slug":"synthesis","type":"feedback","relevance":0.50},
+          {"document_key":"technical_requirements","slug":"parenthesis","type":"feedback","relevance":0.83}
         ]'::jsonb,
         '{
           "documents": [
             {
-              "document_key": "trd",
-              "template_filename": "parenthesis_trd.md",
+              "document_key": "technical_requirements",
+              "template_filename": "parenthesis_technical_requirements.md",
               "artifact_class": "rendered_document",
               "file_type": "markdown",
               "content_to_include": {
@@ -661,11 +661,11 @@ DECLARE
             }
           ],
           "files_to_generate": [
-            {"template_filename": "parenthesis_trd.md", "from_document_key": "trd"}
+            {"template_filename": "parenthesis_technical_requirements.md", "from_document_key": "technical_requirements"}
           ],
           "assembled_json": [
             {
-              "document_key": "trd",
+              "document_key": "technical_requirements",
               "artifact_class": "assembled_document_json",
               "fields": [
                 "subsystems[].name",
@@ -728,7 +728,7 @@ DECLARE
             inputs_relevance = EXCLUDED.inputs_relevance,
             outputs_required = EXCLUDED.outputs_required,
             updated_at = now()
-    RETURNING id INTO v_trd_step_id;
+    RETURNING id INTO v_technical_requirements_step_id;
 
     INSERT INTO public.dialectic_stage_recipe_steps (
         id,
@@ -751,42 +751,42 @@ DECLARE
     ) VALUES (
         gen_random_uuid(),
         v_instance_id,
-        v_trd_step_id,
-        'generate-trd',
-        'generate-trd',
+        v_technical_requirements_step_id,
+        'generate-technical_requirements',
+        'generate-technical_requirements',
         'Generate Technical Requirements Document',
         'EXECUTE',
         'Turn',
-        v_trd_prompt_id,
+        v_technical_requirements_prompt_id,
         'RenderedDocument',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
-          {"type":"document","slug":"synthesis","document_key":"system_architecture_overview","required":true},
-          {"type":"document","slug":"synthesis","document_key":"tech_stack_recommendations","required":true},
-          {"type":"document","slug":"synthesis","document_key":"prd","required":true},
-          {"type":"document","slug":"parenthesis","document_key":"trd","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"system_architecture_overview","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"tech_stack_recommendations","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"prd","required":false},
-          {"type":"feedback","slug":"parenthesis","document_key":"trd","required":false}
+          {"type":"document","slug":"synthesis","document_key":"system_architecture","required":true},
+          {"type":"document","slug":"synthesis","document_key":"tech_stack","required":true},
+          {"type":"document","slug":"synthesis","document_key":"product_requirements","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"technical_requirements","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"system_architecture","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"tech_stack","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"product_requirements","required":false},
+          {"type":"feedback","slug":"parenthesis","document_key":"technical_requirements","required":false}
         ]'::jsonb,
         '[
           {"document_key":"header_context","slug":"parenthesis","relevance":1.0},
-          {"document_key":"system_architecture_overview","slug":"synthesis","relevance":0.95},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","relevance":0.9},
-          {"document_key":"prd","slug":"synthesis","relevance":0.85},
-          {"document_key":"trd","slug":"parenthesis","relevance":0.99},
-          {"document_key":"system_architecture_overview","slug":"synthesis","type":"feedback","relevance":0.80},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","type":"feedback","relevance":0.75},
-          {"document_key":"prd","slug":"synthesis","type":"feedback","relevance":0.50},
-          {"document_key":"trd","slug":"parenthesis","type":"feedback","relevance":0.83}
+          {"document_key":"system_architecture","slug":"synthesis","relevance":0.95},
+          {"document_key":"tech_stack","slug":"synthesis","relevance":0.9},
+          {"document_key":"product_requirements","slug":"synthesis","relevance":0.85},
+          {"document_key":"technical_requirements","slug":"parenthesis","relevance":0.99},
+          {"document_key":"system_architecture","slug":"synthesis","type":"feedback","relevance":0.80},
+          {"document_key":"tech_stack","slug":"synthesis","type":"feedback","relevance":0.75},
+          {"document_key":"product_requirements","slug":"synthesis","type":"feedback","relevance":0.50},
+          {"document_key":"technical_requirements","slug":"parenthesis","type":"feedback","relevance":0.83}
         ]'::jsonb,
         '{
           "documents": [
             {
-              "document_key": "trd",
-              "template_filename": "parenthesis_trd.md",
+              "document_key": "technical_requirements",
+              "template_filename": "parenthesis_technical_requirements.md",
               "artifact_class": "rendered_document",
               "file_type": "markdown",
               "content_to_include": {
@@ -803,11 +803,11 @@ DECLARE
             }
           ],
           "files_to_generate": [
-            {"template_filename": "parenthesis_trd.md", "from_document_key": "trd"}
+            {"template_filename": "parenthesis_technical_requirements.md", "from_document_key": "technical_requirements"}
           ],
           "assembled_json": [
             {
-              "document_key": "trd",
+              "document_key": "technical_requirements",
               "artifact_class": "assembled_document_json",
               "fields": [
                 "subsystems[].name",
@@ -856,7 +856,7 @@ DECLARE
           ]
         }'::jsonb,
         2,
-        'trd',
+        'technical_requirements',
         2
     )
     ON CONFLICT (instance_id, step_key) DO UPDATE
@@ -866,7 +866,7 @@ DECLARE
             inputs_relevance = EXCLUDED.inputs_relevance,
             outputs_required = EXCLUDED.outputs_required,
             updated_at = now()
-    RETURNING id INTO v_instance_trd_step_id;
+    RETURNING id INTO v_instance_technical_requirements_step_id;
 
     INSERT INTO public.dialectic_recipe_template_steps (
         id,
@@ -899,21 +899,21 @@ DECLARE
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
-          {"type":"document","slug":"parenthesis","document_key":"trd","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"technical_requirements","required":true},
           {"type":"document","slug":"parenthesis","document_key":"master_plan","required":false},
-          {"type":"document","slug":"synthesis","document_key":"prd","required":true},
-          {"type":"feedback","slug":"parenthesis","document_key":"trd","required":false},
+          {"type":"document","slug":"synthesis","document_key":"product_requirements","required":true},
+          {"type":"feedback","slug":"parenthesis","document_key":"technical_requirements","required":false},
           {"type":"feedback","slug":"parenthesis","document_key":"master_plan","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"prd","required":false}
+          {"type":"feedback","slug":"synthesis","document_key":"product_requirements","required":false}
         ]'::jsonb,
         '[
           {"document_key":"header_context","slug":"parenthesis","relevance":1.0},
-          {"document_key":"trd","slug":"parenthesis","relevance":0.95},
+          {"document_key":"technical_requirements","slug":"parenthesis","relevance":0.95},
           {"document_key":"master_plan","slug":"parenthesis","relevance":0.99},
-          {"document_key":"prd","slug":"synthesis","relevance":0.75},
-          {"document_key":"trd","slug":"parenthesis","type":"feedback","relevance":0.85},
+          {"document_key":"product_requirements","slug":"synthesis","relevance":0.75},
+          {"document_key":"technical_requirements","slug":"parenthesis","type":"feedback","relevance":0.85},
           {"document_key":"master_plan","slug":"parenthesis","type":"feedback","relevance":0.90},
-          {"document_key":"prd","slug":"synthesis","type":"feedback","relevance":0.70}
+          {"document_key":"product_requirements","slug":"synthesis","type":"feedback","relevance":0.70}
         ]'::jsonb,
         '{
           "documents": [
@@ -1048,21 +1048,21 @@ DECLARE
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
-          {"type":"document","slug":"parenthesis","document_key":"trd","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"technical_requirements","required":true},
           {"type":"document","slug":"parenthesis","document_key":"master_plan","required":false},
-          {"type":"document","slug":"synthesis","document_key":"prd","required":true},
-          {"type":"feedback","slug":"parenthesis","document_key":"trd","required":false},
+          {"type":"document","slug":"synthesis","document_key":"product_requirements","required":true},
+          {"type":"feedback","slug":"parenthesis","document_key":"technical_requirements","required":false},
           {"type":"feedback","slug":"parenthesis","document_key":"master_plan","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"prd","required":false}
+          {"type":"feedback","slug":"synthesis","document_key":"product_requirements","required":false}
         ]'::jsonb,
         '[
           {"document_key":"header_context","slug":"parenthesis","relevance":1.0},
-          {"document_key":"trd","slug":"parenthesis","relevance":0.95},
+          {"document_key":"technical_requirements","slug":"parenthesis","relevance":0.95},
           {"document_key":"master_plan","slug":"parenthesis","relevance":0.99},
-          {"document_key":"prd","slug":"synthesis","relevance":0.75},
-          {"document_key":"trd","slug":"parenthesis","type":"feedback","relevance":0.85},
+          {"document_key":"product_requirements","slug":"synthesis","relevance":0.75},
+          {"document_key":"technical_requirements","slug":"parenthesis","type":"feedback","relevance":0.85},
           {"document_key":"master_plan","slug":"parenthesis","type":"feedback","relevance":0.90},
-          {"document_key":"prd","slug":"synthesis","type":"feedback","relevance":0.70}
+          {"document_key":"product_requirements","slug":"synthesis","type":"feedback","relevance":0.70}
         ]'::jsonb,
         '{
           "documents": [
@@ -1495,7 +1495,7 @@ DECLARE
         from_step_id,
         to_step_id
     ) VALUES
-        (gen_random_uuid(), v_template_id, v_planner_step_id, v_trd_step_id),
+        (gen_random_uuid(), v_template_id, v_planner_step_id, v_technical_requirements_step_id),
         (gen_random_uuid(), v_template_id, v_planner_step_id, v_master_plan_step_id),
         (gen_random_uuid(), v_template_id, v_planner_step_id, v_milestone_schema_step_id)
     ON CONFLICT (template_id, from_step_id, to_step_id) DO NOTHING;
@@ -1506,7 +1506,7 @@ DECLARE
         from_step_id,
         to_step_id
     ) VALUES
-        (gen_random_uuid(), v_instance_id, v_instance_planner_step_id, v_instance_trd_step_id),
+        (gen_random_uuid(), v_instance_id, v_instance_planner_step_id, v_instance_technical_requirements_step_id),
         (gen_random_uuid(), v_instance_id, v_instance_planner_step_id, v_instance_master_plan_step_id),
         (gen_random_uuid(), v_instance_id, v_instance_planner_step_id, v_instance_milestone_schema_step_id)
     ON CONFLICT (instance_id, from_step_id, to_step_id) DO NOTHING;
@@ -1527,12 +1527,12 @@ DECLARE
         file_name
     ) VALUES (
         gen_random_uuid(),
-        'parenthesis_trd',
+        'parenthesis_technical_requirements',
         v_domain_id,
         'Markdown template for the Parenthesis Technical Requirements Document.',
         'prompt-templates',
         'docs/templates/parenthesis/',
-        'parenthesis_trd.md'
+        'parenthesis_technical_requirements.md'
     )
     ON CONFLICT (name, domain_id) DO UPDATE
         SET description = EXCLUDED.description,
@@ -1540,7 +1540,7 @@ DECLARE
             storage_path = EXCLUDED.storage_path,
             file_name = EXCLUDED.file_name,
             updated_at = now()
-    RETURNING id INTO v_trd_doc_template_id;
+    RETURNING id INTO v_technical_requirements_doc_template_id;
 
     INSERT INTO public.dialectic_document_templates (
         id,
@@ -1595,7 +1595,7 @@ DECLARE
     -- Step 3.b: Populate expected_output_template_ids for parenthesis stage
     UPDATE public.dialectic_stages
     SET expected_output_template_ids = ARRAY[
-        v_trd_doc_template_id,
+        v_technical_requirements_doc_template_id,
         v_master_plan_doc_template_id,
         v_milestone_schema_doc_template_id
     ]
@@ -1612,12 +1612,12 @@ INSERT INTO public.dialectic_document_templates (
     file_name
 ) VALUES (
     gen_random_uuid(),
-    'parenthesis_trd',
+    'parenthesis_technical_requirements',
     v_domain_id,
     'Markdown template for the Parenthesis Technical Requirements Document.',
     'prompt-templates',
     'docs/templates/parenthesis/',
-    'parenthesis_trd.md'
+    'parenthesis_technical_requirements.md'
 )
 ON CONFLICT (name, domain_id) DO UPDATE
     SET description = EXCLUDED.description,

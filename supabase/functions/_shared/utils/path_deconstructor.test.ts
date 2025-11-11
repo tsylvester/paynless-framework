@@ -499,20 +499,20 @@ const constructDeconstructTestCases: Array<{
     expectedFixedFileNameInPath: 'm_0_synthesis_header_context.json',
   },
   {
-    name: 'prd',
-    context: { projectId: 'yy-prd', fileType: FileType.prd, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
+    name: 'product_requirements',
+    context: { projectId: 'yy-product_requirements', fileType: FileType.product_requirements, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
     checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
-    expectedFixedFileNameInPath: 'm_0_prd.md',
+    expectedFixedFileNameInPath: 'm_0_product_requirements.md',
   },
   {
-    name: 'system_architecture_overview',
-    context: { projectId: 'yy-sa', fileType: FileType.system_architecture_overview, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
+    name: 'system_architecture',
+    context: { projectId: 'yy-sa', fileType: FileType.system_architecture, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
     checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
     expectedFixedFileNameInPath: 'm_0_system_architecture.md',
   },
   {
-    name: 'tech_stack_recommendations',
-    context: { projectId: 'yy-sts', fileType: FileType.tech_stack_recommendations, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
+    name: 'tech_stack',
+    context: { projectId: 'yy-sts', fileType: FileType.tech_stack, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
     checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
     expectedFixedFileNameInPath: 'm_0_tech_stack.md',
   },
@@ -529,10 +529,10 @@ const constructDeconstructTestCases: Array<{
     expectedFixedFileNameInPath: 'm_0_synthesis_document_business_case.json',
   },
   {
-    name: 'trd',
-    context: { projectId: 'yy-trd', fileType: FileType.trd, sessionId: 's', iteration: 1, stageSlug: 'parenthesis', modelSlug: 'm', attemptCount: 0 },
+    name: 'technical_requirements',
+    context: { projectId: 'yy-technical_requirements', fileType: FileType.technical_requirements, sessionId: 's', iteration: 1, stageSlug: 'parenthesis', modelSlug: 'm', attemptCount: 0 },
     checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
-    expectedFixedFileNameInPath: 'm_0_trd.md',
+    expectedFixedFileNameInPath: 'm_0_technical_requirements.md',
   },
   {
     name: 'milestone_schema',
@@ -917,7 +917,7 @@ Deno.test("[path_deconstructor] failing cases - bugs discovered from inverse tes
     const info = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
 
     assertEquals(info.error, undefined);
-    assertEquals(info.fileTypeGuess, FileType.system_architecture_overview);
+    assertEquals(info.fileTypeGuess, FileType.system_architecture);
     assertEquals(info.modelSlug, 'gpt-4-turbo');
     assertEquals(info.attemptCount, 0);
     assertEquals(info.documentKey, 'system_architecture');
@@ -930,7 +930,7 @@ Deno.test("[path_deconstructor] failing cases - bugs discovered from inverse tes
     const info = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
 
     assertEquals(info.error, undefined);
-    assertEquals(info.fileTypeGuess, FileType.tech_stack_recommendations);
+    assertEquals(info.fileTypeGuess, FileType.tech_stack);
     assertEquals(info.modelSlug, 'gpt-4-turbo');
     assertEquals(info.attemptCount, 0);
     assertEquals(info.documentKey, 'tech_stack');

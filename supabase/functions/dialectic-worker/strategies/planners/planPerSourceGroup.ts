@@ -4,6 +4,7 @@ import type { DialecticExecuteJobPayload, GranularityPlannerFn, SourceDocument }
 import { createCanonicalPathParams } from "../canonical_context_builder.ts";
 import { FileType } from "../../../_shared/types/file_manager.types.ts";
 import { isContributionType } from "../../../_shared/utils/type-guards/type_guards.dialectic.ts";
+import { isModelContributionFileType } from "../../../_shared/utils/type-guards/type_guards.file_manager.ts";
 
 export const planPerSourceGroup: GranularityPlannerFn = (
     sourceDocs,
@@ -44,6 +45,9 @@ export const planPerSourceGroup: GranularityPlannerFn = (
         // Find the original thesis document to act as the anchor for the canonical path
         const anchorDoc = sourceDocs.find(doc => doc.id === groupId);
 
+        if(!isModelContributionFileType(recipeStep.output_type)) {
+            throw new Error(`Invalid output_type for planPerSourceGroup: ${recipeStep.output_type}`);
+        }
         const newPayload: DialecticExecuteJobPayload = {
             // Inherit core context
             projectId: parentJob.payload.projectId,

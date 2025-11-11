@@ -9,6 +9,7 @@ import type {
   IFileManager, 
   CanonicalPathParams, 
   ModelContributionFileTypes,
+  FileType
 } from '../_shared/types/file_manager.types.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import type { DeleteStorageResult, DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
@@ -23,14 +24,13 @@ import type { IIndexingService, IEmbeddingClient } from '../_shared/services/ind
 import type { IRagService } from '../_shared/services/rag_service.interface.ts';
 import type { Messages, AiModelExtendedConfig, ChatApiRequest } from '../_shared/types.ts';
 import type { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
-import type { IPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
+import type { IPromptAssembler, AssembledPrompt } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
 import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
 import type { debitTokens } from '../chat/debitTokens.ts';
 import { ICompressionStrategy } from '../_shared/utils/vector_utils.ts';
 import type { ServiceError } from "../_shared/types.ts";
 import type { IDocumentRenderer } from '../_shared/services/document_renderer.interface.ts';
 import type { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
 
 export type DialecticStageRecipeEdge = Database['public']['Tables']['dialectic_stage_recipe_edges']['Row'];
 export type DialecticStageRecipeInstance = Database['public']['Tables']['dialectic_stage_recipe_instances']['Row'];
@@ -481,7 +481,9 @@ export interface UpdateSessionModelsPayload {
   selectedModelIds: string[];
 }
 
-export type StartSessionSuccessResponse = DialecticSession;
+export type StartSessionSuccessResponse = DialecticSession & {
+  seedPrompt: AssembledPrompt;
+};
 
 export interface CallUnifiedAIModelOptions {
   walletId?: string;
@@ -575,7 +577,7 @@ export interface SystemMaterials {
   current_document?: string; // This is the current document the agent is working on.
   iteration_metadata?: { iteration_number: number }; // This is the iteration number the agent is working on.
   exhaustiveness_requirement?: string; // This is the exhaustiveness requirement the agent will use to determine which documents to generate.
-  trd_outline_inputs?: { subsystems: string[] }; // This is the list of subsystems the agent will use to generate the documents.
+  technical_requirements_outline_inputs?: { subsystems: string[] }; // This is the list of subsystems the agent will use to generate the documents.
 }
 
 export enum BranchKey {
@@ -603,12 +605,12 @@ export enum BranchKey {
   synthesis_document_feature_spec = 'synthesis_document_feature_spec',
   synthesis_document_technical_approach = 'synthesis_document_technical_approach',
   synthesis_document_success_metrics = 'synthesis_document_success_metrics',
-  prd = 'prd',
-  system_architecture_overview = 'system_architecture_overview',
-  tech_stack_recommendations = 'tech_stack_recommendations',
+  product_requirements = 'product_requirements',
+  system_architecture = 'system_architecture',
+  tech_stack = 'tech_stack',
 
   // Parenthesis
-  trd = 'trd',
+  technical_requirements = 'technical_requirements',
   master_plan = 'master_plan',
   milestone_schema = 'milestone_schema',
 
@@ -1121,7 +1123,7 @@ export interface InputRule {
  */
 export interface RelevanceRule {
     /** The key of the document to which this relevance score applies. */
-    document_key: string;
+    document_key: FileType;
     /** The type of the document (e.g., 'document', 'feedback'). */
     type?: string;
     /** A normalized float from 0.0 to 1.0 indicating the priority of this artifact. */

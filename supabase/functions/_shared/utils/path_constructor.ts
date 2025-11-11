@@ -202,10 +202,10 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     case FileType.non_functional_requirements:
     case FileType.dependency_map:
     case FileType.comparison_vector:
-    case FileType.prd:
-    case FileType.system_architecture_overview:
-    case FileType.tech_stack_recommendations:
-    case FileType.trd:
+    case FileType.product_requirements:
+    case FileType.system_architecture:
+    case FileType.tech_stack:
+    case FileType.technical_requirements:
     case FileType.milestone_schema:
     case FileType.updated_master_plan:
     case FileType.actionable_checklist:
@@ -293,8 +293,8 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       const isDocument = [
         FileType.business_case, FileType.feature_spec, FileType.technical_approach, FileType.success_metrics,
         FileType.business_case_critique, FileType.technical_feasibility_assessment, FileType.risk_register, FileType.non_functional_requirements, FileType.dependency_map, FileType.comparison_vector,
-        FileType.prd, FileType.system_architecture_overview, FileType.tech_stack_recommendations,
-        FileType.trd, FileType.milestone_schema,
+        FileType.product_requirements, FileType.system_architecture, FileType.tech_stack,
+        FileType.technical_requirements, FileType.milestone_schema,
         FileType.updated_master_plan, FileType.actionable_checklist, FileType.advisor_recommendations
       ].includes(fileType);
 

@@ -47,7 +47,7 @@ const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
     job_type: 'EXECUTE',
     inputs_required: [],
     inputs_relevance: [],
-    outputs_required: [],
+    outputs_required: { documents: [], assembled_json: [], files_to_generate: [] },
     granularity_strategy: 'all_to_one',
     output_type: FileType.Synthesis,
     created_at: new Date().toISOString(),

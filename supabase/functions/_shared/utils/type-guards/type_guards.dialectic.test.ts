@@ -133,7 +133,7 @@ Deno.test('Type Guard: hasProcessingStrategy', async (t) => {
             step_key: 'key',
             step_slug: 'slug',
             step_name: 'name',
-            output_type: 'system_architecture_overview',
+            output_type: 'system_architecture',
             granularity_strategy: 'per_source_document',
             inputs_required: {},
             inputs_relevance: {},
@@ -1949,9 +1949,29 @@ Deno.test('Type Guard: isInputRule and isInputRuleArray', async (t) => {
         assert(!isInputRule(invalidRule));
     });
 
-    await t.step('isInputRule: should return false if document_key is invalid', () => {
-        const invalidRule = { ...validInputRule, document_key: 'invalid_key' };
+    await t.step('isInputRule: should return false if document_key is an empty string', () => {
+        const invalidRule = { ...validInputRule, document_key: '' };
         assert(!isInputRule(invalidRule));
+    });
+
+    await t.step('isInputRule: should return true for document keys introduced by recipes', () => {
+        const dynamicDocumentRule = {
+            type: 'document',
+            slug: 'synthesis',
+            document_key: 'synthesis_pairwise_feature_spec',
+            required: true,
+        };
+        assert(isInputRule(dynamicDocumentRule));
+    });
+
+    await t.step('isInputRuleArray: should return true for arrays containing dynamic recipe document keys', () => {
+        const dynamicRuleArray = [{
+            type: 'document',
+            slug: 'synthesis',
+            document_key: 'synthesis_pairwise_business_case',
+            required: true,
+        }];
+        assert(isInputRuleArray(dynamicRuleArray));
     });
 
     await t.step('isInputRule: should return false if slug is missing', () => {
@@ -1984,7 +2004,7 @@ Deno.test('Type Guard: isInputRule and isInputRuleArray', async (t) => {
         assert(isInputRuleArray([validInputRule, { 
             type: 'document', 
             slug: 'synthesis', 
-            document_key: FileType.system_architecture_overview, 
+            document_key: FileType.system_architecture, 
             required: false, 
             multiple: true 
         }]));
@@ -2029,8 +2049,8 @@ Deno.test('Type Guard: isRelevanceRule and isRelevanceRuleArray', async (t) => {
         assert(isRelevanceRule(ruleWithAllOptionals));
     });
 
-    await t.step('isRelevanceRule: should return false if document_key is invalid', () => {
-        const invalidRule = { ...validRelevanceRule, document_key: 'invalid_key' };
+    await t.step('isRelevanceRule: should return false if document_key is an empty string', () => {
+        const invalidRule = { ...validRelevanceRule, document_key: '' };
         assert(!isRelevanceRule(invalidRule));
     });
 
@@ -2044,6 +2064,15 @@ Deno.test('Type Guard: isRelevanceRule and isRelevanceRuleArray', async (t) => {
         assert(!isRelevanceRule(invalidRule));
     });
 
+    await t.step('isRelevanceRule: should return true for dynamic document keys emitted by recipes', () => {
+        const dynamicRelevanceRule = {
+            document_key: 'synthesis_pairwise_feature_spec',
+            relevance: 0.9,
+            slug: 'synthesis',
+        };
+        assert(isRelevanceRule(dynamicRelevanceRule));
+    });
+
     await t.step('isRelevanceRule: should return false if type is present but not a string', () => {
         const invalidRule = { ...validRelevanceRule, type: 123 };
         assert(!isRelevanceRule(invalidRule));
@@ -2055,15 +2084,25 @@ Deno.test('Type Guard: isRelevanceRule and isRelevanceRuleArray', async (t) => {
     });
 
     await t.step('isRelevanceRuleArray: should return true for a valid array', () => {
-        assert(isRelevanceRuleArray([validRelevanceRule, { document_key: FileType.system_architecture_overview, type: 'document', relevance: 0.5, slug: 'synthesis' }]));
+        assert(isRelevanceRuleArray([validRelevanceRule, { document_key: FileType.system_architecture, type: 'document', relevance: 0.5, slug: 'synthesis' }]));
     });
 
     await t.step('isRelevanceRuleArray: should return true for an empty array', () => {
         assert(isRelevanceRuleArray([]));
     });
 
+    await t.step('isRelevanceRuleArray: should return true for arrays containing dynamic recipe document keys', () => {
+        const dynamicRelevanceArray = [{
+            document_key: 'final_business_case',
+            relevance: 1,
+            slug: 'synthesis',
+            type: 'document',
+        }];
+        assert(isRelevanceRuleArray(dynamicRelevanceArray));
+    });
+
     await t.step('isRelevanceRuleArray: should return false for an array with invalid items', () => {
-        const invalidArray = [validRelevanceRule, { document_key: 'invalid_key', relevance: 0.5 }];
+        const invalidArray = [validRelevanceRule, { document_key: '', relevance: 0.5 }];
         assert(!isRelevanceRuleArray(invalidArray));
     });
 
@@ -2155,8 +2194,8 @@ Deno.test('Type Guard: isOutputRule', async (t) => {
     await t.step('should return true for a valid "EXECUTE" output rule with both documents and assembled_json', () => {
         const executeOutputRule: OutputRule = {
             documents: [{
-                document_key: FileType.trd,
-                template_filename: 'parenthesis_trd.md',
+                document_key: FileType.technical_requirements,
+                template_filename: 'parenthesis_technical_requirements.md',
                 artifact_class: 'rendered_document',
                 file_type: 'markdown',
                 content_to_include: {
@@ -2164,11 +2203,11 @@ Deno.test('Type Guard: isOutputRule', async (t) => {
                 }
             }],
             files_to_generate: [{ 
-                from_document_key: FileType.trd, 
-                template_filename: "parenthesis_trd.md" 
+                from_document_key: FileType.technical_requirements, 
+                template_filename: "parenthesis_technical_requirements.md" 
             }],
             assembled_json: [{
-                document_key: FileType.trd,
+                document_key: FileType.technical_requirements,
                 artifact_class: 'assembled_document_json',
                 fields: ["subsystems[].name", "subsystems[].objective"],
             }],
@@ -2180,8 +2219,12 @@ Deno.test('Type Guard: isOutputRule', async (t) => {
         assert(isOutputRule({}));
     });
 
-    await t.step('should return false if system_materials is invalid', () => {
-        const invalidRule = { system_materials: { executive_summary: 'e' } };
+    await t.step('should return false if system_materials contains non-string prose', () => {
+        const invalidRule = {
+            system_materials: {
+                stage_rationale: 123,
+            }
+        };
         assert(!isOutputRule(invalidRule));
     });
 
@@ -2245,7 +2288,7 @@ Deno.test('Type Guard: isOutputRule', async (t) => {
         const assembledJsonOutputRule: OutputRule = {
             assembled_json: [{
                 artifact_class: 'assembled_document_json',
-                document_key: FileType.trd,
+                document_key: FileType.technical_requirements,
                 fields: ["subsystems[].name", "subsystems[].objective"],
             }],
         };
@@ -2321,9 +2364,9 @@ Deno.test('Type Guard: isDialecticStageRecipeStep', async (t) => {
         job_type: 'PLAN',
         prompt_type: 'Planner',
         granularity_strategy: 'all_to_one',
-        output_type: FileType.system_architecture_overview,
+        output_type: FileType.system_architecture,
         inputs_required: [{ type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true }],
-        inputs_relevance: [{ document_key: FileType.system_architecture_overview, slug: 'thesis', relevance: 0.5 }],
+        inputs_relevance: [{ document_key: FileType.system_architecture, slug: 'thesis', relevance: 0.5 }],
         outputs_required: {
             system_materials: {
                 stage_rationale: "rationale",
@@ -2366,6 +2409,37 @@ Deno.test('Type Guard: isDialecticStageRecipeStep', async (t) => {
         assert(!isDialecticStageRecipeStep(invalidStep));
     });
 
+    await t.step('should return true when recipe steps use dynamic document keys', () => {
+        const dynamicDocumentStep = {
+            ...validStep,
+            inputs_required: [{
+                type: 'document',
+                slug: 'synthesis',
+                document_key: 'synthesis_pairwise_feature_spec',
+                required: true,
+            }],
+            inputs_relevance: [{
+                document_key: 'synthesis_pairwise_feature_spec',
+                relevance: 1,
+                slug: 'synthesis',
+            }],
+            outputs_required: {
+                documents: [{
+                    document_key: 'final_feature_spec',
+                    template_filename: 'final_feature_spec.md',
+                    artifact_class: 'rendered_document',
+                    file_type: 'markdown',
+                    content_to_include: {},
+                }],
+                context_for_documents: [{
+                    document_key: 'final_feature_spec',
+                    content_to_include: {},
+                }],
+            },
+        };
+        assert(isDialecticStageRecipeStep(dynamicDocumentStep));
+    });
+
     await t.step('should return false if prompt_type is invalid', () => {
         const invalidStep = { ...validStep, prompt_type: 'INVALID' as PromptType };
         assert(!isDialecticStageRecipeStep(invalidStep));
@@ -2396,6 +2470,12 @@ Deno.test('Type Guard: isDialecticStageRecipeStep', async (t) => {
         const stepWithNullOutputs = { ...validStep, outputs_required: null };
         assert(!isDialecticStageRecipeStep(stepWithNullOutputs));
     });
+
+    await t.step('should return false when id is missing', () => {
+        const stepWithoutId = { ...validStep };
+        delete (stepWithoutId as Partial<DialecticStageRecipeStep>).id;
+        assert(!isDialecticStageRecipeStep(stepWithoutId));
+    });
 });
 
 Deno.test('Type Guard: isSystemMaterials', async (t) => {
@@ -2420,7 +2500,7 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
         current_document: 'doc1',
         iteration_metadata: { iteration_number: 1 },
         exhaustiveness_requirement: 'high',
-        trd_outline_inputs: { subsystems: [] },
+        technical_requirements_outline_inputs: { subsystems: [] },
     };
 
     await t.step('should return true for a valid SystemMaterials object', () => {
@@ -2444,9 +2524,28 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
         assert(isSystemMaterials(minimalSystemMaterials));
     });
 
-    await t.step('should return false if stage_rationale is missing', () => {
-        const invalid = { ...validSystemMaterials };
-        delete (invalid as Partial<SystemMaterials>).stage_rationale;
+    await t.step('should return true for planner payload without prose fields', () => {
+        const plannerOnlySystemMaterials = {
+            milestones: [],
+            dependency_rules: [],
+            status_preservation_rules: {
+                completed_status: '[✅]',
+                in_progress_status: '[🚧]',
+                unstarted_status: '[ ]',
+            },
+            technical_requirements_outline_inputs: {
+                subsystems: [],
+                apis: [],
+                schemas: [],
+                proposed_file_tree: '',
+                architecture_overview: '',
+            },
+        };
+        assert(isSystemMaterials(plannerOnlySystemMaterials));
+    });
+
+    await t.step('should return false if stage_rationale is present but not a string', () => {
+        const invalid = { ...validSystemMaterials, stage_rationale: 123 };
         assert(!isSystemMaterials(invalid));
     });
 
@@ -2517,6 +2616,14 @@ Deno.test('Type Guard: isContextForDocument', async (t) => {
         const invalid = { ...validContext };
         delete (invalid as Partial<ContextForDocument>).content_to_include;
         assert(!isContextForDocument(invalid));
+    });
+
+    await t.step('should return true when document_key is a dynamic recipe string', () => {
+        const dynamicContext = {
+            document_key: 'synthesis_pairwise_feature_spec',
+            content_to_include: { strengths: [], weaknesses: [] },
+        };
+        assert(isContextForDocument(dynamicContext));
     });
 });
 
@@ -2601,11 +2708,22 @@ Deno.test('Type Guard: isRenderedDocumentArtifact', async (t) => {
         const invalid = { ...validArtifact, content_to_include: "a string" };
         assert(!isRenderedDocumentArtifact(invalid));
     });
+
+    await t.step('should return true for artifacts that use dynamic document keys', () => {
+        const dynamicDocumentArtifact = {
+            document_key: 'final_business_case',
+            template_filename: 'final_business_case.md',
+            artifact_class: 'rendered_document',
+            file_type: 'markdown',
+            content_to_include: { executive_summary: '', next_steps: '' },
+        };
+        assert(isRenderedDocumentArtifact(dynamicDocumentArtifact));
+    });
 });
 
 Deno.test('Type Guard: isAssembledJsonArtifact', async (t) => {
     const validArtifactWithFields: AssembledJsonArtifact = {
-        document_key: FileType.trd,
+        document_key: FileType.technical_requirements,
         artifact_class: 'assembled_document_json',
         fields: [
             "subsystems[].name",

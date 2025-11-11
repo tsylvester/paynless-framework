@@ -223,12 +223,14 @@ const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
 	prompt_template_id: 'synthesis_step1_pairwise',
 	prompt_type: 'Turn',
 	job_type: 'EXECUTE',
-	inputs_required: [{ type: 'document', stage_slug: 'thesis' }, {
+	inputs_required: [{ type: 'document', slug: 'thesis', document_key: 'business_case', required: true }, {
 		type: 'document',
-		stage_slug: 'antithesis',
+		slug: 'antithesis',
+		document_key: 'business_case_critique',
+		required: true,
 	}],
 	inputs_relevance: [],
-	outputs_required: [],
+	outputs_required: { documents: [], assembled_json: [], files_to_generate: [] },
 	granularity_strategy: 'pairwise_by_origin',
 	output_type: FileType.PairwiseSynthesisChunk,
 	created_at: new Date().toISOString(),

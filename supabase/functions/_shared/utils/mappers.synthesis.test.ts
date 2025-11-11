@@ -549,7 +549,7 @@ describe('mapToStageWithRecipeSteps for synthesis stage', () => {
                     granularity_strategy: 'all_to_one',
                     inputs_required: '[{"type":"seed_prompt","slug":"synthesis","document_key":"seed_prompt","required":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_business_case","required":true,"multiple":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_feature_spec","required":true,"multiple":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_technical_approach","required":true,"multiple":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_success_metrics","required":true,"multiple":true}]',
                     inputs_relevance: '[{"document_key":"seed_prompt","slug":"synthesis","relevance":0.6},{"document_key":"synthesis_document_business_case","slug":"synthesis","relevance":1.0},{"document_key":"synthesis_document_feature_spec","slug":"synthesis","relevance":0.95},{"document_key":"synthesis_document_technical_approach","slug":"synthesis","relevance":0.95},{"document_key":"synthesis_document_success_metrics","slug":"synthesis","relevance":0.9}]',
-                    outputs_required: '{"system_materials":{"executive_summary":"Outline/index of all outputs in this response and how they connect to the objective","input_artifacts_summary":"Succinct summary of prior proposals, critiques, and user feedback included in this synthesis","stage_rationale":"Decision record explaining how signals and critiques informed selections, how conflicts were resolved, gaps were filled, and why chosen approaches best meet constraints","progress_update":"For continuation turns, summarize what is complete vs remaining; omit on first turn","signal_sources":["synthesis_document_business_case","synthesis_document_feature_spec","synthesis_document_technical_approach","synthesis_document_success_metrics"],"decision_criteria":["feasibility","complexity","security","performance","maintainability","scalability","cost","time_to_market","compliance_risk","alignment_with_constraints"],"validation_checkpoint":["requirements addressed","best practices applied","feasible & compliant","references integrated"],"quality_standards":["security-first","maintainable","scalable","performance-aware"]},"header_context_artifact":{"type":"header_context","document_key":"header_context","artifact_class":"header_context","file_type":"json"},"context_for_documents":[{"document_key":"prd","content_to_include":{"executive_summary":"","mvp_description":"","user_problem_validation":"","market_opportunity":"","competitive_analysis":"","differentiation_&_value_proposition":"","risks_&_mitigation":"","strengths":[],"weaknesses":[],"opportunities":[],"threats":[],"feature_scope":[],"features":[{"feature_name":"","feature_objective":"","user_stories":[],"acceptance_criteria":[],"dependencies":[],"success_metrics":[],"risk_mitigation":"","open_questions":"","tradeoffs":[]}],"feasibility_insights":[],"non_functional_alignment":[],"score_adjustments":[],"outcome_alignment":"","north_star_metric":"","primary_kpis":[],"leading_indicators":[],"lagging_indicators":[],"guardrails":[],"measurement_plan":"","risk_signals":[],"resolved_positions":[],"open_questions":[],"next_steps":"","proposal_references":[],"release_plan":[],"assumptions":[],"open_decisions":[],"implementation_risks":[],"stakeholder_communications":[]}},{"document_key":"system_architecture_overview","content_to_include":{"architecture_summary":"","architecture":"","services":[],"components":[],"data_flows":[],"interfaces":[],"integration_points":[],"dependency_resolution":[],"conflict_flags":[],"sequencing":"","risk_mitigations":[],"risk_signals":[],"security_measures":[],"observability_strategy":[],"scalability_plan":[],"resilience_strategy":[],"compliance_controls":[],"open_questions":[]}},{"document_key":"tech_stack_recommendations","content_to_include":{"frontend_stack":{},"backend_stack":{},"data_platform":{},"devops_tooling":{},"security_tooling":{},"shared_libraries":[],"third_party_services":[],"components":[{"component_name":"","recommended_option":"","rationale":"","alternatives":[],"tradeoffs":[],"risk_signals":[],"integration_requirements":[],"operational_owners":[],"migration_plan":[]}],"open_questions":[],"next_steps":[]}}],"files_to_generate":[{"template_filename":"synthesis_product_requirements_document.md","from_document_key":"prd"},{"template_filename":"synthesis_system_architecture_overview.md","from_document_key":"system_architecture_overview"},{"template_filename":"synthesis_tech_stack_recommendations.md","from_document_key":"tech_stack_recommendations"}]}',
+                    outputs_required: '{"system_materials":{"executive_summary":"Outline/index of all outputs in this response and how they connect to the objective","input_artifacts_summary":"Succinct summary of prior proposals, critiques, and user feedback included in this synthesis","stage_rationale":"Decision record explaining how signals and critiques informed selections, how conflicts were resolved, gaps were filled, and why chosen approaches best meet constraints","progress_update":"For continuation turns, summarize what is complete vs remaining; omit on first turn","signal_sources":["synthesis_document_business_case","synthesis_document_feature_spec","synthesis_document_technical_approach","synthesis_document_success_metrics"],"decision_criteria":["feasibility","complexity","security","performance","maintainability","scalability","cost","time_to_market","compliance_risk","alignment_with_constraints"],"validation_checkpoint":["requirements addressed","best practices applied","feasible & compliant","references integrated"],"quality_standards":["security-first","maintainable","scalable","performance-aware"]},"header_context_artifact":{"type":"header_context","document_key":"header_context","artifact_class":"header_context","file_type":"json"},"context_for_documents":[{"document_key":"product_requirements","content_to_include":{"executive_summary":"","mvp_description":"","user_problem_validation":"","market_opportunity":"","competitive_analysis":"","differentiation_&_value_proposition":"","risks_&_mitigation":"","strengths":[],"weaknesses":[],"opportunities":[],"threats":[],"feature_scope":[],"features":[{"feature_name":"","feature_objective":"","user_stories":[],"acceptance_criteria":[],"dependencies":[],"success_metrics":[],"risk_mitigation":"","open_questions":"","tradeoffs":[]}],"feasibility_insights":[],"non_functional_alignment":[],"score_adjustments":[],"outcome_alignment":"","north_star_metric":"","primary_kpis":[],"leading_indicators":[],"lagging_indicators":[],"guardrails":[],"measurement_plan":"","risk_signals":[],"resolved_positions":[],"open_questions":[],"next_steps":"","proposal_references":[],"release_plan":[],"assumptions":[],"open_decisions":[],"implementation_risks":[],"stakeholder_communications":[]}},{"document_key":"system_architecture","content_to_include":{"architecture_summary":"","architecture":"","services":[],"components":[],"data_flows":[],"interfaces":[],"integration_points":[],"dependency_resolution":[],"conflict_flags":[],"sequencing":"","risk_mitigations":[],"risk_signals":[],"security_measures":[],"observability_strategy":[],"scalability_plan":[],"resilience_strategy":[],"compliance_controls":[],"open_questions":[]}},{"document_key":"tech_stack","content_to_include":{"frontend_stack":{},"backend_stack":{},"data_platform":{},"devops_tooling":{},"security_tooling":{},"shared_libraries":[],"third_party_services":[],"components":[{"component_name":"","recommended_option":"","rationale":"","alternatives":[],"tradeoffs":[],"risk_signals":[],"integration_requirements":[],"operational_owners":[],"migration_plan":[]}],"open_questions":[],"next_steps":[]}}],"files_to_generate":[{"template_filename":"synthesis_product_requirements_document.md","from_document_key":"product_requirements"},{"template_filename":"synthesis_system_architecture.md","from_document_key":"system_architecture"},{"template_filename":"synthesis_tech_stack.md","from_document_key":"tech_stack"}]}',
                     parallel_group: null,
                     branch_key: null,
                     execution_order: 4,
@@ -567,7 +567,7 @@ describe('mapToStageWithRecipeSteps for synthesis stage', () => {
         assert(isDialecticStageRecipeStep(actual.dialectic_stage_recipe_steps[0]));
     });
 
-    it('should correctly map the "prd" step from synthesis_stage.sql', () => {
+    it('should correctly map the "product_requirements" step from synthesis_stage.sql', () => {
         const mockDbResponse: DatabaseRecipeSteps = {
             active_recipe_instance_id: 'instance-1',
             created_at: '2025-11-05T11:58:00.000Z',
@@ -587,22 +587,22 @@ describe('mapToStageWithRecipeSteps for synthesis stage', () => {
                 template_id: 'template-synthesis',
                 updated_at: '2025-11-05T11:59:00.000Z',
                 dialectic_stage_recipe_steps: [{
-                    id: 'step-synthesis-prd',
+                    id: 'step-synthesis-product_requirements',
                     instance_id: 'instance-1',
-                    template_step_id: 'template-step-synthesis-prd',
-                    step_key: 'prd',
-                    step_slug: 'render-prd',
+                    template_step_id: 'template-step-synthesis-product_requirements',
+                    step_key: 'product_requirements',
+                    step_slug: 'render-product_requirements',
                     step_name: 'Render Final PRD',
                     job_type: 'EXECUTE',
                     prompt_type: 'Turn',
-                    prompt_template_id: 'prompt-synthesis-prd-turn',
+                    prompt_template_id: 'prompt-synthesis-product_requirements-turn',
                     output_type: 'RenderedDocument',
                     granularity_strategy: 'all_to_one',
                     inputs_required: '[{"type":"header_context","slug":"synthesis","document_key":"header_context","required":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_business_case","required":true,"multiple":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_feature_spec","required":true,"multiple":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_technical_approach","required":true,"multiple":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_success_metrics","required":true,"multiple":true}]',
                     inputs_relevance: '[{"document_key":"header_context","slug":"synthesis","relevance":1.0},{"document_key":"synthesis_document_business_case","slug":"synthesis","relevance":1.0},{"document_key":"synthesis_document_feature_spec","slug":"synthesis","relevance":0.9},{"document_key":"synthesis_document_technical_approach","slug":"synthesis","relevance":0.85},{"document_key":"synthesis_document_success_metrics","slug":"synthesis","relevance":0.8}]',
-                    outputs_required: '{"documents":[{"document_key":"prd","template_filename":"synthesis_product_requirements_document.md","artifact_class":"rendered_document","file_type":"markdown","content_to_include":{"executive_summary":"","mvp_description":"","user_problem_validation":"","market_opportunity":"","competitive_analysis":"","differentiation_&_value_proposition":"","risks_&_mitigation":"","strengths":[],"weaknesses":[],"opportunities":[],"threats":[],"feature_scope":[],"features":[{"feature_name":"","feature_objective":"","user_stories":[],"acceptance_criteria":[],"dependencies":[],"success_metrics":[],"risk_mitigation":"","open_questions":"","tradeoffs":[]}],"feasibility_insights":[],"non_functional_alignment":[],"score_adjustments":[],"outcome_alignment":"","north_star_metric":"","primary_kpis":[],"leading_indicators":[],"lagging_indicators":[],"guardrails":[],"measurement_plan":"","risk_signals":[],"resolved_positions":[],"open_questions":[],"next_steps":"","proposal_references":[],"release_plan":[],"assumptions":[],"open_decisions":[],"implementation_risks":[],"stakeholder_communications":[]}}]}',
+                    outputs_required: '{"documents":[{"document_key":"product_requirements","template_filename":"synthesis_product_requirements_document.md","artifact_class":"rendered_document","file_type":"markdown","content_to_include":{"executive_summary":"","mvp_description":"","user_problem_validation":"","market_opportunity":"","competitive_analysis":"","differentiation_&_value_proposition":"","risks_&_mitigation":"","strengths":[],"weaknesses":[],"opportunities":[],"threats":[],"feature_scope":[],"features":[{"feature_name":"","feature_objective":"","user_stories":[],"acceptance_criteria":[],"dependencies":[],"success_metrics":[],"risk_mitigation":"","open_questions":"","tradeoffs":[]}],"feasibility_insights":[],"non_functional_alignment":[],"score_adjustments":[],"outcome_alignment":"","north_star_metric":"","primary_kpis":[],"leading_indicators":[],"lagging_indicators":[],"guardrails":[],"measurement_plan":"","risk_signals":[],"resolved_positions":[],"open_questions":[],"next_steps":"","proposal_references":[],"release_plan":[],"assumptions":[],"open_decisions":[],"implementation_risks":[],"stakeholder_communications":[]}}]}',
                     parallel_group: 5,
-                    branch_key: 'prd',
+                    branch_key: 'product_requirements',
                     execution_order: 5,
                     created_at: '2025-11-06T00:00:00.000Z',
                     updated_at: '2025-11-06T00:00:00.000Z',
@@ -618,7 +618,7 @@ describe('mapToStageWithRecipeSteps for synthesis stage', () => {
         assert(isDialecticStageRecipeStep(actual.dialectic_stage_recipe_steps[0]));
     });
 
-    it('should correctly map the "system_architecture_overview" step from synthesis_stage.sql', () => {
+    it('should correctly map the "system_architecture" step from synthesis_stage.sql', () => {
         const mockDbResponse: DatabaseRecipeSteps = {
             active_recipe_instance_id: 'instance-1',
             created_at: '2025-11-05T11:58:00.000Z',
@@ -641,7 +641,7 @@ describe('mapToStageWithRecipeSteps for synthesis stage', () => {
                     id: 'step-synthesis-arch-overview',
                     instance_id: 'instance-1',
                     template_step_id: 'template-step-synthesis-arch-overview',
-                    step_key: 'system_architecture_overview',
+                    step_key: 'system_architecture',
                     step_slug: 'render-system-architecture-overview',
                     step_name: 'Render Final System Architecture Overview',
                     job_type: 'EXECUTE',
@@ -651,9 +651,9 @@ describe('mapToStageWithRecipeSteps for synthesis stage', () => {
                     granularity_strategy: 'all_to_one',
                     inputs_required: '[{"type":"header_context","slug":"synthesis","document_key":"header_context","required":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_technical_approach","required":true,"multiple":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_feature_spec","required":true,"multiple":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_business_case","required":true,"multiple":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_success_metrics","required":true,"multiple":true}]',
                     inputs_relevance: '[{"document_key":"header_context","slug":"synthesis","relevance":1.0},{"document_key":"synthesis_document_technical_approach","slug":"synthesis","relevance":1.0},{"document_key":"synthesis_document_feature_spec","slug":"synthesis","relevance":0.9},{"document_key":"synthesis_document_business_case","slug":"synthesis","relevance":0.82},{"document_key":"synthesis_document_success_metrics","slug":"synthesis","relevance":0.78}]',
-                    outputs_required: '{"documents":[{"document_key":"system_architecture_overview","template_filename":"synthesis_system_architecture_overview.md","artifact_class":"rendered_document","file_type":"markdown","content_to_include":{"architecture_summary":"","architecture":"","services":[],"components":[],"data_flows":[],"interfaces":[],"integration_points":[],"dependency_resolution":[],"conflict_flags":[],"sequencing":"","risk_mitigations":[],"risk_signals":[],"security_measures":[],"observability_strategy":[],"scalability_plan":[],"resilience_strategy":[],"compliance_controls":[],"open_questions":[]}}]}',
+                    outputs_required: '{"documents":[{"document_key":"system_architecture","template_filename":"synthesis_system_architecture.md","artifact_class":"rendered_document","file_type":"markdown","content_to_include":{"architecture_summary":"","architecture":"","services":[],"components":[],"data_flows":[],"interfaces":[],"integration_points":[],"dependency_resolution":[],"conflict_flags":[],"sequencing":"","risk_mitigations":[],"risk_signals":[],"security_measures":[],"observability_strategy":[],"scalability_plan":[],"resilience_strategy":[],"compliance_controls":[],"open_questions":[]}}]}',
                     parallel_group: 5,
-                    branch_key: 'system_architecture_overview',
+                    branch_key: 'system_architecture',
                     execution_order: 5,
                     created_at: '2025-11-06T00:00:00.000Z',
                     updated_at: '2025-11-06T00:00:00.000Z',
@@ -669,7 +669,7 @@ describe('mapToStageWithRecipeSteps for synthesis stage', () => {
         assert(isDialecticStageRecipeStep(actual.dialectic_stage_recipe_steps[0]));
     });
 
-    it('should correctly map the "tech_stack_recommendations" step from synthesis_stage.sql', () => {
+    it('should correctly map the "tech_stack" step from synthesis_stage.sql', () => {
         const mockDbResponse: DatabaseRecipeSteps = {
             active_recipe_instance_id: 'instance-1',
             created_at: '2025-11-05T11:58:00.000Z',
@@ -692,7 +692,7 @@ describe('mapToStageWithRecipeSteps for synthesis stage', () => {
                     id: 'step-synthesis-tech-stack',
                     instance_id: 'instance-1',
                     template_step_id: 'template-step-synthesis-tech-stack',
-                    step_key: 'tech_stack_recommendations',
+                    step_key: 'tech_stack',
                     step_slug: 'render-tech-stack-recommendations',
                     step_name: 'Render Final Tech Stack Recommendations',
                     job_type: 'EXECUTE',
@@ -702,9 +702,9 @@ describe('mapToStageWithRecipeSteps for synthesis stage', () => {
                     granularity_strategy: 'all_to_one',
                     inputs_required: '[{"type":"header_context","slug":"synthesis","document_key":"header_context","required":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_technical_approach","required":true,"multiple":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_feature_spec","required":true,"multiple":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_success_metrics","required":true,"multiple":true},{"type":"document","slug":"synthesis","document_key":"synthesis_document_business_case","required":true,"multiple":true}]',
                     inputs_relevance: '[{"document_key":"header_context","slug":"synthesis","relevance":1.0},{"document_key":"synthesis_document_technical_approach","slug":"synthesis","relevance":1.0},{"document_key":"synthesis_document_feature_spec","slug":"synthesis","relevance":0.88},{"document_key":"synthesis_document_success_metrics","slug":"synthesis","relevance":0.85},{"document_key":"synthesis_document_business_case","slug":"synthesis","relevance":0.8}]',
-                    outputs_required: '{"documents":[{"document_key":"tech_stack_recommendations","template_filename":"synthesis_tech_stack_recommendations.md","artifact_class":"rendered_document","file_type":"markdown","content_to_include":[{"component_name":"","recommended_option":"","rationale":"","alternatives":[],"tradeoffs":[],"risk_signals":[],"integration_requirements":[],"operational_owners":[],"migration_plan":[]}],"frontend_stack":{},"backend_stack":{},"data_platform":{},"devops_tooling":{},"security_tooling":{},"shared_libraries":[],"third_party_services":[],"open_questions":[],"next_steps":[]}]}',
+                    outputs_required: '{"documents":[{"document_key":"tech_stack","template_filename":"synthesis_tech_stack.md","artifact_class":"rendered_document","file_type":"markdown","content_to_include":[{"component_name":"","recommended_option":"","rationale":"","alternatives":[],"tradeoffs":[],"risk_signals":[],"integration_requirements":[],"operational_owners":[],"migration_plan":[]}],"frontend_stack":{},"backend_stack":{},"data_platform":{},"devops_tooling":{},"security_tooling":{},"shared_libraries":[],"third_party_services":[],"open_questions":[],"next_steps":[]}]}',
                     parallel_group: 5,
-                    branch_key: 'tech_stack_recommendations',
+                    branch_key: 'tech_stack',
                     execution_order: 5,
                     created_at: '2025-11-06T00:00:00.000Z',
                     updated_at: '2025-11-06T00:00:00.000Z',

@@ -61,12 +61,12 @@ export enum FileType {
   synthesis_document_technical_approach = 'synthesis_document_technical_approach',
   synthesis_document_success_metrics = 'synthesis_document_success_metrics',
   SynthesisHeaderContext = 'synthesis_header_context',
-  prd = 'prd',
-  system_architecture_overview = 'system_architecture',
-  tech_stack_recommendations = 'tech_stack',
+  product_requirements = 'product_requirements',
+  system_architecture = 'system_architecture',
+  tech_stack = 'tech_stack',
 
   // Parenthesis document_keys
-  trd = 'trd',
+  technical_requirements = 'technical_requirements',
   master_plan = 'master_plan',
   milestone_schema = 'milestone_schema',
 
@@ -152,10 +152,10 @@ export type ModelContributionFileTypes =
   | FileType.synthesis_document_technical_approach
   | FileType.synthesis_document_success_metrics
   | FileType.SynthesisHeaderContext
-  | FileType.prd
-  | FileType.system_architecture_overview
-  | FileType.tech_stack_recommendations
-  | FileType.trd
+  | FileType.product_requirements
+  | FileType.system_architecture
+  | FileType.tech_stack
+  | FileType.technical_requirements
   | FileType.master_plan
   | FileType.milestone_schema
   | FileType.updated_master_plan

@@ -238,10 +238,10 @@ Deno.test('constructStoragePath and deconstructStoragePath should be perfect inv
         case FileType.synthesis_document_feature_spec:
         case FileType.synthesis_document_technical_approach:
         case FileType.synthesis_document_success_metrics:
-        case FileType.prd:
-        case FileType.system_architecture_overview:
-        case FileType.tech_stack_recommendations:
-        case FileType.trd:
+        case FileType.product_requirements:
+        case FileType.system_architecture:
+        case FileType.tech_stack:
+        case FileType.technical_requirements:
         case FileType.master_plan:
         case FileType.milestone_schema:
         case FileType.updated_master_plan:
@@ -252,7 +252,7 @@ Deno.test('constructStoragePath and deconstructStoragePath should be perfect inv
             ...baseModelContext,
             stageSlug: fileType.toString().includes('critique') || fileType.toString().includes('assessment') ? 'antithesis'
               : fileType.toString().includes('synthesis') ? 'synthesis'
-              : fileType.toString().includes('trd') || fileType.toString().includes('master_plan') ? 'parenthesis'
+              : fileType.toString().includes('technical_requirements') || fileType.toString().includes('master_plan') ? 'parenthesis'
               : fileType.toString().includes('advisor') ? 'paralysis'
               : 'thesis',
             documentKey: fileType.toString(),
@@ -409,7 +409,7 @@ Deno.test('constructStoragePath', async (t) => {
     const antithesisContext: PathContext = { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.business_case_critique, sourceModelSlugs: ['claude-3-opus'], sourceAttemptCount: 0 };
     const pairwiseContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'pairwise_synthesis_chunk', fileType: FileType.PairwiseSynthesisChunk };
     const reducedContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'reduced_synthesis', fileType: FileType.ReducedSynthesis };
-    const parenthesisContext: PathContext = { ...baseContext, stageSlug: 'parenthesis', contributionType: 'parenthesis', fileType: FileType.trd, documentKey: 'trd' };
+    const parenthesisContext: PathContext = { ...baseContext, stageSlug: 'parenthesis', contributionType: 'parenthesis', fileType: FileType.technical_requirements, documentKey: 'technical_requirements' };
     const paralysisContext: PathContext = { ...baseContext, stageSlug: 'paralysis', contributionType: 'paralysis', fileType: FileType.advisor_recommendations, documentKey: 'advisor_recommendations' };
 
     await t.step('handles SynthesisHeaderContext file type', () => {
@@ -622,19 +622,19 @@ Deno.test('constructStoragePath', async (t) => {
       assertEquals(fileName, 'gpt-4-turbo_0_advisor_recommendations.md');
     });
 
-    await t.step('handles trd file type', () => {
-      const trdContext: PathContext = {
+    await t.step('handles technical_requirements file type', () => {
+      const technical_requirementsContext: PathContext = {
         projectId,
         sessionId,
         iteration,
         stageSlug: 'parenthesis',
-        fileType: FileType.trd,
+        fileType: FileType.technical_requirements,
         modelSlug: 'gpt-4-turbo',
         attemptCount: 0
       };
-      const { storagePath, fileName } = constructStoragePath(trdContext);
+      const { storagePath, fileName } = constructStoragePath(technical_requirementsContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis/documents`);
-      assertEquals(fileName, 'gpt-4-turbo_0_trd.md');
+      assertEquals(fileName, 'gpt-4-turbo_0_technical_requirements.md');
     });
 
     await t.step('handles master_plan file type', () => {
@@ -704,7 +704,7 @@ Deno.test('constructStoragePath', async (t) => {
     await t.step('constructs path for parenthesis', () => {
         const { storagePath, fileName } = constructStoragePath(parenthesisContext);
         assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis/documents`);
-        assertEquals(fileName, 'gpt-4-turbo_0_trd.md');
+        assertEquals(fileName, 'gpt-4-turbo_0_technical_requirements.md');
     });
 
     await t.step('constructs path for paralysis', () => {

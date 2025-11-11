@@ -12,12 +12,12 @@
 - **Stage Instructions**: {{stage_instructions}}
 - **Style Guide Markdown**: {{style_guide_markdown}}
 - **Parenthesis Documents**:
-  - TRD: {{parenthesis_documents.trd}}
+  - TRD: {{parenthesis_documents.technical_requirements}}
   - Master Plan: {{parenthesis_documents.master_plan}}
   - Milestone Schema: {{parenthesis_documents.milestone_schema}}
 {{#section:parenthesis_feedback}}
 - **Parenthesis Feedback (optional)**:
-  - TRD Feedback: {{parenthesis_feedback.trd}}
+  - TRD Feedback: {{parenthesis_feedback.technical_requirements}}
   - Master Plan Feedback: {{parenthesis_feedback.master_plan}}
   - Milestone Schema Feedback: {{parenthesis_feedback.milestone_schema}}
   {{/#section:parenthesis_feedback}}
@@ -80,7 +80,7 @@
       "document_key": "actionable_checklist",
       "content_to_include": {
         "milestone_ids": [],
-        "inputs_required": ["trd", "master_plan"],
+        "inputs_required": ["technical_requirements", "master_plan"],
         "tdd_sequence": ["RED", "GREEN", "REFACTOR"],
         "status_markers": ["[ ]", "[🚧]", "[✅]"],
         "generation_limits": {

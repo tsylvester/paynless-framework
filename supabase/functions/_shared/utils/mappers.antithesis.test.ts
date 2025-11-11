@@ -38,7 +38,166 @@ describe('mapToStageWithRecipeSteps', () => {
                     granularity_strategy: 'per_source_document_by_lineage',
                     inputs_required: '[{"type":"seed_prompt","slug":"antithesis","document_key":"seed_prompt","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]',
                     inputs_relevance: '[{"document_key":"seed_prompt","relevance":1.0},{"document_key":"business_case","relevance":1.0},{"document_key":"feature_spec","relevance":0.9},{"document_key":"technical_approach","relevance":0.9},{"document_key":"success_metrics","relevance":0.8},{"document_key":"business_case","type":"feedback","relevance":0.6},{"document_key":"feature_spec","type":"feedback","relevance":0.6},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"success_metrics","type":"feedback","relevance":0.6}]',
-                    outputs_required: '{"system_materials":{"executive_summary":"concise overview of key findings across all proposals","input_artifacts_summary":"summary of proposals and any user feedback included for review","stage_rationale":"explain the review approach and criteria used","progress_update":"for continuation turns, summarize completed vs pending review areas; omit on first turn","validation_checkpoint":["major technical concerns identified","risk mitigation strategies proposed","alternatives considered where applicable","references and standards checked"],"quality_standards":["evidence-based","actionable","balanced","complete"]},"review_metadata":{"proposal_identifier":{"lineage_key":"<from the file name of the proposal being reviewed>","source_model_slug":"<from the file name of the proposal being reviewed>"},"proposal_summary":"","review_focus":["feasibility","risk","non_functional_requirements","dependencies","comparison_signals"],"user_constraints":[],"normalization_guidance":{"scoring_scale":"1-5","required_dimensions":["feasibility","complexity","security","performance","maintainability","scalability","cost","time_to_market","compliance_risk","alignment_with_constraints"]}},"header_context_artifact":{"type":"header_context","document_key":"header_context","artifact_class":"header_context","file_type":"json"},"context_for_documents":[{"document_key":"business_case_critique","content_to_include":{"strengths":[],"weaknesses":[],"opportunities":[],"threats":[],"recommendations":[],"notes":[]}},{"document_key":"technical_feasibility_assessment","content_to_include":{"constraint_checklist":["team","timeline","cost","integration","compliance"],"findings":[]}},{"document_key":"risk_register","content_to_include":{"required_fields":["risk","impact","likelihood","mitigation"],"seed_examples":[]}},{"document_key":"non_functional_requirements","content_to_include":["security","performance","reliability","scalability","maintainability","compliance"]},{"document_key":"dependency_map","content_to_include":{"components":[],"integration_points":[],"conflict_flags":[]}},{"document_key":"comparison_vector","content_to_include":{"dimensions":{"feasibility":{"score":0,"rationale":""},"complexity":{"score":0,"rationale":""},"security":{"score":0,"rationale":""},"performance":{"score":0,"rationale":""},"maintainability":{"score":0,"rationale":""},"scalability":{"score":0,"rationale":""},"cost":{"score":0,"rationale":""},"time_to_market":{"score":0,"rationale":""},"compliance_risk":{"score":0,"rationale":""},"alignment_with_constraints":{"score":0,"rationale":""}}}}}]}',
+                    outputs_required: `{
+                        "system_materials": {
+                            "executive_summary": "concise overview of key findings across all proposals",
+                            "input_artifacts_summary": "summary of proposals and any user feedback included for review",
+                            "stage_rationale": "explain the review approach and criteria used",
+                            "progress_update": "for continuation turns, summarize completed vs pending review areas; omit on first turn",
+                            "validation_checkpoint": [
+                                "major technical concerns identified",
+                                "risk mitigation strategies proposed",
+                                "alternatives considered where applicable",
+                                "references and standards checked"
+                            ],
+                            "quality_standards": [
+                                "evidence-based",
+                                "actionable",
+                                "balanced",
+                                "complete"
+                            ]
+                        },
+                        "review_metadata": {
+                            "proposal_identifier": {
+                                "lineage_key": "<from the file name of the proposal being reviewed>",
+                                "source_model_slug": "<from the file name of the proposal being reviewed>"
+                            },
+                            "proposal_summary": "",
+                            "review_focus": [
+                                "feasibility",
+                                "risk",
+                                "non_functional_requirements",
+                                "dependencies",
+                                "comparison_signals"
+                            ],
+                            "user_constraints": [],
+                            "normalization_guidance": {
+                                "scoring_scale": "1-5",
+                                "required_dimensions": [
+                                    "feasibility",
+                                    "complexity",
+                                    "security",
+                                    "performance",
+                                    "maintainability",
+                                    "scalability",
+                                    "cost",
+                                    "time_to_market",
+                                    "compliance_risk",
+                                    "alignment_with_constraints"
+                                ]
+                            }
+                        },
+                        "header_context_artifact": {
+                            "type": "header_context",
+                            "document_key": "header_context",
+                            "artifact_class": "header_context",
+                            "file_type": "json"
+                        },
+                        "context_for_documents": [
+                            {
+                                "document_key": "business_case_critique",
+                                "content_to_include": {
+                                    "strengths": [],
+                                    "weaknesses": [],
+                                    "opportunities": [],
+                                    "threats": [],
+                                    "recommendations": [],
+                                    "notes": []
+                                }
+                            },
+                            {
+                                "document_key": "technical_feasibility_assessment",
+                                "content_to_include": {
+                                    "constraint_checklist": [
+                                        "team",
+                                        "timeline",
+                                        "cost",
+                                        "integration",
+                                        "compliance"
+                                    ],
+                                    "findings": []
+                                }
+                            },
+                            {
+                                "document_key": "risk_register",
+                                "content_to_include": {
+                                    "required_fields": [
+                                        "risk",
+                                        "impact",
+                                        "likelihood",
+                                        "mitigation"
+                                    ],
+                                    "seed_examples": []
+                                }
+                            },
+                            {
+                                "document_key": "non_functional_requirements",
+                                "content_to_include": [
+                                    "security",
+                                    "performance",
+                                    "reliability",
+                                    "scalability",
+                                    "maintainability",
+                                    "compliance"
+                                ]
+                            },
+                            {
+                                "document_key": "dependency_map",
+                                "content_to_include": {
+                                    "components": [],
+                                    "integration_points": [],
+                                    "conflict_flags": []
+                                }
+                            },
+                            {
+                                "document_key": "comparison_vector",
+                                "content_to_include": {
+                                    "dimensions": {
+                                        "feasibility": {
+                                            "score": 0,
+                                            "rationale": ""
+                                        },
+                                        "complexity": {
+                                            "score": 0,
+                                            "rationale": ""
+                                        },
+                                        "security": {
+                                            "score": 0,
+                                            "rationale": ""
+                                        },
+                                        "performance": {
+                                            "score": 0,
+                                            "rationale": ""
+                                        },
+                                        "maintainability": {
+                                            "score": 0,
+                                            "rationale": ""
+                                        },
+                                        "scalability": {
+                                            "score": 0,
+                                            "rationale": ""
+                                        },
+                                        "cost": {
+                                            "score": 0,
+                                            "rationale": ""
+                                        },
+                                        "time_to_market": {
+                                            "score": 0,
+                                            "rationale": ""
+                                        },
+                                        "compliance_risk": {
+                                            "score": 0,
+                                            "rationale": ""
+                                        },
+                                        "alignment_with_constraints": {
+                                            "score": 0,
+                                            "rationale": ""
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }`,
                     parallel_group: null,
                     branch_key: null,
                     execution_order: 1,
