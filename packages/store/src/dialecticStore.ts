@@ -45,12 +45,13 @@ import {
   StageDocumentContentState,
   type SubmitStageDocumentFeedbackPayload,
   type ListStageDocumentsPayload,
+  StartSessionSuccessResponse,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { useWalletStore } from './walletStore';
 import { useAiStore } from './aiStore';
 import { selectActiveChatWalletInfo } from './walletStore.selectors';
-import { logger } from '@paynless/utils';
+import { isAssembledPrompt, logger } from '@paynless/utils';
 import {
 	ensureStageDocumentContentLogic,
 	flushStageDocumentDraftLogic,
@@ -150,6 +151,8 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	activeContextSessionId: null,
 	activeContextStage: null,
 	activeStageSlug: null,
+
+	activeSeedPrompt: null,
 
 	// New initial states for single session fetching
 	activeSessionDetail: null,
@@ -654,7 +657,7 @@ export const useDialecticStore = create<DialecticStore>()(
 
 	startDialecticSession: async (
 		payload: StartSessionPayload,
-	): Promise<ApiResponse<DialecticSession>> => {
+	): Promise<ApiResponse<StartSessionSuccessResponse>> => {
 		set({ isStartingSession: true, startSessionError: null });
 		logger.info("[DialecticStore] Starting dialectic session...", {
 			sessionPayload: payload,
@@ -667,26 +670,55 @@ export const useDialecticStore = create<DialecticStore>()(
 				});
 				set({ isStartingSession: false, startSessionError: response.error });
 				return { error: response.error, status: response.status };
-			} else {
-				logger.info("[DialecticStore] Successfully started session:", {
-					sessionDetails: response.data,
-				});
-				set({ isStartingSession: false, startSessionError: null });
+			}
 
-				// If session start is successful, refetch project details to get updated session list
-				// or refetch the entire project list if project_id is not in the session response
-				if (response.data?.project_id) {
+			// The API response is `StartSessionSuccessResponse` which is a `DialecticSession` with an added `seedPrompt`.
+			// The `isAssembledPrompt` guard confirms the shape of the nested `seedPrompt` object.
+			if (
+				response.data &&
+				"seedPrompt" in response.data &&
+				isAssembledPrompt(response.data.seedPrompt)
+			) {
+				// Construct a new, correctly typed object to satisfy the linter.
+				const successData: StartSessionSuccessResponse = {
+					...response.data,
+					seedPrompt: response.data.seedPrompt,
+				};
+
+				logger.info("[DialecticStore] Successfully started session:", {
+					sessionDetails: successData,
+				});
+				set({
+					isStartingSession: false,
+					startSessionError: null,
+					activeSeedPrompt: successData.seedPrompt,
+				});
+
+				// Refetch project details to get updated session list.
+				if (successData.project_id) {
 					logger.info(
-						`[DialecticStore] Session started for project ${response.data.project_id}. Refetching project details.`,
+						`[DialecticStore] Session started for project ${successData.project_id}. Refetching project details.`,
 					);
-					await get().fetchDialecticProjectDetails(response.data.project_id);
+					await get().fetchDialecticProjectDetails(successData.project_id);
 				} else {
 					logger.info(
 						"[DialecticStore] Session started, but no project_id in response. Refetching project list.",
 					);
 					await get().fetchDialecticProjects();
 				}
-				return { data: response.data, status: response.status };
+				return { data: successData, status: response.status };
+			} else {
+				const error: ApiError = {
+					message:
+						"Invalid or missing seedPrompt in startSession response",
+					code: "INVALID_SEED_PROMPT",
+				};
+				logger.error("[DialecticStore] Invalid session response:", {
+					errorDetails: error,
+					responseData: response.data,
+				});
+				set({ isStartingSession: false, startSessionError: error });
+				return { error: error, status: response.status || 0 };
 			}
 		} catch (error: unknown) {
 			const networkError: ApiError = {

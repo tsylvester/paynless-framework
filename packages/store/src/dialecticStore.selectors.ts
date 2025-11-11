@@ -11,6 +11,10 @@ import type {
     DialecticStageRecipe,
     DialecticStageRecipeStep,
     FocusedStageDocumentState,
+    StageDocumentChecklistEntry,
+    StageRunDocumentDescriptor,
+    StageRenderedDocumentDescriptor,
+    StagePlannedDocumentDescriptor,
 } from '@paynless/types';
 import { createSelector } from 'reselect';
 
@@ -575,6 +579,16 @@ type StepStatus = StageRunProgressEntry['stepStatuses'][string];
 type StageRunDocumentEntry = StageRunDocuments[string];
 type DocumentStatus = StageRunDocumentEntry['status'];
 
+const isPlannedDescriptor = (
+    descriptor: StageRunDocumentDescriptor | undefined,
+): descriptor is StagePlannedDocumentDescriptor =>
+    Boolean(descriptor && descriptor.descriptorType === 'planned');
+
+const isRenderedDescriptor = (
+    descriptor: StageRunDocumentDescriptor | undefined,
+): descriptor is StageRenderedDocumentDescriptor =>
+    Boolean(descriptor && descriptor.descriptorType !== 'planned');
+
 const emptyDocuments: StageRunDocuments = {};
 
 const selectRecipeSteps = (
@@ -662,7 +676,7 @@ export const selectLatestRenderedRef = (
 ): string | null | undefined => {
     const documents = selectDocumentsForStageRun(state, progressKey);
     const descriptor = documents[documentKey];
-    if (!descriptor) {
+    if (!descriptor || !isRenderedDescriptor(descriptor)) {
         return undefined;
     }
     return descriptor.latestRenderedResourceId;
@@ -730,34 +744,41 @@ export const selectStageDocumentChecklist = (
     state: DialecticStateValues,
     progressKey: string,
     modelId: string
-): Array<{
-    documentKey: string;
-    status: DocumentStatus;
-    jobId: string;
-    latestRenderedResourceId: string;
-    modelId: string;
-}> => {
+): StageDocumentChecklistEntry[] => {
     const documents = selectDocumentsForStageRun(state, progressKey);
-    const checklist: Array<{
-        documentKey: string;
-        status: DocumentStatus;
-        jobId: string;
-        latestRenderedResourceId: string;
-        modelId: string;
-    }> = [];
+    const checklist: StageDocumentChecklistEntry[] = [];
 
     for (const documentKey of Object.keys(documents)) {
         const descriptor = documents[documentKey];
-        if (!descriptor || descriptor.modelId !== modelId) {
+        if (!descriptor) {
             continue;
         }
-        checklist.push({
-            documentKey,
-            status: descriptor.status,
-            jobId: descriptor.job_id,
-            latestRenderedResourceId: descriptor.latestRenderedResourceId,
-            modelId: descriptor.modelId,
-        });
+
+        if (descriptor.modelId !== modelId) {
+            continue;
+        }
+
+        if (isPlannedDescriptor(descriptor)) {
+            checklist.push({
+                descriptorType: 'planned',
+                documentKey,
+                status: descriptor.status,
+                jobId: null,
+                latestRenderedResourceId: null,
+                modelId: descriptor.modelId,
+                stepKey: descriptor.stepKey,
+            });
+        } else {
+            checklist.push({
+                descriptorType: 'rendered',
+                documentKey,
+                status: descriptor.status,
+                jobId: descriptor.job_id,
+                latestRenderedResourceId: descriptor.latestRenderedResourceId,
+                modelId: descriptor.modelId,
+                stepKey: descriptor.stepKey,
+            });
+        }
     }
 
     return checklist;

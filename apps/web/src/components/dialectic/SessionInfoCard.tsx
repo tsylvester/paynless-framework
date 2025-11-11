@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
 	useDialecticStore,
 	selectIsStageReadyForSessionIteration,
 	selectGenerateContributionsError,
 	selectGeneratingSessionsForSession,
-	selectCurrentProjectDetail,
 	selectActiveStageSlug,
 	selectSortedStages,
 } from "@paynless/store";
@@ -26,10 +25,9 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
-import { Loader2, ArrowLeft, ChevronDown, Download } from "lucide-react";
+import { Loader2, ChevronDown, Download } from "lucide-react";
 import { toast } from "sonner";
 import { WalletSelector } from "../ai/WalletSelector";
-import { ChatContextSelector } from "../ai/ChatContextSelector";
 import { AIModelSelector } from "./AIModelSelector";
 import { GenerateContributionButton } from "./GenerateContributionButton";
 import { useNavigate } from "react-router-dom";
@@ -58,14 +56,13 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
 	const sessionProgress = useDialecticStore((state) =>
 		session ? state.sessionProgress[session.id] : undefined,
 	);
-	const fetchInitialPromptContent = useDialecticStore(
-		(state) => state.fetchInitialPromptContent,
-	);
 	const generateContributionsError = useDialecticStore(
 		selectGenerateContributionsError,
 	);
 	const navigate = useNavigate();
 	const [isPromptOpen, setIsPromptOpen] = useState(false);
+	const activeSeedPrompt = useDialecticStore((state) => state.activeSeedPrompt);
+	const isLoading = useDialecticStore(state => state.isLoadingActiveSessionDetail);
 
 	// Use the new, more specific selector. This is the key to reactivity.
 	const generatingJobs = useDialecticStore((state) =>
@@ -86,9 +83,9 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
 
 	// Check if this is the final stage
 	const isFinalStageInProcess = useMemo(() => {
-		if (!project?.process_template || !activeStage) return false;
-		const transitions = project.process_template.transitions || [];
-		return transitions.every((t: any) => t.source_stage_id !== activeStage.id);
+		if (!project?.process_template_id || !activeStage) return false;
+		const transitions = project.dialectic_process_templates?.transitions || [];
+		return transitions.every((t) => t.source_stage_id !== activeStage.id);
 	}, [project, activeStage]);
 
 	const handleSubmitResponses = async () => {
@@ -100,7 +97,6 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
 			currentIterationNumber: session.iteration_count,
 			projectId: project.id,
 			stageSlug: activeStage.slug,
-			responses: [],
 		};
 
 		try {
@@ -144,67 +140,6 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
 		);
 	});
 
-	const iterationUserPromptResourceId = useMemo(() => {
-		if (!project?.id || !session?.id || !activeStage?.slug) return null;
-		const projectResources = project.resources || [];
-
-		const seedPromptResource = projectResources.find((r) => {
-			if (!r.resource_description) return false;
-
-			if (
-				typeof r.resource_description === "string" &&
-				r.resource_description.trim().startsWith("{") &&
-				r.resource_description.trim().endsWith("}")
-			) {
-				try {
-					const desc = JSON.parse(r.resource_description);
-					return (
-						desc.type === "seed_prompt" &&
-						desc.session_id === session.id &&
-						desc.stage_slug === activeStage.slug &&
-						desc.iteration === session.iteration_count
-					);
-				} catch (e) {
-					return false;
-				}
-			} else {
-				return false;
-			}
-		});
-		return seedPromptResource?.id;
-	}, [
-		project?.id,
-		project?.resources,
-		session?.id,
-		session?.iteration_count,
-		activeStage?.slug,
-	]);
-
-	const iterationPromptCacheEntry = useDialecticStore((state) => {
-		if (!iterationUserPromptResourceId) return undefined;
-		return state.initialPromptContentCache?.[iterationUserPromptResourceId];
-	});
-
-	useEffect(() => {
-		if (
-			activeStage &&
-			isStageReady &&
-			iterationUserPromptResourceId &&
-			(!iterationPromptCacheEntry ||
-				(!iterationPromptCacheEntry.content &&
-					!iterationPromptCacheEntry.isLoading &&
-					!iterationPromptCacheEntry.error))
-		) {
-			fetchInitialPromptContent(iterationUserPromptResourceId);
-		}
-	}, [
-		activeStage,
-		isStageReady,
-		iterationUserPromptResourceId,
-		iterationPromptCacheEntry,
-		fetchInitialPromptContent,
-	]);
-
 	if (!project || !session) {
 		return (
 			<Card className="mb-6">
@@ -247,7 +182,9 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
 							className="text-2xl font-light tracking-tight"
 							data-testid={`session-info-title-${session.id}`}
 						>
-							{session.session_description || "Untitled Session"}
+							{session.session_description || "Untitled Session"} - Iteration:{" "}
+							{session.iteration_count} -{" "}
+							{session.status?.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()) || "Active"}
 						</h1>
 						<Badge
 							variant="outline"
@@ -305,6 +242,7 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
 				</Button>
 
 				<div className="flex items-center gap-3">
+					<ContinueUntilCompleteToggle />
 					<GenerateContributionButton />
 
 					{/* Export button */}
@@ -390,60 +328,19 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
 			{/* Prompt Display Section */}
 			{isPromptOpen && (
 				<div className="bg-card rounded-lg p-4">
-					{activeStage && !isStageReady && (
-						<Alert className="mb-4">
-							<AlertTitle>Stage Not Ready</AlertTitle>
-							<AlertDescription>
-								Stage not ready. Please complete prior stages or ensure the seed
-								prompt for this stage and iteration is available.
-							</AlertDescription>
-						</Alert>
-					)}
-
-					{activeStage && isStageReady && (
-						<div className="mt-2">
-							{iterationPromptCacheEntry?.isLoading && (
-								<div data-testid="iteration-prompt-loading">
-									<Skeleton className="h-4 w-1/4 mb-2" />
-									<Skeleton className="h-8 w-full" />
-								</div>
-							)}
-							{iterationPromptCacheEntry?.error && (
-								<Alert variant="destructive" className="mt-2">
-									<AlertTitle>Error Loading Prompt</AlertTitle>
-									<AlertDescription>
-										{iterationPromptCacheEntry.error.message}
-									</AlertDescription>
-								</Alert>
-							)}
-							{iterationPromptCacheEntry &&
-								!iterationPromptCacheEntry.isLoading &&
-								!iterationPromptCacheEntry.error &&
-								(iterationPromptCacheEntry.content ? (
-									<div className="p-2 rounded-md bg-muted/30">
-										<MarkdownRenderer
-											content={iterationPromptCacheEntry.content}
-										/>
-									</div>
-								) : (
-									<p className="text-sm text-muted-foreground italic">
-										No specific prompt was set for this iteration.
-									</p>
-								))}
-							{!iterationUserPromptResourceId && (
-								<p className="text-sm text-muted-foreground italic">
-									No specific prompt is configured for this iteration/stage.
-								</p>
-							)}
-							{iterationUserPromptResourceId &&
-								!iterationPromptCacheEntry?.content &&
-								!iterationPromptCacheEntry?.isLoading &&
-								!iterationPromptCacheEntry?.error && (
-									<p className="text-sm text-muted-foreground italic">
-										Loading iteration prompt...
-									</p>
-								)}
+					{isLoading ? (
+						<div data-testid="iteration-prompt-loading">
+							<Skeleton className="h-4 w-1/4 mb-2" />
+							<Skeleton className="h-8 w-full" />
 						</div>
+					) : activeSeedPrompt ? (
+						<div className="p-2 rounded-md bg-muted/30">
+							<MarkdownRenderer content={activeSeedPrompt.promptContent} />
+						</div>
+					) : (
+						<p className="text-sm text-muted-foreground italic">
+							No seed prompt available for this session.
+						</p>
 					)}
 				</div>
 			)}

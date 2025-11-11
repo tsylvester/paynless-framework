@@ -234,17 +234,16 @@ describe('Selectors - Recipes', () => {
     });
 
     it('selectStageDocumentChecklist returns each tracked document with status metadata', () => {
-      const checklist = selectStageDocumentChecklist(baseProgressState, progressKey, 'model-1');
-      expect(checklist).toEqual([
-        {
-          documentKey: 'doc_a',
-          status: 'completed',
-          jobId: 'job-1',
-          latestRenderedResourceId: 'res-1',
-          modelId: 'model-1',
-        },
-
-      ]);
+    const checklist = selectStageDocumentChecklist(baseProgressState, progressKey, 'model-1');
+    expect(checklist).toEqual([
+      expect.objectContaining({
+        documentKey: 'doc_a',
+        status: 'completed',
+        jobId: 'job-1',
+        latestRenderedResourceId: 'res-1',
+        modelId: 'model-1',
+      }),
+    ]);
     });
 
     it('selectStageDocumentChecklist entries always expose a modelId', () => {
@@ -252,7 +251,7 @@ describe('Selectors - Recipes', () => {
 
       expectTypeOf(checklist).items
         .toHaveProperty('modelId')
-        .toEqualTypeOf<string>();
+        .toEqualTypeOf<string | null>();
 
       checklist.forEach((entry) => {
         expect(entry.modelId).toBeDefined();
@@ -325,13 +324,15 @@ describe('Selectors - Recipes', () => {
       const focusedDetails = checklist.find(entry => entry.documentKey === focus?.documentKey);
 
       expect(focus).toEqual({ modelId: modelIdForTest, documentKey: 'doc_a' });
-      expect(focusedDetails).toEqual({
-        documentKey: 'doc_a',
-        status: 'completed',
-        jobId: 'job-1',
-        latestRenderedResourceId: 'res-1',
-        modelId: 'model-1',
-      });
+      expect(focusedDetails).toEqual(
+        expect.objectContaining({
+          documentKey: 'doc_a',
+          status: 'completed',
+          jobId: 'job-1',
+          latestRenderedResourceId: 'res-1',
+          modelId: 'model-1',
+        }),
+      );
     });
   });
 

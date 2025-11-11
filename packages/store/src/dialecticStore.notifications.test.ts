@@ -236,15 +236,19 @@ describe('Dialectic Store Notification Handlers', () => {
       const state = useDialecticStore.getState();
       const progress = state.stageRunProgress[progressKey];
       expect(progress.stepStatuses.document_step).toBe('in_progress');
-      expect(progress.documents.business_case).toEqual({
-        status: 'generating',
-        job_id: 'job-doc',
-        latestRenderedResourceId: 'resource/business_case.json',
-        modelId: 'model-2',
-        lastRenderedResourceId: 'resource/business_case.json',
-        versionHash: expect.any(String),
-        lastRenderAtIso: expect.any(String),
-      });
+      expect(progress.documents.business_case).toEqual(
+        expect.objectContaining({
+          descriptorType: 'rendered',
+          status: 'generating',
+          job_id: 'job-doc',
+          latestRenderedResourceId: 'resource/business_case.json',
+          modelId: 'model-2',
+          lastRenderedResourceId: 'resource/business_case.json',
+          versionHash: expect.any(String),
+          lastRenderAtIso: expect.any(String),
+          stepKey: 'document_step',
+        }),
+      );
     });
 
     it('ignores document events when stage progress bucket missing', () => {
@@ -295,15 +299,18 @@ describe('Dialectic Store Notification Handlers', () => {
       _handleDialecticLifecycleEvent?.(event);
 
       const state = useDialecticStore.getState();
-      expect(state.stageRunProgress[progressKey].documents.business_case).toEqual({
-        status: 'continuing',
-        job_id: 'job-doc',
-        latestRenderedResourceId: 'resource/business_case.json',
-        modelId: 'model-2',
-        lastRenderedResourceId: 'resource/business_case.json',
-        versionHash: expect.any(String),
-        lastRenderAtIso: expect.any(String),
-      });
+      expect(state.stageRunProgress[progressKey].documents.business_case).toEqual(
+        expect.objectContaining({
+          descriptorType: 'rendered',
+          status: 'continuing',
+          job_id: 'job-doc',
+          latestRenderedResourceId: 'resource/business_case.json',
+          modelId: 'model-2',
+          lastRenderedResourceId: 'resource/business_case.json',
+          versionHash: expect.any(String),
+          lastRenderAtIso: expect.any(String),
+        }),
+      );
     });
 
     it('marks document completed when final chunk flagged', () => {
@@ -367,15 +374,19 @@ describe('Dialectic Store Notification Handlers', () => {
       const state = useDialecticStore.getState();
       const progress = state.stageRunProgress[progressKey];
       expect(progress.stepStatuses.render_step).toBe('completed');
-      expect(progress.documents.business_case).toEqual({
-        status: 'completed',
-        job_id: 'job-render',
-        latestRenderedResourceId: 'resource-123',
-        modelId: 'model-render',
-        lastRenderedResourceId: 'resource-123',
-        versionHash: expect.any(String),
-        lastRenderAtIso: expect.any(String),
-      });
+      expect(progress.documents.business_case).toEqual(
+        expect.objectContaining({
+          descriptorType: 'rendered',
+          status: 'completed',
+          job_id: 'job-render',
+          latestRenderedResourceId: 'resource-123',
+          modelId: 'model-render',
+          lastRenderedResourceId: 'resource-123',
+          versionHash: expect.any(String),
+          lastRenderAtIso: expect.any(String),
+          stepKey: 'render_step',
+        }),
+      );
     });
 
     it('marks document failed when job_failed arrives', () => {
@@ -409,15 +420,19 @@ describe('Dialectic Store Notification Handlers', () => {
       const state = useDialecticStore.getState();
       const progress = state.stageRunProgress[progressKey];
       expect(progress.stepStatuses.document_step).toBe('failed');
-      expect(progress.documents.business_case).toEqual({
-        status: 'failed',
-        job_id: 'job-doc',
-        latestRenderedResourceId: 'resource/business_case.json',
-        modelId: 'model-2',
-        lastRenderedResourceId: 'resource/business_case.json',
-        versionHash: expect.any(String),
-        lastRenderAtIso: expect.any(String),
-      });
+      expect(progress.documents.business_case).toEqual(
+        expect.objectContaining({
+          descriptorType: 'rendered',
+          status: 'failed',
+          job_id: 'job-doc',
+          latestRenderedResourceId: 'resource/business_case.json',
+          modelId: 'model-2',
+          lastRenderedResourceId: 'resource/business_case.json',
+          versionHash: expect.any(String),
+          lastRenderAtIso: expect.any(String),
+          stepKey: 'document_step',
+        }),
+      );
     });
   });
 

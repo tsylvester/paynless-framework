@@ -14,16 +14,15 @@ import {
   selectStepList,
   selectStageRunProgress,
   selectStageDocumentChecklist,
-  selectStageProgressSummary,
 } from '@paynless/store';
 
-import { Card, CardHeader, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Accordion,
+  AccordionContent,
   AccordionItem,
   AccordionTrigger,
-  AccordionContent,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 
@@ -54,12 +53,134 @@ const formatStatusLabel = (value: string): string => {
     .join(' ');
 };
 
-const buildStepDocumentKeySet = (step: DialecticStageRecipeStep): Set<string> => {
-  const keys = (step.outputs_required ?? [])
-    .map((output) => output.document_key)
-    .filter((key): key is string => typeof key === 'string' && key.length > 0);
+type MarkdownDocumentDescriptor = {
+  documentKey: string;
+  stepKey: string;
+};
 
-  return new Set(keys);
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const toPlainArray = (value: unknown): unknown[] => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (value === null || value === undefined) {
+    return [];
+  }
+  return [value];
+};
+
+const isMarkdownTemplate = (value: string): boolean => {
+  const lower = value.toLowerCase();
+  return lower.endsWith('.md') || lower.endsWith('.markdown');
+};
+
+const extractMarkdownDocumentDescriptorsFromRule = (
+  rawRule: unknown,
+  stepKey: string,
+  descriptors: Map<string, string>,
+): void => {
+  if (!isPlainRecord(rawRule)) {
+    return;
+  }
+
+  const register = (documentKey: unknown) => {
+    if (typeof documentKey === 'string' && documentKey.trim().length > 0 && !descriptors.has(documentKey)) {
+      descriptors.set(documentKey, stepKey);
+    }
+  };
+
+  const legacyDocumentKey = rawRule['document_key'];
+  const legacyFileType = rawRule['file_type'];
+  if (legacyFileType === 'markdown') {
+    register(legacyDocumentKey);
+  }
+
+  const evaluateDocumentEntry = (entry: unknown) => {
+    if (!isPlainRecord(entry)) {
+      return;
+    }
+
+    const documentKey = entry['document_key'];
+    const fileType = entry['file_type'];
+    const templateFilename = entry['template_filename'];
+
+    if (fileType === 'markdown') {
+      register(documentKey);
+      return;
+    }
+
+    if (typeof templateFilename === 'string' && isMarkdownTemplate(templateFilename)) {
+      register(documentKey);
+    }
+  };
+
+  const documents = toPlainArray(rawRule['documents']);
+  documents.forEach(evaluateDocumentEntry);
+
+  const assembledJson = toPlainArray(rawRule['assembled_json']);
+  assembledJson.forEach(evaluateDocumentEntry);
+
+  const filesToGenerate = toPlainArray(rawRule['files_to_generate']);
+  filesToGenerate.forEach((entry) => {
+    if (!isPlainRecord(entry)) {
+      return;
+    }
+
+    const documentKey = entry['from_document_key'];
+    const templateFilename = entry['template_filename'];
+    if (
+      typeof documentKey === 'string' &&
+      documentKey.trim().length > 0 &&
+      typeof templateFilename === 'string' &&
+      isMarkdownTemplate(templateFilename)
+    ) {
+      register(documentKey);
+    }
+  });
+};
+
+const collectMarkdownDocumentDescriptors = (
+  steps: DialecticStageRecipeStep[],
+): MarkdownDocumentDescriptor[] => {
+  const descriptors = new Map<string, string>();
+
+  steps.forEach((step) => {
+    if (!step.outputs_required) {
+      return;
+    }
+
+    let rawOutputs: unknown = step.outputs_required;
+
+    if (typeof rawOutputs === 'string') {
+      try {
+        rawOutputs = JSON.parse(rawOutputs);
+      } catch (error) {
+        console.warn(
+          '[StageRunChecklist] Failed to parse outputs_required JSON',
+          { stepKey: step.step_key, raw: rawOutputs, error },
+        );
+        return;
+      }
+    }
+
+    const rules = toPlainArray(rawOutputs);
+    console.debug('[StageRunChecklist] Parsed outputs_required', {
+      stepKey: step.step_key,
+      ruleCount: rules.length,
+      sampleRule: rules[0],
+    });
+
+    rules.forEach((rule) => {
+      extractMarkdownDocumentDescriptorsFromRule(rule, step.step_key, descriptors);
+    });
+  });
+
+  return Array.from(descriptors.entries()).map(([documentKey, stepKey]) => ({
+    documentKey,
+    stepKey,
+  }));
 };
 
 const buildFocusedDocumentKey = (sessionId: string, stageSlug: string, modelId: string): string =>
@@ -84,6 +205,27 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
     activeStageSlug ? selectStepList(state, activeStageSlug) : []
   );
 
+  const markdownDocumentDescriptors = useMemo(
+    () => collectMarkdownDocumentDescriptors(steps),
+    [steps],
+  );
+
+  const markdownDescriptorMap = useMemo(() => {
+    const descriptors = new Map<string, MarkdownDocumentDescriptor>();
+    markdownDocumentDescriptors.forEach((descriptor) => {
+      descriptors.set(descriptor.documentKey, descriptor);
+    });
+    return descriptors;
+  }, [markdownDocumentDescriptors]);
+
+  const markdownStepKeys = useMemo(() => {
+    const keys = new Set<string>();
+    markdownDocumentDescriptors.forEach(({ stepKey }) => {
+      keys.add(stepKey);
+    });
+    return keys;
+  }, [markdownDocumentDescriptors]);
+
   const progress = useDialecticStore((state) =>
     activeSessionId && activeStageSlug && typeof iterationNumber === 'number'
       ? selectStageRunProgress(state, activeSessionId, activeStageSlug, iterationNumber)
@@ -101,37 +243,55 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
     progressKey ? selectStageDocumentChecklist(state, progressKey, modelId) : []
   );
 
-  const summary = useDialecticStore((state) =>
-    activeSessionId && activeStageSlug && typeof iterationNumber === 'number'
-      ? selectStageProgressSummary(state, activeSessionId, activeStageSlug, iterationNumber, modelId)
-      : undefined
-  );
+  const checklistDocuments = useMemo(() => {
+    const documentsByKey = new Map<string, { entry: StageDocumentEntry; stepKey: string }>();
 
-  const documentsByKey = useMemo(() => {
-    const map = new Map<string, StageDocumentEntry>();
     documentChecklist.forEach((entry) => {
-      if (!entry.latestRenderedResourceId) {
-        throw new Error('Latest rendered resource ID is required');
+      const descriptor = markdownDescriptorMap.get(entry.documentKey);
+      const stepKeyMatch =
+        descriptor?.stepKey ??
+        (entry.stepKey && markdownStepKeys.has(entry.stepKey) ? entry.stepKey : undefined);
+
+      if (descriptor || stepKeyMatch) {
+        const effectiveStepKey = stepKeyMatch ?? entry.stepKey ?? descriptor?.stepKey ?? entry.documentKey;
+        documentsByKey.set(entry.documentKey, {
+          entry,
+          stepKey: effectiveStepKey,
+        });
       }
-      const sanitizedEntry: StageDocumentEntry = {
-        ...entry,
-        latestRenderedResourceId: entry.latestRenderedResourceId,
-      };
-
-      map.set(entry.documentKey, sanitizedEntry);
     });
-    return map;
-  }, [documentChecklist]);
 
-  const openValues = useMemo(
-    () => steps.map((step) => step.step_key),
-    [steps]
+    markdownDescriptorMap.forEach(({ documentKey, stepKey }) => {
+      if (!documentsByKey.has(documentKey)) {
+        const fallbackEntry: StageDocumentEntry = {
+          descriptorType: 'planned',
+          documentKey,
+          status: 'not_started',
+          jobId: null,
+          latestRenderedResourceId: null,
+          modelId: modelId || null,
+          stepKey,
+        };
+        documentsByKey.set(documentKey, {
+          entry: fallbackEntry,
+          stepKey,
+        });
+      }
+    });
+
+    return Array.from(documentsByKey.values()).sort((left, right) =>
+      left.entry.documentKey.localeCompare(right.entry.documentKey),
+    );
+  }, [documentChecklist, markdownDescriptorMap, markdownStepKeys, modelId]);
+
+  const totalDocuments = checklistDocuments.length;
+
+  const completedDocuments = checklistDocuments.reduce(
+    (count, { entry }) => (entry.status === 'completed' ? count + 1 : count),
+    0,
   );
 
-  const totalDocuments = summary?.totalDocuments ?? documentChecklist.length;
-  const completedDocuments = summary?.completedDocuments ?? 0;
-  const outstandingDocuments = summary?.outstandingDocuments ?? [];
-  const hasAnyDocuments = documentChecklist.length > 0;
+  const hasAnyDocuments = checklistDocuments.length > 0;
 
   const effectiveFocusedStageDocumentMap = focusedStageDocumentMap ?? {};
 
@@ -180,181 +340,101 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
     !activeStageSlug ||
     typeof iterationNumber !== 'number' ||
     !recipe ||
-    !progress;
+    (markdownDocumentDescriptors.length === 0 && documentChecklist.length === 0 && !progress);
 
   if (shouldShowGuard) {
     return (
-      <Card data-testid="stage-run-checklist-guard">
-        <CardContent className="py-6">
-          <p className="text-sm text-muted-foreground">Stage progress data is unavailable.</p>
-        </CardContent>
+      <Card className="w-full max-w-full p-4" data-testid="stage-run-checklist-guard">
+        <p className="text-sm text-muted-foreground">Stage progress data is unavailable.</p>
       </Card>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold">Stage Run Checklist</h2>
-          <div aria-live="polite" role="status" className="text-sm text-muted-foreground">
-            {`Completed ${completedDocuments} of ${totalDocuments} documents`}
-          </div>
-          {outstandingDocuments.length > 0 && (
-            <div className="text-sm text-muted-foreground">
-              {`Outstanding: ${outstandingDocuments.join(', ')}`}
-            </div>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {!hasAnyDocuments && (
-          <p className="text-sm text-muted-foreground">No documents generated yet.</p>
-        )}
-        <Accordion
-          type="multiple"
-          className="border rounded-md"
-          defaultValue={openValues}
-        >
-          {steps.map((step) => {
-            const stepStatusValue = progress.stepStatuses[step.step_key] ?? 'not_started';
-            const stepStatusLabel = formatStatusLabel(stepStatusValue);
-            const documentKeys = Array.from(buildStepDocumentKeySet(step));
-            const stepDocuments = documentKeys
-              .map((key) => documentsByKey.get(key))
-              .filter((entry): entry is StageDocumentEntry => Boolean(entry))
-              .sort((left, right) => left.documentKey.localeCompare(right.documentKey));
+    <Card
+      className="w-full max-w-full max-h-96 overflow-hidden border-none p-0"
+      data-testid="stage-run-checklist-card"
+    >
+      <Accordion
+        type="single"
+        collapsible
+        defaultValue="documents"
+        className="w-full"
+        data-testid="stage-run-checklist-accordion"
+      >
+        <AccordionItem value="documents" className="border-none">
+          <AccordionTrigger
+            data-testid="stage-run-checklist-accordion-trigger"
+            className="justify-between rounded-none px-0 py-1 text-sm font-normal text-muted-foreground hover:no-underline"
+          >
+            <span aria-live="polite" role="status" className="text-left">
+              {`Completed ${completedDocuments} of ${totalDocuments} documents`}
+            </span>
+          </AccordionTrigger>
+          <AccordionContent
+            data-testid="stage-run-checklist-accordion-content"
+            className="flex w-full flex-col gap-0 overflow-hidden px-0"
+          >
+            {hasAnyDocuments ? (
+              <ul
+                className="flex max-h-80 flex-col gap-1 overflow-y-auto pr-1"
+                data-testid="stage-run-checklist-documents"
+              >
+                {checklistDocuments.map(({ entry, stepKey }) => {
+                  const documentStatusLabel = formatStatusLabel(entry.status);
+                  const documentModelId = entry.modelId ?? null;
+                  const isSelectable = Boolean(documentModelId);
 
-            return (
-              <AccordionItem key={step.step_key} value={step.step_key} className="px-4">
-                <AccordionTrigger
-                  className="gap-4"
-                  data-testid={`step-row-${step.step_key}`}
-                >
-                  <div className="flex flex-col gap-1 text-left">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium">{step.step_name}</span>
-                      <Badge>{stepStatusLabel}</Badge>
-                    </div>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                      {typeof step.parallel_group === 'number' && (
-                        <span>{`Parallel Group ${step.parallel_group}`}</span>
+                  const focusKey =
+                    activeSessionId && activeStageSlug && documentModelId
+                      ? buildFocusedDocumentKey(activeSessionId, activeStageSlug, documentModelId)
+                      : null;
+
+                  const isActive = Boolean(
+                    focusKey &&
+                      effectiveFocusedStageDocumentMap &&
+                      effectiveFocusedStageDocumentMap[focusKey]?.documentKey === entry.documentKey,
+                  );
+
+                  return (
+                    <li
+                      key={entry.documentKey}
+                      data-testid={`document-${entry.documentKey}`}
+                      className={cn(
+                        'flex items-center justify-between rounded-md border border-border px-2 py-1 text-sm transition-colors',
+                        isSelectable
+                          ? 'cursor-pointer hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40'
+                          : 'cursor-default bg-muted/20 text-muted-foreground',
+                        isActive && 'border-primary ring-2 ring-primary/40',
                       )}
-                      {step.branch_key && step.branch_key.length > 0 && (
-                        <span>{`Branch ${step.branch_key}`}</span>
-                      )}
-                    </div>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent>
-                  <div
-                    data-testid={`documents-for-${step.step_key}`}
-                    className="space-y-2"
-                  >
-                    {stepDocuments.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No documents for this step.</p>
-                    ) : (
-                      <ul className="space-y-2">
-                        {stepDocuments.map((document) => {
-                          const documentStatusLabel = formatStatusLabel(document.status);
-                          const jobIdRaw = document.jobId;
-                          const resourceRaw = document.latestRenderedResourceId;
-                          const modelId = document.modelId;
-                          const isSelectable = Boolean(modelId);
-
-                          const focusKey =
-                            activeSessionId && activeStageSlug && modelId
-                              ? buildFocusedDocumentKey(activeSessionId, activeStageSlug, modelId)
-                              : null;
-
-                          const isActive = Boolean(
-                            focusKey &&
-                              effectiveFocusedStageDocumentMap &&
-                              effectiveFocusedStageDocumentMap[focusKey]?.documentKey === document.documentKey,
-                          );
-
-                          const hasJob = typeof jobIdRaw === 'string' && jobIdRaw.length > 0;
-                          const hasResource = typeof resourceRaw === 'string' && resourceRaw.length > 0;
-
-                          const jobIdDisplay = hasJob
-                            ? jobIdRaw
-                            : hasResource
-                              ? '—'
-                              : 'N/A';
-
-                          const resourceDisplay = hasResource ? resourceRaw : '—';
-
-                          return (
-                            <li
-                              key={document.documentKey}
-                              data-testid={`document-${document.documentKey}`}
-                              className={cn(
-                                'border rounded-md p-3',
-                                'flex flex-col gap-1 text-sm transition-colors outline-none',
-                                isSelectable
-                                  ? 'cursor-pointer hover:border-primary'
-                                  : 'cursor-default',
-                                isActive && 'border-primary ring-2 ring-primary/40',
-                              )}
-                              role={isSelectable ? 'button' : undefined}
-                              tabIndex={isSelectable ? 0 : undefined}
-                              aria-pressed={isActive || undefined}
-                              data-active={isActive ? 'true' : undefined}
-                              onClick={() =>
-                                handleDocumentSelect(document.documentKey, modelId, step.step_key)
-                              }
-                              onKeyDown={(event) =>
-                                handleDocumentKeyDown(
-                                  event,
-                                  document.documentKey,
-                                  modelId,
-                                  step.step_key,
-                                )
-                              }
-                            >
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <span className="font-mono text-xs sm:text-sm">
-                                  {document.documentKey}
-                                </span>
-                                <Badge className="w-fit">{documentStatusLabel}</Badge>
-                              </div>
-                              <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-                                <span>
-                                  Job ID: <span className="font-medium text-foreground">{jobIdDisplay}</span>
-                                </span>
-                                <span>
-                                  Latest Render: <span className="font-medium text-foreground">{resourceDisplay}</span>
-                                </span>
-                              </div>
-                              {modelId && (
-                                <div className="text-xs text-muted-foreground">
-                                  Model:{' '}
-                                  <span className="font-medium text-foreground">{modelId}</span>
-                                </div>
-                              )}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            );
-          })}
-        </Accordion>
-      </CardContent>
+                      tabIndex={isSelectable ? 0 : undefined}
+                      aria-pressed={isSelectable ? (isActive || undefined) : undefined}
+                      data-active={isActive ? 'true' : undefined}
+                      onClick={() =>
+                        isSelectable &&
+                        handleDocumentSelect(entry.documentKey, documentModelId || undefined, stepKey)
+                      }
+                      onKeyDown={(event) =>
+                        isSelectable &&
+                        handleDocumentKeyDown(event, entry.documentKey, documentModelId || undefined, stepKey)
+                      }
+                    >
+                      <span className="font-mono text-xs sm:text-sm">{entry.documentKey}</span>
+                      <Badge className="shrink-0">{documentStatusLabel}</Badge>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="px-3 py-2 text-sm text-muted-foreground">
+                No documents generated yet.
+              </p>
+            )}
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
     </Card>
   );
 };
 
 export { StageRunChecklist };
-
-
-
-
-
-
-
-
-

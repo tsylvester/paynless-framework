@@ -1602,7 +1602,7 @@ export const useAiStore = create<AiStore>()(
 										];
 
 										// Find or create streaming assistant message
-										let assistantMsgIndex = chatMsgs.findIndex(
+										const assistantMsgIndex = chatMsgs.findIndex(
 											(msg) =>
 												msg.role === "assistant" &&
 												msg.id === assistantMessageId,

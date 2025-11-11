@@ -8,6 +8,7 @@ import {
     ChatRole,
     WalletDecisionOutcome,
     DialecticNotificationTypes,
+    AssembledPrompt,
 } from '@paynless/types';
 
 export function isUserRole(role: unknown): role is UserRole {
@@ -56,6 +57,17 @@ export function isApiError(obj: unknown): obj is ApiError {
     return (
         'code' in obj && typeof obj['code'] === 'string' &&
         'message' in obj && typeof obj['message'] === 'string'
+    );
+}
+
+// Type guard for AssembledPrompt
+export function isAssembledPrompt(obj: unknown): obj is AssembledPrompt {
+    if (typeof obj !== 'object' || obj === null) {
+        return false;
+    }
+    return (
+        'promptContent' in obj && typeof obj['promptContent'] === 'string' &&
+        'source_prompt_resource_id' in obj && typeof obj['source_prompt_resource_id'] === 'string'
     );
 }
 

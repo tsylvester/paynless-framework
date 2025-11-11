@@ -140,12 +140,12 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 	return (
 		<div>
 			{/* Enhanced Header */}
-			<div className="container mx-auto px-6 py-2 max-w-7xl">
+			<div className="px-6 py-2">
 				<SessionInfoCard />
 			</div>
 
 			{/* Enhanced Content */}
-			<div className="container mx-auto px-6 py-8 max-w-7xl">
+			<div className="px-6 py-8">
 				<div className="grid grid-cols-1 lg:grid-cols-5 gap-8 lg:gap-12">
 					{/* Enhanced Sidebar */}
 					<div className="lg:col-span-1">

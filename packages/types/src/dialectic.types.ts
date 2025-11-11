@@ -354,6 +354,7 @@ export interface DialecticStateValues {
   stageDocumentFeedbackError: ApiError | null;
   isSubmittingStageDocumentFeedback: boolean;
   submitStageDocumentFeedbackError: ApiError | null;
+  activeSeedPrompt: AssembledPrompt | null;
 }
 
 export type StageRunProgressEntry = NonNullable<DialecticStateValues['stageRunProgress'][string]>;
@@ -361,20 +362,61 @@ export type StageRunDocuments = StageRunProgressEntry['documents'];
 export type StageRunDocumentEntry = StageRunDocuments[string];
 export type DocumentStatus = StageRunDocumentEntry['status'];
 
-export type StageDocumentChecklistEntry = {
-  documentKey: string;
-  status: DocumentStatus;
-  jobId: StageRunDocumentDescriptor['job_id'] | undefined;
-  latestRenderedResourceId: StageRunDocumentDescriptor['latestRenderedResourceId'];
-  modelId: StageRunDocumentDescriptor['modelId'];
-};
 export type StageRunDocumentStatus =
   | 'idle'
   | 'generating'
   | 'retrying'
   | 'failed'
   | 'completed'
-  | 'continuing';
+  | 'continuing'
+  | 'not_started';
+
+export interface StageRenderedDocumentDescriptor {
+  descriptorType?: 'rendered';
+  status: Exclude<StageRunDocumentStatus, 'not_started'> | 'not_started';
+  job_id: string;
+  latestRenderedResourceId: string;
+  modelId: string;
+  versionHash: string;
+  lastRenderedResourceId: string;
+  lastRenderAtIso: string;
+  stepKey?: string;
+}
+
+export interface StagePlannedDocumentDescriptor {
+  descriptorType: 'planned';
+  status: 'not_started';
+  stepKey: string;
+  modelId: string | null;
+}
+
+export type StageRunDocumentDescriptor =
+  | StageRenderedDocumentDescriptor
+  | StagePlannedDocumentDescriptor;
+
+export interface StageRenderedDocumentChecklistEntry {
+  descriptorType?: 'rendered';
+  documentKey: string;
+  status: StageRunDocumentStatus;
+  jobId: string;
+  latestRenderedResourceId: string;
+  modelId: string;
+  stepKey?: string;
+}
+
+export interface StagePlannedDocumentChecklistEntry {
+  descriptorType: 'planned';
+  documentKey: string;
+  status: 'not_started';
+  jobId: null;
+  latestRenderedResourceId: null;
+  modelId: string | null;
+  stepKey: string;
+}
+
+export type StageDocumentChecklistEntry =
+  | StageRenderedDocumentChecklistEntry
+  | StagePlannedDocumentChecklistEntry;
 
 export interface StageDocumentCompositeKey {
   sessionId: string;
@@ -399,16 +441,6 @@ export interface StageDocumentContentState {
   lastBaselineVersion: StageDocumentVersionInfo | null;
   pendingDiff: string | null;
   lastAppliedVersionHash: string | null;
-}
-
-export interface StageRunDocumentDescriptor {
-  status: StageRunDocumentStatus;
-  job_id: string;
-  latestRenderedResourceId: string;
-  modelId: string;
-  versionHash: string;
-  lastRenderedResourceId: string;
-  lastRenderAtIso: string;
 }
 
 export interface StageRunProgressSnapshot {
@@ -475,7 +507,7 @@ export interface DialecticActions {
   fetchDialecticProjects: () => Promise<void>;
   fetchDialecticProjectDetails: (projectId: string) => Promise<void>;
   createDialecticProject: (payload: CreateProjectPayload) => Promise<ApiResponse<DialecticProjectRow>>;
-  startDialecticSession: (payload: StartSessionPayload) => Promise<ApiResponse<DialecticSession>>;
+  startDialecticSession: (payload: StartSessionPayload) => Promise<ApiResponse<StartSessionSuccessResponse>>;
   updateSessionModels: (payload: UpdateSessionModelsPayload) => Promise<ApiResponse<DialecticSession>>;
   fetchAIModelCatalog: () => Promise<void>;
 
@@ -790,7 +822,7 @@ export interface DialecticApiClient {
   createProject(payload: FormData): Promise<ApiResponse<DialecticProject>>;
   listProjects(): Promise<ApiResponse<DialecticProject[]>>;
   getProjectDetails(projectId: string): Promise<ApiResponse<DialecticProject>>;
-  startSession(payload: StartSessionPayload): Promise<ApiResponse<DialecticSession>>;
+  startSession(payload: StartSessionPayload): Promise<ApiResponse<StartSessionSuccessResponse>>;
   updateSessionModels(payload: UpdateSessionModelsPayload): Promise<ApiResponse<DialecticSession>>;
   listModelCatalog(): Promise<ApiResponse<AIModelCatalogEntry[]>>;
   getContributionContentData(contributionId: string): Promise<ApiResponse<GetContributionContentDataResponse | null>>;
@@ -1055,3 +1087,11 @@ export interface SubmitStageDocumentFeedbackPayload {
 	feedback: string;
 }
 
+export interface AssembledPrompt {
+  promptContent: string;
+  source_prompt_resource_id: string;
+}
+
+export interface StartSessionSuccessResponse extends DialecticSession {
+  seedPrompt: AssembledPrompt;
+}

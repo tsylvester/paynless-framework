@@ -309,15 +309,10 @@ describe('StageTabCard', () => {
     ]);
 
     const stageCard = screen.getByTestId('stage-card-hypothesis');
-    const accordion = within(stageCard).getByTestId('stage-checklist-accordion-hypothesis');
-    const toggle = within(stageCard).getByTestId('stage-checklist-toggle-hypothesis');
+    const checklistWrapper = within(stageCard).getByTestId('stage-checklist-wrapper-hypothesis');
 
-    if (toggle.getAttribute('aria-expanded') === 'false') {
-      fireEvent.click(toggle);
-    }
-
-    expect(within(accordion).getByTestId('mock-stage-run-checklist-model-1')).toBeInTheDocument();
-    expect(within(accordion).getByTestId('mock-stage-run-checklist-model-2')).toBeInTheDocument();
+    expect(within(checklistWrapper).getByTestId('mock-stage-run-checklist-model-1')).toBeInTheDocument();
+    expect(within(checklistWrapper).getByTestId('mock-stage-run-checklist-model-2')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('mock-stage-run-checklist-model-2'));
 
@@ -329,5 +324,44 @@ describe('StageTabCard', () => {
       documentKey: 'draft_document_outline',
       stepKey: 'draft_document',
     });
+  });
+
+  it('asserts the new relocated checklist container contract', () => {
+    const multiModelSession: DialecticSession = {
+      ...mockSession,
+      selected_model_ids: ['model-1', 'model-2'],
+    };
+    setupStore({
+      activeSessionDetail: multiModelSession,
+      selectedModelIds: multiModelSession.selected_model_ids ?? [],
+    });
+
+    const { container } = renderComponent();
+    const stageCard = screen.getByTestId('stage-card-hypothesis');
+
+    // 12.e.iii: Verify the stage column exports spacing classes for independent height
+    const rootElement = container.firstChild;
+    expect(rootElement).not.toBeNull();
+    if (rootElement instanceof HTMLElement) {
+      expect(rootElement.classList.contains('self-start')).toBe(true);
+    } else {
+      throw new Error('rootElement is not an HTMLElement');
+    }
+
+
+    // 12.e.i: Assert the inner checklist wrapper matches outer card width and has hooks
+    const checklistWrapper = within(stageCard).getByTestId('stage-checklist-wrapper-hypothesis');
+    expect(checklistWrapper).toBeInTheDocument();
+    expect(checklistWrapper.classList.contains('w-full')).toBe(true);
+
+    // 12.e.ii: Assert that the embedded StageRunChecklist panel resides directly within the wrapper
+    const checklistModel1 = within(checklistWrapper).getByTestId('mock-stage-run-checklist-model-1');
+    const checklistModel2 = within(checklistWrapper).getByTestId('mock-stage-run-checklist-model-2');
+    expect(checklistModel1).toBeInTheDocument();
+    expect(checklistModel2).toBeInTheDocument();
+
+    // Ensure no intermediate accordion is rendered by this component
+    const accordions = checklistWrapper.querySelectorAll('[data-testid*="accordion"]');
+    expect(accordions.length).toBe(0);
   });
 });

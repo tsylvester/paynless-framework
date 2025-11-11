@@ -206,6 +206,80 @@ describe('Dialectic store document refresh behaviour', () => {
 		});
 	});
 
+	it('promotes planned document descriptors to rendered descriptors on first render event', async () => {
+		const mockRecipe: DialecticStageRecipe = {
+			stageSlug: 'thesis',
+			instanceId: 'test-instance',
+			steps: [
+				{
+					id: '1',
+					step_key: 'render_step',
+					step_slug: 'render',
+					step_name: 'Render Document',
+					execution_order: 1,
+					job_type: 'RENDER',
+					prompt_type: 'Turn',
+					output_type: 'RenderedDocument',
+					granularity_strategy: 'per_source_document',
+					inputs_required: [],
+				},
+			],
+		};
+
+		useDialecticStore.setState({
+			stageRunProgress: {
+				[progressKey]: {
+					documents: {
+						[compositeKey.documentKey]: {
+							descriptorType: 'planned',
+							status: 'not_started',
+							stepKey: 'render_step',
+							modelId: compositeKey.modelId,
+						},
+					},
+					stepStatuses: {},
+				},
+			},
+			recipesByStageSlug: {
+				[compositeKey.stageSlug]: mockRecipe,
+			},
+		});
+
+		const renderEvent: RenderCompletedPayload = {
+			type: 'render_completed',
+			sessionId: compositeKey.sessionId,
+			stageSlug: compositeKey.stageSlug,
+			iterationNumber: compositeKey.iterationNumber,
+			job_id: 'job-render',
+			document_key: compositeKey.documentKey,
+			modelId: compositeKey.modelId,
+			latestRenderedResourceId: 'resource/rendered',
+			step_key: 'render_step',
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(renderEvent);
+
+		const documentDescriptor =
+			useDialecticStore.getState().stageRunProgress[progressKey].documents[
+				compositeKey.documentKey
+			];
+
+		expect(documentDescriptor).toBeDefined();
+		expect(documentDescriptor.descriptorType).toBe('rendered');
+		if (documentDescriptor.descriptorType !== 'rendered') {
+			throw new Error('render completion must produce a rendered descriptor');
+		}
+		expect(documentDescriptor.job_id).toBe(renderEvent.job_id);
+		expect(documentDescriptor.latestRenderedResourceId).toBe(
+			renderEvent.latestRenderedResourceId,
+		);
+		expect(documentDescriptor.versionHash).toBeDefined();
+		expect(documentDescriptor.lastRenderedResourceId).toBe(
+			renderEvent.latestRenderedResourceId,
+		);
+		expect(documentDescriptor.lastRenderAtIso).toBeDefined();
+	});
+
 	it('reapplies user edits after refreshed baseline content is fetched', async () => {
 		const oldBaseline = 'Old baseline';
 		const userEdits = 'User edits';

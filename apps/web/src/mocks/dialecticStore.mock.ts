@@ -315,6 +315,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   stageDocumentFeedbackError: null,
   isSubmittingStageDocumentFeedback: false,
   submitStageDocumentFeedbackError: null,
+  activeSeedPrompt: null,
 };
 
 // 2. Helper function to create a new mock store instance
@@ -369,7 +370,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       return {
       ...initialDialecticStateValues,
       ...(initialOverrides || {}),
-
+      hydrateStageProgress: vi.fn().mockResolvedValue(undefined),
       // Actions - implemented using vi.fn() and using `set` for state changes
       fetchDomains: vi.fn().mockResolvedValue(undefined),
       setSelectedDomain: vi.fn((domain: DialecticDomain | null) => set({ selectedDomain: domain })),
