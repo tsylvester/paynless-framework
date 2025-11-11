@@ -2060,6 +2060,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			const {
 				session: fetchedSession,
 				currentStageDetails: fetchedStageDetails,
+				activeSeedPrompt,
 			} = response.data;
 
 			logger.info(
@@ -2072,6 +2073,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			);
 
       set((state) => {
+        state.activeSeedPrompt = activeSeedPrompt || null;
         let sessionWithContributions = fetchedSession; // Default to fetchedSession
 
         if (state.currentProjectDetail && state.currentProjectDetail.dialectic_sessions) {

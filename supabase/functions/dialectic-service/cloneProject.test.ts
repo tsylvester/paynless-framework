@@ -204,9 +204,9 @@ describe("cloneProject", () => {
             created_at: new Date().toISOString(), updated_at: new Date().toISOString(), process_template_id: "pt1",
             initial_prompt_resource_id: null, repo_url: null, selected_domain_overlay_id: null, user_domain_overlay_values: null,
         };
-        const resource1Desc = JSON.stringify({ type: "general_resource", description: "A general file" });
-        const resource2Desc = JSON.stringify({ type: "user_prompt" });
-        const resource3Desc = JSON.stringify({ type: "general_resource" });
+        const resource1Desc = { type: "general_resource", originalDescription: "A general file" };
+        const resource2Desc = { type: "user_prompt" };
+        const resource3Desc = { type: "general_resource" };
 
         const originalResourcesData = [
             {
@@ -302,7 +302,7 @@ describe("cloneProject", () => {
         assertEquals(firstCallArgs.pathContext.originalFileName, originalResourcesData[0].file_name);
         assertEquals(firstCallArgs.mimeType, originalResourcesData[0].mime_type);
         assertEquals(firstCallArgs.userId, cloningUserId);
-        assertEquals(firstCallArgs.description, originalResourcesData[0].resource_description);
+        assertEquals(firstCallArgs.description, "A general file");
         // Check that path components that should be undefined for this simple resource are indeed undefined
         assertEquals(firstCallArgs.pathContext.iteration, undefined, "Iteration should be undefined for simple resource1");
         assertEquals(firstCallArgs.pathContext.stageSlug, undefined, "StageSlug should be undefined for simple resource1");
@@ -313,7 +313,7 @@ describe("cloneProject", () => {
         assertEquals(secondCallArgs.pathContext.fileType, "initial_user_prompt");
         assertEquals(secondCallArgs.pathContext.originalFileName, originalResourcesData[1].file_name);
         assertEquals(secondCallArgs.mimeType, originalResourcesData[1].mime_type);
-        assertEquals(secondCallArgs.description, originalResourcesData[1].resource_description);
+        assertEquals(secondCallArgs.description, "");
         assertEquals(secondCallArgs.pathContext.iteration, undefined, "Iteration should be undefined for simple resource2");
         assertEquals(secondCallArgs.pathContext.stageSlug, undefined, "StageSlug should be undefined for simple resource2");
         assertEquals(secondCallArgs.pathContext.modelSlug, undefined, "ModelSlug should be undefined for simple resource2");
@@ -328,7 +328,7 @@ describe("cloneProject", () => {
         assertEquals(thirdCallArgs.pathContext.modelSlug, undefined, "ModelSlug should be undefined for this project-level seed_prompt path format");
         assertEquals(thirdCallArgs.pathContext.attemptCount, undefined, "AttemptCount should be undefined for this seed_prompt path");
         assertEquals(thirdCallArgs.mimeType, originalResourcesData[2].mime_type);
-        assertEquals(thirdCallArgs.description, originalResourcesData[2].resource_description);
+        assertEquals(thirdCallArgs.description, "");
     });
     
     it("should return error if original project not found", async () => {
@@ -398,12 +398,12 @@ describe("cloneProject", () => {
         const originalContributionsData: Array<DialecticContributionRow & { model_name: string; seed_prompt_url?: string; raw_response_storage_path?: string }> = [
             {
                 id: "contrib1-uuid", session_id: originalSessionId1, user_id: cloningUserId,
-                file_name: "claude-3-opus_1_thesis.md", storage_bucket: "test-bucket",
+                file_name: "claude-3-opus_1_business_case.md", storage_bucket: "test-bucket",
                 storage_path: `${originalProjectId}/session_${originalSession1ShortId}/iteration_1/1_thesis`,
                 mime_type: "text/markdown", size_bytes: 1024, stage: "thesis", iteration_number: 1, 
                 model_id: "ai_model_id_opus", model_name: "claude-3-opus", 
-                contribution_type: "model_output",
-                raw_response_storage_path: `${originalProjectId}/session_${originalSession1ShortId}/iteration_1/1_thesis/raw_responses/claude-3-opus_1_thesis_raw.json`,
+                contribution_type: "business_case",
+                raw_response_storage_path: `${originalProjectId}/session_${originalSession1ShortId}/iteration_1/1_thesis/raw_responses/claude-3-opus_1_business_case_raw.json`,
                 seed_prompt_url: `${originalProjectId}/session_${originalSession1ShortId}/iteration_1/1_thesis/seed_prompt.md`,
                 created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
                 error: "", citations: null, processing_time_ms: 1000, prompt_template_id_used: null, target_contribution_id: null,
@@ -414,13 +414,13 @@ describe("cloneProject", () => {
             },
             {
                 id: "contrib2-uuid", session_id: originalSessionId1, user_id: cloningUserId,
-                file_name: "gemini-1.5-pro_critiquing_(claude-3-opus's_thesis_1)_0_antithesis.md",
+                file_name: "gemini-1.5-pro_critiquing_(claude-3-opus's_thesis_1)_0_business_case_critique.md",
                 storage_bucket: 'test-bucket',
                 storage_path: 'orig-project-uuid/session_origsess/iteration_1/2_antithesis',
                 mime_type: 'text/markdown',
                 size_bytes: 512, stage: "antithesis", iteration_number: 1, 
                 model_id: "ai_model_id_gemini", model_name: "gemini-1.5-pro", 
-                contribution_type: "model_output", 
+                contribution_type: "business_case_critique", 
                 raw_response_storage_path: "",
                 seed_prompt_url: `${originalProjectId}/session_${originalSession1ShortId}/iteration_1/2_antithesis/seed_prompt.md`,
                 created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -523,7 +523,7 @@ describe("cloneProject", () => {
         assert(contrib1MainCallArgs, "File manager should have been called for contribution 1 main file");
         assertEquals(contrib1MainCallArgs.pathContext.projectId, capturedNewProjectIdLocal);
         assertEquals(contrib1MainCallArgs.pathContext.sessionId, capturedNewSessionId1Local);
-        assertEquals(contrib1MainCallArgs.pathContext.fileType, "model_contribution_main");
+        assertEquals(contrib1MainCallArgs.pathContext.fileType, FileType.business_case);
         assertEquals(contrib1MainCallArgs.pathContext.originalFileName, originalContributionsData[0].file_name);
         assertEquals(contrib1MainCallArgs.pathContext.iteration, originalContributionsData[0].iteration_number);
         assertEquals(contrib1MainCallArgs.pathContext.stageSlug, "thesis");
@@ -552,7 +552,7 @@ describe("cloneProject", () => {
         assert(contrib2MainCallArgs, "File manager should have been called for contribution 2 main file");
         assertEquals(contrib2MainCallArgs.pathContext.projectId, capturedNewProjectIdLocal);
         assertEquals(contrib2MainCallArgs.pathContext.sessionId, capturedNewSessionId1Local);
-        assertEquals(contrib2MainCallArgs.pathContext.fileType, "model_contribution_main");
+        assertEquals(contrib2MainCallArgs.pathContext.fileType, FileType.business_case_critique);
         assertEquals(contrib2MainCallArgs.pathContext.originalFileName, originalContributionsData[1].file_name); 
         assertEquals(contrib2MainCallArgs.pathContext.iteration, originalContributionsData[1].iteration_number);
         assertEquals(contrib2MainCallArgs.pathContext.stageSlug, "antithesis"); 
@@ -600,7 +600,7 @@ describe("cloneProject", () => {
                 id: resInitialId, project_id: originalProjectId, user_id: cloningUserId,
                 file_name: "initial_prompt.md", storage_bucket: "test-bucket",
                 storage_path: `${originalProjectId}`,
-                mime_type: "text/markdown", size_bytes: 123, resource_description: JSON.stringify({ type: "initial_user_prompt" }),
+                mime_type: "text/markdown", size_bytes: 123, resource_description: { type: "initial_user_prompt" },
                 created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
                 iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null,
             },
@@ -608,7 +608,7 @@ describe("cloneProject", () => {
                 id: resPlannerPromptId, project_id: originalProjectId, user_id: cloningUserId,
                 file_name: "claude-3-opus_0_some-step-name_planner_prompt.md", storage_bucket: "test-bucket",
                 storage_path: `${originalProjectId}/session_${originalSessionShortId}/iteration_1/1_thesis/_work/prompts`,
-                mime_type: "text/markdown", size_bytes: 256, resource_description: JSON.stringify({ type: FileType.PlannerPrompt }),
+                mime_type: "text/markdown", size_bytes: 256, resource_description: { type: FileType.PlannerPrompt },
                 created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
                 iteration_number: 1, resource_type: "planner_prompt", session_id: originalSessionId, source_contribution_id: null, stage_slug: "thesis",
             },
@@ -619,12 +619,12 @@ describe("cloneProject", () => {
         const originalContributionsData: Array<DialecticContributionRow & { model_name: string }> = [
             {
                 id: contrib1Id, session_id: originalSessionId, user_id: cloningUserId,
-                file_name: "claude-3-opus_0_thesis.md", storage_bucket: "test-bucket",
+                file_name: "claude-3-opus_0_business_case.md", storage_bucket: "test-bucket",
                 storage_path: `${originalProjectId}/session_${originalSessionShortId}/iteration_1/1_thesis`,
                 mime_type: "text/markdown", size_bytes: 1000, stage: "thesis", iteration_number: 1,
                 model_id: "ai_model_id_opus", model_name: "claude-3-opus",
-                contribution_type: "thesis",
-                raw_response_storage_path: `${originalProjectId}/session_${originalSessionShortId}/iteration_1/1_thesis/raw_responses/claude-3-opus_0_thesis_raw.json`,
+                contribution_type: "business_case",
+                raw_response_storage_path: `${originalProjectId}/session_${originalSessionShortId}/iteration_1/1_thesis/raw_responses/claude-3-opus_0_business_case_raw.json`,
                 seed_prompt_url: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
                 error: null, citations: null, processing_time_ms: 900, prompt_template_id_used: null, target_contribution_id: null,
                 tokens_used_input: 10, tokens_used_output: 20, edit_version: 1, is_latest_edit: true, original_model_contribution_id: null,
@@ -798,6 +798,10 @@ describe("cloneProject", () => {
         const fmCalls = mockFileManager.uploadAndRegisterFile.calls;
         assertEquals(fmCalls.length, 5, "Expected 5 FileManager uploads (2 resources + 2 contributions + 1 feedback)");
         
+        const initialPromptCallArgs = fmCalls.find(call => call.args[0].pathContext.originalFileName === "initial_prompt.md")?.args[0];
+        assert(initialPromptCallArgs, "Initial prompt resource was not cloned");
+        assertEquals(initialPromptCallArgs.description, '');
+
         const feedbackCallArgs = fmCalls.find(call => call.args[0].pathContext.fileType === FileType.UserFeedback)?.args[0];
         assert(feedbackCallArgs, "A call to FileManager for the feedback asset is MISSING.");
 

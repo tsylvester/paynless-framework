@@ -230,7 +230,8 @@ Deno.test('FileManagerService', async (t) => {
         const expectedPathParts = constructStoragePath(context.pathContext);
         assertEquals(insertData.storage_path, expectedPathParts.storagePath);
         assertEquals(insertData.file_name, expectedPathParts.fileName);
-        assertEquals(insertData.resource_description, JSON.stringify({ type: context.pathContext.fileType, originalDescription: context.description }));
+        assert(typeof insertData.resource_description === 'object' && insertData.resource_description !== null, 'resource_description should be an object');
+        assertEquals(insertData.resource_description, { type: context.pathContext.fileType, originalDescription: context.description });
       } finally {
         afterEach()
       }
@@ -358,7 +359,7 @@ Deno.test('FileManagerService', async (t) => {
         const expectedPathParts = constructStoragePath(context.pathContext);
         assertEquals(insertData.storage_path, expectedPathParts.storagePath);
         assertEquals(insertData.file_name, expectedPathParts.fileName);
-        assertEquals(insertData.resource_description, JSON.stringify({ type: context.pathContext.fileType, originalDescription: context.description }));
+        assertEquals(insertData.resource_description, { type: context.pathContext.fileType, originalDescription: context.description });
       } finally {
         afterEach()
       }

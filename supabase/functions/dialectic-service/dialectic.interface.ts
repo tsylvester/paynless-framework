@@ -962,6 +962,7 @@ export interface GetContributionContentDataResponse {
 export interface GetSessionDetailsResponse {
   session: DialecticSession;
   currentStageDetails: DialecticStage | null;
+  activeSeedPrompt: AssembledPrompt | null;
 }
 
 export interface ProgressReporting {
@@ -1107,8 +1108,8 @@ export interface InputRule {
     type: 'document' | 'feedback' | 'header_context' | 'seed_prompt' | 'project_resource';
     /** The slug of the stage from which to draw the artifact (e.g., 'thesis'). */
     slug: string;
-    /** The specific key of the document to use, or '*' to use all documents from the specified stage. */
-    document_key?: string | '*';
+    /** The specific key of the document to use. */
+    document_key?: FileType;
     /** Whether this input is mandatory for the step to proceed. */
     required?: boolean;
     /** Whether multiple artifacts of this type can be provided. */

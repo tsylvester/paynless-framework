@@ -936,6 +936,22 @@ Deno.test("[path_deconstructor] failing cases - bugs discovered from inverse tes
     assertEquals(info.documentKey, 'tech_stack');
     assertEquals(info.stageSlug, 'synthesis');
   });
+
+  await t.step("should correctly deconstruct antithesis with document key", () => {
+    const dirPart = "project-uuid-123/session_sessionu/iteration_1/2_antithesis";
+    const filePart = "gemini-1.5-pro_critiquing_(claude-3-opus's_thesis_1)_0_business_case_critique.md";
+    const info = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
+
+    assertEquals(info.error, undefined);
+    assertEquals(info.fileTypeGuess, FileType.business_case_critique);
+    assertEquals(info.modelSlug, 'gemini-1.5-pro');
+    assertEquals(info.attemptCount, 0);
+    assertEquals(info.documentKey, 'business_case_critique');
+    assertEquals(info.stageSlug, 'antithesis');
+    assertEquals(info.sourceModelSlug, 'claude-3-opus');
+    assertEquals(info.sourceContributionType, 'thesis');
+    assertEquals(info.sourceAttemptCount, 1);
+  });
 });
 
 

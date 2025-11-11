@@ -26,12 +26,12 @@ Deno.test('getSeedPromptForStage - Happy Path', async () => {
         { 
             storage_bucket: 'test-bucket',
             storage_path: 'prompts/', 
-            resource_description: JSON.stringify({
+            resource_description: {
                 type: 'seed_prompt',
                 session_id: mockSession.id,
                 stage_slug: mockStage.slug,
                 iteration: mockSession.iteration_count,
-            }),
+            },
             file_name: 'prompt.md'
         }
     ];
@@ -107,12 +107,12 @@ Deno.test('getSeedPromptForStage - Throws when resource download fails', async (
         { 
             storage_bucket: 'test-bucket',
             storage_path: 'prompts/', 
-            resource_description: JSON.stringify({
+            resource_description: {
                 type: 'seed_prompt',
                 session_id: mockSession.id,
                 stage_slug: mockStage.slug,
                 iteration: mockSession.iteration_count,
-            }),
+            },
             file_name: 'prompt.md'
         }
     ];

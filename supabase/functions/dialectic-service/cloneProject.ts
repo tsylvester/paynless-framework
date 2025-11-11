@@ -1,5 +1,5 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@^2";
-import type { Database, Json } from "../types_db.ts";
+import type { Database } from "../types_db.ts";
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts';
 import { 
     IFileManager, 
@@ -9,11 +9,26 @@ import {
     ModelContributionUploadContext,
     ResourceUploadContext,
     UserFeedbackUploadContext,
+    ModelContributionFileTypes,
 } from "../_shared/types/file_manager.types.ts";
 import { downloadFromStorage } from "../_shared/supabase_storage_utils.ts";
 import { deconstructStoragePath } from "../_shared/utils/path_deconstructor.ts";
 import type { DialecticProjectRow, DialecticProjectInsert, DialecticSessionInsert, DialecticContributionRow, DialecticProjectResourceRow, DialecticFeedbackRow } from "../dialectic-service/dialectic.interface.ts";
 import { isContributionType, isFileType } from "../_shared/utils/type_guards.ts";
+
+function isModelContributionFileType(fileType: FileType): fileType is ModelContributionFileTypes {
+    // This is a simplified check. A more robust implementation might involve
+    // checking against a programmatically generated list of ModelContributionFileTypes.
+    // For now, we assume that if it's not a resource or feedback type, it's a model contribution.
+    // This logic may need refinement if more top-level FileType categories are added.
+    const resourceOrFeedbackTypes = [
+        FileType.ProjectReadme, FileType.PendingFile, FileType.CurrentFile, FileType.CompleteFile,
+        FileType.InitialUserPrompt, FileType.ProjectSettingsFile, FileType.GeneralResource,
+        FileType.SeedPrompt, FileType.ProjectExportZip, FileType.PlannerPrompt, FileType.TurnPrompt,
+        FileType.AssembledDocumentJson, FileType.RenderedDocument, FileType.UserFeedback
+    ];
+    return !resourceOrFeedbackTypes.includes(fileType);
+}
 
 export interface CloneProjectError {
     message: string;
@@ -45,7 +60,7 @@ function buildUploadContextForAsset(
     };
 
     if (originalAsset.sourceTable === 'dialectic_contributions') {
-        if (pathContext.fileType !== FileType.ModelContributionRawJson && pathContext.fileType !== FileType.PairwiseSynthesisChunk) {
+        if (!isModelContributionFileType(pathContext.fileType)) {
              throw new Error(`Asset from contributions table has unexpected fileType: ${pathContext.fileType}`);
         }
         const context: ModelContributionUploadContext = {
@@ -104,17 +119,10 @@ function buildUploadContextForAsset(
             throw new Error(`Asset from resources table has unexpected fileType: ${pathContext.fileType}`);
         }
         
-        let descriptionObject: Json | null = null;
-        if (typeof originalAsset.resource_description === 'string') {
-            try {
-                descriptionObject = JSON.parse(originalAsset.resource_description);
-            } catch (e) {
-                console.warn(`Could not parse resource_description for asset ${originalAsset.id}:`, e);
-                descriptionObject = originalAsset.resource_description;
-                }
-            } else {
-            descriptionObject = originalAsset.resource_description;
-        }
+        const desc = originalAsset.resource_description;
+        const originalDescription = (desc && typeof desc === 'object' && 'originalDescription' in desc && typeof desc.originalDescription === 'string')
+            ? desc.originalDescription
+            : '';
 
         const context: ResourceUploadContext = {
             ...commonContext,
@@ -122,7 +130,7 @@ function buildUploadContextForAsset(
                 ...pathContext,
                 fileType: pathContext.fileType,
             },
-            description: typeof descriptionObject === 'string' ? descriptionObject : JSON.stringify(descriptionObject),
+            description: originalDescription,
         };
         return context;
     }
@@ -270,6 +278,20 @@ export async function cloneProject(
             const deconstructed = deconstructStoragePath({ storageDir: asset.storage_path, fileName: asset.file_name });
             if (deconstructed.error) throw new Error(`Failed to deconstruct path for asset ${asset.id}: ${deconstructed.error}`);
             
+            let fileType = deconstructed.fileTypeGuess;
+            if (!fileType) {
+                if (asset.sourceTable === 'dialectic_contributions') {
+                    const type = asset.contribution_type;
+                    if (type === 'pairwise_synthesis_chunk') {
+                        fileType = FileType.PairwiseSynthesisChunk;
+                    } else if (type && isFileType(type)) {
+                        fileType = type;
+                    }
+                } else if (asset.sourceTable === 'dialectic_feedback') {
+                    fileType = FileType.UserFeedback;
+                }
+            }
+            
             console.log('--- Debugging Asset ---');
             console.log('Asset:', JSON.stringify(asset, null, 2));
             console.log('Deconstructed Path:', JSON.stringify(deconstructed, null, 2));
@@ -277,9 +299,10 @@ export async function cloneProject(
             const newSessionId = asset.session_id ? originalFullSessionIdToNewFullSessionIdMap.get(asset.session_id) : undefined;
             if (asset.session_id && !newSessionId) throw new Error(`Could not find new session ID for asset ${asset.id}`);
 
+            if (!fileType) throw new Error(`Could not determine fileType for asset ${asset.id}`);
             const pathContext: PathContext = {
                 projectId: actualClonedProjectId,
-                fileType: deconstructed.fileTypeGuess!,
+                fileType: fileType,
                 originalFileName: deconstructed.parsedFileNameFromPath || asset.file_name,
                 sessionId: newSessionId,
                 iteration: deconstructed.iteration,

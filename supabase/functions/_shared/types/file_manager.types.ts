@@ -202,9 +202,7 @@ export type ResourceUploadContext = UploadContextBase & {
     fileType: ResourceFileTypes;
   };
   resourceTypeForDb?: string; // To directly populate dialectic_project_resources.resource_type
-  contributionMetadata?: never;
-  feedbackTypeForDb?: never;
-  resourceDescriptionForDb?: never;
+  resourceDescriptionForDb?: Json | null;
 };
 
 export type UploadContext = ModelContributionUploadContext | UserFeedbackUploadContext | ResourceUploadContext;

@@ -132,6 +132,7 @@ export interface DialecticSession {
 export interface GetSessionDetailsResponse {
   session: DialecticSession;
   currentStageDetails: DialecticStage | null;
+  activeSeedPrompt: AssembledPrompt | null;
 }
 
 export interface DialecticSessionModel {

@@ -22,32 +22,14 @@ export async function getSeedPromptForStage(
   }
 
   const seedPromptResource = projectResources.find(resource => {
-    if (typeof resource.resource_description !== 'string') {
-      if (resource.resource_description && typeof resource.resource_description === 'object' && !Array.isArray(resource.resource_description)) {
-        const desc = resource.resource_description; // No cast needed
-        if (isResourceDescription(desc)) {
-          return desc.type === 'seed_prompt' &&
-                 desc.session_id === sessionId &&
-                 desc.stage_slug === stageSlug &&
-                 desc.iteration === iterationNumber;
-        }
-      }
-      return false;
+    const desc = resource.resource_description;
+    if (desc && typeof desc === 'object' && !Array.isArray(desc) && isResourceDescription(desc)) {
+      return desc.type === 'seed_prompt' &&
+             desc.session_id === sessionId &&
+             desc.stage_slug === stageSlug &&
+             desc.iteration === iterationNumber;
     }
-    try {
-      const desc = JSON.parse(resource.resource_description);
-      if (isResourceDescription(desc)) {
-        return desc.type === 'seed_prompt' &&
-               desc.session_id === sessionId &&
-               desc.stage_slug === stageSlug &&
-               desc.iteration === iterationNumber;
-      }
-      return false;
-    } catch (e) {
-      // Log parsing failure but continue search
-      console.debug(`Failed to parse resource_description for resource ${resource.file_name}`, { error: e });
-      return false;
-    }
+    return false;
   });
 
   if (!seedPromptResource) {

@@ -30,8 +30,8 @@ export function deconstructStoragePath(
   const fullPath = storageDir ? `${storageDir}/${fileName}` : fileName;
 
   // Regex patterns defined as strings
-  const antithesisContribRawPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/raw_responses/([^_]+)_critiquing_\\(([^_]+)'s_([^_]+)_(\\d+)\\)_(\\d+)_antithesis_raw\\.json$";
-  const antithesisContribPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/([^_]+)_critiquing_\\(([^_]+)'s_([^_]+)_(\\d+)\\)_(\\d+)_antithesis\\.md$";
+  const antithesisContribRawPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/raw_responses/([^_]+)_critiquing_\\(([^_]+)'s_([^_]+)_(\\d+)\\)_(\\d+)_(.+)_raw\\.json$";
+  const antithesisContribPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/([^_]+)_critiquing_\\(([^_]+)'s_([^_]+)_(\\d+)\\)_(\\d+)_(.+)\\.md$";
   
   // New pattern for continuation chunks - must be checked before general model contributions
   const modelContribContinuationPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(.+)_(\\d+)_(.+)_continuation_(\\d+)(\\.md)$";
@@ -85,6 +85,11 @@ export function deconstructStoragePath(
     info.attemptCount = parseInt(matches[9], 10);
     info.contributionType = 'antithesis';
     info.fileTypeGuess = FileType.ModelContributionRawJson;
+    info.documentKey = matches[10];
+    const specificFileType = Object.values(FileType).find(ft => ft === info.documentKey);
+    if (specificFileType) {
+      info.fileTypeGuess = specificFileType;
+    }
     return info;
   }
 
@@ -102,6 +107,11 @@ export function deconstructStoragePath(
     info.sourceAttemptCount = parseInt(matches[8], 10);
     info.attemptCount = parseInt(matches[9], 10);
     info.contributionType = 'antithesis';
+    info.documentKey = matches[10];
+    const specificFileType = Object.values(FileType).find(ft => ft === info.documentKey);
+    if (specificFileType) {
+      info.fileTypeGuess = specificFileType;
+    }
     return info;
   }
 
