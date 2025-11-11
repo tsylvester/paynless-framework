@@ -237,12 +237,13 @@ export const selectIsStageReadyForSessionIteration = createSelector(
         (state: DialecticStateValues) => state.stageRunProgress,
         selectCurrentProjectDetail,
         selectCurrentProcessTemplate,
+        (state: DialecticStateValues) => state.activeSeedPrompt,
         (_state, projectId: string) => projectId,
         (_state, _projectId, sessionId: string) => sessionId,
         (_state, _projectId, _sessionId, stageSlug: string) => stageSlug,
         (_state, _projectId, _sessionId, _stageSlug, iterationNumber: number) => iterationNumber
     ],
-    (recipesByStageSlug, stageRunProgressMap, project, processTemplate, projectId, sessionId, stageSlug, iterationNumber): boolean => {
+    (recipesByStageSlug, stageRunProgressMap, project, processTemplate, activeSeedPrompt, projectId, sessionId, stageSlug, iterationNumber): boolean => {
         if (!project || project.id !== projectId || !processTemplate) {
             return false;
         }
@@ -333,44 +334,7 @@ export const selectIsStageReadyForSessionIteration = createSelector(
                 }
 
                 if (requirement.type === 'seed_prompt') {
-                    let hasSeedPrompt = false;
-                    for (const resource of projectResources) {
-                        let descriptorCandidate: unknown = resource.resource_description;
-                        if (typeof descriptorCandidate === 'string') {
-                            try {
-                                const parsed: unknown = JSON.parse(descriptorCandidate);
-                                descriptorCandidate = parsed;
-                            } catch {
-                                continue;
-                            }
-                        }
-                        if (typeof descriptorCandidate !== 'object' || descriptorCandidate === null) {
-                            continue;
-                        }
-                        const typeDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'type');
-                        const typeValue = typeDescriptor?.value;
-                        if (typeof typeValue !== 'string' || typeValue !== 'seed_prompt') {
-                            continue;
-                        }
-                        const sessionDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'session_id');
-                        const sessionValue = sessionDescriptor?.value;
-                        if (typeof sessionValue !== 'string' || sessionValue !== sessionId) {
-                            continue;
-                        }
-                        const stageDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'stage_slug');
-                        const stageValue = stageDescriptor?.value;
-                        if (typeof stageValue !== 'string' || stageValue !== stageSlug) {
-                            continue;
-                        }
-                        const iterationDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'iteration');
-                        const iterationValue = iterationDescriptor?.value;
-                        if (typeof iterationValue !== 'number' || iterationValue !== iterationNumber) {
-                            continue;
-                        }
-                        hasSeedPrompt = true;
-                        break;
-                    }
-                    if (!hasSeedPrompt) {
+                    if (!activeSeedPrompt) {
                         return false;
                     }
                     continue;
