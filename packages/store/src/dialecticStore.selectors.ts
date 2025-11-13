@@ -657,6 +657,9 @@ export const selectStageProgressSummary = (
     totalDocuments: number;
     completedDocuments: number;
     outstandingDocuments: string[];
+    hasFailed: boolean;
+    failedDocuments: number;
+    failedDocumentKeys: string[];
 } => {
     const progress = selectStageRunProgress(state, sessionId, stageSlug, iterationNumber);
     if (!progress) {
@@ -665,6 +668,9 @@ export const selectStageProgressSummary = (
             totalDocuments: 0,
             completedDocuments: 0,
             outstandingDocuments: [],
+            hasFailed: false,
+            failedDocuments: 0,
+            failedDocumentKeys: [],
         };
     }
 
@@ -678,6 +684,7 @@ export const selectStageProgressSummary = (
 
     let completedDocuments = 0;
     const outstandingDocuments: string[] = [];
+    const failedDocumentKeys: string[] = [];
 
     for (const key of documentKeys) {
         const documentDescriptor = documentEntries[key];
@@ -686,6 +693,11 @@ export const selectStageProgressSummary = (
         }
         if (documentDescriptor.status === 'completed') {
             completedDocuments += 1;
+            continue;
+        }
+
+        if (documentDescriptor.status === 'failed') {
+            failedDocumentKeys.push(key);
         } else {
             outstandingDocuments.push(key);
         }
@@ -695,12 +707,16 @@ export const selectStageProgressSummary = (
     const isComplete = totalDocuments > 0 && completedDocuments === totalDocuments;
 
     outstandingDocuments.sort();
+    failedDocumentKeys.sort();
 
     return {
         isComplete,
         totalDocuments,
         completedDocuments,
         outstandingDocuments,
+        hasFailed: failedDocumentKeys.length > 0,
+        failedDocuments: failedDocumentKeys.length,
+        failedDocumentKeys,
     };
 };
 

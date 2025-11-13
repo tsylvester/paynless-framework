@@ -335,7 +335,7 @@ export function isInputRule(value: unknown): value is InputRule {
 
     if ('document_key' in value) {
         // Recipe documents can introduce new keys at runtime; ensure we only enforce non-empty strings.
-        if (value.document_key !== '*' && (typeof value.document_key !== 'string' || value.document_key.length === 0)) {
+        if (typeof value.document_key !== 'string' || value.document_key.length === 0) {
             return false;
         }
     }

@@ -25,6 +25,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
+import { XCircle } from 'lucide-react';
 
 const formatStatusLabel = (value: string): string => {
   const mapping: Record<string, string> = {
@@ -419,7 +420,16 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
                         handleDocumentKeyDown(event, entry.documentKey, documentModelId || undefined, stepKey)
                       }
                     >
-                      <span className="font-mono text-xs sm:text-sm">{entry.documentKey}</span>
+                      <div className="flex items-center gap-2">
+                        {entry.status === 'failed' ? (
+                          <XCircle
+                            aria-label="Document failed"
+                            className="h-4 w-4 text-destructive"
+                            data-testid="document-failed-icon"
+                          />
+                        ) : null}
+                        <span className="font-mono text-xs sm:text-sm">{entry.documentKey}</span>
+                      </div>
                       <Badge className="shrink-0">{documentStatusLabel}</Badge>
                     </li>
                   );

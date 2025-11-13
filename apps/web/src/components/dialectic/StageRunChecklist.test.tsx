@@ -210,6 +210,35 @@ describe('StageRunChecklist', () => {
     beforeEach(() => {
         initializeMockDialecticState();
     });
+    
+    it('surfaces a failure icon when a document status is failed', () => {
+        const recipe = createRecipe([buildRenderStep()]);
+
+        const stepStatuses: StepStatuses = {
+            render_document: 'failed',
+        };
+
+        const documents: StageRunDocuments = {
+            synthesis_document_rendered: {
+                status: 'failed',
+                job_id: 'job-render-failed',
+                latestRenderedResourceId: 'resource-render',
+                modelId: modelIdA,
+                versionHash: 'hash-render',
+                lastRenderedResourceId: 'resource-render',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+            },
+        };
+
+        const progressEntry = createProgressEntry(stepStatuses, documents);
+
+        setChecklistState(recipe, progressEntry);
+
+        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+
+        const failureIcon = screen.getByTestId('document-failed-icon');
+        expect(failureIcon).toBeInTheDocument();
+    });
 
     it('lists only markdown deliverables for the active model', () => {
         const recipe = createRecipe([

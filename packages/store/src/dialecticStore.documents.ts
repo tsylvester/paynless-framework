@@ -742,15 +742,6 @@ export const handleJobFailedLogic = (
 		logger.warn('[DialecticStore] job_failed ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
 		return;
 	}
-	const latestRenderedResourceId = event.latestRenderedResourceId;
-	if (typeof latestRenderedResourceId !== 'string' || latestRenderedResourceId.length === 0) {
-		logger.warn('[DialecticStore] job_failed ignored; latestRenderedResourceId missing', {
-			stageSlug: event.stageSlug,
-			documentKey: event.document_key,
-			jobId: event.job_id,
-		});
-		return;
-	}
 
 	const compositeKey: StageDocumentCompositeKey = {
 		sessionId: event.sessionId,
@@ -759,7 +750,6 @@ export const handleJobFailedLogic = (
 		modelId: event.modelId,
 		documentKey: event.document_key,
 	};
-	const versionInfo = createVersionInfo(latestRenderedResourceId);
 
 	set((state) => {
 		const progress = state.stageRunProgress[progressKey];
@@ -768,29 +758,128 @@ export const handleJobFailedLogic = (
 		}
 		progress.stepStatuses[stepKey] = 'failed';
 		const documentKeyValue = event.document_key;
-		const descriptor = ensureRenderedDocumentDescriptor(progress, documentKeyValue, {
-			status: 'failed',
-			jobId: event.job_id,
-			latestRenderedResourceId,
-			modelId: event.modelId,
-			versionInfo,
-			stepKey,
-		});
+		const hasLatestResource =
+			typeof event.latestRenderedResourceId === 'string' &&
+			event.latestRenderedResourceId.length > 0;
+		const existingDescriptor = progress.documents[documentKeyValue];
+		let descriptorVersionInfo: StageDocumentVersionInfo | null = null;
+
+		const buildFallbackVersion = (resourceId: string): StageDocumentVersionInfo =>
+			createVersionInfo(resourceId);
+
+		const convertPlannedToRendered = (
+			planned: StagePlannedDocumentDescriptor,
+			resourceId: string,
+			versionInfo: StageDocumentVersionInfo,
+		): StageRenderedDocumentDescriptor => {
+			const renderedDescriptor = ensureRenderedDocumentDescriptor(progress, documentKeyValue, {
+				status: 'failed',
+				jobId: event.job_id,
+				latestRenderedResourceId: resourceId,
+				modelId: event.modelId,
+				versionInfo,
+				stepKey: planned.stepKey ?? stepKey,
+			});
+			descriptorVersionInfo = versionInfo;
+			return renderedDescriptor;
+		};
+
+		const ensureDescriptor = (): StageRenderedDocumentDescriptor => {
+			if (existingDescriptor) {
+				if (isPlannedDescriptor(existingDescriptor)) {
+					if (hasLatestResource) {
+						const versionInfo = buildFallbackVersion(event.latestRenderedResourceId!);
+						const rendered = convertPlannedToRendered(
+							existingDescriptor,
+							event.latestRenderedResourceId!,
+							versionInfo,
+						);
+						return rendered;
+					}
+
+					const versionInfo = buildFallbackVersion(event.job_id);
+					const renderedDescriptor: StageRenderedDocumentDescriptor = {
+						descriptorType: 'rendered',
+						status: 'failed',
+						job_id: event.job_id,
+						latestRenderedResourceId: event.job_id,
+						modelId: event.modelId,
+						versionHash: versionInfo.versionHash,
+						lastRenderedResourceId: event.job_id,
+						lastRenderAtIso: versionInfo.updatedAt,
+						stepKey: existingDescriptor.stepKey ?? stepKey,
+					};
+					progress.documents[documentKeyValue] = renderedDescriptor;
+					descriptorVersionInfo = null;
+					return renderedDescriptor;
+				}
+
+				return existingDescriptor;
+			}
+
+			if (hasLatestResource) {
+				const versionInfo = buildFallbackVersion(event.latestRenderedResourceId!);
+				const renderedDescriptor = ensureRenderedDocumentDescriptor(progress, documentKeyValue, {
+					status: 'failed',
+					jobId: event.job_id,
+					latestRenderedResourceId: event.latestRenderedResourceId!,
+					modelId: event.modelId,
+					versionInfo,
+					stepKey,
+				});
+				descriptorVersionInfo = versionInfo;
+				return renderedDescriptor;
+			}
+
+			const versionInfo = buildFallbackVersion(event.job_id);
+			const renderedDescriptor: StageRenderedDocumentDescriptor = {
+				descriptorType: 'rendered',
+				status: 'failed',
+				job_id: event.job_id,
+				latestRenderedResourceId: event.job_id,
+				modelId: event.modelId,
+				versionHash: versionInfo.versionHash,
+				lastRenderedResourceId: event.job_id,
+				lastRenderAtIso: versionInfo.updatedAt,
+			};
+			if (stepKey) {
+				renderedDescriptor.stepKey = stepKey;
+			}
+			progress.documents[documentKeyValue] = renderedDescriptor;
+			descriptorVersionInfo = null;
+			return renderedDescriptor;
+		};
+
+		const descriptor = ensureDescriptor();
 		descriptor.status = 'failed';
 		descriptor.job_id = event.job_id;
-		descriptor.latestRenderedResourceId = latestRenderedResourceId;
 		descriptor.modelId = event.modelId;
-		descriptor.versionHash = versionInfo.versionHash;
-		descriptor.lastRenderedResourceId = latestRenderedResourceId;
-		descriptor.lastRenderAtIso = versionInfo.updatedAt;
-		if (!descriptor.stepKey && stepKey) {
+		descriptor.error = event.error;
+		if (stepKey && !descriptor.stepKey) {
 			descriptor.stepKey = stepKey;
 		}
-		upsertStageDocumentVersionLogic(state, compositeKey, versionInfo);
-		ensureStageDocumentContentLogic(state, compositeKey, {
-			baselineMarkdown: '',
-			version: versionInfo,
-		});
+
+		if (hasLatestResource) {
+			descriptor.latestRenderedResourceId = event.latestRenderedResourceId!;
+			if (!descriptorVersionInfo) {
+				descriptorVersionInfo = buildFallbackVersion(event.latestRenderedResourceId!);
+			}
+			descriptor.versionHash = descriptorVersionInfo.versionHash;
+			descriptor.lastRenderedResourceId = event.latestRenderedResourceId!;
+			descriptor.lastRenderAtIso = descriptorVersionInfo.updatedAt;
+		}
+
+		if (descriptorVersionInfo) {
+			upsertStageDocumentVersionLogic(state, compositeKey, descriptorVersionInfo);
+			ensureStageDocumentContentLogic(state, compositeKey, {
+				baselineMarkdown: '',
+				version: descriptorVersionInfo,
+			});
+		}
+
+		const contentEntry = ensureStageDocumentContentLogic(state, compositeKey);
+		contentEntry.error = event.error;
+		contentEntry.isLoading = false;
 	});
 };
 

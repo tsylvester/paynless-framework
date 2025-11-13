@@ -44,7 +44,8 @@ import {
     selectSessionById,
     selectStageById,
     selectFeedbackForStageIteration,
-    selectSortedStages
+    selectSortedStages,
+    selectStageProgressSummary
 } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
 import type { 
@@ -712,6 +713,56 @@ describe('Dialectic Store Selectors', () => {
             expect(result).toBeUndefined();
         });
     });
+
+  describe('selectStageProgressSummary', () => {
+    it('reports failure metadata when any document has failed', () => {
+      const sessionId = 'session-progress';
+      const stageSlug = 'synthesis';
+      const iterationNumber = 1;
+
+      const progressState: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        stageRunProgress: {
+          [`${sessionId}:${stageSlug}:${iterationNumber}`]: {
+            stepStatuses: {},
+            documents: {
+              'stage-outline': {
+                descriptorType: 'rendered',
+                status: 'completed',
+                job_id: 'job-complete',
+                latestRenderedResourceId: 'res-complete',
+                modelId: 'model-a',
+                versionHash: 'hash-complete',
+                lastRenderedResourceId: 'res-complete',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+              'stage-draft': {
+                descriptorType: 'rendered',
+                status: 'failed',
+                job_id: 'job-failed',
+                latestRenderedResourceId: 'res-failed',
+                modelId: 'model-a',
+                versionHash: 'hash-failed',
+                lastRenderedResourceId: 'res-failed',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+            },
+          },
+        },
+      };
+
+      const summary = selectStageProgressSummary(
+        progressState,
+        sessionId,
+        stageSlug,
+        iterationNumber,
+      );
+
+      expect(summary.hasFailed).toBe(true);
+      expect(summary.failedDocuments).toBe(1);
+      expect(summary.failedDocumentKeys).toEqual(['stage-draft']);
+    });
+  });
 
     // Tests for selectFeedbackForStageIteration
     describe('selectFeedbackForStageIteration', () => {

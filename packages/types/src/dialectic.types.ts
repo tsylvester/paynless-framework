@@ -382,6 +382,7 @@ export interface StageRenderedDocumentDescriptor {
   lastRenderedResourceId: string;
   lastRenderAtIso: string;
   stepKey?: string;
+  error?: ApiError | null;
 }
 
 export interface StagePlannedDocumentDescriptor {

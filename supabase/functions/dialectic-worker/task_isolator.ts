@@ -1,4 +1,3 @@
-import { PostgrestError } from 'npm:@supabase/postgrest-js@1.19.4';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import {
     DialecticExecuteJobPayload,
@@ -119,94 +118,325 @@ function mapFeedbackToSourceDocument(row: DialecticFeedbackRow, content: string)
 
 type SourceRecord = DialecticContributionRow | DialecticProjectResourceRow | DialecticFeedbackRow;
 
-async function findSourceDocuments(
+function hasDocumentKeyField(value: unknown): value is { document_key: unknown } {
+    return typeof value === 'object' && value !== null && 'document_key' in value;
+}
+
+function getDocumentKeyFromResource(row: DialecticProjectResourceRow): string | null {
+    const descriptor = row.resource_description;
+    if (hasDocumentKeyField(descriptor)) {
+        const maybeKey = descriptor.document_key;
+        if (typeof maybeKey === 'string' && maybeKey.length > 0) {
+            return maybeKey;
+        }
+    }
+    return null;
+}
+
+function fileNameContainsDocumentKey(fileName: string | null | undefined, documentKey: string): boolean {
+    if (!fileName) {
+        return false;
+    }
+    return fileName.toLowerCase().includes(documentKey.toLowerCase());
+}
+
+function recordMatchesDocumentKey(record: SourceRecord, documentKey: string | undefined): boolean {
+    if (!documentKey) {
+        return true;
+    }
+
+    if (fileNameContainsDocumentKey(record.file_name ?? null, documentKey)) {
+        return true;
+    }
+
+    if (isProjectResourceRow(record)) {
+        const descriptorKey = getDocumentKeyFromResource(record);
+        if (descriptorKey && descriptorKey.toLowerCase() === documentKey.toLowerCase()) {
+            return true;
+        }
+    }
+
+    if (isContributionRow(record)) {
+        const contributionType = record.contribution_type;
+        if (typeof contributionType === 'string' && contributionType.toLowerCase() === documentKey.toLowerCase()) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function filterRecordsByDocumentKey<T extends SourceRecord>(records: T[], documentKey: string | undefined): T[] {
+    if (!documentKey) {
+        return records;
+    }
+    return records.filter((record) => recordMatchesDocumentKey(record, documentKey));
+}
+
+function dedupeByFileName(records: SourceRecord[]): SourceRecord[] {
+    const seen = new Set<string>();
+    const deduped: SourceRecord[] = [];
+    for (const record of records) {
+        const key = record.file_name ?? record.id;
+        if (!seen.has(key)) {
+            seen.add(key);
+            deduped.push(record);
+        }
+    }
+    return deduped;
+}
+
+function toTimestamp(value: string | null | undefined): number {
+    if (!value) return 0;
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function sortRecordsByRecency(records: SourceRecord[]): SourceRecord[] {
+    return [...records].sort((a, b) => {
+        const updatedDiff = toTimestamp(b.updated_at) - toTimestamp(a.updated_at);
+        if (updatedDiff !== 0) {
+            return updatedDiff;
+        }
+        return toTimestamp(b.created_at) - toTimestamp(a.created_at);
+    });
+}
+
+function ensureRecordsHaveStorage(records: SourceRecord[]): void {
+    for (const record of records) {
+        if (!record.file_name || !record.storage_bucket || !record.storage_path) {
+            throw new Error(
+                `Contribution ${record.id} is missing required storage information (file_name, storage_bucket, or storage_path).`,
+            );
+        }
+    }
+}
+
+function getRecordUniqueKey(record: SourceRecord): string {
+    const bucket = record.storage_bucket ?? '';
+    const path = record.storage_path ?? '';
+    const fileName = record.file_name ?? record.id;
+    return `${bucket}|${path}|${fileName}`;
+}
+
+function selectRecordsForRule(
+    records: SourceRecord[],
+    allowMultiple: boolean,
+    usedRecordKeys: Set<string>,
+): SourceRecord[] {
+    if (allowMultiple) {
+        return records;
+    }
+
+    for (const record of records) {
+        const key = getRecordUniqueKey(record);
+        if (!usedRecordKeys.has(key)) {
+            return [record];
+        }
+    }
+
+    return [];
+}
+
+export async function findSourceDocuments(
     dbClient: SupabaseClient<Database>,
     parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
     inputsRequired: DialecticRecipeStep['inputs_required'],
     downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>,
 ): Promise<SourceDocument[]> {
-    if (!inputsRequired) return [];
+    if (!inputsRequired || inputsRequired.length === 0) return [];
 
     const allSourceDocuments: SourceDocument[] = [];
-    const seenKeys = new Set<string>();
+    const seenDocumentPaths = new Set<string>();
+    const usedRecordKeys = new Set<string>();
     const { projectId, sessionId, iterationNumber } = parentJob.payload;
 
     for (const rule of inputsRequired) {
-        let sourceRecords: SourceRecord[] | null = null;
-        let error: PostgrestError | null = null;
-        
-        if (rule.type === 'feedback') {
-            let query = dbClient.from('dialectic_feedback').select('*').eq('session_id', sessionId);
-            if (rule.stage_slug) query = query.eq('stage_slug', rule.stage_slug);
-            const result = await query;
-            sourceRecords = result.data;
-            error = result.error;
+        const stageSlugCandidate = typeof rule.slug === 'string' ? rule.slug.trim() : '';
+        const shouldFilterByStage = stageSlugCandidate.length > 0 && stageSlugCandidate !== 'any';
+        const normalizedIterationNumber = typeof iterationNumber === 'number' ? iterationNumber : 0;
+        const allowMultipleMatches = rule.multiple === true;
 
-        } else if (rule.type === 'document') {
-            // Prefer canonical documents from project resources
-            let resourceQuery = dbClient.from('dialectic_project_resources').select('*').eq('project_id', projectId);
-            if (rule.document_key && rule.document_key !== '*') {
-                resourceQuery = resourceQuery.eq('id', rule.document_key);
-            }
-            if (rule.stage_slug) {
-                resourceQuery = resourceQuery.eq('stage_slug', rule.stage_slug);
-            }
-            const { data: resourceData, error: resourceError } = await resourceQuery;
-            if (resourceError) {
-                throw new Error(`Failed to fetch source documents for type '${rule.type}' from project_resources: ${resourceError.message}`);
-            }
+        let sourceRecords: SourceRecord[] = [];
 
-            if (resourceData && resourceData.length > 0) {
-                sourceRecords = resourceData;
-                error = null;
-            } else {
-                // CoW DAG override: fallback to contributions when no resources found
-                let contributionQuery = dbClient.from('dialectic_contributions').select('*')
+        switch (rule.type) {
+            case 'feedback': {
+                let feedbackQuery = dbClient.from('dialectic_feedback').select('*').eq('session_id', sessionId);
+                if (shouldFilterByStage) {
+                    feedbackQuery = feedbackQuery.eq('stage_slug', stageSlugCandidate);
+                }
+                if (rule.document_key) {
+                    feedbackQuery = feedbackQuery.ilike('file_name', `%${rule.document_key}%`);
+                }
+                const { data, error: feedbackError } = await feedbackQuery;
+                if (feedbackError) {
+                    throw new Error(`Failed to fetch source documents for type '${rule.type}': ${feedbackError.message}`);
+                }
+
+                const feedbackRecordsRaw = (data ?? []);
+                ensureRecordsHaveStorage(feedbackRecordsRaw);
+                const feedbackRecords = sortRecordsByRecency(feedbackRecordsRaw);
+                const filteredFeedback = filterRecordsByDocumentKey(feedbackRecords, rule.document_key);
+                const dedupedFeedback = dedupeByFileName(filteredFeedback);
+                sourceRecords = selectRecordsForRule(dedupedFeedback, allowMultipleMatches, usedRecordKeys);
+                break;
+            }
+            case 'document': {
+                // NOTE: resource_type column is currently unset in production. Continue filtering via JSON until
+                // the plan in docs/implementations/Current/Checklists/Current/Contract_Column_Use.md is completed.
+                let resourceQuery = dbClient.from('dialectic_project_resources')
+                    .select('*')
+                    .eq('project_id', projectId)
+                    .eq('resource_description->>type', 'document');
+
+                if (shouldFilterByStage) {
+                    resourceQuery = resourceQuery.eq('stage_slug', stageSlugCandidate);
+                }
+                if (rule.document_key) {
+                    const documentKey = rule.document_key;
+                    resourceQuery = resourceQuery.or(
+                        `file_name.ilike.%${documentKey}%,resource_description->>document_key.eq.${documentKey}`,
+                    );
+                }
+                const { data: resourceData, error: resourceError } = await resourceQuery;
+                if (resourceError) {
+                    throw new Error(
+                        `Failed to fetch source documents for type '${rule.type}' from project_resources: ${resourceError.message}`,
+                    );
+                }
+
+                const resourceRecordsRaw = (resourceData ?? []);
+                ensureRecordsHaveStorage(resourceRecordsRaw);
+                const resourceRecords = sortRecordsByRecency(resourceRecordsRaw);
+                const filteredResources = filterRecordsByDocumentKey(resourceRecords, rule.document_key);
+                const hasDocumentKey = typeof rule.document_key === 'string' && rule.document_key.length > 0;
+                if (!(hasDocumentKey && filteredResources.length === 0)) {
+                    const resourceCandidates = filteredResources.length > 0 ? filteredResources : resourceRecords;
+                    const dedupedResources = dedupeByFileName(resourceCandidates);
+                    const selectedResources = selectRecordsForRule(dedupedResources, allowMultipleMatches, usedRecordKeys);
+                    if (selectedResources.length > 0) {
+                        sourceRecords = selectedResources;
+                        break;
+                    }
+                }
+
+                let contributionQuery = dbClient.from('dialectic_contributions')
+                    .select('*')
                     .eq('session_id', sessionId)
-                    .eq('iteration_number', iterationNumber ?? 0)
+                    .eq('iteration_number', normalizedIterationNumber)
                     .eq('is_latest_edit', true);
 
-                if (rule.document_key && rule.document_key !== '*') {
-                    contributionQuery = contributionQuery.eq('id', rule.document_key);
-                }
-                if (rule.stage_slug) {
-                    contributionQuery = contributionQuery.eq('stage', rule.stage_slug);
+                if (shouldFilterByStage) {
+                    contributionQuery = contributionQuery.eq('stage', stageSlugCandidate);
                 }
 
                 const { data: contributionData, error: contributionError } = await contributionQuery;
                 if (contributionError) {
-                    throw new Error(`Failed to fetch source documents for type '${rule.type}' from contributions: ${contributionError.message}`);
+                    throw new Error(
+                        `Failed to fetch source documents for type '${rule.type}' from contributions: ${contributionError.message}`,
+                    );
                 }
-                sourceRecords = contributionData ?? [];
-                error = null;
+                const contributionRecordsRaw = (contributionData ?? []);
+                ensureRecordsHaveStorage(contributionRecordsRaw);
+                const contributionRecords = sortRecordsByRecency(contributionRecordsRaw);
+                const filteredContributions = filterRecordsByDocumentKey(contributionRecords, rule.document_key);
+                const contributionCandidates = hasDocumentKey
+                    ? filteredContributions
+                    : (filteredContributions.length > 0 ? filteredContributions : contributionRecords);
+                const dedupedContributions = dedupeByFileName(contributionCandidates);
+                sourceRecords = selectRecordsForRule(dedupedContributions, allowMultipleMatches, usedRecordKeys);
+                break;
             }
-        } else { // Handle contribution types like 'thesis', 'header_context', etc.
-            let query = dbClient.from('dialectic_contributions').select('*')
-                .eq('session_id', sessionId)
-                .eq('iteration_number', iterationNumber ?? 0)
-                .eq('is_latest_edit', true);
+            case 'seed_prompt':
+            case 'header_context':
+            case 'project_resource': {
+                // NOTE: See Contract_Column_Use.md for the long-term column fix.
+                let resourceQuery = dbClient.from('dialectic_project_resources')
+                    .select('*')
+                    .eq('project_id', projectId)
+                    .eq('resource_description->>type', rule.type);
 
-            if (rule.stage_slug) {
-                query = query.eq('stage', rule.stage_slug);
-            } else if (rule.type) {
-                query = query.eq('contribution_type', rule.type);
+                if (shouldFilterByStage) {
+                    resourceQuery = resourceQuery.eq('stage_slug', stageSlugCandidate);
+                }
+                if (rule.document_key) {
+                    const documentKey = rule.document_key;
+                    resourceQuery = resourceQuery.or(
+                        `file_name.ilike.%${documentKey}%,resource_description->>document_key.eq.${documentKey}`,
+                    );
+                }
+                const { data: resourceData, error: resourceError } = await resourceQuery;
+                if (resourceError) {
+                    throw new Error(
+                        `Failed to fetch source documents for type '${rule.type}' from project_resources: ${resourceError.message}`,
+                    );
+                }
+
+                const resourceRecordsRaw = (resourceData ?? []);
+                ensureRecordsHaveStorage(resourceRecordsRaw);
+                const resourceRecords = sortRecordsByRecency(resourceRecordsRaw);
+                const filteredResources = filterRecordsByDocumentKey(resourceRecords, rule.document_key);
+                const hasDocumentKey = typeof rule.document_key === 'string' && rule.document_key.length > 0;
+                const resourceCandidates = hasDocumentKey && filteredResources.length === 0
+                    ? resourceRecords
+                    : (filteredResources.length > 0 ? filteredResources : resourceRecords);
+                let effectiveRecords = selectRecordsForRule(
+                    dedupeByFileName(resourceCandidates),
+                    allowMultipleMatches,
+                    usedRecordKeys,
+                );
+
+                if (effectiveRecords.length === 0 && rule.type === 'header_context') {
+                    let contributionQuery = dbClient.from('dialectic_contributions')
+                        .select('*')
+                        .eq('session_id', sessionId)
+                        .eq('iteration_number', normalizedIterationNumber)
+                        .eq('is_latest_edit', true)
+                        .eq('contribution_type', 'header_context');
+
+                    if (shouldFilterByStage) {
+                        contributionQuery = contributionQuery.eq('stage', stageSlugCandidate);
+                    }
+                    const { data: headerContributions, error: headerError } = await contributionQuery;
+                    if (headerError) {
+                        throw new Error(
+                            `Failed to fetch source documents for type '${rule.type}' from contributions: ${headerError.message}`,
+                        );
+                    }
+                    const headerRecordsRaw = (headerContributions ?? []);
+                    ensureRecordsHaveStorage(headerRecordsRaw);
+                    const headerRecords = sortRecordsByRecency(headerRecordsRaw);
+                    const filteredHeaderContributions = filterRecordsByDocumentKey(headerRecords, rule.document_key);
+                    const headerCandidates = hasDocumentKey
+                        ? filteredHeaderContributions
+                        : (filteredHeaderContributions.length > 0 ? filteredHeaderContributions : headerRecords);
+                    const dedupedHeaderContributions = dedupeByFileName(headerCandidates);
+                    effectiveRecords = selectRecordsForRule(
+                        dedupedHeaderContributions,
+                        allowMultipleMatches,
+                        usedRecordKeys,
+                    );
+                }
+
+                sourceRecords = effectiveRecords;
+                break;
             }
-            if (rule.document_key && rule.document_key !== '*') {
-                query = query.eq('id', rule.document_key);
+            default: {
+                throw new Error(`Unsupported input type '${rule.type}' provided to findSourceDocuments.`);
             }
-            const result = await query;
-            sourceRecords = result.data;
-            error = result.error;
         }
 
-        if (error) {
-            throw new Error(`Failed to fetch source documents for type '${rule.type}': ${error.message}`);
-        }
         if (!sourceRecords || sourceRecords.length === 0) {
             // Only throw if the rule is not optional, which we can assume for now.
             // A more robust implementation might check a `rule.optional` flag.
             throw new Error(`A required input of type '${rule.type}' was not found for the current job.`);
         }
+
+        for (const record of sourceRecords) {
+            usedRecordKeys.add(getRecordUniqueKey(record));
+        }
+
+        ensureRecordsHaveStorage(sourceRecords);
 
         const documents = await Promise.all(
             sourceRecords.map(async (record: SourceRecord) => {
@@ -219,7 +449,7 @@ async function findSourceDocuments(
                     throw new Error(`Failed to download content for contribution ${record.id} from ${fullPath}: ${error.message}`);
                 }
                 
-                const content = new TextDecoder().decode(data!);
+                const content = new TextDecoder().decode(data ?? new ArrayBuffer(0));
                 
                 if (isFeedbackRow(record)) {
                     return mapFeedbackToSourceDocument(record, content);
@@ -234,9 +464,9 @@ async function findSourceDocuments(
         
         const validDocuments = documents.filter((doc): doc is SourceDocument => doc !== null);
         for (const doc of validDocuments) {
-            const key = `${doc.storage_bucket}|${doc.storage_path}|${doc.file_name}`;
-            if (!seenKeys.has(key)) {
-                seenKeys.add(key);
+            const documentPathKey = `${doc.storage_bucket}|${doc.storage_path}|${doc.file_name}`;
+            if (!seenDocumentPaths.has(documentPathKey)) {
+                seenDocumentPaths.add(documentPathKey);
                 allSourceDocuments.push(doc);
             }
         }
@@ -391,6 +621,3 @@ export async function planComplexStage(
     //deps.logger.info(`[task_isolator] [planComplexStage] Planned ${childJobsToInsert.length} child jobs for step "${recipeStep.name}".`);
     return childJobsToInsert;
 }
-
-
-

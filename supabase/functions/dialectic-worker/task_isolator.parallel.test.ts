@@ -81,7 +81,7 @@ describe('planComplexStage', () => {
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 contribution_type: 'thesis',
-                file_name: 'doc1.txt',
+                file_name: 'sess-1_thesis_business_case_v1.md',
                 storage_bucket: 'test-bucket',
                 storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
                 size_bytes: 123,
@@ -113,7 +113,7 @@ describe('planComplexStage', () => {
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 contribution_type: 'antithesis',
-                file_name: 'doc2.txt',
+                file_name: 'sess-1_antithesis_business_case_critique_v1.md',
                 storage_bucket: 'test-bucket',
                 storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/antithesis',
                 size_bytes: 123,
@@ -145,7 +145,7 @@ describe('planComplexStage', () => {
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 contribution_type: 'header_context',
-                file_name: 'header.json',
+                file_name: 'sess-1_test-stage_header_context.json',
                 storage_bucket: 'test-bucket',
                 storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
                 size_bytes: 80,
@@ -160,12 +160,12 @@ describe('planComplexStage', () => {
             id: 'resource-1',
             project_id: 'proj-1',
             user_id: 'user-123',
-            file_name: 'resource1.txt',
+            file_name: 'sess-1_thesis_business_case_branchA.md',
             storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/resources',
             mime_type: 'text/plain',
             size_bytes: 456,
-            resource_description: { "description": "A test resource file" },
+            resource_description: { "description": "A test resource file", "type": "document", "document_key": FileType.business_case },
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             iteration_number: null,
@@ -185,7 +185,7 @@ describe('planComplexStage', () => {
             iteration_number: 1,
             storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis/_feedback',
-            file_name: 'feedback.txt',
+            file_name: 'sess-1_thesis_business_case_feedback.txt',
             mime_type: 'text/plain',
             size_bytes: 789,
             feedback_type: 'user_feedback',
@@ -212,12 +212,109 @@ describe('planComplexStage', () => {
                 },
                 dialectic_project_resources: {
                     select: (state: MockQueryBuilderState) => {
+                        const isDescriptorRecord = (value: unknown): value is Record<string, unknown> =>
+                            typeof value === 'object' && value !== null;
+
+                        const descriptorValue = (resource: DialecticProjectResourceRow, key: string): unknown => {
+                            if (key.length === 0) return undefined;
+                            const descriptor = resource.resource_description;
+                            if (!isDescriptorRecord(descriptor)) return undefined;
+                            return descriptor[key];
+                        };
+
+                        const matchesEqFilter = (
+                            resource: DialecticProjectResourceRow,
+                            column: string,
+                            value: unknown,
+                        ): boolean => {
+                            if (column.startsWith('resource_description->>')) {
+                                const [, descriptorKey = ''] = column.split('->>');
+                                const candidate = descriptorValue(resource, descriptorKey);
+                                return candidate === value;
+                            }
+
+                            switch (column) {
+                                case 'project_id':
+                                    return resource.project_id === value;
+                                case 'stage_slug':
+                                    return resource.stage_slug === value;
+                                case 'resource_type':
+                                    return resource.resource_type === value;
+                                case 'session_id':
+                                    return resource.session_id === value;
+                                case 'iteration_number':
+                                    return resource.iteration_number === value;
+                                case 'user_id':
+                                    return resource.user_id === value;
+                                case 'file_name':
+                                    return resource.file_name === value;
+                                default:
+                                    return false;
+                            }
+                        };
+
+                        const matchesOrCondition = (
+                            resource: DialecticProjectResourceRow,
+                            condition: string,
+                        ): boolean => {
+                            const trimmed = condition.trim();
+                            if (trimmed.length === 0 || trimmed === 'undefined') {
+                                return false;
+                            }
+                            const segments = trimmed.split('.');
+                            if (segments.length < 3) {
+                                return false;
+                            }
+                            const column = segments[0];
+                            const operator = segments[1];
+                            const rawValue = segments.slice(2).join('.');
+                            let cleanedValue = rawValue;
+                            if (operator === 'ilike') {
+                                cleanedValue = rawValue.replace(/%/g, '');
+                            }
+
+                            if (column.startsWith('resource_description->>')) {
+                                const [, descriptorKey = ''] = column.split('->>');
+                                const candidate = descriptorValue(resource, descriptorKey);
+                                if (typeof candidate !== 'string') {
+                                    return false;
+                                }
+                                if (operator === 'eq') {
+                                    return candidate === cleanedValue;
+                                }
+                                if (operator === 'ilike') {
+                                    return candidate.toLowerCase().includes(cleanedValue.toLowerCase());
+                                }
+                                return false;
+                            }
+
+                            if (column === 'file_name') {
+                                const candidate = resource.file_name;
+                                if (typeof candidate !== 'string') {
+                                    return false;
+                                }
+                                if (operator === 'eq') {
+                                    return candidate === cleanedValue;
+                                }
+                                if (operator === 'ilike') {
+                                    return candidate.toLowerCase().includes(cleanedValue.toLowerCase());
+                                }
+                            }
+
+                            return false;
+                        };
+
                         let data = [...mockProjectResources];
                         for (const filter of state.filters) {
-                            if (filter.column && filter.type === 'eq') {
-                                data = data.filter((r: any) => r[filter.column!] === filter.value);
+                            if (filter.type === 'eq' && typeof filter.column === 'string') {
+                                const column = filter.column;
+                                data = data.filter((resource) => matchesEqFilter(resource, column, filter.value));
+                            } else if (filter.type === 'or' && typeof filter.filters === 'string') {
+                                const conditions = filter.filters.split(',');
+                                data = data.filter((resource) => conditions.some((condition) => matchesOrCondition(resource, condition)));
                             }
                         }
+
                         return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
                     },
                 }
@@ -278,9 +375,9 @@ describe('planComplexStage', () => {
             prompt_template_id: 'test-prompt-uuid',
             output_type: FileType.business_case,
             granularity_strategy: 'per_source_document',
-            inputs_required: [{ type: 'document', document_key: '*' }],
+            inputs_required: [{ type: 'document', document_key: FileType.business_case, slug: 'any' }],
             inputs_relevance: [],
-            outputs_required: [],
+            outputs_required: { documents: [] },
             config_override: {},
             object_filter: {},
             output_overrides: {},
@@ -452,10 +549,17 @@ describe('planComplexStage', () => {
     
             // Arrange:
             // 1. Create a second distinct resource.
-            const targetResource: DialecticProjectResourceRow = { ...mockProjectResources[0], id: 'resource-B', file_name: 'resourceB.txt' };
+            const targetResource: DialecticProjectResourceRow = {
+                ...mockProjectResources[0],
+                id: 'resource-B',
+                file_name: 'sess-1_thesis_business_case_branchB.md',
+                resource_description: { "description": "Branch B resource", "type": "document", "document_key": FileType.business_case },
+                created_at: new Date(Date.now() + 10).toISOString(),
+                updated_at: new Date(Date.now() + 10).toISOString(),
+            };
             mockProjectResources.push(targetResource);
             // 2. The recipe will explicitly ask for only this new resource.
-            mockRecipeStep.inputs_required = [{ type: 'document', document_key: 'resource-B' }];
+            mockRecipeStep.inputs_required = [{ type: 'document', document_key: FileType.business_case, slug: 'any' }];
             // 3. Set up a planner spy to capture the source documents it receives.
             let receivedDocs: SourceDocument[] = [];
             const plannerFn: GranularityPlannerFn = (sourceDocs) => {
@@ -482,7 +586,7 @@ describe('planComplexStage', () => {
             // Arrange:
             // 1. The beforeEach provides contributions of type 'thesis' and 'antithesis'.
             // 2. The recipe will ask for only 'thesis' contributions.
-            mockRecipeStep.inputs_required = [{ type: 'document', stage_slug: 'thesis' }];
+            mockRecipeStep.inputs_required = [{ type: 'document', slug: 'thesis', document_key: FileType.business_case }];
             // 3. Set up a planner spy to capture the source documents.
             let receivedDocs: SourceDocument[] = [];
             const plannerFn: GranularityPlannerFn = (sourceDocs) => {
@@ -508,13 +612,27 @@ describe('planComplexStage', () => {
     
             // Arrange:
             // 1. Create two mock outputs from parallel branches.
-            const branchA_Output: DialecticProjectResourceRow = { ...mockProjectResources[0], id: 'doc-2a-output', file_name: 'docA.txt' };
-            const branchB_Output: DialecticProjectResourceRow = { ...mockProjectResources[0], id: 'doc-2b-output', file_name: 'docB.txt' };
+            const branchA_Output: DialecticProjectResourceRow = {
+                ...mockProjectResources[0],
+                id: 'doc-2a-output',
+                file_name: 'test-stage_rendered_document_docA.md',
+                resource_description: { "description": "Rendered branch A", "type": "document", "document_key": FileType.RenderedDocument },
+                created_at: new Date(Date.now() + 20).toISOString(),
+                updated_at: new Date(Date.now() + 20).toISOString(),
+            };
+            const branchB_Output: DialecticProjectResourceRow = {
+                ...mockProjectResources[0],
+                id: 'doc-2b-output',
+                file_name: 'test-stage_rendered_document_docB.md',
+                resource_description: { "description": "Rendered branch B", "type": "document", "document_key": FileType.RenderedDocument },
+                created_at: new Date(Date.now() + 30).toISOString(),
+                updated_at: new Date(Date.now() + 30).toISOString(),
+            };
             mockProjectResources.push(branchA_Output, branchB_Output);
             // 2. Create a recipe step that requires both as inputs.
             mockRecipeStep.inputs_required = [
-                { type: 'document', document_key: 'doc-2a-output' },
-                { type: 'document', document_key: 'doc-2b-output' }
+                { type: 'document', document_key: FileType.RenderedDocument, slug: 'any' },
+                { type: 'document', document_key: FileType.RenderedDocument, slug: 'any' }
             ];
             // 3. Set up a planner spy to capture the source documents.
             let receivedDocs: SourceDocument[] = [];
@@ -540,10 +658,20 @@ describe('planComplexStage', () => {
             // parallel branch has not yet produced its output, the function must fail loudly.
     
             // Arrange:
-            // 1. The recipe requires two documents, but the database will only be able to find one.
+            // 1. Seed the database with a single rendered document for the first requirement.
+            const existingRenderedDoc: DialecticProjectResourceRow = {
+                ...mockProjectResources[0],
+                id: 'doc-join-existing',
+                file_name: 'test-stage_rendered_document_join.md',
+                resource_description: { "description": "Existing join document", "type": "document", "document_key": FileType.RenderedDocument },
+                created_at: new Date(Date.now() + 40).toISOString(),
+                updated_at: new Date(Date.now() + 40).toISOString(),
+            };
+            mockProjectResources.push(existingRenderedDoc);
+            // 2. The recipe requires two documents, but only the first exists.
             mockRecipeStep.inputs_required = [
-                { type: 'document', document_key: 'resource-1' }, // This one exists
-                { type: 'document', document_key: 'doc-2b-output-MISSING' } // This one does not
+                { type: 'document', document_key: FileType.RenderedDocument, slug: 'any' }, // This one exists
+                { type: 'document', document_key: FileType.RenderedDocument, slug: 'any' } // This one does not
             ];
             
             // Act & Assert:

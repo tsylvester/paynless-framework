@@ -13,6 +13,9 @@ import type {
 	ListStageDocumentsResponse,
 	StageDocumentChecklistEntry,
 	SubmitStageDocumentFeedbackPayload,
+	JobFailedPayload,
+	StageRenderedDocumentDescriptor,
+	StageRunDocumentDescriptor,
 } from '@paynless/types';
 import {
 	handleRenderCompletedLogic,
@@ -38,6 +41,11 @@ vi.mock('@paynless/api', async () => {
 		},
 	};
 });
+
+const isRenderedDescriptor = (
+	descriptor: StageRunDocumentDescriptor | undefined,
+): descriptor is StageRenderedDocumentDescriptor =>
+	Boolean(descriptor && descriptor.descriptorType !== 'planned');
 
 describe('Stage Progress Hydration', () => {
 	const sessionId = 'session-1';
@@ -750,5 +758,203 @@ describe('submitStageDocumentFeedback', () => {
 				key: 'test-session-id:synthesis:1:model-a:document_1',
 			},
 		);
+	});
+});
+
+describe('handleJobFailedLogic', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		resetApiMock();
+		useDialecticStore.setState(initialDialecticStateValues);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('marks planner documents as failed when a job_failed notification arrives', () => {
+		const sessionId = 'session-job-failed';
+		const stageSlug = 'planner-stage';
+		const iterationNumber = 1;
+		const jobId = 'job-planner';
+		const modelId = 'model-planner';
+		const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+		const plannerRecipe: DialecticStageRecipe = {
+			stageSlug,
+			instanceId: 'instance-planner',
+			steps: [
+				{
+					id: 'planner-step-id',
+					step_key: 'planner_step',
+					step_slug: 'planner-step',
+					step_name: 'Planner Step',
+					execution_order: 1,
+					job_type: 'PLAN',
+					prompt_type: 'Planner',
+					output_type: 'HeaderContext',
+					granularity_strategy: 'all_to_one',
+					inputs_required: [],
+					outputs_required: [],
+				},
+			],
+		};
+
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = plannerRecipe;
+			state.stageRunProgress[progressKey] = {
+				documents: {
+					HeaderContext: {
+						descriptorType: 'rendered',
+						status: 'generating',
+						job_id: jobId,
+						latestRenderedResourceId: 'resource-placeholder',
+						modelId,
+						versionHash: 'version-placeholder',
+						lastRenderedResourceId: 'resource-placeholder',
+						lastRenderAtIso: new Date().toISOString(),
+					},
+				},
+				stepStatuses: {
+					planner_step: 'in_progress',
+				},
+			};
+		});
+
+		const failureError: ApiError = {
+			code: 'PLANNER_ERROR',
+			message: 'Planner failed before producing output',
+		};
+		const latestRenderedResourceId = 'resource-planner-final';
+
+		const jobFailedEvent: JobFailedPayload = {
+			type: 'job_failed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: jobId,
+			document_key: 'HeaderContext',
+			modelId,
+			error: failureError,
+			step_key: 'planner_step',
+			latestRenderedResourceId,
+		};
+
+		useDialecticStore
+			.getState()
+			._handleDialecticLifecycleEvent?.(jobFailedEvent);
+
+		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(updatedProgress).toBeDefined();
+		expect(updatedProgress?.documents['HeaderContext']?.status).toBe('failed');
+		expect(updatedProgress?.stepStatuses['planner_step']).toBe('failed');
+		const descriptor = updatedProgress?.documents['HeaderContext'];
+		expect(isRenderedDescriptor(descriptor)).toBe(true);
+		if (isRenderedDescriptor(descriptor)) {
+			expect(descriptor.latestRenderedResourceId).toBe(latestRenderedResourceId);
+			expect(descriptor.error).toEqual(failureError);
+		}
+
+		const contentEntry = useDialecticStore.getState().stageDocumentContent[getStageDocumentKey({
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			modelId,
+			documentKey: 'HeaderContext',
+		})];
+		expect(contentEntry?.error).toEqual(failureError);
+	});
+
+	it('still processes job_failed notifications that omit latestRenderedResourceId', () => {
+		const sessionId = 'session-missing-resource';
+		const stageSlug = 'planner-stage';
+		const iterationNumber = 1;
+		const jobId = 'job-planner-missing-resource';
+		const modelId = 'model-planner';
+		const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+		const plannerRecipe: DialecticStageRecipe = {
+			stageSlug,
+			instanceId: 'instance-planner',
+			steps: [
+				{
+					id: 'planner-step-id',
+					step_key: 'planner_step',
+					step_slug: 'planner-step',
+					step_name: 'Planner Step',
+					execution_order: 1,
+					job_type: 'PLAN',
+					prompt_type: 'Planner',
+					output_type: 'HeaderContext',
+					granularity_strategy: 'all_to_one',
+					inputs_required: [],
+					outputs_required: [],
+				},
+			],
+		};
+
+		const existingResourceId = 'resource-placeholder';
+
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = plannerRecipe;
+			state.stageRunProgress[progressKey] = {
+				documents: {
+					HeaderContext: {
+						descriptorType: 'rendered',
+						status: 'generating',
+						job_id: jobId,
+						latestRenderedResourceId: existingResourceId,
+						modelId,
+						versionHash: 'version-placeholder',
+						lastRenderedResourceId: existingResourceId,
+						lastRenderAtIso: new Date().toISOString(),
+					},
+				},
+				stepStatuses: {
+					planner_step: 'in_progress',
+				},
+			};
+		});
+
+		const failureError: ApiError = {
+			code: 'PLANNER_ERROR',
+			message: 'Planner failed before producing output',
+		};
+
+		const jobFailedEvent: JobFailedPayload = {
+			type: 'job_failed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: jobId,
+			document_key: 'HeaderContext',
+			modelId,
+			error: failureError,
+			step_key: 'planner_step',
+		};
+
+		useDialecticStore
+			.getState()
+			._handleDialecticLifecycleEvent?.(jobFailedEvent);
+
+		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(updatedProgress).toBeDefined();
+		const descriptor = updatedProgress?.documents['HeaderContext'];
+		expect(isRenderedDescriptor(descriptor)).toBe(true);
+		if (isRenderedDescriptor(descriptor)) {
+			expect(descriptor.status).toBe('failed');
+			expect(descriptor.latestRenderedResourceId).toBe(existingResourceId);
+			expect(descriptor.error).toEqual(failureError);
+		}
+		expect(updatedProgress?.stepStatuses['planner_step']).toBe('failed');
+
+		const contentEntry = useDialecticStore.getState().stageDocumentContent[getStageDocumentKey({
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			modelId,
+			documentKey: 'HeaderContext',
+		})];
+		expect(contentEntry?.error).toEqual(failureError);
 	});
 });
