@@ -171,6 +171,45 @@ const buildSecondaryRenderStep = (): DialecticStageRecipeStep => {
     };
 };
 
+const buildRenderStepWithHeaderContext = (): DialecticStageRecipeStep => {
+    const outputs = JSON.parse(
+        JSON.stringify([
+            {
+                documents: [
+                    {
+                        document_key: 'synthesis_document_rendered',
+                        artifact_class: 'rendered_document',
+                        file_type: 'markdown',
+                        template_filename: 'synthesis_document_rendered.md',
+                    },
+                    {
+                        document_key: 'synthesis_plan_header',
+                        artifact_class: 'header_context',
+                        file_type: 'json',
+                        template_filename: 'synthesis_plan_header.json',
+                    },
+                ],
+            },
+        ]),
+    );
+
+    return {
+        id: 'step-5',
+        step_key: 'render_document_with_header',
+        step_slug: 'render-document-with-header',
+        step_name: 'Render Document With Header',
+        execution_order: 5,
+        parallel_group: 3,
+        branch_key: 'render-with-header',
+        job_type: 'RENDER',
+        prompt_type: 'Planner',
+        inputs_required: [],
+        outputs_required: outputs,
+        output_type: 'RenderedDocument',
+        granularity_strategy: 'all_to_one',
+    };
+};
+
 const createRecipe = (steps: RecipeSteps, slug: string = stageSlug, instanceId = 'instance-xyz'): DialecticStageRecipe => ({
     stageSlug: slug,
     instanceId,
@@ -764,5 +803,46 @@ describe('StageRunChecklist', () => {
             expect(checklistCard.classList.contains(className)).toBe(true);
             expect(accordion.classList.contains(className)).toBe(true);
         });
+    });
+
+    it('omits header_context artifacts even when they share a markdown step', () => {
+        const recipe = createRecipe([buildRenderStepWithHeaderContext()]);
+
+        const stepStatuses: StepStatuses = {
+            render_document_with_header: 'failed',
+        };
+
+        const documents: StageRunDocuments = {
+            synthesis_document_rendered: {
+                status: 'failed',
+                job_id: 'job-render',
+                latestRenderedResourceId: 'resource-render',
+                modelId: modelIdA,
+                versionHash: 'hash-render',
+                lastRenderedResourceId: 'resource-render',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                stepKey: 'render_document_with_header',
+            },
+            synthesis_plan_header: {
+                status: 'failed',
+                job_id: 'job-header',
+                latestRenderedResourceId: 'resource-header',
+                modelId: modelIdA,
+                versionHash: 'hash-header',
+                lastRenderedResourceId: 'resource-header',
+                lastRenderAtIso: '2025-01-01T00:00:01.000Z',
+                stepKey: 'render_document_with_header',
+            },
+        };
+
+        const progressEntry = createProgressEntry(stepStatuses, documents);
+
+        setChecklistState(recipe, progressEntry);
+
+        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+
+        expect(screen.getByTestId('document-synthesis_document_rendered')).toBeInTheDocument();
+        expect(screen.queryByTestId('document-synthesis_plan_header')).toBeNull();
+        expect(screen.getByText('Completed 0 of 1 documents')).toBeInTheDocument();
     });
 });

@@ -4,6 +4,7 @@ import { isRecord } from '../_shared/utils/type_guards.ts';
 import type { IRenderJobDeps } from '../dialectic-service/dialectic.interface.ts';
 import type { RenderDocumentParams, DocumentRendererDeps } from '../_shared/services/document_renderer.interface.ts';
 import { isFileType } from '../_shared/utils/type_guards.ts';
+import { isString, isNumber } from "node:util";
 
 export async function processRenderJob(
   dbClient: SupabaseClient<Database>,
@@ -16,38 +17,52 @@ export async function processRenderJob(
 
   try {
     // Normalize payload (Supabase may return JSON as string)
-    const normalizedPayload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
-    if (!isRecord(normalizedPayload)) {
+    if (!isRecord(job.payload)) {
       throw new Error('Invalid payload');
     }
 
-    const projectId = String(normalizedPayload['projectId'] ?? '');
-    const sessionId = String(normalizedPayload['sessionId'] ?? '');
-    const iterationNumberUnknown = normalizedPayload['iterationNumber'];
-    const stageSlug = String(normalizedPayload['stageSlug'] ?? '');
-    const documentIdentity = String(normalizedPayload['documentIdentity'] ?? '');
-    const documentKeyUnknown = normalizedPayload['documentKey'];
-
+    const { projectId, sessionId, iterationNumber, stageSlug, documentIdentity, documentKey, sourceContributionId } = job.payload;
     if (!projectId || !sessionId || !stageSlug || !documentIdentity) {
       throw new Error('Missing required render parameters');
     }
-    const iterationNumber = typeof iterationNumberUnknown === 'number' ? iterationNumberUnknown : Number(iterationNumberUnknown);
-    if (!Number.isFinite(iterationNumber)) {
+
+    if (!isNumber(iterationNumber)) {
       throw new Error('iterationNumber is required');
     }
 
     // Validate documentKey
-    if (!isFileType(documentKeyUnknown)) {
+    if (!isFileType(documentKey)) {
       throw new Error('documentKey must be a valid FileType');
     }
-
+    if (!sourceContributionId) {
+      throw new Error('sourceContributionId is required');
+    }
+    if(!isString(projectId)) {
+      throw new Error('projectId must be a string');
+    }
+    if(!isString(sessionId)) {
+      throw new Error('sessionId must be a string');
+    }
+    if(!isString(stageSlug)) {
+      throw new Error('stageSlug must be a string');
+    }
+    if(!isString(documentIdentity)) {
+      throw new Error('documentIdentity must be a string');
+    }
+    if(!isString(sourceContributionId)) {
+      throw new Error('sourceContributionId must be a string');
+    }
+    if (sourceContributionId !== documentIdentity) {
+      throw new Error('sourceContributionId must equal documentIdentity');
+    }
     const params: RenderDocumentParams = {
       projectId,
       sessionId,
       iterationNumber,
       stageSlug,
       documentIdentity,
-      documentKey: documentKeyUnknown,
+      documentKey,
+      sourceContributionId,
     };
 
     const rendererDeps: DocumentRendererDeps = {
@@ -68,6 +83,7 @@ export async function processRenderJob(
       documentKey: renderResult.pathContext.documentKey,
       fileType: renderResult.pathContext.fileType,
       modelSlug: renderResult.pathContext.modelSlug,
+      sourceContributionId: renderResult.pathContext.sourceContributionId,
     };
 
     await dbClient

@@ -695,6 +695,13 @@ export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
     user_jwt?: string;
 }
 
+export interface DialecticRenderJobPayload extends DialecticBaseJobPayload {
+    job_type: 'RENDER';
+    documentIdentity: string;
+    documentKey: FileType;
+    sourceContributionId: string;
+}
+
 // Update the main union type
 export type DialecticJobPayload =
     | DialecticSimpleJobPayload // Assuming this exists for non-complex jobs

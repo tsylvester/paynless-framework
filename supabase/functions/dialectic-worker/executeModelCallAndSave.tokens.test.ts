@@ -14,9 +14,7 @@ import {
     PromptConstructionPayload,
     SourceDocument
 } from '../dialectic-service/dialectic.interface.ts';
-import { Messages } from '../_shared/types.ts';
-import type { AiModelExtendedConfig } from '../_shared/types.ts';
-import { ContextWindowError } from '../_shared/utils/errors.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
@@ -687,10 +685,11 @@ Deno.test('should use source documents for token estimation before prompt assemb
                     id: 'doc-oversize',
                     content: 'X'.repeat(2000),
                     stage: 'test-stage',
+                    document_key: FileType.business_case,
                     created_at: new Date().toISOString(),
                     // Use document-centric path so the parser can extract stage + documentKey
                     storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
-                    file_name: 'modelA_1_large_doc.md',
+                    file_name: 'modelA_1_business_case.md',
                 }
             ], error: null }
         },
@@ -718,7 +717,7 @@ Deno.test('should use source documents for token estimation before prompt assemb
         // New executor behavior: provide inputsRequired so it gathers matching docs
         inputsRequired: [
             // document_key must match the parsed key (without extension)
-            { type: 'document', stage_slug: 'test-stage', document_key: 'large_doc' },
+            { type: 'document', slug: 'test-stage', document_key: FileType.business_case },
         ],
         sessionData: mockSessionData,
         compressionStrategy: getSortedCompressionCandidates,

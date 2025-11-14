@@ -22,18 +22,6 @@ export type ContributionRowMinimal = {
     original_model_contribution_id?: string | null;
     user_id?: string | null;
   };
-  
-  export type RendererPathContext = {
-    projectId?: string;
-    sessionId?: string;
-    iteration?: number;
-    stageSlug?: string;
-    documentKey?: string;
-    modelSlug?: string;
-  };
-  
-  export type FileManagerCall = { pathContext?: RendererPathContext; fileContent: Blob | string };
-  
 
 export type RenderDocumentParams = {
   projectId: string;
@@ -42,6 +30,7 @@ export type RenderDocumentParams = {
   stageSlug: string;
   documentIdentity: string; // true-root id for this document chain
   documentKey: FileType;
+  sourceContributionId: string;
 };
 
 export type RenderDocumentResult = {

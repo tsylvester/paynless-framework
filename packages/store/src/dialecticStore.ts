@@ -1635,8 +1635,15 @@ export const useDialecticStore = create<DialecticStore>()(
       if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
         state.activeSessionDetail = { ...session };
       }
-      // Clear tracking for this session only if the failure is catastrophic (no job_id)
-      if (!event.job_id) {
+      const sessionJobs = state.generatingSessions[event.sessionId];
+      if (event.job_id && Array.isArray(sessionJobs)) {
+        state.generatingSessions[event.sessionId] = sessionJobs.filter(jobId => jobId !== event.job_id);
+        if (state.generatingSessions[event.sessionId].length === 0) {
+          delete state.generatingSessions[event.sessionId];
+        }
+        state.contributionGenerationStatus = 'failed';
+        state.generateContributionsError = event.error || { message: 'Generation failed for this job.', code: 'JOB_FAILED' };
+      } else if (!event.job_id) {
         delete state.generatingSessions[event.sessionId];
         state.contributionGenerationStatus = 'failed';
         state.generateContributionsError = event.error || { message: 'Generation failed without a specific error.', code: 'GENERATION_FAILED' };

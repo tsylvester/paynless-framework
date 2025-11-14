@@ -31,6 +31,7 @@ export function createDocumentRendererMock(options?: {
       stageSlug: "thesis",
       documentKey: FileType.business_case,
       modelSlug: "mock-model",
+      sourceContributionId: null,
     },
     renderedBytes: new Uint8Array(),
   };
@@ -50,6 +51,7 @@ export function createDocumentRendererMock(options?: {
         stageSlug: params.stageSlug,
         documentKey: params.documentKey,
         modelSlug: "mock-model",
+        sourceContributionId: params.documentIdentity,
       };
       return {
         pathContext: pc,

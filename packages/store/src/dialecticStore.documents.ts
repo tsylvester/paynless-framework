@@ -855,6 +855,9 @@ export const handleJobFailedLogic = (
 		descriptor.job_id = event.job_id;
 		descriptor.modelId = event.modelId;
 		descriptor.error = event.error;
+		if (descriptor.descriptorType !== 'rendered') {
+			descriptor.descriptorType = 'rendered';
+		}
 		if (stepKey && !descriptor.stepKey) {
 			descriptor.stepKey = stepKey;
 		}

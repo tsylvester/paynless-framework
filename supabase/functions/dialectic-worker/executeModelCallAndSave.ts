@@ -125,7 +125,7 @@ export async function executeModelCallAndSave(
 
         for (const ru of rulesUnknown) {
             const rType = isRecord(ru) && typeof ru['type'] === 'string' ? ru['type'] : undefined; // 'document' | 'feedback'
-            const rStage = isRecord(ru) && typeof ru['stage_slug'] === 'string' ? ru['stage_slug'] : undefined;
+            const rStage = isRecord(ru) && typeof ru['slug'] === 'string' ? ru['slug'] : undefined;
             const rKey = isRecord(ru) && typeof ru['document_key'] === 'string' ? ru['document_key'] : undefined;
             if (!rType || !rStage || !rKey) continue;
 
@@ -264,7 +264,7 @@ export async function executeModelCallAndSave(
             for (const ru of rulesUnknown) {
                 const ruUnknown: unknown = ru;
                 const rType = isRecord(ruUnknown) && typeof ruUnknown['type'] === 'string' ? ruUnknown['type'] : undefined;
-                const rStage = isRecord(ruUnknown) && typeof ruUnknown['stage_slug'] === 'string' ? ruUnknown['stage_slug'] : undefined;
+                const rStage = isRecord(ruUnknown) && typeof ruUnknown['slug'] === 'string' ? ruUnknown['slug'] : undefined;
                 const rKey = isRecord(ruUnknown) && typeof ruUnknown['document_key'] === 'string' ? ruUnknown['document_key'] : undefined;
                 if (rType && rStage && rKey && rType === tp && rStage === ss && rKey === dk) {
                     match = true;
@@ -1078,6 +1078,24 @@ export async function executeModelCallAndSave(
     }
 
     const contribution = savedResult.record;
+
+    if (typeof promptConstructionPayload.source_prompt_resource_id === 'string' && promptConstructionPayload.source_prompt_resource_id.trim().length > 0) {
+        const { error: promptLinkUpdateError } = await dbClient
+            .from('dialectic_project_resources')
+            .update({ source_contribution_id: contribution.id })
+            .eq('id', promptConstructionPayload.source_prompt_resource_id);
+
+        if (promptLinkUpdateError) {
+            deps.logger.error(
+                '[executeModelCallAndSave] Failed to update source_contribution_id for originating prompt resource.',
+                {
+                    promptResourceId: promptConstructionPayload.source_prompt_resource_id,
+                    contributionId: contribution.id,
+                    error: promptLinkUpdateError,
+                },
+            );
+        }
+    }
 
     // Emit chunk completion for continuation jobs immediately after save
     if (projectOwnerUserId && isContinuationForStorage) {

@@ -232,11 +232,60 @@ Deno.test('FileManagerService', async (t) => {
         assertEquals(insertData.file_name, expectedPathParts.fileName);
         assert(typeof insertData.resource_description === 'object' && insertData.resource_description !== null, 'resource_description should be an object');
         assertEquals(insertData.resource_description, { type: context.pathContext.fileType, originalDescription: context.description });
+        assertEquals(insertData.source_contribution_id, undefined);
       } finally {
         afterEach()
       }
     },
   )
+
+  await t.step('uploadAndRegisterFile should register a seed prompt resource with session metadata', async () => {
+    try {
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_project_resources: {
+            insert: { data: [{ id: 'seed-resource-id' }], error: null },
+          },
+        },
+      };
+      beforeEach(config);
+
+      const seedPromptPathContext: ResourceUploadContext['pathContext'] = {
+        projectId: 'project-seed-contract',
+        sessionId: 'session-seed-contract',
+        iteration: 2,
+        stageSlug: 'thesis',
+        fileType: FileType.SeedPrompt,
+        sourceContributionId: 'seed-contribution-123',
+      };
+
+      const seedPromptContext: ResourceUploadContext = {
+        ...baseUploadContext,
+        pathContext: seedPromptPathContext,
+        fileContent: '# Seed prompt content',
+        mimeType: 'text/markdown',
+        description: 'Seed prompt for thesis stage',
+        resourceTypeForDb: 'seed_prompt',
+      };
+
+      const { record, error } = await fileManager.uploadAndRegisterFile(seedPromptContext);
+
+      assertEquals(error, null);
+      assertExists(record);
+
+      const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert;
+      assertExists(insertSpy);
+      const insertData = insertSpy.calls[0].args[0];
+
+      assertEquals(insertData.resource_type, 'seed_prompt');
+      assertEquals(insertData.session_id, seedPromptPathContext.sessionId);
+      assertEquals(insertData.stage_slug, seedPromptPathContext.stageSlug);
+      assertEquals(insertData.iteration_number, seedPromptPathContext.iteration);
+      assertEquals(insertData.source_contribution_id, seedPromptPathContext.sourceContributionId);
+    } finally {
+      afterEach();
+    }
+  });
 
   await t.step('uploadAndRegisterFile should register a project export zip at project root',
     async () => {
@@ -1060,7 +1109,7 @@ Deno.test('FileManagerService', async (t) => {
         throw new Error('fileType is null');
       }
       const stepName = 'generate_plan';
-      const pathContext: ResourceUploadContext['pathContext'] = {
+      const plannerPathContext: ResourceUploadContext['pathContext'] = {
         fileType: FileType.PlannerPrompt,
         projectId: 'project-doc-centric',
         sessionId: 'session-doc-centric',
@@ -1068,6 +1117,7 @@ Deno.test('FileManagerService', async (t) => {
         stageSlug: 'thesis',
         modelSlug: 'test-model',
         stepName,
+        sourceContributionId: 'planner-source-contrib-123',
       };
 
       const expectedPathParts = {
@@ -1112,7 +1162,7 @@ Deno.test('FileManagerService', async (t) => {
       const plannerContext: ResourceUploadContext = {
         ...baseUploadContext,
         pathContext: {
-          ...pathContext,
+          ...plannerPathContext,
           fileType: FileType.PlannerPrompt,
         },
         fileContent: '{}',
@@ -1131,6 +1181,11 @@ Deno.test('FileManagerService', async (t) => {
       const fromSpyCalls = setup.spies.fromSpy.calls;
       const contributionTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_project_resources');
       assertExists(contributionTableCall, `'dialectic_project_resources' table was not targeted for ${fileType}`);
+
+      const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert;
+      assertExists(insertSpy, "Insert spy for 'dialectic_project_resources' should exist");
+      const insertData = insertSpy.calls[0].args[0];
+      assertEquals(insertData.source_contribution_id, plannerPathContext.sourceContributionId);
     } finally {
       afterEach();
     }

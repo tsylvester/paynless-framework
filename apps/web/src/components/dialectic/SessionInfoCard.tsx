@@ -56,9 +56,7 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
 	const sessionProgress = useDialecticStore((state) =>
 		session ? state.sessionProgress[session.id] : undefined,
 	);
-	const generateContributionsError = useDialecticStore(
-		selectGenerateContributionsError,
-	);
+	const generateContributionsError = useDialecticStore(selectGenerateContributionsError);
 	const navigate = useNavigate();
 	const [isPromptOpen, setIsPromptOpen] = useState(false);
 	const activeSeedPrompt = useDialecticStore((state) => state.activeSeedPrompt);
@@ -68,7 +66,7 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
 	const generatingJobs = useDialecticStore((state) =>
 		session ? selectGeneratingSessionsForSession(state, session.id) : [],
 	);
-	const isGenerating = generatingJobs.length > 0;
+	const isGenerating = generatingJobs.length > 0 && !generateContributionsError;
 
 	// Submit functionality
 	const activeStageSlug = useDialecticStore(selectActiveStageSlug);

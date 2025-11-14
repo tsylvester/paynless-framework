@@ -1,5 +1,6 @@
 import { describe, it, expect, expectTypeOf } from 'vitest';
 import type {
+  AssembledPrompt,
   DialecticContribution,
   DialecticFeedback,
   DialecticProcessTemplate,
@@ -113,8 +114,24 @@ describe('Selectors - Recipes', () => {
             b_key: 'not_started',
           },
           documents: {
-            doc_a: { status: 'completed', job_id: 'job-1', latestRenderedResourceId: 'res-1', modelId: 'model-1', versionHash: 'hash-1', lastRenderedResourceId: 'res-1', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
-            doc_b: { status: 'generating', job_id: 'job-2', latestRenderedResourceId: 'res-2', modelId: 'model-2', versionHash: 'hash-2', lastRenderedResourceId: 'res-2', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
+            doc_a: {
+              status: 'completed',
+              job_id: 'job-1',
+              latestRenderedResourceId: 'res-1',
+              modelId: 'model-1',
+              versionHash: 'hash-1',
+              lastRenderedResourceId: 'res-1',
+              lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+            },
+            doc_b: {
+              status: 'generating',
+              job_id: 'job-2',
+              latestRenderedResourceId: 'res-2',
+              modelId: 'model-2',
+              versionHash: 'hash-2',
+              lastRenderedResourceId: 'res-2',
+              lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+            },
           },
         },
       },
@@ -154,6 +171,9 @@ describe('Selectors - Recipes', () => {
         totalDocuments: 2,
         completedDocuments: 1,
         outstandingDocuments: ['doc_b'],
+        hasFailed: false,
+        failedDocuments: 0,
+        failedDocumentKeys: [],
       });
     });
 
@@ -179,6 +199,9 @@ describe('Selectors - Recipes', () => {
         totalDocuments: 2,
         completedDocuments: 2,
         outstandingDocuments: [],
+        hasFailed: false,
+        failedDocuments: 0,
+        failedDocumentKeys: [],
       });
     });
 
@@ -188,10 +211,42 @@ describe('Selectors - Recipes', () => {
           [progressKey]: {
             stepStatuses: { a_key: 'completed', b_key: 'not_started' },
             documents: {
-              doc_a: { status: 'completed', job_id: 'job-1', latestRenderedResourceId: 'res-1', modelId: 'model-a', versionHash: 'hash-1', lastRenderedResourceId: 'res-1', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
-              doc_b: { status: 'generating', job_id: 'job-2', latestRenderedResourceId: 'res-2', modelId: 'model-b', versionHash: 'hash-2', lastRenderedResourceId: 'res-2', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
-              doc_c: { status: 'completed', job_id: 'job-3', latestRenderedResourceId: 'res-3', modelId: 'model-a', versionHash: 'hash-3', lastRenderedResourceId: 'res-3', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
-              doc_d: { status: 'continuing', job_id: 'job-4', latestRenderedResourceId: 'res-4', modelId: 'model-a', versionHash: 'hash-4', lastRenderedResourceId: 'res-4', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
+              doc_a: {
+                status: 'completed',
+                job_id: 'job-1',
+                latestRenderedResourceId: 'res-1',
+                modelId: 'model-a',
+                versionHash: 'hash-1',
+                lastRenderedResourceId: 'res-1',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+              },
+              doc_b: {
+                status: 'generating',
+                job_id: 'job-2',
+                latestRenderedResourceId: 'res-2',
+                modelId: 'model-b',
+                versionHash: 'hash-2',
+                lastRenderedResourceId: 'res-2',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+              },
+              doc_c: {
+                status: 'completed',
+                job_id: 'job-3',
+                latestRenderedResourceId: 'res-3',
+                modelId: 'model-a',
+                versionHash: 'hash-3',
+                lastRenderedResourceId: 'res-3',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+              },
+              doc_d: {
+                status: 'continuing',
+                job_id: 'job-4',
+                latestRenderedResourceId: 'res-4',
+                modelId: 'model-a',
+                versionHash: 'hash-4',
+                lastRenderedResourceId: 'res-4',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+              },
             },
           },
         },
@@ -204,6 +259,9 @@ describe('Selectors - Recipes', () => {
           totalDocuments: 3,
           completedDocuments: 2,
           outstandingDocuments: ['doc_d'],
+          hasFailed: false,
+          failedDocuments: 0,
+          failedDocumentKeys: [],
         });
       });
 
@@ -214,6 +272,9 @@ describe('Selectors - Recipes', () => {
           totalDocuments: 1,
           completedDocuments: 0,
           outstandingDocuments: ['doc_b'],
+          hasFailed: false,
+          failedDocuments: 0,
+          failedDocumentKeys: [],
         });
       });
 
@@ -222,14 +283,68 @@ describe('Selectors - Recipes', () => {
         expect(summary).toBeDefined();
         if (!summary) return;
 
-        const { outstandingDocuments, ...rest } = summary;
-
-        expect(outstandingDocuments.sort()).toEqual(['doc_b', 'doc_d'].sort());
-        expect(rest).toEqual({
+        expect(summary).toEqual({
           isComplete: false,
           totalDocuments: 4,
           completedDocuments: 2,
+          outstandingDocuments: ['doc_b', 'doc_d'],
+          hasFailed: false,
+          failedDocuments: 0,
+          failedDocumentKeys: [],
         });
+      });
+    });
+
+    it('selectStageProgressSummary reports failed documents separately from outstanding ones', () => {
+      const stateWithFailure = makeState({
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: {
+              a_key: 'completed',
+              b_key: 'failed',
+            },
+            documents: {
+              doc_a: {
+                status: 'completed',
+                job_id: 'job-1',
+                latestRenderedResourceId: 'res-1',
+                modelId: 'model-1',
+                versionHash: 'hash-1',
+                lastRenderedResourceId: 'res-1',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+              },
+              doc_b: {
+                status: 'failed',
+                job_id: 'job-2',
+                latestRenderedResourceId: 'res-2',
+                modelId: 'model-2',
+                versionHash: 'hash-2',
+                lastRenderedResourceId: 'res-2',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+              },
+              doc_c: {
+                status: 'generating',
+                job_id: 'job-3',
+                latestRenderedResourceId: 'res-3',
+                modelId: 'model-3',
+                versionHash: 'hash-3',
+                lastRenderedResourceId: 'res-3',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+              },
+            },
+          },
+        },
+      });
+
+      const summary = selectStageProgressSummary(stateWithFailure, sessionId, stageSlug, iterationNumber);
+      expect(summary).toEqual({
+        isComplete: false,
+        totalDocuments: 3,
+        completedDocuments: 1,
+        outstandingDocuments: ['doc_c'],
+        hasFailed: true,
+        failedDocuments: 1,
+        failedDocumentKeys: ['doc_b'],
       });
     });
 
@@ -498,6 +613,7 @@ describe('Selectors - Recipes', () => {
       contributions?: DialecticContribution[];
       feedbackEntries?: DialecticFeedback[];
       stepStatuses?: Partial<Record<string, StepStatus>>;
+      activeSeedPrompt?: AssembledPrompt | null;
     }): DialecticStateValues => {
       const resources = config?.resources ?? [];
       const contributions = config?.contributions ?? [];
@@ -558,6 +674,7 @@ describe('Selectors - Recipes', () => {
         ...initialDialecticStateValues,
         currentProjectDetail: project,
         currentProcessTemplate: processTemplate,
+        activeSeedPrompt: config?.activeSeedPrompt ?? null,
         recipesByStageSlug: { [stageSlugUnderTest]: readinessRecipe },
         stageRunProgress: {
           [progressKey]: {
@@ -596,8 +713,13 @@ describe('Selectors - Recipes', () => {
       ).toBe(false);
     });
 
+    const assembledSeedPrompt: AssembledPrompt = {
+      promptContent: 'Seed prompt content',
+      source_prompt_resource_id: seedPromptResource.id,
+    };
+
     it('returns true when the planner has its required seed prompt resource', () => {
-      const state = buildState({ resources: [seedPromptResource] });
+      const state = buildState({ resources: [seedPromptResource], activeSeedPrompt: assembledSeedPrompt });
       expect(
         selectIsStageReadyForSessionIteration(
           state,
@@ -671,6 +793,7 @@ describe('Selectors - Recipes', () => {
         contributions: [contribution],
         feedbackEntries: [feedbackEntry],
         stepStatuses: { [plannerStepKey]: 'completed' },
+        activeSeedPrompt: assembledSeedPrompt,
       });
 
       expect(

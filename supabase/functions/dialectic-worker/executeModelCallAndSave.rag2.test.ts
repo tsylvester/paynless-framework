@@ -21,7 +21,7 @@ import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { ICompressionStrategy, getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
-
+import { FileType } from '../_shared/types/file_manager.types.ts';
 import { 
     createMockJob, 
     testPayload, 
@@ -32,6 +32,7 @@ import {
     getMockDeps 
 } from './executeModelCallAndSave.test.ts';
 import { DocumentRelationships } from '../_shared/types/file_manager.types.ts';
+import { RelevanceRule } from '../dialectic-service/dialectic.interface.ts';
 
 Deno.test('passes inputsRelevance to rag_service.getContextForModel and compressionStrategy', async () => {
   if (!isRecord(mockFullProviderData.config)) {
@@ -79,8 +80,8 @@ Deno.test('passes inputsRelevance to rag_service.getContextForModel and compress
     ];
   };
 
-  const inputsRelevance = [
-    { document_key: 'docA', type: 'document', relevance: 1 },
+  const inputsRelevance: RelevanceRule[] = [
+    { document_key: FileType.business_case, type: 'document', relevance: 1 },
   ];
 
   const payload: PromptConstructionPayload = {
@@ -278,12 +279,12 @@ Deno.test('compression ordering and identity: removes lowest blended-score first
     // Executor gathers from DB; provide two distinct identities to avoid latest-per-identity dedupe
     'dialectic_contributions': { select: { data: [
       {
-        id: 'doc-high', content: 'high relevance', stage: 'stage-a', document_key: 'k_hi', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_k_hi.json'
+        id: 'doc-high', content: 'high relevance', stage: 'stage-a', document_key: FileType.product_requirements, type: 'document', created_at: new Date().toISOString(),
+        storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_product_requirements.md'
       },
       {
-        id: 'doc-low', content: 'low relevance', stage: 'stage-a', document_key: 'k_lo', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_k_lo.json'
+        id: 'doc-low', content: 'low relevance', stage: 'stage-a', document_key: FileType.business_case, type: 'document', created_at: new Date().toISOString(),
+        storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_business_case.md'
       },
     ], error: null } },
   });
@@ -349,16 +350,16 @@ Deno.test('compression ordering and identity: removes lowest blended-score first
     stage: 'test-stage',
     is_header: false,
     source_prompt_resource_id: null,
-    document_key: 'k_hi',
+    document_key: FileType.product_requirements,
     type: 'document',
     stage_slug: 'stage-a',
   };
 
-  const docLo = { ...docHi, id: 'doc-low', file_name: 'lo.txt', storage_path: 'p/lo', document_key: 'k_lo' };
+  const docLo = { ...docHi, id: 'doc-low', file_name: 'lo.txt', storage_path: 'p/lo', document_key: FileType.business_case };
 
-  const inputsRelevance = [
-    { document_key: 'k_hi', type: 'document', relevance: 1 }, // high priority for doc-high
-    { document_key: 'k_lo', type: 'document', relevance: 0 }, // low priority for doc-low
+  const inputsRelevance: RelevanceRule[] = [
+    { document_key: FileType.product_requirements, type: 'document', relevance: 1 }, // high priority for doc-high
+    { document_key: FileType.business_case, type: 'document', relevance: 0 }, // low priority for doc-low
   ];
 
   // Spy on adapter to inspect final resourceDocuments ordering and content replacement
@@ -384,8 +385,8 @@ Deno.test('compression ordering and identity: removes lowest blended-score first
     inputsRelevance,
     // Scope strictly to current step’s inputs for both identities
     inputsRequired: [
-      { document_key: 'k_hi', type: 'document', stage_slug: 'stage-a' },
-      { document_key: 'k_lo', type: 'document', stage_slug: 'stage-a' },
+      { document_key: FileType.product_requirements, type: 'document', slug: 'stage-a' },
+      { document_key: FileType.business_case, type: 'document', slug: 'stage-a' },
     ],
   };
 
@@ -430,12 +431,12 @@ Deno.test('inputsRelevance effects: higher relevance ranks later; stage_slug-spe
     'dialectic_memory': { select: { data: [], error: null } },
     'dialectic_contributions': { select: { data: [
       {
-        id: 'A', content: 'x', stage: 's1', document_key: 'k', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/s1/documents', file_name: 'model-collect_1_k.json'
+        id: 'A', content: 'x', stage: 's1', document_key: FileType.success_metrics, type: 'document', created_at: new Date().toISOString(),
+        storage_path: 'project-abc/session_session-456/iteration_1/s1/documents', file_name: 'model-collect_1_success_metrics.md'
       },
       {
-        id: 'B', content: 'x', stage: 's2', document_key: 'k', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/s2/documents', file_name: 'model-collect_1_k.json'
+        id: 'B', content: 'x', stage: 's2', document_key: FileType.business_case, type: 'document', created_at: new Date().toISOString(),
+        storage_path: 'project-abc/session_session-456/iteration_1/s2/documents', file_name: 'model-collect_1_business_case.md'
       },
     ], error: null } },
   });
@@ -474,14 +475,14 @@ Deno.test('inputsRelevance effects: higher relevance ranks later; stage_slug-spe
     original_model_contribution_id: null,
   };
 
-  const docA: SourceDocument = { ...base, id: 'A', file_name: 'a.txt', storage_path: 'p/a', document_key: 'k', type: 'document', stage_slug: 's1' };
-  const docB: SourceDocument = { ...base, id: 'B', file_name: 'b.txt', storage_path: 'p/b', document_key: 'k', type: 'document', stage_slug: 's2' };
+  const docA: SourceDocument = { ...base, id: 'A', file_name: 'a.txt', storage_path: 'p/a', document_key: FileType.success_metrics, type: 'document', stage_slug: 's1' };
+  const docB: SourceDocument = { ...base, id: 'B', file_name: 'b.txt', storage_path: 'p/b', document_key: FileType.business_case, type: 'document', stage_slug: 's2' };
   const docC: SourceDocument = { ...base, id: 'C', file_name: 'c.txt', storage_path: 'p/c' } as SourceDocument; // missing identity
 
   // Stage-specific rule for k@s1 and general rule for k
-  const inputsRelevance = [
-    { document_key: 'k', type: 'document', relevance: 0.3 },
-    { document_key: 'k', type: 'document', relevance: 1, stage_slug: 's1' },
+  const inputsRelevance: RelevanceRule[] = [
+    { document_key: FileType.business_case, type: 'document', relevance: 0.3 },
+    { document_key: FileType.success_metrics, type: 'document', relevance: 1, slug: 's1' },
   ];
 
   const params: ExecuteModelCallAndSaveParams = {
@@ -501,8 +502,8 @@ Deno.test('inputsRelevance effects: higher relevance ranks later; stage_slug-spe
     compressionStrategy,
     inputsRelevance,
     inputsRequired: [
-      { document_key: 'k', type: 'document', stage_slug: 's1' },
-      { document_key: 'k', type: 'document', stage_slug: 's2' },
+      { document_key: FileType.success_metrics, type: 'document', slug: 's1' },
+      { document_key: FileType.business_case, type: 'document', slug: 's2' },
     ],
   };
 
@@ -535,12 +536,12 @@ Deno.test('empty inputsRelevance: similarity-only behavior is deterministic', as
     'dialectic_memory': { select: { data: [], error: null } },
     'dialectic_contributions': { select: { data: [
       {
-        id: 'alpha', content: 'alpha', stage: 't', document_key: 'k_alpha', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_k_alpha.json'
+        id: 'alpha', content: 'alpha', stage: 't', document_key: FileType.business_case, type: 'document', created_at: new Date().toISOString(),
+        storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_business_case.md'
       },
       {
-        id: 'beta', content: 'beta', stage: 't', document_key: 'k_beta', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_k_beta.json'
+        id: 'beta', content: 'beta', stage: 't', document_key: FileType.success_metrics, type: 'document', created_at: new Date().toISOString(),
+        storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_success_metrics.md'
       },
     ], error: null } },
   });
@@ -594,8 +595,8 @@ Deno.test('empty inputsRelevance: similarity-only behavior is deterministic', as
     compressionStrategy,
     inputsRelevance: [],
     inputsRequired: [
-      { document_key: 'k_alpha', type: 'document', stage_slug: 't' },
-      { document_key: 'k_beta',  type: 'document', stage_slug: 't' },
+      { document_key: FileType.business_case, type: 'document', slug: 't' },
+      { document_key: FileType.success_metrics,  type: 'document', slug: 't' },
     ],
   };
 
@@ -626,15 +627,15 @@ Deno.test('passes identity-rich candidates into compression even when prompt doc
     // Identity-rich rows in DB tables with document-centric file_name and directory-only storage_path
     'dialectic_contributions': { select: { data: [ {
       id: 'c1', content: 'C1', stage: 's1', document_key: 'k1', type: 'document', created_at: new Date().toISOString(),
-      storage_path: 'project-abc/session_session-456/iteration_1/s1/documents', file_name: 'modelM_1_k1.json'
+      storage_path: 'project-abc/session_session-456/iteration_1/s1/documents', file_name: 'modelM_1_business_case.md'
     } ], error: null } },
     'dialectic_project_resources': { select: { data: [ {
       id: 'r1', content: 'R1', stage_slug: 's2', document_key: 'k2', type: 'document', created_at: new Date().toISOString(),
-      storage_path: 'project-abc/session_session-456/iteration_1/s2/documents', file_name: 'modelM_1_k2.json'
+      storage_path: 'project-abc/session_session-456/iteration_1/s2/documents', file_name: 'modelM_1_success_metrics.md'
     } ], error: null } },
     'dialectic_feedback': { select: { data: [ {
       id: 'f1', content: 'F1', stage_slug: 's3', document_key: 'k3', type: 'feedback', created_at: new Date().toISOString(),
-      storage_path: 'project-abc/session_session-456/iteration_1/s3/documents', file_name: 'modelM_1_k3.json'
+      storage_path: 'project-abc/session_session-456/iteration_1/s3/documents', file_name: 'modelM_1_user_feedback.md'
     } ], error: null } },
   });
 
@@ -673,9 +674,9 @@ Deno.test('passes identity-rich candidates into compression even when prompt doc
     compressionStrategy: capturingCompressionStrategy,
     inputsRelevance: [],
     inputsRequired: [
-      { document_key: 'k1', type: 'document', stage_slug: 's1' },
-      { document_key: 'k2', type: 'document', stage_slug: 's2' },
-      { document_key: 'k3', type: 'feedback', stage_slug: 's3' },
+      { document_key: FileType.business_case, type: 'document', slug: 's1' },
+      { document_key: FileType.success_metrics, type: 'document', slug: 's2' },
+      { document_key: FileType.UserFeedback, type: 'feedback', slug: 's3' },
     ],
   };
 
@@ -765,12 +766,12 @@ Deno.test('ties without inputsRelevance: candidates are in non-decreasing effect
     'dialectic_memory': { select: { data: [], error: null } },
     'dialectic_contributions': { select: { data: [
       {
-        id: 'A', content: 'x', stage: 's', document_key: 'k1', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_k1.json'
+        id: 'A', content: 'x', stage: 's', document_key: FileType.business_case, type: 'document', created_at: new Date().toISOString(),
+        storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_business_case.md'
       },
       {
-        id: 'B', content: 'x', stage: 's', document_key: 'k2', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_k2.json'
+        id: 'B', content: 'x', stage: 's', document_key: FileType.success_metrics, type: 'document', created_at: new Date().toISOString(),
+        storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_success_metrics.md'
       },
     ], error: null } },
   });
@@ -797,8 +798,8 @@ Deno.test('ties without inputsRelevance: candidates are in non-decreasing effect
     seed_prompt_url: null, size_bytes: 1, storage_bucket: 'b', tokens_used_input: 0, tokens_used_output: 0, stage: 't', is_header: false, source_prompt_resource_id: null,
     original_model_contribution_id: null,
   };
-  const d1: SourceDocument = { ...base, id: 'A', file_name: 'a.txt', storage_path: 'p/a', document_key: 'k', type: 'document', stage_slug: 's' };
-  const d2: SourceDocument = { ...base, id: 'B', file_name: 'b.txt', storage_path: 'p/b', document_key: 'k', type: 'document', stage_slug: 's' };
+  const d1: SourceDocument = { ...base, id: 'A', file_name: 'a.txt', storage_path: 'p/a', document_key: FileType.business_case, type: 'document', stage_slug: 's' };
+  const d2: SourceDocument = { ...base, id: 'B', file_name: 'b.txt', storage_path: 'p/b', document_key: FileType.success_metrics, type: 'document', stage_slug: 's' };
 
   const payload: PromptConstructionPayload = {
     systemInstruction: 'SYS',
@@ -819,8 +820,8 @@ Deno.test('ties without inputsRelevance: candidates are in non-decreasing effect
     compressionStrategy: wrapperStrategy,
     inputsRelevance: [],
     inputsRequired: [
-      { document_key: 'k1', type: 'document', stage_slug: 's' },
-      { document_key: 'k2', type: 'document', stage_slug: 's' },
+      { document_key: FileType.business_case, type: 'document', slug: 's' },
+      { document_key: FileType.success_metrics, type: 'document', slug: 's' },
     ],
   };
 

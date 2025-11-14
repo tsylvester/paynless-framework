@@ -272,6 +272,25 @@ export const SessionContributionsDisplayCard: React.FC = () => {
     [documentsByModel],
   );
 
+const failedDocumentKeys = useMemo(() => {
+  if (stageProgressSummary?.hasFailed) {
+    return stageProgressSummary.failedDocumentKeys;
+  }
+
+  const fallback = documentGroups.flatMap(([, documents]) =>
+    documents
+      .filter((document) => document.status === 'failed')
+      .map((document) => document.documentKey),
+  );
+
+  return Array.from(new Set(fallback));
+}, [documentGroups, stageProgressSummary]);
+
+const isGenerating =
+  contributionGenerationStatus === 'generating' &&
+  failedDocumentKeys.length === 0 &&
+  !generationError;
+
   const hasDocuments = useMemo(
     () => documentGroups.some(([, documents]) => documents.length > 0),
     [documentGroups],
@@ -439,8 +458,6 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 		);
 	}
 
-  const isGenerating = contributionGenerationStatus === "generating";
-
   return (
     <div className="space-y-8">
       <div data-testid="card-header" className="space-y-3">
@@ -490,8 +507,11 @@ export const SessionContributionsDisplayCard: React.FC = () => {
           </div>
         </div>
       )}
-      {generationError && (
-        <div className="bg-red-50 dark:bg-red-950/20 rounded-xl px-6 py-4 border border-red-200/50 dark:border-red-800/50">
+      {(generationError || failedDocumentKeys.length > 0) && (
+        <div
+          className="bg-red-50 dark:bg-red-950/20 rounded-xl px-6 py-4 border border-red-200/50 dark:border-red-800/50"
+          data-testid="generation-error-banner"
+        >
           <div className="flex items-center gap-3">
             <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
               <div className="h-5 w-5 rounded-full bg-red-600 flex items-center justify-center">
@@ -500,7 +520,14 @@ export const SessionContributionsDisplayCard: React.FC = () => {
             </div>
             <div>
               <p className="font-medium text-red-900 dark:text-red-100">Generation Error</p>
-              <p className="text-sm text-red-700 dark:text-red-300">{generationError.message}</p>
+              {generationError?.message && (
+                <p className="text-sm text-red-700 dark:text-red-300">{generationError.message}</p>
+              )}
+              {failedDocumentKeys.length > 0 && (
+                <p className="text-xs text-red-700 dark:text-red-300">
+                  Failed documents: {failedDocumentKeys.join(', ')}
+                </p>
+              )}
             </div>
           </div>
         </div>

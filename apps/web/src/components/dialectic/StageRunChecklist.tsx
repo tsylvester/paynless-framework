@@ -249,17 +249,15 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
 
     documentChecklist.forEach((entry) => {
       const descriptor = markdownDescriptorMap.get(entry.documentKey);
-      const stepKeyMatch =
-        descriptor?.stepKey ??
-        (entry.stepKey && markdownStepKeys.has(entry.stepKey) ? entry.stepKey : undefined);
-
-      if (descriptor || stepKeyMatch) {
-        const effectiveStepKey = stepKeyMatch ?? entry.stepKey ?? descriptor?.stepKey ?? entry.documentKey;
-        documentsByKey.set(entry.documentKey, {
-          entry,
-          stepKey: effectiveStepKey,
-        });
+      if (!descriptor) {
+        return;
       }
+
+      const effectiveStepKey = entry.stepKey ?? descriptor.stepKey ?? entry.documentKey;
+      documentsByKey.set(entry.documentKey, {
+        entry,
+        stepKey: effectiveStepKey,
+      });
     });
 
     markdownDescriptorMap.forEach(({ documentKey, stepKey }) => {

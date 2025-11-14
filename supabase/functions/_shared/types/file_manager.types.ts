@@ -111,6 +111,7 @@ export interface PathContext {
   pairedModelSlug?: string;
   isContinuation?: boolean;
   turnIndex?: number;
+  sourceContributionId?: string | null;
   documentKey?: string; // e.g., 'executive_summary', 'technical_design'
   stepName?: string; // e.g., 'critique_and_improve'
 }

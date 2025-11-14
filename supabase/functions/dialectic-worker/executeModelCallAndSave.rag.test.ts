@@ -21,7 +21,7 @@ import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { ICompressionStrategy, getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
-
+import { FileType } from '../_shared/types/file_manager.types.ts';
 import { 
     createMockJob, 
     testPayload, 
@@ -51,7 +51,7 @@ Deno.test('resource documents are used for sizing but not included in ChatApiReq
               iteration_number: 1,
               // Path deconstructor expects directory in storage_path and full file name in file_name
               storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
-              file_name: 'modelA_1_doc.txt.json'
+              file_name: 'modelA_1_business_case.md'
             }
           ], error: null }
       }
@@ -160,7 +160,7 @@ Deno.test('resource documents are used for sizing but not included in ChatApiReq
         sessionData: mockSessionData,
         compressionStrategy: getSortedCompressionCandidates,
     inputsRequired: [
-      { type: 'document', stage_slug: 'test-stage', document_key: 'doc.txt' }
+      { type: 'document', slug: 'test-stage', document_key: FileType.business_case }
     ],
     };
 

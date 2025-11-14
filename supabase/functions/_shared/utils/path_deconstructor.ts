@@ -594,6 +594,7 @@ export function deconstructStoragePath(
     info.stageSlug = mapDirNameToStageSlug(info.stageDirName); 
     info.parsedFileNameFromPath = `user_feedback_${matches[5]}.md`;
     info.fileTypeGuess = FileType.UserFeedback;
+    info.documentKey = FileType.UserFeedback;
     return info;
   }
 

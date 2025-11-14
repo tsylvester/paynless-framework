@@ -50,3 +50,30 @@ const query = dbClient
    - Extend the new RED tests or add targeted unit tests around file-manager to prove it writes the column matrix correctly (e.g. resource upload with stage/session info, resource upload without, etc.).
 
 This keeps production stable (queries still match via JSON) while letting us transition to the first-class columns that the planner now expects. Let me know when you want the detailed TDD checklist for the file-manager changes.
+
+## Contract Column Alignment Plan
+
+*   `[ ]` 1. **`[BE]` Persist full project-resource contract in `FileManagerService`**
+    *   `[ ]` 1.a. `[TEST-UNIT]` In `supabase/functions/_shared/services/file_manager.upload.test.ts`, add coverage for `FileType.SeedPrompt` (and a generic resource) that asserts the insert payload includes `resource_type`, `session_id`, `stage_slug`, `iteration_number`, and `source_contribution_id` when those values exist in the path context.
+    *   `[ ]` 1.b. `[BE]` In `supabase/functions/_shared/services/file_manager.ts`, populate the columns above using `context.resourceTypeForDb ?? pathContext.fileType` and the session/stage/iteration values from `pathContext`. Preserve the JSON `resource_description` but stop relying on it for typed metadata.
+    *   `[ ]` 1.c. `[TEST-UNIT]` Re-run the file-manager suite to prove the new metadata contract is enforced.
+
+*   `[ ]` 2. **`[BE]` Update resource readers in `task_isolator`**
+    *   `[ ]` 2.a. `[TEST-UNIT]` In `supabase/functions/dialectic-worker/task_isolator.test.ts` and `task_isolator.parallel.test.ts`, RED the planner tests so they expect queries to filter on `resource_type`, `session_id`, and `stage_slug` rather than JSON paths.
+    *   `[ ]` 2.b. `[BE]` In `supabase/functions/dialectic-worker/task_isolator.ts`, replace every `resource_description->>` filter with the corresponding column filters (`resource_type`, `document_key`, etc.) and prune the JSON fallback.
+    *   `[ ]` 2.c. `[TEST-UNIT]` Ensure both task-isolator suites pass, proving seed prompts and header-context resources are now discoverable through the column contract.
+
+*   `[ ]` 3. **`[BE]` Align session seed prompt lookup**
+    *   `[ ]` 3.a. `[TEST-UNIT]` In `supabase/functions/dialectic-service/getSessionDetails.test.ts`, RED the seed prompt coverage so it asserts the query filters on `resource_type = 'seed_prompt'` (and session/stage matching) instead of `resource_description`.
+    *   `[ ]` 3.b. `[BE]` Update `supabase/functions/dialectic-service/getSessionDetails.ts` to query by the new columns only, discarding the JSON predicate.
+    *   `[ ]` 3.c. `[TEST-UNIT]` Re-run the session-details suite to confirm the assembled response still includes the seed prompt when the column contract is in place.
+
+*   `[ ]` 4. **`[BE]` Refresh stage document listing contract**
+    *   `[ ]` 4.a. `[TEST-UNIT]` Extend `supabase/functions/dialectic-service/listStageDocuments.test.ts` so it expects `resource_type = 'rendered_document'` and filters on the new job identifier column (e.g., `source_contribution_id`) rather than `resource_description->>job_id`.
+    *   `[ ]` 4.b. `[BE]` Update `supabase/functions/dialectic-service/listStageDocuments.ts` to use the new columns when fetching rendered documents and associated metadata.
+    *   `[ ]` 4.c. `[TEST-UNIT]` Re-run the list-stage-documents tests to demonstrate the worker/UI now receive properly typed document metadata.
+
+*   `[ ]` 5. **`[BE]` Fix resource checks in `submitStageResponses`**
+    *   `[ ]` 5.a. `[TEST-UNIT]` Add RED coverage in `supabase/functions/dialectic-service/submitStageResponses.test.ts` (or create it if missing) that proves required-document validation uses `resource_type`/`document_key` rather than raw `resource_description` comparisons.
+    *   `[ ]` 5.b. `[BE]` Update `supabase/functions/dialectic-service/submitStageResponses.ts` to perform those checks via the new columns (and align any helper utilities as needed).
+    *   `[ ]` 5.c. `[TEST-UNIT]` Re-run the submit-stage-responses suite to confirm the validation path passes with the column-based contract.

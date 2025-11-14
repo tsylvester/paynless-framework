@@ -148,6 +148,7 @@ export async function renderDocument(
     documentKey: String(documentKey),
     modelSlug,
     attemptCount,
+    sourceContributionId: documentIdentity,
   };
 
   if (deps.fileManager && typeof deps.fileManager.uploadAndRegisterFile === "function") {
@@ -162,6 +163,7 @@ export async function renderDocument(
           documentKey: pathContext.documentKey,
           modelSlug: pathContext.modelSlug,
           attemptCount: pathContext.attemptCount,
+          sourceContributionId: pathContext.sourceContributionId ?? null,
         },
         fileContent: rendered,
         mimeType: "text/markdown",
@@ -176,20 +178,20 @@ export async function renderDocument(
 
   // 6) Notification 
   const targetUser = base.user_id;
-  if (deps.notificationService && typeof deps.notificationService.sendDocumentRenderedNotification === "function" && targetUser) {
+  if (deps.notificationService && typeof deps.notificationService.sendDocumentCentricNotification === "function" && targetUser) {
+    const renderJobId = `render-${documentIdentity}`;
     try {
-      await deps.notificationService.sendDocumentRenderedNotification({
-        type: 'document_rendered',
-        projectId,
+      await deps.notificationService.sendDocumentCentricNotification({
+        type: "render_completed",
         sessionId,
-        iterationNumber,
         stageSlug,
-        documentIdentity,
-        documentKey: documentKey,
-        completed: true,
+        iterationNumber,
+        job_id: renderJobId,
+        document_key: documentKey,
+        modelId: modelSlug,
       }, targetUser);
     } catch (e) {
-      deps.logger?.warn?.("Failed to send document rendered notification", { error: e });
+      deps.logger?.warn?.("Failed to send render_completed notification", { error: e });
     }
   }
 

@@ -11,6 +11,7 @@ import type {
   DialecticStateValues,
   DialecticProcessTemplate,
   StageDocumentContentState,
+  StageRenderedDocumentDescriptor,
 } from '@paynless/types';
 
 import { SessionContributionsDisplayCard } from './SessionContributionsDisplayCard';
@@ -229,8 +230,9 @@ const buildStageRunProgress = (
 
 const buildStageDocumentDescriptor = (
   modelId: string,
-  overrides: Partial<StageRunDocuments[string]> = {},
+  overrides: Partial<StageRenderedDocumentDescriptor> = {},
 ): StageRunDocuments[string] => ({
+  descriptorType: 'rendered',
   status: 'completed',
   job_id: `${modelId}-job`,
   latestRenderedResourceId: `${modelId}-resource`,
@@ -350,7 +352,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const draftArea = screen.getByTestId(
         `stage-document-feedback-model-a-${documentKey}`,
-      ) as HTMLTextAreaElement;
+      );
 
       fireEvent.change(draftArea, { target: { value: 'Updated draft' } });
 
@@ -560,6 +562,41 @@ describe('SessionContributionsDisplayCard', () => {
       renderSessionContributionsDisplayCard();
 
       expect(selectIsStageReadyForSessionIteration).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Failure handling', () => {
+    it('hides the spinner and surfaces failed document details when generation fails', () => {
+      const failureMessage = 'Planner failure for model-a';
+      const progress = buildStageRunProgress(
+        {
+          planner_header: 'completed',
+          draft_document: 'failed',
+          render_document: 'failed',
+        },
+        {
+          draft_document_markdown: buildStageDocumentDescriptor('model-a', {
+            status: 'failed',
+            job_id: 'job-failure',
+            latestRenderedResourceId: 'render.md',
+            error: { code: 'MODEL_FAILURE', message: failureMessage },
+          }),
+        },
+      );
+
+      seedBaseStore(progress, {
+        contributionGenerationStatus: 'generating',
+        generateContributionsError: { code: 'MODEL_FAILURE', message: failureMessage },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      expect(screen.queryByText('Generating documents')).toBeNull();
+
+      const errorBanner = screen.getByTestId('generation-error-banner');
+      expect(within(errorBanner).getByText('Generation Error')).toBeInTheDocument();
+      expect(within(errorBanner).getByText(failureMessage)).toBeInTheDocument();
+      expect(within(errorBanner).getByText(/draft_document_markdown/i)).toBeInTheDocument();
     });
   });
 });

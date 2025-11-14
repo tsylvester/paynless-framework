@@ -660,6 +660,52 @@ describe('Dialectic Store Notification Handlers', () => {
     expect(updatedContributions?.[0].error?.message).toBe('Model timed out');
   });
 
+  it('should set generation status to failed when job_failed arrives with a job id', async () => {
+    const { generateContributions, _handleDialecticLifecycleEvent } = useDialecticStore.getState();
+    const mockApiResponse: GenerateContributionsResponse = {
+      sessionId: 'session-1',
+      projectId: 'proj-1',
+      stage: 'test-stage',
+      iteration: 1,
+      status: 'pending',
+      job_ids: ['job-1', 'job-2'],
+      successfulContributions: [],
+      failedAttempts: [],
+    };
+    getMockDialecticClient().generateContributions.mockResolvedValue({ data: mockApiResponse, status: 202 });
+
+    await generateContributions({
+      sessionId: 'session-1',
+      projectId: 'proj-1',
+      stageSlug: 'test-stage',
+      iterationNumber: 1,
+      continueUntilComplete: false,
+      walletId: 'wallet-1',
+    });
+
+    const preFailureState = useDialecticStore.getState();
+    expect(preFailureState.generatingSessions['session-1']).toEqual(['job-1', 'job-2']);
+    expect(preFailureState.contributionGenerationStatus).toBe('generating');
+    expect(preFailureState.generateContributionsError).toBeNull();
+
+    const failureNotification: DialecticLifecycleEvent = {
+      type: 'contribution_generation_failed',
+      sessionId: 'session-1',
+      job_id: 'job-1',
+      modelId: 'model-1',
+      error: { code: 'MODEL_FAILURE', message: 'Planner failure for model-1' },
+    };
+
+    _handleDialecticLifecycleEvent?.(failureNotification);
+
+    const postFailureState = useDialecticStore.getState();
+    expect(postFailureState.generatingSessions['session-1']).toEqual(['job-2']);
+    expect(postFailureState.contributionGenerationStatus).toBe('failed');
+    expect(postFailureState.generateContributionsError).toEqual(
+      expect.objectContaining({ code: 'MODEL_FAILURE', message: 'Planner failure for model-1' }),
+    );
+  });
+
   it('should update session progress on progress update notification', () => {
       const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
       

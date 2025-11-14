@@ -335,6 +335,19 @@ describe('SessionInfoCard', () => {
       expect(screen.getByText(/Generating contributions, please wait.../i)).toBeInTheDocument();
       expect(screen.getByText(/\(2 running\)/)).toBeInTheDocument();
     });
+    it('hides the spinner and displays generation error when a failure is recorded', () => {
+      const error: ApiError = { message: 'Planner failure', code: 'MODEL_FAILURE' };
+      setupMockStore({
+        generatingSessions: { [mockSessionId]: ['job-1', 'job-2'] },
+        generateContributionsError: error,
+      });
+      renderComponent();
+      expect(screen.queryByTestId('generating-contributions-indicator')).toBeNull();
+      const errorAlert = screen.getByTestId('generate-contributions-error');
+      expect(errorAlert).toBeInTheDocument();
+      expect(within(errorAlert).getByText('Error Generating Contributions')).toBeInTheDocument();
+      expect(within(errorAlert).getByText(error.message)).toBeInTheDocument();
+    });
 
     it('displays generation error if error is present', () => {
       const error: ApiError = { message: 'Generation failed hard', code: 'GEN_FAIL' };

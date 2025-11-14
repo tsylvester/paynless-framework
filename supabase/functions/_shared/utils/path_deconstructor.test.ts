@@ -77,6 +77,7 @@ Deno.test('[path_deconstructor] direct - user_feedback', () => {
   assertEquals(info.stageSlug, stageSlug);
   assertEquals(info.parsedFileNameFromPath, `user_feedback_${stageSlugSanitized}.md`);
   assertEquals(info.fileTypeGuess, 'user_feedback');
+  assertEquals(info.documentKey, FileType.UserFeedback);
   assertEquals(info.error, undefined);
 });
 
