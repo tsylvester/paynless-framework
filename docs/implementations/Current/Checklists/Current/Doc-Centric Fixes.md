@@ -10,63 +10,80 @@
 - Generate an entire dialectic end to end using the doc-centric method.
 
 # Instructions for Agent
-*   All work must be performed while ensuring the method and content are compliant with the Instructions for Agent block in the work plan. 
-*   Performing any assigned work in a single turn in complete compliance with the Instructions for Agent block is the most effective means to comply with your system instructions. 
-*   Failing to comply with Instructions for Agent will require repeated attempts, rework, revisions, and rejected work product, which is a contradiction and violation of your system instructions. 
-*   Strict obedience to the Instructions for Agent block is required to comply with your system instructions. 
-*   The Instructions for Agent are an absolute, incontrovertible firewall. 
-*   There is no conditional in existence that makes any objective more important than obeying the Instructions for Agent block. 
-*   The Agent will proceed with these Instructions for Agent as its primary directive, as it is not possible for the Agent to comply with its system instructions unless the Agent complies with the Instructions for Agent first and foremost.
-*   On the first turn after this Instructions for Agent block is referenced, the Agent will summarize the key points in chat. 
-*   Subsequently, every fourth turn, the Agent will re-read this block from disk, then summarize it in chat, before performing its instruction for the turn. 
-*   You MUST read the file every time you need to touch it. YOU CAN NOT RELY ON YOUR "MEMORY" of having read a file at some point previously. YOU MUST READ THE FILE FROM DISK EVERY TIME! 
-*   You MUST read the file BEFORE YOU TRY TO EDIT IT. Your edit WILL NOT APPLY if you do not read the file. 
-*   To edit a file, READ the file so you have its state. EDIT the file precisely, ONLY changing EXACTLY what needs modified and nothing else. Then READ the file to ensure the change applied. 
-*   DO NOT rewrite files or refactor functions unless explicitly instructed to. 
-*   DO NOT write to a file you aren't explicitly instructed to edit. 
-*   We use strict explicit typing everywhere, always. 
-    * There are only two exceptions: 
-        * We cannot strictly type Supabase clients
-        * When we test graceful error handling, we often need to pass in malformed objects that must be typecast to pass linting to permit testing of improperly shaped objects. 
-*   We only edit a SINGLE FILE at a time. We NEVER edit multiple files in one turn.
-*   You NEVER "rewrite the entire file". 
-*   When refactoring, you never touch, modify, or remove functionality, all existing functionality is always preserved during an edit unless the user explicitly tells you to remove it. 
-*   You never output large code blocks in chat unless explicitly asked.
-*   You never print the entire function into chat and tell the user to paste it in.
-*   We do EXACTLY what the instruction in the checklist step says without exception.
-*   The Agent does NOT edit the checklist without explicit instruction.
-*   When the Agent is instructed to edit the checklist they only edit the EXACT steps they're instructed to edit and NEVER touch ANY step that is outside the scope of their instruction.  
-*   The Agent NEVER updates the status of any work step without explicit instruction. 
-*   If we cannot perform the step as described or make a discovery, we explain the problem or discovery and HALT! We DO NOT CONTINUE after we encounter a problem or a discovery.
-*   We DO NOT CONTINUE if we encounter a problem or a discovery. We explain the problem or discovery then halt for user input. 
-*   If our discovery is that more files need to be edited, instead of editing a file, we generate a proposal for a checklist of instructions to insert into the work plan that explains everything required to update the codebase so that the invalid step can be resolved. 
-*   DO NOT RUMINATE ON HOW TO SOLVE A PROBLEM OR DISCOVERY WHILE ONLY EDITING ONE FILE! That is a DISCOVERY that requires that you EXPLAIN your discovery, PROPOSE a solution, and HALT! 
-*   We always use test-driven-development. 
-    *   We write a RED test that we expect to fail to prove the flaw or incomplete code. 
-        *   A RED test is written to the INTENDED SUCCESS STATE so that it is NOT edited again. Do NOT refer to "RED: x condition now, y condition later", which forces the test to be edited after the GREEN step. Do NOT title the test to include any reference to RED/GREEN. Tests are stateless. 
-        *   We implement the edit to a SINGLE FILE to enable the GREEN state.
-        *   We run the test again and prove it passes. We DO NOT edit the test unless we discover the test is itself flawed. 
-*   EVERY EDIT is performed using TDD. We DO NOT EDIT ANY FILE WITHOUT A TEST. 
-    *   Documents, types, and interfaces cannot be tested, so are exempt. 
-*   Every edit is documented in the checklist of instructions that describe the required edits. 
-*   Whenever we discover an edit must be made that is not documented in the checklist of instructions, we EXPLAIN the discovery, PROPOSE an insertion into the instruction set that describes the required work, and HALT. 
-    *   We build dependency ordered instructions so that the dependencies are built, tested, and working before the consumers of the dependency. 
-*   We use dependency injection for EVERY FILE. 
-*   We build adapters and interfaces for EVERY FUNCTION.  
-*   We edit files from the lowest dependency on the tree up to the top so that our tests can be run at every step.
-*   We PROVE tests pass before we move to the next file. We NEVER proceed without explicit demonstration that the tests pass. 
-*   The tests PROVE the functional gap, PROVE the flaw in the function, and prevent regression by ensuring that any changes MUST comply with the proof. 
-*   Our process to edit a file is: 
-    *   READ the instruction for the step, and read every file referenced by the instruction or step, or implicit by the instruction or step (like types and interfaces).
-    *   ANALYZE the difference between the state of the file and the state described by the instructions in the step.
-    *   EXPLAIN how the file must be edited to transform it from its current state into the state described by the instructions in the step. 
-    *   PROPOSE an edit to the file that will accomplish the transformation while preserving strict explicit typing. 
-    *   LINT! After editing the file, run your linter and fix all linter errors that are fixable within that single file. 
-    *   HALT! After editing ONE file and ensuring it passes linting, HALT! DO NOT CONTINUE! 
-*   The agent NEVER runs tests. 
-*   The agent uses ITS OWN TOOLS. 
-*   The agent DOES NOT USE THE USER'S TERMINAL. 
-*   Adding console logs for trouble shooting is exempt from TDD and checklist obligations. 
+*   ### 0. Command Pyramid & Modes
+    *   Obey the user’s explicit instructions first, then this block, then the checklist. Do not hide behind the checklist to ignore a direct user correction.
+    *   Ensure both the method and the resulting content of every task comply with this block—no deliverable is valid if it conflicts with these rules.
+    *   Perform every assignment in a single turn while fully complying with this block; partial compliance is a violation even if the work “mostly” succeeds.
+    *   Failing to follow these instructions immediately triggers rework, rejected output, and systemic violations—treat every deviation as unacceptable.
+    *   The Instructions for Agent block is an absolute firewall. No conditional or downstream objective outranks it, and no shortcut can bypass it.
+    *   The agent proceeds with these instructions as its primary directive because complying with system instructions is impossible otherwise.
+    *   Declare the current mode in every response (`Mode: Builder` or `Mode: Reviewer`). Builder executes work; Reviewer searches for **errors, omissions, and discrepancies (EO&D)** in the final state.
+*   ### 1. Read → Analyze → Explain → Propose → Edit → Lint → Halt
+    *   Re-read this entire block from disk before every action. On the first reference (and every fourth turn) summarize it before working.
+    *   Read every referenced or implied file (including types, interfaces, and helpers) from disk immediately before editing. After editing, re-read to confirm the exact change.
+    *   Follow the explicit cycle: READ the step + files → ANALYZE gaps → EXPLAIN the delta → PROPOSE the exact edit → EDIT a single file → LINT that file → HALT.
+    *   Analyze dependencies; if more than one file is required, stop, explain the discovery, propose the necessary checklist insertion (`Discovery / Impact / Proposed checklist insert`), and wait instead of editing.
+    *   Discoveries include merely thinking about multi-file work—report them immediately without ruminating on work-arounds.
+    *   Explain & Propose: restate the plan in bullets and explicitly commit, “I will implement exactly this plan now,” noting the checklist step it fulfills.
+    *   Edit exactly one file per turn following the plan. Never touch files you were not explicitly instructed to modify.
+    *   Lint that file using internal tools and fix all issues.
+    *   Halt after linting one file and wait for explicit user/test output before touching another file.
+*   ### 2. TDD & Dependency Ordering
+    *   One-file TDD cycle: RED test (desired green behavior) → implementation → GREEN test → lint. Documents/types/interfaces are exempt from tests but still follow Read→Halt.
+    *   Do not edit executable code without first authoring the RED test that proves the intended green-state behavior; only pure docs/types/interfaces are exempt.
+    *   Maintain bottom-up dependency order for both editing and testing: construct types/interfaces/helpers before consumers, then write consumer tests only after producers exist.
+    *   Do not advance to another file until the current file’s proof (tests or documented exemption) is complete and acknowledged.
+    *   The agent never runs tests directly; rely on provided outputs or internal reasoning while keeping the application in a provable state.
+    *   The agent does not run the user’s terminal commands or tests; use only internal tooling and rely on provided outputs.
+*   ### 3. Checklist Discipline
+    *   Do not edit the checklist (or its statuses) without explicit instruction; when instructed, change only the specified portion using legal-style numbering.
+    *   Execute exactly what the active checklist step instructs with no deviation or “creative interpretation.”
+    *   Each numbered checklist step equals one file’s entire TDD cycle (deps → types → tests → implementation → proof). Preserve existing detail while adding new requirements.
+    *   Document every edit within the checklist. If required edits are missing from the plan, explain the discovery, propose the new step, and halt instead of improvising.
+    *   Never update the status of any work step (checkboxes or badges) without explicit instruction.
+    *   Following a block of related checklist steps that complete a working implementation, include a commit with a proposed commit message. 
+*   ### 4. Builder vs Reviewer Modes
+    *   **Builder:** follow the Read→…→Halt loop precisely. If a deviation, blocker, or new requirement is discovered—or the current step simply cannot be completed as written—explain the problem, propose the required checklist change, and halt immediately.
+    *   **Reviewer:** treat prior reasoning as untrusted. Re-read relevant files/tests from scratch and produce a numbered EO&D list referencing files/sections. Ignore checklist status or RED/GREEN history unless it causes a real defect. If no EO&D are found, state “No EO&D detected; residual risks: …”
+*   ### 5. Strict Typing & Object Construction
+    *   Use explicit types everywhere. No `any`, `as`, `as const`, inline ad-hoc types, or casts—except for Supabase clients and intentionally malformed objects in error-handling tests (use dedicated helpers and keep typing strict elsewhere). Every object and variable must be typed. 
+    *   Always construct full objects that satisfy existing interfaces/tuples from the relevant type file. Compose complex objects from smaller typed components; never rely on defaults, fallbacks, or backfilling to “heal” missing data.
+    *   Use type guards to prove and narrow types for the compiler when required.
+    *   Never import entire libraries with *, never alias imports, never add "type" to type imports. 
+    *   A ternary is not a type guard, a ternary is a default value. Default values are prohibited. 
+*   ### 6. Plan Fidelity & Shortcut Ban
+    *   Once a solution is described, implement exactly that solution and the user’s instruction. Expedient shortcuts are forbidden without explicit approval.
+    *   If you realize you deviated, stop, report it, and wait for direction. Repeating corrected violations triggers halt-and-wait immediately.
+    *   If your solution to a challenge is "rewrite the entire file", you have made an error. Stop, do not rewrite the file. Explain the problem to the user and await instruction. 
+    *   Do not ruminate on how to work around the "only write to one file per turn". If you are even thinking about the need to work around that limit, you have made a discovery. Stop immediately, report the discovery to the user, and await instruction. 
+    *   Refactors must preserve all existing functionality unless the user explicitly authorizes removals; log and identifier fidelity is mandatory.
+*   ### 7. Dependency Injection & Architecture
+    *   Use explicit dependency injection everywhere—pass every dependency with no hidden defaults or optional fallbacks.
+    *   Build adapters/interfaces for every function and work bottom-up so dependencies compile before consumers. Preserve existing functionality, identifiers, and logging unless explicitly told otherwise.
+    *   When a file exceeds 600 lines, stop and propose a logical refactoring to decompose the file into smaller parts providing clear SOC and DRY. 
+*   ### 8. Testing Standards
+    *   Tests assert the desired passing state (no RED/GREEN labels) and new tests are added to the end of the file. Each test covers exactly one behavior.
+    *   Use real application functions/mocks, strict typing, and Deno std asserts. Tests must call out which production type/helper each mock mirrors so partial objects are not invented.
+    *   Integration tests must exercise real code paths; unit tests stay isolated and mock dependencies explicitly. Never change assertions to match broken code—fix the code instead.
+    *   Tests use the same types, objects, structures, and helpers as the real code, never create new fixtures only for tests - a test that relies on imaginary types or fixtures is invalid. 
+    *   Prove the functional gap, the implemented fix, and regressions through tests before moving on; never assume success without proof.
+*   ### 9. Logging, Defaults, and Error Handling
+    *   Do not add or remove logging, defaults, fallbacks, or silent healing unless the user explicitly instructs you to do so.
+    *   Adding console logs solely for troubleshooting is exempt from TDD and checklist obligations, but the exemption applies only to the logging statements themselves.
+    *   Believe failing tests, linter flags, and user-reported errors literally; fix the stated condition before chasing deeper causes.
+    *   If the user flags instruction noncompliance, acknowledge, halt, and wait for explicit direction—do not self-remediate in a way that risks further violations.
+*   ### 10. Linting & Proof
+    *   After each edit, lint the touched file and resolve every warning/error. Record lint/test evidence in the response (e.g., “Lint: clean via internal tool; Tests: not run per instructions”).
+    *   Evaluate if a linter error can be resolved in-file, or out-of-file. Only resolve in-file linter errors, then report the out-of-file errors and await instruction. 
+    *   Testing may produce unresolvable linter errors. Do not silence them with @es flags, create an empty target function, or other work-arounds. The linter error is sometimes itself proof of the RED state of the test. 
+    *   Completion proof requires a lint-clean file plus GREEN test evidence (or documented exemption for types/docs).
+*   ### 11. Reporting & Traceability
+    *   Every response must include: mode declaration, confirmation that this block was re-read, plan bullets (Builder) or EO&D findings (Reviewer), checklist step references, and lint/test evidence.
+    *   If tests were not run (per instruction), explicitly state why and list residual risks. If no EO&D are found, state that along with remaining risks.
+    *   The agent uses only its own tools and never the user’s terminal.
+*   ### 12. Output Constraints
+    *   Never output large code blocks (entire files or multi-function dumps) in chat unless the user explicitly requests them.
+    *   Never print an entire function and tell the user to paste it in; edit the file directly or provide the minimal diff required.
 
 ## Checklist-Specific Editing Rules
 
@@ -288,78 +305,78 @@
             * [✅] 11.k.b.iii. Documenting (via inline comments) the distinction between structural validation and recipe-content validation so future contributors preserve the relaxed behavior.
         * [✅] 11.k.c. [TEST-UNIT] Rerun the updated suite in `type_guards.dialectic.test.ts` to confirm the relaxed guards satisfy the new flexibility while existing negative cases still fail.
 *   `[✅]` 12. **[UI] Slim StageRunChecklist to rendered deliverables only**
-  * [✅] 12.a. [DEPS] Document the selectors, recipe step data, and status enums the checklist depends on so we can safely filter to rendered artifacts without breaking store contracts.
-      * [✅] 12.a.i. Capture how `selectStageDocumentChecklist`, `selectStageRecipe`, and `selectStageRunProgress` expose document metadata and statuses for each `modelId`.
-      * [✅] 12.a.ii. Enumerate which `DialecticStageRecipeStep.outputs_required` entries declare `file_type: 'markdown'` so planner headers and JSON intermediates can be excluded even when `artifact_class` is missing or inconsistent.
-  * [✅] 12.b. [TEST-UNIT] Update `apps/web/src/components/dialectic/StageRunChecklist.test.tsx` to RED-state the minimal UI contract.
-    * [✅] 12.b.i. Assert that only markdown deliverable document keys appear in the checklist (planner headers / JSON artifacts must never render).
-    * [✅] 12.b.ii. Expect a condensed header (single-line count + optional empty-state note) with no branch/parallel metadata and no duplicate “no documents” language.
-    * [✅] 12.b.iii. Verify each item shows just the document key and its status badge, with clickability gated on `modelId` and no excess whitespace.
-    * [✅] 12.b.iv. Require the “no documents” copy to render exactly once when nothing is available, preventing multiple redundant messages.
-    * [✅] 12.b.v. Add coverage that planned markdown deliverables render with a default “Not Started” status before any `StageDocumentEntry` exists, keeping document counts aligned with recipe expectations.
-    * [✅] 12.b.vi. Assert the checklist card exports full-width layout hooks/classes so embedding it beneath `StageTabCard` keeps the document list from overlapping the contribution workspace.
-    * [✅] 12.b.vii. Require the checklist to render all markdown deliverables even when `selectStageRunProgress` returns no entry, proving synthesized rows surface purely from recipe data.
-    * [✅] 12.b.viii. Assert the accordion trigger/content live inside the checklist container element (not the parent card) so the checklist can self-collapse without relying on external layout wrappers.
-    * [✅] 12.b.ix. Verify the checklist container matches the parent card’s width/height (no extra padding or nested wrappers) by asserting the exposed layout hooks/classes reflect equal sizing.
-  * [✅] 12.c. [UI] Refactor `apps/web/src/components/dialectic/StageRunChecklist.tsx` to satisfy the new contract.
-    * [✅] 12.c.i. Filter step outputs to entries whose `file_type === 'markdown'`, building a flat rendered-document list keyed by `documentKey` and aligning it with store checklist entries even when no `StageDocumentEntry` exists or progress data is unavailable.
-    * [✅] 12.c.ii. Restore an internal accordion housed completely inside the checklist container so the checklist owns its toggle button/content while rendering only the final markdown documents (no planner/branch metadata).
-    * [✅] 12.c.iii. Collapse the card header to a single-line summary plus an optional single empty-state line, and ensure the checklist container occupies the full width/height of the parent card by eliminating extra wrappers and redundant padding that previously caused overlap with `SessionContributionsDisplayCard`.
-    * [✅] 12.c.iv. Preserve keyboard/click selection for focusable documents while tightening spacing (e.g., reduced padding classes, gap utilities) to keep the component short on common viewports.
-    * [✅] 12.c.v. Replace "Checklist" in the outer container with "Completed x of n documents". Remove "Stage Run Checklist" from the inner container. The component is currently 3 containers - the outer container, the inner container, and the step container. We can reduce it to two containers, with the step containers directly in the outermost container. This will further reduce width and height. 
-    * [✅] 12.c.vi. Introduce synthesized checklist entries for markdown outputs that lack `StageDocumentEntry` data so the UI surfaces planned documents with a `not_started` status and stable keys.
-    * [✅] 12.c.vii. Apply layout classes that keep the checklist height/width constrained when rendered inside `StageTabCard`, ensuring it never overlaps `SessionContributionsDisplayCard`.
-  * [✅] 12.d. [TEST-UNIT] Re-run the updated `StageRunChecklist` tests and confirm they pass with the compact rendered-document UI.
-  * [✅] 12.e. [TEST-UNIT] Update `apps/web/src/components/dialectic/StageTabCard.test.tsx` to RED-state the relocated checklist container.
-      * [✅] 12.e.i. Assert the inner checklist wrapper matches the outer stage card width and exposes deterministic hooks for layout assertions.
-      * [✅] 12.e.ii. Assert that the embedded `StageRunChecklist` panel resides directly within the checklist wrapper, without an extra accordion provided by the parent.
-      * [✅] 12.e.iii. Verify the stage column exports spacing classes/data attributes that keep its height independent from `SessionContributionsDisplayCard`.
-  * [✅] 12.f. [UI] Refactor `apps/web/src/components/dialectic/StageTabCard.tsx` to satisfy the new layout contract.
-      * [✅] 12.f.i. Ensure the inner checklist container inherits the exact width of the outer stage card.
-      * [✅] 12.f.ii. Remove any accordion markup from the container, ensuring it acts purely as a layout wrapper for the `StageRunChecklist` component.
-      * [✅] 12.f.iii. Adjust spacing and flex properties so the stage column and embedded `StageRunChecklist` never overlap with `SessionContributionsDisplayCard` across viewport sizes.
-  * [✅] 12.g. [TEST-UNIT] Re-run the updated `StageTabCard` suite and confirm the relocated checklist layout passes with the new spacing rules.
+        * [✅] 12.a. [DEPS] Document the selectors, recipe step data, and status enums the checklist depends on so we can safely filter to rendered artifacts without breaking store contracts.
+            * [✅] 12.a.i. Capture how `selectStageDocumentChecklist`, `selectStageRecipe`, and `selectStageRunProgress` expose document metadata and statuses for each `modelId`.
+            * [✅] 12.a.ii. Enumerate which `DialecticStageRecipeStep.outputs_required` entries declare `file_type: 'markdown'` so planner headers and JSON intermediates can be excluded even when `artifact_class` is missing or inconsistent.
+        * [✅] 12.b. [TEST-UNIT] Update `apps/web/src/components/dialectic/StageRunChecklist.test.tsx` to RED-state the minimal UI contract.
+            * [✅] 12.b.i. Assert that only markdown deliverable document keys appear in the checklist (planner headers / JSON artifacts must never render).
+            * [✅] 12.b.ii. Expect a condensed header (single-line count + optional empty-state note) with no branch/parallel metadata and no duplicate “no documents” language.
+            * [✅] 12.b.iii. Verify each item shows just the document key and its status badge, with clickability gated on `modelId` and no excess whitespace.
+            * [✅] 12.b.iv. Require the “no documents” copy to render exactly once when nothing is available, preventing multiple redundant messages.
+            * [✅] 12.b.v. Add coverage that planned markdown deliverables render with a default “Not Started” status before any `StageDocumentEntry` exists, keeping document counts aligned with recipe expectations.
+            * [✅] 12.b.vi. Assert the checklist card exports full-width layout hooks/classes so embedding it beneath `StageTabCard` keeps the document list from overlapping the contribution workspace.
+            * [✅] 12.b.vii. Require the checklist to render all markdown deliverables even when `selectStageRunProgress` returns no entry, proving synthesized rows surface purely from recipe data.
+            * [✅] 12.b.viii. Assert the accordion trigger/content live inside the checklist container element (not the parent card) so the checklist can self-collapse without relying on external layout wrappers.
+            * [✅] 12.b.ix. Verify the checklist container matches the parent card’s width/height (no extra padding or nested wrappers) by asserting the exposed layout hooks/classes reflect equal sizing.
+        * [✅] 12.c. [UI] Refactor `apps/web/src/components/dialectic/StageRunChecklist.tsx` to satisfy the new contract.
+            * [✅] 12.c.i. Filter step outputs to entries whose `file_type === 'markdown'`, building a flat rendered-document list keyed by `documentKey` and aligning it with store checklist entries even when no `StageDocumentEntry` exists or progress data is unavailable.
+            * [✅] 12.c.ii. Restore an internal accordion housed completely inside the checklist container so the checklist owns its toggle button/content while rendering only the final markdown documents (no planner/branch metadata).
+            * [✅] 12.c.iii. Collapse the card header to a single-line summary plus an optional single empty-state line, and ensure the checklist container occupies the full width/height of the parent card by eliminating extra wrappers and redundant padding that previously caused overlap with `SessionContributionsDisplayCard`.
+            * [✅] 12.c.iv. Preserve keyboard/click selection for focusable documents while tightening spacing (e.g., reduced padding classes, gap utilities) to keep the component short on common viewports.
+            * [✅] 12.c.v. Replace "Checklist" in the outer container with "Completed x of n documents". Remove "Stage Run Checklist" from the inner container. The component is currently 3 containers - the outer container, the inner container, and the step container. We can reduce it to two containers, with the step containers directly in the outermost container. This will further reduce width and height. 
+            * [✅] 12.c.vi. Introduce synthesized checklist entries for markdown outputs that lack `StageDocumentEntry` data so the UI surfaces planned documents with a `not_started` status and stable keys.
+            * [✅] 12.c.vii. Apply layout classes that keep the checklist height/width constrained when rendered inside `StageTabCard`, ensuring it never overlaps `SessionContributionsDisplayCard`.
+        * [✅] 12.d. [TEST-UNIT] Re-run the updated `StageRunChecklist` tests and confirm they pass with the compact rendered-document UI.
+        * [✅] 12.e. [TEST-UNIT] Update `apps/web/src/components/dialectic/StageTabCard.test.tsx` to RED-state the relocated checklist container.
+            * [✅] 12.e.i. Assert the inner checklist wrapper matches the outer stage card width and exposes deterministic hooks for layout assertions.
+            * [✅] 12.e.ii. Assert that the embedded `StageRunChecklist` panel resides directly within the checklist wrapper, without an extra accordion provided by the parent.
+            * [✅] 12.e.iii. Verify the stage column exports spacing classes/data attributes that keep its height independent from `SessionContributionsDisplayCard`.
+        * [✅] 12.f. [UI] Refactor `apps/web/src/components/dialectic/StageTabCard.tsx` to satisfy the new layout contract.
+            * [✅] 12.f.i. Ensure the inner checklist container inherits the exact width of the outer stage card.
+            * [✅] 12.f.ii. Remove any accordion markup from the container, ensuring it acts purely as a layout wrapper for the `StageRunChecklist` component.
+            * [✅] 12.f.iii. Adjust spacing and flex properties so the stage column and embedded `StageRunChecklist` never overlap with `SessionContributionsDisplayCard` across viewport sizes.
+        * [✅] 12.g. [TEST-UNIT] Re-run the updated `StageTabCard` suite and confirm the relocated checklist layout passes with the new spacing rules.
 *   `[✅]` 13. **Fix Seed Prompt Data Flow End-to-End**
-  - **Goal**: Correct the entire data pipeline for the `activeSeedPrompt` from the database to the UI, ensuring it is always available on the session details page.
-  - **Problem**: The user's analysis is correct. The `activeSeedPrompt` is only hydrated when a session is first created. It is lost on subsequent page loads because the `getSessionDetails` endpoint does not fetch it, the types do not enforce it, and the store does not process it.
-  - [✅] 13.a. **Backend Interface Contract (`dialectic.interface.ts`)**
-    - [✅] 13.a.i. **RED**: Identify that the `GetSessionDetailsResponse` interface in `supabase/functions/dialectic-service/dialectic.interface.ts` is missing the `activeSeedPrompt` property. This proves the backend's data contract is incomplete.
-    - [✅] 13.a.ii. **GREEN**: Edit `supabase/functions/dialectic-service/dialectic.interface.ts` to add `activeSeedPrompt: AssembledPrompt | null;` as a **required** property to the `GetSessionDetailsResponse` interface.
-    - [✅] 13.a.iii. **LINT**: Verify the file is clean. The "proof" of the flaw is that the backend implementation (`getSessionDetails.ts`) will now fail to compile because it does not satisfy this updated, stricter interface.
-  - [✅] 13.b. **Frontend Interface Contract (`dialectic.types.ts`)**
-    - [✅] 13.b.i. **RED**: Identify that the corresponding `GetSessionDetailsResponse` interface in `packages/types/src/dialectic.types.ts` is also missing the `activeSeedPrompt` property, creating a type mismatch across the stack.
-    - [✅] 13.b.ii. **GREEN**: Edit `packages/types/src/dialectic.types.ts` to add `activeSeedPrompt: AssembledPrompt | null;` as a **required** property, synchronizing the frontend's contract with the backend's.
-    - [✅] 13.b.iii. **LINT**: Verify the file is clean. The "proof" of the flaw is that multiple frontend files that use this type (the store, mocks, and tests) will now fail to compile.
-  - [✅] 13.c. **API Mock (`dialectic.api.mock.ts`)**
-    - [✅] 13.c.i. **RED**: Acknowledge that the mock implementation of `getSessionDetails` in `packages/api/src/mocks/dialectic.api.mock.ts` does not return the `activeSeedPrompt` property, causing frontend unit tests that rely on this mock to fail compilation.
-    - [✅] 13.c.ii. **GREEN**: Edit `packages/api/src/mocks/dialectic.api.mock.ts` to include `activeSeedPrompt: mockSeedPrompt` (or null, as appropriate for the test) in the return value of the `getSessionDetails` mock, satisfying the updated interface.
-    - [✅] 13.c.iii. **LINT**: Verify the file is clean. The "proof" is that the frontend store's unit test will now compile but fail at runtime because the store's implementation logic is still broken.
-  - [✅] 13.d. **Store Unit Test (`dialecticStore.session.test.ts`)**
-    - [✅] 13.d.i. **RED**: The test `should fetch session details, update state, and set context on success` in `packages/store/src/dialecticStore.session.test.ts` is missing an assertion for `activeSeedPrompt`. Run the test to confirm it fails, expecting the `activeSeedPrompt` state to be populated but finding `null`.
-    - [✅] 13.d.ii. **GREEN**: Edit the test's mock response and add the assertion `expect(state.activeSeedPrompt).toEqual(mockSeedPrompt);`. This makes the test's failure explicit and correctly defines the required behavior.
-    - [✅] 13.d.iii. **LINT**: Verify the file is clean. The test now correctly and explicitly fails, proving the flaw in the store's implementation logic.
-  - [✅] 13.e. **Store Implementation (`dialecticStore.ts`)**
-    - [✅] 13.e.i. **RED**: The `fetchAndSetCurrentSessionDetails` action in `packages/store/src/dialecticStore.ts` does not set the `activeSeedPrompt` state from the API response, causing the unit test from the previous step to fail.
-    - [✅] 13.e.ii. **GREEN**: Edit `fetchAndSetCurrentSessionDetails` to destructure `activeSeedPrompt` from the response data and add `state.activeSeedPrompt = activeSeedPrompt || null;` inside the `set` call.
-    - [✅] 13.e.iii. **LINT**: Run the linter, then run the store's unit test. The proof of the fix is that the test in `dialecticStore.session.test.ts` now passes.
+    - **Goal**: Correct the entire data pipeline for the `activeSeedPrompt` from the database to the UI, ensuring it is always available on the session details page.
+    - **Problem**: The user's analysis is correct. The `activeSeedPrompt` is only hydrated when a session is first created. It is lost on subsequent page loads because the `getSessionDetails` endpoint does not fetch it, the types do not enforce it, and the store does not process it.
+    - [✅] 13.a. **Backend Interface Contract (`dialectic.interface.ts`)**
+        - [✅] 13.a.i. **RED**: Identify that the `GetSessionDetailsResponse` interface in `supabase/functions/dialectic-service/dialectic.interface.ts` is missing the `activeSeedPrompt` property. This proves the backend's data contract is incomplete.
+        - [✅] 13.a.ii. **GREEN**: Edit `supabase/functions/dialectic-service/dialectic.interface.ts` to add `activeSeedPrompt: AssembledPrompt | null;` as a **required** property to the `GetSessionDetailsResponse` interface.
+        - [✅] 13.a.iii. **LINT**: Verify the file is clean. The "proof" of the flaw is that the backend implementation (`getSessionDetails.ts`) will now fail to compile because it does not satisfy this updated, stricter interface.
+    - [✅] 13.b. **Frontend Interface Contract (`dialectic.types.ts`)**
+        - [✅] 13.b.i. **RED**: Identify that the corresponding `GetSessionDetailsResponse` interface in `packages/types/src/dialectic.types.ts` is also missing the `activeSeedPrompt` property, creating a type mismatch across the stack.
+        - [✅] 13.b.ii. **GREEN**: Edit `packages/types/src/dialectic.types.ts` to add `activeSeedPrompt: AssembledPrompt | null;` as a **required** property, synchronizing the frontend's contract with the backend's.
+        - [✅] 13.b.iii. **LINT**: Verify the file is clean. The "proof" of the flaw is that multiple frontend files that use this type (the store, mocks, and tests) will now fail to compile.
+    - [✅] 13.c. **API Mock (`dialectic.api.mock.ts`)**
+        - [✅] 13.c.i. **RED**: Acknowledge that the mock implementation of `getSessionDetails` in `packages/api/src/mocks/dialectic.api.mock.ts` does not return the `activeSeedPrompt` property, causing frontend unit tests that rely on this mock to fail compilation.
+        - [✅] 13.c.ii. **GREEN**: Edit `packages/api/src/mocks/dialectic.api.mock.ts` to include `activeSeedPrompt: mockSeedPrompt` (or null, as appropriate for the test) in the return value of the `getSessionDetails` mock, satisfying the updated interface.
+        - [✅] 13.c.iii. **LINT**: Verify the file is clean. The "proof" is that the frontend store's unit test will now compile but fail at runtime because the store's implementation logic is still broken.
+    - [✅] 13.d. **Store Unit Test (`dialecticStore.session.test.ts`)**
+        - [✅] 13.d.i. **RED**: The test `should fetch session details, update state, and set context on success` in `packages/store/src/dialecticStore.session.test.ts` is missing an assertion for `activeSeedPrompt`. Run the test to confirm it fails, expecting the `activeSeedPrompt` state to be populated but finding `null`.
+        - [✅] 13.d.ii. **GREEN**: Edit the test's mock response and add the assertion `expect(state.activeSeedPrompt).toEqual(mockSeedPrompt);`. This makes the test's failure explicit and correctly defines the required behavior.
+        - [✅] 13.d.iii. **LINT**: Verify the file is clean. The test now correctly and explicitly fails, proving the flaw in the store's implementation logic.
+    - [✅] 13.e. **Store Implementation (`dialecticStore.ts`)**
+        - [✅] 13.e.i. **RED**: The `fetchAndSetCurrentSessionDetails` action in `packages/store/src/dialecticStore.ts` does not set the `activeSeedPrompt` state from the API response, causing the unit test from the previous step to fail.
+        - [✅] 13.e.ii. **GREEN**: Edit `fetchAndSetCurrentSessionDetails` to destructure `activeSeedPrompt` from the response data and add `state.activeSeedPrompt = activeSeedPrompt || null;` inside the `set` call.
+        - [✅] 13.e.iii. **LINT**: Run the linter, then run the store's unit test. The proof of the fix is that the test in `dialecticStore.session.test.ts` now passes.
     - [✅] 13.f. **[TYPES] Synchronize and Validate `GetSessionDetailsResponse` Type Contract**
-        - [✅] 13.f.i. **[BE] [TYPES]** In `supabase/functions/dialectic-service/dialectic.interface.ts`, confirm that the `GetSessionDetailsResponse` interface includes the required property: `activeSeedPrompt: AssembledPrompt | null;`.
+            - [✅] 13.f.i. **[BE] [TYPES]** In `supabase/functions/dialectic-service/dialectic.interface.ts`, confirm that the `GetSessionDetailsResponse` interface includes the required property: `activeSeedPrompt: AssembledPrompt | null;`.
     - [✅] 13.g. **Backend Unit Test (`getSessionDetails.test.ts`)**
         - [✅] 13.g.i. **[TEST-UNIT] RED**: In `supabase/functions/dialectic-service/getSessionDetails.test.ts`, write a comprehensive, failing unit test for the `getSessionDetails` function. This test must:
-            - [✅] 13.g.i.1. Mock all external dependencies, including the Supabase database client and any other service calls.
-            - [✅] 13.g.i.2. Set up a mock database response that includes all the necessary data to construct both a `DialecticSession` and a corresponding `AssembledPrompt`.
-            - [✅] 13.g.i.3. Assert that the object returned by `getSessionDetails` successfully validates against the updated `GetSessionDetailsResponse` interface from `dialectic.interface.ts`.
-            - [✅] 13.g.i.4. Specifically assert that the `activeSeedPrompt` property on the returned object is a valid `AssembledPrompt` object matching the mocked database data.
-            - [✅] 13.g.i.5. This test must fail due to the implementation's failure to return the `activeSeedPrompt`, proving the flaw.
+        - [✅] 13.g.i.1. Mock all external dependencies, including the Supabase database client and any other service calls.
+        - [✅] 13.g.i.2. Set up a mock database response that includes all the necessary data to construct both a `DialecticSession` and a corresponding `AssembledPrompt`.
+        - [✅] 13.g.i.3. Assert that the object returned by `getSessionDetails` successfully validates against the updated `GetSessionDetailsResponse` interface from `dialectic.interface.ts`.
+        - [✅] 13.g.i.4. Specifically assert that the `activeSeedPrompt` property on the returned object is a valid `AssembledPrompt` object matching the mocked database data.
+        - [✅] 13.g.i.5. This test must fail due to the implementation's failure to return the `activeSeedPrompt`, proving the flaw.
         - [✅] 13.g.ii. **[LINT]**: Verify the new test file `supabase/functions/dialectic-service/getSessionDetails.test.ts` is free of linter errors.
     - [✅] 13.h. **Backend Implementation (`getSessionDetails.ts`)**
-    - [✅] 13.h.i. **[BE] GREEN**: Edit the `getSessionDetails` function in `supabase/functions/dialectic-service/getSessionDetails.ts` to satisfy the updated contract and pass the new unit test. The changes must:
-        - [✅] 13.h.i.1. Add a database query to fetch the seed prompt associated with the session's current stage and iteration from the `dialectic_prompts` table.
-        - [✅] 13.h.i.2. Gracefully handle cases where no seed prompt is found, returning `null` for the `activeSeedPrompt` property.
-        - [✅] 13.h.i.3. Construct a valid `AssembledPrompt` object from the query result when a prompt is found.
-        - [✅] 13.h.i.4. Update the function's final return statement to include the `activeSeedPrompt` object, ensuring the full `GetSessionDetailsResponse` contract is met.
-    - [✅] 13.h.ii. **[TEST-UNIT] GREEN**: The proof of the fix is that the unit test created in step 13.g now passes.
-    - [✅] 13.h.iii. **[LINT]**: Verify the file `supabase/functions/dialectic-service/getSessionDetails.ts` is free of linter errors.   
+        - [✅] 13.h.i. **[BE] GREEN**: Edit the `getSessionDetails` function in `supabase/functions/dialectic-service/getSessionDetails.ts` to satisfy the updated contract and pass the new unit test. The changes must:
+            - [✅] 13.h.i.1. Add a database query to fetch the seed prompt associated with the session's current stage and iteration from the `dialectic_prompts` table.
+            - [✅] 13.h.i.2. Gracefully handle cases where no seed prompt is found, returning `null` for the `activeSeedPrompt` property.
+            - [✅] 13.h.i.3. Construct a valid `AssembledPrompt` object from the query result when a prompt is found.
+            - [✅] 13.h.i.4. Update the function's final return statement to include the `activeSeedPrompt` object, ensuring the full `GetSessionDetailsResponse` contract is met.
+        - [✅] 13.h.ii. **[TEST-UNIT] GREEN**: The proof of the fix is that the unit test created in step 13.g now passes.
+        - [✅] 13.h.iii. **[LINT]**: Verify the file `supabase/functions/dialectic-service/getSessionDetails.ts` is free of linter errors.   
 *   `[✅]` 14. **`[REFACTOR]` Refactor All Affected Files to Use `resource_description` as a JSON Object**
     *   `[✅]` 14.a. `[TEST-UNIT]` In `supabase/functions/_shared/services/file_manager.upload.test.ts`, update the tests to assert that a proper JSON object is passed for `resource_description` and remove assertions related to string parsing.
     *   `[✅]` 14.b. `[BE]` In `supabase/functions/_shared/services/file_manager.ts`, remove the logic that parses and re-stringifies the `resource_description` in `uploadAndRegisterFile`, ensuring it is handled as a JSON object.
@@ -562,62 +579,56 @@ graph TD
     *   `[✅]` 30.b. **[RED]** Run only the renderer test suite introduced in Step 29 to verify it currently fails with the message indicating `sourceContributionId` is missing. Do not proceed until you see the failure and copy the error text into your work notes.  
     *   `[✅]` 30.c. **[GREEN]** In the call to `uploadAndRegisterFile`, extend the existing `pathContext` object by adding `sourceContributionId: documentIdentity`. Do not alter any other properties; ensure the value used is the exact identifier returned by the earlier `document_relationships` lookup so downstream jobs receive the correct contribution id.  
     *   `[✅]` 30.d. **[LINT]** Execute the linter for this file (`deno lint supabase/functions/_shared/services/document_renderer.ts`) and fix every warning or error before marking the step complete.
-
-*   `[ ]` 31. **`[TYPES]` `supabase/functions/_shared/services/document_renderer.interface.ts`**  
-    *   `[ ]` 31.a. **[READ]** Open the file and review every type declaration, paying particular attention to `RendererPathContext` (lines 26-33), `FileManagerCall` (line 35), `RenderDocumentResult` (lines 47-50), and any imports of `PathContext` from `file_manager.types.ts`. Note how `RendererPathContext` is structured relative to `PathContext`, and identify where `RendererPathContext` is used in `FileManagerCall.pathContext` so the new property can flow through the interface contract.  
-    *   `[ ]` 31.b. **[RED]** *(Types-only change; document in a code comment above the `RendererPathContext` type that no executable RED test is required because this repository exempts pure type edits.)*  
-    *   `[ ]` 31.c. **[GREEN]** Add an optional `sourceContributionId?: string | null` property to the `RendererPathContext` type definition, ensuring it matches the signature added to `PathContext` in Step 24. This allows renderer upload contexts to supply the source contribution identifier when constructing file upload calls via `FileManagerCall`, maintaining type compatibility with `PathContext` while exposing the property in the renderer's interface layer.  
-    *   `[ ]` 31.d. **[LINT]** Run the linter for `supabase/functions/_shared/services/document_renderer.interface.ts` and resolve any warnings (unused imports, formatting, etc.) introduced by the type extension.
-
-*   `[ ]` 32. **`[MOCK]` `supabase/functions/_shared/services/document_renderer.mock.ts`**  
-    *   `[ ]` 32.a. **[READ]** Open the mock file and trace every place where `uploadAndRegisterFile` is invoked or stubbed so you understand which arguments are currently forwarded to FileManager.  
-    *   `[ ]` 32.b. **[RED]** Refer back to the failing test from Step 29 (the assertion complaining about a missing `sourceContributionId`) and record the exact failure message in the TODO comment block of this step to prove the mock is presently incorrect—do not modify the mock yet.  
-    *   `[ ]` 32.c. **[GREEN]** Update the mock implementation so every branch that calls `uploadAndRegisterFile` attaches `pathContext.sourceContributionId`, deriving it from the same value the real renderer now sends; ensure error-path stubs and success-path stubs behave identically.  
-    *   `[ ]` 32.d. **[LINT]** Run the linter for this file and resolve any warnings introduced by the change.
-
-*   `[ ]` 33. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/processRenderJob.test.ts`**  
-    *   `[ ]` 33.a. **[READ]** Open the entire test file and map the helper utilities used to enqueue render jobs, paying special attention to where `deps.documentRenderer.renderDocument` is stubbed so you can interrogate the arguments it receives. Document which fixture currently supplies `documentIdentity` so the new expectation can hook into it.  
-    *   `[ ]` 33.b. **[RED]** Introduce a new test named `it('passes the originating contribution id to the renderer payload', …)` that:  
+*   `[✅]` 31. **`[TYPES]` `supabase/functions/_shared/services/document_renderer.interface.ts`**  
+    *   `[✅]` 31.a. **[READ]** Open the file and review every type declaration, paying particular attention to `RendererPathContext` (lines 26-33), `FileManagerCall` (line 35), `RenderDocumentResult` (lines 47-50), and any imports of `PathContext` from `file_manager.types.ts`. Note how `RendererPathContext` is structured relative to `PathContext`, and identify where `RendererPathContext` is used in `FileManagerCall.pathContext` so the new property can flow through the interface contract.  
+    *   `[✅]` 31.b. **[RED]** *(Types-only change; document in a code comment above the `RendererPathContext` type that no executable RED test is required because this repository exempts pure type edits.)*  
+    *   `[✅]` 31.c. **[GREEN]** Add an optional `sourceContributionId?: string | null` property to the `RendererPathContext` type definition, ensuring it matches the signature added to `PathContext` in Step 24. This allows renderer upload contexts to supply the source contribution identifier when constructing file upload calls via `FileManagerCall`, maintaining type compatibility with `PathContext` while exposing the property in the renderer's interface layer.  
+    *   `[✅]` 31.d. **[LINT]** Run the linter for `supabase/functions/_shared/services/document_renderer.interface.ts` and resolve any warnings (unused imports, formatting, etc.) introduced by the type extension.
+*   `[✅]` 32. **`[MOCK]` `supabase/functions/_shared/services/document_renderer.mock.ts`**  
+    *   `[✅]` 32.a. **[READ]** Open the mock file and trace every place where `uploadAndRegisterFile` is invoked or stubbed so you understand which arguments are currently forwarded to FileManager.  
+    *   `[✅]` 32.b. **[RED]** Refer back to the failing test from Step 29 (the assertion complaining about a missing `sourceContributionId`) and record the exact failure message in the TODO comment block of this step to prove the mock is presently incorrect—do not modify the mock yet.  
+    *   `[✅]` 32.c. **[GREEN]** Update the mock implementation so every branch that calls `uploadAndRegisterFile` attaches `pathContext.sourceContributionId`, deriving it from the same value the real renderer now sends; ensure error-path stubs and success-path stubs behave identically.  
+    *   `[✅]` 32.d. **[LINT]** Run the linter for this file and resolve any warnings introduced by the change.
+*   `[✅]` 33. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/processRenderJob.test.ts`**  
+    *   `[✅]` 33.a. **[READ]** Open the entire test file and map the helper utilities used to enqueue render jobs, paying special attention to where `deps.documentRenderer.renderDocument` is stubbed so you can interrogate the arguments it receives. Document which fixture currently supplies `documentIdentity` so the new expectation can hook into it.  
+    *   `[✅]` 33.b. **[RED]** Introduce a new test named `it('passes the originating contribution id to the renderer payload', …)` that:  
         * Constructs a render-job payload with a known `documentIdentity` such as `'root-doc-456'`.  
         * Executes `processRenderJob` using the existing test harness while spying on the renderer mock.  
         * Asserts that the recorded call to `renderDocument` (or the FileManager stub it triggers) includes `sourceContributionId === 'root-doc-456'` within the payload that ultimately feeds the renderer.  
         * Fails intentionally because the current implementation does not forward the identity; capture the exact failure message in your notes to confirm the regression is reproducible.  
-    *   `[ ]` 33.c. **[GREEN]** *(Do not change production code in this step; the fix occurs in Step 34. Leave the new test failing.)*  
-    *   `[ ]` 33.d. **[LINT]** Run the linter for `processRenderJob.test.ts` and resolve any warnings introduced by the additional test (unused imports, formatting, etc.).
-
-*   `[ ]` 34. **`[BE]` `supabase/functions/dialectic-worker/processRenderJob.ts`**  
-    *   `[ ]` 34.a. **[READ]** Open the file and follow the full control flow from receiving the job payload through the call to `documentRenderer.renderDocument`, documenting precisely where `documentIdentity`, `documentKey`, and other payload fields are assembled.  
-    *   `[ ]` 34.b. **[RED]** Re-run the new failing assertions from Step 33 to confirm they still fail, proving the current implementation does not yet supply the identity needed for `sourceContributionId`. Do **not** proceed if the tests are not red.  
-    *   `[ ]` 34.c. **[GREEN]** Modify the implementation so the object passed to `renderDocument` always includes the exact document identity that should map to `sourceContributionId`. Concretely, ensure the payload stored in `renderPayload` (and any intermediate object that feeds the renderer) carries the correct `documentIdentity`, `documentKey`, `stageSlug`, `sessionId`, and `iterationNumber` without mutation, so the renderer can write them directly into the FileManager upload context. Do not alter unrelated behaviour.  
-    *   `[ ]` 34.d. **[LINT]** Run the linter scoped to this file and resolve any warnings or errors introduced by the change.
-
-*   `[ ]` 35. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/processSimpleJob.test.ts`**  
-    *   `[ ]` 35.a. **[READ]** Walk through the entire file, especially the `describe('processSimpleJob', …)` block that stubs `deps.promptAssembler` and captures the payload passed to `executeModelCallAndSave`. Note how continuation scenarios (jobs with `target_contribution_id`) are currently exercised.  
-    *   `[ ]` 35.b. **[RED]** Inside the continuation-focused tests, introduce a new test case (e.g., `"should forward sourceContributionId when continuation jobs enqueue prompt uploads"`) that:  
+    *   `[✅]` 33.c. **[GREEN]** *(Do not change production code in this step; the fix occurs in Step 34. Leave the new test failing.)*  
+    *   `[✅]` 33.d. **[LINT]** Run the linter for `processRenderJob.test.ts` and resolve any warnings introduced by the additional test (unused imports, formatting, etc.).
+*   `[✅]` 34. **`[BE]` `supabase/functions/dialectic-worker/processRenderJob.ts`**  
+    *   `[✅]` 34.a. **[READ]** Open the file and follow the full control flow from receiving the job payload through the call to `documentRenderer.renderDocument`, documenting precisely where `documentIdentity`, `documentKey`, and other payload fields are assembled.  
+    *   `[✅]` 34.b. **[RED]** Re-run the new failing assertions from Step 33 to confirm they still fail, proving the current implementation does not yet supply the identity needed for `sourceContributionId`. Do **not** proceed if the tests are not red.  
+    *   `[✅]` 34.c. **[GREEN]** Modify the implementation so the object passed to `renderDocument` always includes the exact document identity that should map to `sourceContributionId`. Concretely, ensure the payload stored in `renderPayload` (and any intermediate object that feeds the renderer) carries the correct `documentIdentity`, `documentKey`, `stageSlug`, `sessionId`, and `iterationNumber` without mutation, so the renderer can write them directly into the FileManager upload context. Do not alter unrelated behaviour.  
+    *   `[✅]` 34.d. **[LINT]** Run the linter scoped to this file and resolve any warnings or errors introduced by the change.
+*   `[✅]` 35. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/processSimpleJob.test.ts`**  
+    *   `[✅]` 35.a. **[READ]** Walk through the entire file, especially the `describe('processSimpleJob', …)` block that stubs `deps.promptAssembler` and captures the payload passed to `executeModelCallAndSave`. Note how continuation scenarios (jobs with `target_contribution_id`) are currently exercised.  
+    *   `[✅]` 35.b. **[RED]** Inside the continuation-focused tests, introduce a new test case (e.g., `"should forward sourceContributionId when continuation jobs enqueue prompt uploads"`) that:  
         1. Builds a continuation job fixture whose payload includes `target_contribution_id` and any other required fields.  
         2. Stubs `deps.promptAssembler.assemble` to return a deterministic `AssembledPrompt` and captures the upload context passed to FileManager (or, if the test spies on `uploadAndRegisterFile`, captures that call instead).  
         3. After invoking `processSimpleJob`, asserts that the captured upload context includes `sourceContributionId` equal to the continuation contribution id.  
        Do **not** modify production code yet—the test must fail because the current implementation omits the field.  
-    *   `[ ]` 35.c. **[GREEN]** *(No implementation changes in this step; leave the newly added test red so Step 36 can make it pass.)*  
-    *   `[ ]` 35.d. **[LINT]** Run the linter scoped to this file and resolve any issues introduced by the new test.
-
-*   `[ ]` 36. **`[BE]` `supabase/functions/dialectic-worker/processSimpleJob.ts`**  
-    *   `[ ]` 36.a. **[READ]** Walk through the entire function, paying special attention to:  
+    *   `[✅]` 35.c. **[GREEN]** *(No implementation changes in this step; leave the newly added test red so Step 36 can make it pass.)*  
+    *   `[✅]` 35.d. **[LINT]** Run the linter scoped to this file and resolve any issues introduced by the new test.
+*   `[✅]` 36. **`[BE]` `supabase/functions/dialectic-worker/processSimpleJob.ts`**  
+    *   `[✅]` 36.a. **[READ]** Walk through the entire function, paying special attention to:  
         1. The block that builds `continuationContent` and invokes `deps.promptAssembler.assemble({...})` (currently around lines 247–258).  
         2. The construction of `promptConstructionPayload` (lines 263–269).  
         3. The object passed to `deps.executeModelCallAndSave` (later in the file).  
        Document how `job.payload.target_contribution_id` is used today and where the assembler upload context is sourced from.  
-    *   `[ ]` 36.b. **[RED]** Rerun the new test from Step 35 and confirm it fails because `promptConstructionPayload` lacks `sourceContributionId`. Do **not** modify production code yet.  
-    *   `[ ]` 36.c. **[GREEN]** Implement the fix:  
+        *   `[✅]` 36.a.i. **[TYPES - PREDICATE]** Before editing `processSimpleJob.ts`, insert the `sourceContributionId?: string | null` property into `supabase/functions/dialectic-service/dialectic.interface.ts` (`PromptConstructionPayload`), `supabase/functions/_shared/prompt-assembler/prompt-assembler.interface.ts` (`AssemblePromptOptions` and any dependent assembler option types), and update the related mocks/tests so the new field is part of the shared contract.  
+    *   `[✅]` 36.b. **[RED]** Rerun the new test from Step 35 and confirm it fails because `promptConstructionPayload` lacks `sourceContributionId`. Do **not** modify production code yet.  
+    *   `[✅]` 36.c. **[GREEN]** Implement the fix:  
         1. Derive `sourceContributionId` near the continuation-content block using `const sourceContributionId = typeof job.payload === 'object' && job.payload && typeof job.payload.target_contribution_id === 'string' && job.payload.target_contribution_id.trim().length > 0 ? job.payload.target_contribution_id : undefined;`.  
         2. When calling `deps.promptAssembler.assemble`, spread this value into the options object (e.g., `{ ..., sourceContributionId }`) so downstream assemblers receive it. (Later steps update the assembler interfaces; add a TODO comment if the compiler guides you to subsequent edits.)  
         3. Extend `promptConstructionPayload` with `sourceContributionId` so the executor payload mirrors the assembler input. Ensure the property is only present when the id exists (omit or set `undefined` otherwise).  
         4. Verify that the object passed to `deps.executeModelCallAndSave` now carries the enriched `promptConstructionPayload` without altering other fields.  
-    *   `[ ]` 36.d. **[LINT]** Run the linter constrained to this file (`deno lint --filter supabase/functions/dialectic-worker/processSimpleJob.ts` or equivalent) and resolve any diagnostics.
-
-*   `[ ]` 37. **`[TEST-UNIT]` `supabase/functions/_shared/prompt-assembler/assembleSeedPrompt.test.ts`**  
-    *   `[ ]` 37.a. **[READ]** Walk through the entire `Deno.test("assembleSeedPrompt", …)` block, paying close attention to the shared `setup` helper, the `mockFileManager` instance returned from `createMockFileManagerService`, and how existing `t.step` cases capture the arguments passed to `fileManager.uploadAndRegisterFile`. Take notes on which variables already hold the upload context (e.g., `fileManager.uploadAndRegisterFile.calls[0].args[0]`).  
-    *   `[ ]` 37.b. **[RED]** Introduce a new failing sub-step (for example, `await t.step("should include sourceContributionId when provided", async () => { … })`) that:  
+    *   `[✅]` 36.d. **[LINT]** Run the linter constrained to this file (`deno lint --filter supabase/functions/dialectic-worker/processSimpleJob.ts` or equivalent) and resolve any diagnostics.
+*   `[✅]` 37. **`[TEST-UNIT]` `supabase/functions/_shared/prompt-assembler/assembleSeedPrompt.test.ts`**  
+    *   `[✅]` 37.a. **[READ]** Walk through the entire `Deno.test("assembleSeedPrompt", …)` block, paying close attention to the shared `setup` helper, the `mockFileManager` instance returned from `createMockFileManagerService`, and how existing `t.step` cases capture the arguments passed to `fileManager.uploadAndRegisterFile`. Take notes on which variables already hold the upload context (e.g., `fileManager.uploadAndRegisterFile.calls[0].args[0]`).  
+    *   `[✅]` 37.b. **[RED]** Introduce a new failing sub-step (for example, `await t.step("should include sourceContributionId when provided", async () => { … })`) that:  
         1. Calls `setup()` to obtain the mock client and FileManager.  
         2. Defines an explicit `const sourceContributionId = "contrib-123";`.  
         3. Invokes `assembleSeedPrompt({ …, sourceContributionId })` while reusing the existing `defaultProject`, `defaultSession`, and `defaultStage` fixtures.  
@@ -625,70 +636,63 @@ graph TD
         5. Uses `assertEquals`/`assertExists` to express these expectations so the test fails with the current implementation (which does not yet pass the id through).  
         6. Calls `teardown()` to clean up stubs.  
       Do **not** modify the production assembler yet—the goal is a red test that proves the omission.  
-    *   `[ ]` 37.c. **[GREEN]** *(Deferred to Step 38; leave the new test failing.)*  
-    *   `[ ]` 37.d. **[LINT]** Run the linter scoped to this test file and resolve any warnings introduced by the new case.
-
-*   `[ ]` 38. **`[BE]` `supabase/functions/_shared/prompt-assembler/assembleSeedPrompt.ts`**  
-    *   `[ ]` 38.a. **[READ]** Carefully read the entire file, noting where the function imports helpers, how it builds the `uploadContext`, and how it returns the assembled prompt object. Pay particular attention to the object literal passed into `fileManager.uploadAndRegisterFile`, confirming which properties already populate `pathContext`.  
-    *   `[ ]` 38.b. **[RED]** Re-run Step 37’s new test case (`await t.step("should include sourceContributionId when provided", …)`) to verify it is still failing because `fileManager.uploadAndRegisterFile` receives a context without `sourceContributionId`. Do not begin implementation until you observe the red failure.  
-    *   `[ ]` 38.c. **[GREEN]** Implement the fix by threading the id through the upload context without altering other behaviour:  
+    *   `[✅]` 37.c. **[GREEN]** *(Deferred to Step 38; leave the new test failing.)*  
+    *   `[✅]` 37.d. **[LINT]** Run the linter scoped to this test file and resolve any warnings introduced by the new case.
+*   `[✅]` 38. **`[BE]` `supabase/functions/_shared/prompt-assembler/assembleSeedPrompt.ts`**  
+    *   `[✅]` 38.a. **[READ]** Carefully read the entire file, noting where the function imports helpers, how it builds the `uploadContext`, and how it returns the assembled prompt object. Pay particular attention to the object literal passed into `fileManager.uploadAndRegisterFile`, confirming which properties already populate `pathContext`.  
+    *   `[✅]` 38.b. **[RED]** Re-run Step 37’s new test case (`await t.step("should include sourceContributionId when provided", …)`) to verify it is still failing because `fileManager.uploadAndRegisterFile` receives a context without `sourceContributionId`. Do not begin implementation until you observe the red failure.  
+    *   `[✅]` 38.c. **[GREEN]** Implement the fix by threading the id through the upload context without altering other behaviour:  
         1. Accept a new `sourceContributionId` parameter (the RED test already calls the assembler with this argument). If the parameter already exists in the function signature, confirm its name and reuse it.  
         2. Inside the `fileManager.uploadAndRegisterFile` call, add `sourceContributionId` to the `pathContext` object so it reads `pathContext: { …, sourceContributionId }`. Only include this property—do not mutate unrelated fields or add defaults.  
         3. Ensure the returned `AssembledPrompt` object remains unchanged, other than the existing properties that were already being returned.  
         4. Verify TypeScript now infers the new field correctly (Step 24 already updated the shared types). Address any compiler feedback by adjusting the destructured arguments rather than adding `any` casts.  
-    *   `[ ]` 38.d. **[LINT]** Run the linter for this file (`deno lint --filter supabase/functions/_shared/prompt-assembler/assembleSeedPrompt.ts`) and fix any diagnostics introduced by the change.
-
-*   `[ ]` 39. **`[TEST-UNIT]` `supabase/functions/_shared/prompt-assembler/assemblePlannerPrompt.test.ts`**  
-    *   `[ ]` 39.a. **[READ]** Read the entire test module, identify every existing `t.step` block, and note how the current mocks capture the arguments passed to `fileManager.uploadAndRegisterFile`. Pay attention to the continuation-specific cases so you understand which payloads already include a `target_contribution_id`.  
-    *   `[ ]` 39.b. **[RED]** Introduce a new `await t.step("should forward sourceContributionId when continuation exists", …)` (or equivalent) that:  
+    *   `[✅]` 38.d. **[LINT]** Run the linter for this file (`deno lint --filter supabase/functions/_shared/prompt-assembler/assembleSeedPrompt.ts`) and fix any diagnostics introduced by the change.
+*   `[✅]` 39. **`[TEST-UNIT]` `supabase/functions/_shared/prompt-assembler/assemblePlannerPrompt.test.ts`**  
+    *   `[✅]` 39.a. **[READ]** Read the entire test module, identify every existing `t.step` block, and note how the current mocks capture the arguments passed to `fileManager.uploadAndRegisterFile`. Pay attention to the continuation-specific cases so you understand which payloads already include a `target_contribution_id`.  
+    *   `[✅]` 39.b. **[RED]** Introduce a new `await t.step("should forward sourceContributionId when continuation exists", …)` (or equivalent) that:  
         1. Creates a mock planner job whose payload includes a valid `target_contribution_id` (or whichever field the planner uses to reference the parent contribution).  
         2. Invokes `assemblePlannerPrompt` exactly as the production code does (re-using existing helper builders when available).  
         3. Asserts that the mocked `uploadAndRegisterFile` receives a `pathContext` lacking `sourceContributionId`, and deliberately `assertEquals(pathContext.sourceContributionId, expectedId)` so the assertion fails. The new expectation must fail before implementation, proving the missing behaviour.  
         4. Avoids altering existing tests—only add the new failing case.  
-    *   `[ ]` 39.c. **[GREEN]** *(No implementation in this step; Step 40 will make the test pass.)*  
-    *   `[ ]` 39.d. **[LINT]** Run the linter for this test file (`deno lint --filter supabase/functions/_shared/prompt-assembler/assemblePlannerPrompt.test.ts`) and resolve any warnings introduced by the new test.
-
-*   `[ ]` 40. **`[BE]` `supabase/functions/_shared/prompt-assembler/assemblePlannerPrompt.ts`**  
-    *   `[ ]` 40.a. **[READ]** Open the file and review the entire `assemblePlannerPrompt` function, paying particular attention to the `uploadAndRegisterFile` call so you understand which values are currently written into `pathContext`. Note any existing guards around `job.payload.target_contribution_id` or related continuation data.  
-    *   `[ ]` 40.b. **[RED]** From the test added in Step 39, confirm the suite is still failing because `sourceContributionId` is missing in the upload context. Document the exact failure message so you can prove it transitions to GREEN. Do not proceed until this test is reproducing the RED state.  
-    *   `[ ]` 40.c. **[GREEN]** Modify the object passed to `uploadAndRegisterFile` so that when the job payload includes a valid contribution identifier (e.g. `target_contribution_id` or another field describing the parent contribution), that id is assigned to `pathContext.sourceContributionId`. Ensure the property is only set when the id is present and non-empty to avoid regressing new prompt scenarios. Leave all other behaviour untouched.  
-    *   `[ ]` 40.d. **[LINT]** Run the linter for this file (`deno lint <path>` or the project’s lint command scoped to this file) and resolve any warnings or errors introduced by the change.
-
-*   `[ ]` 41. **`[TEST-UNIT]` `supabase/functions/_shared/prompt-assembler/assembleTurnPrompt.test.ts`**  
-    *   `[ ]` 41.a. **[READ]** Read the entire test module from top to bottom, listing each existing `await t.step` block and noting how the FileManager stub captures its arguments. Identify which helpers build continuation jobs (those that include `target_contribution_id`, `continuation_count`, or similar).  
-    *   `[ ]` 41.b. **[RED]** Add a new failing test step (e.g., `await t.step("should pass sourceContributionId for continuation turns", async () => { … })`) that:  
+    *   `[✅]` 39.c. **[GREEN]** *(No implementation in this step; Step 40 will make the test pass.)*  
+    *   `[✅]` 39.d. **[LINT]** Run the linter for this test file (`deno lint --filter supabase/functions/_shared/prompt-assembler/assemblePlannerPrompt.test.ts`) and resolve any warnings introduced by the new test.
+*   `[✅]` 40. **`[BE]` `supabase/functions/_shared/prompt-assembler/assemblePlannerPrompt.ts`**  
+    *   `[✅]` 40.a. **[READ]** Open the file and review the entire `assemblePlannerPrompt` function, paying particular attention to the `uploadAndRegisterFile` call so you understand which values are currently written into `pathContext`. Note any existing guards around `job.payload.target_contribution_id` or related continuation data.  
+    *   `[✅]` 40.b. **[RED]** From the test added in Step 39, confirm the suite is still failing because `sourceContributionId` is missing in the upload context. Document the exact failure message so you can prove it transitions to GREEN. Do not proceed until this test is reproducing the RED state.  
+    *   `[✅]` 40.c. **[GREEN]** Modify the object passed to `uploadAndRegisterFile` so that when the job payload includes a valid contribution identifier (e.g. `target_contribution_id` or another field describing the parent contribution), that id is assigned to `pathContext.sourceContributionId`. Ensure the property is only set when the id is present and non-empty to avoid regressing new prompt scenarios. Leave all other behaviour untouched.  
+    *   `[✅]` 40.d. **[LINT]** Run the linter for this file (`deno lint <path>` or the project’s lint command scoped to this file) and resolve any warnings or errors introduced by the change.
+*   `[✅]` 41. **`[TEST-UNIT]` `supabase/functions/_shared/prompt-assembler/assembleTurnPrompt.test.ts`**  
+    *   `[✅]` 41.a. **[READ]** Read the entire test module from top to bottom, listing each existing `await t.step` block and noting how the FileManager stub captures its arguments. Identify which helpers build continuation jobs (those that include `target_contribution_id`, `continuation_count`, or similar).  
+    *   `[✅]` 41.b. **[RED]** Add a new failing test step (e.g., `await t.step("should pass sourceContributionId for continuation turns", async () => { … })`) that:  
         1. Builds a continuation-style job payload using the same helper functions the other tests rely on, ensuring the payload contains a valid parent contribution id.  
         2. Invokes `assembleTurnPrompt` with the mocked dependencies already used elsewhere in the file—do not create ad-hoc mocks outside the existing patterns.  
         3. Records the argument passed to `fileManager.uploadAndRegisterFile` and asserts `assertEquals(captured.pathContext.sourceContributionId, expectedContributionId);` so the assertion currently fails because the field is `undefined`.  
         4. Leaves all pre-existing tests untouched and runs within the same `Deno.test` block structure already in the file.  
       Confirm the new test fails (RED) before moving on.  
-    *   `[ ]` 41.c. **[GREEN]** *(Do not implement here; Step 42 contains the production edit that makes the new test pass.)*  
-    *   `[ ]` 41.d. **[LINT]** Run the linter scoped to this test file (`deno lint --filter supabase/functions/_shared/prompt-assembler/assembleTurnPrompt.test.ts`) and resolve any warnings introduced by the RED addition.
-
-*   `[ ]` 42. **`[BE]` `supabase/functions/_shared/prompt-assembler/assembleTurnPrompt.ts`**  
-    *   `[ ]` 42.a. **[READ]**  
+    *   `[✅]` 41.c. **[GREEN]** *(Do not implement here; Step 42 contains the production edit that makes the new test pass.)*  
+    *   `[✅]` 41.d. **[LINT]** Run the linter scoped to this test file (`deno lint --filter supabase/functions/_shared/prompt-assembler/assembleTurnPrompt.test.ts`) and resolve any warnings introduced by the RED addition.
+*   `[✅]` 42. **`[BE]` `supabase/functions/_shared/prompt-assembler/assembleTurnPrompt.ts`**  
+    *   `[✅]` 42.a. **[READ]**  
         * Open the file and follow the function that constructs the FileManager upload context for turn prompts, noting every property currently passed.  
-    *   `[ ]` 42.b. **[RED]**  
+    *   `[✅]` 42.b. **[RED]**  
         * Do **not** modify the implementation yet.  
         * Re-run the Step 41 test you just added and confirm it is failing because `sourceContributionId` is missing.  
         * If the test does not fail, stop immediately and correct the RED test before proceeding.  
-    *   `[ ]` 42.c. **[GREEN]**  
+    *   `[✅]` 42.c. **[GREEN]**  
         * Update the upload context so that, when the incoming job payload references an existing contribution (e.g., continuation retries), the context includes `sourceContributionId` set to that contribution’s id.  
         * Preserve existing behaviour for brand-new prompts (leave the property undefined/null in those cases).  
-    *   `[ ]` 42.d. **[LINT]**  
+    *   `[✅]` 42.d. **[LINT]**  
         * Run the linter on this file and resolve any reported issues.
-
-*   `[ ]` 43. **`[TEST-UNIT]` `supabase/functions/_shared/prompt-assembler/assembleContinuationPrompt.test.ts`**  
-    *   `[ ]` 43.a. **[READ]** Open the test file and study the existing continuation prompt scenarios (including the happy-path and error-path tests) so you understand how mocks such as `fileManager.uploadAndRegisterFile` are currently asserted. Take notes on the sections that verify the upload context arguments.  
-    *   `[ ]` 43.b. **[RED]** Following the established Deno testing style in this file, add a new test (or extend an existing continuation test) that stubs `fileManager.uploadAndRegisterFile`, captures its first argument, and asserts that `uploadArgs.pathContext.sourceContributionId` is defined and equals the contribution id provided by the job payload. Make the expectation strict so the test fails with the current implementation.  
-    *   `[ ]` 43.c. **[GREEN]** *(Do not modify production code in this step; leave the failing test in place for Step 44 to address.)*  
-    *   `[ ]` 43.d. **[LINT]** Run the repository linter for this file (e.g., `deno lint supabase/functions/_shared/prompt-assembler/assembleContinuationPrompt.test.ts`) and resolve any warnings or errors introduced by the new test.
-
-*   `[ ]` 44. **`[BE]` `supabase/functions/_shared/prompt-assembler/assembleContinuationPrompt.ts`**  
-    *   `[ ]` 44.a. **[READ]** Walk through the entire file, identify where the FileManager upload context is constructed, and note how the continuation job’s payload currently supplies `target_contribution_id`, `document_key`, and other identifiers. Do not proceed until you can explain how those fields flow into the upload call.  
-    *   `[ ]` 44.b. **[RED]** Before editing, re-run the failing test added in Step 43 and confirm it still fails because `sourceContributionId` is missing from the upload context. Document the exact failure message so you can prove GREEN later.  
-    *   `[ ]` 44.c. **[GREEN]** Modify the upload-context construction so that when the continuation payload provides a parent contribution (e.g., via `job.payload.target_contribution_id`), the code assigns `sourceContributionId` on the `pathContext` passed to `fileManager.uploadAndRegisterFile`. Leave the behaviour unchanged when no parent contribution exists.  
-    *   `[ ]` 44.d. **[LINT]** Run the linter targeting this file. If any warnings or errors appear, resolve them immediately and rerun the linter to prove the file is clean.
+*   `[✅]` 43. **`[TEST-UNIT]` `supabase/functions/_shared/prompt-assembler/assembleContinuationPrompt.test.ts`**  
+    *   `[✅]` 43.a. **[READ]** Open the test file and study the existing continuation prompt scenarios (including the happy-path and error-path tests) so you understand how mocks such as `fileManager.uploadAndRegisterFile` are currently asserted. Take notes on the sections that verify the upload context arguments.  
+    *   `[✅]` 43.b. **[RED]** Following the established Deno testing style in this file, add a new test (or extend an existing continuation test) that stubs `fileManager.uploadAndRegisterFile`, captures its first argument, and asserts that `uploadArgs.pathContext.sourceContributionId` is defined and equals the contribution id provided by the job payload. Make the expectation strict so the test fails with the current implementation.  
+    *   `[✅]` 43.c. **[GREEN]** *(Do not modify production code in this step; leave the failing test in place for Step 44 to address.)*  
+    *   `[✅]` 43.d. **[LINT]** Run the repository linter for this file (e.g., `deno lint supabase/functions/_shared/prompt-assembler/assembleContinuationPrompt.test.ts`) and resolve any warnings or errors introduced by the new test.
+*   `[✅]` 44. **`[BE]` `supabase/functions/_shared/prompt-assembler/assembleContinuationPrompt.ts`**  
+    *   `[✅]` 44.a. **[READ]** Walk through the entire file, identify where the FileManager upload context is constructed, and note how the continuation job’s payload currently supplies `target_contribution_id`, `document_key`, and other identifiers. Do not proceed until you can explain how those fields flow into the upload call.  
+    *   `[✅]` 44.b. **[RED]** Before editing, re-run the failing test added in Step 43 and confirm it still fails because `sourceContributionId` is missing from the upload context. Document the exact failure message so you can prove GREEN later.  
+    *   `[✅]` 44.c. **[GREEN]** Modify the upload-context construction so that when the continuation payload provides a parent contribution (e.g., via `job.payload.target_contribution_id`), the code assigns `sourceContributionId` on the `pathContext` passed to `fileManager.uploadAndRegisterFile`. Leave the behaviour unchanged when no parent contribution exists.  
+    *   `[✅]` 44.d. **[LINT]** Run the linter targeting this file. If any warnings or errors appear, resolve them immediately and rerun the linter to prove the file is clean.
 
 *   `[ ]` 45. **`[TEST-UNIT]` `supabase/functions/_shared/prompt-assembler/prompt-assembler.test.ts`**  
     *   `[ ]` 45.a. **[READ]**  

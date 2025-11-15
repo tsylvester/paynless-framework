@@ -53,7 +53,7 @@ const defaultMockContext: DynamicContextVariables = {
     granularity_strategy: "all_to_one",
     inputs_required: [],
     inputs_relevance: [],
-    outputs_required: [],
+    outputs_required: {},
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     parallel_group: null,
@@ -140,7 +140,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     granularity_strategy: "all_to_one",
     inputs_required: [],
     inputs_relevance: [],
-    outputs_required: [],
+    outputs_required: {},
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     parallel_group: null,
@@ -322,6 +322,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             stepName: "GeneratePlan",
             branchKey: null,
             parallelGroup: null,
+            sourceContributionId: null,
           },
           resourceTypeForDb: "planner_prompt",
           fileContent: "rendered planner prompt",
@@ -331,6 +332,82 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           description: `Planner prompt for stage: ${defaultStage.slug}, step: ${mockRecipeStep.step_name}`,
         };
         assertEquals(uploadSpy.calls[0].args[0], expectedUploadContext);
+      } finally {
+        teardown();
+      }
+    },
+  );
+
+  await t.step("should forward sourceContributionId when continuation exists",
+    async () => {
+      const continuationContributionId = "contrib-123";
+      const continuationJob: DialecticJobRow = {
+        ...mockPlannerJob,
+        target_contribution_id: continuationContributionId,
+      };
+
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          system_prompts: {
+            select: { data: [{ prompt_text: plannerPromptText }], error: null },
+          },
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+              ],
+            }
+          }
+        },
+      };
+
+      const {
+        client,
+        fileManager,
+        gatherContextFn,
+        renderFn,
+      } = setup(config, defaultMockContext);
+
+      const mockFileRecord: FileRecord = {
+        id: "mock-planner-resource-id-continuation",
+        project_id: defaultProject.id,
+        file_name: "claude-3-opus_1_GeneratePlan_planner_prompt.md",
+        storage_bucket: "test-bucket",
+        storage_path: "path/to/mock/planner_prompt.md",
+        mime_type: "text/markdown",
+        size_bytes: 123,
+        resource_description: "A mock planner prompt",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        user_id: defaultProject.user_id,
+        session_id: defaultSession.id,
+        stage_slug: defaultStage.slug,
+        iteration_number: 1,
+        resource_type: "planner_prompt",
+        source_contribution_id: null,
+      };
+
+      fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+      const uploadSpy = fileManager.uploadAndRegisterFile;
+
+      try {
+        await assemblePlannerPrompt({
+          dbClient: client,
+          fileManager,
+          job: continuationJob,
+          project: defaultProject,
+          session: defaultSession,
+          stage: defaultStage,
+          gatherContext: gatherContextFn,
+          render: renderFn,
+        });
+
+        assertSpyCalls(uploadSpy, 1);
+        const uploadContext = uploadSpy.calls[0].args[0];
+        assertEquals(
+          uploadContext.pathContext.sourceContributionId,
+          continuationContributionId,
+        );
       } finally {
         teardown();
       }

@@ -125,6 +125,14 @@ export async function assembleContinuationPrompt(
     ? payload.model_slug
     : "unknown-model";
 
+  let sourceContributionId: string | undefined;
+  if (
+    typeof payload.target_contribution_id === "string" &&
+    payload.target_contribution_id.trim().length > 0
+  ) {
+    sourceContributionId = payload.target_contribution_id;
+  }
+
   let fileType: FileType;
   if (job.job_type === "PLAN") {
     fileType = FileType.PlannerPrompt;
@@ -148,6 +156,7 @@ export async function assembleContinuationPrompt(
       turnIndex: (job.attempt_count || 0) + 1,
       branchKey: stage.recipe_step?.branch_key,
       parallelGroup: stage.recipe_step?.parallel_group,
+      sourceContributionId,
     },
     fileContent: finalPrompt,
     mimeType: "text/markdown",

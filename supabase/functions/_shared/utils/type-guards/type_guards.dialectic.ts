@@ -34,6 +34,8 @@ import {
     RenderedDocumentArtifact,
     AssembledJsonArtifact,
     ReviewMetadata,
+    EditedDocumentResource,
+    SaveContributionEditSuccessResponse,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { isPlainObject, isRecord } from './type_guards.common.ts';
 import { FileType } from '../../types/file_manager.types.ts';
@@ -379,6 +381,39 @@ export function isRelevanceRule(value: unknown): value is RelevanceRule {
 
 export function isRelevanceRuleArray(value: unknown): value is RelevanceRule[] {
     return Array.isArray(value) && value.every(isRelevanceRule);
+}
+
+export function isEditedDocumentResource(value: unknown): value is EditedDocumentResource {
+    if (!isRecord(value)) return false;
+
+    if (typeof value.id !== 'string') return false;
+    if (value.resource_type !== null && typeof value.resource_type !== 'string') return false;
+    if (value.project_id !== null && typeof value.project_id !== 'string') return false;
+    if (value.session_id !== null && typeof value.session_id !== 'string') return false;
+    if (value.stage_slug !== null && typeof value.stage_slug !== 'string') return false;
+    if (value.iteration_number !== null && typeof value.iteration_number !== 'number') return false;
+    if (value.document_key !== null) {
+        if (typeof value.document_key !== 'string' || !isFileType(value.document_key)) {
+            return false;
+        }
+    }
+    if (value.source_contribution_id !== null && typeof value.source_contribution_id !== 'string') return false;
+    if (typeof value.storage_bucket !== 'string') return false;
+    if (typeof value.storage_path !== 'string') return false;
+    if (typeof value.file_name !== 'string') return false;
+    if (typeof value.mime_type !== 'string') return false;
+    if (typeof value.size_bytes !== 'number') return false;
+    if (typeof value.created_at !== 'string') return false;
+    if (typeof value.updated_at !== 'string') return false;
+
+    return true;
+}
+
+export function isSaveContributionEditSuccessResponse(value: unknown): value is SaveContributionEditSuccessResponse {
+    if (!isRecord(value)) return false;
+    if (typeof value.sourceContributionId !== 'string') return false;
+    if (!('resource' in value) || !isEditedDocumentResource(value.resource)) return false;
+    return true;
 }
 
 export function isReviewMetadata(value: unknown): value is ReviewMetadata {

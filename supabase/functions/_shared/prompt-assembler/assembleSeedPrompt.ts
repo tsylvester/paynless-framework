@@ -18,6 +18,7 @@ export async function assembleSeedPrompt(
     stage,
     projectInitialUserPrompt,
     iterationNumber,
+    sourceContributionId,
   }: AssembleSeedPromptDeps,
 ): Promise<AssembledPrompt> {
 
@@ -46,6 +47,7 @@ export async function assembleSeedPrompt(
       iteration: iterationNumber,
       stageSlug: stage.slug,
       fileType: FileType.SeedPrompt,
+      sourceContributionId,
     },
     fileContent: renderedPrompt,
     mimeType: "text/markdown",

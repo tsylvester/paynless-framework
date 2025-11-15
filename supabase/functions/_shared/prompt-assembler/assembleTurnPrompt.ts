@@ -157,6 +157,23 @@ export async function assembleTurnPrompt(
     throw new Error("PRECONDITION_FAILED: Job payload is missing 'model_slug'.");
   }
   // 6. Persist the Assembled Prompt
+  let sourceContributionId: string | undefined;
+  if ("target_contribution_id" in job.payload) {
+    const rawTargetContributionId = job.payload.target_contribution_id;
+    if (
+      rawTargetContributionId !== undefined &&
+      rawTargetContributionId !== null &&
+      typeof rawTargetContributionId !== "string"
+    ) {
+      throw new Error(
+        "PRECONDITION_FAILED: Job payload target_contribution_id must be a string.",
+      );
+    }
+    if (typeof rawTargetContributionId === "string") {
+      sourceContributionId = rawTargetContributionId;
+    }
+  }
+
   const response: FileManagerResponse = await fileManager.uploadAndRegisterFile({
     pathContext: {
       projectId: project.id,
@@ -169,6 +186,7 @@ export async function assembleTurnPrompt(
       stepName: stage.recipe_step.step_name,
       branchKey: stage.recipe_step.branch_key,
       parallelGroup: stage.recipe_step.parallel_group,
+      sourceContributionId,
     },
     fileContent: renderedPrompt,
     mimeType: "text/markdown",

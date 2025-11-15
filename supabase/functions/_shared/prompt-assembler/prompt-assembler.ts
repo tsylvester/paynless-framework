@@ -26,7 +26,7 @@ import { assemblePlannerPrompt } from "./assemblePlannerPrompt.ts";
 import { assembleTurnPrompt } from "./assembleTurnPrompt.ts";
 import { assembleContinuationPrompt } from "./assembleContinuationPrompt.ts";
 import { IFileManager } from "../types/file_manager.types.ts";
-import { isDialecticPlanJobPayload } from "../utils/type_guards.ts";
+import { isDialecticPlanJobPayload, isRecord } from "../utils/type_guards.ts";
 import { RenderFn } from "./prompt-assembler.interface.ts";
 
 export class PromptAssembler implements IPromptAssembler {
@@ -79,6 +79,8 @@ export class PromptAssembler implements IPromptAssembler {
     }
 
     async assemble(options: AssemblePromptOptions): Promise<AssembledPrompt> {
+        const sourceContributionId = this.resolveSourceContributionId(options);
+
         if (options.job) {
             if (options.continuationContent) {
                 return this.assembleContinuationPrompt({
@@ -89,7 +91,8 @@ export class PromptAssembler implements IPromptAssembler {
                     session: options.session,
                     stage: options.stage,
                     continuationContent: options.continuationContent,
-                    gatherContext: this.gatherContextFn
+                    gatherContext: this.gatherContextFn,
+                    sourceContributionId
                 });
             } 
             
@@ -103,7 +106,8 @@ export class PromptAssembler implements IPromptAssembler {
                     session: options.session,
                     stage: options.stage,
                     gatherContext: this.gatherContextFn,
-                    render: this.renderFn
+                    render: this.renderFn,
+                    sourceContributionId
                 });
             } else {
                 return this.assembleTurnPrompt({
@@ -114,7 +118,8 @@ export class PromptAssembler implements IPromptAssembler {
                     session: options.session,
                     stage: options.stage,
                     gatherContext: this.gatherContextFn,
-                    render: this.renderFn
+                    render: this.renderFn,
+                    sourceContributionId
                 });
             }
         } else {
@@ -128,7 +133,8 @@ export class PromptAssembler implements IPromptAssembler {
                 iterationNumber: options.iterationNumber,
                 downloadFromStorageFn: this.downloadFromStorageFn,
                 gatherInputsForStageFn: this.gatherInputsForStageFn,
-                renderPromptFn: this.renderPromptFn
+                renderPromptFn: this.renderPromptFn,
+                sourceContributionId
             });
         }
     }
@@ -155,6 +161,58 @@ export class PromptAssembler implements IPromptAssembler {
         deps: AssembleContinuationPromptDeps
     ): Promise<AssembledPrompt> {
         return this.assembleContinuationPromptFn(deps);
+    }
+
+    private resolveSourceContributionId(options: AssemblePromptOptions): string | null {
+        const optionValue = this.normalizeContributionId(options.sourceContributionId);
+        if (optionValue) {
+            return optionValue;
+        }
+
+        return this.extractContributionIdFromJob(options.job);
+    }
+
+    private normalizeContributionId(value: string | null | undefined) {
+        if (typeof value !== "string") {
+            return null;
+        }
+        return value;
+    }
+
+    private extractContributionIdFromJob(job: AssemblePromptOptions["job"]): string | null {
+        if (!job) {
+            return null;
+        }
+
+        const directId = this.normalizeContributionId(job.target_contribution_id);
+        if (directId) {
+            return directId;
+        }
+
+        return this.extractContributionIdFromPayload(job.payload);
+    }
+
+    private extractContributionIdFromPayload(payload: Json | null | undefined): string | null {
+        if (!isRecord(payload)) {
+            return null;
+        }
+
+        const keysToCheck: ReadonlyArray<string> = [
+            "sourceContributionId",
+            "source_contribution_id",
+            "target_contribution_id"
+        ];
+
+        for (const key of keysToCheck) {
+            if (key in payload) {
+                const value = payload[key];
+                if (typeof value === "string") {
+                    return this.normalizeContributionId(value);
+                }
+            }
+        }
+
+        return null;
     }
 
     private async _gatherContext(

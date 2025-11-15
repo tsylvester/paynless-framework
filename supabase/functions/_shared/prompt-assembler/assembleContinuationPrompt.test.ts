@@ -28,6 +28,7 @@ import {
 } from "../../dialectic-service/dialectic.interface.ts";
 import { assertSpyCall } from "jsr:@std/testing@0.225.1/mock";
 import { isRecord } from "../utils/type_guards.ts";
+import { DynamicContextVariables } from "./prompt-assembler.interface.ts";
 
 Deno.test("assembleContinuationPrompt", async (t) => {
   let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
@@ -99,7 +100,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
       granularity_strategy: "all_to_one",
       inputs_required: [],
       inputs_relevance: [],
-      outputs_required: [],
+      outputs_required: { documents: [{ artifact_class: "rendered_document", file_type: "markdown", document_key: FileType.business_case, template_filename: "business_case.md" }] },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       is_skipped: false,
@@ -113,6 +114,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
       execution_order: 1,
       output_type: FileType.business_case,
       instance_id: "instance-123",
+      step_description: "Recipe Step Description",
     }, // Not always needed for continuation
     active_recipe_instance_id: null,
     expected_output_template_ids: [],
@@ -218,20 +220,18 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               session: defaultSession,
               stage: defaultStage,
               continuationContent: partialContent,
-              gatherContext: spy(async () => ({
-                user_objective: "",
-                domain: "",
-                agent_count: 0,
-                context_description: "",
-                original_user_request: null,
+              gatherContext: spy(async () => { return {
+                user_objective: "mock user objective",
+                domain: "Software Development",
+                agent_count: 1,
+                context_description: "A test context",
+                original_user_request: "The original request",
                 prior_stage_ai_outputs: "",
                 prior_stage_user_feedback: "",
-                deployment_context: null,
-                reference_documents: null,
-                constraint_boundaries: null,
-                stakeholder_considerations: null,
-                deliverable_format: null,
-              })),
+                deployment_context: undefined,
+                reference_documents: undefined,
+                recipeStep: defaultStage.recipe_step,
+              }}),
             });
 
         // 3. Assert:
@@ -324,14 +324,15 @@ Deno.test("assembleContinuationPrompt", async (t) => {
                 domain: "",
                 agent_count: 0,
                 context_description: "",
-                original_user_request: null,
+                original_user_request: "",
                 prior_stage_ai_outputs: "",
                 prior_stage_user_feedback: "",
-                deployment_context: null,
-                reference_documents: null,
-                constraint_boundaries: null,
-                stakeholder_considerations: null,
-                deliverable_format: null,
+                deployment_context: undefined,  
+                reference_documents: undefined,
+                constraint_boundaries: undefined,
+                stakeholder_considerations: undefined,
+                deliverable_format: undefined,
+                recipeStep: defaultStage.recipe_step,
               })),
             });
 
@@ -414,20 +415,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               session: defaultSession,
               stage: defaultStage,
               continuationContent: partialContent,
-              gatherContext: spy(async () => ({
+              gatherContext: spy(async () => { return {
                 user_objective: "",
                 domain: "",
                 agent_count: 0,
                 context_description: "",
-                original_user_request: null,
+                original_user_request: "",
                 prior_stage_ai_outputs: "",
                 prior_stage_user_feedback: "",
-                deployment_context: null,
-                reference_documents: null,
-                constraint_boundaries: null,
-                stakeholder_considerations: null,
-                deliverable_format: null,
-              })),
+                deployment_context: undefined,
+                reference_documents: undefined,
+                constraint_boundaries: undefined,
+                stakeholder_considerations: undefined,
+                deliverable_format: undefined,
+                recipeStep: defaultStage.recipe_step,
+              }}),
             });
 
         // 3. Assert:
@@ -461,12 +463,13 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               step_key: "recipe-step-key-orchestration",
               step_slug: "recipe-step-slug-orchestration",
               step_name: "Orchestration Recipe Step",
+              step_description: "Orchestration Recipe Step Description",
               job_type: "EXECUTE",
               prompt_type: "Turn",
               granularity_strategy: "all_to_one",
               inputs_required: [],
               inputs_relevance: [],
-              outputs_required: [],
+              outputs_required: { documents: [{ artifact_class: "rendered_document", file_type: "markdown", document_key: FileType.business_case, template_filename: "business_case.md" }] },
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
               is_skipped: false,
@@ -538,20 +541,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               session: defaultSession,
               stage: stageWithOrchestrationKeys,
               continuationContent: "partial content",
-              gatherContext: spy(async () => ({
+                gatherContext: spy(async () => { return {
                 user_objective: "",
                 domain: "",
                 agent_count: 0,
                 context_description: "",
-                original_user_request: null,
+                original_user_request: "",
                 prior_stage_ai_outputs: "",
                 prior_stage_user_feedback: "",
-                deployment_context: null,
-                reference_documents: null,
-                constraint_boundaries: null,
-                stakeholder_considerations: null,
-                deliverable_format: null,
-              })),
+                deployment_context: undefined,
+                reference_documents: undefined,
+                constraint_boundaries: undefined,
+                stakeholder_considerations: undefined,
+                deliverable_format: undefined,
+                recipeStep: defaultStage.recipe_step,
+              }}),
             });
 
         // 3. Assert:
@@ -618,20 +622,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             session: defaultSession,
             stage: defaultStage,
             continuationContent: incompleteJson,
-            gatherContext: spy(async () => ({
+            gatherContext: spy(async () => { return {
               user_objective: "",
               domain: "",
               agent_count: 0,
               context_description: "",
-              original_user_request: null,
+              original_user_request: "",
               prior_stage_ai_outputs: "",
               prior_stage_user_feedback: "",
-              deployment_context: null,
-              reference_documents: null,
-              constraint_boundaries: null,
-              stakeholder_considerations: null,
-              deliverable_format: null,
-            })),
+              deployment_context: undefined,
+              reference_documents: undefined,
+              constraint_boundaries: undefined,
+              stakeholder_considerations: undefined,
+              deliverable_format: undefined,
+              recipeStep: defaultStage.recipe_step,
+            }}),
           });
 
         // 3. Assert:
@@ -699,20 +704,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             session: defaultSession,
             stage: defaultStage,
             continuationContent: incompleteJson,
-            gatherContext: spy(async () => ({
+            gatherContext: spy(async () => { return {
               user_objective: "",
               domain: "",
               agent_count: 0,
               context_description: "",
-              original_user_request: null,
+              original_user_request: "",
               prior_stage_ai_outputs: "",
               prior_stage_user_feedback: "",
-              deployment_context: null,
-              reference_documents: null,
-              constraint_boundaries: null,
-              stakeholder_considerations: null,
-              deliverable_format: null,
-            })),
+              deployment_context: undefined,
+              reference_documents: undefined,
+              constraint_boundaries: undefined,
+              stakeholder_considerations: undefined,
+              deliverable_format: undefined,
+              recipeStep: defaultStage.recipe_step,
+            }}),
           });
 
         // 3. Assert:
@@ -776,20 +782,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               session: defaultSession,
               stage: defaultStage,
               continuationContent: incompleteJson,
-              gatherContext: spy(async () => ({
+              gatherContext: spy(async () => { return {
                 user_objective: "",
                 domain: "",
                 agent_count: 0,
                 context_description: "",
-                original_user_request: null,
+                original_user_request: "",
                 prior_stage_ai_outputs: "",
                 prior_stage_user_feedback: "",
-                deployment_context: null,
-                reference_documents: null,
-                constraint_boundaries: null,
-                stakeholder_considerations: null,
-                deliverable_format: null,
-              })),
+                deployment_context: undefined,
+                reference_documents: undefined,
+                constraint_boundaries: undefined,
+                stakeholder_considerations: undefined,
+                deliverable_format: undefined,
+                recipeStep: defaultStage.recipe_step,
+              }}),
             });
 
           // 3. Assert:
@@ -851,20 +858,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             session: defaultSession,
             stage: defaultStage,
             continuationContent: malformedJson,
-            gatherContext: spy(async () => ({
+            gatherContext: spy(async () => { return {
               user_objective: "",
               domain: "",
               agent_count: 0,
               context_description: "",
-              original_user_request: null,
+              original_user_request: "",
               prior_stage_ai_outputs: "",
               prior_stage_user_feedback: "",
-              deployment_context: null,
-              reference_documents: null,
-              constraint_boundaries: null,
-              stakeholder_considerations: null,
-              deliverable_format: null,
-            })),
+              deployment_context: undefined,
+              reference_documents: undefined,
+              constraint_boundaries: undefined,
+              stakeholder_considerations: undefined,
+              deliverable_format: undefined,
+              recipeStep: defaultStage.recipe_step,
+            }   }),
           });
 
         // 3. Assert:
@@ -930,20 +938,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             session: defaultSession,
             stage: defaultStage,
             continuationContent: malformedJson,
-            gatherContext: spy(async () => ({
+            gatherContext: spy(async () => { return {
               user_objective: "",
               domain: "",
               agent_count: 0,
               context_description: "",
-              original_user_request: null,
+              original_user_request: "",
               prior_stage_ai_outputs: "",
               prior_stage_user_feedback: "",
-              deployment_context: null,
-              reference_documents: null,
-              constraint_boundaries: null,
-              stakeholder_considerations: null,
-              deliverable_format: null,
-            })),
+              deployment_context: undefined,
+              reference_documents: undefined,
+              constraint_boundaries: undefined,
+              stakeholder_considerations: undefined,
+              deliverable_format: undefined,
+              recipeStep: defaultStage.recipe_step,
+            }}),
           });
 
         // 3. Assert:
@@ -1006,20 +1015,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             session: defaultSession,
             stage: defaultStage,
             continuationContent: malformedJson,
-            gatherContext: spy(async () => ({
+            gatherContext: spy(async () => { return {
               user_objective: "",
               domain: "",
               agent_count: 0,
               context_description: "",
-              original_user_request: null,
+              original_user_request: "",
               prior_stage_ai_outputs: "",
               prior_stage_user_feedback: "",
-              deployment_context: null,
-              reference_documents: null,
-              constraint_boundaries: null,
-              stakeholder_considerations: null,
-              deliverable_format: null,
-            })),
+              deployment_context: undefined,
+              reference_documents: undefined,
+              constraint_boundaries: undefined,
+              stakeholder_considerations: undefined,
+              deliverable_format: undefined,
+              recipeStep: defaultStage.recipe_step,
+            }}),
           });
 
         // 3. Assert:
@@ -1093,20 +1103,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               session: defaultSession,
               stage: defaultStage,
               continuationContent: "some partial text",
-              gatherContext: spy(async () => ({
+              gatherContext: spy(async () => { return {
                 user_objective: "",
                 domain: "",
                 agent_count: 0,
                 context_description: "",
-                original_user_request: null,
+                original_user_request: "",
                 prior_stage_ai_outputs: "",
                 prior_stage_user_feedback: "",
-                deployment_context: null,
-                reference_documents: null,
-                constraint_boundaries: null,
-                stakeholder_considerations: null,
-                deliverable_format: null,
-              })),
+                deployment_context: undefined,
+                reference_documents: undefined,
+                constraint_boundaries: undefined,
+                stakeholder_considerations: undefined,
+                deliverable_format: undefined,
+                recipeStep: defaultStage.recipe_step,
+              }}),
             });
 
         // 3. Assert:
@@ -1175,20 +1186,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               session: defaultSession,
               stage: defaultStage,
               continuationContent: malformedJson,
-              gatherContext: spy(async () => ({
+              gatherContext: spy(async () => { return {
                 user_objective: "",
                 domain: "",
                 agent_count: 0,
                 context_description: "",
-                original_user_request: null,
+                original_user_request: "",
                 prior_stage_ai_outputs: "",
                 prior_stage_user_feedback: "",
-                deployment_context: null,
-                reference_documents: null,
-                constraint_boundaries: null,
-                stakeholder_considerations: null,
-                deliverable_format: null,
-              })),
+                deployment_context: undefined,
+                reference_documents: undefined,
+                constraint_boundaries: undefined,
+                stakeholder_considerations: undefined,
+                deliverable_format: undefined,
+                recipeStep: defaultStage.recipe_step,
+              }}),
             });
 
         // 3. Assert:
@@ -1256,20 +1268,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               session: defaultSession,
               stage: defaultStage,
               continuationContent: partialValidJson,
-              gatherContext: spy(async () => ({
+              gatherContext: spy(async () => { return {
                 user_objective: "",
                 domain: "",
                 agent_count: 0,
                 context_description: "",
-                original_user_request: null,
+                original_user_request: "",
                 prior_stage_ai_outputs: "",
                 prior_stage_user_feedback: "",
-                deployment_context: null,
-                reference_documents: null,
-                constraint_boundaries: null,
-                stakeholder_considerations: null,
-                deliverable_format: null,
-              })),
+                deployment_context: undefined,
+                reference_documents: undefined,
+                constraint_boundaries: undefined,
+                stakeholder_considerations: undefined,
+                deliverable_format: undefined,
+                recipeStep: defaultStage.recipe_step,
+              }}),
             });
 
             // 3. Assert:
@@ -1335,20 +1348,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               session: defaultSession,
               stage: defaultStage,
               continuationContent: stillMalformedJson,
-              gatherContext: spy(async () => ({
+              gatherContext: spy(async () => { return {
                 user_objective: "",
                 domain: "",
                 agent_count: 0,
                 context_description: "",
-                original_user_request: null,
+                original_user_request: "",
                 prior_stage_ai_outputs: "",
                 prior_stage_user_feedback: "",
-                deployment_context: null,
-                reference_documents: null,
-                constraint_boundaries: null,
-                stakeholder_considerations: null,
-                deliverable_format: null,
-              })),
+                deployment_context: undefined,
+                reference_documents: undefined,
+                constraint_boundaries: undefined,
+                stakeholder_considerations: undefined,
+                deliverable_format: undefined,
+                recipeStep: defaultStage.recipe_step,
+              }}),
             });
 
         // 3. Assert:
@@ -1383,20 +1397,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             project: defaultProject,
             session: defaultSession,
             stage: defaultStage,
-            gatherContext: spy(async () => ({
+            gatherContext: spy(async () => { return {
               user_objective: "",
               domain: "",
               agent_count: 0,
               context_description: "",
-              original_user_request: null,
+              original_user_request: "",
               prior_stage_ai_outputs: "",
               prior_stage_user_feedback: "",
-              deployment_context: null,
-              reference_documents: null,
-              constraint_boundaries: null,
-              stakeholder_considerations: null,
-              deliverable_format: null,
-            })),
+              deployment_context: undefined,
+              reference_documents: undefined,
+              constraint_boundaries: undefined,
+              stakeholder_considerations: undefined,
+              deliverable_format: undefined,
+              recipeStep: defaultStage.recipe_step,
+            }}),
             render: spy(() => "rendered prompt"),
           };
 
@@ -1487,20 +1502,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
                 session: defaultSession,
                 stage: defaultStage,
                 continuationContent: "any content",
-                gatherContext: spy(async () => ({
+                gatherContext: spy(async () => { return {
                   user_objective: "",
                   domain: "",
                   agent_count: 0,
                   context_description: "",
-                  original_user_request: null,
+                  original_user_request: "",
                   prior_stage_ai_outputs: "",
                   prior_stage_user_feedback: "",
-                  deployment_context: null,
-                  reference_documents: null,
-                  constraint_boundaries: null,
-                  stakeholder_considerations: null,
-                  deliverable_format: null,
-                })),
+                  deployment_context: undefined,
+                  reference_documents: undefined,
+                  constraint_boundaries: undefined,
+                  stakeholder_considerations: undefined,
+                  deliverable_format: undefined,
+                  recipeStep: defaultStage.recipe_step,
+                }}),
               }),
             Error,
             "Failed to fetch HeaderContext",
@@ -1558,20 +1574,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               session: defaultSession,
               stage: defaultStage,
               continuationContent: "any content",
-              gatherContext: spy(async () => ({
+              gatherContext: spy(async () => { return {
                 user_objective: "",
                 domain: "",
                 agent_count: 0,
                 context_description: "",
-                original_user_request: null,
+                original_user_request: "",
                 prior_stage_ai_outputs: "",
                 prior_stage_user_feedback: "",
-                deployment_context: null,
-                reference_documents: null,
-                constraint_boundaries: null,
-                stakeholder_considerations: null,
-                deliverable_format: null,
-              })),
+                deployment_context: undefined,
+                reference_documents: undefined,
+                constraint_boundaries: undefined,
+                stakeholder_considerations: undefined,
+                deliverable_format: undefined,
+                recipeStep: defaultStage.recipe_step,
+              }}),
             });
             // 3. Assert:
             //    - The call completes successfully, proving it did not attempt to download a non-existent context.
@@ -1633,20 +1650,21 @@ Deno.test("assembleContinuationPrompt", async (t) => {
                 session: defaultSession,
                 stage: defaultStage,
                 continuationContent: "any content",
-                gatherContext: spy(async () => ({
+                gatherContext: spy(async () => { return {
                   user_objective: "",
                   domain: "",
                   agent_count: 0,
                   context_description: "",
-                  original_user_request: null,
+                  original_user_request: "",
                   prior_stage_ai_outputs: "",
                   prior_stage_user_feedback: "",
-                  deployment_context: null,
-                  reference_documents: null,
-                  constraint_boundaries: null,
-                  stakeholder_considerations: null,
-                  deliverable_format: null,
-                })),
+                  deployment_context: undefined,
+                  reference_documents: undefined,
+                  constraint_boundaries: undefined,
+                  stakeholder_considerations: undefined,
+                  deliverable_format: undefined,
+                  recipeStep: defaultStage.recipe_step,
+                }}),
               }),
             Error,
             fileManagerError.message,
@@ -1677,25 +1695,115 @@ Deno.test("assembleContinuationPrompt", async (t) => {
                 session: sessionWithNoModels,
                 stage: defaultStage,
                 continuationContent: "any content",
-                gatherContext: spy(async () => ({
+                gatherContext: spy(async () => { return {
                   user_objective: "",
                   domain: "",
                   agent_count: 0,
                   context_description: "",
-                  original_user_request: null,
+                  original_user_request: "",
                   prior_stage_ai_outputs: "",
                   prior_stage_user_feedback: "",
-                  deployment_context: null,
-                  reference_documents: null,
-                  constraint_boundaries: null,
-                  stakeholder_considerations: null,
-                  deliverable_format: null,
-                })),
+                  deployment_context: undefined,
+                  reference_documents: undefined,
+                  constraint_boundaries: undefined,
+                  stakeholder_considerations: undefined,
+                  deliverable_format: undefined,
+                  recipeStep: defaultStage.recipe_step,
+                }}),
               }),
             Error,
             "Session has no selected models",
           );
         },
       );
+
+  await t.step("Category E: Source Contribution Metadata", async (t) => {
+      await t.step(
+        "E.1: should forward sourceContributionId when continuation references a prior contribution",
+        async () => {
+          const sourceContributionId = "contrib-123";
+          const mockContinuationJob: DialecticJobRow = {
+            id: "job-cont-source-link",
+            job_type: "EXECUTE",
+            payload: {
+              model_id: "model-123",
+              model_slug: "test-model",
+              target_contribution_id: sourceContributionId,
+            },
+            session_id: defaultSession.id,
+            stage_slug: defaultStage.slug,
+            iteration_number: 1,
+            status: "pending",
+            user_id: defaultProject.user_id,
+            is_test_job: false,
+            created_at: new Date().toISOString(),
+            attempt_count: 0,
+            completed_at: null,
+            error_details: null,
+            max_retries: 3,
+            parent_job_id: null,
+            prerequisite_job_id: null,
+            results: null,
+            started_at: null,
+            target_contribution_id: sourceContributionId,
+          };
+          const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+              ai_providers: {
+                select: {
+                  data: [{
+                    id: "model-123",
+                    name: "Test Model",
+                    provider: "test",
+                    slug: "test-model",
+                  }],
+                },
+              },
+            },
+          };
+          const { client, fileManager } = setup(config);
+          fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+          const partialContent = "continuation content";
+
+          try {
+            await assembleContinuationPrompt({
+              dbClient: client,
+              fileManager,
+              job: mockContinuationJob,
+              project: defaultProject,
+              session: defaultSession,
+              stage: defaultStage,
+              continuationContent: partialContent,
+              gatherContext: spy(async () => { return {
+                user_objective: "",
+                domain: "",
+                agent_count: 0,
+                context_description: "",
+                original_user_request: "",
+                prior_stage_ai_outputs: "",
+                prior_stage_user_feedback: "",
+                deployment_context: undefined,
+                reference_documents: undefined,
+                constraint_boundaries: undefined,
+                stakeholder_considerations: undefined,
+                deliverable_format: undefined,
+                recipeStep: defaultStage.recipe_step,
+              }}),
+            });
+
+            assertSpyCall(fileManager.uploadAndRegisterFile, 0);
+            const uploadArgs =
+              fileManager.uploadAndRegisterFile.calls[0].args[0];
+            assertEquals(
+              uploadArgs.pathContext.sourceContributionId,
+              sourceContributionId,
+            );
+          } finally {
+            teardown();
+          }
+        },
+      );
+    },
+  );
     });
   });

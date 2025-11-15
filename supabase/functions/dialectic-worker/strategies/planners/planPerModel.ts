@@ -48,6 +48,10 @@ export const planPerModel: GranularityPlannerFn = (
 	// It assumes all source documents are inputs for this single job.
 
 	const anchorDoc = sourceDocs[0];
+	const sourceContributionId =
+		anchorDoc && typeof anchorDoc.id === 'string' && anchorDoc.id.length > 0
+			? anchorDoc.id
+			: null;
 	const canonicalPathParams = createCanonicalPathParams(
 		sourceDocs,
 		recipeStep.output_type,
@@ -83,6 +87,7 @@ export const planPerModel: GranularityPlannerFn = (
 		canonicalPathParams,
 		document_relationships: document_relationships,
 		inputs,
+		sourceContributionId,
 		walletId: parentJob.payload.walletId,
 	};
 

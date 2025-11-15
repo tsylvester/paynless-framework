@@ -30,6 +30,10 @@ export const planAllToOne: GranularityPlannerFn = (
     }
 
     const documentIds = sourceDocs.map(doc => doc.id);
+    const anchorDocument = sourceDocs[0];
+    if (!anchorDocument) {
+        throw new Error('planAllToOne requires at least one source document to build its payload.');
+    }
 
     if(!isModelContributionFileType(recipeStep.output_type)) {
         throw new Error(`Invalid output_type for planAllToOne: ${recipeStep.output_type}`);
@@ -42,7 +46,8 @@ export const planAllToOne: GranularityPlannerFn = (
         iterationNumber: parentJob.payload.iterationNumber,
         model_id: parentJob.payload.model_id,
         output_type: recipeStep.output_type,
-        canonicalPathParams: createCanonicalPathParams(sourceDocs, recipeStep.output_type, sourceDocs[0], stageSlug),
+        canonicalPathParams: createCanonicalPathParams(sourceDocs, recipeStep.output_type, anchorDocument, stageSlug),
+        sourceContributionId: anchorDocument.id,
         // Set job-specific properties
         job_type: 'execute',
         prompt_template_id: recipeStep.prompt_template_id,

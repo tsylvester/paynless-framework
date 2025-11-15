@@ -41,6 +41,8 @@ import {
     isContextForDocument,
     isRenderedDocumentArtifact,
     isAssembledJsonArtifact,
+    isEditedDocumentResource,
+    isSaveContributionEditSuccessResponse,
 } from './type_guards.dialectic.ts';
 import { 
     BranchKey, 
@@ -67,6 +69,7 @@ import {
     ContextForDocument,
     RenderedDocumentArtifact,
     AssembledJsonArtifact,
+    EditedDocumentResource,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 import { ContinueReason, FinishReason } from '../../types.ts';
@@ -2718,6 +2721,101 @@ Deno.test('Type Guard: isRenderedDocumentArtifact', async (t) => {
             content_to_include: { executive_summary: '', next_steps: '' },
         };
         assert(isRenderedDocumentArtifact(dynamicDocumentArtifact));
+    });
+});
+
+Deno.test('Type Guard: isEditedDocumentResource', async (t) => {
+    const baseResource: EditedDocumentResource = {
+        id: 'resource-1',
+        resource_type: 'rendered_document',
+        project_id: 'project-1',
+        session_id: 'session-1',
+        stage_slug: 'thesis',
+        iteration_number: 1,
+        document_key: FileType.business_case,
+        source_contribution_id: 'contrib-1',
+        storage_bucket: 'dialectic_project_resources',
+        storage_path: 'project-1/session_ABC/stage',
+        file_name: 'thesis_business_case.md',
+        mime_type: 'text/markdown',
+        size_bytes: 1024,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    await t.step('should return true for a fully-populated resource', () => {
+        assert(isEditedDocumentResource(baseResource));
+    });
+
+    await t.step('should return true when optional fields are null', () => {
+        const nullableResource: EditedDocumentResource = {
+            ...baseResource,
+            resource_type: null,
+            project_id: null,
+            session_id: null,
+            stage_slug: null,
+            iteration_number: null,
+            document_key: null,
+            source_contribution_id: null,
+        };
+        assert(isEditedDocumentResource(nullableResource));
+    });
+
+    await t.step('should return false when a required string field is missing', () => {
+        const invalid = { ...baseResource };
+        delete (invalid as Partial<EditedDocumentResource>).file_name;
+        assert(!isEditedDocumentResource(invalid));
+    });
+
+    await t.step('should return false when a required number field has the wrong type', () => {
+        const invalid = { ...baseResource, size_bytes: 'big' as unknown as number };
+        assert(!isEditedDocumentResource(invalid));
+    });
+});
+
+Deno.test('Type Guard: isSaveContributionEditSuccessResponse', async (t) => {
+    const resource: EditedDocumentResource = {
+        id: 'resource-2',
+        resource_type: 'rendered_document',
+        project_id: 'project-2',
+        session_id: 'session-2',
+        stage_slug: 'synthesis',
+        iteration_number: 2,
+        document_key: FileType.synthesis_document_business_case,
+        source_contribution_id: 'contrib-2',
+        storage_bucket: 'dialectic_project_resources',
+        storage_path: 'project-2/session_DEF/stage',
+        file_name: 'synthesis_business_case.md',
+        mime_type: 'text/markdown',
+        size_bytes: 2048,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    await t.step('should return true for a valid success response', () => {
+        const response = {
+            sourceContributionId: 'contrib-2',
+            resource,
+        };
+        assert(isSaveContributionEditSuccessResponse(response));
+    });
+
+    await t.step('should return false when sourceContributionId is missing', () => {
+        const response = {
+            resource,
+        };
+        assert(!isSaveContributionEditSuccessResponse(response));
+    });
+
+    await t.step('should return false when resource is invalid', () => {
+        const response = {
+            sourceContributionId: 'contrib-2',
+            resource: {
+                ...resource,
+                file_name: 123,
+            },
+        };
+        assert(!isSaveContributionEditSuccessResponse(response));
     });
 });
 

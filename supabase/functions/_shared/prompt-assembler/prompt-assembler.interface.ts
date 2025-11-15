@@ -26,6 +26,7 @@ export interface AssembleTurnPromptDeps {
   stage: StageContext;
   gatherContext: GatherContextFn;
   render: RenderFn;
+  sourceContributionId?: string | null;
 }
 
 export interface AssembleContinuationPromptDeps {
@@ -37,6 +38,7 @@ export interface AssembleContinuationPromptDeps {
   stage: StageContext;
   continuationContent: string;
   gatherContext: GatherContextFn;
+  sourceContributionId?: string | null;
 }
 export interface AssemblePlannerPromptDeps {
   dbClient: SupabaseClient<Database>;
@@ -47,6 +49,7 @@ export interface AssemblePlannerPromptDeps {
   stage: StageContext;
   gatherContext: GatherContextFn;
   render: RenderFn;
+  sourceContributionId?: string | null;
 }
 
 export interface AssembleSeedPromptDeps {
@@ -63,6 +66,7 @@ export interface AssembleSeedPromptDeps {
     stage: StageContext;
     projectInitialUserPrompt: string;
     iterationNumber: number;
+    sourceContributionId?: string | null;
   }
   
   export type AssembleSeedPromptFn = (
@@ -98,6 +102,7 @@ export type AssemblePromptOptions = {
     iterationNumber: number;
     job?: DialecticJobRow;
     continuationContent?: string;
+    sourceContributionId?: string | null;
 };
 
 export type DynamicContextVariables = {

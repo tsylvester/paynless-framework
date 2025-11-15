@@ -83,7 +83,7 @@ Deno.test('planPerSourceDocumentByLineage', async (t) => {
         prompt_template_id: 'tmpl-12345',
         output_type: FileType.ReducedSynthesis,
         granularity_strategy: 'per_source_document_by_lineage',
-        inputs_required: [{ type: 'document', slug: 'pairwise_synthesis_chunk', document_key: 'pairwise_synthesis_chunk', required: true }],
+        inputs_required: [{ type: 'document', slug: 'pairwise_synthesis_chunk', document_key: FileType.PairwiseSynthesisChunk, required: true }],
         job_type: 'EXECUTE',
         prompt_type: 'Turn',
         branch_key: null,
@@ -287,7 +287,7 @@ Deno.test('planPerSourceDocumentByLineage should treat a doc without a source_gr
         prompt_template_id: 'tmpl-antithesis-54321',
         output_type: FileType.business_case_critique,
         granularity_strategy: 'per_source_document_by_lineage',
-        inputs_required: [{ type: 'document', slug: 'thesis', document_key: 'business_case', required: true }],
+        inputs_required: [{ type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true }],
         job_type: 'EXECUTE',
         prompt_type: 'Turn',
         branch_key: null,
@@ -329,4 +329,115 @@ Deno.test('planPerSourceDocumentByLineage should treat a doc without a source_gr
         assertEquals((childPayload as any).prompt_template_name, undefined, "prompt_template_name should be undefined.");
         assertEquals(childPayload.output_type, FileType.business_case_critique);
     });
+});
+
+Deno.test('planPerSourceDocumentByLineage surfaces sourceContributionId for lineage documents', () => {
+    const lineageDocId = 'lineage-contrib-789';
+    const netNewDocId = 'net-new-doc-123';
+
+    const getMockSourceDoc = (docId: string, sourceGroup: string | null): SourceDocument => ({
+        id: docId,
+        session_id: 'sess-id',
+        contribution_type: 'pairwise_synthesis_chunk',
+        model_id: 'model-a-id',
+        model_name: `model-${docId}-model`,
+        content: `content for ${docId}`,
+        user_id: 'user-id',
+        stage: 'synthesis',
+        iteration_number: 1,
+        prompt_template_id_used: 'prompt-a',
+        seed_prompt_url: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        target_contribution_id: null,
+        tokens_used_input: 10,
+        tokens_used_output: 10,
+        processing_time_ms: 100,
+        error: null,
+        citations: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: `file-${docId}`,
+        storage_bucket: 'bucket',
+        storage_path: `path-${docId}`,
+        size_bytes: 100,
+        mime_type: 'text/plain',
+        document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
+        is_header: false,
+        source_prompt_resource_id: null,
+    });
+
+    const mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        id: 'parent-job-id',
+        created_at: new Date().toISOString(),
+        status: 'in_progress',
+        user_id: 'user-id',
+        session_id: 'sess-id',
+        iteration_number: 1,
+        parent_job_id: null,
+        attempt_count: 1,
+        max_retries: 3,
+        completed_at: null,
+        error_details: null,
+        prerequisite_job_id: null,
+        results: null,
+        stage_slug: 'synthesis',
+        started_at: new Date().toISOString(),
+        target_contribution_id: null,
+        payload: {
+            projectId: 'proj-id',
+            sessionId: 'sess-id',
+            stageSlug: 'synthesis',
+            job_type: 'PLAN',
+            model_id: 'model-a-id',
+            walletId: 'wallet-default',
+        },
+        is_test_job: false,
+        job_type: 'PLAN',
+    };
+
+    const mockRecipeStep: DialecticRecipeStep = {
+        id: 'recipe-step-id-lineage',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        template_id: 'template-id-lineage',
+        step_key: 'lineage-step-key',
+        step_slug: 'lineage-step-slug',
+        step_description: 'Lineage coverage',
+        step_number: 2,
+        step_name: 'lineage-step',
+        prompt_template_id: 'tmpl-lineage-123',
+        output_type: FileType.ReducedSynthesis,
+        granularity_strategy: 'per_source_document_by_lineage',
+        inputs_required: [{ type: 'document', slug: 'pairwise_synthesis_chunk', document_key: FileType.PairwiseSynthesisChunk, required: true }],
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        branch_key: null,
+        parallel_group: null,
+        inputs_relevance: [],
+        outputs_required: { documents: [], assembled_json: [], files_to_generate: [] },
+    };
+
+    const lineageDoc = getMockSourceDoc(lineageDocId, 'lineage-group-a');
+    const netNewDoc = getMockSourceDoc(netNewDocId, null);
+
+    const childPayloads = planPerSourceDocumentByLineage([lineageDoc, netNewDoc], mockParentJob, mockRecipeStep, 'user-jwt-123');
+
+    const lineagePayload = childPayloads.find((payload) => payload.document_relationships?.source_group === 'lineage-group-a');
+    assertExists(lineagePayload, 'Expected payload for lineage group to exist');
+    assertEquals(
+        lineagePayload.sourceContributionId,
+        lineageDocId,
+        'Lineage-backed payload must surface the originating contribution id'
+    );
+
+    const netNewPayload = childPayloads.find((payload) => payload.document_relationships?.source_group === netNewDocId);
+    assertExists(netNewPayload, 'Expected payload for net-new document lineage to exist');
+    assertEquals(
+        netNewPayload.sourceContributionId,
+        null,
+        'Net-new lineage payloads must omit sourceContributionId'
+    );
 });

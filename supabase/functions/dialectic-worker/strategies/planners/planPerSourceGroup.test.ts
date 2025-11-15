@@ -1,5 +1,5 @@
 // supabase/functions/dialectic-worker/strategies/planners/planPerSourceGroup.test.ts
-import { assertEquals, assertExists, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
+import { assertEquals, assertExists, assert, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import type { DialecticJobRow, DialecticRecipeStep, SourceDocument, DialecticPlanJobPayload, DocumentRelationships } from '../../../dialectic-service/dialectic.interface.ts';
 import { planPerSourceGroup } from './planPerSourceGroup.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
@@ -91,7 +91,7 @@ const MOCK_RECIPE_STEP: DialecticRecipeStep = {
     step_name: 'Consolidate Per-Thesis Syntheses',
     prompt_template_id: 'synthesis_step2_combine',
     granularity_strategy: 'per_source_group',
-    inputs_required: [{ type: 'document', slug: 'thesis', document_key: 'business_case', required: true }],
+    inputs_required: [{ type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true }],
     output_type: FileType.ReducedSynthesis,
     job_type: 'EXECUTE',
     prompt_type: 'Turn',
@@ -110,6 +110,7 @@ Deno.test('planPerSourceGroup should create one child job for each group of rela
     const job1 = childJobs.find(j => j.document_relationships?.source_group === 'thesis-1');
     assertExists(job1, "Job for group 'thesis-1' should exist");
     assertEquals(job1.job_type, 'execute');
+    assertEquals(job1?.sourceContributionId, 'thesis-1');
     
     // UPDATED Assertions for modern contract
     assertExists(job1.prompt_template_id, "prompt_template_id should exist on the new payload.");
@@ -132,6 +133,7 @@ Deno.test('planPerSourceGroup should create one child job for each group of rela
     assertEquals(job2Inputs?.length, 2);
     assert(job2Inputs?.includes('chunk-2a'));
     assert(job2Inputs?.includes('chunk-2b'));
+    assertEquals(job2?.sourceContributionId, 'thesis-2');
 });
 
 Deno.test('planPerSourceGroup should return an empty array if no documents have a source group', () => {
@@ -159,5 +161,20 @@ Deno.test('planPerSourceGroup constructs child payloads with dynamic stage consi
 	assertEquals(childJobs.length > 0, true, 'Planner should produce one job per group');
 	for (const child of childJobs) {
 		assertEquals(child.stageSlug, expectedStage, 'Child payload.stageSlug must equal parent.payload.stageSlug');
+        assertEquals(
+            child.sourceContributionId,
+            child.document_relationships?.source_group,
+            'Child payload must expose the canonical source contribution id'
+        );
 	}
+});
+
+Deno.test('planPerSourceGroup throws when a source group lacks its canonical anchor', () => {
+    const docsMissingAnchor = MOCK_SOURCE_DOCS.filter(doc => doc.id !== 'thesis-2');
+
+    assertThrows(
+        () => planPerSourceGroup(docsMissingAnchor, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123'),
+        Error,
+        'planPerSourceGroup missing anchor SourceDocument for group thesis-2',
+    );
 });

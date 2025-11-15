@@ -1,4 +1,4 @@
-import { assertThrows, assertEquals, assert } from "jsr:@std/assert@0.225.3";
+import { assertThrows, assertEquals } from "jsr:@std/assert@0.225.3";
 import {
   spy,
   stub,
@@ -26,12 +26,17 @@ import {
   type RenderPromptFunctionType,
   type DynamicContextVariables,
 } from "./prompt-assembler.interface.ts";
-import { IFileManager, FileType } from "../types/file_manager.types.ts";
+import {
+  IFileManager,
+  FileType,
+  UploadContext,
+} from "../types/file_manager.types.ts";
+import type { ServiceError } from "../types.ts";
 import { FileManagerService } from "../services/file_manager.ts";
 import {
   DialecticJobRow,
-  DialecticRecipeStep,
   DialecticStageRecipeStep,
+  OutputRule,
 } from "../../dialectic-service/dialectic.interface.ts";
 
 
@@ -103,6 +108,15 @@ const mockSession: SessionContext = {
   user_input_reference_url: null,
 };
 
+const mockOutputRule: OutputRule = {
+  documents: [{
+    artifact_class: "rendered_document",
+    file_type: "markdown",
+    document_key: FileType.HeaderContext,
+    template_filename: "template.md",
+  }],
+};
+
 const mockRecipeStep: DialecticStageRecipeStep = {
   id: "recipe-step-id",
   created_at: new Date().toISOString(),
@@ -113,7 +127,7 @@ const mockRecipeStep: DialecticStageRecipeStep = {
   granularity_strategy: "all_to_one",
   inputs_required: [],
   inputs_relevance: [],
-  outputs_required: [],
+  outputs_required: mockOutputRule,
   prompt_template_id: "prompt-template-id",
   template_step_id: "template-step-id",
   branch_key: "main",
@@ -525,6 +539,89 @@ Deno.test("PromptAssembler", async (t) => {
 
         assertSpyCalls(continuationSpy, 1);
       } finally {
+        teardown();
+      }
+    },
+  );
+
+  await t.step("assemble should pass sourceContributionId through to upload context", async () => {
+      const expectedSourceContributionId = "source-contribution-123";
+      const uploadContext: UploadContext = {
+        fileContent: "seed prompt",
+        mimeType: "text/plain",
+        sizeBytes: 10,
+        userId: null,
+        description: "seed prompt upload",
+        pathContext: {
+          projectId: mockProject.id,
+          fileType: FileType.SeedPrompt,
+          sourceContributionId: expectedSourceContributionId,
+        },
+      };
+
+      const { client, fileManager } = setup({
+        "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+      });
+
+      const uploadSpy = stub(
+        fileManager!,
+        "uploadAndRegisterFile",
+        async () => ({
+          record: null,
+          error: { message: "test stub" },
+        }),
+      );
+
+      try {
+        const assembleSeedPromptStub = spy(
+          async (deps: AssembleSeedPromptDeps): Promise<AssembledPrompt> => {
+            const assembledUploadContext: UploadContext = {
+              fileContent: "seed prompt",
+              mimeType: "text/plain",
+              sizeBytes: 10,
+              userId: null,
+              description: "seed prompt upload",
+              pathContext: {
+                projectId: deps.project.id,
+                fileType: FileType.SeedPrompt,
+                sourceContributionId: deps.sourceContributionId ?? null,
+              },
+            };
+            await deps.fileManager.uploadAndRegisterFile(
+              assembledUploadContext,
+            );
+            return mockAssembleSeedPrompt(deps);
+          },
+        );
+
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          assembleSeedPromptStub,
+        );
+
+        const options: AssemblePromptOptions = {
+          project: mockProject,
+          session: mockSession,
+          stage: mockStage,
+          projectInitialUserPrompt: "init prompt",
+          iterationNumber: 1,
+          sourceContributionId: expectedSourceContributionId,
+        };
+
+        await assembler.assemble(options);
+
+        assertSpyCalls(assembleSeedPromptStub, 1);
+        assertSpyCalls(uploadSpy, 1);
+        const actualUploadContext = uploadSpy.calls[0].args[0];
+        assertEquals(
+          actualUploadContext.pathContext.sourceContributionId,
+          uploadContext.pathContext.sourceContributionId,
+        );
+      } finally {
+        uploadSpy.restore();
         teardown();
       }
     },

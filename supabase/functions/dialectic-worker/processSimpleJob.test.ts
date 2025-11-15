@@ -4,24 +4,37 @@ import {
   assert,
 } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { spy, stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
-import type { Database, Tables, Json } from '../types_db.ts';
+import { Database, Tables, Json } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
-import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
+import { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { logger } from '../_shared/logger.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { isDialecticJobPayload, isJson, isRecord } from '../_shared/utils/type_guards.ts';
+import { 
+  isDialecticExecuteJobPayload, 
+  isDialecticJobPayload, 
+  isJson, 
+  isRecord,
+  isDialecticJobRow 
+} from '../_shared/utils/type_guards.ts';
 import { processSimpleJob } from './processSimpleJob.ts';
-import type { 
+import { 
     DialecticJobRow, 
     DialecticSession, 
     DialecticContributionRow, 
     IDialecticJobDeps, 
     SelectedAiProvider, 
-    DialecticJobPayload, 
+    DialecticJobPayload,
+    DialecticExecuteJobPayload,
+    ExecuteModelCallAndSaveParams, 
+    DialecticRecipeTemplateStep,
+    DialecticStageRecipeStep,
+    OutputRule,
+    InputRule,
+    RelevanceRule,
 } from '../dialectic-service/dialectic.interface.ts';
-import type { AiModelExtendedConfig } from '../_shared/types.ts';
-import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
+import { AiModelExtendedConfig } from '../_shared/types.ts';
+import { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { getGranularityPlanner } from './strategies/granularity.strategies.ts';
@@ -29,7 +42,7 @@ import { IndexingService, LangchainTextSplitter, EmbeddingClient } from '../_sha
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
 import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 import { MockPromptAssembler, MOCK_ASSEMBLED_PROMPT } from '../_shared/prompt-assembler/prompt-assembler.mock.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
+import { FileType, ModelContributionUploadContext } from '../_shared/types/file_manager.types.ts';
 // Helper: wrap a PromptAssembler to forbid direct calls to legacy methods
 function wrapAssemblerForbidLegacy<T extends object>(assembler: T): T {
   const forbidden = new Set(['gatherContext', 'render', 'gatherInputsForStage', 'gatherContinuationInputs']);
@@ -59,6 +72,8 @@ const mockPayload: Json = {
 if (!isDialecticJobPayload(mockPayload)) {
   throw new Error("Test setup failed: mockPayload is not a valid DialecticJobPayload.");
 }
+
+const defaultStepSlug = 'test-stage';
 
 // Define a type for our mock job for clarity
 const mockJob: DialecticJobRow = {
@@ -187,6 +202,125 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
         active_recipe_instance_id: null,
         recipe_template_id: 'template-123',
     };
+
+    const templateInputsRequired: InputRule[] = [
+        {
+            type: 'document',
+            slug: defaultStepSlug,
+            document_key: FileType.business_case,
+            required: true,
+            section_header: 'Business Case Inputs',
+        },
+        {
+            type: 'document',
+            slug: defaultStepSlug,
+            document_key: FileType.feature_spec,
+            required: true,
+        },
+        {
+            type: 'header_context',
+            slug: defaultStepSlug,
+            document_key: FileType.HeaderContext,
+            required: true,
+            section_header: 'Planner Context',
+        },
+    ];
+
+    const templateInputsRelevance: RelevanceRule[] = [
+        { document_key: FileType.business_case, slug: defaultStepSlug, relevance: 1, type: 'document' },
+        { document_key: FileType.feature_spec, slug: defaultStepSlug, relevance: 0.85, type: 'document' },
+        { document_key: FileType.HeaderContext, slug: defaultStepSlug, relevance: 0.75 },
+    ];
+
+    const templateOutputsRequired: OutputRule = {
+        system_materials: {
+            stage_rationale: 'Align business case with feature spec for this iteration.',
+            executive_summary: 'Summarize the dialectic findings across artifacts.',
+            input_artifacts_summary: 'Business case + feature spec + header context.',
+            quality_standards: ['Tie evidence directly to documents', 'Preserve prior commitments'],
+            validation_checkpoint: ['All referenced artifacts exist', 'Instructions follow dependency order'],
+            document_order: ['business_case'],
+            current_document: 'business_case',
+        },
+        header_context_artifact: {
+            type: 'header_context',
+            document_key: 'header_context',
+            artifact_class: 'header_context',
+            file_type: 'json',
+        },
+        context_for_documents: [
+            {
+                document_key: FileType.business_case,
+                content_to_include: {
+                    focus: 'doc-centric deliverable summary',
+                    reasoning_chain: true,
+                },
+            },
+        ],
+        documents: [
+            {
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                document_key: FileType.business_case,
+                template_filename: 'business_case.md',
+                content_to_include: {
+                    enforce_style: 'doc-centric',
+                },
+            },
+        ],
+    };
+
+    const stageInputsRequired: InputRule[] = [
+        {
+            type: 'document',
+            slug: defaultStepSlug,
+            document_key: FileType.business_case,
+            required: true,
+        },
+        {
+            type: 'document',
+            slug: defaultStepSlug,
+            document_key: FileType.feature_spec,
+            required: true,
+        },
+        {
+            type: 'header_context',
+            slug: defaultStepSlug,
+            document_key: FileType.HeaderContext,
+            required: true,
+        },
+    ];
+
+    const stageInputsRelevance: RelevanceRule[] = [
+        { document_key: FileType.business_case, slug: defaultStepSlug, relevance: 1 },
+        { document_key: FileType.feature_spec, slug: defaultStepSlug, relevance: 0.85 },
+        { document_key: FileType.HeaderContext, slug: defaultStepSlug, relevance: 0.75 },
+    ];
+
+    const stageOutputsRequired: OutputRule = {
+        system_materials: {
+            stage_rationale: 'Align business case with feature spec for this iteration.',
+            executive_summary: 'Summarize the dialectic findings across artifacts.',
+            input_artifacts_summary: 'Business case + feature spec + header context.',
+            validation_checkpoint: ['All referenced artifacts exist', 'Instructions follow dependency order'],
+            document_order: ['business_case'],
+            current_document: 'business_case',
+        },
+        header_context_artifact: {
+            type: 'header_context',
+            document_key: 'header_context',
+            artifact_class: 'header_context',
+            file_type: 'json',
+        },
+        documents: [
+            {
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                document_key: FileType.business_case,
+                template_filename: 'business_case.md',
+            },
+        ],
+    };
     
     return createMockSupabaseClient('user-789', {
         genericMockResults: {
@@ -224,22 +358,22 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
             // Provide default template step rows for recipe resolution by ID or by (template_id, step_slug)
             dialectic_recipe_template_steps: {
                 select: (state: any) => {
-                    const defaultStep = {
+                    const defaultStep: DialecticRecipeTemplateStep = {
                         id: 'step-1',
                         template_id: 'template-123',
                         step_number: 1,
                         step_key: 'seed',
                         step_slug: 'seed',
-                        step_name: 'Assemble Seed Prompt',
-                        step_description: 'Test seed step',
+                        step_name: 'Doc-centric execution step',
+                        step_description: 'Generate the main business case document.',
                         job_type: 'EXECUTE',
-                        prompt_type: 'Seed',
+                        prompt_type: 'Turn',
                         prompt_template_id: 'prompt-123',
-                        output_type: 'model_contribution_main',
+                        output_type: FileType.business_case,
                         granularity_strategy: 'per_source_document',
-                        inputs_required: [],
-                        inputs_relevance: [],
-                        outputs_required: [],
+                        inputs_required: templateInputsRequired,
+                        inputs_relevance: templateInputsRelevance,
+                        outputs_required: templateOutputsRequired,
                         parallel_group: null,
                         branch_key: null,
                         created_at: new Date().toISOString(),
@@ -259,12 +393,56 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
                     return Promise.resolve({ data: [], error: null });
                 },
             },
+            dialectic_stage_recipe_steps: {
+                select: (state: any) => {
+                    const defaultStageStep: DialecticStageRecipeStep = {
+                        id: 'stage-step-1',
+                        instance_id: 'instance-1',
+                        template_step_id: 'step-1',
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        step_key: 'seed',
+                        step_slug: 'seed',
+                        step_name: 'Doc-centric execution step',
+                        step_description: 'Generate the main business case document.',
+                        job_type: 'EXECUTE',
+                        prompt_type: 'Turn',
+                        output_type: FileType.business_case,
+                        granularity_strategy: 'per_source_document',
+                        inputs_required: stageInputsRequired,
+                        inputs_relevance: stageInputsRelevance,
+                        outputs_required: stageOutputsRequired,
+                        config_override: { temperature: 0.2 },
+                        object_filter: { branch_key: 'business_case' },
+                        output_overrides: { document_key: FileType.business_case },
+                        is_skipped: false,
+                        parallel_group: null,
+                        branch_key: null,
+                        prompt_template_id: 'prompt-123',
+                        execution_order: 1,
+                    };
+
+                    const filters = Array.isArray(state?.filters) ? state.filters : [];
+                    const matchesId = filters.some((f: any) => f.type === 'eq' && f.column === 'id' && f.value === defaultStageStep.id);
+                    if (matchesId) {
+                        return Promise.resolve({ data: [defaultStageStep], error: null });
+                    }
+
+                    const matchesInstance = filters.some((f: any) => f.type === 'eq' && f.column === 'instance_id' && f.value === defaultStageStep.instance_id);
+                    const matchesSlug = filters.some((f: any) => f.type === 'eq' && f.column === 'step_slug' && typeof f.value === 'string');
+                    if (matchesInstance && matchesSlug) {
+                        return Promise.resolve({ data: [defaultStageStep], error: null });
+                    }
+
+                    return Promise.resolve({ data: [], error: null });
+                },
+            },
             ...configOverrides,
         },
     });
 };
 
-const getMockDeps = (): { deps: IDialecticJobDeps, promptAssembler: MockPromptAssembler } => {
+const getMockDeps = (): { deps: IDialecticJobDeps, promptAssembler: MockPromptAssembler, fileManager: MockFileManagerService } => {
     const mockSupabaseClient = createMockSupabaseClient().client as unknown as SupabaseClient<Database>;
     const mockModelConfig: AiModelExtendedConfig = {
         api_identifier: 'mock-embedding-model',
@@ -335,7 +513,7 @@ const getMockDeps = (): { deps: IDialecticJobDeps, promptAssembler: MockPromptAs
       promptAssembler: promptAssembler,
       documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
     }
-    return { deps, promptAssembler };
+    return { deps, promptAssembler, fileManager };
 };
 
 Deno.test('processSimpleJob - Happy Path', async (t) => {
@@ -396,7 +574,7 @@ Deno.test('processSimpleJob - emits document_started at EXECUTE job start', asyn
   assertEquals(payloadArg.sessionId, executeJob.session_id);
   assertEquals(payloadArg.stageSlug, executeJob.stage_slug);
   assertEquals(payloadArg.job_id, executeJob.id);
-  assertEquals(payloadArg.document_key, 'model_contribution_main');
+  assertEquals(payloadArg.document_key, 'business_case');
   assertEquals(payloadArg.modelId, 'model-def');
   assertEquals(payloadArg.iterationNumber, 1);
   assertEquals(targetUserId, 'user-789');
@@ -829,6 +1007,203 @@ Deno.test('processSimpleJob - fails when stage overlays are missing (no render, 
   clearAllStubs?.();
 });
 
+Deno.test('processSimpleJob - forwards sourceContributionId for continuation uploads', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient();
+  const { deps } = getMockDeps();
+
+  const continuationContributionId = 'root-contrib-123';
+  const continuationPayload: DialecticJobPayload = {
+    ...mockPayload,
+    target_contribution_id: continuationContributionId,
+  };
+
+  if (!isJson(continuationPayload)) {
+    throw new Error('Test setup failed: continuationPayload is not valid Json.');
+  }
+
+  const continuationJob: DialecticJobRow & { payload: DialecticJobPayload } = {
+    ...mockJob,
+    payload: continuationPayload,
+    target_contribution_id: continuationContributionId,
+  };
+
+  const recordedCalls: ExecuteModelCallAndSaveParams[] = [];
+  deps.executeModelCallAndSave = async (params: ExecuteModelCallAndSaveParams) => {
+    recordedCalls.push(params);
+  };
+
+  try {
+    await processSimpleJob(
+      dbClient as unknown as SupabaseClient<Database>,
+      continuationJob,
+      'user-789',
+      deps,
+      'auth-token',
+    );
+  } catch (_e) {
+    // Existing implementation may throw once executor runs; the recorded call is the RED signal.
+  }
+
+  assertEquals(recordedCalls.length, 1, 'Expected executeModelCallAndSave to be invoked once for continuation job.');
+  const [executorParams] = recordedCalls;
+  const payload = executorParams.promptConstructionPayload;
+
+  assertEquals(
+    payload.sourceContributionId,
+    continuationContributionId,
+    'PromptConstructionPayload must include sourceContributionId for continuation uploads.',
+  );
+
+  clearAllStubs?.();
+});
+
+Deno.test('processSimpleJob - continuations push sourceContributionId into FileManager path context', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient();
+  const { deps, fileManager } = getMockDeps();
+
+  const continuationContributionId = 'root-contrib-456';
+  const continuationPayload: DialecticExecuteJobPayload = {
+    projectId: 'project-abc',
+    sessionId: 'session-456',
+    stageSlug: 'test-stage',
+    model_id: 'model-def',
+    iterationNumber: 1,
+    continueUntilComplete: false,
+    walletId: 'wallet-ghi',
+    user_jwt: 'jwt.token.here',
+    planner_metadata: { recipe_step_id: 'step-1', recipe_template_id: 'template-123' },
+    job_type: 'execute',
+    prompt_template_id: 'prompt-123',
+    output_type: FileType.business_case,
+    canonicalPathParams: {
+      contributionType: 'thesis',
+      stageSlug: 'test-stage',
+    },
+    inputs: {
+      header_context: 'resource-1',
+    },
+    document_key: 'business_case',
+    branch_key: null,
+    parallel_group: null,
+    document_relationships: { thesis: continuationContributionId },
+    isIntermediate: false,
+    target_contribution_id: continuationContributionId,
+    continuation_count: 1,
+  };
+
+  if (!isJson(continuationPayload)) {
+    throw new Error('Test setup failed: continuationPayload is not valid Json.');
+  }
+  const continuationJob = {
+    ...mockJob,
+    payload: continuationPayload,
+    target_contribution_id: continuationContributionId,
+  };
+
+  deps.executeModelCallAndSave = async (params: ExecuteModelCallAndSaveParams) => {
+    if (!isDialecticJobPayload(params.job.payload)) {
+      throw new Error('Test setup failed: job payload is not DialecticJobPayload.');
+    }
+    const payloadCandidate = params.job.payload;
+    if (!isDialecticExecuteJobPayload(payloadCandidate)) {
+      throw new Error('Test setup failed: payload is not DialecticExecuteJobPayload.');
+    }
+    const payload = payloadCandidate;
+    const promptContent = params.promptConstructionPayload.currentUserPrompt;
+    if (typeof promptContent !== 'string' || promptContent.length === 0) {
+      throw new Error('Test setup failed: prompt content missing for continuation job.');
+    }
+
+    const pathContext: ModelContributionUploadContext['pathContext'] = {
+      projectId: payload.projectId,
+      fileType: continuationPayload.output_type,
+      sessionId: payload.sessionId,
+      iteration: payload.iterationNumber,
+      stageSlug: payload.stageSlug,
+      contributionType: continuationPayload.canonicalPathParams.contributionType,
+      modelSlug: params.providerDetails.api_identifier,
+      attemptCount: params.job.attempt_count,
+      isContinuation: true,
+    };
+
+    if (typeof continuationPayload.continuation_count === 'number') {
+      pathContext.turnIndex = continuationPayload.continuation_count;
+    }
+    if (typeof params.promptConstructionPayload.sourceContributionId === 'string') {
+      pathContext.sourceContributionId = params.promptConstructionPayload.sourceContributionId;
+    }
+
+    if(!payload.stageSlug) {
+      throw new Error('Test setup failed: payload.stageSlug is missing.');
+    }
+    if(!payload.iterationNumber) {
+      throw new Error('Test setup failed: payload.iterationNumber is missing.');
+    }
+    if(!continuationPayload.canonicalPathParams.contributionType) {
+      throw new Error('Test setup failed: continuationPayload.canonicalPathParams.contributionType is missing.');
+    }
+    const uploadContext: ModelContributionUploadContext = {
+      pathContext,
+      fileContent: promptContent,
+      mimeType: 'text/plain',
+      sizeBytes: promptContent.length,
+      userId: params.projectOwnerUserId,
+      description: `Continuation upload for ${continuationPayload.stageSlug}`,
+      contributionMetadata: {
+        sessionId: payload.sessionId,
+        modelIdUsed: params.providerDetails.id,
+        modelNameDisplay: params.providerDetails.name,
+        stageSlug: payload.stageSlug,
+        iterationNumber: payload.iterationNumber,
+        contributionType: continuationPayload.canonicalPathParams.contributionType,
+        rawJsonResponseContent: { prompt: promptContent },
+        tokensUsedInput: promptContent.length,
+        tokensUsedOutput: 0,
+        processingTimeMs: 0,
+        source_prompt_resource_id: params.promptConstructionPayload.source_prompt_resource_id,
+        target_contribution_id: payload.target_contribution_id,
+        document_relationships: payload.document_relationships,
+        isIntermediate: payload.isIntermediate,
+      },
+    };
+
+    await fileManager.uploadAndRegisterFile(uploadContext);
+  };
+
+  deps.callUnifiedAIModel = async () => ({
+    content: JSON.stringify({
+      sections: [],
+      continuation_needed: false,
+    }),
+    finish_reason: 'stop',
+    rawProviderResponse: { finish_reason: 'stop' },
+    contentType: 'application/json',
+    inputTokens: 10,
+    outputTokens: 5,
+    processingTimeMs: 1,
+  });
+
+  await processSimpleJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    continuationJob,
+    'user-789',
+    deps,
+    'auth-token',
+  );
+
+  const uploadCalls = fileManager.uploadAndRegisterFile.calls;
+  assertEquals(uploadCalls.length, 1, 'Expected FileManager upload to be invoked once for continuation jobs.');
+  const [uploadContextArg] = uploadCalls[0].args;
+  const pathContext = uploadContextArg.pathContext;
+  assertEquals(
+    pathContext.sourceContributionId,
+    continuationContributionId,
+    'FileManager pathContext must include sourceContributionId for continuation uploads.',
+  );
+
+  clearAllStubs?.();
+});
+
 Deno.test('processSimpleJob - fails when no initial prompt exists', async () => {
   // Arrange: project with no direct prompt and no resource id
   const { client: dbClient, spies, clearAllStubs } = setupMockClient({
@@ -1128,28 +1503,54 @@ Deno.test('processSimpleJob - Preflight dependency missing is immediate failure 
 
 Deno.test('processSimpleJob - forwards recipe_step inputs_relevance and inputs_required to executor', async () => {
   // Arrange: override recipe step to include non-empty inputs_required and inputs_relevance
-  const customStep = {
+  const customOutputsRequired: OutputRule = {
+    system_materials: {
+      stage_rationale: 'Ensure business-case alignment.',
+      executive_summary: 'Summarize execution intent.',
+      input_artifacts_summary: 'Business case, feature spec, header context.',
+      document_order: ['business_case'],
+      current_document: 'business_case',
+    },
+    header_context_artifact: {
+      type: 'header_context',
+      document_key: 'header_context',
+      artifact_class: 'header_context',
+      file_type: 'json',
+    },
+    documents: [
+      {
+        artifact_class: 'rendered_document',
+        file_type: 'markdown',
+        document_key: FileType.business_case,
+        template_filename: 'business_case.md',
+        content_to_include: {
+          enforce_style: 'doc-centric',
+        },
+      },
+    ],
+  };
+  const customStep: DialecticRecipeTemplateStep = {
     id: 'step-1',
     template_id: 'template-123',
     step_number: 1,
-    step_key: 'seed',
-    step_slug: 'seed',
-    step_name: 'Assemble Seed Prompt',
-    step_description: 'Test seed step with inputs',
+    step_key: 'doc_step',
+    step_slug: 'doc-step',
+    step_name: 'Doc-centric execution step',
+    step_description: 'Test execution step with explicit inputs',
     job_type: 'EXECUTE',
-    prompt_type: 'Seed',
+    prompt_type: 'Turn',
     prompt_template_id: 'prompt-123',
-    output_type: 'document',
+    output_type: FileType.business_case,
     granularity_strategy: 'per_source_document',
     inputs_required: [
-      { type: 'document' },
-      { document_key: 'header_context' },
+      { type: 'document', slug: defaultStepSlug, document_key: FileType.business_case, required: true },
+      { type: 'header_context', slug: defaultStepSlug, document_key: FileType.HeaderContext, required: true },
     ],
     inputs_relevance: [
-      { type: 'document', stage_slug: 'test-stage', relevance: 3 },
-      { document_key: 'header_context', relevance: 2 },
+      { document_key: FileType.business_case, slug: defaultStepSlug, relevance: 0.9, type: 'document' },
+      { document_key: FileType.HeaderContext, slug: defaultStepSlug, relevance: 0.7 },
     ],
-    outputs_required: [],
+    outputs_required: customOutputsRequired,
     parallel_group: null,
     branch_key: null,
     created_at: new Date().toISOString(),
@@ -1189,7 +1590,7 @@ Deno.test('processSimpleJob - forwards recipe_step inputs_relevance and inputs_r
   // Verify selected identity fields are preserved verbatim
   const r0 = inputsRelevanceUnknown[0];
   const r1 = inputsRelevanceUnknown[1];
-  assert(isRecord(r0) && r0.type === 'document' && r0.stage_slug === 'test-stage');
+  assert(isRecord(r0) && r0.type === 'document' && r0.slug === defaultStepSlug);
   assert(isRecord(r1) && r1.document_key === 'header_context');
 
   const req0 = inputsRequiredUnknown[0];

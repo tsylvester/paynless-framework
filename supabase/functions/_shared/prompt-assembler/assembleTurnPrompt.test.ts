@@ -23,15 +23,84 @@ import { FileType, FileRecord } from "../types/file_manager.types.ts";
 import { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
 import {
   type DialecticRecipeStep,
+  type DialecticStageRecipeStep,
 } from "../../dialectic-service/dialectic.interface.ts";
 import { isRecord } from "../utils/type_guards.ts";
+import { GatherContextFn } from "./gatherContext.ts";
+
+const STAGE_SLUG = "synthesis";
+const BUSINESS_CASE_DOCUMENT_KEY = FileType.business_case;
+const TECHNICAL_DESIGN_DOCUMENT_KEY = FileType.system_architecture;
+const HEADER_CONTEXT_RESOURCE_ID = "header-context-id";
+
+const baseRecipeStep: DialecticStageRecipeStep = {
+  id: "step-123",
+  branch_key: BUSINESS_CASE_DOCUMENT_KEY,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  execution_order: 1,
+  output_type: FileType.RenderedDocument,
+  parallel_group: null,
+  config_override: {},
+  instance_id: "instance-123",
+  job_type: "EXECUTE",
+  prompt_type: "Turn",
+  step_name: "generate-executive-summary",
+  step_description: "Generate the executive summary document.",
+  granularity_strategy: "all_to_one",
+  inputs_required: [{
+    type: "header_context",
+    slug: STAGE_SLUG,
+    document_key: FileType.HeaderContext,
+    required: true,
+  }],
+  inputs_relevance: [],
+  outputs_required: {
+    documents: [{
+      artifact_class: "rendered_document",
+      file_type: "markdown",
+      document_key: BUSINESS_CASE_DOCUMENT_KEY,
+      template_filename: "summary_template.md",
+    }],
+  },
+  prompt_template_id: "pt-exec-summary-123",
+  step_key: "generate-executive-summary",
+  step_slug: "generate-executive-summary",
+  template_step_id: "template-step-123",
+  is_skipped: false,
+  object_filter: {},
+  output_overrides: {},
+};
+
+const buildRecipeStep = (
+  overrides: Partial<DialecticStageRecipeStep> = {},
+): DialecticStageRecipeStep => ({
+  ...baseRecipeStep,
+  ...overrides,
+});
+
+const defaultRecipeStep: DialecticStageRecipeStep = buildRecipeStep();
 
 Deno.test("assembleTurnPrompt", async (t) => {
   let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
   let denoEnvStub: any = null;
   const consoleSpies: { error?: Spy<Console>; warn?: Spy<Console> } = {};
   
-  const mockGatherContext = spy(async () => { return { user_objective: "mock user objective", domain: "Software Development", agent_count: 1, context_description: "A test context", original_user_request: "The original request", prior_stage_ai_outputs: "", prior_stage_user_feedback: "", deployment_context: null, reference_documents: null, constraint_boundaries: null, stakeholder_considerations: null, deliverable_format: null } });
+  const mockGatherContext: GatherContextFn = spy(async () => { return { 
+    user_objective: "mock user objective", 
+    domain: "Software Development", 
+    agent_count: 1, 
+    context_description: "A test context", 
+    original_user_request: "The original request", 
+    prior_stage_ai_outputs: "", 
+    prior_stage_user_feedback: "", 
+    deployment_context: undefined, 
+    reference_documents: undefined, 
+    constraint_boundaries: undefined, 
+    stakeholder_considerations: undefined, 
+    deliverable_format: undefined,
+    recipeStep: defaultRecipeStep,
+  } });
   const mockRender = spy(() => "rendered turn prompt");
   const mockFileManager = createMockFileManagerService();
 
@@ -65,35 +134,6 @@ Deno.test("assembleTurnPrompt", async (t) => {
     if (mockSupabaseSetup) {
       mockSupabaseSetup.clearAllStubs?.();
     }
-  };
-
-  const defaultRecipeStep: DialecticRecipeStep = {
-    id: "step-123",
-    branch_key: "executive_summary",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    execution_order: 1,
-    output_type: FileType.business_case,
-    parallel_group: null,
-    config_override: null,
-    job_type: "EXECUTE",
-    prompt_type: "Turn",
-    step_name: "generate-executive-summary",
-    granularity_strategy: "all_to_one",
-    inputs_required: [{ type: "header_context", required: true }],
-    inputs_relevance: [],
-    outputs_required: [{
-      type: FileType.RenderedDocument,
-      document_key: "executive_summary",
-    }],
-    prompt_template_id: "pt-exec-summary-123",
-    step_key: "generate-executive-summary",
-    step_slug: "generate-executive-summary",
-    instance_id: "instance-123",
-    is_skipped: false,
-    object_filter: {},
-    output_overrides: {},
-    template_step_id: null,
   };
 
   const defaultProject: ProjectContext = {
@@ -131,7 +171,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
     id: "stage-123",
     system_prompts: { prompt_text: "Default system prompt" },
     domain_specific_prompt_overlays: [],
-    slug: "synthesis",
+    slug: STAGE_SLUG,
     display_name: "Synthesis",
     description: "Synthesis stage",
     created_at: new Date().toISOString(),
@@ -154,8 +194,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
         stageSlug: defaultStage.slug,
         iterationNumber: 1,
         walletId: "wallet-123",
-        header_context_resource_id: "header-context-id",
-        document_key: "executive_summary",
+        header_context_resource_id: HEADER_CONTEXT_RESOURCE_ID,
+        document_key: BUSINESS_CASE_DOCUMENT_KEY,
         document_specific_data: {
             title: "Project Executive Summary",
             points_to_cover: ["Problem", "Solution", "Market"]
@@ -184,8 +224,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
         shared_plan: "This is the shared plan for all documents."
     },
     files_to_generate: [
-        { document_key: "executive_summary", template_filename: "summary_template.md" },
-        { document_key: "technical_design", template_filename: "design_template.md" },
+        { document_key: BUSINESS_CASE_DOCUMENT_KEY, template_filename: "summary_template.md" },
+        { document_key: TECHNICAL_DESIGN_DOCUMENT_KEY, template_filename: "design_template.md" },
     ]
   };
 
@@ -269,6 +309,102 @@ Deno.test("assembleTurnPrompt", async (t) => {
     },
   );
 
+  await t.step("should pass sourceContributionId for continuation turns", async () => {
+    const continuationContributionId = "contrib-123";
+    const mockFileRecord: FileRecord = {
+      id: "mock-turn-resource-id-continuation",
+      project_id: defaultProject.id,
+      file_name: "turn_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/turn_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock turn prompt for continuation jobs",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "turn_prompt",
+      source_contribution_id: null,
+      feedback_type: "test",
+      target_contribution_id: null,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          },
+        },
+      },
+      storageMock: {
+        downloadResult: (bucket, path) => {
+          if (path.includes("header-context-id")) {
+            return Promise.resolve({
+              data: new Blob([JSON.stringify(headerContextContent)]),
+              error: null,
+            });
+          }
+          if (path.includes("summary_template.md")) {
+            return Promise.resolve({
+              data: new Blob([documentTemplateContent]),
+              error: null,
+            });
+          }
+          return Promise.resolve({
+            data: null,
+            error: new Error("File not found in mock"),
+          });
+        },
+      },
+    };
+
+    const { client } = setup(config);
+    mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    if (!isRecord(mockTurnJob.payload)) {
+      throw new Error("PRECONDITION_FAILED: Mock turn job payload is not a record");
+    }
+    const continuationJob: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        target_contribution_id: continuationContributionId,
+      },
+    };
+
+    try {
+      const deps: AssembleTurnPromptDeps = {
+        dbClient: client,
+        job: continuationJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+      };
+      await assembleTurnPrompt(deps);
+
+      assert(
+        mockFileManager.uploadAndRegisterFile.calls.length === 1,
+        "uploadAndRegisterFile should be called once",
+      );
+      const uploadContext = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
+      assertEquals(
+        uploadContext.pathContext.sourceContributionId,
+        continuationContributionId,
+      );
+    } finally {
+      teardown();
+    }
+  });
+
   await t.step("should throw an error if the header context cannot be fetched", async () => {
     const config: MockSupabaseDataConfig = {
         genericMockResults: {
@@ -328,8 +464,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
             stageSlug: defaultStage.slug,
             iterationNumber: 1,
             walletId: "wallet-123",
-            header_context_resource_id: "header-context-id",
-            document_key: "technical_design",
+            header_context_resource_id: HEADER_CONTEXT_RESOURCE_ID,
+            document_key: TECHNICAL_DESIGN_DOCUMENT_KEY,
             document_specific_data: {
                 title: "Technical Design",
                 points_to_cover: []
@@ -825,7 +961,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
         ...mockTurnJob,
         payload: {
             ...mockTurnJob.payload,
-            document_key: "technical_design",
+            document_key: TECHNICAL_DESIGN_DOCUMENT_KEY,
             document_specific_data: { custom_style: "minimalist" },
             model_slug: "test-model",
         }
@@ -942,7 +1078,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
           ...mockTurnJob,
           payload: {
               ...mockTurnJob.payload,
-              document_key: "technical_design",
+              document_key: TECHNICAL_DESIGN_DOCUMENT_KEY,
               document_specific_data: { custom_style: "brutalist" },
               model_slug: "test-model",
           }

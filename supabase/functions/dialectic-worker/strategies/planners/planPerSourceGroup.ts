@@ -41,9 +41,12 @@ export const planPerSourceGroup: GranularityPlannerFn = (
     for (const groupId in docsByGroup) {
         const groupDocs = docsByGroup[groupId];
         const documentIds = groupDocs.map(doc => doc.id);
-        
-        // Find the original thesis document to act as the anchor for the canonical path
+
+        // The canonical source contribution for this group is the parent whose id matches the group id.
         const anchorDoc = sourceDocs.find(doc => doc.id === groupId);
+        if (!anchorDoc) {
+            throw new Error(`planPerSourceGroup missing anchor SourceDocument for group ${groupId}`);
+        }
 
         if(!isModelContributionFileType(recipeStep.output_type)) {
             throw new Error(`Invalid output_type for planPerSourceGroup: ${recipeStep.output_type}`);
@@ -60,13 +63,14 @@ export const planPerSourceGroup: GranularityPlannerFn = (
             job_type: 'execute',
             prompt_template_id: recipeStep.prompt_template_id,
             output_type: recipeStep.output_type,
-            canonicalPathParams: createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorDoc!, stageSlug),
+            canonicalPathParams: createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorDoc, stageSlug),
             document_relationships: { source_group: groupId },
             inputs: {
                 document_ids: documentIds,
             },
             isIntermediate: recipeStep.output_type !== FileType.Synthesis,
             walletId: parentJob.payload.walletId,
+            sourceContributionId: anchorDoc.id,
         };
 
         childPayloads.push(newPayload);

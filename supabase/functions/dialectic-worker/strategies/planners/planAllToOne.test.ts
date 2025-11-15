@@ -114,3 +114,16 @@ Deno.test('planAllToOne constructs child payload with dynamic stage consistency 
     assertExists(child);
     assertEquals(child.stageSlug, expectedStage);
 });
+
+Deno.test('planAllToOne surfaces sourceContributionId for aggregated source documents', () => {
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
+    assertEquals(childJobs.length, 1);
+
+    const payload = childJobs[0];
+    assertExists(payload);
+    assertEquals(
+        payload.sourceContributionId,
+        MOCK_SOURCE_DOCS[0].id,
+        'Aggregated planner payload must expose the originating contribution id',
+    );
+});

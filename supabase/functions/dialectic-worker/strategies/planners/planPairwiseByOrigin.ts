@@ -50,6 +50,12 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 		const relatedAntitheses = findRelatedContributions(antithesis, thesisDoc.id);
 
 		for (const antithesisDoc of relatedAntitheses) {
+			if (!antithesisDoc.id) {
+				throw new Error(
+					`planPairwiseByOrigin requires each antithesis document to have an id`
+				);
+			}
+
 			// Step 7.a.ii: Call the canonical context builder
 			const pair: SourceDocument[] = [thesisDoc, antithesisDoc];
 			const canonicalPathParams = createCanonicalPathParams(
@@ -98,6 +104,7 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 				inputs,
 				isIntermediate: true,
 				walletId: parentJob.payload.walletId,
+				sourceContributionId: antithesisDoc.id,
 			};
 
 			childPayloads.push(newPayload);

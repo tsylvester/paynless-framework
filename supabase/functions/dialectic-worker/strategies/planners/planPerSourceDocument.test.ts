@@ -127,7 +127,7 @@ const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
 	prompt_template_id: 'antithesis_step1_critique',
 	prompt_type: 'Turn',
 	job_type: 'EXECUTE',
-	inputs_required: [{ type: 'document', slug: 'thesis', document_key: 'business_case', required: true }],
+	inputs_required: [{ type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true }],
 	inputs_relevance: [],
 	outputs_required: { documents: [], assembled_json: [], files_to_generate: [] },	
 	granularity_strategy: 'per_source_document',
@@ -464,5 +464,47 @@ Deno.test('planPerSourceDocument constructs child payloads with dynamic stage co
 	for (const child of result) {
 		assertEquals(child.stageSlug, expectedStage, 'Child payload.stageSlug must equal parent.payload.stageSlug');
 	}
+});
+
+Deno.test('planPerSourceDocument threads sourceContributionId for known source documents', () => {
+	const knownContributionId = 'thesis-contrib-123';
+	const contributionDoc: SourceDocument = {
+		...MOCK_SOURCE_DOCS[0],
+		id: knownContributionId,
+		document_relationships: { source_group: knownContributionId },
+	};
+	const brandNewDocId = 'brand-new-doc';
+	const netNewDoc: SourceDocument = {
+		...MOCK_SOURCE_DOCS[1],
+		id: brandNewDocId,
+		document_relationships: null,
+	};
+
+	const payloads = planPerSourceDocument(
+		[contributionDoc, netNewDoc],
+		MOCK_PARENT_JOB,
+		MOCK_RECIPE_STEP,
+		'user-jwt-123'
+	);
+
+	const contributionPayload = payloads.find(
+		(payload) => payload.inputs?.thesis_id === knownContributionId
+	);
+	assertExists(contributionPayload, 'Expected payload for contribution-backed document');
+	assertEquals(
+		contributionPayload.sourceContributionId,
+		knownContributionId,
+		'Contribution-backed payload must surface sourceContributionId'
+	);
+
+	const netNewPayload = payloads.find(
+		(payload) => payload.inputs?.thesis_id === brandNewDocId
+	);
+	assertExists(netNewPayload, 'Expected payload for net-new document');
+	assertEquals(
+		netNewPayload.sourceContributionId,
+		undefined,
+		'Net-new documents must not declare a sourceContributionId'
+	);
 });
  

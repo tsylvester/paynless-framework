@@ -105,6 +105,8 @@ export async function assemblePlannerPrompt(
 
   const promptTemplate = promptTemplateData.prompt_text;
 
+  const sourceContributionId = job.target_contribution_id;
+
   const context = await gatherContext(
     dbClient,
     (bucket, path) => downloadFromStorage(dbClient, bucket, path),
@@ -139,6 +141,7 @@ export async function assemblePlannerPrompt(
       stepName: stage.recipe_step.step_name,
       branchKey: stage.recipe_step.branch_key,
       parallelGroup: stage.recipe_step.parallel_group,
+      sourceContributionId,
     },
     resourceTypeForDb: "planner_prompt",
     fileContent: renderedPrompt,

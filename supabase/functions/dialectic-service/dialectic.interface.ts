@@ -644,6 +644,7 @@ export interface DialecticStepPlannerMetadata {
  */
 export interface DialecticBaseJobPayload extends Omit<GenerateContributionsPayload, 'selectedModelIds' | 'chatId'> {
     model_id: string; // Individual model ID for this specific job
+    sourceContributionId?: string | null;
 }
 
 /**
@@ -714,6 +715,7 @@ export interface PromptConstructionPayload {
   resourceDocuments: SourceDocument[];
   currentUserPrompt: Prompt;
   source_prompt_resource_id?: string;
+  sourceContributionId?: string | null;
 }
 
 export interface GenerateContributionsSuccessResponse {
@@ -800,6 +802,24 @@ export interface DialecticProjectResource {
   metadata?: Record<string, unknown> | null; // For any other structured data
 }
 
+export interface EditedDocumentResource {
+  id: string;
+  resource_type: string | null;
+  project_id: string | null;
+  session_id: string | null;
+  stage_slug: string | null;
+  iteration_number: number | null;
+  document_key: FileType | null;
+  source_contribution_id: string | null;
+  storage_bucket: string;
+  storage_path: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // --- END: Added for Project Resource Upload (1.0.B) ---
 
 export interface DomainOverlayDescriptor {
@@ -845,6 +865,13 @@ export interface SaveContributionEditPayload {
   originalContributionIdToEdit: string;
   editedContentText: string;
   // session_id is implied by the originalContributionIdToEdit and will be fetched
+  documentKey?: FileType;
+  resourceType?: string;
+}
+
+export interface SaveContributionEditSuccessResponse {
+  resource: EditedDocumentResource;
+  sourceContributionId: string;
 }
 
 // Updated DialecticFeedback to match the new file-based schema

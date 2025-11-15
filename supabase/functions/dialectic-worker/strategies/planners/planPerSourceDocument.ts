@@ -2,11 +2,25 @@
 // Cache-busting comment: 2025-08-04T04:20:05
 import type {
 	DialecticExecuteJobPayload,
+	DocumentRelationships,
 	GranularityPlannerFn,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
 import { isContributionType } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 import { isModelContributionFileType } from '../../../_shared/utils/type-guards/type_guards.file_manager.ts';
+
+const deriveSourceContributionId = (
+	documentId: string | null | undefined,
+	relationships: DocumentRelationships | null | undefined
+): string | undefined => {
+	const relationshipIdentifier = relationships?.source_group;
+	if (typeof relationshipIdentifier === 'string' && relationshipIdentifier.length > 0) {
+		return relationshipIdentifier;
+	}
+	if (typeof documentId !== 'string' || documentId.length === 0) {
+		return undefined;
+	}
+};
 
 export const planPerSourceDocument: GranularityPlannerFn = (
 	sourceDocs,
@@ -95,6 +109,13 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 			user_jwt: parentJwt,
 			walletId: parentJob.payload.walletId,
 		};
+		const derivedSourceContributionId = deriveSourceContributionId(
+			doc.id,
+			doc.document_relationships
+		);
+		if (derivedSourceContributionId) {
+			newPayload.sourceContributionId = derivedSourceContributionId;
+		}
 		console.log(
 			`[planPerSourceDocument] Constructed newPayload for doc ${doc.id}:`,
 			JSON.stringify(newPayload, null, 2)

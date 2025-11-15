@@ -58,6 +58,10 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
         // Use the first document as the anchor for canonical path generation.
         const anchorDoc = groupDocs[0];
         const canonicalPathParams = createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorDoc, stageSlug);
+        let derivedSourceContributionId: string | null = null;
+        if (anchorDoc.document_relationships?.source_group) {
+            derivedSourceContributionId = anchorDoc.id;
+        }
 
         if(!isModelContributionFileType(recipeStep.output_type)) {
             throw new Error(`Invalid output_type for planPerSourceDocumentByLineage: ${recipeStep.output_type}`);
@@ -81,6 +85,7 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
                 source_group: groupId,
             },
             walletId: parentJob.payload.walletId,
+            sourceContributionId: derivedSourceContributionId,
         };
         childPayloads.push(newPayload);
     }

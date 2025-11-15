@@ -135,6 +135,62 @@ Deno.test("assembleSeedPrompt", async (t) => {
     recipe_template_id: null,
   };
 
+  await t.step(
+    "should include sourceContributionId when provided",
+    async () => {
+      const { client, fileManager } = setup();
+      const sourceContributionId = "contrib-123";
+      fileManager.setUploadAndRegisterFileResponse({
+        id: "seed-resource-id",
+        storage_path: "path/to/seed/",
+        storage_bucket: "test-bucket",
+        file_name: "seed-prompt.md",
+        iteration_number: 1,
+        mime_type: "text/markdown",
+        created_at: new Date().toISOString(),
+        project_id: defaultProject.id,
+        resource_description: { test: "seed" },
+        resource_type: "seed_prompt",
+        size_bytes: 42,
+        user_id: defaultProject.user_id,
+        session_id: defaultSession.id,
+        source_contribution_id: "existing-source",
+        stage_slug: defaultStage.slug,
+        updated_at: new Date().toISOString(),
+      }, null);
+      const downloadFn = (bucket: string, path: string) =>
+        downloadFromStorage(client, bucket, path);
+
+      try {
+        await assembleSeedPrompt({
+          dbClient: client,
+          downloadFromStorageFn: downloadFn,
+          gatherInputsForStageFn: gatherInputsForStage,
+          renderPromptFn: renderPrompt,
+          fileManager,
+          project: defaultProject,
+          session: defaultSession,
+          stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          iterationNumber: 1,
+          sourceContributionId,
+        });
+
+        assert(
+          fileManager.uploadAndRegisterFile.calls.length === 1,
+          "uploadAndRegisterFile should be called once",
+        );
+        const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+        assertEquals(
+          uploadContext.pathContext.sourceContributionId,
+          sourceContributionId,
+        );
+      } finally {
+        teardown();
+      }
+    },
+  );
+
   await t.step("should correctly assemble, persist, and render a prompt for the initial stage", async () => {
       const expectedRenderedPrompt = "Mocked Rendered Prompt Output";
       const mockFileRecord: FileRecord = {

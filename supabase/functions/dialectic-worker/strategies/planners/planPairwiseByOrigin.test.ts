@@ -223,10 +223,10 @@ const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
 	prompt_template_id: 'synthesis_step1_pairwise',
 	prompt_type: 'Turn',
 	job_type: 'EXECUTE',
-	inputs_required: [{ type: 'document', slug: 'thesis', document_key: 'business_case', required: true }, {
+	inputs_required: [{ type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true }, {
 		type: 'document',
 		slug: 'antithesis',
-		document_key: 'business_case_critique',
+		document_key: FileType.business_case_critique,
 		required: true,
 	}],
 	inputs_relevance: [],
@@ -278,6 +278,7 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 		thesis_id: 'thesis-1',
 		antithesis_id: 'antithesis-1a',
 	});
+	assertEquals(job1Payload.sourceContributionId, 'antithesis-1a');
 	assertEquals(job1Payload.document_relationships, {
 		thesis: 'thesis-1',
 		antithesis: 'antithesis-1a',
@@ -302,6 +303,7 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 		thesis_id: 'thesis-1',
 		antithesis_id: 'antithesis-1b',
 	});
+	assertEquals(job2Payload.sourceContributionId, 'antithesis-1b');
 	assertExists(job2Payload.canonicalPathParams);
 	assertEquals(job2Payload.canonicalPathParams.sourceAnchorType, 'thesis');
 	assertEquals(job2Payload.canonicalPathParams.sourceAnchorModelSlug, 'Model ABC');
@@ -318,6 +320,7 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 		thesis_id: 'thesis-2',
 		antithesis_id: 'antithesis-2a',
 	});
+	assertEquals(job3Payload.sourceContributionId, 'antithesis-2a');
 	assertExists(job3Payload.canonicalPathParams);
 	assertEquals(job3Payload.canonicalPathParams.sourceAnchorType, 'thesis');
 	assertEquals(job3Payload.canonicalPathParams.sourceAnchorModelSlug, 'Model DEF');
@@ -373,6 +376,7 @@ Deno.test('planPairwiseByOrigin constructs child payloads with dynamic stage con
 	assertEquals(childPayloads.length, 3);
 	for (const child of childPayloads) {
 		assertEquals(child.stageSlug, expectedStage);
+		assertEquals(child.sourceContributionId, child.inputs?.antithesis_id);
 	}
 });
 
@@ -460,6 +464,7 @@ Deno.test('planPairwiseByOrigin Test Case A: The Failing Case (Proves the bug ex
 	try {
 		childPayloads.forEach(child => {
 			assertEquals(child.model_id, failingParentJob.payload.model_id, "Child job model_id must match the parent job's model_id");
+			assertEquals(child.sourceContributionId, child.inputs?.antithesis_id);
 		});
 		assert(false, "Test A expected an error to be thrown, but none was. The bug may be fixed.");
 	} catch (e) {
@@ -506,6 +511,7 @@ Deno.test('planPairwiseByOrigin Test Case B: The Passing Case (Describes the cor
 	// After the fix, it will PASS.
 	childPayloads.forEach(child => {
 		assertEquals(child.model_id, passingParentJob.payload.model_id, "Child job model_id must match the parent job's model_id");
+		assertEquals(child.sourceContributionId, child.inputs?.antithesis_id);
 	});
 });
  

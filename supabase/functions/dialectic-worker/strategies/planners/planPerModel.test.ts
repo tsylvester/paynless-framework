@@ -100,7 +100,7 @@ const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
 	prompt_template_id: 'technical_requirements_template_v1',
 	prompt_type: 'Turn',
 	job_type: 'EXECUTE',
-	inputs_required: [{ type: 'document', slug: 'synthesis', document_key: 'product_requirements', required: true }],
+	inputs_required: [{ type: 'document', slug: 'synthesis', document_key: FileType.product_requirements, required: true }],
 	inputs_relevance: [],
 	outputs_required: { documents: [], assembled_json: [], files_to_generate: [] },
 	granularity_strategy: 'per_model',
@@ -137,6 +137,11 @@ Deno.test('planPerModel should create a single job with correct properties', () 
 	assertEquals(jobPayload.output_type, MOCK_RECIPE_STEP.output_type);
 	assertEquals(jobPayload.model_id, MOCK_PARENT_JOB.payload.model_id, "Child job's model_id should match the parent job's model_id");
 	assertEquals(jobPayload.job_type, 'execute');
+	assertEquals(
+		jobPayload.sourceContributionId,
+		MOCK_SOURCE_DOCS[0].id,
+		'sourceContributionId should match the anchor document id when provided'
+	);
 });
 
 Deno.test('planPerModel should throw an error if sourceDocs are empty', () => {
@@ -166,3 +171,34 @@ Deno.test('planPerModel should throw an error if parent job has no model_id', ()
 		`Invalid parent job for planPerModel: model_id is missing.`
 	);
 });
+
+Deno.test(
+	'planPerModel sets sourceContributionId to null when anchor document id is missing',
+	() => {
+		const sourceDocsMissingAnchorId: SourceDocument[] = MOCK_SOURCE_DOCS.map(
+			(doc, index) => {
+				if (index === 0) {
+					return {
+						...doc,
+						id: '',
+					};
+				}
+				return doc;
+			}
+		);
+
+		const childPayloads = planPerModel(
+			sourceDocsMissingAnchorId,
+			MOCK_PARENT_JOB,
+			MOCK_RECIPE_STEP,
+			'user-jwt-123'
+		);
+
+		assertEquals(childPayloads.length, 1);
+		assertEquals(
+			childPayloads[0].sourceContributionId,
+			null,
+			'sourceContributionId should be null when the planner lacks an anchor id'
+		);
+	}
+);
