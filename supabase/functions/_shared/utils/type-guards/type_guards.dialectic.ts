@@ -36,6 +36,7 @@ import {
     ReviewMetadata,
     EditedDocumentResource,
     SaveContributionEditSuccessResponse,
+    DialecticProjectResourceRow,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { isPlainObject, isRecord } from './type_guards.common.ts';
 import { FileType } from '../../types/file_manager.types.ts';
@@ -407,6 +408,48 @@ export function isEditedDocumentResource(value: unknown): value is EditedDocumen
     if (typeof value.updated_at !== 'string') return false;
 
     return true;
+}
+
+export function isDialecticProjectResourceRow(value: unknown): value is DialecticProjectResourceRow {
+    if (!isRecord(value)) return false;
+
+    const requiredStringKeys: Array<keyof DialecticProjectResourceRow> = [
+        'id',
+        'project_id',
+        'storage_bucket',
+        'storage_path',
+        'mime_type',
+        'created_at',
+        'updated_at',
+    ];
+
+    for (const key of requiredStringKeys) {
+        if (typeof value[key] !== 'string') {
+            return false;
+        }
+    }
+
+    if (value.user_id !== null && typeof value.user_id !== 'string') return false;
+    if (value.file_name !== null && typeof value.file_name !== 'string') return false;
+    if (value.resource_type !== null && typeof value.resource_type !== 'string') return false;
+    if (value.session_id !== null && typeof value.session_id !== 'string') return false;
+    if (value.stage_slug !== null && typeof value.stage_slug !== 'string') return false;
+    if (value.iteration_number !== null && typeof value.iteration_number !== 'number') return false;
+    if (value.size_bytes !== null && typeof value.size_bytes !== 'number') return false;
+    if (value.source_contribution_id !== null && typeof value.source_contribution_id !== 'string') return false;
+
+    return 'resource_description' in value;
+}
+
+export function isObjectWithOptionalId(value: unknown): value is { id?: string } {
+    if (!isRecord(value)) return false;
+    if (!('id' in value)) return true;
+    const { id } = value;
+    return typeof id === 'string' || typeof id === 'undefined';
+}
+
+export function isArrayWithOptionalId(value: unknown): value is Array<{ id?: string }> {
+    return Array.isArray(value) && value.every(isObjectWithOptionalId);
 }
 
 export function isSaveContributionEditSuccessResponse(value: unknown): value is SaveContributionEditSuccessResponse {

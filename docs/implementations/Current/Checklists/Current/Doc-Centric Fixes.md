@@ -305,78 +305,78 @@
             * [✅] 11.k.b.iii. Documenting (via inline comments) the distinction between structural validation and recipe-content validation so future contributors preserve the relaxed behavior.
         * [✅] 11.k.c. [TEST-UNIT] Rerun the updated suite in `type_guards.dialectic.test.ts` to confirm the relaxed guards satisfy the new flexibility while existing negative cases still fail.
 *   `[✅]` 12. **[UI] Slim StageRunChecklist to rendered deliverables only**
-        * [✅] 12.a. [DEPS] Document the selectors, recipe step data, and status enums the checklist depends on so we can safely filter to rendered artifacts without breaking store contracts.
-            * [✅] 12.a.i. Capture how `selectStageDocumentChecklist`, `selectStageRecipe`, and `selectStageRunProgress` expose document metadata and statuses for each `modelId`.
-            * [✅] 12.a.ii. Enumerate which `DialecticStageRecipeStep.outputs_required` entries declare `file_type: 'markdown'` so planner headers and JSON intermediates can be excluded even when `artifact_class` is missing or inconsistent.
-        * [✅] 12.b. [TEST-UNIT] Update `apps/web/src/components/dialectic/StageRunChecklist.test.tsx` to RED-state the minimal UI contract.
-            * [✅] 12.b.i. Assert that only markdown deliverable document keys appear in the checklist (planner headers / JSON artifacts must never render).
-            * [✅] 12.b.ii. Expect a condensed header (single-line count + optional empty-state note) with no branch/parallel metadata and no duplicate “no documents” language.
-            * [✅] 12.b.iii. Verify each item shows just the document key and its status badge, with clickability gated on `modelId` and no excess whitespace.
-            * [✅] 12.b.iv. Require the “no documents” copy to render exactly once when nothing is available, preventing multiple redundant messages.
-            * [✅] 12.b.v. Add coverage that planned markdown deliverables render with a default “Not Started” status before any `StageDocumentEntry` exists, keeping document counts aligned with recipe expectations.
-            * [✅] 12.b.vi. Assert the checklist card exports full-width layout hooks/classes so embedding it beneath `StageTabCard` keeps the document list from overlapping the contribution workspace.
-            * [✅] 12.b.vii. Require the checklist to render all markdown deliverables even when `selectStageRunProgress` returns no entry, proving synthesized rows surface purely from recipe data.
-            * [✅] 12.b.viii. Assert the accordion trigger/content live inside the checklist container element (not the parent card) so the checklist can self-collapse without relying on external layout wrappers.
-            * [✅] 12.b.ix. Verify the checklist container matches the parent card’s width/height (no extra padding or nested wrappers) by asserting the exposed layout hooks/classes reflect equal sizing.
-        * [✅] 12.c. [UI] Refactor `apps/web/src/components/dialectic/StageRunChecklist.tsx` to satisfy the new contract.
-            * [✅] 12.c.i. Filter step outputs to entries whose `file_type === 'markdown'`, building a flat rendered-document list keyed by `documentKey` and aligning it with store checklist entries even when no `StageDocumentEntry` exists or progress data is unavailable.
-            * [✅] 12.c.ii. Restore an internal accordion housed completely inside the checklist container so the checklist owns its toggle button/content while rendering only the final markdown documents (no planner/branch metadata).
-            * [✅] 12.c.iii. Collapse the card header to a single-line summary plus an optional single empty-state line, and ensure the checklist container occupies the full width/height of the parent card by eliminating extra wrappers and redundant padding that previously caused overlap with `SessionContributionsDisplayCard`.
-            * [✅] 12.c.iv. Preserve keyboard/click selection for focusable documents while tightening spacing (e.g., reduced padding classes, gap utilities) to keep the component short on common viewports.
-            * [✅] 12.c.v. Replace "Checklist" in the outer container with "Completed x of n documents". Remove "Stage Run Checklist" from the inner container. The component is currently 3 containers - the outer container, the inner container, and the step container. We can reduce it to two containers, with the step containers directly in the outermost container. This will further reduce width and height. 
-            * [✅] 12.c.vi. Introduce synthesized checklist entries for markdown outputs that lack `StageDocumentEntry` data so the UI surfaces planned documents with a `not_started` status and stable keys.
-            * [✅] 12.c.vii. Apply layout classes that keep the checklist height/width constrained when rendered inside `StageTabCard`, ensuring it never overlaps `SessionContributionsDisplayCard`.
-        * [✅] 12.d. [TEST-UNIT] Re-run the updated `StageRunChecklist` tests and confirm they pass with the compact rendered-document UI.
-        * [✅] 12.e. [TEST-UNIT] Update `apps/web/src/components/dialectic/StageTabCard.test.tsx` to RED-state the relocated checklist container.
-            * [✅] 12.e.i. Assert the inner checklist wrapper matches the outer stage card width and exposes deterministic hooks for layout assertions.
-            * [✅] 12.e.ii. Assert that the embedded `StageRunChecklist` panel resides directly within the checklist wrapper, without an extra accordion provided by the parent.
-            * [✅] 12.e.iii. Verify the stage column exports spacing classes/data attributes that keep its height independent from `SessionContributionsDisplayCard`.
-        * [✅] 12.f. [UI] Refactor `apps/web/src/components/dialectic/StageTabCard.tsx` to satisfy the new layout contract.
-            * [✅] 12.f.i. Ensure the inner checklist container inherits the exact width of the outer stage card.
-            * [✅] 12.f.ii. Remove any accordion markup from the container, ensuring it acts purely as a layout wrapper for the `StageRunChecklist` component.
-            * [✅] 12.f.iii. Adjust spacing and flex properties so the stage column and embedded `StageRunChecklist` never overlap with `SessionContributionsDisplayCard` across viewport sizes.
-        * [✅] 12.g. [TEST-UNIT] Re-run the updated `StageTabCard` suite and confirm the relocated checklist layout passes with the new spacing rules.
+  * [✅] 12.a. [DEPS] Document the selectors, recipe step data, and status enums the checklist depends on so we can safely filter to rendered artifacts without breaking store contracts.
+      * [✅] 12.a.i. Capture how `selectStageDocumentChecklist`, `selectStageRecipe`, and `selectStageRunProgress` expose document metadata and statuses for each `modelId`.
+      * [✅] 12.a.ii. Enumerate which `DialecticStageRecipeStep.outputs_required` entries declare `file_type: 'markdown'` so planner headers and JSON intermediates can be excluded even when `artifact_class` is missing or inconsistent.
+  * [✅] 12.b. [TEST-UNIT] Update `apps/web/src/components/dialectic/StageRunChecklist.test.tsx` to RED-state the minimal UI contract.
+    * [✅] 12.b.i. Assert that only markdown deliverable document keys appear in the checklist (planner headers / JSON artifacts must never render).
+    * [✅] 12.b.ii. Expect a condensed header (single-line count + optional empty-state note) with no branch/parallel metadata and no duplicate “no documents” language.
+    * [✅] 12.b.iii. Verify each item shows just the document key and its status badge, with clickability gated on `modelId` and no excess whitespace.
+    * [✅] 12.b.iv. Require the “no documents” copy to render exactly once when nothing is available, preventing multiple redundant messages.
+    * [✅] 12.b.v. Add coverage that planned markdown deliverables render with a default “Not Started” status before any `StageDocumentEntry` exists, keeping document counts aligned with recipe expectations.
+    * [✅] 12.b.vi. Assert the checklist card exports full-width layout hooks/classes so embedding it beneath `StageTabCard` keeps the document list from overlapping the contribution workspace.
+    * [✅] 12.b.vii. Require the checklist to render all markdown deliverables even when `selectStageRunProgress` returns no entry, proving synthesized rows surface purely from recipe data.
+    * [✅] 12.b.viii. Assert the accordion trigger/content live inside the checklist container element (not the parent card) so the checklist can self-collapse without relying on external layout wrappers.
+    * [✅] 12.b.ix. Verify the checklist container matches the parent card’s width/height (no extra padding or nested wrappers) by asserting the exposed layout hooks/classes reflect equal sizing.
+  * [✅] 12.c. [UI] Refactor `apps/web/src/components/dialectic/StageRunChecklist.tsx` to satisfy the new contract.
+    * [✅] 12.c.i. Filter step outputs to entries whose `file_type === 'markdown'`, building a flat rendered-document list keyed by `documentKey` and aligning it with store checklist entries even when no `StageDocumentEntry` exists or progress data is unavailable.
+    * [✅] 12.c.ii. Restore an internal accordion housed completely inside the checklist container so the checklist owns its toggle button/content while rendering only the final markdown documents (no planner/branch metadata).
+    * [✅] 12.c.iii. Collapse the card header to a single-line summary plus an optional single empty-state line, and ensure the checklist container occupies the full width/height of the parent card by eliminating extra wrappers and redundant padding that previously caused overlap with `SessionContributionsDisplayCard`.
+    * [✅] 12.c.iv. Preserve keyboard/click selection for focusable documents while tightening spacing (e.g., reduced padding classes, gap utilities) to keep the component short on common viewports.
+    * [✅] 12.c.v. Replace "Checklist" in the outer container with "Completed x of n documents". Remove "Stage Run Checklist" from the inner container. The component is currently 3 containers - the outer container, the inner container, and the step container. We can reduce it to two containers, with the step containers directly in the outermost container. This will further reduce width and height. 
+    * [✅] 12.c.vi. Introduce synthesized checklist entries for markdown outputs that lack `StageDocumentEntry` data so the UI surfaces planned documents with a `not_started` status and stable keys.
+    * [✅] 12.c.vii. Apply layout classes that keep the checklist height/width constrained when rendered inside `StageTabCard`, ensuring it never overlaps `SessionContributionsDisplayCard`.
+  * [✅] 12.d. [TEST-UNIT] Re-run the updated `StageRunChecklist` tests and confirm they pass with the compact rendered-document UI.
+  * [✅] 12.e. [TEST-UNIT] Update `apps/web/src/components/dialectic/StageTabCard.test.tsx` to RED-state the relocated checklist container.
+      * [✅] 12.e.i. Assert the inner checklist wrapper matches the outer stage card width and exposes deterministic hooks for layout assertions.
+      * [✅] 12.e.ii. Assert that the embedded `StageRunChecklist` panel resides directly within the checklist wrapper, without an extra accordion provided by the parent.
+      * [✅] 12.e.iii. Verify the stage column exports spacing classes/data attributes that keep its height independent from `SessionContributionsDisplayCard`.
+  * [✅] 12.f. [UI] Refactor `apps/web/src/components/dialectic/StageTabCard.tsx` to satisfy the new layout contract.
+      * [✅] 12.f.i. Ensure the inner checklist container inherits the exact width of the outer stage card.
+      * [✅] 12.f.ii. Remove any accordion markup from the container, ensuring it acts purely as a layout wrapper for the `StageRunChecklist` component.
+      * [✅] 12.f.iii. Adjust spacing and flex properties so the stage column and embedded `StageRunChecklist` never overlap with `SessionContributionsDisplayCard` across viewport sizes.
+  * [✅] 12.g. [TEST-UNIT] Re-run the updated `StageTabCard` suite and confirm the relocated checklist layout passes with the new spacing rules.
 *   `[✅]` 13. **Fix Seed Prompt Data Flow End-to-End**
-    - **Goal**: Correct the entire data pipeline for the `activeSeedPrompt` from the database to the UI, ensuring it is always available on the session details page.
-    - **Problem**: The user's analysis is correct. The `activeSeedPrompt` is only hydrated when a session is first created. It is lost on subsequent page loads because the `getSessionDetails` endpoint does not fetch it, the types do not enforce it, and the store does not process it.
-    - [✅] 13.a. **Backend Interface Contract (`dialectic.interface.ts`)**
-        - [✅] 13.a.i. **RED**: Identify that the `GetSessionDetailsResponse` interface in `supabase/functions/dialectic-service/dialectic.interface.ts` is missing the `activeSeedPrompt` property. This proves the backend's data contract is incomplete.
-        - [✅] 13.a.ii. **GREEN**: Edit `supabase/functions/dialectic-service/dialectic.interface.ts` to add `activeSeedPrompt: AssembledPrompt | null;` as a **required** property to the `GetSessionDetailsResponse` interface.
-        - [✅] 13.a.iii. **LINT**: Verify the file is clean. The "proof" of the flaw is that the backend implementation (`getSessionDetails.ts`) will now fail to compile because it does not satisfy this updated, stricter interface.
-    - [✅] 13.b. **Frontend Interface Contract (`dialectic.types.ts`)**
-        - [✅] 13.b.i. **RED**: Identify that the corresponding `GetSessionDetailsResponse` interface in `packages/types/src/dialectic.types.ts` is also missing the `activeSeedPrompt` property, creating a type mismatch across the stack.
-        - [✅] 13.b.ii. **GREEN**: Edit `packages/types/src/dialectic.types.ts` to add `activeSeedPrompt: AssembledPrompt | null;` as a **required** property, synchronizing the frontend's contract with the backend's.
-        - [✅] 13.b.iii. **LINT**: Verify the file is clean. The "proof" of the flaw is that multiple frontend files that use this type (the store, mocks, and tests) will now fail to compile.
-    - [✅] 13.c. **API Mock (`dialectic.api.mock.ts`)**
-        - [✅] 13.c.i. **RED**: Acknowledge that the mock implementation of `getSessionDetails` in `packages/api/src/mocks/dialectic.api.mock.ts` does not return the `activeSeedPrompt` property, causing frontend unit tests that rely on this mock to fail compilation.
-        - [✅] 13.c.ii. **GREEN**: Edit `packages/api/src/mocks/dialectic.api.mock.ts` to include `activeSeedPrompt: mockSeedPrompt` (or null, as appropriate for the test) in the return value of the `getSessionDetails` mock, satisfying the updated interface.
-        - [✅] 13.c.iii. **LINT**: Verify the file is clean. The "proof" is that the frontend store's unit test will now compile but fail at runtime because the store's implementation logic is still broken.
-    - [✅] 13.d. **Store Unit Test (`dialecticStore.session.test.ts`)**
-        - [✅] 13.d.i. **RED**: The test `should fetch session details, update state, and set context on success` in `packages/store/src/dialecticStore.session.test.ts` is missing an assertion for `activeSeedPrompt`. Run the test to confirm it fails, expecting the `activeSeedPrompt` state to be populated but finding `null`.
-        - [✅] 13.d.ii. **GREEN**: Edit the test's mock response and add the assertion `expect(state.activeSeedPrompt).toEqual(mockSeedPrompt);`. This makes the test's failure explicit and correctly defines the required behavior.
-        - [✅] 13.d.iii. **LINT**: Verify the file is clean. The test now correctly and explicitly fails, proving the flaw in the store's implementation logic.
-    - [✅] 13.e. **Store Implementation (`dialecticStore.ts`)**
-        - [✅] 13.e.i. **RED**: The `fetchAndSetCurrentSessionDetails` action in `packages/store/src/dialecticStore.ts` does not set the `activeSeedPrompt` state from the API response, causing the unit test from the previous step to fail.
-        - [✅] 13.e.ii. **GREEN**: Edit `fetchAndSetCurrentSessionDetails` to destructure `activeSeedPrompt` from the response data and add `state.activeSeedPrompt = activeSeedPrompt || null;` inside the `set` call.
-        - [✅] 13.e.iii. **LINT**: Run the linter, then run the store's unit test. The proof of the fix is that the test in `dialecticStore.session.test.ts` now passes.
-    - [✅] 13.f. **[TYPES] Synchronize and Validate `GetSessionDetailsResponse` Type Contract**
-            - [✅] 13.f.i. **[BE] [TYPES]** In `supabase/functions/dialectic-service/dialectic.interface.ts`, confirm that the `GetSessionDetailsResponse` interface includes the required property: `activeSeedPrompt: AssembledPrompt | null;`.
-    - [✅] 13.g. **Backend Unit Test (`getSessionDetails.test.ts`)**
-        - [✅] 13.g.i. **[TEST-UNIT] RED**: In `supabase/functions/dialectic-service/getSessionDetails.test.ts`, write a comprehensive, failing unit test for the `getSessionDetails` function. This test must:
+  - **Goal**: Correct the entire data pipeline for the `activeSeedPrompt` from the database to the UI, ensuring it is always available on the session details page.
+  - **Problem**: The user's analysis is correct. The `activeSeedPrompt` is only hydrated when a session is first created. It is lost on subsequent page loads because the `getSessionDetails` endpoint does not fetch it, the types do not enforce it, and the store does not process it.
+  - [✅] 13.a. **Backend Interface Contract (`dialectic.interface.ts`)**
+    - [✅] 13.a.i. **RED**: Identify that the `GetSessionDetailsResponse` interface in `supabase/functions/dialectic-service/dialectic.interface.ts` is missing the `activeSeedPrompt` property. This proves the backend's data contract is incomplete.
+    - [✅] 13.a.ii. **GREEN**: Edit `supabase/functions/dialectic-service/dialectic.interface.ts` to add `activeSeedPrompt: AssembledPrompt | null;` as a **required** property to the `GetSessionDetailsResponse` interface.
+    - [✅] 13.a.iii. **LINT**: Verify the file is clean. The "proof" of the flaw is that the backend implementation (`getSessionDetails.ts`) will now fail to compile because it does not satisfy this updated, stricter interface.
+  - [✅] 13.b. **Frontend Interface Contract (`dialectic.types.ts`)**
+    - [✅] 13.b.i. **RED**: Identify that the corresponding `GetSessionDetailsResponse` interface in `packages/types/src/dialectic.types.ts` is also missing the `activeSeedPrompt` property, creating a type mismatch across the stack.
+    - [✅] 13.b.ii. **GREEN**: Edit `packages/types/src/dialectic.types.ts` to add `activeSeedPrompt: AssembledPrompt | null;` as a **required** property, synchronizing the frontend's contract with the backend's.
+    - [✅] 13.b.iii. **LINT**: Verify the file is clean. The "proof" of the flaw is that multiple frontend files that use this type (the store, mocks, and tests) will now fail to compile.
+  - [✅] 13.c. **API Mock (`dialectic.api.mock.ts`)**
+    - [✅] 13.c.i. **RED**: Acknowledge that the mock implementation of `getSessionDetails` in `packages/api/src/mocks/dialectic.api.mock.ts` does not return the `activeSeedPrompt` property, causing frontend unit tests that rely on this mock to fail compilation.
+    - [✅] 13.c.ii. **GREEN**: Edit `packages/api/src/mocks/dialectic.api.mock.ts` to include `activeSeedPrompt: mockSeedPrompt` (or null, as appropriate for the test) in the return value of the `getSessionDetails` mock, satisfying the updated interface.
+    - [✅] 13.c.iii. **LINT**: Verify the file is clean. The "proof" is that the frontend store's unit test will now compile but fail at runtime because the store's implementation logic is still broken.
+  - [✅] 13.d. **Store Unit Test (`dialecticStore.session.test.ts`)**
+    - [✅] 13.d.i. **RED**: The test `should fetch session details, update state, and set context on success` in `packages/store/src/dialecticStore.session.test.ts` is missing an assertion for `activeSeedPrompt`. Run the test to confirm it fails, expecting the `activeSeedPrompt` state to be populated but finding `null`.
+    - [✅] 13.d.ii. **GREEN**: Edit the test's mock response and add the assertion `expect(state.activeSeedPrompt).toEqual(mockSeedPrompt);`. This makes the test's failure explicit and correctly defines the required behavior.
+    - [✅] 13.d.iii. **LINT**: Verify the file is clean. The test now correctly and explicitly fails, proving the flaw in the store's implementation logic.
+  - [✅] 13.e. **Store Implementation (`dialecticStore.ts`)**
+    - [✅] 13.e.i. **RED**: The `fetchAndSetCurrentSessionDetails` action in `packages/store/src/dialecticStore.ts` does not set the `activeSeedPrompt` state from the API response, causing the unit test from the previous step to fail.
+    - [✅] 13.e.ii. **GREEN**: Edit `fetchAndSetCurrentSessionDetails` to destructure `activeSeedPrompt` from the response data and add `state.activeSeedPrompt = activeSeedPrompt || null;` inside the `set` call.
+    - [✅] 13.e.iii. **LINT**: Run the linter, then run the store's unit test. The proof of the fix is that the test in `dialecticStore.session.test.ts` now passes.
+- [✅] 13.f. **[TYPES] Synchronize and Validate `GetSessionDetailsResponse` Type Contract**
+    - [✅] 13.f.i. **[BE] [TYPES]** In `supabase/functions/dialectic-service/dialectic.interface.ts`, confirm that the `GetSessionDetailsResponse` interface includes the required property: `activeSeedPrompt: AssembledPrompt | null;`.
+- [✅] 13.g. **Backend Unit Test (`getSessionDetails.test.ts`)**
+    - [✅] 13.g.i. **[TEST-UNIT] RED**: In `supabase/functions/dialectic-service/getSessionDetails.test.ts`, write a comprehensive, failing unit test for the `getSessionDetails` function. This test must:
         - [✅] 13.g.i.1. Mock all external dependencies, including the Supabase database client and any other service calls.
         - [✅] 13.g.i.2. Set up a mock database response that includes all the necessary data to construct both a `DialecticSession` and a corresponding `AssembledPrompt`.
         - [✅] 13.g.i.3. Assert that the object returned by `getSessionDetails` successfully validates against the updated `GetSessionDetailsResponse` interface from `dialectic.interface.ts`.
         - [✅] 13.g.i.4. Specifically assert that the `activeSeedPrompt` property on the returned object is a valid `AssembledPrompt` object matching the mocked database data.
         - [✅] 13.g.i.5. This test must fail due to the implementation's failure to return the `activeSeedPrompt`, proving the flaw.
-        - [✅] 13.g.ii. **[LINT]**: Verify the new test file `supabase/functions/dialectic-service/getSessionDetails.test.ts` is free of linter errors.
-    - [✅] 13.h. **Backend Implementation (`getSessionDetails.ts`)**
-        - [✅] 13.h.i. **[BE] GREEN**: Edit the `getSessionDetails` function in `supabase/functions/dialectic-service/getSessionDetails.ts` to satisfy the updated contract and pass the new unit test. The changes must:
-            - [✅] 13.h.i.1. Add a database query to fetch the seed prompt associated with the session's current stage and iteration from the `dialectic_prompts` table.
-            - [✅] 13.h.i.2. Gracefully handle cases where no seed prompt is found, returning `null` for the `activeSeedPrompt` property.
-            - [✅] 13.h.i.3. Construct a valid `AssembledPrompt` object from the query result when a prompt is found.
-            - [✅] 13.h.i.4. Update the function's final return statement to include the `activeSeedPrompt` object, ensuring the full `GetSessionDetailsResponse` contract is met.
-        - [✅] 13.h.ii. **[TEST-UNIT] GREEN**: The proof of the fix is that the unit test created in step 13.g now passes.
-        - [✅] 13.h.iii. **[LINT]**: Verify the file `supabase/functions/dialectic-service/getSessionDetails.ts` is free of linter errors.   
+    - [✅] 13.g.ii. **[LINT]**: Verify the new test file `supabase/functions/dialectic-service/getSessionDetails.test.ts` is free of linter errors.
+- [✅] 13.h. **Backend Implementation (`getSessionDetails.ts`)**
+    - [✅] 13.h.i. **[BE] GREEN**: Edit the `getSessionDetails` function in `supabase/functions/dialectic-service/getSessionDetails.ts` to satisfy the updated contract and pass the new unit test. The changes must:
+        - [✅] 13.h.i.1. Add a database query to fetch the seed prompt associated with the session's current stage and iteration from the `dialectic_prompts` table.
+        - [✅] 13.h.i.2. Gracefully handle cases where no seed prompt is found, returning `null` for the `activeSeedPrompt` property.
+        - [✅] 13.h.i.3. Construct a valid `AssembledPrompt` object from the query result when a prompt is found.
+        - [✅] 13.h.i.4. Update the function's final return statement to include the `activeSeedPrompt` object, ensuring the full `GetSessionDetailsResponse` contract is met.
+    - [✅] 13.h.ii. **[TEST-UNIT] GREEN**: The proof of the fix is that the unit test created in step 13.g now passes.
+    - [✅] 13.h.iii. **[LINT]**: Verify the file `supabase/functions/dialectic-service/getSessionDetails.ts` is free of linter errors.   
 *   `[✅]` 14. **`[REFACTOR]` Refactor All Affected Files to Use `resource_description` as a JSON Object**
     *   `[✅]` 14.a. `[TEST-UNIT]` In `supabase/functions/_shared/services/file_manager.upload.test.ts`, update the tests to assert that a proper JSON object is passed for `resource_description` and remove assertions related to string parsing.
     *   `[✅]` 14.b. `[BE]` In `supabase/functions/_shared/services/file_manager.ts`, remove the logic that parses and re-stringifies the `resource_description` in `uploadAndRegisterFile`, ensuring it is handled as a JSON object.
@@ -693,246 +693,238 @@ graph TD
     *   `[✅]` 44.b. **[RED]** Before editing, re-run the failing test added in Step 43 and confirm it still fails because `sourceContributionId` is missing from the upload context. Document the exact failure message so you can prove GREEN later.  
     *   `[✅]` 44.c. **[GREEN]** Modify the upload-context construction so that when the continuation payload provides a parent contribution (e.g., via `job.payload.target_contribution_id`), the code assigns `sourceContributionId` on the `pathContext` passed to `fileManager.uploadAndRegisterFile`. Leave the behaviour unchanged when no parent contribution exists.  
     *   `[✅]` 44.d. **[LINT]** Run the linter targeting this file. If any warnings or errors appear, resolve them immediately and rerun the linter to prove the file is clean.
-
-*   `[ ]` 45. **`[TEST-UNIT]` `supabase/functions/_shared/prompt-assembler/prompt-assembler.test.ts`**  
-    *   `[ ]` 45.a. **[READ]**  
+*   `[✅]` 45. **`[TEST-UNIT]` `supabase/functions/_shared/prompt-assembler/prompt-assembler.test.ts`**  
+    *   `[✅]` 45.a. **[READ]**  
         * Open the test file and read every orchestrator scenario, including the happy-path and error-path cases.  
         * Identify where the mock `fileManager.uploadAndRegisterFile` or similar helpers capture the upload arguments.  
         * Note which tests currently assert anything about the upload context so you know where to extend coverage.  
-    *   `[ ]` 45.b. **[RED]**  
+    *   `[✅]` 45.b. **[RED]**  
         * Following the existing test structure (naming conventions, `t.step` usage, assertion style), add a new test case (or extend an existing one) that stubs `fileManager.uploadAndRegisterFile`.  
         * Inside that test, capture the first argument passed to the mock and assert that `capturedArgs.pathContext.sourceContributionId` matches the contribution id produced by the orchestrated flow.  
         * Make the assertion strict so it fails with the current implementation.  
         * Do not modify production code in this step; stop once the new test fails for the right reason.  
-    *   `[ ]` 45.c. **[GREEN]** *(Implementation is handled in Step 46; do not change production code here.)*  
-    *   `[ ]` 45.d. **[LINT]**  
+    *   `[✅]` 45.c. **[GREEN]** *(Implementation is handled in Step 46; do not change production code here.)*  
+    *   `[✅]` 45.d. **[LINT]**  
         * Run the linter targeting this file (e.g., `deno lint supabase/functions/_shared/prompt-assembler/prompt-assembler.test.ts`).  
         * Resolve any warnings or errors introduced by the new test, then re-run the linter to confirm the file is clean.
-
-*   `[ ]` 46. **`[BE]` `supabase/functions/_shared/prompt-assembler/prompt-assembler.ts`**  
-    *   `[ ]` 46.a. **[READ]** Open the entire file, identify every exported function that orchestrates prompt assembly (e.g., `assemblePrompt`, `assemblePlannerPromptForModel`, continuation helpers), and note where each call site constructs the `pathContext` or passes arguments into the individual assembler modules.  
-    *   `[ ]` 46.b. **[RED]** Before editing, rerun the Step 45 tests to confirm they are still failing because the orchestrator is not forwarding `sourceContributionId`. Do not modify any code until the failure is observed and documented.  
-    *   `[ ]` 46.c. **[GREEN]** Update every orchestration branch so that whenever a contribution identifier is present on the job/session payload (for example `job.payload.target_contribution_id`, the continuation metadata, or any previously assembled contribution id), that identifier is passed into the downstream assembler by setting `sourceContributionId` on the argument object forwarded to `assembleSeedPrompt`, `assemblePlannerPrompt`, `assembleTurnPrompt`, or `assembleContinuationPrompt`. Ensure no assembler invocation is skipped—every branch that constructs an upload context must now include the property.  
-    *   `[ ]` 46.d. **[LINT]** Run the linter for this file only and resolve any reported issues (type errors, unused imports, formatting) introduced by the change.
-
-*   `[ ]` 47. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/strategies/planners/planPerSourceDocument.test.ts`**  
-    *   `[ ]` 47.a. **[READ]**  
+*   `[✅]` 46. **`[BE]` `supabase/functions/_shared/prompt-assembler/prompt-assembler.ts`**  
+    *   `[✅]` 46.a. **[READ]** Open the entire file, identify every exported function that orchestrates prompt assembly (e.g., `assemblePrompt`, `assemblePlannerPromptForModel`, continuation helpers), and note where each call site constructs the `pathContext` or passes arguments into the individual assembler modules.  
+    *   `[✅]` 46.b. **[RED]** Before editing, rerun the Step 45 tests to confirm they are still failing because the orchestrator is not forwarding `sourceContributionId`. Do not modify any code until the failure is observed and documented.  
+    *   `[✅]` 46.c. **[GREEN]** Update every orchestration branch so that whenever a contribution identifier is present on the job/session payload (for example `job.payload.target_contribution_id`, the continuation metadata, or any previously assembled contribution id), that identifier is passed into the downstream assembler by setting `sourceContributionId` on the argument object forwarded to `assembleSeedPrompt`, `assemblePlannerPrompt`, `assembleTurnPrompt`, or `assembleContinuationPrompt`. Ensure no assembler invocation is skipped—every branch that constructs an upload context must now include the property.  
+    *   `[✅]` 46.d. **[LINT]** Run the linter for this file only and resolve any reported issues (type errors, unused imports, formatting) introduced by the change.
+*   `[✅]` 47. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/strategies/planners/planPerSourceDocument.test.ts`**  
+    *   `[✅]` 47.a. **[READ]**  
         * Open the entire test file and read every `t.step`, paying close attention to how mock contributions, planner inputs, and expected job payloads are constructed.  
         * Identify where the suite currently inspects the generated job array (typically via `assertEquals` on the payload) so you know exactly where to extend those assertions.  
         * Note which helper builders (e.g., `buildMockContribution`, `createPlannerDeps`) are used so you can reuse them when authoring the new coverage.  
-    *   `[ ]` 47.b. **[RED]**  
+    *   `[✅]` 47.b. **[RED]**  
         * Following the existing naming conventions, add a new test (or extend the most relevant existing scenario) that seeds at least one mock contribution with a known id (for example, `'thesis-contrib-123'`).  
         * Execute `planPerSourceDocument` within that test and capture the emitted job payloads.  
         * Add strict assertions that (1) the payload whose `output_type` targets that same document now contains `payload.sourceContributionId === 'thesis-contrib-123'`, and (2) a payload targeting a completely new document keeps the property `undefined`/`null`.  
         * Ensure these new assertions currently fail, proving the production planner does not yet populate the field. Do **not** modify implementation files in this step.  
-    *   `[ ]` 47.c. **[GREEN]** *(Production implementation occurs in Step 48; no changes here once the test is failing.)*  
-    *   `[ ]` 47.d. **[LINT]**  
+    *   `[✅]` 47.c. **[GREEN]** *(Production implementation occurs in Step 48; no changes here once the test is failing.)*  
+    *   `[✅]` 47.d. **[LINT]**  
         * Run the repository linter scoped to this file (e.g., `deno lint supabase/functions/dialectic-worker/strategies/planners/planPerSourceDocument.test.ts`).  
         * Resolve any warnings or errors introduced by the new test code. Re-run the linter to confirm the file is clean before moving on.
-
-*   `[ ]` 48. **`[BE]` `supabase/functions/dialectic-worker/strategies/planners/planPerSourceDocument.ts`**  
-    *   `[ ]` 48.a. **[READ]** Walk through the entire default export, tracing every branch that builds `DialecticGenerationJob` payloads and noting where contribution-related metadata is sourced. Pay particular attention to helper functions that compose the job’s `payload` object.  
-    *   `[ ]` 48.b. **[RED]** Do not alter the tests; confirm the new expectations from Step 47 are currently failing because the constructed payload does not yet contain `sourceContributionId`.  
-    *   `[ ]` 48.c. **[GREEN]** Update each code path that creates a job payload so that when the planner knows the originating contribution (e.g., via `sourceDocument` / `document.id`), it sets `payload.sourceContributionId` (or injects the field into the context passed to prompt assemblers) before enqueuing the job. Leave behaviour unchanged for cases where no contribution exists. Include exhaustive handling for every branch that emits planner jobs.  
-    *   `[ ]` 48.d. **[LINT]** Run the linter on this file and resolve any reported issues.
-
-*   `[ ]` 49. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/strategies/planners/planPerSourceDocumentByLineage.test.ts`**  
-    *   `[ ]` 49.a. **[READ]**  
+*   `[✅]` 48. **`[BE]` `supabase/functions/dialectic-worker/strategies/planners/planPerSourceDocument.ts`**  
+    *   `[✅]` 48.a. **[READ]** Walk through the entire default export, tracing every branch that builds `DialecticGenerationJob` payloads and noting where contribution-related metadata is sourced. Pay particular attention to helper functions that compose the job’s `payload` object.  
+    *   `[✅]` 48.b. **[RED]** Do not alter the tests; confirm the new expectations from Step 47 are currently failing because the constructed payload does not yet contain `sourceContributionId`.  
+    *   `[✅]` 48.c. **[GREEN]** Update each code path that creates a job payload so that when the planner knows the originating contribution (e.g., via `sourceDocument` / `document.id`), it sets `payload.sourceContributionId` (or injects the field into the context passed to prompt assemblers) before enqueuing the job. Leave behaviour unchanged for cases where no contribution exists. Include exhaustive handling for every branch that emits planner jobs.  
+    *   `[✅]` 48.d. **[LINT]** Run the linter on this file and resolve any reported issues.
+*   `[✅]` 49. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/strategies/planners/planPerSourceDocumentByLineage.test.ts`**  
+    *   `[✅]` 49.a. **[READ]**  
         * Open the entire file and read every existing test case (`t.step`) so you understand which helpers (`buildLineagePlannerDeps`, mock contribution factories, etc.) are already available.  
         * Identify the assertions that currently inspect emitted job payloads (typically arrays returned from `planPerSourceDocumentByLineage`) so you know exactly where to extend coverage.  
         * Take notes on how lineage metadata (e.g., `lineageSeedContributions`, `mockLineageGraph`) is represented; you will need a concrete contribution id from that structure to drive the new expectations.  
-    *   `[ ]` 49.b. **[RED]**  
+    *   `[✅]` 49.b. **[RED]**  
         * Following the naming conventions in this suite, add a new test (or extend the most relevant existing scenario) that seeds at least one lineage node with a deterministic contribution id, for example `'lineage-contrib-789'`.  
         * Invoke `planPerSourceDocumentByLineage` within the test, capture the returned job list, and locate the job whose payload targets the same document produced from that lineage node.  
         * Add strict assertions that:  
             1. The matching job now includes `payload.sourceContributionId === 'lineage-contrib-789'`.  
             2. Any job whose output represents a brand-new document (no ancestor contribution) continues to omit the field (`undefined`/`null`).  
         * Run the test suite and document that it fails, proving the implementation does not yet set the column. Do **not** touch implementation files in this step.  
-    *   `[ ]` 49.c. **[GREEN]** *(Leave failing; the planner implementation will be updated in Step 50.)*  
-    *   `[ ]` 49.d. **[LINT]**  
+    *   `[✅]` 49.c. **[GREEN]** *(Leave failing; the planner implementation will be updated in Step 50.)*  
+    *   `[✅]` 49.d. **[LINT]**  
         * Execute the repository linter scoped to this file (e.g., `deno lint supabase/functions/dialectic-worker/strategies/planners/planPerSourceDocumentByLineage.test.ts`).  
         * Resolve every warning or error introduced by the new test code (imports, formatting, unused variables). Repeat the lint run until clean.
-
-*   `[ ]` 50. **`[BE]` `supabase/functions/dialectic-worker/strategies/planners/planPerSourceDocumentByLineage.ts`**  
-    *   `[ ]` 50.a. **[READ]**  
+*   `[✅]` 50. **`[BE]` `supabase/functions/dialectic-worker/strategies/planners/planPerSourceDocumentByLineage.ts`**  
+    *   `[✅]` 50.a. **[READ]**  
         * Open the implementation and trace the full control flow of `planPerSourceDocumentByLineage`, including every helper it calls to compose `DialecticGenerationJob` payloads.  
         * Identify where lineage information (ancestor contribution ids, document keys, stage slugs) is available in the current logic.  
         * Map each branch that produces an output job so you know exactly which objects must be updated to carry `sourceContributionId`.  
-    *   `[ ]` 50.b. **[RED]**  
+    *   `[✅]` 50.b. **[RED]**  
         * Before editing, re-run the tests from Step 49 and confirm they are failing due to missing `payload.sourceContributionId`. Do **not** modify test code in this step.  
-    *   `[ ]` 50.c. **[GREEN]**  
+    *   `[✅]` 50.c. **[GREEN]**  
         * For every place the planner builds a job payload representing work derived from an existing contribution, set `payload.sourceContributionId` to the correct ancestor contribution id (e.g., values obtained from lineage nodes or resolved source documents).  
         * Ensure new outputs that originate from scratch leave the field undefined/null.  
         * Keep the rest of the payload structure unchanged so existing consumers continue to function.  
-    *   `[ ]` 50.d. **[LINT]** Run the linter scoped to this file, resolve all warnings/errors, and repeat until clean.
-
-*   `[ ]` 51. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/strategies/planners/planPerSourceGroup.test.ts`**  
-    *   `[ ]` 51.a. **[READ]** Slowly read the entire test file, noting every describe/it block that asserts planner job payloads, and write down where `expectedJobs` or similar arrays are constructed so we know exactly where to extend assertions.  
-    *   `[ ]` 51.b. **[RED]** For each scenario that validates the planner’s emitted jobs (grouped by source documents or branches), add new `assertEquals`/`assertStrictEquals` checks proving each job includes a `sourceContributionId` field with the origin contribution’s id; if no id is available for a particular test fixture, assert the property is explicitly `null`. Staging these assertions must leave the suite red because the implementation does not yet populate the field.  
-    *   `[ ]` 51.c. **[GREEN]** *(Do not edit the implementation here—leave the failing assertions in place for Step 52.)*  
-    *   `[ ]` 51.d. **[LINT]** Run the linter on this specific file (and only this file) and resolve any style errors introduced by the RED changes.
-
-*   `[ ]` 52. **`[BE]` `supabase/functions/dialectic-worker/strategies/planners/planPerSourceGroup.ts` — Propagate `source_contribution_id` for grouped planner jobs**  
-    *   `[ ]` 52.a. **[READ]** Open the file and step through the logic that iterates grouped source documents, focusing on where each job payload (or upload context handed to the prompt assemblers) is constructed. Identify every place the planner copies contribution identifiers today so you know exactly where `sourceContributionId` must be introduced.  
-    *   `[ ]` 52.b. **[RED]** Before changing any code, re-run the failing tests you added in Step 51 to confirm they are still red. This guarantees the new expectations are actively enforcing the missing `sourceContributionId` behaviour in this file.  
-    *   `[ ]` 52.c. **[GREEN]** Update the planner so every job it emits carries a `sourceContributionId` derived from the grouped contribution being processed. This typically means threading the original contribution id into the payload object that eventually becomes the upload context for the prompt assembler. Be explicit: assign `sourceContributionId` right alongside the existing identifiers (stage, document key, etc.) so downstream callers can read it without additional parsing.  
-    *   `[ ]` 52.d. **[LINT]** Run the linter targeting `supabase/functions/dialectic-worker/strategies/planners/planPerSourceGroup.ts` and resolve any warnings or errors introduced by the edit.
-
-*   `[ ]` 53. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/strategies/planners/planPairwiseByOrigin.test.ts` — Prove pairwise planner outputs carry \`sourceContributionId\`**  
-    *   `[ ]` 53.a. **[READ]**  
+    *   `[✅]` 50.d. **[LINT]** Run the linter scoped to this file, resolve all warnings/errors, and repeat until clean.
+*   `[✅]` 51. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/strategies/planners/planPerSourceGroup.test.ts`**  
+    *   `[✅]` 51.a. **[READ]** Slowly read the entire test file, noting every describe/it block that asserts planner job payloads, and write down where `expectedJobs` or similar arrays are constructed so we know exactly where to extend assertions.  
+    *   `[✅]` 51.b. **[RED]** For each scenario that validates the planner’s emitted jobs (grouped by source documents or branches), add new `assertEquals`/`assertStrictEquals` checks proving each job includes a `sourceContributionId` field with the origin contribution’s id; if no id is available for a particular test fixture, assert the property is explicitly `null`. Staging these assertions must leave the suite red because the implementation does not yet populate the field.  
+    *   `[✅]` 51.c. **[GREEN]** *(Do not edit the implementation here—leave the failing assertions in place for Step 52.)*  
+    *   `[✅]` 51.d. **[LINT]** Run the linter on this specific file (and only this file) and resolve any style errors introduced by the RED changes.
+*   `[✅]` 52. **`[BE]` `supabase/functions/dialectic-worker/strategies/planners/planPerSourceGroup.ts` — Propagate `source_contribution_id` for grouped planner jobs**  
+    *   `[✅]` 52.a. **[READ]** Open the file and step through the logic that iterates grouped source documents, focusing on where each job payload (or upload context handed to the prompt assemblers) is constructed. Identify every place the planner copies contribution identifiers today so you know exactly where `sourceContributionId` must be introduced.  
+    *   `[✅]` 52.b. **[RED]** Before changing any code, re-run the failing tests you added in Step 51 to confirm they are still red. This guarantees the new expectations are actively enforcing the missing `sourceContributionId` behaviour in this file.  
+    *   `[✅]` 52.c. **[GREEN]** Update the planner so every job it emits carries a `sourceContributionId` derived from the grouped contribution being processed. This typically means threading the original contribution id into the payload object that eventually becomes the upload context for the prompt assembler. Be explicit: assign `sourceContributionId` right alongside the existing identifiers (stage, document key, etc.) so downstream callers can read it without additional parsing.  
+    *   `[✅]` 52.d. **[LINT]** Run the linter targeting `supabase/functions/dialectic-worker/strategies/planners/planPerSourceGroup.ts` and resolve any warnings or errors introduced by the edit.
+*   `[✅]` 53. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/strategies/planners/planPairwiseByOrigin.test.ts` — Prove pairwise planner outputs carry \`sourceContributionId\`**  
+    *   `[✅]` 53.a. **[READ]**  
         * Open the entire test file and read every `describe`/`it` block, especially the helpers that build `expectedJobs` or similar arrays.  
         * Take notes on each scenario that validates planner output so you know which assertions must be extended (e.g., when the planner pairs thesis vs. antithesis contributions, or when no pairing occurs).  
-    *   `[ ]` 53.b. **[RED]**  
+    *   `[✅]` 53.b. **[RED]**  
         * For every test case that asserts the contents of planner-emitted jobs, add explicit `assertEquals` (or equivalent) expectations for a new `sourceContributionId` field.  
         * When the fixture has a known parent contribution id, assert that exact id; when the fixture purposely lacks a parent, assert that the property is `null` (or absent if the contract dictates).  
         * Re-run the suite and confirm the new assertions fail because the implementation does not yet populate the field. Do **not** change production code in this step.  
-    *   `[ ]` 53.c. **[GREEN]** *(Defer implementation to Step 54; leave the failing tests in place.)*  
-    *   `[ ]` 53.d. **[LINT]** Run the linter scoped to this test file. Resolve every warning (imports, formatting, unused variables) introduced by the RED edits, repeating until clean.
-
-*   `[ ]` 54. **`[BE]` `supabase/functions/dialectic-worker/strategies/planners/planPairwiseByOrigin.ts` — Thread contribution ids through pairwise planner outputs**  
-    *   `[ ]` 54.a. **[READ]** Open the file and trace every function that produces planner jobs (for example `buildPairwiseJobs`, any helpers that flatten thesis/antithesis pairs, and the final object literal that becomes the job payload). For each branch, note where the source contribution (often exposed as `origin.id`, `pair.thesis.id`, `pair.antithesis.id`, etc.) is already available so you know exactly which values must be copied into `sourceContributionId`.  
-    *   `[ ]` 54.b. **[RED]** Before touching the implementation, re-run the failing expectations you added in Step 53 and confirm they are still red. This proves the gap really lives in this file and keeps the test harness actively exercising the missing behaviour.  
-    *   `[ ]` 54.c. **[GREEN]** Update every code path that constructs a planner job payload so it explicitly sets `sourceContributionId` next to the existing identifiers (stage slug, document key, model id, etc.). When the planner builds both sides of a pair, ensure each job receives the id of the specific contribution it is derived from. When a contribution id is genuinely unavailable, assign `null` so the tests document that case.  
-    *   `[ ]` 54.d. **[LINT]** Run the linter against `planPairwiseByOrigin.ts` and resolve any warnings or errors triggered by the edit before moving on.
-
-*   `[ ]` 55. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/strategies/planners/planPerModel.test.ts` — Prove per-model planner jobs surface `sourceContributionId`**  
-    *   `[ ]` 55.a. **[READ]** Open the test file and catalogue every scenario that inspects planner-emitted jobs (e.g., single-model happy paths, multiple models, continuation replays). Identify which fixtures already include a contribution id (often exposed as `mockContribution.id`, `modelJob.sourceContribution.id`, etc.) and which deliberately omit one so you can tailor assertions in the next step.  
-    *   `[ ]` 55.b. **[RED]** For each test that validates the structure of a planner job payload, add explicit assertions that check the new `sourceContributionId` property:  
+    *   `[✅]` 53.c. **[GREEN]** *(Defer implementation to Step 54; leave the failing tests in place.)*  
+    *   `[✅]` 53.d. **[LINT]** Run the linter scoped to this test file. Resolve every warning (imports, formatting, unused variables) introduced by the RED edits, repeating until clean.
+*   `[✅]` 54. **`[BE]` `supabase/functions/dialectic-worker/strategies/planners/planPairwiseByOrigin.ts` — Thread contribution ids through pairwise planner outputs**  
+    *   `[✅]` 54.a. **[READ]** Open the file and trace every function that produces planner jobs (for example `buildPairwiseJobs`, any helpers that flatten thesis/antithesis pairs, and the final object literal that becomes the job payload). For each branch, note where the source contribution (often exposed as `origin.id`, `pair.thesis.id`, `pair.antithesis.id`, etc.) is already available so you know exactly which values must be copied into `sourceContributionId`.  
+    *   `[✅]` 54.b. **[RED]** Before touching the implementation, re-run the failing expectations you added in Step 53 and confirm they are still red. This proves the gap really lives in this file and keeps the test harness actively exercising the missing behaviour.  
+    *   `[✅]` 54.c. **[GREEN]** Update every code path that constructs a planner job payload so it explicitly sets `sourceContributionId` next to the existing identifiers (stage slug, document key, model id, etc.). When the planner builds both sides of a pair, ensure each job receives the id of the specific contribution it is derived from. When a contribution id is genuinely unavailable, assign `null` so the tests document that case.  
+    *   `[✅]` 54.d. **[LINT]** Run the linter against `planPairwiseByOrigin.ts` and resolve any warnings or errors triggered by the edit before moving on.
+*   `[✅]` 55. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/strategies/planners/planPerModel.test.ts` — Prove per-model planner jobs surface `sourceContributionId`**  
+    *   `[✅]` 55.a. **[READ]** Open the test file and catalogue every scenario that inspects planner-emitted jobs (e.g., single-model happy paths, multiple models, continuation replays). Identify which fixtures already include a contribution id (often exposed as `mockContribution.id`, `modelJob.sourceContribution.id`, etc.) and which deliberately omit one so you can tailor assertions in the next step.  
+    *   `[✅]` 55.b. **[RED]** For each test that validates the structure of a planner job payload, add explicit assertions that check the new `sourceContributionId` property:  
         * When the fixture provides a concrete contribution id, assert the job contains that exact id (use `assertEquals(actual.sourceContributionId, expectedId)`).  
         * When the fixture is intentionally id-less, assert the property is `null` or absent according to the agreed contract (use `assertEquals(actual.sourceContributionId, null)` or `assert('sourceContributionId' in actual === false)` as appropriate).  
         * Re-run the test suite and verify the new assertions fail, demonstrating the implementation has not yet been updated. Do not touch production code in this step.  
-    *   `[ ]` 55.c. **[GREEN]** *(Leave the implementation untouched; the fix will be completed in Step 56.)*  
-    *   `[ ]` 55.d. **[LINT]** Run the linter scoped to this test file and resolve any warnings introduced by the RED edits (unused imports, formatting drift, etc.) until the file is clean.
-
-*   `[ ]` 56. **`[BE]` `supabase/functions/dialectic-worker/strategies/planners/planPerModel.ts`**  
-    *   `[ ]` 56.a. **[READ]** Walk through every branch that builds the per-model job payload (including any helper functions inside this file) and list the fields currently forwarded to downstream assemblers.  
-    *   `[ ]` 56.b. **[RED]** With Step 55’s failing test still present, verify in-code (e.g., with temporary assertions or logging) that `sourceContributionId` is not being set; do not modify permanent logic yet.  
-    *   `[ ]` 56.c. **[GREEN]** Update each payload-construction site so that whenever the planner knows which contribution the job is derived from, it assigns `sourceContributionId` on the emitted job object (leave it explicitly `undefined` only when no parent contribution exists). Ensure the value propagates through any intermediate objects exported by this module.  
-    *   `[ ]` 56.d. **[LINT]** Run the linter scoped to this file and resolve every warning or error that appears.
-
-*   `[ ]` 57. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/strategies/planners/planAllToOne.test.ts`**  
-    *   `[ ]` 57.a. **[READ]** Study every existing test case to understand how the all-to-one planner builds continuation jobs, paying close attention to the shape of the mocked payloads and the assertions made against them.  
-    *   `[ ]` 57.b. **[RED]** Introduce a new test (or extend the relevant scenario) that constructs an all-to-one planner job with a known source contribution. Assert that the resulting planner payload includes a `sourceContributionId` property matching the originating contribution id; the test must fail because the implementation currently omits this field.  
-    *   `[ ]` 57.c. **[GREEN]** *(Do not modify the implementation in this step; leave the failing test in place for Step 58.)*  
-    *   `[ ]` 57.d. **[LINT]** Run the linter for this test file and resolve any warnings or formatting issues introduced by the new test.
-
-*   `[ ]` 58. **`[BE]` `supabase/functions/dialectic-worker/strategies/planners/planAllToOne.ts`**  
-    *   `[ ]` 58.a. **[READ]** Open the file and read the exported `planAllToOne` function from start to finish, paying special attention to the section that iterates over aggregated source documents and pushes job definitions into the array returned to the worker. Note the exact variable that stores the originating contribution id for each aggregated document.  
-    *   `[ ]` 58.b. **[RED]** Re-run the failing test introduced in Step 57 (e.g., `deno test supabase/functions/dialectic-worker/strategies/planners/planAllToOne.test.ts`) and verify it still fails with an assertion mentioning `sourceContributionId` before touching the implementation.  
-    *   `[ ]` 58.c. **[GREEN]** Inside the job-building loop, update every payload object passed to `createExecuteJobPayload` / pushed into the job list so it includes `sourceContributionId` set to the contribution id identified in Step 58.a. Preserve all existing properties and ensure the new field is written to the `payload` the worker will forward to the prompt assemblers.  
-    *   `[ ]` 58.d. **[LINT]** Run the linter for this file and resolve any warnings or formatting issues produced by the change.
-
-*   `[ ]` 61. **`[TEST-UNIT]` `supabase/functions/dialectic-service/saveContributionEdit.test.ts`**  
-    *   `[ ]` 61.a. **[READ]** Open the test file and read every existing `Deno.test` block, paying special attention to the happy-path scenario that verifies the edited contribution is saved via `fileManager.uploadAndRegisterFile`. Identify where the current expectations inspect the upload context returned from the mock.  
-    *   `[ ]` 61.b. **[RED]** Create a new test (or extend the happy-path test) that simulates editing an existing contribution. Within the mocked `uploadAndRegisterFile` call, assert that `context.pathContext.sourceContributionId` equals the id of the original contribution under edit. The new assertion must currently fail because the implementation does not supply this property.  
-    *   `[ ]` 61.c. **[GREEN]** *(Do not change the implementation in this step; leave the failing test in place for Step 62.)*  
-    *   `[ ]` 61.d. **[LINT]** Run `deno lint supabase/functions/dialectic-service/saveContributionEdit.test.ts` (or the project’s lint task) and resolve any warnings introduced by the new test.
-
-*   `[ ]` 62. **`[BE]` `supabase/functions/dialectic-service/saveContributionEdit.ts`**  
-    *   `[ ]` 62.a. **[READ]** Open the file and read the entire `saveContributionEdit` implementation; locate the `fileManager.uploadAndRegisterFile` invocation that persists the user’s edited content. Note the variables already holding the original contribution id (`typedOriginalContribution.id`) and the deconstructed path data (`deconstructed`).  
-    *   `[ ]` 62.b. **[RED]** Without changing code, run the newly added test from Step 61 to observe it failing because the upload context does not yet set `sourceContributionId`. Do not proceed until the failure is reproduced.  
-    *   `[ ]` 62.c. **[GREEN]** Update the existing upload context object so it includes `sourceContributionId: typedOriginalContribution.id`; ensure no other properties are altered, and that the value is drawn from the original contribution (not the new edit). Re-read the function afterwards to verify the new field is present exactly once.  
-    *   `[ ]` 62.d. **[LINT]** Execute the linter for this file and resolve any issues, confirming the implementation compiles cleanly.
-
-*   `[ ]` 63. **`[TEST-UNIT]` `supabase/functions/dialectic-service/exportProject.test.ts`**  
-    *   `[ ]` 63.a. **[READ]** Read the entire test file, paying special attention to the fixtures that mock FileManager uploads, the expectations for the generated export manifest, and the assertions around `dialectic_project_resources` data. Take notes on every place where resource metadata is asserted so you can extend them consistently.  
-    *   `[ ]` 63.b. **[RED]** Introduce failing coverage that proves every exported project-resource record must retain its originating `source_contribution_id`. This must include:  
+    *   `[✅]` 55.c. **[GREEN]** *(Leave the implementation untouched; the fix will be completed in Step 56.)*  
+    *   `[✅]` 55.d. **[LINT]** Run the linter scoped to this test file and resolve any warnings introduced by the RED edits (unused imports, formatting drift, etc.) until the file is clean.
+*   `[✅]` 56. **`[BE]` `supabase/functions/dialectic-worker/strategies/planners/planPerModel.ts`**  
+    *   `[✅]` 56.a. **[READ]** Walk through every branch that builds the per-model job payload (including any helper functions inside this file) and list the fields currently forwarded to downstream assemblers.  
+    *   `[✅]` 56.b. **[RED]** With Step 55’s failing test still present, verify in-code (e.g., with temporary assertions or logging) that `sourceContributionId` is not being set; do not modify permanent logic yet.  
+    *   `[✅]` 56.c. **[GREEN]** Update each payload-construction site so that whenever the planner knows which contribution the job is derived from, it assigns `sourceContributionId` on the emitted job object (leave it explicitly `undefined` only when no parent contribution exists). Ensure the value propagates through any intermediate objects exported by this module.  
+    *   `[✅]` 56.d. **[LINT]** Run the linter scoped to this file and resolve every warning or error that appears.
+*   `[✅]` 57. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/strategies/planners/planAllToOne.test.ts`**  
+    *   `[✅]` 57.a. **[READ]** Study every existing test case to understand how the all-to-one planner builds continuation jobs, paying close attention to the shape of the mocked payloads and the assertions made against them.  
+    *   `[✅]` 57.b. **[RED]** Introduce a new test (or extend the relevant scenario) that constructs an all-to-one planner job with a known source contribution. Assert that the resulting planner payload includes a `sourceContributionId` property matching the originating contribution id; the test must fail because the implementation currently omits this field.  
+    *   `[✅]` 57.c. **[GREEN]** *(Do not modify the implementation in this step; leave the failing test in place for Step 58.)*  
+    *   `[✅]` 57.d. **[LINT]** Run the linter for this test file and resolve any warnings or formatting issues introduced by the new test.
+*   `[✅]` 58. **`[BE]` `supabase/functions/dialectic-worker/strategies/planners/planAllToOne.ts`**  
+    *   `[✅]` 58.a. **[READ]** Open the file and read the exported `planAllToOne` function from start to finish, paying special attention to the section that iterates over aggregated source documents and pushes job definitions into the array returned to the worker. Note the exact variable that stores the originating contribution id for each aggregated document.  
+    *   `[✅]` 58.b. **[RED]** Re-run the failing test introduced in Step 57 (e.g., `deno test supabase/functions/dialectic-worker/strategies/planners/planAllToOne.test.ts`) and verify it still fails with an assertion mentioning `sourceContributionId` before touching the implementation.  
+    *   `[✅]` 58.c. **[GREEN]** Inside the job-building loop, update every payload object passed to `createExecuteJobPayload` / pushed into the job list so it includes `sourceContributionId` set to the contribution id identified in Step 58.a. Preserve all existing properties and ensure the new field is written to the `payload` the worker will forward to the prompt assemblers.  
+    *   `[✅]` 58.d. **[LINT]** Run the linter for this file and resolve any warnings or formatting issues produced by the change.
+*   `[✅]` 59. **`[TYPES]` Align `saveContributionEdit` contracts with document-centric resources**  
+    *   `[✅]` 59.a. **[READ]** Re-read `supabase/functions/dialectic-service/dialectic.interface.ts` (and any downstream type exports) so the request/response contracts for `saveContributionEdit` are fully understood before modifying them.  
+    *   `[✅]` 59.b. **[TYPES]** Update the type definitions for doc-centric editing:  
+        *   `[✅]` 59.b.i. Add a new `EditedDocumentResource` type (or equivalent) that models the subset of `dialectic_project_resources` fields the API returns after a successful edit (id, resource_type, session_id, stage_slug, iteration_number, document_key, storage metadata, mime, size, `source_contribution_id`, timestamps).  
+        *   `[✅]` 59.b.ii. Extend `SaveContributionEditPayload` to carry the document identity required for resource saves (e.g., a `documentKey` and optional `resourceType`), ensuring doc-centric edits do not rely on legacy `contribution_type` fallbacks.  
+        *   `[✅]` 59.b.iii. Replace the old `DialecticContribution`-based success payload with a new `SaveContributionEditSuccessResponse` that surfaces the edited resource metadata plus the originating contribution id for audit/history purposes. Export this type so mocks, frontend store code, and tests adopt the same contract.  
+    *   `[✅]` 59.c. **[LINT]** Run `deno lint supabase/functions/dialectic-service/dialectic.interface.ts` (or the repo lint task scoped to this file) and resolve any issues introduced by the new type declarations.
+*   `[✅]` 61. **`[TEST-UNIT]` `supabase/functions/dialectic-service/saveContributionEdit.test.ts`**  
+    *   `[✅]` 61.a. **[READ]** Open the test file and read every existing `Deno.test` block, paying special attention to the happy-path scenario that verifies the edited contribution is saved via `fileManager.uploadAndRegisterFile`. Identify where the current expectations inspect the upload context returned from the mock.  
+    *   `[✅]` 61.b. **[RED]** Extend the canonical edit scenario to cover document-centric persistence. The updated test must now:  
+        *   `[✅]` 61.b.i. Assert that `uploadAndRegisterFile` receives a `ResourceUploadContext` targeting `FileType.RenderedDocument`, with `pathContext.documentKey` matching the document under edit (`documentKey` payload or `contribution_type`) and `resourceTypeForDb === 'rendered_document'`.  
+        *   `[✅]` 61.b.ii. Prove we are no longer writing through the contribution pipeline by asserting `('contributionMetadata' in ctx) === false` while still checking all canonical path fields (projectId/sessionId/stageSlug/iteration/modelSlug/attemptCount/originalFileName).  
+        *   `[✅]` 61.b.iii. Keep the previous requirement: `pathContext.sourceContributionId` must equal the original contribution id so version history can be traced.  
+        *   `[✅]` 61.b.iv. Configure the mock FileManager to return a `dialectic_project_resources` row and add assertions that the test now expects the API to surface the new `SaveContributionEditSuccessResponse` (from Step 59) instead of a `DialecticContribution`.  
+      All new expectations must fail until the implementation is updated in Step 62.  
+    *   `[✅]` 61.c. **[GREEN]** *(Do not change the implementation in this step; leave the failing test in place for Step 62.)*  
+    *   `[✅]` 61.d. **[LINT]** Run `deno lint supabase/functions/dialectic-service/saveContributionEdit.test.ts` (or the project’s lint task) and resolve any warnings introduced by the new test.
+*   `[✅]` 62. **`[BE]` `supabase/functions/dialectic-service/saveContributionEdit.ts`**  
+    *   `[✅]` 62.a. **[READ]** Open the file and read the entire `saveContributionEdit` implementation; locate the `fileManager.uploadAndRegisterFile` invocation that persists the user’s edited content. Note the variables already holding the original contribution id (`typedOriginalContribution.id`) and the deconstructed path data (`deconstructed`).  
+    *   `[✅]` 62.b. **[RED]** Without changing code, run the newly added test from Step 61 to observe the failures around missing `FileType.RenderedDocument` pathing, absent `resourceTypeForDb`, and missing `sourceContributionId`. Do not proceed until those assertions are red.  
+    *   `[✅]` 62.c. **[GREEN]** Refactor the implementation to persist user edits as document resources:  
+        *   `[✅]` 62.c.i. Derive a deterministic `documentKey` (prefer the new payload field; fall back to `typedOriginalContribution.contribution_type`) and fail fast if neither is available so edits can’t be routed to ambiguous paths.  
+        *   `[✅]` 62.c.ii. Replace the `ModelContributionUploadContext` call with a `ResourceUploadContext` targeting `FileType.RenderedDocument`, setting `pathContext.documentKey`, `pathContext.sourceContributionId = typedOriginalContribution.id`, and `resourceTypeForDb = 'rendered_document'`. Populate `resourceDescriptionForDb` with the metadata needed by downstream UIs (model id/name, editVersion, original contribution id, etc.).  
+        *   `[✅]` 62.c.iii. Remove the now-invalid `contributionMetadata` block, and update the success-handling logic to treat the FileManager response as a `dialectic_project_resources` row that is mapped to the `SaveContributionEditSuccessResponse` defined in Step 59.  
+        *   `[✅]` 62.c.iv. Keep the existing behaviour that marks the original contribution as not latest, and ensure any IDs required by the store (e.g., `source_contribution_id`, `resource_id`) are plumbed through the new response.  
+    *   `[✅]` 62.d. **[LINT]** Execute the linter for this file and resolve any issues, confirming the implementation compiles cleanly.
+*   `[✅]` 63. **`[TEST-UNIT]` `supabase/functions/dialectic-service/exportProject.test.ts`**  
+    *   `[✅]` 63.a. **[READ]** Read the entire test file, paying special attention to the fixtures that mock FileManager uploads, the expectations for the generated export manifest, and the assertions around `dialectic_project_resources` data. Take notes on every place where resource metadata is asserted so you can extend them consistently.  
+    *   `[✅]` 63.b. **[RED]** Introduce failing coverage that proves every exported project-resource record must retain its originating `source_contribution_id`. This must include:  
         * Updating the mocked database rows returned by the Supabase client so at least one resource has a non-null `source_contribution_id` and another remains null (so both cases are asserted).  
         * Adding explicit expectations in the existing `it` blocks (or creating a new one if necessary) that validate the exported JSON payload, ensuring `source_contribution_id` is present and equals the mocked value for each resource entry that originally had one.  
         * Verifying any FileManager mocks that write zip contents also reflect the new field where appropriate. The test should fail until the implementation propagates the column.  
-    *   `[ ]` 63.c. **[GREEN]** *(Do not modify the implementation in this step; Step 64 will satisfy the failing test.)*  
-    *   `[ ]` 63.d. **[LINT]** Run the linter on this test file and resolve any warnings or formatting issues introduced by the new assertions.
-
-*   `[ ]` 64. **`[BE]` `supabase/functions/dialectic-service/exportProject.ts` — Persist `source_contribution_id` throughout the export pipeline**  
-    *   `[ ]` 64.a. **[READ]** Open the file and read the `exportProject` implementation from top to bottom. Document every place where project resources are fetched (`supabase.from('dialectic_project_resources')`), transformed (e.g., `const resourceEntries = resources.map(...)`), or written to the export manifest/zip. Pay special attention to helper functions that build resource descriptors or FileManager upload contexts.  
-    *   `[ ]` 64.b. **[RED]** Re-run the failing coverage added in Step 63 (e.g., `deno test supabase/functions/dialectic-service/exportProject.test.ts`) and confirm the assertions explicitly report a missing or mismatched `source_contribution_id`. Do not touch production code until this failure is observed.  
-    *   `[ ]` 64.c. **[GREEN]** Update the implementation so the column is preserved end-to-end:  
+    *   `[✅]` 63.c. **[GREEN]** *(Do not modify the implementation in this step; Step 64 will satisfy the failing test.)*  
+    *   `[✅]` 63.d. **[LINT]** Run the linter on this test file and resolve any warnings or formatting issues introduced by the new assertions.
+*   `[✅]` 64. **`[BE]` `supabase/functions/dialectic-service/exportProject.ts` — Persist `source_contribution_id` throughout the export pipeline**  
+    *   `[✅]` 64.a. **[READ]** Open the file and read the `exportProject` implementation from top to bottom. Document every place where project resources are fetched (`supabase.from('dialectic_project_resources')`), transformed (e.g., `const resourceEntries = resources.map(...)`), or written to the export manifest/zip. Pay special attention to helper functions that build resource descriptors or FileManager upload contexts.  
+    *   `[✅]` 64.b. **[RED]** Re-run the failing coverage added in Step 63 (e.g., `deno test supabase/functions/dialectic-service/exportProject.test.ts`) and confirm the assertions explicitly report a missing or mismatched `source_contribution_id`. Do not touch production code until this failure is observed.  
+    *   `[✅]` 64.c. **[GREEN]** Update the implementation so the column is preserved end-to-end:  
         * Ensure the Supabase selects destructure `source_contribution_id` into the local resource objects.  
         * When constructing the JSON manifest/metadata (`resourceEntries`, `manifest.resources`, or equivalent), include the `source_contribution_id` field with the value read from each row.  
         * Whenever the export code re-uploads resources via `fileManager.uploadAndRegisterFile`, pass `sourceContributionId` through the upload context’s `pathContext`.  
         * Verify no code paths drop or overwrite the column (e.g., cloning to temporary arrays, JSON serialization).  
-    *   `[ ]` 64.d. **[LINT]** Run the project linter scoped to this file (or the full lint command if required) and resolve every warning/error before proceeding.
-
-*   `[ ]` 65. **`[TEST-UNIT]` `supabase/functions/dialectic-service/cloneProject.test.ts` — Prove cloned resources preserve \`source_contribution_id\`**  
-    *   `[ ]` 65.a. **[READ]** Read the entire test file. Document every fixture and helper that fabricates `dialectic_project_resources` rows (e.g., `makeResource`, Supabase stubs, FileManager spies) and note where the resulting clone payloads/manifests are asserted. Pay attention to tests that already validate other metadata so you know exactly which expectations to extend.  
-    *   `[ ]` 65.b. **[RED]** Add failing coverage that proves the clone workflow must retain the original `source_contribution_id` values:  
+    *   `[✅]` 64.d. **[LINT]** Run the project linter scoped to this file (or the full lint command if required) and resolve every warning/error before proceeding.
+*   `[✅]` 65. **`[TEST-UNIT]` `supabase/functions/dialectic-service/cloneProject.test.ts` — Prove cloned resources preserve \`source_contribution_id\`**  
+    *   `[✅]` 65.a. **[READ]** Read the entire test file. Document every fixture and helper that fabricates `dialectic_project_resources` rows (e.g., `makeResource`, Supabase stubs, FileManager spies) and note where the resulting clone payloads/manifests are asserted. Pay attention to tests that already validate other metadata so you know exactly which expectations to extend.  
+    *   `[✅]` 65.b. **[RED]** Add failing coverage that proves the clone workflow must retain the original `source_contribution_id` values:  
         * Augment the mocked Supabase responses so at least one resource row has `source_contribution_id: 'original-contrib-id'` and another retains `null`.  
         * Extend the relevant `it` blocks to assert the cloned resource list (and any FileManager upload contexts the tests inspect) includes a `source_contribution_id` property matching the source row for both the non-null and null cases.  
         * Ensure the test fails with a clear assertion error indicating the field is missing or incorrect until the implementation is updated in Step 66.  
-    *   `[ ]` 65.c. **[GREEN]** *(Leave the production code untouched here so the new test continues to fail; Step 66 will provide the implementation.)*  
-    *   `[ ]` 65.d. **[LINT]** Run the linter for this test file (e.g., `deno fmt`/`deno lint` scoped to the path) and resolve any formatting or lint issues introduced by the new assertions.
-
-*   `[ ]` 66. **`[BE]` `supabase/functions/dialectic-service/cloneProject.ts` — Preserve \`source_contribution_id\` when cloning resources**  
-    *   `[ ]` 66.a. **[READ]** Open the implementation file and trace every branch that clones project resources:  
+    *   `[✅]` 65.c. **[GREEN]** *(Leave the production code untouched here so the new test continues to fail; Step 66 will provide the implementation.)*  
+    *   `[✅]` 65.d. **[LINT]** Run the linter for this test file (e.g., `deno fmt`/`deno lint` scoped to the path) and resolve any formatting or lint issues introduced by the new assertions.
+*   `[✅]` 66. **`[BE]` `supabase/functions/dialectic-service/cloneProject.ts` — Preserve \`source_contribution_id\` when cloning resources**  
+    *   `[✅]` 66.a. **[READ]** Open the implementation file and trace every branch that clones project resources:  
         * Identify where existing resources are fetched from Supabase (look for queries against `dialectic_project_resources`, `dialectic_contributions`, etc.).  
         * Locate the logic that prepares new rows or upload contexts for the cloned project (e.g., objects passed to FileManager, payloads inserted via Supabase).  
         * Document the exact shapes of those objects so you know where to thread `source_contribution_id`.  
-    *   `[ ]` 66.b. **[RED]** Before touching the code, run the failing test from Step 65 to verify it still reports the missing `source_contribution_id`. Do **not** proceed if the test is already passing; resolve that discrepancy first.  
-    *   `[ ]` 66.c. **[GREEN]** Update the cloning logic so every new resource includes the original `source_contribution_id`:  
+    *   `[✅]` 66.b. **[RED]** Before touching the code, run the failing test from Step 65 to verify it still reports the missing `source_contribution_id`. Do **not** proceed if the test is already passing; resolve that discrepancy first.  
+    *   `[✅]` 66.c. **[GREEN]** Update the cloning logic so every new resource includes the original `source_contribution_id`:  
         * When building the object that FileManager uploads for cloned resources, explicitly set the upload context’s `sourceContributionId` to the value from the source row (or `null` if the original was `null`).  
         * Ensure any direct Supabase inserts (e.g., `insert`/`upsert` calls) copy the `source_contribution_id` column into the new record alongside existing metadata (storage path, mime type, etc.).  
         * If the cloning path fans out across multiple helper functions, thread the value through the call stack so no branch drops it.  
-    *   `[ ]` 66.d. **[LINT]** Run the project linter scoped to this file (or the full lint command if required) and resolve every warning/error introduced by the change.
-
-*   `[ ]` 67. **`[TEST-UNIT]` `supabase/functions/dialectic-service/submitStageDocumentFeedback.test.ts` — Codify the required `source_contribution_id` behaviour for feedback uploads**  
-    *   `[ ]` 67.a. **[READ]** Open the test file and document every helper/fixture used to fabricate feedback payloads and FileManager responses. Identify the assertions that currently check metadata (e.g., `resource_description`, storage path) so you know where to extend them.  
-    *   `[ ]` 67.b. **[RED]** Add explicit failing coverage describing the desired behaviour for `source_contribution_id`:  
+    *   `[✅]` 66.d. **[LINT]** Run the project linter scoped to this file (or the full lint command if required) and resolve every warning/error introduced by the change.
+*   `[✅]` 67. **`[TEST-UNIT]` `supabase/functions/dialectic-service/submitStageDocumentFeedback.test.ts` — Codify the required `source_contribution_id` behaviour for feedback uploads**  
+    *   `[✅]` 67.a. **[READ]** Open the test file and document every helper/fixture used to fabricate feedback payloads and FileManager responses. Identify the assertions that currently check metadata (e.g., `resource_description`, storage path) so you know where to extend them.  
+    *   `[✅]` 67.b. **[RED]** Add explicit failing coverage describing the desired behaviour for `source_contribution_id`:  
         * Choose the canonical scenario (e.g., feedback tied to a rendered document) and update the fixture so the mocked resource row includes a concrete contribution id such as `'contrib-feedback-source'`.  
         * Extend the relevant `it` block(s) to assert that the FileManager upload context (and any Supabase insert payload the test inspects) contains `sourceContributionId` matching the chosen id, and that cases with no linkage explicitly assert the value remains `null`.  
         * Ensure the new expectations fail with a clear message until Step 68 implements the behaviour.  
-    *   `[ ]` 67.c. **[GREEN]** *(Do not modify production code in this step; leave the failing test in place for Step 68.)*  
-    *   `[ ]` 67.d. **[LINT]** Run the linter for this file and fix any formatting or lint warnings introduced by the new assertions.
-
-*   `[ ]` 68. **`[BE]` `supabase/functions/dialectic-service/submitStageDocumentFeedback.ts` — Wire `source_contribution_id` into feedback uploads**  
-    *   `[ ]` 68.a. **[READ]** Walk through the entire `submitStageDocumentFeedback` function, writing down:  
+    *   `[✅]` 67.c. **[GREEN]** *(Do not modify production code in this step; leave the failing test in place for Step 68.)*  
+    *   `[✅]` 67.d. **[LINT]** Run the linter for this file and fix any formatting or lint warnings introduced by the new assertions.  
+    *   `[✅]` 67.e. **[TYPES]** In `supabase/functions/dialectic-service/dialectic.interface.ts`, extend the `SubmitStageDocumentFeedbackPayload` interface with an optional `sourceContributionId?: string | null;` property so the RED tests in this step (and the GREEN implementation in Step 68) have a strictly typed field for the targeted contribution linkage.
+*   `[✅]` 68. **`[BE]` `supabase/functions/dialectic-service/submitStageDocumentFeedback.ts` — Wire `source_contribution_id` into feedback uploads**  
+    *   `[✅]` 68.a. **[READ]** Walk through the entire `submitStageDocumentFeedback` function, writing down:  
         * Where the `uploadContext` passed to `fileManager.uploadAndRegisterFile` is constructed (note the current `pathContext` shape and metadata copied into `resourceDescriptionForDb`).  
         * How the Supabase insert payload (`dbRecord`) is assembled immediately after the upload completes.  
         * Which field on `SubmitStageDocumentFeedbackPayload` (from `dialectic.interface.ts`) identifies the contribution or document the feedback targets; if no such field exists yet, record that you will rely on the value introduced by Step 67 (e.g., `payload.sourceContributionId`).  
-    *   `[ ]` 68.b. **[RED]** Re-run the RED test(s) added in Step 67 and confirm they still fail with the expected “missing source_contribution_id” assertion. Do **not** proceed if they unexpectedly pass; investigate and fix the test first.  
-    *   `[ ]` 68.c. **[GREEN]** Update the implementation so the feedback metadata forwards the linkage:  
+    *   `[✅]` 68.b. **[RED]** Re-run the RED test(s) added in Step 67 and confirm they still fail with the expected “missing source_contribution_id” assertion. Do **not** proceed if they unexpectedly pass; investigate and fix the test first.  
+    *   `[✅]` 68.c. **[GREEN]** Update the implementation so the feedback metadata forwards the linkage:  
         * Derive a local constant (e.g., `const sourceContributionId = payload.sourceContributionId ?? null;`) using the field documented in Step 68.a; if the payload exposes the id under a different name, align with that property.  
         * Add `sourceContributionId` to the `uploadContext.pathContext` before calling FileManager, ensuring the property is always present (explicitly `null` when no linkage exists).  
         * When constructing `dbRecord`, copy the same value into the `source_contribution_id` column so the stored feedback row mirrors the upload metadata.  
         * If any helper branches create alternative payloads (e.g., update vs. insert), make identical adjustments there so every code path honours the new metadata.  
-    *   `[ ]` 68.d. **[LINT]** Run the project linter scoped to this file (or the full lint task if scoping is unavailable) and resolve every warning/error introduced by the changes.
-
-*   `[ ]` 69. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/task_isolator.test.ts`**  
-    *   `[ ]` 69.a. **[READ]** Work through every `Deno.test` under the `"findSourceDocuments"` describe block. For each test:
+    *   `[✅]` 68.d. **[LINT]** Run the project linter scoped to this file (or the full lint task if scoping is unavailable) and resolve every warning/error introduced by the changes.
+*   `[✅]` 69. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/task_isolator.findSourceDocuments.test.ts`**  
+    *   `[✅]` 69.a. **[READ]** Work through every `Deno.test` under the `"findSourceDocuments"` describe block. For each test:
         * Write down which mocked Supabase calls are currently asserted (e.g., `.select('*').eq('resource_description->>type', ...)`).
         * Identify which expectations still rely on JSON-path filters or ignore `source_contribution_id`.
         * Note the helper functions (spies, stubs, factories) that fabricate project-resource rows so you can adjust them after the assertions change.
-    *   `[ ]` 69.b. **[RED]** Update the failing expectations to enforce the new column contract:
+    *   `[✅]` 69.b. **[RED]** Update the failing expectations to enforce the new column contract:
         * For contribution-backed documents, require the mocked query builder to receive chained `.eq('resource_type', …)`, `.eq('project_id', …)`, `.eq('session_id', …)`, `.eq('stage_slug', …)`, and `.eq('source_contribution_id', …)` calls (use the spy history to assert the exact arguments in order).
         * For planner resources that previously inspected `resource_description`, rewrite the test so it now fails if any JSON-path predicate is used instead of the corresponding column.
         * Ensure at least one test verifies the absence of `source_contribution_id` (i.e., asserts the spy never sees a non-null value when the resource truly lacks a contribution linkage).
         * Run the suite and confirm it is red because the implementation still issues JSON-path filters.
-    *   `[ ]` 69.c. **[GREEN]** *(Defer changes to Step 70; no implementation edits here.)*  
-    *   `[ ]` 69.d. **[LINT]** Execute the linter scoped to this test file (or run the project lint command if scoping is unavailable) and resolve every reported warning/error introduced during the RED step.
-
-*   `[ ]` 70. **`[BE]` `supabase/functions/dialectic-worker/task_isolator.ts` — Replace JSON-only lookups with column-driven predicates**  
-    *   `[ ]` 70.a. **[READ]** Open the file and, starting at the top of `findSourceDocuments`, document the following before you touch any code:  
+    *   `[✅]` 69.c. **[GREEN]** *(Defer changes to Step 70; no implementation edits here.)*  
+    *   `[✅]` 69.d. **[LINT]** Execute the linter scoped to this test file (or run the project lint command if scoping is unavailable) and resolve every reported warning/error introduced during the RED step.
+*   `[✅]` 70. **`[BE]` `supabase/functions/dialectic-worker/task_isolator.ts` — Replace JSON-only lookups with column-driven predicates**  
+    *   `[✅]` 70.a. **[READ]** Open the file and, starting at the top of `findSourceDocuments`, document the following before you touch any code:  
         * Every place the function currently calls `.eq('resource_description->>type', …)` or inspects nested JSON fields to find documents or planner artefacts.  
         * Each branch that distinguishes between contributions, project resources, and feedback rows, noting which properties are actually available on the Supabase records (e.g., `stage`, `stage_slug`, `target_contribution_id`).  
         * The helper utilities (`deconstructStoragePath`, `pickLatest`, etc.) that will remain in use after the refactor so you do not accidentally remove required behaviour.  
       Record these observations in your working notes so you can confirm later that every legacy JSON predicate has a column-based replacement.  
-    *   `[ ]` 70.b. **[RED]** Run the suite from Step 69 and confirm it fails specifically because the implementation still issues JSON-path comparisons (the failure messages should reference the missing `eq('resource_type', …)` / `eq('source_contribution_id', …)` calls). Do not proceed until the failure is reproduced; if the tests pass, revisit Step 69 to ensure the expectations are truly red.  
-    *   `[ ]` 70.c. **[GREEN]** Refactor `findSourceDocuments` so each code path issues column predicates instead of JSON-path checks:  
+    *   `[✅]` 70.b. **[RED]** Run the suite from Step 69 and confirm it fails specifically because the implementation still issues JSON-path comparisons (the failure messages should reference the missing `eq('resource_type', …)` / `eq('source_contribution_id', …)` calls). Do not proceed until the failure is reproduced; if the tests pass, revisit Step 69 to ensure the expectations are truly red.  
+    *   `[✅]` 70.c. **[GREEN]** Refactor `findSourceDocuments` so each code path issues column predicates instead of JSON-path checks:  
         * For contribution-backed documents, call `.eq('resource_type', 'rendered_document')`, `.eq('project_id', …)`, `.eq('session_id', …)`, `.eq('stage_slug', …)`, and `.eq('source_contribution_id', …)` using the rule’s values and the contribution id derived from the runtime context.  
         * For planner and prompt resources, apply the same pattern with the correct `resource_type` (e.g., `'planner_prompt'`, `'turn_prompt'`) and continue to filter by `stage_slug`, `session_id`, and `project_id`, leaving `source_contribution_id` as `null` unless the rule provides a concrete id.  
         * Retain the existing fallback logic (e.g., `pickLatest`) but update any filtering predicates inside those helpers so they examine the newly retrieved rows (which now arrive filtered by columns) rather than re-parsing JSON descriptors.  
         * Remove any obsolete JSON-path `eq` calls or string parsing that is no longer needed once the column filters are in place.  
         * After implementing the changes, rerun the Step 69 tests and ensure they now pass, confirming every expectation about the query builder history is satisfied.  
-    *   `[ ]` 70.d. **[LINT]** Execute the linter scoped to `task_isolator.ts` (or the full lint task if scoping is not available). Resolve every warning/error introduced by the refactor, and rerun to verify the file is lint-clean.
-
-*   `[ ]` 71. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/task_isolator.parallel.test.ts` — Enforce column-based lookups for parallel planner flows**  
-    *   `[ ]` 71.a. **[READ]** Open the entire file and catalogue each mocked Supabase interaction used by the parallel planner scenarios. Pay special attention to the sequences that currently expect `.eq('resource_description->>type', …)` or reparse JSON descriptors; note the exact call order and arguments so you can update them later.  
-    *   `[ ]` 71.b. **[RED]** For every scenario that fetches project resources or contributions, insert explicit expectations (via spies or recorded call history) that the query builder receives column-based predicates:  
+    *   `[✅]` 70.d. **[LINT]** Execute the linter scoped to `task_isolator.ts` (or the full lint task if scoping is not available). Resolve every warning/error introduced by the refactor, and rerun to verify the file is lint-clean.
+*   `[✅]` 71. **`[TEST-UNIT]` `supabase/functions/dialectic-worker/task_isolator.parallel.test.ts` — Enforce column-based lookups for parallel planner flows**  
+    *   `[✅]` 71.a. **[READ]** Open the entire file and catalogue each mocked Supabase interaction used by the parallel planner scenarios. Pay special attention to the sequences that currently expect `.eq('resource_description->>type', …)` or reparse JSON descriptors; note the exact call order and arguments so you can update them later.  
+    *   `[✅]` 71.b. **[RED]** For every scenario that fetches project resources or contributions, insert explicit expectations (via spies or recorded call history) that the query builder receives column-based predicates:  
         * Assert `eq('resource_type', …)` is invoked with the same type used by the rule under test (e.g., `'planner_prompt'`, `'rendered_document'`).  
         * Assert `eq('project_id', …)`, `eq('session_id', …)`, and `eq('stage_slug', …)` are issued with the correct values for the parallel job.  
         * When a continuation contribution id is part of the scenario, assert an additional `eq('source_contribution_id', …)` call is recorded; when no such id exists, assert the spy never sees a non-null value for that predicate.  
         * Leave the implementation untouched so the test suite now fails, producing error messages that highlight the missing column filters.  
-    *   `[ ]` 71.c. **[GREEN]** *(No implementation edits here; the expectations will pass after Step 70’s refactor.)*  
-    *   `[ ]` 71.d. **[LINT]** Run the linter scoped to `task_isolator.parallel.test.ts` and fix every warning or error introduced while adding the RED assertions.
+    *   `[✅]` 71.c. **[GREEN]** *(No implementation edits here; the expectations will pass after Step 70’s refactor.)*  
+    *   `[✅]` 71.d. **[LINT]** Run the linter scoped to `task_isolator.parallel.test.ts` and fix every warning or error introduced while adding the RED assertions.
 
 
 *   `[ ]` 24. **`[TEST-UNIT]` Prove FileManager writes the full project-resource contract**
@@ -990,3 +982,162 @@ graph TD
     *   `[ ]` 33.a. `[BE]` Replace the JSON-string comparisons in `supabase/functions/dialectic-service/submitStageResponses.ts` with column-based predicates that mirror the new resource contract.
     *   `[ ]` 33.b. `[BE]` Ensure the validation logic handles both rendered documents and planner artifacts consistently with the metadata we now persist.
     *   `[ ]` 33.c. `[TEST-UNIT]` Re-run the submit-stage-responses suite and verify the new assertions succeed.
+
+*   `[ ]` 72. **`[TYPES]` Update doc-centric edit contracts in `packages/types/src/dialectic.types.ts`**  
+    *   `[ ]` 72.a. `[READ]` Review the existing `DialecticStoreApi`, `DialecticStoreFunctions`, `SaveContributionEditPayload`, and `ApiResponse<DialecticContribution>` references to identify every consumer that assumes a contribution-based response.  
+    *   `[ ]` 72.b. `[TYPES]` Introduce `EditedDocumentResource` and `SaveContributionEditSuccessResponse` interfaces that mirror the `dialectic_project_resources` row shape (id, resource_type, session_id, stage_slug, iteration_number, document_key, storage fields, mime, size, timestamps, `source_contribution_id`). Extend `SaveContributionEditPayload` with an explicit `documentKey` (and optional `resourceType`) so edits no longer infer from `contribution_type`. Update `DialecticStoreApi.saveContributionEdit`, `DialecticStoreFunctions.saveContributionEdit`, and any related union types to return `ApiResponse<SaveContributionEditSuccessResponse>`.  
+    *   `[ ]` 72.c. `[LINT]` Run `pnpm lint packages/types/src/dialectic.types.ts` (or scoped lint) to ensure no unused imports or formatting regressions remain after the type additions.
+
+*   `[ ]` 73. **`[TEST-UNIT]` `packages/api/src/dialectic.api.project.test.ts` — RED test for resource response**  
+    *   `[ ]` 73.a. `[READ]` Open the API project tests and note every assertion that currently inspects `response.data.id`, `contribution_type`, or other `DialecticContribution` fields from `saveContributionEdit`.  
+    *   `[ ]` 73.b. `[TEST-UNIT]` Update the save-contribution-edit scenario to mock the service returning an `EditedDocumentResource` (with `resource_type: 'rendered_document'`, `document_key`, `source_contribution_id`). Assert the API layer now exposes `response.data.resourceId` (or whichever field is defined in Step 72) and never forwards a `DialecticContribution`. The test should fail until the client implementation changes.  
+    *   `[ ]` 73.c. `[LINT]` Lint the test file to keep snapshots and imports aligned with the new assertions.
+
+*   `[ ]` 74. **`[API]` `packages/api/src/dialectic.api.ts` — GREEN: return document resources**  
+    *   `[ ]` 74.a. `[READ]` Re-read the `saveContributionEdit` method, noting the existing response typing and any downstream logging that references `response.data?.id`.  
+    *   `[ ]` 74.b. `[BE]` Update the API client call to expect `SaveContributionEditSuccessResponse`, rename log fields to reference resource ids, and ensure the method’s return type matches the updated shared types.  
+    *   `[ ]` 74.c. `[TEST-UNIT]` Re-run the Step 73 test (and the existing API suite) to confirm it now passes, proving the client returns the new shape.  
+    *   `[ ]` 74.d. `[LINT]` Lint `packages/api/src/dialectic.api.ts` after implementation.
+
+*   `[ ]` 75. **`[MOCK]` `packages/api/src/mocks/dialectic.api.mock.ts` — align mocked responses**  
+    *   `[ ]` 75.a. `[READ]` Examine the mock factory to see how `vi.fn` instances currently resolve `ApiResponse<DialecticContribution>` for `saveContributionEdit`.  
+    *   `[ ]` 75.b. `[MOCK]` Update the mock typings and default return objects to the new `SaveContributionEditSuccessResponse`, ensuring all helper builders construct realistic `EditedDocumentResource` payloads (resource id, document key, storage path, etc.).  
+    *   `[ ]` 75.c. `[LINT]` Lint the mock file so formatting and import ordering remain consistent.
+
+*   `[ ]` 76. **`[TEST-UNIT]` `packages/store/src/dialecticStore.contribution.test.ts` — RED for doc-centric store state**  
+    *   `[ ]` 76.a. `[READ]` Identify every test that expects `response.data` to be a contribution row and asserts `dialectic_contributions` replacement.  
+    *   `[ ]` 76.b. `[TEST-UNIT]` Rewrite the canonical edit scenario to expect the store to patch `stageDocumentContent` (or the new doc-resource map) with the returned `EditedDocumentResource`, and to avoid mutating `dialectic_contributions`. Add assertions that the document cache now reflects the new markdown and that `saveContributionEdit` no longer touches contribution arrays. Leave tests failing until the store implementation is updated.  
+    *   `[ ]` 76.c. `[LINT]` Lint the test file once the RED assertions are in place.
+
+*   `[ ]` 77. **`[STORE]` `packages/store/src/dialecticStore.ts` — GREEN: pipe document resources into UI state**  
+    *   `[ ]` 77.a. `[READ]` Trace the current edit flow, especially how `set` mutates `dialectic_contributions` and which parts of state power `StageRunChecklist`, `GeneratedContributionCard`, and `SessionContributionsDisplayCard`.  
+    *   `[ ]` 77.b. `[STORE]` Refactor `saveContributionEdit` to:  
+        *   Write the returned resource into a normalized `stageDocumentContent` entry (keyed by `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`) so document-centric components automatically render the edited markdown.  
+        *   Leave `dialectic_contributions` untouched except for toggling `isLatestEdit` on the original contribution via the backend response flags.  
+        *   Expose any new helpers/selectors (e.g., `updateStageDocumentResource`) via `set`.  
+    *   `[ ]` 77.c. `[TEST-UNIT]` Re-run the failing tests from Step 76 plus any impacted integration suites to confirm the store now manages doc-centric state.  
+    *   `[ ]` 77.d. `[LINT]` Lint `packages/store/src/dialecticStore.ts`.
+
+*   `[ ]` 78. **`[TEST-UNIT]` `packages/store/src/dialecticStore.selectors.test.ts` — RED for document resource selectors**  
+    *   `[ ]` 78.a. `[READ]` Note which selectors currently expose `dialectic_contributions` data to the UI (e.g., `selectContributionById`, `selectFocusedStageDocument`).  
+    *   `[ ]` 78.b. `[TEST-UNIT]` Add tests that assert new selectors (or updated ones) surface the edited document resource (content, timestamps, resource id) and that legacy contribution selectors no longer drive UI renders for the editable documents. Leave these tests failing until the selector implementation is updated.  
+    *   `[ ]` 78.c. `[LINT]` Lint the selectors test file.
+
+*   `[ ]` 79. **`[STORE]` `packages/store/src/dialecticStore.selectors.ts` — GREEN for resource-first selectors**  
+    *   `[ ]` 79.a. `[READ]` Map each consumer component to the selectors it uses so we know which ones must now read from `stageDocumentContent`/resource maps.  
+    *   `[ ]` 79.b. `[STORE]` Update or add selectors (e.g., `selectStageDocumentResource`, `selectEditedDocumentByKey`) to pull from the normalized resource state introduced in Step 77, guaranteeing the UI never relies on stale `dialectic_contributions`.  
+    *   `[ ]` 79.c. `[TEST-UNIT]` Re-run the Step 78 tests to prove the selectors return the new data.  
+    *   `[ ]` 79.d. `[LINT]` Lint the selectors implementation.
+
+*   `[ ]` 80. **`[TEST-UNIT]` `packages/store/src/dialecticStore.integration.test.ts` — RED for end-to-end edit flow**  
+    *   `[ ]` 80.a. `[READ]` Identify the scenarios that currently mock a contribution update when a user saves edits.  
+    *   `[ ]` 80.b. `[TEST-UNIT]` Extend the integration test to dispatch `saveContributionEdit`, assert that `stageDocumentContent` (and any derived selectors) reflect the edited markdown while `dialectic_contributions` remains untouched, and verify that downstream UI selectors see the new resource. Leave failing until the store + selector work is complete.  
+    *   `[ ]` 80.c. `[LINT]` Lint the integration test file.
+
+*   `[ ]` 81. **`[MOCK]` `apps/web/src/mocks/dialecticStore.mock.ts` — expose doc-centric edit helpers**  
+    *   `[ ]` 81.a. `[READ]` Review the mock store shape to see how `stageDocumentContent`, `saveContributionEdit`, and related helpers are currently stubbed.  
+    *   `[ ]` 81.b. `[MOCK]` Update the mock state to include the new normalized resource entries plus helper functions (`setStageDocumentResource`, etc.) so component tests can simulate edited documents without real contributions.  
+    *   `[ ]` 81.c. `[LINT]` Lint the mock file.
+
+*   `[ ]` 82. **`[TEST-UNIT]` `apps/web/src/components/dialectic/GeneratedContributionCard.test.tsx` — RED for UI expectations**  
+    *   `[ ]` 82.a. `[READ]` Identify assertions that presently look for `dialectic_contributions` changes after an edit or rely on `saveContributionEdit` returning a contribution id.  
+    *   `[ ]` 82.b. `[TEST-UNIT]` Update the tests to mock store selectors returning the new resource data, assert that the component renders `stageDocumentContent` entries, and verify that saving an edit triggers the correct store action plus optimistic UI updates. Leave tests failing until the component is refactored.  
+    *   `[ ]` 82.c. `[LINT]` Lint the component test file.
+
+*   `[ ]` 83. **`[UI]` `apps/web/src/components/dialectic/GeneratedContributionCard.tsx` — GREEN for resource-driven rendering**  
+    *   `[ ]` 83.a. `[READ]` Trace how the component currently derives `documentContent`, `isSaving`, and success/error toasts.  
+    *   `[ ]` 83.b. `[UI]` Replace contribution-based selectors with the new resource selectors from Step 79 so the card renders `stageDocumentContent[documentKey]`, updates immediately after an edit, and surfaces metadata from `EditedDocumentResource` (e.g., last updated timestamp). Ensure `saveContributionEdit` is invoked with the new `documentKey` payload.  
+    *   `[ ]` 83.c. `[TEST-UNIT]` Re-run the Step 82 tests to confirm the refactor is green.  
+    *   `[ ]` 83.d. `[LINT]` Lint the component.
+
+*   `[ ]` 84. **`[TEST-UNIT]` `apps/web/src/components/dialectic/SessionContributionsDisplayCard.test.tsx` — RED for document list expectations**  
+    *   `[ ]` 84.a. `[READ]` Determine how the card presently inspects `dialectic_contributions` to render document summaries and statuses.  
+    *   `[ ]` 84.b. `[TEST-UNIT]` Update the tests to mock the store returning document resources per model/document key, assert that the card now renders from `stageDocumentContent`, and proves that edited documents reflect the resource metadata (e.g., `source_contribution_id`, last modified). Leave failing until the component changes.  
+    *   `[ ]` 84.c. `[LINT]` Lint the test file.
+
+*   `[ ]` 85. **`[UI]` `apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx` — GREEN for resource list rendering**  
+    *   `[ ]` 85.a. `[READ]` Map the props/state used to build the per-model document grids, noting where contribution data is threaded in.  
+    *   `[ ]` 85.b. `[UI]` Rebuild the data derivation so the card consumes the new selectors from Step 79, ensures optimistic updates when `saveContributionEdit` resolves, and surfaces document-level metadata (e.g., version status) from the resource row.  
+    *   `[ ]` 85.c. `[TEST-UNIT]` Re-run the Step 84 tests to confirm the component renders the new resource data.  
+    *   `[ ]` 85.d. `[LINT]` Lint the component file.
+
+*   `[ ]` 86. **`[COMMIT]` fix(FE): Port saveContributionEdit to document resources end-to-end**  
+    *   `[ ]` 86.a. Draft a commit that captures all type, API, store, and UI changes plus their tests, referencing the checklist steps above.  
+    *   `[ ]` 86.b. Summarize the new doc-centric edit flow in the commit body (types → API → store → selectors → UI) before moving on to subsequent work.
+
+*   `[ ]` 87. **`[TYPES]` Align front-end \`SubmitStageDocumentFeedbackPayload\` with backend source-contribution contract**  
+    *   `[ ]` 87.a. **[READ]** Open `packages/types/src/dialectic.types.ts` and locate both:  
+        * The shared `SubmitStageDocumentFeedbackPayload` interface.  
+        * The `DialecticStoreApi` / `DialecticStoreFunctions` signatures that reference it.  
+    *   `[ ]` 87.b. **[RED – TYPES]** Note that the front-end payload currently exposes only `{ sessionId, stageSlug, iterationNumber, modelId, documentKey, feedback }` while the backend contract uses `feedbackContent` and expects a linkage field for the targeted contribution. Document this mismatch in a brief code comment above the interface so future refactors can standardize naming, but do not attempt to fix the naming in this step.  
+    *   `[ ]` 87.c. **[GREEN – TYPES]** Extend the front-end `SubmitStageDocumentFeedbackPayload` interface with an optional `sourceContributionId?: string | null;` property so clients can carry the ID of the contribution (or `null` when the feedback is not tied to a contribution). Ensure the new field flows through the `DialecticStoreApi.submitStageDocumentFeedback` and `DialecticStoreFunctions.submitStageDocumentFeedback` signatures without introducing defaults.  
+    *   `[ ]` 87.d. **[LINT]** Run the types package linter scoped to `packages/types/src/dialectic.types.ts` and resolve any formatting or unused-import issues introduced by the new field.  
+
+*   `[ ]` 88. **`[TEST-UNIT][API]` Prove the API client forwards \`sourceContributionId\` unchanged**  
+    *   `[ ]` 88.a. **[READ]** In `packages/api/src/dialectic.api.feedback.test.ts`, re-read the `describe('submitStageDocumentFeedback', ...)` block and note how the tests currently build a `SubmitStageDocumentFeedbackPayload` with `feedback` but no contribution linkage, asserting that `mockApiClient.post` is called with `{ action: 'submitStageDocumentFeedback', payload }`.  
+    *   `[ ]` 88.b. **[RED]** Update the existing “successful submission” and “API call fails” tests to construct payloads that include the new optional `sourceContributionId` field in two scenarios:  
+        * A canonical case where `sourceContributionId: 'contrib-feedback-source'` is provided.  
+        * A case where the field is omitted or explicitly `null`, proving the type and client tolerate the absence of a linkage.  
+      Extend the expectations so each test asserts that `mockApiClient.post` was called with the payload object containing the exact `sourceContributionId` value provided in the test. Until the types are aligned and the API client continues to spread `payload` unchanged, these expectations should fail to compile or execute, proving the RED state.  
+    *   `[ ]` 88.c. **[GREEN]** In `packages/api/src/dialectic.api.ts`, confirm the `submitStageDocumentFeedback` method simply forwards the full payload object, including `sourceContributionId`, into the `DialecticServiceActionPayload` without filtering or remapping fields. If any intermediate destructuring omits the new property, update it to spread `payload` so the new field is preserved.  
+    *   `[ ]` 88.d. **[LINT]** Run the API package tests and linter scoped to `packages/api/src/dialectic.api.feedback.test.ts` and `packages/api/src/dialectic.api.ts`, resolving any errors until the new expectations pass and the files are lint-clean.  
+
+*   `[ ]` 89. **`[MOCK][API]` Ensure the Dialectic API mock accepts the enriched payload**  
+    *   `[ ]` 89.a. **[READ]** Open `packages/api/src/mocks/dialectic.api.mock.ts` and review the `MockDialecticApiClient` type plus the `createMockDialecticClient` factory, focusing on the `submitStageDocumentFeedback` mock signature.  
+    *   `[ ]` 89.b. **[RED]** Confirm that the mock’s call sites in tests (including feedback-related suites and store tests) now construct `SubmitStageDocumentFeedbackPayload` objects using the updated types from Step 87. If any call sites omit required fields or fail to compile, document them as RED and do not patch behavior here.  
+    *   `[ ]` 89.c. **[GREEN]** Update the mock’s type declarations (return type of `submitStageDocumentFeedback`) to rely on the shared `SubmitStageDocumentFeedbackPayload` and ensure the mock function signature accepts the new `sourceContributionId` field without narrowing or stripping it. No behavioral change is required beyond type alignment.  
+    *   `[ ]` 89.d. **[LINT]** Run the linter on `packages/api/src/mocks/dialectic.api.mock.ts` and fix any style or import issues introduced by the type updates.  
+
+*   `[ ]` 90. **`[TEST-UNIT][STORE]` Require the store to forward \`sourceContributionId\` when submitting a single document’s feedback**  
+    *   `[ ]` 90.a. **[READ]** Open `packages/store/src/dialecticStore.documents.test.ts` and focus on the `describe('submitStageDocumentFeedback', ...)` suite, noting how it currently:  
+        * Constructs `SubmitStageDocumentFeedbackPayload` objects containing only the composite key and `feedback`.  
+        * Asserts that `mockDialecticClient.submitStageDocumentFeedback` is called with that payload, and that store flags are toggled appropriately.  
+    *   `[ ]` 90.b. **[RED]** Extend the canonical “API called with correct payload” test to seed `stageDocumentContent` (or the appropriate normalized resource map) with a document entry whose underlying resource metadata includes a `source_contribution_id` such as `'contrib-doc-123'`. Then assert that:  
+        * The store’s `submitStageDocumentFeedback` action still receives a payload with `{ sessionId, stageSlug, iterationNumber, modelId, documentKey, feedback }` from the UI.  
+        * The call to `mockDialecticClient.submitStageDocumentFeedback` now includes `sourceContributionId: 'contrib-doc-123'`, proving enrichment happens inside the store.  
+      Add a second test that seeds a document with no linkage and asserts the API call carries `sourceContributionId: null` (or omits the field according to the chosen contract). Both tests must fail until the store logic is updated in Step 91.  
+    *   `[ ]` 90.c. **[GREEN]** Do not modify the store implementation in this step; leave the failing tests in place to drive the refactor in the next step.  
+    *   `[ ]` 90.d. **[LINT]** Run the linter for `packages/store/src/dialecticStore.documents.test.ts` and resolve any new warnings (unused imports, formatting) introduced by the RED assertions.  
+
+*   `[ ]` 91. **`[STORE]` Enrich \`submitStageDocumentFeedbackLogic\` with \`sourceContributionId\` from document resources**  
+    *   `[ ]` 91.a. **[READ]** In `packages/store/src/dialecticStore.documents.ts`, re-read `submitStageDocumentFeedbackLogic` and the surrounding helpers that manage `stageDocumentContent` and `StageDocumentCompositeKey` derivation. Identify where the logic currently:  
+        * Accepts a `SubmitStageDocumentFeedbackPayload` from the UI.  
+        * Calls `api.dialectic().submitStageDocumentFeedback(payload)` with no enrichment.  
+    *   `[ ]` 91.b. **[RED]** Confirm the tests from Step 90 are still failing because `sourceContributionId` is undefined in the API call, even when the store has resource metadata for the targeted document. Do not proceed if these tests are green.  
+    *   `[ ]` 91.c. **[GREEN]** Refactor `submitStageDocumentFeedbackLogic` so that before calling the API client it:  
+        * Locates the normalized document resource associated with the incoming composite key (using existing helpers such as `getStageDocumentKey` and the `stageDocumentContent` map or other resource maps that include `source_contribution_id`).  
+        * Derives a local `const sourceContributionId = resolvedResource?.source_contribution_id ?? null;`.  
+        * Constructs a new payload object that spreads the original UI payload and adds the derived `sourceContributionId` field.  
+        * Passes this enriched payload into `api.dialectic().submitStageDocumentFeedback`, leaving all other behavior (flags, errors) unchanged.  
+      Ensure no defaults are applied beyond the explicit `?? null` and that enrichment is purely additive.  
+    *   `[ ]` 91.d. **[LINT]** Run the linter for `packages/store/src/dialecticStore.documents.ts` and fix any issues introduced by the new logic. Re-run the Step 90 tests to confirm they now pass.  
+
+*   `[ ]` 92. **`[TEST-UNIT][STORE]` Require \`submitStageResponses\` orchestration to propagate \`sourceContributionId\` for each dirty document**  
+    *   `[ ]` 92.a. **[READ]** Open `packages/store/src/dialecticStore.contribution.test.ts` and locate the test that proves `submitStageResponses` flushes dirty document feedback drafts by calling `api.dialectic().submitStageDocumentFeedback` before advancing the stage. Note the existing `expectedPayload1`/`expectedPayload2` objects, which currently lack `sourceContributionId`.  
+    *   `[ ]` 92.b. **[RED]** Update that test to:  
+        * Seed `stageDocumentContent` (and any related metadata maps) so the two dirty documents under test each have a known `source_contribution_id` (e.g., `'contrib-doc-1'` and `'contrib-doc-3'`).  
+        * Extend `expectedPayload1` and `expectedPayload2` to include `sourceContributionId` equal to these IDs.  
+        * Assert that `api.dialectic().submitStageDocumentFeedback` is called with these enriched payloads for each dirty document.  
+      The test must now fail until the orchestration uses the updated logic from Step 91 to enrich payloads when called via `submitStageResponses`.  
+    *   `[ ]` 92.c. **[GREEN]** If the orchestration already delegates to `submitStageDocumentFeedbackLogic` (and thus picks up the enrichment automatically), adjust only the test setup so it seeds the correct resource metadata and relies on the existing logic; no implementation changes should be required. If the orchestration bypasses the logic, refactor it to call the same helper used by the direct store action so enrichment is centralized.  
+    *   `[ ]` 92.d. **[LINT]** Run the linter for `packages/store/src/dialecticStore.contribution.test.ts` and fix any new warnings. Confirm the updated test suite passes once enrichment is wired correctly.  
+
+*   `[ ]` 93. **`[MOCK][UI]` Align the web dialectic store mock with the enriched feedback payload**  
+    *   `[ ]` 93.a. **[READ]** Open `apps/web/src/mocks/dialecticStore.mock.ts` and identify the `submitStageDocumentFeedback` mock and any default payload shapes it assumes. Note how the mock is used in `GeneratedContributionCard.test.tsx` and other UI tests.  
+    *   `[ ]` 93.b. **[RED]** After updating the shared types in Step 87, verify the mock’s signature compiles against the new `SubmitStageDocumentFeedbackPayload` interface. If any tests or mock implementations still assume the old shape (missing `sourceContributionId`), mark them as RED.  
+    *   `[ ]` 93.c. **[GREEN]** Update the mock so its function signature accepts the new optional `sourceContributionId` property without forcing callers to pass it explicitly. Where tests assert on the payload, keep the expectations focused on the composite key and `feedback` fields; do not require `sourceContributionId` at the UI layer, as enrichment is now the store’s responsibility.  
+    *   `[ ]` 93.d. **[LINT]** Lint `apps/web/src/mocks/dialecticStore.mock.ts` and resolve any issues introduced by the signature changes.  
+
+*   `[ ]` 94. **`[TEST-UNIT][UI]` Keep `GeneratedContributionCard` feedback submits compatible with enriched payloads**  
+    *   `[ ]` 94.a. **[READ]** Open `apps/web/src/components/dialectic/GeneratedContributionCard.test.tsx` and re-read the tests that exercise `handleSaveFeedback`, noting how they currently:  
+        * Mock the dialectic store, including `submitStageDocumentFeedback`, via `apps/web/src/mocks/dialecticStore.mock.ts`.  
+        * Assert that saving feedback calls `submitStageDocumentFeedback` with a payload that matches the `StageDocumentCompositeKey` plus `feedback`.  
+    *   `[ ]` 94.b. **[RED]** Update the expectations so they explicitly allow the store to receive an enriched payload that includes `sourceContributionId` in addition to the composite key and `feedback` fields. Concretely, change assertions to use object-matchers (or equivalent) that check the five-key identity and feedback content, while not failing if `sourceContributionId` is present. The tests should now fail if the component drops or mutates the composite key fields when the underlying store type changes.  
+    *   `[ ]` 94.c. **[GREEN]** Ensure `GeneratedContributionCard` continues to call `submitStageDocumentFeedback` exactly once per successful save, passing `{ ...compositeKey, feedback: currentDraft }` so TypeScript infers a `SubmitStageDocumentFeedbackPayload` and the store can enrich with `sourceContributionId` transparently. No UI-layer logic should attempt to compute or override `sourceContributionId`.  
+    *   `[ ]` 94.d. **[LINT]** Run the linter for `apps/web/src/components/dialectic/GeneratedContributionCard.test.tsx` and fix any style or import issues introduced by the updated expectations.  
+
+*   `[ ]` 95. **`[UI]` Confirm `GeneratedContributionCard` consumes the updated store contract without leaking backend details**  
+    *   `[ ]` 95.a. **[READ]** Re-open `apps/web/src/components/dialectic/GeneratedContributionCard.tsx` and trace the props/state mapping from `useDialecticStore`, focusing on how `submitStageDocumentFeedback` is selected and how the payload for `handleSaveFeedback` is constructed.  
+    *   `[ ]` 95.b. **[RED]** Verify that the component does not introduce its own `SubmitStageDocumentFeedbackPayload` type alias or narrow the payload shape in a way that would exclude `sourceContributionId` (e.g., by manually typing the argument as a smaller object). If any such narrowing exists, document it as RED, as it would prevent the store from receiving the enriched field.  
+    *   `[ ]` 95.c. **[GREEN]** Rely on the store function’s type signature to type the payload—either by leaving the argument object inline or, if an explicit type is required, by importing and using `SubmitStageDocumentFeedbackPayload` from `@paynless/types` so the component remains compatible with the enriched contract. Ensure `handleSaveFeedback` continues to pass only the composite key and `feedback`, leaving `sourceContributionId` to be supplied by the store.  
+    *   `[ ]` 95.d. **[LINT]** Lint `apps/web/src/components/dialectic/GeneratedContributionCard.tsx` and resolve any issues introduced by type-import changes or formatting updates, keeping to the project’s no-defaults, no-casts standard.  

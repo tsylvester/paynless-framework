@@ -11,7 +11,17 @@ import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockQueryB
 import { createMockFileManagerService, MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import { generateShortId } from '../_shared/utils/path_constructor.ts';
-import type { DialecticMemoryRow, DialecticFeedbackRow, DialecticContributionRow, DialecticProjectResourceRow } from "../dialectic-service/dialectic.interface.ts";
+import type { 
+    DialecticMemoryRow, 
+    DialecticFeedbackRow, 
+    DialecticContributionRow, 
+    DialecticProjectResourceRow,
+} from "../dialectic-service/dialectic.interface.ts";
+import { 
+    isArrayWithOptionalId, 
+    isObjectWithOptionalId, 
+    isDialecticProjectResourceRow, 
+} from "../_shared/utils/type-guards/type_guards.dialectic.ts";
 
 describe("cloneProject", () => {
     let mockSupabaseSetup: MockSupabaseClientSetup;
@@ -22,17 +32,9 @@ describe("cloneProject", () => {
     const cloningUserId = "user-uuid-cloner";
     let capturedNewProjectId = "";
     let capturedNewSessionId1 = "";
-    const originalSession1ShortId = generateShortId("orig-session-uuid-1");
 
     let uuidCallCount = 0;
 
-    // Narrowing helpers for mock insert payloads
-    function isArrayWithOptionalId(val: unknown): val is Array<{ id?: string }> {
-        return Array.isArray(val) && val.every((v) => v !== null && typeof v === 'object');
-    }
-    function isObjectWithOptionalId(val: unknown): val is { id?: string } {
-        return val !== null && typeof val === 'object';
-    }
 
     beforeEach(() => {
         mockSupabaseSetup = createMockSupabaseClient(cloningUserId, {});
@@ -109,7 +111,7 @@ describe("cloneProject", () => {
                         iteration_number: null,
                         resource_type: null,
                         session_id: null,
-                        source_contribution_id: null,
+                        source_contribution_id: context.pathContext.sourceContributionId ?? null,
                         stage_slug: null,
                     }; // conforms to dialectic_project_resources.Row
                     return Promise.resolve({ record: resourceRecord, error: null });
@@ -215,6 +217,7 @@ describe("cloneProject", () => {
                 storage_path: `${originalProjectId}/general_resource`,
                 mime_type: "text/plain", size_bytes: 100, resource_description: resource1Desc,
                 created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+                source_contribution_id: "original-contrib-id",
             },
             {
                 id: "res2-uuid", project_id: originalProjectId, user_id: cloningUserId,
@@ -222,6 +225,7 @@ describe("cloneProject", () => {
                 storage_path: `${originalProjectId}`,
                 mime_type: "text/markdown", size_bytes: 200, resource_description: resource2Desc,
                 created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+                source_contribution_id: null,
             },
             {
                 id: "res3-uuid", project_id: originalProjectId, user_id: cloningUserId,
@@ -230,6 +234,7 @@ describe("cloneProject", () => {
                 storage_path: `${originalProjectId}/general_resource`,
                 mime_type: "application/json", size_bytes: 300, resource_description: resource3Desc,
                 created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+                source_contribution_id: null,
             }
         ];
         
@@ -303,10 +308,16 @@ describe("cloneProject", () => {
         assertEquals(firstCallArgs.mimeType, originalResourcesData[0].mime_type);
         assertEquals(firstCallArgs.userId, cloningUserId);
         assertEquals(firstCallArgs.description, "A general file");
+        assertEquals(firstCallArgs.pathContext.sourceContributionId, originalResourcesData[0].source_contribution_id);
         // Check that path components that should be undefined for this simple resource are indeed undefined
         assertEquals(firstCallArgs.pathContext.iteration, undefined, "Iteration should be undefined for simple resource1");
         assertEquals(firstCallArgs.pathContext.stageSlug, undefined, "StageSlug should be undefined for simple resource1");
         assertEquals(firstCallArgs.pathContext.modelSlug, undefined, "ModelSlug should be undefined for simple resource1");
+        const firstCallResult = await fmCalls[0].returned;
+        assert(firstCallResult);
+        const firstCallRecord = firstCallResult.record;
+        assert(isDialecticProjectResourceRow(firstCallRecord), "Expected a resource record for the first upload");
+        assertEquals(firstCallRecord.source_contribution_id, originalResourcesData[0].source_contribution_id);
 
         const secondCallArgs = fmCalls[1].args[0];
         assertEquals(secondCallArgs.pathContext.projectId, newProjectIdCapture);
@@ -317,6 +328,12 @@ describe("cloneProject", () => {
         assertEquals(secondCallArgs.pathContext.iteration, undefined, "Iteration should be undefined for simple resource2");
         assertEquals(secondCallArgs.pathContext.stageSlug, undefined, "StageSlug should be undefined for simple resource2");
         assertEquals(secondCallArgs.pathContext.modelSlug, undefined, "ModelSlug should be undefined for simple resource2");
+        assertEquals(secondCallArgs.pathContext.sourceContributionId ?? null, null, "Resources without linkage must remain null");
+        const secondCallResult = await fmCalls[1].returned;
+        assert(secondCallResult);
+        const secondCallRecord = secondCallResult.record;
+        assert(isDialecticProjectResourceRow(secondCallRecord), "Expected a resource record for the second upload");
+        assertEquals(secondCallRecord.source_contribution_id, null);
 
         const thirdCallArgs = fmCalls[2].args[0];
         assertEquals(thirdCallArgs.pathContext.projectId, newProjectIdCapture);

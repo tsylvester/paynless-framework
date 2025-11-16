@@ -319,6 +319,7 @@ export async function cloneProject(
                 pairedModelSlug: deconstructed.pairedModelSlug,
                 isContinuation: deconstructed.isContinuation,
                 turnIndex: deconstructed.turnIndex,
+                ...(asset.sourceTable === 'dialectic_project_resources' && { sourceContributionId: asset.source_contribution_id }),
             };
 
             const uploadContext = buildUploadContextForAsset(pathContext, fileContentBuffer, asset, cloningUserId, rawJsonResponseContent);

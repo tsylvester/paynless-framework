@@ -408,6 +408,7 @@ export interface SubmitStageDocumentFeedbackPayload {
   projectId: string;
   feedbackId?: string;
   feedbackType: string;
+  sourceContributionId?: string | null;
 }
 type SubmitStageDocumentFeedbackAction = {
   action: 'submitStageDocumentFeedback';

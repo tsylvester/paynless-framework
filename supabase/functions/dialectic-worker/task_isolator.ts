@@ -249,7 +249,7 @@ export async function findSourceDocuments(
     const allSourceDocuments: SourceDocument[] = [];
     const seenDocumentPaths = new Set<string>();
     const usedRecordKeys = new Set<string>();
-    const { projectId, sessionId, iterationNumber } = parentJob.payload;
+    const { projectId, sessionId, iterationNumber, sourceContributionId } = parentJob.payload;
 
     for (const rule of inputsRequired) {
         const stageSlugCandidate = typeof rule.slug === 'string' ? rule.slug.trim() : '';
@@ -282,21 +282,26 @@ export async function findSourceDocuments(
                 break;
             }
             case 'document': {
-                // NOTE: resource_type column is currently unset in production. Continue filtering via JSON until
-                // the plan in docs/implementations/Current/Checklists/Current/Contract_Column_Use.md is completed.
                 let resourceQuery = dbClient.from('dialectic_project_resources')
                     .select('*')
                     .eq('project_id', projectId)
-                    .eq('resource_description->>type', 'document');
+                    .eq('resource_type', 'rendered_document');
+
+                if (typeof sourceContributionId === 'string' && sourceContributionId.length > 0) {
+                    resourceQuery = resourceQuery.eq('source_contribution_id', sourceContributionId);
+                }
+
+                if (sessionId) {
+                    resourceQuery = resourceQuery.eq('session_id', sessionId);
+                }
 
                 if (shouldFilterByStage) {
                     resourceQuery = resourceQuery.eq('stage_slug', stageSlugCandidate);
                 }
+
                 if (rule.document_key) {
                     const documentKey = rule.document_key;
-                    resourceQuery = resourceQuery.or(
-                        `file_name.ilike.%${documentKey}%,resource_description->>document_key.eq.${documentKey}`,
-                    );
+                    resourceQuery = resourceQuery.ilike('file_name', `%${documentKey}%`);
                 }
                 const { data: resourceData, error: resourceError } = await resourceQuery;
                 if (resourceError) {
@@ -350,20 +355,22 @@ export async function findSourceDocuments(
             case 'seed_prompt':
             case 'header_context':
             case 'project_resource': {
-                // NOTE: See Contract_Column_Use.md for the long-term column fix.
                 let resourceQuery = dbClient.from('dialectic_project_resources')
                     .select('*')
                     .eq('project_id', projectId)
-                    .eq('resource_description->>type', rule.type);
+                    .eq('resource_type', rule.type);
+
+                if (sessionId) {
+                    resourceQuery = resourceQuery.eq('session_id', sessionId);
+                }
 
                 if (shouldFilterByStage) {
                     resourceQuery = resourceQuery.eq('stage_slug', stageSlugCandidate);
                 }
+
                 if (rule.document_key) {
                     const documentKey = rule.document_key;
-                    resourceQuery = resourceQuery.or(
-                        `file_name.ilike.%${documentKey}%,resource_description->>document_key.eq.${documentKey}`,
-                    );
+                    resourceQuery = resourceQuery.ilike('file_name', `%${documentKey}%`);
                 }
                 const { data: resourceData, error: resourceError } = await resourceQuery;
                 if (resourceError) {

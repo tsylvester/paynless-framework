@@ -781,6 +781,94 @@ describe("exportProject", () => {
         localMockSupabaseSetup.clearAllStubs?.();
     });
 
+    it("exports source_contribution_id metadata for every resource", async () => {
+        const resourceWithSource: Tables<'dialectic_project_resources'> = {
+            ...resource1Data,
+            id: "res-with-source",
+            file_name: "resource_with_source.txt",
+            storage_path: `${mockProjectId}/general_resource_with_source`,
+            source_contribution_id: "origin-contrib-123",
+        };
+        const resourceWithoutSource: Tables<'dialectic_project_resources'> = {
+            ...resource1Data,
+            id: "res-without-source",
+            file_name: "resource_without_source.txt",
+            storage_path: `${mockProjectId}/general_resource_without_source`,
+            source_contribution_id: null,
+        };
+
+        const resourceWithSourceBuffer = await new Blob(["Resource content with a linked contribution"]).arrayBuffer();
+        const resourceWithoutSourceBuffer = await new Blob(["Resource content without linkage"]).arrayBuffer();
+
+        const localMockSupabaseSetup = createMockSupabaseClient(mockUser.id, {
+            genericMockResults: {
+                'dialectic_projects': { select: () => Promise.resolve({ data: [projectData], error: null }) },
+                'dialectic_project_resources': { select: () => Promise.resolve({ data: [resourceWithSource, resourceWithoutSource], error: null }) },
+                'dialectic_sessions': { select: () => Promise.resolve({ data: [], error: null }) },
+            }
+        });
+
+        const downloadImpl = async (
+            _client: SupabaseClient,
+            bucket: string,
+            path: string,
+        ): Promise<DownloadStorageResult> => {
+            if (bucket !== mockExportBucket) {
+                return { data: null, error: new Error(`Unexpected bucket ${bucket}`) };
+            }
+            if (path === `${resourceWithSource.storage_path}/${resourceWithSource.file_name}`) {
+                return { data: resourceWithSourceBuffer, error: null };
+            }
+            if (path === `${resourceWithoutSource.storage_path}/${resourceWithoutSource.file_name}`) {
+                return { data: resourceWithoutSourceBuffer, error: null };
+            }
+            return { data: null, error: new Error(`Unexpected download path ${path}`) };
+        };
+        const localStorageUtils: IStorageUtils = {
+            downloadFromStorage: downloadImpl,
+            createSignedUrlForPath: mockStorageUtils.createSignedUrlForPath,
+        };
+        const localDownloadSpy = stub(localStorageUtils, "downloadFromStorage", downloadImpl);
+
+        mockFileManager.setUploadAndRegisterFileResponse(mockFileRecordForZip, null);
+
+        await exportProject(
+            localMockSupabaseSetup.client as any,
+            mockFileManager,
+            localStorageUtils,
+            mockProjectId,
+            mockUser.id,
+        );
+
+        assertEquals(localDownloadSpy.calls.length, 2, "Both resources should be downloaded.");
+
+        const uploadArgs: UploadContext = mockFileManager.uploadAndRegisterFile.calls[mockFileManager.uploadAndRegisterFile.calls.length - 1].args[0];
+        const zipReader = new ZipReader(new BlobReader(new Blob([uploadArgs.fileContent])));
+        const entries = await zipReader.getEntries();
+        const manifestEntry = entries.find((entry) => entry.filename === "project_manifest.json");
+        assertExists(manifestEntry, "project_manifest.json not found in zip");
+        if (!manifestEntry?.getData) {
+            throw new Error("Unable to read manifest entry data");
+        }
+        const manifestText = await manifestEntry.getData(new TextWriter());
+        const manifest = JSON.parse(manifestText);
+            
+        assertEquals(manifest.resources.length, 2, "Both resources should be serialized in the manifest.");
+        const serializedWithSource = manifest.resources.find((resource: DialecticProjectResource) => resource.id === resourceWithSource.id);
+        const serializedWithoutSource = manifest.resources.find((resource: DialecticProjectResource) => resource.id === resourceWithoutSource.id);
+        assertExists(serializedWithSource, "Resource with source metadata missing from manifest.");
+        assertExists(serializedWithoutSource, "Resource without source metadata missing from manifest.");
+
+        assertEquals(Object.prototype.hasOwnProperty.call(serializedWithSource, "source_contribution_id"), true);
+        assertEquals(serializedWithSource?.source_contribution_id, resourceWithSource.source_contribution_id);
+        assertEquals(Object.prototype.hasOwnProperty.call(serializedWithoutSource, "source_contribution_id"), true);
+        assertEquals(serializedWithoutSource?.source_contribution_id, resourceWithoutSource.source_contribution_id);
+
+        await zipReader.close();
+        localDownloadSpy.restore();
+        localMockSupabaseSetup.clearAllStubs?.();
+    });
+
     // TODO: Add more test cases:
     // - Project with no sessions / no resources (empty manifest sections, empty zip folders)
 }); 

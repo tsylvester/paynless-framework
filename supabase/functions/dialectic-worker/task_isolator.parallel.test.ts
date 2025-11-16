@@ -246,8 +246,43 @@ describe('planComplexStage', () => {
                                     return resource.iteration_number === value;
                                 case 'user_id':
                                     return resource.user_id === value;
+                                case 'source_contribution_id':
+                                    return resource.source_contribution_id === value;
                                 case 'file_name':
                                     return resource.file_name === value;
+                                default:
+                                    return false;
+                            }
+                        };
+
+                        const matchesIlikeFilter = (
+                            resource: DialecticProjectResourceRow,
+                            column: string,
+                            value: unknown,
+                        ): boolean => {
+                            if (typeof value !== 'string') {
+                                return false;
+                            }
+                            // Remove % wildcards from pattern
+                            const cleanedValue = value.replace(/%/g, '');
+
+                            if (column.startsWith('resource_description->>')) {
+                                const [, descriptorKey = ''] = column.split('->>');
+                                const candidate = descriptorValue(resource, descriptorKey);
+                                if (typeof candidate !== 'string') {
+                                    return false;
+                                }
+                                return candidate.toLowerCase().includes(cleanedValue.toLowerCase());
+                            }
+
+                            switch (column) {
+                                case 'file_name': {
+                                    const candidate = resource.file_name;
+                                    if (typeof candidate !== 'string') {
+                                        return false;
+                                    }
+                                    return candidate.toLowerCase().includes(cleanedValue.toLowerCase());
+                                }
                                 default:
                                     return false;
                             }
@@ -309,6 +344,9 @@ describe('planComplexStage', () => {
                             if (filter.type === 'eq' && typeof filter.column === 'string') {
                                 const column = filter.column;
                                 data = data.filter((resource) => matchesEqFilter(resource, column, filter.value));
+                            } else if (filter.type === 'ilike' && typeof filter.column === 'string') {
+                                const column = filter.column;
+                                data = data.filter((resource) => matchesIlikeFilter(resource, column, filter.value));
                             } else if (filter.type === 'or' && typeof filter.filters === 'string') {
                                 const conditions = filter.filters.split(',');
                                 data = data.filter((resource) => conditions.some((condition) => matchesOrCondition(resource, condition)));
@@ -548,16 +586,35 @@ describe('planComplexStage', () => {
             // via a specific document_key in its inputs_required rule.
     
             // Arrange:
-            // 1. Create a second distinct resource.
-            const targetResource: DialecticProjectResourceRow = {
+            // 1. Seed project resources with two rendered documents that both match the column predicates.
+            const branchAResource: DialecticProjectResourceRow = {
                 ...mockProjectResources[0],
+                id: 'resource-A',
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                stage_slug: 'thesis',
+                file_name: 'sess-1_thesis_business_case_branchA.md',
+                resource_description: {
+                    description: 'Branch A resource',
+                    type: 'rendered_document',
+                    document_key: FileType.business_case,
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            const targetResource: DialecticProjectResourceRow = {
+                ...branchAResource,
                 id: 'resource-B',
                 file_name: 'sess-1_thesis_business_case_branchB.md',
-                resource_description: { "description": "Branch B resource", "type": "document", "document_key": FileType.business_case },
+                resource_description: {
+                    description: 'Branch B resource',
+                    type: 'rendered_document',
+                    document_key: FileType.business_case,
+                },
                 created_at: new Date(Date.now() + 10).toISOString(),
                 updated_at: new Date(Date.now() + 10).toISOString(),
             };
-            mockProjectResources.push(targetResource);
+            mockProjectResources = [branchAResource, targetResource];
             // 2. The recipe will explicitly ask for only this new resource.
             mockRecipeStep.inputs_required = [{ type: 'document', document_key: FileType.business_case, slug: 'any' }];
             // 3. Set up a planner spy to capture the source documents it receives.
@@ -611,24 +668,38 @@ describe('planComplexStage', () => {
             // executes all rules in `inputs_required` and returns the complete, combined list of documents.
     
             // Arrange:
-            // 1. Create two mock outputs from parallel branches.
+            // 1. Create two mock outputs from parallel branches that satisfy the rendered_document column filters.
             const branchA_Output: DialecticProjectResourceRow = {
                 ...mockProjectResources[0],
                 id: 'doc-2a-output',
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                stage_slug: 'test-stage',
                 file_name: 'test-stage_rendered_document_docA.md',
-                resource_description: { "description": "Rendered branch A", "type": "document", "document_key": FileType.RenderedDocument },
+                resource_description: {
+                    description: 'Rendered branch A',
+                    type: 'rendered_document',
+                    document_key: FileType.RenderedDocument,
+                },
                 created_at: new Date(Date.now() + 20).toISOString(),
                 updated_at: new Date(Date.now() + 20).toISOString(),
             };
             const branchB_Output: DialecticProjectResourceRow = {
                 ...mockProjectResources[0],
                 id: 'doc-2b-output',
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                stage_slug: 'test-stage',
                 file_name: 'test-stage_rendered_document_docB.md',
-                resource_description: { "description": "Rendered branch B", "type": "document", "document_key": FileType.RenderedDocument },
+                resource_description: {
+                    description: 'Rendered branch B',
+                    type: 'rendered_document',
+                    document_key: FileType.RenderedDocument,
+                },
                 created_at: new Date(Date.now() + 30).toISOString(),
                 updated_at: new Date(Date.now() + 30).toISOString(),
             };
-            mockProjectResources.push(branchA_Output, branchB_Output);
+            mockProjectResources = [branchA_Output, branchB_Output];
             // 2. Create a recipe step that requires both as inputs.
             mockRecipeStep.inputs_required = [
                 { type: 'document', document_key: FileType.RenderedDocument, slug: 'any' },
@@ -766,6 +837,197 @@ describe('planComplexStage', () => {
             // 1. The function must reject the polluted payload, resulting in zero child jobs.
             //    This proves the "reject, don't sanitize" contract is enforced.
             assertEquals(childJobs.length, 0, "The polluted payload should be rejected, resulting in zero child jobs.");
+        });
+    });
+
+    describe('Group 4: Column-based lookups for parallel planner flows', () => {
+        it('uses column predicates including source_contribution_id when fetching rendered documents', async () => {
+            // Arrange:
+            // 1. Configure the parent job with a sourceContributionId so rendered document lookups are contribution-backed.
+            const contributionId = 'contrib-123';
+            mockParentJob.payload.sourceContributionId =
+                contributionId;
+
+            // 2. Seed a rendered_document resource that matches the column predicates used by the implementation.
+            if (!isDialecticPlanJobPayload(mockParentJob.payload)) {
+                throw new Error('mockParentJob.payload must be a valid DialecticPlanJobPayload');
+            }
+            if (typeof mockParentJob.payload.stageSlug !== 'string') {
+                throw new Error('mockParentJob.payload.stageSlug must be defined as a string. Fix the data flow upstream.');
+            }
+            const renderedResource: DialecticProjectResourceRow = {
+                ...mockProjectResources[0],
+                id: 'rendered-doc-1',
+                project_id: mockParentJob.payload.projectId,
+                resource_type: 'rendered_document',
+                session_id: mockParentJob.payload.sessionId,
+                stage_slug: mockParentJob.payload.stageSlug,
+                source_contribution_id: contributionId,
+                file_name: 'sess-1_test-stage_technical_approach_v1.md',
+                resource_description: {
+                    description: 'Rendered technical approach document',
+                    type: 'rendered_document',
+                    document_key: FileType.technical_approach,
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            mockProjectResources = [renderedResource];
+
+            // 3. Require a document rule scoped to a specific stage and document key so the resource query is exercised.
+            mockRecipeStep.inputs_required = [{
+                type: 'document',
+                slug: 'test-stage',
+                document_key: FileType.technical_approach,
+            }];
+
+            // 4. Provide a trivial planner so planning completes without creating jobs.
+            const plannerFn: GranularityPlannerFn = () => [];
+            mockDeps.getGranularityPlanner = () => plannerFn;
+
+            // Act:
+            await planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                mockRecipeStep,
+                'user-jwt-123',
+            );
+
+            // Assert:
+            // Use the Supabase mock spies to verify column-based predicates.
+            const eqHistory = mockSupabase.spies.getHistoricQueryBuilderSpies(
+                'dialectic_project_resources',
+                'eq',
+            );
+            assertExists(eqHistory);
+
+            const calls = eqHistory.callsArgs;
+            const hasFilter = (column: string, value: unknown): boolean =>
+                calls.some((args) =>
+                    Array.isArray(args) &&
+                    typeof args[0] === 'string' &&
+                    args[0] === column &&
+                    args[1] === value
+                );
+
+            assert(
+                hasFilter('resource_type', 'rendered_document'),
+                'Expected resource_type filter for rendered_document',
+            );
+            assert(
+                hasFilter('project_id', mockParentJob.payload.projectId),
+                'Expected project_id filter for rendered_document',
+            );
+            assert(
+                hasFilter('session_id', mockParentJob.payload.sessionId),
+                'Expected session_id filter for rendered_document',
+            );
+            assert(
+                hasFilter('stage_slug', 'test-stage'),
+                'Expected stage_slug filter for rendered_document',
+            );
+            assert(
+                hasFilter('source_contribution_id', contributionId),
+                'Expected source_contribution_id filter for rendered_document',
+            );
+        });
+
+        it('does not add a non-null source_contribution_id filter when project resources have no linkage', async () => {
+            // Arrange:
+            // 1. Seed a project_resource row without linkage that matches the column predicates.
+            if (!isDialecticPlanJobPayload(mockParentJob.payload)) {
+                throw new Error('mockParentJob.payload must be a valid DialecticPlanJobPayload');
+            }
+            if (typeof mockParentJob.payload.stageSlug !== 'string') {
+                throw new Error('mockParentJob.payload.stageSlug must be defined as a string. Fix the data flow upstream.');
+            }
+            const unlinkedResource: DialecticProjectResourceRow = {
+                ...mockProjectResources[0],
+                id: 'unlinked-project-resource-1',
+                project_id: mockParentJob.payload.projectId,
+                resource_type: 'project_resource',
+                session_id: mockParentJob.payload.sessionId,
+                stage_slug: mockParentJob.payload.stageSlug,
+                source_contribution_id: null,
+                file_name: 'sess-1_test-stage_general_resource.md',
+                resource_description: {
+                    description: 'General project resource without linkage',
+                    type: 'project_resource',
+                    document_key: FileType.GeneralResource,
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            mockProjectResources = [unlinkedResource];
+
+            // 2. Use a project_resource rule; these resources are not contribution-backed in this scenario.
+            mockRecipeStep.inputs_required = [{
+                type: 'project_resource',
+                slug: 'test-stage',
+                document_key: FileType.GeneralResource,
+            }];
+
+            // 3. Ensure the parent job has no sourceContributionId field at all.
+            delete mockParentJob.payload.sourceContributionId;
+
+            const plannerFn: GranularityPlannerFn = () => [];
+            mockDeps.getGranularityPlanner = () => plannerFn;
+
+            // Act:
+            await planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                mockRecipeStep,
+                'user-jwt-123',
+            );
+
+            // Assert:
+            const eqHistory = mockSupabase.spies.getHistoricQueryBuilderSpies(
+                'dialectic_project_resources',
+                'eq',
+            );
+            assertExists(eqHistory);
+            const calls = eqHistory.callsArgs;
+
+            const hasFilter = (column: string, value: unknown): boolean =>
+                calls.some((args) =>
+                    Array.isArray(args) &&
+                    typeof args[0] === 'string' &&
+                    args[0] === column &&
+                    args[1] === value
+                );
+
+            assert(
+                hasFilter('resource_type', 'project_resource'),
+                'Expected resource_type filter for project_resource',
+            );
+            assert(
+                hasFilter('project_id', mockParentJob.payload.projectId),
+                'Expected project_id filter for project_resource',
+            );
+            assert(
+                hasFilter('session_id', mockParentJob.payload.sessionId),
+                'Expected session_id filter for project_resource',
+            );
+            assert(
+                hasFilter('stage_slug', 'test-stage'),
+                'Expected stage_slug filter for project_resource',
+            );
+
+            const hasNonNullSourceContributionFilter = calls.some((args) =>
+                Array.isArray(args) &&
+                typeof args[0] === 'string' &&
+                args[0] === 'source_contribution_id' &&
+                args[1] !== null &&
+                args[1] !== undefined
+            );
+
+            assert(
+                hasNonNullSourceContributionFilter === false,
+                'project_resource lookups without linkage must not filter by non-null source_contribution_id',
+            );
         });
     });
 

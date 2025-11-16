@@ -43,6 +43,9 @@ import {
     isAssembledJsonArtifact,
     isEditedDocumentResource,
     isSaveContributionEditSuccessResponse,
+    isDialecticProjectResourceRow,
+    isObjectWithOptionalId,
+    isArrayWithOptionalId,
 } from './type_guards.dialectic.ts';
 import { 
     BranchKey, 
@@ -2770,6 +2773,96 @@ Deno.test('Type Guard: isEditedDocumentResource', async (t) => {
     await t.step('should return false when a required number field has the wrong type', () => {
         const invalid = { ...baseResource, size_bytes: 'big' as unknown as number };
         assert(!isEditedDocumentResource(invalid));
+    });
+});
+
+Deno.test('Type Guard: isDialecticProjectResourceRow', async (t) => {
+    const baseResource = {
+        id: 'res-1',
+        project_id: 'proj-1',
+        user_id: 'user-1',
+        file_name: 'resource.md',
+        storage_bucket: 'dialectic_project_resources',
+        storage_path: 'proj-1/resource.md',
+        mime_type: 'text/markdown',
+        size_bytes: 1024,
+        resource_description: { type: 'general_resource' },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        iteration_number: null,
+        resource_type: 'general_resource',
+        session_id: null,
+        source_contribution_id: 'contrib-123',
+        stage_slug: null,
+    };
+
+    await t.step('should return true for a fully populated resource row', () => {
+        assert(isDialecticProjectResourceRow(baseResource));
+    });
+
+    await t.step('should return true when optional nullable properties are null', () => {
+        const nullableResource = {
+            ...baseResource,
+            user_id: null,
+            file_name: null,
+            resource_type: null,
+            session_id: null,
+            stage_slug: null,
+            iteration_number: null,
+            size_bytes: null,
+            source_contribution_id: null,
+        };
+        assert(isDialecticProjectResourceRow(nullableResource));
+    });
+
+    await t.step('should return false when a required string property is missing', () => {
+        const invalidResource = { ...baseResource };
+        delete (invalidResource as Partial<typeof baseResource>).project_id;
+        assert(!isDialecticProjectResourceRow(invalidResource));
+    });
+
+    await t.step('should return false when a numeric field has the wrong type', () => {
+        const invalidResource = { ...baseResource, size_bytes: 'large' };
+        assert(!isDialecticProjectResourceRow(invalidResource));
+    });
+});
+
+Deno.test('Type Guard: isObjectWithOptionalId', async (t) => {
+    await t.step('should return true when id is a string', () => {
+        assert(isObjectWithOptionalId({ id: 'abc' }));
+    });
+
+    await t.step('should return true when id is undefined/missing', () => {
+        assert(isObjectWithOptionalId({}));
+    });
+
+    await t.step('should return false when id is not a string', () => {
+        assert(!isObjectWithOptionalId({ id: 123 }));
+    });
+
+    await t.step('should return false for non-record inputs', () => {
+        assert(!isObjectWithOptionalId(null));
+        assert(!isObjectWithOptionalId('test'));
+    });
+});
+
+Deno.test('Type Guard: isArrayWithOptionalId', async (t) => {
+    await t.step('should return true for an array of objects with optional ids', () => {
+        assert(isArrayWithOptionalId([{ id: 'one' }, {}]));
+    });
+
+    await t.step('should return true for an empty array', () => {
+        assert(isArrayWithOptionalId([]));
+    });
+
+    await t.step('should return false when any element fails the object guard', () => {
+        assert(!isArrayWithOptionalId([{ id: 'one' }, { id: 123 }]));
+    });
+
+    await t.step('should return false for non-array inputs', () => {
+        assert(!isArrayWithOptionalId({}));
+        assert(!isArrayWithOptionalId('test'));
+        assert(!isArrayWithOptionalId(null));
     });
 });
 
