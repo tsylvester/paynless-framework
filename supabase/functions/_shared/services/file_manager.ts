@@ -175,10 +175,10 @@ export class FileManagerService {
         const resourceType = context.resourceTypeForDb ?? pathContextForStorage.fileType
         const recordData: TablesInsert<'dialectic_project_resources'> = {
           project_id: pathContextForStorage.projectId,
-          session_id: pathContextForStorage.sessionId,
+          session_id: pathContextForStorage.sessionId ?? null,
           user_id: context.userId!,
-          stage_slug: pathContextForStorage.stageSlug,
-          iteration_number: pathContextForStorage.iteration,
+          stage_slug: pathContextForStorage.stageSlug ?? null,
+          iteration_number: pathContextForStorage.iteration ?? null,
           resource_type: typeof resourceType === 'string' ? resourceType : String(resourceType),
           file_name: finalFileName, 
           mime_type: context.mimeType,
@@ -186,7 +186,7 @@ export class FileManagerService {
           storage_bucket: this.storageBucket,
           storage_path: finalMainContentFilePath,
           resource_description: resourceDescriptionForDb,
-          source_contribution_id: pathContextForStorage.sourceContributionId,
+          source_contribution_id: pathContextForStorage.sourceContributionId ?? null,
         };
         // Use upsert only for project export zip; otherwise, insert as before
         if (pathContextForStorage.fileType === 'project_export_zip') {

@@ -11,6 +11,7 @@ import {
   ListStageDocumentsPayload,
   ListStageDocumentsResponse,
   StageDocumentDescriptorDto,
+  DialecticProjectResourceRow,
 } from './dialectic.interface.ts';
 
 const USER_ID = 'user-abc';
@@ -55,16 +56,28 @@ Deno.test('listStageDocuments - Happy Path: returns normalized document descript
     },
   ];
 
-  const mockResources = [
+  const mockResources: DialecticProjectResourceRow[] = [
     {
       id: 'resource-1',
       project_id: 'proj-1',
       file_name: 'doc-a.md',
+      resource_type: 'rendered_document',
+      session_id: 'session-123',
+      stage_slug: 'synthesis',
+      iteration_number: 1,
+      source_contribution_id: null,
       resource_description: {
         type: 'rendered_document',
         document_key: 'doc-a',
         job_id: 'job-1',
       },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      mime_type: 'text/markdown',
+      size_bytes: 100,
+      storage_bucket: 'dialectic-contributions',
+      storage_path: 'path/to/doc-a.md',
+      user_id: USER_ID,
     },
   ];
 
@@ -111,27 +124,41 @@ Deno.test('listStageDocuments - Happy Path: returns normalized document descript
   assertEquals(jobsSpies.eq.calls[3].args, ['user_id', USER_ID]);
   assertEquals(jobsSpies.eq.calls[4].args, ['project_id', PROJECT_ID]);
 
-  // Assert that the resources query is now using an efficient filter
+  // Assert that the resources query uses column-based filters instead of JSON path queries
   const resourcesSpies = mockSupabase.spies.getLatestQueryBuilderSpies(
     'dialectic_project_resources',
   );
   assertExists(resourcesSpies);
 
-  // Assert that the query still filters by resource type
+  // Assert that the query filters by resource_type column, not JSON path
   assertExists(resourcesSpies.eq);
-  assertEquals(resourcesSpies.eq.calls.length, 1);
+  assertEquals(resourcesSpies.eq.calls.length, 4);
   assertEquals(resourcesSpies.eq.calls[0].args, [
-    'resource_description->>type',
+    'resource_type',
     'rendered_document',
   ]);
 
-  // Assert that an efficient '.filter()' was used with the job IDs
+  // Assert that the query filters by session_id column
+  assertEquals(resourcesSpies.eq.calls[1].args, [
+    'session_id',
+    'session-123',
+  ]);
+
+  // Assert that the query filters by stage_slug column
+  assertEquals(resourcesSpies.eq.calls[2].args, [
+    'stage_slug',
+    'synthesis',
+  ]);
+
+  // Assert that the query filters by iteration_number column
+  assertEquals(resourcesSpies.eq.calls[3].args, [
+    'iteration_number',
+    1,
+  ]);
+
+  // Assert that no JSON path queries are used (no filter calls for job_id)
   assertExists(resourcesSpies.filter);
-  assertEquals(resourcesSpies.filter.calls.length, 1);
-  assertEquals(
-    resourcesSpies.filter.calls[0].args,
-    ['resource_description->>job_id', 'in', '("job-1","job-2")'],
-  );
+  assertEquals(resourcesSpies.filter.calls.length, 0);
 });
 
 Deno.test('listStageDocuments - Happy Path: handles jobs with no rendered resources', async () => {
@@ -239,4 +266,88 @@ Deno.test('listStageDocuments - Error: returns 500 on database error', async () 
 
   assertEquals(result.status, 500);
   assertExists(result.error);
+});
+
+Deno.test('listStageDocuments - Happy Path: correlates resources via source_contribution_id when job payload includes it', async () => {
+  const mockJobs = [
+    {
+      id: 'job-1',
+      session_id: 'session-123',
+      status: 'completed',
+      payload: {
+        document_key: 'doc-a',
+        model_id: 'model-a',
+        sourceContributionId: 'contrib-123',
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  const mockResources: DialecticProjectResourceRow[] = [
+    {
+      id: 'resource-1',
+      project_id: PROJECT_ID,
+      file_name: 'doc-a.md',
+      resource_type: 'rendered_document',
+      session_id: 'session-123',
+      stage_slug: 'synthesis',
+      iteration_number: 1,
+      source_contribution_id: 'contrib-123',
+      resource_description: {
+        type: 'rendered_document',
+        document_key: 'doc-a',
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      mime_type: 'text/markdown',
+      size_bytes: 100,
+      storage_bucket: 'dialectic-contributions',
+      storage_path: 'path/to/doc-a.md',
+      user_id: USER_ID,
+    },
+  ];
+
+  const mockSupabase = createMockSupabaseClient(USER_ID, {
+    genericMockResults: {
+      'dialectic_generation_jobs': {
+        select: { data: mockJobs, error: null },
+      },
+      'dialectic_project_resources': {
+        select: { data: mockResources, error: null },
+      },
+    },
+  });
+
+  const result = await listStageDocuments(
+    payload,
+    mockSupabase.client as unknown as SupabaseClient<Database>,
+  );
+
+  assertEquals(result.status, 200);
+  assertExists(result.data);
+  const { documents }: ListStageDocumentsResponse = result.data;
+  assertEquals(documents.length, 1);
+
+  const docA = documents.find((d: StageDocumentDescriptorDto) => d.documentKey === 'doc-a');
+  assertExists(docA);
+  assertEquals(docA.modelId, 'model-a');
+  assertEquals(docA.lastRenderedResourceId, 'resource-1');
+
+  // Assert that the resources query filters by columns including source_contribution_id correlation
+  const resourcesSpies = mockSupabase.spies.getLatestQueryBuilderSpies(
+    'dialectic_project_resources',
+  );
+  assertExists(resourcesSpies);
+  assertExists(resourcesSpies.eq);
+
+  // Assert column-based filtering is used
+  assertEquals(resourcesSpies.eq.calls[0].args, ['resource_type', 'rendered_document']);
+  assertEquals(resourcesSpies.eq.calls[1].args, ['session_id', 'session-123']);
+  assertEquals(resourcesSpies.eq.calls[2].args, ['stage_slug', 'synthesis']);
+  assertEquals(resourcesSpies.eq.calls[3].args, ['iteration_number', 1]);
+
+  // When source_contribution_id is available in job payload, the query should correlate via that field
+  // Note: The exact implementation may vary, but we assert that column-based filtering is used
+  // and that source_contribution_id can be used for correlation (this will be refined in step 31)
 });

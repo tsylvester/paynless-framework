@@ -349,6 +349,7 @@ export interface DialecticStateValues {
   stageRunProgress: Record<string, StageRunProgressSnapshot>;
   focusedStageDocument: Record<string, FocusedStageDocumentState | null>;
   stageDocumentContent: Record<string, StageDocumentContentState>;
+  stageDocumentResources: Record<string, EditedDocumentResource>;
   stageDocumentVersions: Record<string, StageDocumentVersionInfo>;
   stageDocumentFeedback: Record<string, StageDocumentFeedback[]>;
   isLoadingStageDocumentFeedback: boolean;
@@ -557,8 +558,9 @@ export interface DialecticActions {
   // Actions for saving contribution edits (plan 1.2.Y / 1.5.6.5)
   setSavingContributionEdit: (isSaving: boolean) => void;
   setSaveContributionEditError: (error: ApiError | null) => void;
-  saveContributionEdit: (payload: SaveContributionEditPayload) => Promise<ApiResponse<DialecticContribution>>;
+  saveContributionEdit: (payload: SaveContributionEditPayload) => Promise<ApiResponse<SaveContributionEditSuccessResponse>>;
   resetSaveContributionEditError: () => void;
+  updateStageDocumentResource: (key: StageDocumentCompositeKey, resource: EditedDocumentResource, editedContentText: string) => void;
 
   // New context actions
   setActiveContextProjectId: (id: string | null) => void;
@@ -843,7 +845,7 @@ export interface DialecticApiClient {
   updateDialecticProjectInitialPrompt(payload: UpdateProjectInitialPromptPayload): Promise<ApiResponse<DialecticProject>>;
 
   submitStageResponses(payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>>;
-  saveContributionEdit(payload: SaveContributionEditPayload): Promise<ApiResponse<DialecticContribution>>;
+  saveContributionEdit(payload: SaveContributionEditPayload): Promise<ApiResponse<SaveContributionEditSuccessResponse>>;
 
   getIterationInitialPromptContent(payload: GetIterationInitialPromptPayload): Promise<ApiResponse<IterationInitialPromptData>>;
 
@@ -909,6 +911,37 @@ export interface DialecticProjectResource {
     resource_description: string | null;
     created_at: string;
     updated_at: string;
+}
+
+/**
+ * Represents a document resource that has been edited, matching the dialectic_project_resources table schema.
+ * This type mirrors the database row shape for rendered documents created from user edits.
+ */
+export interface EditedDocumentResource {
+  id: string;
+  resource_type: string | null;
+  project_id: string;
+  session_id: string | null;
+  stage_slug: string | null;
+  iteration_number: number | null;
+  document_key: string | null;
+  source_contribution_id: string | null;
+  storage_bucket: string;
+  storage_path: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Response type for successful contribution edit saves.
+ * Returns the created document resource instead of a contribution object.
+ */
+export interface SaveContributionEditSuccessResponse {
+  resource: EditedDocumentResource;
+  sourceContributionId: string;
 }
 
 export interface DomainOverlayDescriptor {
@@ -1042,6 +1075,15 @@ export interface SaveContributionEditPayload {
     sessionId: string;
     originalModelContributionId: string; 
     responseText: string;
+    /**
+     * Explicit document key identifier. Edits no longer infer from contribution_type.
+     * Optional to maintain backward compatibility.
+     */
+    documentKey?: string;
+    /**
+     * Explicit resource type. Optional to allow backend to determine default.
+     */
+    resourceType?: string;
 }
 
 // START: New type definitions needed for 1.5.6 UI and 1.2.Y backend enhancements
@@ -1080,6 +1122,13 @@ export interface StageDocumentFeedback {
 	createdAt: string;
 }
 
+/**
+ * Payload for submitting stage document feedback.
+ * NOTE: Naming mismatch with backend contract - this interface uses `feedback` while
+ * the backend API expects `feedbackContent`. Additionally, the backend contract expects
+ * a linkage field (`source_contribution_id`) to track which contribution the feedback
+ * targets. Future refactors should standardize naming to align with backend.
+ */
 export interface SubmitStageDocumentFeedbackPayload {
 	sessionId: string;
 	stageSlug: string;
@@ -1087,6 +1136,7 @@ export interface SubmitStageDocumentFeedbackPayload {
 	modelId: string;
 	documentKey: string;
 	feedback: string;
+	sourceContributionId?: string | null;
 }
 
 export interface AssembledPrompt {

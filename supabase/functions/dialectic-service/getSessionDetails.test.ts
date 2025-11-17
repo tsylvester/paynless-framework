@@ -7,7 +7,7 @@ import { describe, it, beforeEach, afterEach } from "https://deno.land/std@0.208
 import type { User } from 'npm:@supabase/supabase-js';
 import { getSessionDetails } from './getSessionDetails.ts';
 import { logger } from '../_shared/logger.ts';
-import { createMockSupabaseClient, type MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
+import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockQueryBuilderState } from '../_shared/supabase.mock.ts';
 
 const getMockUser = (id: string): User => ({
   id,
@@ -66,13 +66,95 @@ describe("getSessionDetails Unit Tests", () => {
       storage_path: "path/to",
       file_name: "prompt.md",
       storage_bucket: "dialectic-contributions",
+      resource_type: 'seed_prompt',
+      session_id: mockSessionId,
+      stage_slug: 'test-stage',
     };
 
     mockClientSetup = createMockSupabaseClient(mockOwnerUser.id, {
       genericMockResults: {
         'dialectic_sessions': { select: { data: [mockDbSession] } },
         'dialectic_projects': { select: { data: [mockDbProject] } },
-        'dialectic_project_resources': { select: { data: [mockResource] } },
+        'dialectic_project_resources': {
+          select: (state: MockQueryBuilderState) => {
+            // Assert JSON path predicate is NOT present
+            const hasJsonPathFilter = state.filters.some((filter) => {
+              if (typeof filter.column === 'string' && filter.column.includes('resource_description->>')) {
+                return true;
+              }
+              return false;
+            });
+            if (hasJsonPathFilter) {
+              return Promise.resolve({
+                data: null,
+                error: new Error('seed_prompt queries must not use JSON-path predicates on resource_description'),
+                count: 0,
+                status: 400,
+                statusText: 'JSON path filter detected',
+              });
+            }
+
+            // Assert resource_type filter is present
+            const hasResourceTypeFilter = state.filters.some(
+              (filter) =>
+                filter.type === 'eq' &&
+                filter.column === 'resource_type' &&
+                filter.value === 'seed_prompt',
+            );
+            if (!hasResourceTypeFilter) {
+              return Promise.resolve({
+                data: null,
+                error: new Error('seed_prompt queries must filter by resource_type'),
+                count: 0,
+                status: 400,
+                statusText: 'Missing resource_type filter',
+              });
+            }
+
+            // Assert session_id filter is present
+            const hasSessionIdFilter = state.filters.some(
+              (filter) =>
+                filter.type === 'eq' &&
+                filter.column === 'session_id' &&
+                filter.value === mockSessionId,
+            );
+            if (!hasSessionIdFilter) {
+              return Promise.resolve({
+                data: null,
+                error: new Error('seed_prompt queries must filter by session_id'),
+                count: 0,
+                status: 400,
+                statusText: 'Missing session_id filter',
+              });
+            }
+
+            // Assert stage_slug filter is present
+            const hasStageSlugFilter = state.filters.some(
+              (filter) =>
+                filter.type === 'eq' &&
+                filter.column === 'stage_slug' &&
+                filter.value === mockDbSession.dialectic_stages.slug,
+            );
+            if (!hasStageSlugFilter) {
+              return Promise.resolve({
+                data: null,
+                error: new Error('seed_prompt queries must filter by stage_slug'),
+                count: 0,
+                status: 400,
+                statusText: 'Missing stage_slug filter',
+              });
+            }
+
+            // All filters satisfied, return success
+            return Promise.resolve({
+              data: [mockResource],
+              error: null,
+              count: 1,
+              status: 200,
+              statusText: 'OK',
+            });
+          },
+        },
       },
     });
 
@@ -166,7 +248,86 @@ describe("getSessionDetails Unit Tests", () => {
         genericMockResults: {
             'dialectic_sessions': { select: { data: [mockDbSession] } },
             'dialectic_projects': { select: { data: [mockDbProject] } },
-            'dialectic_project_resources': { select: { data: null, error: null } },
+            'dialectic_project_resources': {
+              select: (state: MockQueryBuilderState) => {
+                // Assert JSON path predicate is NOT present
+                const hasJsonPathFilter = state.filters.some((filter) => {
+                  if (typeof filter.column === 'string' && filter.column.includes('resource_description->>')) {
+                    return true;
+                  }
+                  return false;
+                });
+                if (hasJsonPathFilter) {
+                  return Promise.resolve({
+                    data: null,
+                    error: new Error('seed_prompt queries must not use JSON-path predicates on resource_description'),
+                    count: 0,
+                    status: 400,
+                    statusText: 'JSON path filter detected',
+                  });
+                }
+
+                // Assert resource_type filter is present
+                const hasResourceTypeFilter = state.filters.some(
+                  (filter) =>
+                    filter.type === 'eq' &&
+                    filter.column === 'resource_type' &&
+                    filter.value === 'seed_prompt',
+                );
+                if (!hasResourceTypeFilter) {
+                  return Promise.resolve({
+                    data: null,
+                    error: new Error('seed_prompt queries must filter by resource_type'),
+                    count: 0,
+                    status: 400,
+                    statusText: 'Missing resource_type filter',
+                  });
+                }
+
+                // Assert session_id filter is present
+                const hasSessionIdFilter = state.filters.some(
+                  (filter) =>
+                    filter.type === 'eq' &&
+                    filter.column === 'session_id' &&
+                    filter.value === mockSessionId,
+                );
+                if (!hasSessionIdFilter) {
+                  return Promise.resolve({
+                    data: null,
+                    error: new Error('seed_prompt queries must filter by session_id'),
+                    count: 0,
+                    status: 400,
+                    statusText: 'Missing session_id filter',
+                  });
+                }
+
+                // Assert stage_slug filter is present
+                const hasStageSlugFilter = state.filters.some(
+                  (filter) =>
+                    filter.type === 'eq' &&
+                    filter.column === 'stage_slug' &&
+                    filter.value === mockDbSession.dialectic_stages.slug,
+                );
+                if (!hasStageSlugFilter) {
+                  return Promise.resolve({
+                    data: null,
+                    error: new Error('seed_prompt queries must filter by stage_slug'),
+                    count: 0,
+                    status: 400,
+                    statusText: 'Missing stage_slug filter',
+                  });
+                }
+
+                // All filters satisfied but no resource found
+                return Promise.resolve({
+                  data: null,
+                  error: null,
+                  count: 0,
+                  status: 200,
+                  statusText: 'OK',
+                });
+              },
+            },
         },
     });
 

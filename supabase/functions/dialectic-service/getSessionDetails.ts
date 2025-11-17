@@ -78,7 +78,9 @@ export async function getSessionDetails(
         .from('dialectic_project_resources')
         .select('id, storage_path, file_name, storage_bucket')
         .eq('project_id', session.project_id)
-        .eq('resource_description->>type', 'seed_prompt');
+        .eq('resource_type', 'seed_prompt')
+        .eq('session_id', sessionId)
+        .eq('stage_slug', session.dialectic_stages.slug);
 
       // For the initial seed prompt, iteration_number may be null even if session.iteration_count is 1
       if (session.iteration_count === 1) {

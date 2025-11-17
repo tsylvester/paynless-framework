@@ -95,6 +95,7 @@ describe('DialecticApiClient - Document Feedback', () => {
         modelId: 'gpt-4',
         documentKey: 'draft_document_outline',
         feedback: 'This is my submitted feedback.',
+        sourceContributionId: 'contrib-feedback-source',
       };
 
       const mockApiResponse: ApiResponse<{ success: boolean }> = {
@@ -111,7 +112,15 @@ describe('DialecticApiClient - Document Feedback', () => {
         'dialectic-service',
         {
           action: 'submitStageDocumentFeedback',
-          payload,
+          payload: expect.objectContaining({
+            sessionId: 'test-session-id',
+            stageSlug: 'synthesis',
+            iterationNumber: 1,
+            modelId: 'gpt-4',
+            documentKey: 'draft_document_outline',
+            feedback: 'This is my submitted feedback.',
+            sourceContributionId: 'contrib-feedback-source',
+          }),
         }
       );
       expect(result.data).toEqual({ success: true });
@@ -126,6 +135,7 @@ describe('DialecticApiClient - Document Feedback', () => {
         modelId: 'gpt-4',
         documentKey: 'draft_document_outline',
         feedback: 'This is my submitted feedback.',
+        sourceContributionId: null,
       };
       const mockError: ApiError = { message: 'Failed to submit', code: '400' };
 
@@ -143,11 +153,69 @@ describe('DialecticApiClient - Document Feedback', () => {
         'dialectic-service',
         {
           action: 'submitStageDocumentFeedback',
-          payload,
+          payload: expect.objectContaining({
+            sessionId: 'test-session-id',
+            stageSlug: 'synthesis',
+            iterationNumber: 1,
+            modelId: 'gpt-4',
+            documentKey: 'draft_document_outline',
+            feedback: 'This is my submitted feedback.',
+            sourceContributionId: null,
+          }),
         }
       );
       expect(result.data).toBeUndefined();
       expect(result.error).toEqual(mockError);
+    });
+
+    it('should forward payload without sourceContributionId when omitted', async () => {
+      const payload: SubmitStageDocumentFeedbackPayload = {
+        sessionId: 'test-session-id',
+        stageSlug: 'synthesis',
+        iterationNumber: 1,
+        modelId: 'gpt-4',
+        documentKey: 'draft_document_outline',
+        feedback: 'This is my submitted feedback.',
+      };
+
+      const mockApiResponse: ApiResponse<{ success: boolean }> = {
+        data: { success: true },
+        error: undefined,
+        status: 200,
+      };
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockApiResponse);
+
+      const result = await dialecticApiClient.submitStageDocumentFeedback(payload);
+
+      expect(mockApiClient.post).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'submitStageDocumentFeedback',
+          payload: expect.objectContaining({
+            sessionId: 'test-session-id',
+            stageSlug: 'synthesis',
+            iterationNumber: 1,
+            modelId: 'gpt-4',
+            documentKey: 'draft_document_outline',
+            feedback: 'This is my submitted feedback.',
+          }),
+        }
+      );
+
+      const callArgs = vi.mocked(mockApiClient.post).mock.calls[0];
+      if (
+        callArgs[1] &&
+        typeof callArgs[1] === 'object' &&
+        'payload' in callArgs[1] &&
+        callArgs[1].payload &&
+        typeof callArgs[1].payload === 'object' &&
+        'sourceContributionId' in callArgs[1].payload
+      ) {
+        throw new Error('Expected sourceContributionId to be absent when omitted');
+      }
+      expect(result.data).toEqual({ success: true });
+      expect(result.error).toBeUndefined();
     });
   });
 });

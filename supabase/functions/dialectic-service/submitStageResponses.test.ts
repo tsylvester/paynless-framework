@@ -81,6 +81,7 @@ Deno.test("submitStageResponses", async (t) => {
   const createMockSession = (
     stage: DialecticStage,
     userId: string = testUserId,
+    iterationCount: number | undefined = undefined,
   ): Partial<DialecticSession> & {
     stage: DialecticStage;
     project: {
@@ -92,6 +93,7 @@ Deno.test("submitStageResponses", async (t) => {
       initial_prompt_resource_id: string;
     };
     selected_model_ids: string[];
+    iteration_count?: number;
   } => ({
     id: testSessionId,
     project_id: testProjectId,
@@ -106,6 +108,7 @@ Deno.test("submitStageResponses", async (t) => {
       initial_prompt_resource_id: "test-resource-id",
     },
     selected_model_ids: ["test-model-id"],
+    ...(iterationCount !== undefined && { iteration_count: iterationCount }),
   });
 
   const fileManagerShouldNotBeCalled = createMockFileManagerService();
@@ -454,6 +457,232 @@ Deno.test("submitStageResponses", async (t) => {
         data.message,
         "Stage responses submitted. Current stage is terminal.",
       );
+    },
+  );
+
+  await t.step("Validation should use column-based predicates, not JSON descriptors",
+    async () => {
+      const testRecipeInstanceId = crypto.randomUUID();
+      const testRequiredDocumentKey = "required_thesis_document";
+      const testResourceId = crypto.randomUUID();
+
+      const mockAntithesisWithActiveRecipe: DialecticStage = {
+        ...mockAntithesisStage,
+        active_recipe_instance_id: testRecipeInstanceId,
+      };
+
+      const mockRecipeStep = {
+        instance_id: testRecipeInstanceId,
+        inputs_required: [{
+          type: "document",
+          document_key: testRequiredDocumentKey,
+        }],
+      };
+
+      const mockResource = {
+        id: testResourceId,
+        project_id: testProjectId,
+        resource_type: "rendered_document",
+        session_id: testSessionId,
+        stage_slug: "thesis",
+        iteration_number: 1,
+        file_name: `${testRequiredDocumentKey}.md`,
+        source_contribution_id: null,
+      };
+
+      const mockInitialPromptResource = {
+        id: "test-resource-id",
+        project_id: testProjectId,
+        storage_bucket: "test-bucket",
+        storage_path: "test-path",
+        file_name: "test-file.txt",
+      };
+
+      const mockPayload: SubmitStageResponsesPayload = {
+        sessionId: testSessionId,
+        projectId: testProjectId,
+        stageSlug: "thesis",
+        currentIterationNumber: 1,
+        responses: [],
+      };
+
+      const mockDependenciesWithStorage = {
+        ...mockDependencies,
+        downloadFromStorage: spy(() =>
+          Promise.resolve({
+            data: new TextEncoder().encode("Mock file content").slice().buffer,
+            error: null,
+          })
+        ),
+      };
+
+      const fileManagerAllowsUpload = createMockFileManagerService();
+      fileManagerAllowsUpload.uploadAndRegisterFile = spy((_context) =>
+        Promise.resolve({
+          record: {
+            id: "new-seed-prompt-resource-id",
+            project_id: testProjectId,
+            user_id: testUserId,
+            file_name: "seed_prompt.md",
+            storage_bucket: "test-bucket",
+            storage_path: "test/path/seed_prompt.md",
+            mime_type: "text/markdown",
+            size_bytes: 123,
+            resource_description: { type: "SeedPrompt" },
+            resource_type: "seed_prompt",
+            session_id: testSessionId,
+            stage_slug: "antithesis",
+            iteration_number: 1,
+            source_contribution_id: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          error: null,
+        })
+      );
+
+      const mockDependenciesWithFileManager = {
+        ...mockDependenciesWithStorage,
+        fileManager: fileManagerAllowsUpload,
+      };
+
+      const mockDbConfig: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_sessions: {
+            select: { data: [createMockSession(mockThesisStage, testUserId, 1)] },
+            update: {
+              data: [{ id: testSessionId, status: "pending_antithesis" }],
+            },
+          },
+          dialectic_stage_recipe_steps: {
+            select: {
+              data: [mockRecipeStep],
+            },
+          },
+          dialectic_project_resources: {
+            select: async (state) => {
+              const idFilter = state.filters.find(
+                (f) => f.column === "id" && f.type === "eq"
+              );
+              
+              if (idFilter && idFilter.value === "test-resource-id") {
+                return {
+                  data: [mockInitialPromptResource],
+                  error: null,
+                  count: 1,
+                  status: 200,
+                  statusText: "OK",
+                };
+              }
+              
+              const resourceTypeFilter = state.filters.find(
+                (f) => f.column === "resource_type" && f.type === "eq" && f.value === "rendered_document"
+              );
+              
+              if (resourceTypeFilter) {
+                return {
+                  data: [mockResource],
+                  error: null,
+                  count: 1,
+                  status: 200,
+                  statusText: "OK",
+                };
+              }
+              
+              return {
+                data: [],
+                error: null,
+                count: 0,
+                status: 200,
+                statusText: "OK",
+              };
+            },
+          },
+          system_prompts: {
+            select: {
+              data: [
+                {
+                  id: "prompt-id-antithesis",
+                  prompt_text: "Test antithesis prompt",
+                },
+              ],
+            },
+          },
+          domain_specific_prompt_overlays: {
+            select: {
+              data: [{ overlay_values: { test: "overlay" } }],
+            },
+          },
+          dialectic_stage_transitions: {
+            select: {
+              data: [
+                {
+                  source_stage_id: testThesisStageId,
+                  target_stage: mockAntithesisWithActiveRecipe,
+                },
+              ],
+            },
+          },
+        },
+      };
+
+      const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
+
+      const { status } = await submitStageResponses(
+        mockPayload,
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockUser,
+        mockDependenciesWithFileManager,
+      );
+
+      const eqHistory = mockSupabase.spies.getHistoricQueryBuilderSpies(
+        "dialectic_project_resources",
+        "eq",
+      );
+      assertExists(eqHistory, "eq history should exist for dialectic_project_resources");
+      assert(eqHistory.callCount > 0, "eq should have been called at least once");
+
+      const calls = eqHistory.callsArgs;
+      const hasFilter = (column: string, value: unknown): boolean =>
+        calls.some((args) =>
+          Array.isArray(args) &&
+          typeof args[0] === 'string' &&
+          args[0] === column &&
+          args[1] === value
+        );
+
+      assert(
+        hasFilter("resource_type", "rendered_document"),
+        "Validation should filter by resource_type column, not JSON descriptor",
+      );
+
+      assert(
+        hasFilter("session_id", testSessionId),
+        "Validation should filter by session_id column when session context is available",
+      );
+
+      assert(
+        hasFilter("stage_slug", "thesis"),
+        "Validation should filter by stage_slug column when stage context is available",
+      );
+
+      assert(
+        hasFilter("iteration_number", 1),
+        "Validation should filter by iteration_number column when iteration context is available",
+      );
+
+      const hasResourceDescriptionFilter = calls.some((args) =>
+        Array.isArray(args) &&
+        typeof args[0] === 'string' &&
+        args[0] === "resource_description"
+      );
+
+      assert(
+        !hasResourceDescriptionFilter,
+        "Validation should NOT use resource_description JSON path; should use column-based predicates instead",
+      );
+
+      assertEquals(status, 200, "Function should succeed when resource exists with column metadata");
     },
   );
 });

@@ -12,6 +12,7 @@ import type {
   DialecticProcessTemplate,
   StageDocumentContentState,
   StageRenderedDocumentDescriptor,
+  EditedDocumentResource,
 } from '@paynless/types';
 
 import { SessionContributionsDisplayCard } from './SessionContributionsDisplayCard';
@@ -259,6 +260,28 @@ const buildStageDocumentContent = (
 
 const buildStageDocumentKey = (modelId: string, documentKey: string): string =>
   `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
+
+const buildEditedDocumentResource = (
+  documentKey: string,
+  overrides: Partial<EditedDocumentResource> = {},
+): EditedDocumentResource => ({
+  id: `resource-${documentKey}`,
+  resource_type: 'rendered_document',
+  project_id: projectId,
+  session_id: sessionId,
+  stage_slug: stageSlug,
+  iteration_number: iterationNumber,
+  document_key: documentKey,
+  source_contribution_id: `contrib-source-${documentKey}`,
+  storage_bucket: 'bucket',
+  storage_path: `path/${documentKey}.md`,
+  file_name: `${documentKey}.md`,
+  mime_type: 'text/markdown',
+  size_bytes: 2048,
+  created_at: isoTimestamp,
+  updated_at: isoTimestamp,
+  ...overrides,
+});
 
 const renderSessionContributionsDisplayCard = () => render(<SessionContributionsDisplayCard />);
 
@@ -597,6 +620,160 @@ describe('SessionContributionsDisplayCard', () => {
       expect(within(errorBanner).getByText('Generation Error')).toBeInTheDocument();
       expect(within(errorBanner).getByText(failureMessage)).toBeInTheDocument();
       expect(within(errorBanner).getByText(/draft_document_markdown/i)).toBeInTheDocument();
+    });
+  });
+
+  describe('Resource metadata display', () => {
+    it('renders document resource metadata including source_contribution_id and updated_at', () => {
+      const documentKey = 'draft_document_outline_model_a';
+      const sourceContributionId = 'contrib-source-123';
+      const updatedAt = '2024-01-15T10:30:00.000Z';
+      
+      const progress = buildStageRunProgress(
+        {},
+        {
+          [documentKey]: buildStageDocumentDescriptor('model-a'),
+        },
+      );
+
+      const mockResourceMetadata = buildEditedDocumentResource(documentKey, {
+        source_contribution_id: sourceContributionId,
+        updated_at: updatedAt,
+      });
+
+      seedBaseStore(progress, {
+        stageDocumentContent: {
+          [buildStageDocumentKey('model-a', documentKey)]: buildStageDocumentContent(),
+        },
+        stageDocumentResources: {
+          [buildStageDocumentKey('model-a', documentKey)]: mockResourceMetadata,
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      const card = screen.getByTestId(`stage-document-card-model-a-${documentKey}`);
+      expect(card).toBeInTheDocument();
+      
+      // Assert resource metadata is displayed within the specific card
+      // Text is split across multiple elements, so we use a function matcher scoped to the card
+      // Use getAllByText since parent elements also match, then check that at least one exists
+      const cardQueries = within(card);
+      const sourceContributionMatches = cardQueries.getAllByText((_content, element) => {
+        const hasText = element?.textContent?.includes(`Source Contribution: ${sourceContributionId}`);
+        return hasText === true;
+      });
+      expect(sourceContributionMatches.length).toBeGreaterThan(0);
+      
+      const formattedDate = new Date(updatedAt).toLocaleString();
+      const lastModifiedMatches = cardQueries.getAllByText((_content, element) => {
+        const hasText = element?.textContent?.includes(`Last Modified: ${formattedDate}`);
+        return hasText === true;
+      });
+      expect(lastModifiedMatches.length).toBeGreaterThan(0);
+    });
+
+    it('displays resource metadata when document is edited via saveContributionEdit', () => {
+      const documentKey = 'draft_document_outline_model_a';
+      const originalContributionId = 'contrib-original-789';
+      const editedUpdatedAt = '2024-01-20T14:45:00.000Z';
+      
+      const progress = buildStageRunProgress(
+        {},
+        {
+          [documentKey]: buildStageDocumentDescriptor('model-a'),
+        },
+      );
+
+      seedBaseStore(progress, {
+        stageDocumentContent: {
+          [buildStageDocumentKey('model-a', documentKey)]: buildStageDocumentContent({
+            currentDraftMarkdown: 'Edited content',
+            isDirty: true,
+          }),
+        },
+        stageDocumentResources: {
+          [buildStageDocumentKey('model-a', documentKey)]: buildEditedDocumentResource(documentKey, {
+            source_contribution_id: originalContributionId,
+            updated_at: editedUpdatedAt,
+          }),
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      const card = screen.getByTestId(`stage-document-card-model-a-${documentKey}`);
+      const cardQueries = within(card);
+
+      // Assert edited document shows updated metadata within the specific card
+      // Text is split across multiple elements, so we use a function matcher scoped to the card
+      // Use getAllByText since parent elements also match, then check that at least one exists
+      const sourceContributionMatches = cardQueries.getAllByText((_content, element) => {
+        const hasText = element?.textContent?.includes(`Source Contribution: ${originalContributionId}`);
+        return hasText === true;
+      });
+      expect(sourceContributionMatches.length).toBeGreaterThan(0);
+      
+      const formattedDate = new Date(editedUpdatedAt).toLocaleString();
+      const lastModifiedMatches = cardQueries.getAllByText((_content, element) => {
+        const hasText = element?.textContent?.includes(`Last Modified: ${formattedDate}`);
+        return hasText === true;
+      });
+      expect(lastModifiedMatches.length).toBeGreaterThan(0);
+    });
+
+    it('proves the card renders from stageDocumentContent and reflects resource metadata', () => {
+      const documentKey = 'draft_document_outline_model_a';
+      const documentContent = 'Content from stageDocumentContent';
+      const sourceContributionId = 'contrib-metadata-test';
+      const updatedAt = '2024-01-25T08:15:00.000Z';
+      
+      const progress = buildStageRunProgress(
+        {},
+        {
+          [documentKey]: buildStageDocumentDescriptor('model-a'),
+        },
+      );
+
+      seedBaseStore(progress, {
+        stageDocumentContent: {
+          [buildStageDocumentKey('model-a', documentKey)]: buildStageDocumentContent({
+            baselineMarkdown: documentContent,
+            currentDraftMarkdown: documentContent,
+          }),
+        },
+        stageDocumentResources: {
+          [buildStageDocumentKey('model-a', documentKey)]: buildEditedDocumentResource(documentKey, {
+            source_contribution_id: sourceContributionId,
+            updated_at: updatedAt,
+          }),
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      // Assert card renders content from stageDocumentContent
+      const textarea = screen.getByTestId(`stage-document-feedback-model-a-${documentKey}`);
+      expect(textarea).toHaveValue(documentContent);
+
+      const card = screen.getByTestId(`stage-document-card-model-a-${documentKey}`);
+      const cardQueries = within(card);
+
+      // Assert resource metadata is displayed within the specific card
+      // Text is split across multiple elements, so we use a function matcher scoped to the card
+      // Use getAllByText since parent elements also match, then check that at least one exists
+      const sourceContributionMatches = cardQueries.getAllByText((_content, element) => {
+        const hasText = element?.textContent?.includes(`Source Contribution: ${sourceContributionId}`);
+        return hasText === true;
+      });
+      expect(sourceContributionMatches.length).toBeGreaterThan(0);
+      
+      const formattedDate = new Date(updatedAt).toLocaleString();
+      const lastModifiedMatches = cardQueries.getAllByText((_content, element) => {
+        const hasText = element?.textContent?.includes(`Last Modified: ${formattedDate}`);
+        return hasText === true;
+      });
+      expect(lastModifiedMatches.length).toBeGreaterThan(0);
     });
   });
 });

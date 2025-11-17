@@ -16,6 +16,7 @@ import type {
 	JobFailedPayload,
 	StageRenderedDocumentDescriptor,
 	StageRunDocumentDescriptor,
+	EditedDocumentResource,
 } from '@paynless/types';
 import {
 	handleRenderCompletedLogic,
@@ -704,6 +705,7 @@ describe('submitStageDocumentFeedback', () => {
 			modelId: 'model-a',
 			documentKey: 'document_1',
 			feedback: 'This is a test feedback.',
+			sourceContributionId: null,
 		};
 
 		const spy = vi
@@ -758,6 +760,126 @@ describe('submitStageDocumentFeedback', () => {
 				key: 'test-session-id:synthesis:1:model-a:document_1',
 			},
 		);
+	});
+
+	it('should enrich payload with sourceContributionId when resource metadata exists', async () => {
+		const feedbackPayload: SubmitStageDocumentFeedbackPayload = {
+			sessionId: 'test-session-id',
+			stageSlug: 'synthesis',
+			iterationNumber: 1,
+			modelId: 'model-a',
+			documentKey: 'document_1',
+			feedback: 'This is test feedback.',
+		};
+
+		const compositeKey: StageDocumentCompositeKey = {
+			sessionId: feedbackPayload.sessionId,
+			stageSlug: feedbackPayload.stageSlug,
+			iterationNumber: feedbackPayload.iterationNumber,
+			modelId: feedbackPayload.modelId,
+			documentKey: feedbackPayload.documentKey,
+		};
+		const serializedKey = getStageDocumentKey(compositeKey);
+		const mockResource: EditedDocumentResource = {
+			id: 'resource-123',
+			resource_type: 'rendered_document',
+			project_id: 'proj-1',
+			session_id: feedbackPayload.sessionId,
+			stage_slug: feedbackPayload.stageSlug,
+			iteration_number: feedbackPayload.iterationNumber,
+			document_key: feedbackPayload.documentKey,
+			source_contribution_id: 'contrib-doc-123',
+			storage_bucket: 'bucket',
+			storage_path: 'path',
+			file_name: 'file.md',
+			mime_type: 'text/markdown',
+			size_bytes: 100,
+			created_at: new Date().toISOString(),
+			updated_at: new Date().toISOString(),
+		};
+
+		useDialecticStore.setState({
+			stageDocumentResources: {
+				[serializedKey]: mockResource,
+			},
+		});
+
+		const spy = vi
+			.spyOn(mockDialecticClient, 'submitStageDocumentFeedback')
+			.mockResolvedValue({
+				data: { success: true },
+				error: undefined,
+				status: 200,
+			});
+
+		await useDialecticStore.getState().submitStageDocumentFeedback(
+			feedbackPayload,
+		);
+
+		expect(spy).toHaveBeenCalledWith({
+			...feedbackPayload,
+			sourceContributionId: 'contrib-doc-123',
+		});
+	});
+
+	it('should pass null for sourceContributionId when resource has no linkage', async () => {
+		const feedbackPayload: SubmitStageDocumentFeedbackPayload = {
+			sessionId: 'test-session-id',
+			stageSlug: 'synthesis',
+			iterationNumber: 1,
+			modelId: 'model-a',
+			documentKey: 'document_2',
+			feedback: 'This is test feedback.',
+		};
+
+		const compositeKey: StageDocumentCompositeKey = {
+			sessionId: feedbackPayload.sessionId,
+			stageSlug: feedbackPayload.stageSlug,
+			iterationNumber: feedbackPayload.iterationNumber,
+			modelId: feedbackPayload.modelId,
+			documentKey: feedbackPayload.documentKey,
+		};
+		const serializedKey = getStageDocumentKey(compositeKey);
+		const mockResource: EditedDocumentResource = {
+			id: 'resource-456',
+			resource_type: 'rendered_document',
+			project_id: 'proj-1',
+			session_id: feedbackPayload.sessionId,
+			stage_slug: feedbackPayload.stageSlug,
+			iteration_number: feedbackPayload.iterationNumber,
+			document_key: feedbackPayload.documentKey,
+			source_contribution_id: null,
+			storage_bucket: 'bucket',
+			storage_path: 'path',
+			file_name: 'file.md',
+			mime_type: 'text/markdown',
+			size_bytes: 100,
+			created_at: new Date().toISOString(),
+			updated_at: new Date().toISOString(),
+		};
+
+		useDialecticStore.setState({
+			stageDocumentResources: {
+				[serializedKey]: mockResource,
+			},
+		});
+
+		const spy = vi
+			.spyOn(mockDialecticClient, 'submitStageDocumentFeedback')
+			.mockResolvedValue({
+				data: { success: true },
+				error: undefined,
+				status: 200,
+			});
+
+		await useDialecticStore.getState().submitStageDocumentFeedback(
+			feedbackPayload,
+		);
+
+		expect(spy).toHaveBeenCalledWith({
+			...feedbackPayload,
+			sourceContributionId: null,
+		});
 	});
 });
 

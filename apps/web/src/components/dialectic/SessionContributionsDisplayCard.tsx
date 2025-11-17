@@ -19,6 +19,7 @@ import {
 	StageDocumentChecklistEntry,
 	StageDocumentCompositeKey,
 	StageDocumentContentState,
+	EditedDocumentResource,
 } from "@paynless/types";
 import {
 	Card,
@@ -110,6 +111,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	const setActiveStage = useDialecticStore((state) => state.setActiveStage);
 	const updateStageDocumentDraft = useDialecticStore((state) => state.updateStageDocumentDraft);
 	const stageDocumentContent = useDialecticStore((state) => state.stageDocumentContent);
+	const stageDocumentResources = useDialecticStore((state) => state.stageDocumentResources);
 	const modelCatalog = useDialecticStore((state) => state.modelCatalog);
 
   const activeStage = useMemo(() => {
@@ -252,6 +254,10 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 
   const serializeCompositeKey = (key: StageDocumentCompositeKey): string =>
     `${key.sessionId}:${key.stageSlug}:${key.iterationNumber}:${key.modelId}:${key.documentKey}`;
+
+  const getDocumentResourceMetadata = (serializedKey: string): EditedDocumentResource | undefined => {
+    return stageDocumentResources[serializedKey];
+  };
 
   const handleDocumentDraftChange = (modelId: string, documentKey: string, value: string) => {
     const compositeKey = buildCompositeKey(modelId, documentKey);
@@ -553,6 +559,7 @@ const isGenerating =
                     const documentState: StageDocumentContentState | undefined =
                       serializedKey !== null ? stageDocumentContent[serializedKey] : undefined;
                     const draftValue = documentState?.currentDraftMarkdown ?? '';
+                    const resourceMetadata = serializedKey !== null ? getDocumentResourceMetadata(serializedKey) : undefined;
 
                     return (
                       <Card
@@ -581,6 +588,22 @@ const isGenerating =
                                 Latest Render:{' '}
                                 <span className="font-medium text-foreground">
                                   {document.latestRenderedResourceId}
+                                </span>
+                              </span>
+                            )}
+                            {resourceMetadata?.source_contribution_id && (
+                              <span>
+                                Source Contribution:{' '}
+                                <span className="font-medium text-foreground">
+                                  {resourceMetadata.source_contribution_id}
+                                </span>
+                              </span>
+                            )}
+                            {resourceMetadata?.updated_at && (
+                              <span>
+                                Last Modified:{' '}
+                                <span className="font-medium text-foreground">
+                                  {new Date(resourceMetadata.updated_at).toLocaleString()}
                                 </span>
                               </span>
                             )}

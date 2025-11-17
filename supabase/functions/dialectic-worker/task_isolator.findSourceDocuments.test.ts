@@ -120,6 +120,22 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
+                        const hasResourceTypeFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'resource_type' &&
+                                filter.value === 'seed_prompt',
+                        );
+                        if (!hasResourceTypeFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('seed_prompt queries must filter by resource_type'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing resource_type filter',
+                            });
+                        }
+
                         const expectedStageSlug = rule[0].slug;
                         const hasStageFilter = state.filters.some(
                             (filter) =>
@@ -134,6 +150,26 @@ describe('findSourceDocuments', () => {
                                 count: 0,
                                 status: 400,
                                 statusText: 'Missing stage_slug filter',
+                            });
+                        }
+
+                        const hasJsonPathFilter = state.filters.some((filter) => {
+                            if (typeof filter.column === 'string' && filter.column.includes('resource_description->>')) {
+                                return true;
+                            }
+                            if (typeof filter.filters === 'string' && filter.filters.includes('resource_description->>')) {
+                                return true;
+                            }
+                            return false;
+                        });
+
+                        if (hasJsonPathFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('seed_prompt queries must not use JSON-path predicates on resource_description'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'JSON-path filter detected',
                             });
                         }
 
@@ -211,6 +247,22 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
+                        const hasResourceTypeFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'resource_type' &&
+                                filter.value === 'header_context',
+                        );
+                        if (!hasResourceTypeFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('header_context queries must filter by resource_type'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing resource_type filter',
+                            });
+                        }
+
                         const expectedStageSlug = rule[0].slug;
                         const hasStageFilter = state.filters.some(
                             (filter) =>
@@ -225,6 +277,26 @@ describe('findSourceDocuments', () => {
                                 count: 0,
                                 status: 400,
                                 statusText: 'Missing stage_slug filter',
+                            });
+                        }
+
+                        const hasJsonPathFilter = state.filters.some((filter) => {
+                            if (typeof filter.column === 'string' && filter.column.includes('resource_description->>')) {
+                                return true;
+                            }
+                            if (typeof filter.filters === 'string' && filter.filters.includes('resource_description->>')) {
+                                return true;
+                            }
+                            return false;
+                        });
+
+                        if (hasJsonPathFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('header_context queries must not use JSON-path predicates on resource_description'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'JSON-path filter detected',
                             });
                         }
 
@@ -838,14 +910,84 @@ describe('findSourceDocuments', () => {
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 dialectic_project_resources: {
-                    select: () =>
-                        Promise.resolve({
+                    select: (state: MockQueryBuilderState) => {
+                        const hasResourceTypeFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'resource_type' &&
+                                filter.value === 'project_resource',
+                        );
+                        if (!hasResourceTypeFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('project_resource queries must filter by resource_type'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing resource_type filter',
+                            });
+                        }
+
+                        const hasProjectFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'project_id' &&
+                                filter.value === projectResource.project_id,
+                        );
+                        if (!hasProjectFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('project_resource queries must scope by project_id'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing project_id filter',
+                            });
+                        }
+
+                        const expectedStageSlug = rules[0].slug;
+                        const hasStageFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'stage_slug' &&
+                                filter.value === expectedStageSlug,
+                        );
+                        if (!hasStageFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('project_resource queries must filter by rule.slug'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing stage_slug filter',
+                            });
+                        }
+
+                        const hasJsonPathFilter = state.filters.some((filter) => {
+                            if (typeof filter.column === 'string' && filter.column.includes('resource_description->>')) {
+                                return true;
+                            }
+                            if (typeof filter.filters === 'string' && filter.filters.includes('resource_description->>')) {
+                                return true;
+                            }
+                            return false;
+                        });
+
+                        if (hasJsonPathFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('project_resource queries must not use JSON-path predicates on resource_description'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'JSON-path filter detected',
+                            });
+                        }
+
+                        return Promise.resolve({
                             data: [projectResource],
                             error: null,
                             count: 1,
                             status: 200,
                             statusText: 'OK',
-                        }),
+                        });
+                    },
                 },
             },
         });

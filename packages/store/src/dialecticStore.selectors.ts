@@ -15,6 +15,8 @@ import type {
     StageRunDocumentDescriptor,
     StageRenderedDocumentDescriptor,
     StagePlannedDocumentDescriptor,
+    StageDocumentContentState,
+    EditedDocumentResource,
 } from '@paynless/types';
 import { createSelector } from 'reselect';
 
@@ -780,4 +782,110 @@ export const selectFocusedStageDocument = (
         return null;
     }
     return entry;
+};
+
+/**
+ * Step 79: Resource-first selectors for document-centric workflows
+ * 
+ * Component mappings (79.a):
+ * - GeneratedContributionCard: Uses selectStageDocumentResource to render edited document content
+ *   from stageDocumentContent instead of relying on selectContributionById for editable documents.
+ *   Uses selectEditedDocumentByKey for quick document metadata lookups.
+ * - SessionContributionsDisplayCard: Uses selectStageDocumentResource to display document summaries
+ *   and edited document metadata, ensuring UI never relies on stale dialectic_contributions.
+ * 
+ * These selectors pull from the normalized resource state (stageDocumentContent) introduced in Step 77,
+ * guaranteeing the UI never relies on stale dialectic_contributions for editable documents.
+ */
+
+/**
+ * Selector to get document resource content from stageDocumentContent.
+ * This is the authoritative source for editable document content, replacing
+ * dialectic_contributions for document-centric workflows.
+ * 
+ * The composite key format is: `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`
+ * 
+ * @param state - The dialectic state values
+ * @param sessionId - The session identifier
+ * @param stageSlug - The stage slug
+ * @param iterationNumber - The iteration number
+ * @param modelId - The model identifier
+ * @param documentKey - The document key
+ * @returns The document resource content state, or undefined if not found
+ */
+export const selectStageDocumentResource = (
+    state: DialecticStateValues,
+    sessionId: string,
+    stageSlug: string,
+    iterationNumber: number,
+    modelId: string,
+    documentKey: string
+): StageDocumentContentState | undefined => {
+    const compositeKey = `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
+    return state.stageDocumentContent[compositeKey];
+};
+
+/**
+ * Selector to get edited document metadata by composite key.
+ * Provides quick access to document resources without requiring all key components.
+ * 
+ * The composite key format is: `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`
+ * 
+ * @param state - The dialectic state values
+ * @param compositeKey - The composite key for the document resource
+ * @returns The document resource content state, or undefined if not found
+ */
+export const selectEditedDocumentByKey = (
+    state: DialecticStateValues,
+    compositeKey: string
+): StageDocumentContentState | undefined => {
+    return state.stageDocumentContent[compositeKey];
+};
+
+/**
+ * Selector to get the complete EditedDocumentResource metadata from stageDocumentResources.
+ * This returns the full resource metadata including source_contribution_id, updated_at,
+ * resource_type, document_key, id, storage_path, mime_type, size_bytes, created_at,
+ * and all other EditedDocumentResource fields.
+ * 
+ * This is required so UI components (Steps 84-85) can display resource metadata like
+ * source_contribution_id and last modified timestamps.
+ * 
+ * The composite key format is: `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`
+ * 
+ * @param state - The dialectic state values
+ * @param sessionId - The session identifier
+ * @param stageSlug - The stage slug
+ * @param iterationNumber - The iteration number
+ * @param modelId - The model identifier
+ * @param documentKey - The document key
+ * @returns The complete EditedDocumentResource object, or undefined if not found
+ */
+export const selectStageDocumentResourceMetadata = (
+    state: DialecticStateValues,
+    sessionId: string,
+    stageSlug: string,
+    iterationNumber: number,
+    modelId: string,
+    documentKey: string
+): EditedDocumentResource | undefined => {
+    const compositeKey = `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
+    return state.stageDocumentResources[compositeKey];
+};
+
+/**
+ * Selector to get the complete EditedDocumentResource metadata by composite key.
+ * Provides quick access to document resource metadata without requiring all key components.
+ * 
+ * The composite key format is: `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`
+ * 
+ * @param state - The dialectic state values
+ * @param compositeKey - The composite key for the document resource
+ * @returns The complete EditedDocumentResource object, or undefined if not found
+ */
+export const selectStageDocumentResourceMetadataByKey = (
+    state: DialecticStateValues,
+    compositeKey: string
+): EditedDocumentResource | undefined => {
+    return state.stageDocumentResources[compositeKey];
 };

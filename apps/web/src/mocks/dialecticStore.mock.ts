@@ -12,6 +12,7 @@ import type {
   DialecticDomain,
   DialecticActions,
   ApiError,
+  ApiResponse,
   DialecticFeedback,
   ContributionGenerationStatus,
   DialecticProcessTemplate,
@@ -26,6 +27,10 @@ import type {
   StageDocumentContentState,
   StageDocumentVersionInfo,
   ListStageDocumentsPayload,
+  EditedDocumentResource,
+  SaveContributionEditSuccessResponse,
+  SaveContributionEditPayload,
+  SubmitStageDocumentFeedbackPayload,
 } from '@paynless/types';
 import {
   beginStageDocumentEditLogic,
@@ -156,13 +161,16 @@ export const selectStageDocumentChecklist = (
     if (!descriptor || descriptor.modelId !== modelId) {
       continue;
     }
-    checklist.push({
-      documentKey,
-      status: descriptor.status,
-      jobId: descriptor.job_id,
-      latestRenderedResourceId: descriptor.latestRenderedResourceId ?? null,
-      modelId: descriptor.modelId,
-    });
+    // Check if this is a rendered descriptor (has job_id property)
+    if ('job_id' in descriptor) {
+      checklist.push({
+        documentKey,
+        status: descriptor.status,
+        jobId: descriptor.job_id,
+        latestRenderedResourceId: descriptor.latestRenderedResourceId ?? null,
+        modelId: descriptor.modelId,
+      });
+    }
   }
 
   return checklist;
@@ -316,6 +324,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   isSubmittingStageDocumentFeedback: false,
   submitStageDocumentFeedbackError: null,
   activeSeedPrompt: null,
+  stageDocumentResources: {},
 };
 
 // 2. Helper function to create a new mock store instance
@@ -370,7 +379,6 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       return {
       ...initialDialecticStateValues,
       ...(initialOverrides || {}),
-      hydrateStageProgress: vi.fn().mockResolvedValue(undefined),
       // Actions - implemented using vi.fn() and using `set` for state changes
       fetchDomains: vi.fn().mockResolvedValue(undefined),
       setSelectedDomain: vi.fn((domain: DialecticDomain | null) => set({ selectedDomain: domain })),
@@ -413,11 +421,46 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       setSubmittingStageResponses: vi.fn((isLoading: boolean) => set({ isSubmittingStageResponses: isLoading })),
       setSubmitStageResponsesError: vi.fn((error: ApiError | null) => set({ submitStageResponsesError: error })),
       resetSubmitStageResponsesError: vi.fn(() => set({ submitStageResponsesError: null })),
-      saveContributionEdit: vi.fn().mockImplementation(async (params) => {
+      saveContributionEdit: vi.fn().mockImplementation(async (params: SaveContributionEditPayload) => {
           // Base mock. Tests may override.
-          // Example of setting loading state: set({ isSavingContributionEdit: true });
-          // After "async" work: set({ isSavingContributionEdit: false });
-          return { data: ({ id: params.originalContributionIdToEdit, ...params }), error: null, status: 200 };
+          // Simulates document-centric editing flow by updating stageDocumentContent state
+          set({ isSavingContributionEdit: true, saveContributionEditError: null });
+          
+          // Simulate async API call
+          await new Promise(resolve => setTimeout(resolve, 0));
+          
+          // Construct mock resource response matching EditedDocumentResource type
+          const mockResource: EditedDocumentResource = {
+            id: `resource-${params.originalContributionIdToEdit}`,
+            resource_type: params.resourceType ?? 'rendered_document',
+            project_id: params.projectId,
+            session_id: params.sessionId,
+            stage_slug: null, // Mock implementation - tests should override if stage_slug is needed
+            iteration_number: null, // Mock implementation - tests should override if iteration_number is needed
+            document_key: params.documentKey ?? params.originalModelContributionId,
+            source_contribution_id: params.originalContributionIdToEdit,
+            storage_bucket: 'dialectic-resources',
+            storage_path: `/edited/${params.originalContributionIdToEdit}.md`,
+            file_name: `edited-${params.originalContributionIdToEdit}.md`,
+            mime_type: 'text/markdown',
+            size_bytes: params.editedContentText.length,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+
+          const mockResponse: SaveContributionEditSuccessResponse = {
+            resource: mockResource,
+            sourceContributionId: params.originalContributionIdToEdit,
+          };
+
+          // Update stageDocumentContent state to simulate document-centric editing
+          // This allows component tests to simulate edited documents without real contributions
+          // Note: This requires deriving the composite key from params, which may need adjustment
+          // based on actual payload structure in component tests
+          // For now, tests can override this mock or call setStageDocumentResource directly
+
+          set({ isSavingContributionEdit: false, saveContributionEditError: null });
+          return { data: mockResponse, error: null, status: 200 };
       }),
       setSavingContributionEdit: vi.fn((isLoading: boolean) => set({ isSavingContributionEdit: isLoading })),
       setSaveContributionEditError: vi.fn((error: ApiError | null) => set({ saveContributionEditError: error })),
@@ -497,7 +540,8 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       fetchStageRecipe: vi.fn().mockResolvedValue(undefined),
       ensureRecipeForActiveStage: vi.fn().mockResolvedValue(undefined),
       fetchStageDocumentFeedback: vi.fn().mockResolvedValue(undefined),
-      submitStageDocumentFeedback: vi.fn().mockResolvedValue({ data: { success: true }, error: undefined, status: 200 }),
+      submitStageDocumentFeedback: vi.fn<[SubmitStageDocumentFeedbackPayload], Promise<ApiResponse<{ success: boolean }>>>()
+        .mockResolvedValue({ data: { success: true }, error: undefined, status: 200 }),
       beginStageDocumentEdit: vi.fn().mockImplementation(
         (key: StageDocumentCompositeKey, initialDraftMarkdown: string) => {
             beginStageDocumentEditLogic(
@@ -548,6 +592,25 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
                 key,
                 resourceId,
             );
+        },
+      ),
+      updateStageDocumentResource: vi.fn().mockImplementation(
+        (key: StageDocumentCompositeKey, resource: EditedDocumentResource, editedContentText: string) => {
+            const versionInfo: StageDocumentVersionInfo = {
+                resourceId: resource.id,
+                versionHash: '', // Mock implementation - tests should override if versionHash is needed
+                updatedAt: resource.updated_at ?? new Date().toISOString(),
+            };
+            set((state) => {
+                const documentEntry = ensureStageDocumentContent(state, key, {
+                    baselineMarkdown: editedContentText,
+                    version: versionInfo,
+                });
+                documentEntry.currentDraftMarkdown = editedContentText;
+                documentEntry.isDirty = false;
+                documentEntry.isLoading = false;
+                documentEntry.error = null;
+            });
         },
       ),
       hydrateStageProgress: vi.fn().mockImplementation((payload: ListStageDocumentsPayload) => {

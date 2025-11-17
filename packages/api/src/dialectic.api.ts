@@ -14,12 +14,12 @@ import type {
     UpdateProjectInitialPromptPayload,
     GetProjectResourceContentPayload,
     GetProjectResourceContentResponse,
-    DialecticContribution,
     SubmitStageResponsesPayload,
     SubmitStageResponsesResponse,
     GetIterationInitialPromptPayload,
     IterationInitialPromptData,
     SaveContributionEditPayload,
+    SaveContributionEditSuccessResponse,
     DialecticDomain,
     DialecticProcessTemplate,
     UpdateSessionModelsPayload,
@@ -516,14 +516,14 @@ export class DialecticApiClient {
 
     async saveContributionEdit(
         payload: SaveContributionEditPayload
-    ): Promise<ApiResponse<DialecticContribution>> {
+    ): Promise<ApiResponse<SaveContributionEditSuccessResponse>> {
         logger.info('Saving user edit for contribution', {
             contributionId: payload.originalContributionIdToEdit,
         });
 
         try {
             const response = await this.apiClient.post<
-                DialecticContribution,
+                SaveContributionEditSuccessResponse,
                 DialecticServiceActionPayload
             >('dialectic-service', {
                 action: 'saveContributionEdit',
@@ -537,7 +537,7 @@ export class DialecticApiClient {
                 });
             } else {
                 logger.info('Successfully saved contribution edit', {
-                    newContributionId: response.data?.id,
+                    resourceId: response.data?.resource?.id,
                 });
             }
             return response;

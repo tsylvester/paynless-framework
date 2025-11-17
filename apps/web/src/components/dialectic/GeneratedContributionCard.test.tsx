@@ -5,12 +5,13 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { initializeMockDialecticState, getDialecticStoreState } from '../../mocks/dialecticStore.mock';
 import { toast } from 'sonner';
 import {
-  type StageRunDocumentDescriptor,
-  type StageDocumentCompositeKey,
-  type SetFocusedStageDocumentPayload,
-  type StageRunChecklistProps,
+  StageRunDocumentDescriptor,
+  StageDocumentCompositeKey,
+  SetFocusedStageDocumentPayload,
+  StageRunChecklistProps,
+  SaveContributionEditPayload,
+  DialecticContribution,
 } from '@paynless/types';
-
 // --- MOCKS ---
 
 const getStageDocumentKey = (key: StageDocumentCompositeKey): string =>
@@ -27,20 +28,43 @@ vi.mock('sonner', () => ({
 vi.mock('@paynless/store', async (importOriginal) => {
   const mockStoreExports = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>('@/mocks/dialecticStore.mock');
   const actualStoreModule = await importOriginal<typeof import('@paynless/store')>();
-  return { ...actualStoreModule, ...mockStoreExports };
+  
+  // Capture the real selector in a closure variable
+  const realSelector = actualStoreModule.selectStageDocumentResource;
+  
+  // Use the actual selector implementation so it reads from state
+  // Tests can still spy on it to verify it's called
+  // The mock calls through to the real function by default
+  const mockSelector = vi.fn((...args: Parameters<typeof actualStoreModule.selectStageDocumentResource>) => {
+    return realSelector(...args);
+  });
+  
+  return { 
+    ...actualStoreModule, 
+    ...mockStoreExports,
+    selectStageDocumentResource: mockSelector,
+  };
 });
+
+// Get reference to the mocked selector after module is loaded
+import { selectStageDocumentResource } from '@paynless/store';
+const mockSelectStageDocumentResource = vi.mocked(selectStageDocumentResource);
 
 // Mock child components
 vi.mock('@/components/common/TextInputArea', () => ({
-  TextInputArea: vi.fn(({ value, onChange, placeholder, disabled }) => (
-    <textarea
-      // NOTE: The test now finds these by placeholder or display value, not testid
-      data-testid={placeholder?.startsWith('Enter feedback') ? 'feedback-textarea' : 'content-textarea'}
-      value={value || ''}
-      onChange={(e) => onChange?.(e.target.value)}
-      placeholder={placeholder}
-      disabled={disabled}
-    />
+  TextInputArea: vi.fn(({ value, onChange, placeholder, disabled, label, id }) => (
+    <div>
+      {label && <label htmlFor={id}>{label}</label>}
+      <textarea
+        // NOTE: The test now finds these by placeholder or display value, not testid
+        data-testid={placeholder?.startsWith('Enter feedback') ? 'feedback-textarea' : 'content-textarea'}
+        id={id}
+        value={value || ''}
+        onChange={(e) => onChange?.(e.target.value)}
+        placeholder={placeholder}
+        disabled={disabled}
+      />
+    </div>
   )),
 }));
 
@@ -108,11 +132,15 @@ const setupStore = ({
   content = '',
   feedback = '',
   isLoading = false,
+  contribution = null,
+  sourceContributionId = null,
 }: {
   focusedDocument?: { modelId: string; documentKey: string } | null;
   content?: string;
   feedback?: string;
   isLoading?: boolean;
+  contribution?: DialecticContribution | null;
+  sourceContributionId?: string | null;
 }) => {
   const documents = {
     [docA1Key]: docA1,
@@ -137,7 +165,7 @@ const setupStore = ({
       isDirty: feedback !== '',
       isLoading: isLoading,
       error: null,
-      lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: 'now' },
+      lastBaselineVersion: sourceContributionId ? { resourceId: sourceContributionId, versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' } : null,
       pendingDiff: null,
       lastAppliedVersionHash: 'hash-1',
     }
@@ -159,7 +187,7 @@ const setupStore = ({
       current_stage_id: mockStageSlug,
       created_at: '2023-01-01T00:00:00Z',
       updated_at: '2023-01-01T00:00:00Z',
-      dialectic_contributions: [],
+      dialectic_contributions: contribution ? [contribution] : [],
     },
     modelCatalog: [
       { id: modelA, model_name: 'Model Alpha', provider_name: 'OpenAI', api_identifier: 'openai', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [] },
@@ -182,6 +210,7 @@ describe('GeneratedContributionCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     stageRunChecklistMock.mockClear();
+    mockSelectStageDocumentResource.mockClear();
   });
 
   it('renders model and document metadata when its model has a focused document', async () => {
@@ -275,10 +304,13 @@ describe('GeneratedContributionCard', () => {
     };
 
     await waitFor(() => {
-      expect(updateStageDocumentDraft).toHaveBeenCalledWith(
-        expect.objectContaining(expectedKey),
-        'Existing feedback - updated',
-      );
+      // user.type types character by character, so check the last call
+      const mockedUpdate = vi.mocked(updateStageDocumentDraft);
+      const calls = mockedUpdate.mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      const lastCall = calls[calls.length - 1];
+      expect(lastCall[0]).toEqual(expect.objectContaining(expectedKey));
+      expect(lastCall[1]).toBe('Existing feedback - updated');
     });
   });
 
@@ -305,23 +337,335 @@ describe('GeneratedContributionCard', () => {
     };
 
     await waitFor(() => {
-      expect(updateStageDocumentDraft).toHaveBeenCalledWith(
-        expect.objectContaining(expectedKey),
-        'This is my feedback for A1. This is new feedback.',
-      );
+      // user.type types character by character, so check the last call
+      const mockedUpdate = vi.mocked(updateStageDocumentDraft);
+      const calls = mockedUpdate.mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      const lastCall = calls[calls.length - 1];
+      expect(lastCall[0]).toEqual(expect.objectContaining(expectedKey));
+      expect(lastCall[1]).toBe('This is my feedback for A1. This is new feedback.');
     });
 
     const saveButton = screen.getByRole('button', { name: /save feedback/i });
     await user.click(saveButton);
 
     await waitFor(() => {
-      expect(submitStageDocumentFeedback).toHaveBeenCalledWith(
+      expect(submitStageDocumentFeedback).toHaveBeenCalled();
+      const callArgs = vi.mocked(submitStageDocumentFeedback).mock.calls[0]?.[0];
+      
+      // Verify all required composite key fields are present
+      expect(callArgs).toHaveProperty('sessionId', mockSessionId);
+      expect(callArgs).toHaveProperty('stageSlug', mockStageSlug);
+      expect(callArgs).toHaveProperty('iterationNumber', iterationNumber);
+      expect(callArgs).toHaveProperty('modelId', modelA);
+      expect(callArgs).toHaveProperty('documentKey', docA1Key);
+      expect(callArgs).toHaveProperty('feedback', 'This is my feedback for A1. This is new feedback.');
+      
+      // Verify component passes only composite key + feedback; store may enrich with sourceContributionId
+      // Component does not compute or set sourceContributionId - that's the store's responsibility
+      // This assertion verifies the payload structure is compatible with enriched payloads
+      expect(callArgs).toEqual(
         expect.objectContaining({
           ...expectedKey,
           feedback: 'This is my feedback for A1. This is new feedback.',
         }),
       );
+      
       expect(toast.success).toHaveBeenCalledWith('Feedback saved successfully.');
     });
   });
+
+  describe('document editing', () => {
+    beforeEach(() => {
+      mockSelectStageDocumentResource.mockClear();
+    });
+
+    it('should use selectStageDocumentResource selector instead of direct state access', () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Document content',
+      });
+
+      const documentResourceState = {
+        baselineMarkdown: 'Document content',
+        currentDraftMarkdown: '',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+      };
+
+      mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      expect(mockSelectStageDocumentResource).toHaveBeenCalledWith(
+        expect.any(Object),
+        mockSessionId,
+        mockStageSlug,
+        iterationNumber,
+        modelA,
+        docA1Key,
+      );
+    });
+
+    it('should render stageDocumentContent entries using selectStageDocumentResource', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Document content from resource',
+      });
+
+      const documentResourceState = {
+        baselineMarkdown: 'Document content from resource',
+        currentDraftMarkdown: '',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+      };
+
+      mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      expect(await screen.findByDisplayValue('Document content from resource')).toBeInTheDocument();
+    });
+
+    it('should call saveContributionEdit with originalContributionIdToEdit derived from resource state, not dialectic_contributions', async () => {
+      const user = userEvent.setup();
+      const originalContributionId = 'contrib-orig-123';
+      
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Original document content',
+        contribution: null,
+        sourceContributionId: originalContributionId,
+      });
+
+      // Don't override the selector - let it read from the actual store state
+      // Reset any previous mockReturnValue and restore the default call-through implementation
+      mockSelectStageDocumentResource.mockReset();
+      // The mock factory captures the real selector in a closure, but after mockReset we need to restore it
+      // Import the actual module to get the real selector
+      const actualStoreModule = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
+      mockSelectStageDocumentResource.mockImplementation((...args) => {
+        return actualStoreModule.selectStageDocumentResource(...args);
+      });
+
+      const { saveContributionEdit, updateStageDocumentDraft } = getDialecticStoreState();
+
+      // Update the draft BEFORE rendering so the component renders with the correct content
+      const compositeKey: StageDocumentCompositeKey = {
+        sessionId: mockSessionId,
+        stageSlug: mockStageSlug,
+        iterationNumber,
+        modelId: modelA,
+        documentKey: docA1Key,
+      };
+      updateStageDocumentDraft(compositeKey, 'Edited document content');
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+      
+      // Wait for the component to render with the updated content
+      await waitFor(() => {
+        const contentTextarea = screen.getByTestId('content-textarea');
+        expect(contentTextarea).toHaveValue('Edited document content');
+      });
+
+      const saveEditButton = screen.getByRole('button', { name: /save edit/i });
+      await waitFor(() => {
+        expect(saveEditButton).not.toBeDisabled();
+      });
+      await user.click(saveEditButton);
+
+      const expectedPayload: SaveContributionEditPayload = {
+        originalContributionIdToEdit: originalContributionId,
+        editedContentText: 'Edited document content',
+        projectId: mockProjectId,
+        sessionId: mockSessionId,
+        originalModelContributionId: originalContributionId,
+        responseText: 'Edited document content',
+        documentKey: docA1Key,
+        resourceType: 'rendered_document',
+      };
+
+      await waitFor(() => {
+        expect(saveContributionEdit).toHaveBeenCalledWith(
+          expect.objectContaining(expectedPayload),
+        );
+        
+        const activeSessionDetail = getDialecticStoreState().activeSessionDetail;
+        expect(activeSessionDetail?.dialectic_contributions).toEqual([]);
+      });
+    });
+
+    it('should display EditedDocumentResource metadata after successful edit', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Document content',
+      });
+
+      const documentResourceState = {
+        baselineMarkdown: 'Edited content',
+        currentDraftMarkdown: 'Edited content',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: {
+          resourceId: 'resource-456',
+          versionHash: 'hash-456',
+          updatedAt: '2023-01-02T12:00:00Z',
+        },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-456',
+      };
+
+      mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      // Assert metadata is displayed (last updated timestamp)
+      expect(await screen.findByText(/Last updated:/i)).toBeInTheDocument();
+      expect(screen.getByText(/2023-01-02/i)).toBeInTheDocument();
+    });
+
+    it('should show optimistic UI updates after saveContributionEdit succeeds using resource-driven state', async () => {
+      const user = userEvent.setup();
+      const originalContributionId = 'contrib-orig-123';
+      
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Original content',
+        contribution: null,
+        sourceContributionId: originalContributionId,
+      });
+
+      // Don't override the selector - let it read from the actual store state
+      // Reset the mock to clear any previous mockReturnValue and restore default call-through behavior
+      mockSelectStageDocumentResource.mockReset();
+      const actualStoreModule = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
+      mockSelectStageDocumentResource.mockImplementation((...args) => {
+        return actualStoreModule.selectStageDocumentResource(...args);
+      });
+
+      const { saveContributionEdit, updateStageDocumentDraft } = getDialecticStoreState();
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      // Directly set the new content in the store - the component uses || so empty string falls back to baseline
+      const compositeKey: StageDocumentCompositeKey = {
+        sessionId: mockSessionId,
+        stageSlug: mockStageSlug,
+        iterationNumber,
+        modelId: modelA,
+        documentKey: docA1Key,
+      };
+      updateStageDocumentDraft(compositeKey, 'Edited content');
+      
+      // Wait for the store to update and component to re-render with the new content
+      await waitFor(() => {
+        const contentTextarea = screen.getByTestId('content-textarea');
+        expect(contentTextarea).toHaveValue('Edited content');
+      });
+
+      // Save the edit
+      const saveEditButton = screen.getByRole('button', { name: /save edit/i });
+      await user.click(saveEditButton);
+
+      // Assert saveContributionEdit was called
+      const expectedPayload: SaveContributionEditPayload = {
+        originalContributionIdToEdit: originalContributionId,
+        editedContentText: 'Edited content',
+        projectId: mockProjectId,
+        sessionId: mockSessionId,
+        originalModelContributionId: originalContributionId,
+        responseText: 'Edited content',
+        documentKey: docA1Key,
+        resourceType: 'rendered_document',
+      };
+
+      await waitFor(() => {
+        expect(saveContributionEdit).toHaveBeenCalledWith(
+          expect.objectContaining(expectedPayload),
+        );
+      });
+
+      const { updateStageDocumentResource } = getDialecticStoreState();
+      updateStageDocumentResource(
+        {
+          sessionId: mockSessionId,
+          stageSlug: mockStageSlug,
+          iterationNumber,
+          modelId: modelA,
+          documentKey: docA1Key,
+        },
+        {
+          id: 'resource-new',
+          resource_type: 'rendered_document',
+          project_id: mockProjectId,
+          session_id: mockSessionId,
+          stage_slug: mockStageSlug,
+          iteration_number: iterationNumber,
+          document_key: docA1Key,
+          source_contribution_id: originalContributionId,
+          storage_bucket: 'dialectic-resources',
+          storage_path: '/edited/resource-new.md',
+          file_name: 'edited-resource-new.md',
+          mime_type: 'text/markdown',
+          size_bytes: 'Edited content'.length,
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-02T12:00:00Z',
+        },
+        'Edited content',
+      );
+
+      await waitFor(() => {
+        const contentTextarea = screen.getByTestId('content-textarea');
+        expect(contentTextarea).toHaveValue('Edited content');
+        expect(screen.getByText(/Last updated:/i)).toBeInTheDocument();
+        expect(screen.getByText(/2023-01-02/i)).toBeInTheDocument();
+      });
+
+      expect(toast.success).toHaveBeenCalledWith('Edit saved successfully.');
+    });
+
+    it('should enable save edit button based on resource state, not dialectic_contributions', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Document content',
+        contribution: null,
+        sourceContributionId: 'contrib-123',
+      });
+
+      const { updateStageDocumentDraft } = getDialecticStoreState();
+      const compositeKey: StageDocumentCompositeKey = {
+        sessionId: mockSessionId,
+        stageSlug: mockStageSlug,
+        iterationNumber,
+        modelId: modelA,
+        documentKey: docA1Key,
+      };
+      
+      // Set draft content
+      updateStageDocumentDraft(compositeKey, 'Edited content');
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      await waitFor(() => {
+        const saveEditButton = screen.getByRole('button', { name: /save edit/i });
+        expect(saveEditButton).not.toBeDisabled();
+      });
+
+      const activeSessionDetail = getDialecticStoreState().activeSessionDetail;
+      expect(activeSessionDetail?.dialectic_contributions).toEqual([]);
+    });
+  });
 });
+
+
+
+

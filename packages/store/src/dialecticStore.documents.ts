@@ -923,6 +923,7 @@ export const fetchStageDocumentFeedbackLogic = async (
 };
 
 export const submitStageDocumentFeedbackLogic = async (
+	get: () => DialecticStore,
 	set: (fn: (draft: Draft<DialecticStateValues>) => void) => void,
 	payload: SubmitStageDocumentFeedbackPayload,
 ): Promise<ApiResponse<{ success: boolean }>> => {
@@ -932,13 +933,33 @@ export const submitStageDocumentFeedbackLogic = async (
 	});
 
 	try {
-		const response = await api.dialectic().submitStageDocumentFeedback(payload);
+		// Locate the normalized document resource associated with the incoming composite key
+		const compositeKey: StageDocumentCompositeKey = {
+			sessionId: payload.sessionId,
+			stageSlug: payload.stageSlug,
+			iterationNumber: payload.iterationNumber,
+			modelId: payload.modelId,
+			documentKey: payload.documentKey,
+		};
+		const serializedKey = getStageDocumentKey(compositeKey);
+		const resolvedResource = get().stageDocumentResources[serializedKey];
+		
+		// Derive sourceContributionId from resource metadata
+		const sourceContributionId = resolvedResource?.source_contribution_id ?? null;
+		
+		// Construct enriched payload with sourceContributionId
+		const enrichedPayload: SubmitStageDocumentFeedbackPayload = {
+			...payload,
+			sourceContributionId,
+		};
+		
+		const response = await api.dialectic().submitStageDocumentFeedback(enrichedPayload);
 		if (response.error) {
 			logger.error(
 				'[submitStageDocumentFeedback] Failed to submit document feedback',
 				{
 					error: response.error,
-					key: getStageDocumentKey(payload),
+					key: serializedKey,
 				},
 			);
 			set(state => {
@@ -950,14 +971,7 @@ export const submitStageDocumentFeedbackLogic = async (
 				state.isSubmittingStageDocumentFeedback = false;
 				state.submitStageDocumentFeedbackError = null;
 				// On success, flush the draft
-				const key: StageDocumentCompositeKey = {
-					sessionId: payload.sessionId,
-					stageSlug: payload.stageSlug,
-					iterationNumber: payload.iterationNumber,
-					modelId: payload.modelId,
-					documentKey: payload.documentKey,
-				};
-				flushStageDocumentDraftLogic(state, key);
+				flushStageDocumentDraftLogic(state, compositeKey);
 			});
 		}
 		return response;

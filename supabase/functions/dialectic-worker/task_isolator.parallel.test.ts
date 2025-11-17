@@ -1029,6 +1029,168 @@ describe('planComplexStage', () => {
                 'project_resource lookups without linkage must not filter by non-null source_contribution_id',
             );
         });
+
+        it('uses column predicates when fetching seed_prompt resources', async () => {
+            // Arrange:
+            // 1. Seed a seed_prompt resource that matches the column predicates.
+            if (!isDialecticPlanJobPayload(mockParentJob.payload)) {
+                throw new Error('mockParentJob.payload must be a valid DialecticPlanJobPayload');
+            }
+            if (typeof mockParentJob.payload.stageSlug !== 'string') {
+                throw new Error('mockParentJob.payload.stageSlug must be defined as a string. Fix the data flow upstream.');
+            }
+            const seedPromptResource: DialecticProjectResourceRow = {
+                ...mockProjectResources[0],
+                id: 'seed-prompt-1',
+                project_id: mockParentJob.payload.projectId,
+                resource_type: 'seed_prompt',
+                session_id: mockParentJob.payload.sessionId,
+                stage_slug: mockParentJob.payload.stageSlug,
+                source_contribution_id: null,
+                file_name: 'test-stage_seed_prompt.md',
+                resource_description: {
+                    description: 'Seed prompt for test stage',
+                    type: 'seed_prompt',
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            mockProjectResources = [seedPromptResource];
+
+            // 2. Use a seed_prompt rule so the resource query is exercised.
+            mockRecipeStep.inputs_required = [{
+                type: 'seed_prompt',
+                slug: 'test-stage',
+            }];
+
+            // 3. Provide a trivial planner so planning completes without creating jobs.
+            const plannerFn: GranularityPlannerFn = () => [];
+            mockDeps.getGranularityPlanner = () => plannerFn;
+
+            // Act:
+            await planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                mockRecipeStep,
+                'user-jwt-123',
+            );
+
+            // Assert:
+            // Use the Supabase mock spies to verify column-based predicates.
+            const eqHistory = mockSupabase.spies.getHistoricQueryBuilderSpies(
+                'dialectic_project_resources',
+                'eq',
+            );
+            assertExists(eqHistory);
+
+            const calls = eqHistory.callsArgs;
+            const hasFilter = (column: string, value: unknown): boolean =>
+                calls.some((args) =>
+                    Array.isArray(args) &&
+                    typeof args[0] === 'string' &&
+                    args[0] === column &&
+                    args[1] === value
+                );
+
+            assert(
+                hasFilter('resource_type', 'seed_prompt'),
+                'Expected resource_type filter for seed_prompt',
+            );
+            assert(
+                hasFilter('project_id', mockParentJob.payload.projectId),
+                'Expected project_id filter for seed_prompt',
+            );
+            assert(
+                hasFilter('session_id', mockParentJob.payload.sessionId),
+                'Expected session_id filter for seed_prompt',
+            );
+            assert(
+                hasFilter('stage_slug', 'test-stage'),
+                'Expected stage_slug filter for seed_prompt',
+            );
+        });
+
+        it('uses column predicates when fetching header_context resources', async () => {
+            // Arrange:
+            // 1. Seed a header_context resource that matches the column predicates.
+            if (!isDialecticPlanJobPayload(mockParentJob.payload)) {
+                throw new Error('mockParentJob.payload must be a valid DialecticPlanJobPayload');
+            }
+            if (typeof mockParentJob.payload.stageSlug !== 'string') {
+                throw new Error('mockParentJob.payload.stageSlug must be defined as a string. Fix the data flow upstream.');
+            }
+            const headerContextResource: DialecticProjectResourceRow = {
+                ...mockProjectResources[0],
+                id: 'header-context-1',
+                project_id: mockParentJob.payload.projectId,
+                resource_type: 'header_context',
+                session_id: mockParentJob.payload.sessionId,
+                stage_slug: mockParentJob.payload.stageSlug,
+                source_contribution_id: null,
+                file_name: 'sess-1_test-stage_header_context.json',
+                resource_description: {
+                    description: 'Header context for test stage',
+                    type: 'header_context',
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            mockProjectResources = [headerContextResource];
+
+            // 2. Use a header_context rule so the resource query is exercised.
+            mockRecipeStep.inputs_required = [{
+                type: 'header_context',
+                slug: 'test-stage',
+            }];
+
+            // 3. Provide a trivial planner so planning completes without creating jobs.
+            const plannerFn: GranularityPlannerFn = () => [];
+            mockDeps.getGranularityPlanner = () => plannerFn;
+
+            // Act:
+            await planComplexStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockParentJob,
+                mockDeps,
+                mockRecipeStep,
+                'user-jwt-123',
+            );
+
+            // Assert:
+            // Use the Supabase mock spies to verify column-based predicates.
+            const eqHistory = mockSupabase.spies.getHistoricQueryBuilderSpies(
+                'dialectic_project_resources',
+                'eq',
+            );
+            assertExists(eqHistory);
+
+            const calls = eqHistory.callsArgs;
+            const hasFilter = (column: string, value: unknown): boolean =>
+                calls.some((args) =>
+                    Array.isArray(args) &&
+                    typeof args[0] === 'string' &&
+                    args[0] === column &&
+                    args[1] === value
+                );
+
+            assert(
+                hasFilter('resource_type', 'header_context'),
+                'Expected resource_type filter for header_context',
+            );
+            assert(
+                hasFilter('project_id', mockParentJob.payload.projectId),
+                'Expected project_id filter for header_context',
+            );
+            assert(
+                hasFilter('session_id', mockParentJob.payload.sessionId),
+                'Expected session_id filter for header_context',
+            );
+            assert(
+                hasFilter('stage_slug', 'test-stage'),
+                'Expected stage_slug filter for header_context',
+            );
+        });
     });
 
 }); 

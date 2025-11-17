@@ -3,11 +3,13 @@ import {
 	useDialecticStore,
 	selectStageRunProgress,
 	selectFocusedStageDocument,
+	selectStageDocumentResource,
 } from "@paynless/store";
 import {
-	type StageDocumentCompositeKey,
-	type StageRunDocumentDescriptor,
-	type SetFocusedStageDocumentPayload,
+	StageDocumentCompositeKey,
+	StageRunDocumentDescriptor,
+	SetFocusedStageDocumentPayload,
+	SaveContributionEditPayload,
 } from "@paynless/types";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -57,8 +59,6 @@ const formatStatusLabel = (value: string | undefined): string => {
 		.join(" ");
 };
 
-const noop = () => {};
-
 export const GeneratedContributionCard: React.FC<
 	GeneratedContributionCardProps
 > = ({ modelId, className }) => {
@@ -71,10 +71,13 @@ export const GeneratedContributionCard: React.FC<
 		setFocusedStageDocument,
 		updateStageDocumentDraft,
 		submitStageDocumentFeedback,
-		stageDocumentContent,
+		saveContributionEdit,
 		modelCatalog,
 		isSubmittingStageDocumentFeedback,
 		submitStageDocumentFeedbackError,
+		isSavingContributionEdit,
+		saveContributionEditError,
+		activeContextProjectId,
 	} = useDialecticStore((state) => {
 		const sessionId = state.activeContextSessionId;
 		const stageSlug = state.activeStageSlug;
@@ -93,10 +96,13 @@ export const GeneratedContributionCard: React.FC<
 			setFocusedStageDocument: state.setFocusedStageDocument,
 			updateStageDocumentDraft: state.updateStageDocumentDraft,
 			submitStageDocumentFeedback: state.submitStageDocumentFeedback,
-			stageDocumentContent: state.stageDocumentContent,
+			saveContributionEdit: state.saveContributionEdit,
 			modelCatalog: state.modelCatalog,
 			isSubmittingStageDocumentFeedback: state.isSubmittingStageDocumentFeedback,
 			submitStageDocumentFeedbackError: state.submitStageDocumentFeedbackError,
+			isSavingContributionEdit: state.isSavingContributionEdit,
+			saveContributionEditError: state.saveContributionEditError,
+			activeContextProjectId: state.activeContextProjectId,
 		};
 	});
 
@@ -144,13 +150,30 @@ export const GeneratedContributionCard: React.FC<
 		[compositeKey],
 	);
 
-	const draftState = serializedKey
-		? stageDocumentContent[serializedKey]
-		: undefined;
-	const draftValue = draftState?.currentDraftMarkdown ?? "";
-	const baselineContent = draftState?.baselineMarkdown ?? "";
-	const isDraftLoading = draftState?.isLoading ?? false;
-	const draftError = draftState?.error;
+	const documentResourceState = useDialecticStore((state) => {
+		if (
+			!compositeKey ||
+			!sessionId ||
+			!stageSlug ||
+			typeof iterationNumber !== "number"
+		) {
+			return undefined;
+		}
+		return selectStageDocumentResource(
+			state,
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			modelId,
+			compositeKey.documentKey,
+		);
+	});
+
+	const draftValue = documentResourceState?.currentDraftMarkdown ?? "";
+	const baselineContent = documentResourceState?.baselineMarkdown ?? "";
+	const isDraftLoading = documentResourceState?.isLoading ?? false;
+	const draftError = documentResourceState?.error;
+	const lastBaselineVersion = documentResourceState?.lastBaselineVersion;
 
 	const documentDescriptor: StageRunDocumentDescriptor | undefined =
 		focusedDocument && stageRunProgress
@@ -180,8 +203,7 @@ export const GeneratedContributionCard: React.FC<
 			return;
 		}
 
-		const currentDraft =
-			stageDocumentContent[serializedKey]?.currentDraftMarkdown;
+		const currentDraft = documentResourceState?.currentDraftMarkdown;
 
 		if (!currentDraft || currentDraft.trim().length === 0) {
 			toast.error("Provide feedback before saving.");
@@ -200,13 +222,74 @@ export const GeneratedContributionCard: React.FC<
 	}, [
 		compositeKey,
 		serializedKey,
-		stageDocumentContent,
+		documentResourceState,
 		submitStageDocumentFeedback,
 	]);
 
-	const canSave =
+	const handleSaveEdit = useCallback(async () => {
+		if (!compositeKey || !activeContextProjectId) {
+			toast.error("Could not save edit.");
+			return;
+		}
+
+		const editedContent = documentResourceState?.currentDraftMarkdown ?? "";
+		if (!editedContent || editedContent.trim().length === 0) {
+			toast.error("Provide content before saving.");
+			return;
+		}
+
+		// Derive original contribution ID from resource state
+		// For the first edit, lastBaselineVersion.resourceId points to the original contribution
+		// For subsequent edits, it points to the resource which has source_contribution_id
+		const originalContributionIdToEdit = documentResourceState?.lastBaselineVersion?.resourceId;
+
+		if (!originalContributionIdToEdit) {
+			toast.error("Could not find original contribution to edit.");
+			return;
+		}
+
+		const payload: SaveContributionEditPayload = {
+			originalContributionIdToEdit,
+			editedContentText: editedContent,
+			projectId: activeContextProjectId,
+			sessionId: compositeKey.sessionId,
+			originalModelContributionId: originalContributionIdToEdit,
+			responseText: editedContent,
+			documentKey: compositeKey.documentKey,
+			resourceType: "rendered_document",
+		};
+
+		try {
+			await saveContributionEdit(payload);
+			toast.success("Edit saved successfully.");
+		} catch (_error) {
+			toast.error("Could not save edit.");
+		}
+	}, [
+		compositeKey,
+		activeContextProjectId,
+		documentResourceState,
+		saveContributionEdit,
+	]);
+
+	const handleDocumentContentChange = useCallback(
+		(value: string) => {
+			if (!compositeKey) {
+				return;
+			}
+			updateStageDocumentDraft(compositeKey, value);
+		},
+		[compositeKey, updateStageDocumentDraft],
+	);
+
+	const canSaveFeedback =
 		Boolean(compositeKey) &&
-		Boolean(stageDocumentContent[serializedKey ?? ""]?.currentDraftMarkdown);
+		Boolean(documentResourceState?.currentDraftMarkdown);
+
+	const canSaveEdit =
+		Boolean(compositeKey) &&
+		Boolean(documentResourceState?.currentDraftMarkdown) &&
+		Boolean(documentResourceState?.lastBaselineVersion?.resourceId);
 
 	if (!hasStageContext) {
 		return (
@@ -254,7 +337,7 @@ export const GeneratedContributionCard: React.FC<
 								Document: {focusedDocument.documentKey}
 							</p>
 							<div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-								{documentDescriptor?.job_id && (
+								{documentDescriptor && 'job_id' in documentDescriptor && documentDescriptor.job_id && (
 									<span>
 										Job:{" "}
 										<span className="font-medium text-foreground">
@@ -262,11 +345,19 @@ export const GeneratedContributionCard: React.FC<
 										</span>
 									</span>
 								)}
-								{documentDescriptor?.latestRenderedResourceId && (
+								{documentDescriptor && 'latestRenderedResourceId' in documentDescriptor && documentDescriptor.latestRenderedResourceId && (
 									<span>
 										Latest Render:{" "}
 										<span className="font-medium text-foreground">
 											{documentDescriptor.latestRenderedResourceId}
+										</span>
+									</span>
+								)}
+								{lastBaselineVersion?.updatedAt && (
+									<span>
+										Last updated:{" "}
+										<span className="font-medium text-foreground">
+											{new Date(lastBaselineVersion.updatedAt).toISOString().split('T')[0]}
 										</span>
 									</span>
 								)}
@@ -279,17 +370,17 @@ export const GeneratedContributionCard: React.FC<
 							</Alert>
 						)}
 
-						<TextInputArea
-							label="Document Content"
-							value={baselineContent}
-							onChange={noop}
-							disabled
-							placeholder="No content available."
-							id={`stage-document-content-${modelId}-${focusedDocument.documentKey}`}
-							dataTestId={`stage-document-content-${modelId}-${focusedDocument.documentKey}`}
-							showPreviewToggle
-							initialPreviewMode
-						/>
+					<TextInputArea
+						label="Document Content"
+						value={documentResourceState?.currentDraftMarkdown || baselineContent}
+						onChange={handleDocumentContentChange}
+						disabled={isDraftLoading || isSavingContributionEdit}
+						placeholder="No content available."
+						id={`stage-document-content-${modelId}-${focusedDocument.documentKey}`}
+						dataTestId={`stage-document-content-${modelId}-${focusedDocument.documentKey}`}
+						showPreviewToggle
+						initialPreviewMode
+					/>
 
 						<TextInputArea
 							label="Document Feedback"
@@ -300,6 +391,14 @@ export const GeneratedContributionCard: React.FC<
 							dataTestId={`stage-document-feedback-${modelId}-${focusedDocument.documentKey}`}
 							showPreviewToggle
 						/>
+
+						{saveContributionEditError && (
+							<Alert variant="destructive">
+								<AlertDescription>
+									{saveContributionEditError.message}
+								</AlertDescription>
+							</Alert>
+						)}
 
 						{submitStageDocumentFeedbackError && (
 							<Alert variant="destructive">
@@ -317,9 +416,26 @@ export const GeneratedContributionCard: React.FC<
 								/>
 							)}
 							<Button
+								onClick={handleSaveEdit}
+								disabled={
+									!canSaveEdit ||
+									isDraftLoading ||
+									isSavingContributionEdit
+								}
+							>
+								{isSavingContributionEdit ? (
+									<>
+										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+										Saving...
+									</>
+								) : (
+									"Save Edit"
+								)}
+							</Button>
+							<Button
 								onClick={handleSaveFeedback}
 								disabled={
-									!canSave ||
+									!canSaveFeedback ||
 									isDraftLoading ||
 									isSubmittingStageDocumentFeedback
 								}

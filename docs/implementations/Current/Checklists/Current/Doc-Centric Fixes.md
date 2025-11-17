@@ -508,11 +508,6 @@ graph TD
             *   `[✅]` 17.c.iii.1. Add a conditional check for `item.status === 'failed'`.
             *   `[✅]` 17.c.iii.2. When true, render an appropriate error icon (e.g., `XCircleIcon`) next to the document key.
         *   `[✅]` 17.c.iv. `[TEST-UNIT]` **GREEN**: Prove the test created in step 17.c.ii now passes.
-
-
-* Change Submit Responses button to detect when in the last stage and instead provide Export and Iterate from Plan
-* Fix SessionInfoCard to never display Export Final
-
 *   `[✅]` 20. **`[STORE]` Resolve job_failed sessions remaining in generating state**
     *   `[✅]` 20.a. `[DEPS]` `_handleContributionGenerationFailed` only sets `generateContributionsError` and clears `generatingSessions` when a catastrophic failure omits `job_id`. Planner failures with a `job_id` leave the session tracked as generating, so `contributionGenerationStatus` stays `'generating'` and both `SessionContributionsDisplayCard` and `SessionInfoCard` keep showing their loading banners.
     *   `[✅]` 20.b. `[TEST-UNIT]` In `packages/store/src/dialecticStore.notifications.test.ts`, add a RED case that dispatches a `contribution_generation_failed` lifecycle event with a `job_id` and expects the store to (1) remove that job from `generatingSessions`, (2) downgrade `contributionGenerationStatus` to `'failed'`, and (3) expose the supplied error through `generateContributionsError`.
@@ -925,219 +920,189 @@ graph TD
         * Leave the implementation untouched so the test suite now fails, producing error messages that highlight the missing column filters.  
     *   `[✅]` 71.c. **[GREEN]** *(No implementation edits here; the expectations will pass after Step 70’s refactor.)*  
     *   `[✅]` 71.d. **[LINT]** Run the linter scoped to `task_isolator.parallel.test.ts` and fix every warning or error introduced while adding the RED assertions.
-
-
-*   `[ ]` 24. **`[TEST-UNIT]` Prove FileManager writes the full project-resource contract**
-    *   `[ ]` 24.a. `[DEPS]` When `FileManagerService.uploadAndRegisterFile` saves a project resource, downstream readers expect the Supabase row to expose `resource_type`, `session_id`, `stage_slug`, `iteration_number`, and (where applicable) `source_contribution_id`. Current tests only assert the JSON `resource_description`, allowing the columns to remain null.
-    *   `[ ]` 24.b. `[TEST-UNIT]` In `supabase/functions/_shared/services/file_manager.upload.test.ts`, add a new RED suite covering:
-        *   `[ ]` 24.b.i. A `FileType.SeedPrompt` upload whose `pathContext` includes `projectId`, `sessionId`, `stageSlug`, and `iteration`. Assert the mocked insert payload sets `resource_type` to `'seed_prompt'`, carries through the session/stage/iteration values, and leaves `source_contribution_id` null.
-        *   `[ ]` 24.b.ii. A generic project resource upload (e.g., `FileType.GeneralResource`) without session metadata that proves the insert omits only the unavailable columns while still writing `resource_type`.
-        *   `[ ]` 24.b.iii. A continuation-backed resource (e.g., planner prompt) that asserts `source_contribution_id` is persisted when the `pathContext` supplies it.
-    *   `[ ]` 24.c. `[TEST-UNIT]` Run the file-manager unit suite and capture the RED failures that demonstrate the missing columns.
-
-*   `[ ]` 25. **`[BE]` Persist project-resource metadata in `FileManagerService`**
-    *   `[ ]` 25.a. `[DEPS]` With the failing tests in place, update `supabase/functions/_shared/services/file_manager.ts` so every resource insert writes the column contract in addition to the JSON description. The implementation must derive:
-        *   `[ ]` 25.a.i. `resource_type` from `context.resourceTypeForDb ?? pathContext.fileType`.
-        *   `[ ]` 25.a.ii. `session_id`, `stage_slug`, and `iteration_number` from `pathContextForStorage` when present, falling back to `null` when those values are legitimately absent (e.g., project-level assets).
-        *   `[ ]` 25.a.iii. `source_contribution_id` from continuation contexts without mutating unrelated uploads.
-    *   `[ ]` 25.b. `[BE]` Ensure the JSON `resource_description` remains intact for auxiliary metadata but is no longer the sole source of typed fields.
-    *   `[ ]` 25.c. `[TEST-UNIT]` Re-run `file_manager.upload.test.ts` and confirm it now passes, proving the rows contain the expected column values.
-    
-*   `[ ]` 26. **`[TEST-UNIT]` Update task isolator coverage for column-based lookups**
-    *   `[ ]` 26.a. `[DEPS]` `findSourceDocuments` still filters project resources via `resource_description->>` predicates. With the new columns populated, the tests must enforce column-based filtering.
-    *   `[ ]` 26.b. `[TEST-UNIT]` In `supabase/functions/dialectic-worker/task_isolator.test.ts`, revise the existing `seed_prompt`, `header_context`, and `project_resource` cases so they assert the mock Supabase client receives queries constrained by `resource_type`, `project_id`, `session_id`, and `stage_slug` (when the rule specifies a slug). Mirror the same expectations in `task_isolator.parallel.test.ts` for the parallel planner scenarios.
-    *   `[ ]` 26.c. `[TEST-UNIT]` Capture the RED state that proves the current implementation still targets the JSON path.
-
-*   `[ ]` 27. **`[BE]` Align `findSourceDocuments` with the column contract**
-    *   `[ ]` 27.a. `[BE]` In `supabase/functions/dialectic-worker/task_isolator.ts`, replace every project-resource filter that references `resource_description` with column predicates:
-        *   `[ ]` 27.a.i. Use `resource_type` for the artifact type, `stage_slug` for rule slugs (when provided), `session_id` for session-scoped materials, and `iteration_number` when the parent job supplies it.
-    *   `[ ]` 27.b. `[BE]` Update the header-context fallback to contributions to ensure it still matches by stage and iteration after the column changes.
-    *   `[ ]` 27.c. `[TEST-UNIT]` Re-run both task-isolator suites and confirm the revised queries satisfy the new assertions.
-
-*   `[ ]` 28. **`[TEST-UNIT]` Enforce column queries in session seed prompt retrieval**
-    *   `[ ]` 28.a. `[TEST-UNIT]` In `supabase/functions/dialectic-service/getSessionDetails.test.ts`, adjust the seed prompt fixture so it expects the repository to query by `resource_type = 'seed_prompt'` and the active session/stage identifiers. Ensure the test fails until the implementation drops the JSON predicate.
-
-*   `[ ]` 29. **`[BE]` Query seed prompts by column in `getSessionDetails.ts`**
-    *   `[ ]` 29.a. `[BE]` In `supabase/functions/dialectic-service/getSessionDetails.ts`, modify the seed prompt lookup to target `resource_type`, `session_id`, `stage_slug`, and `iteration_number` (where applicable). Remove the `resource_description->>` filter entirely.
-    *   `[ ]` 29.b. `[TEST-UNIT]` Re-run the session-details suite to confirm the API now surfaces the seed prompt using the column contract.
-
-*   `[ ]` 30. **`[TEST-UNIT]` Require column-based rendered document lookups**
-    *   `[ ]` 30.a. `[DEPS]` Stage document listing still relies on JSON path checks for `document_key` and job metadata.
-    *   `[ ]` 30.b. `[TEST-UNIT]` In `supabase/functions/dialectic-service/listStageDocuments.test.ts`, add expectations that rendered document rows are filtered by `resource_type = 'rendered_document'`, match the requested session/stage/iteration, and correlate to the originating contribution via `source_contribution_id`.
-    *   `[ ]` 30.c. `[TEST-UNIT]` Record the RED failure before touching the implementation.
-
-*   `[ ]` 31. **`[BE]` Query rendered documents via the new columns**
-    *   `[ ]` 31.a. `[BE]` Update `supabase/functions/dialectic-service/listStageDocuments.ts` to:
-        *   `[ ]` 31.a.i. Filter project resources using `resource_type`, `session_id`, `stage_slug`, and `iteration_number`.
-        *   `[ ]` 31.a.ii. Use `source_contribution_id` (or equivalent) to correlate rendered documents with their generating jobs instead of parsing the JSON payload.
-    *   `[ ]` 31.b. `[TEST-UNIT]` Re-run the list-stage-documents tests and confirm the expectations now pass.
-
-*   `[ ]` 32. **`[TEST-UNIT]` Prove submit-stage-response validation uses the column contract**
-    *   `[ ]` 32.a. `[TEST-UNIT]` Extend or create coverage in `supabase/functions/dialectic-service/submitStageResponses.test.ts` that:
-        *   `[ ]` 32.a.i. Seeds required document rules and mocks project resources with the new metadata fields.
-        *   `[ ]` 32.a.ii. Asserts the validation path looks up required documents by `resource_type`/`document_key`/`session_id`/`stage_slug` columns, not the JSON descriptor.
-        *   `[ ]` 32.a.iii. Proves the existing implementation still passes because of the legacy JSON checks, resulting in a RED state.
-
-*   `[ ]` 33. **`[BE]` Update `submitStageResponses.ts` to validate via columns**
-    *   `[ ]` 33.a. `[BE]` Replace the JSON-string comparisons in `supabase/functions/dialectic-service/submitStageResponses.ts` with column-based predicates that mirror the new resource contract.
-    *   `[ ]` 33.b. `[BE]` Ensure the validation logic handles both rendered documents and planner artifacts consistently with the metadata we now persist.
-    *   `[ ]` 33.c. `[TEST-UNIT]` Re-run the submit-stage-responses suite and verify the new assertions succeed.
-
-*   `[ ]` 72. **`[TYPES]` Update doc-centric edit contracts in `packages/types/src/dialectic.types.ts`**  
-    *   `[ ]` 72.a. `[READ]` Review the existing `DialecticStoreApi`, `DialecticStoreFunctions`, `SaveContributionEditPayload`, and `ApiResponse<DialecticContribution>` references to identify every consumer that assumes a contribution-based response.  
-    *   `[ ]` 72.b. `[TYPES]` Introduce `EditedDocumentResource` and `SaveContributionEditSuccessResponse` interfaces that mirror the `dialectic_project_resources` row shape (id, resource_type, session_id, stage_slug, iteration_number, document_key, storage fields, mime, size, timestamps, `source_contribution_id`). Extend `SaveContributionEditPayload` with an explicit `documentKey` (and optional `resourceType`) so edits no longer infer from `contribution_type`. Update `DialecticStoreApi.saveContributionEdit`, `DialecticStoreFunctions.saveContributionEdit`, and any related union types to return `ApiResponse<SaveContributionEditSuccessResponse>`.  
-    *   `[ ]` 72.c. `[LINT]` Run `pnpm lint packages/types/src/dialectic.types.ts` (or scoped lint) to ensure no unused imports or formatting regressions remain after the type additions.
-
-*   `[ ]` 73. **`[TEST-UNIT]` `packages/api/src/dialectic.api.project.test.ts` — RED test for resource response**  
-    *   `[ ]` 73.a. `[READ]` Open the API project tests and note every assertion that currently inspects `response.data.id`, `contribution_type`, or other `DialecticContribution` fields from `saveContributionEdit`.  
-    *   `[ ]` 73.b. `[TEST-UNIT]` Update the save-contribution-edit scenario to mock the service returning an `EditedDocumentResource` (with `resource_type: 'rendered_document'`, `document_key`, `source_contribution_id`). Assert the API layer now exposes `response.data.resourceId` (or whichever field is defined in Step 72) and never forwards a `DialecticContribution`. The test should fail until the client implementation changes.  
-    *   `[ ]` 73.c. `[LINT]` Lint the test file to keep snapshots and imports aligned with the new assertions.
-
-*   `[ ]` 74. **`[API]` `packages/api/src/dialectic.api.ts` — GREEN: return document resources**  
-    *   `[ ]` 74.a. `[READ]` Re-read the `saveContributionEdit` method, noting the existing response typing and any downstream logging that references `response.data?.id`.  
-    *   `[ ]` 74.b. `[BE]` Update the API client call to expect `SaveContributionEditSuccessResponse`, rename log fields to reference resource ids, and ensure the method’s return type matches the updated shared types.  
-    *   `[ ]` 74.c. `[TEST-UNIT]` Re-run the Step 73 test (and the existing API suite) to confirm it now passes, proving the client returns the new shape.  
-    *   `[ ]` 74.d. `[LINT]` Lint `packages/api/src/dialectic.api.ts` after implementation.
-
-*   `[ ]` 75. **`[MOCK]` `packages/api/src/mocks/dialectic.api.mock.ts` — align mocked responses**  
-    *   `[ ]` 75.a. `[READ]` Examine the mock factory to see how `vi.fn` instances currently resolve `ApiResponse<DialecticContribution>` for `saveContributionEdit`.  
-    *   `[ ]` 75.b. `[MOCK]` Update the mock typings and default return objects to the new `SaveContributionEditSuccessResponse`, ensuring all helper builders construct realistic `EditedDocumentResource` payloads (resource id, document key, storage path, etc.).  
-    *   `[ ]` 75.c. `[LINT]` Lint the mock file so formatting and import ordering remain consistent.
-
-*   `[ ]` 76. **`[TEST-UNIT]` `packages/store/src/dialecticStore.contribution.test.ts` — RED for doc-centric store state**  
-    *   `[ ]` 76.a. `[READ]` Identify every test that expects `response.data` to be a contribution row and asserts `dialectic_contributions` replacement.  
-    *   `[ ]` 76.b. `[TEST-UNIT]` Rewrite the canonical edit scenario to expect the store to patch `stageDocumentContent` (or the new doc-resource map) with the returned `EditedDocumentResource`, and to avoid mutating `dialectic_contributions`. Add assertions that the document cache now reflects the new markdown and that `saveContributionEdit` no longer touches contribution arrays. Leave tests failing until the store implementation is updated.  
-    *   `[ ]` 76.c. `[LINT]` Lint the test file once the RED assertions are in place.
-
-*   `[ ]` 77. **`[STORE]` `packages/store/src/dialecticStore.ts` — GREEN: pipe document resources into UI state**  
-    *   `[ ]` 77.a. `[READ]` Trace the current edit flow, especially how `set` mutates `dialectic_contributions` and which parts of state power `StageRunChecklist`, `GeneratedContributionCard`, and `SessionContributionsDisplayCard`.  
-    *   `[ ]` 77.b. `[STORE]` Refactor `saveContributionEdit` to:  
+*   `[✅]` 24. **`[TEST-UNIT]` Prove FileManager writes the full project-resource contract**
+    *   `[✅]` 24.a. `[DEPS]` When `FileManagerService.uploadAndRegisterFile` saves a project resource, downstream readers expect the Supabase row to expose `resource_type`, `session_id`, `stage_slug`, `iteration_number`, and (where applicable) `source_contribution_id`. Current tests only assert the JSON `resource_description`, allowing the columns to remain null.
+    *   `[✅]` 24.b. `[TEST-UNIT]` In `supabase/functions/_shared/services/file_manager.upload.test.ts`, add a new RED suite covering:
+        *   `[✅]` 24.b.i. A `FileType.SeedPrompt` upload whose `pathContext` includes `projectId`, `sessionId`, `stageSlug`, and `iteration`. Assert the mocked insert payload sets `resource_type` to `'seed_prompt'`, carries through the session/stage/iteration values, and leaves `source_contribution_id` null.
+        *   `[✅]` 24.b.ii. A generic project resource upload (e.g., `FileType.GeneralResource`) without session metadata that proves the insert omits only the unavailable columns while still writing `resource_type`.
+        *   `[✅]` 24.b.iii. A continuation-backed resource (e.g., planner prompt) that asserts `source_contribution_id` is persisted when the `pathContext` supplies it.
+    *   `[✅]` 24.c. `[TEST-UNIT]` Run the file-manager unit suite and capture the RED failures that demonstrate the missing columns.
+*   `[✅]` 25. **`[BE]` Persist project-resource metadata in `FileManagerService`**
+    *   `[✅]` 25.a. `[DEPS]` With the failing tests in place, update `supabase/functions/_shared/services/file_manager.ts` so every resource insert writes the column contract in addition to the JSON description. The implementation must derive:
+        *   `[✅]` 25.a.i. `resource_type` from `context.resourceTypeForDb ?? pathContext.fileType`.
+        *   `[✅]` 25.a.ii. `session_id`, `stage_slug`, and `iteration_number` from `pathContextForStorage` when present, falling back to `null` when those values are legitimately absent (e.g., project-level assets).
+        *   `[✅]` 25.a.iii. `source_contribution_id` from continuation contexts without mutating unrelated uploads.
+    *   `[✅]` 25.b. `[BE]` Ensure the JSON `resource_description` remains intact for auxiliary metadata but is no longer the sole source of typed fields.
+    *   `[✅]` 25.c. `[TEST-UNIT]` Re-run `file_manager.upload.test.ts` and confirm it now passes, proving the rows contain the expected column values.
+*   `[✅]` 26. **`[TEST-UNIT]` Update task isolator coverage for column-based lookups**
+    *   `[✅]` 26.a. `[DEPS]` `findSourceDocuments` still filters project resources via `resource_description->>` predicates. With the new columns populated, the tests must enforce column-based filtering.
+    *   `[✅]` 26.b. `[TEST-UNIT]` In `supabase/functions/dialectic-worker/task_isolator.test.ts`, revise the existing `seed_prompt`, `header_context`, and `project_resource` cases so they assert the mock Supabase client receives queries constrained by `resource_type`, `project_id`, `session_id`, and `stage_slug` (when the rule specifies a slug). Mirror the same expectations in `task_isolator.parallel.test.ts` for the parallel planner scenarios.
+    *   `[✅]` 26.c. `[TEST-UNIT]` Capture the RED state that proves the current implementation still targets the JSON path.
+*   `[✅]` 27. **`[BE]` Align `findSourceDocuments` with the column contract**
+    *   `[✅]` 27.a. `[BE]` In `supabase/functions/dialectic-worker/task_isolator.ts`, replace every project-resource filter that references `resource_description` with column predicates:
+        *   `[✅]` 27.a.i. Use `resource_type` for the artifact type, `stage_slug` for rule slugs (when provided), `session_id` for session-scoped materials, and `iteration_number` when the parent job supplies it.
+    *   `[✅]` 27.b. `[BE]` Update the header-context fallback to contributions to ensure it still matches by stage and iteration after the column changes.
+    *   `[✅]` 27.c. `[TEST-UNIT]` Re-run both task-isolator suites and confirm the revised queries satisfy the new assertions.
+*   `[✅]` 28. **`[TEST-UNIT]` Enforce column queries in session seed prompt retrieval**
+    *   `[✅]` 28.a. `[TEST-UNIT]` In `supabase/functions/dialectic-service/getSessionDetails.test.ts`, adjust the seed prompt fixture so it expects the repository to query by `resource_type = 'seed_prompt'` and the active session/stage identifiers. Ensure the test fails until the implementation drops the JSON predicate.
+*   `[✅]` 29. **`[BE]` Query seed prompts by column in `getSessionDetails.ts`**
+    *   `[✅]` 29.a. `[BE]` In `supabase/functions/dialectic-service/getSessionDetails.ts`, modify the seed prompt lookup to target `resource_type`, `session_id`, `stage_slug`, and `iteration_number` (where applicable). Remove the `resource_description->>` filter entirely.
+    *   `[✅]` 29.b. `[TEST-UNIT]` Re-run the session-details suite to confirm the API now surfaces the seed prompt using the column contract.
+*   `[✅]` 30. **`[TEST-UNIT]` Require column-based rendered document lookups**
+    *   `[✅]` 30.a. `[DEPS]` Stage document listing still relies on JSON path checks for `document_key` and job metadata.
+    *   `[✅]` 30.b. `[TEST-UNIT]` In `supabase/functions/dialectic-service/listStageDocuments.test.ts`, add expectations that rendered document rows are filtered by `resource_type = 'rendered_document'`, match the requested session/stage/iteration, and correlate to the originating contribution via `source_contribution_id`.
+    *   `[✅]` 30.c. `[TEST-UNIT]` Record the RED failure before touching the implementation.
+*   `[✅]` 31. **`[BE]` Query rendered documents via the new columns**
+    *   `[✅]` 31.a. `[BE]` Update `supabase/functions/dialectic-service/listStageDocuments.ts` to:
+        *   `[✅]` 31.a.i. Filter project resources using `resource_type`, `session_id`, `stage_slug`, and `iteration_number`.
+        *   `[✅]` 31.a.ii. Use `source_contribution_id` (or equivalent) to correlate rendered documents with their generating jobs instead of parsing the JSON payload.
+    *   `[✅]` 31.b. `[TEST-UNIT]` Re-run the list-stage-documents tests and confirm the expectations now pass.
+*   `[✅]` 32. **`[TEST-UNIT]` Prove submit-stage-response validation uses the column contract**
+    *   `[✅]` 32.a. `[TEST-UNIT]` Extend or create coverage in `supabase/functions/dialectic-service/submitStageResponses.test.ts` that:
+        *   `[✅]` 32.a.i. Seeds required document rules and mocks project resources with the new metadata fields.
+        *   `[✅ ]` 32.a.ii. Asserts the validation path looks up required documents by `resource_type`/`document_key`/`session_id`/`stage_slug` columns, not the JSON descriptor.
+        *   `[✅]` 32.a.iii. Proves the existing implementation still passes because of the legacy JSON checks, resulting in a RED state.
+*   `[✅]` 33. **`[BE]` Update `submitStageResponses.ts` to validate via columns**
+    *   `[✅]` 33.a. `[BE]` Replace the JSON-string comparisons in `supabase/functions/dialectic-service/submitStageResponses.ts` with column-based predicates that mirror the new resource contract.
+    *   `[✅]` 33.b. `[BE]` Ensure the validation logic handles both rendered documents and planner artifacts consistently with the metadata we now persist.
+    *   `[✅]` 33.c. `[TEST-UNIT]` Re-run the submit-stage-responses suite and verify the new assertions succeed.
+*   `[✅]` 72. **`[TYPES]` Update doc-centric edit contracts in `packages/types/src/dialectic.types.ts`**  
+    *   `[✅]` 72.a. `[READ]` Review the existing `DialecticStoreApi`, `DialecticStoreFunctions`, `SaveContributionEditPayload`, and `ApiResponse<DialecticContribution>` references to identify every consumer that assumes a contribution-based response.  
+    *   `[✅]` 72.b. `[TYPES]` Introduce `EditedDocumentResource` and `SaveContributionEditSuccessResponse` interfaces that mirror the `dialectic_project_resources` row shape (id, resource_type, session_id, stage_slug, iteration_number, document_key, storage fields, mime, size, timestamps, `source_contribution_id`). Extend `SaveContributionEditPayload` with an explicit `documentKey` (and optional `resourceType`) so edits no longer infer from `contribution_type`. Update `DialecticStoreApi.saveContributionEdit`, `DialecticStoreFunctions.saveContributionEdit`, and any related union types to return `ApiResponse<SaveContributionEditSuccessResponse>`. **CRITICAL: Add a new field `stageDocumentResources: Record<string, EditedDocumentResource>` to the `DialecticStateValues` interface. This normalized map stores complete `EditedDocumentResource` metadata keyed by composite key (`${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`) and is required by Step 77.b so the store can persist and expose resource metadata (including `source_contribution_id`, `updated_at`, and all other fields) for UI display purposes (Steps 84-85). This field must be initialized as an empty object `{}` in the initial state.**  
+    *   `[✅]` 72.c. `[LINT]` Run `pnpm lint packages/types/src/dialectic.types.ts` (or scoped lint) to ensure no unused imports or formatting regressions remain after the type additions.
+*   `[✅]` 73. **`[TEST-UNIT]` `packages/api/src/dialectic.api.project.test.ts` — RED test for resource response**  
+    *   `[✅]` 73.a. `[READ]` Open the API project tests and note every assertion that currently inspects `response.data.id`, `contribution_type`, or other `DialecticContribution` fields from `saveContributionEdit`.  
+    *   `[✅]` 73.b. `[TEST-UNIT]` Update the save-contribution-edit scenario to mock the service returning an `EditedDocumentResource` (with `resource_type: 'rendered_document'`, `document_key`, `source_contribution_id`). Assert the API layer now exposes `response.data.resourceId` (or whichever field is defined in Step 72) and never forwards a `DialecticContribution`. The test should fail until the client implementation changes.  
+    *   `[✅]` 73.c. `[LINT]` Lint the test file to keep snapshots and imports aligned with the new assertions.
+*   `[✅]` 74. **`[API]` `packages/api/src/dialectic.api.ts` — GREEN: return document resources**  
+    *   `[✅]` 74.a. `[READ]` Re-read the `saveContributionEdit` method, noting the existing response typing and any downstream logging that references `response.data?.id`.  
+    *   `[✅]` 74.b. `[BE]` Update the API client call to expect `SaveContributionEditSuccessResponse`, rename log fields to reference resource ids, and ensure the method’s return type matches the updated shared types.  
+    *   `[✅]` 74.c. `[TEST-UNIT]` Re-run the Step 73 test (and the existing API suite) to confirm it now passes, proving the client returns the new shape.  
+    *   `[✅]` 74.d. `[LINT]` Lint `packages/api/src/dialectic.api.ts` after implementation.
+*   `[✅]` 75. **`[MOCK]` `packages/api/src/mocks/dialectic.api.mock.ts` — align mocked responses**  
+    *   `[✅]` 75.a. `[READ]` Examine the mock factory to see how `vi.fn` instances currently resolve `ApiResponse<DialecticContribution>` for `saveContributionEdit`.  
+    *   `[✅]` 75.b. `[MOCK]` Update the mock typings and default return objects to the new `SaveContributionEditSuccessResponse`, ensuring all helper builders construct realistic `EditedDocumentResource` payloads (resource id, document key, storage path, etc.).  
+    *   `[✅]` 75.c. `[LINT]` Lint the mock file so formatting and import ordering remain consistent.
+*   `[✅]` 76. **`[TEST-UNIT]` `packages/store/src/dialecticStore.contribution.test.ts` — RED for doc-centric store state**  
+    *   `[✅]` 76.a. `[READ]` Identify every test that expects `response.data` to be a contribution row and asserts `dialectic_contributions` replacement.  
+    *   `[✅]` 76.b. `[TEST-UNIT]` Rewrite the canonical edit scenario to expect the store to patch `stageDocumentContent` (or the new doc-resource map) with the returned `EditedDocumentResource`, and to avoid mutating `dialectic_contributions`. Add assertions that the document cache now reflects the new markdown and that `saveContributionEdit` no longer touches contribution arrays. **CRITICAL: Add explicit assertions that the store stores the complete `EditedDocumentResource` metadata (including `source_contribution_id`, `updated_at`, `resource_type`, `document_key`, and all other fields from the `EditedDocumentResource` interface) in a normalized resource map keyed by composite key, not just the markdown content in `stageDocumentContent`.** Leave tests failing until the store implementation is updated.  
+    *   `[✅]` 76.c. `[LINT]` Lint the test file once the RED assertions are in place.
+*   `[✅]` 77. **`[STORE]` `packages/store/src/dialecticStore.ts` — GREEN: pipe document resources into UI state**  
+    *   `[✅]` 77.a. `[READ]` Trace the current edit flow, especially how `set` mutates `dialectic_contributions` and which parts of state power `StageRunChecklist`, `GeneratedContributionCard`, and `SessionContributionsDisplayCard`.  
+    *   `[✅]` 77.b. `[STORE]` Refactor `saveContributionEdit` to:  
         *   Write the returned resource into a normalized `stageDocumentContent` entry (keyed by `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`) so document-centric components automatically render the edited markdown.  
+        *   **CRITICAL: Store the complete `EditedDocumentResource` object (including `source_contribution_id`, `updated_at`, `resource_type`, `document_key`, `id`, `storage_path`, `mime_type`, `size_bytes`, `created_at`, and all other fields) in a new normalized state map `stageDocumentResources: Record<string, EditedDocumentResource>` keyed by the same composite key format (`${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`). This separate resource metadata map is required so UI components can access `source_contribution_id` and `updated_at` for display purposes (as required by Steps 84-85).**  
         *   Leave `dialectic_contributions` untouched except for toggling `isLatestEdit` on the original contribution via the backend response flags.  
         *   Expose any new helpers/selectors (e.g., `updateStageDocumentResource`) via `set`.  
-    *   `[ ]` 77.c. `[TEST-UNIT]` Re-run the failing tests from Step 76 plus any impacted integration suites to confirm the store now manages doc-centric state.  
-    *   `[ ]` 77.d. `[LINT]` Lint `packages/store/src/dialecticStore.ts`.
-
-*   `[ ]` 78. **`[TEST-UNIT]` `packages/store/src/dialecticStore.selectors.test.ts` — RED for document resource selectors**  
-    *   `[ ]` 78.a. `[READ]` Note which selectors currently expose `dialectic_contributions` data to the UI (e.g., `selectContributionById`, `selectFocusedStageDocument`).  
-    *   `[ ]` 78.b. `[TEST-UNIT]` Add tests that assert new selectors (or updated ones) surface the edited document resource (content, timestamps, resource id) and that legacy contribution selectors no longer drive UI renders for the editable documents. Leave these tests failing until the selector implementation is updated.  
-    *   `[ ]` 78.c. `[LINT]` Lint the selectors test file.
-
-*   `[ ]` 79. **`[STORE]` `packages/store/src/dialecticStore.selectors.ts` — GREEN for resource-first selectors**  
-    *   `[ ]` 79.a. `[READ]` Map each consumer component to the selectors it uses so we know which ones must now read from `stageDocumentContent`/resource maps.  
-    *   `[ ]` 79.b. `[STORE]` Update or add selectors (e.g., `selectStageDocumentResource`, `selectEditedDocumentByKey`) to pull from the normalized resource state introduced in Step 77, guaranteeing the UI never relies on stale `dialectic_contributions`.  
-    *   `[ ]` 79.c. `[TEST-UNIT]` Re-run the Step 78 tests to prove the selectors return the new data.  
-    *   `[ ]` 79.d. `[LINT]` Lint the selectors implementation.
-
-*   `[ ]` 80. **`[TEST-UNIT]` `packages/store/src/dialecticStore.integration.test.ts` — RED for end-to-end edit flow**  
-    *   `[ ]` 80.a. `[READ]` Identify the scenarios that currently mock a contribution update when a user saves edits.  
-    *   `[ ]` 80.b. `[TEST-UNIT]` Extend the integration test to dispatch `saveContributionEdit`, assert that `stageDocumentContent` (and any derived selectors) reflect the edited markdown while `dialectic_contributions` remains untouched, and verify that downstream UI selectors see the new resource. Leave failing until the store + selector work is complete.  
-    *   `[ ]` 80.c. `[LINT]` Lint the integration test file.
-
-*   `[ ]` 81. **`[MOCK]` `apps/web/src/mocks/dialecticStore.mock.ts` — expose doc-centric edit helpers**  
-    *   `[ ]` 81.a. `[READ]` Review the mock store shape to see how `stageDocumentContent`, `saveContributionEdit`, and related helpers are currently stubbed.  
-    *   `[ ]` 81.b. `[MOCK]` Update the mock state to include the new normalized resource entries plus helper functions (`setStageDocumentResource`, etc.) so component tests can simulate edited documents without real contributions.  
-    *   `[ ]` 81.c. `[LINT]` Lint the mock file.
-
-*   `[ ]` 82. **`[TEST-UNIT]` `apps/web/src/components/dialectic/GeneratedContributionCard.test.tsx` — RED for UI expectations**  
-    *   `[ ]` 82.a. `[READ]` Identify assertions that presently look for `dialectic_contributions` changes after an edit or rely on `saveContributionEdit` returning a contribution id.  
-    *   `[ ]` 82.b. `[TEST-UNIT]` Update the tests to mock store selectors returning the new resource data, assert that the component renders `stageDocumentContent` entries, and verify that saving an edit triggers the correct store action plus optimistic UI updates. Leave tests failing until the component is refactored.  
-    *   `[ ]` 82.c. `[LINT]` Lint the component test file.
-
-*   `[ ]` 83. **`[UI]` `apps/web/src/components/dialectic/GeneratedContributionCard.tsx` — GREEN for resource-driven rendering**  
-    *   `[ ]` 83.a. `[READ]` Trace how the component currently derives `documentContent`, `isSaving`, and success/error toasts.  
-    *   `[ ]` 83.b. `[UI]` Replace contribution-based selectors with the new resource selectors from Step 79 so the card renders `stageDocumentContent[documentKey]`, updates immediately after an edit, and surfaces metadata from `EditedDocumentResource` (e.g., last updated timestamp). Ensure `saveContributionEdit` is invoked with the new `documentKey` payload.  
-    *   `[ ]` 83.c. `[TEST-UNIT]` Re-run the Step 82 tests to confirm the refactor is green.  
-    *   `[ ]` 83.d. `[LINT]` Lint the component.
-
-*   `[ ]` 84. **`[TEST-UNIT]` `apps/web/src/components/dialectic/SessionContributionsDisplayCard.test.tsx` — RED for document list expectations**  
-    *   `[ ]` 84.a. `[READ]` Determine how the card presently inspects `dialectic_contributions` to render document summaries and statuses.  
-    *   `[ ]` 84.b. `[TEST-UNIT]` Update the tests to mock the store returning document resources per model/document key, assert that the card now renders from `stageDocumentContent`, and proves that edited documents reflect the resource metadata (e.g., `source_contribution_id`, last modified). Leave failing until the component changes.  
-    *   `[ ]` 84.c. `[LINT]` Lint the test file.
-
-*   `[ ]` 85. **`[UI]` `apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx` — GREEN for resource list rendering**  
-    *   `[ ]` 85.a. `[READ]` Map the props/state used to build the per-model document grids, noting where contribution data is threaded in.  
-    *   `[ ]` 85.b. `[UI]` Rebuild the data derivation so the card consumes the new selectors from Step 79, ensures optimistic updates when `saveContributionEdit` resolves, and surfaces document-level metadata (e.g., version status) from the resource row.  
-    *   `[ ]` 85.c. `[TEST-UNIT]` Re-run the Step 84 tests to confirm the component renders the new resource data.  
-    *   `[ ]` 85.d. `[LINT]` Lint the component file.
-
-*   `[ ]` 86. **`[COMMIT]` fix(FE): Port saveContributionEdit to document resources end-to-end**  
-    *   `[ ]` 86.a. Draft a commit that captures all type, API, store, and UI changes plus their tests, referencing the checklist steps above.  
-    *   `[ ]` 86.b. Summarize the new doc-centric edit flow in the commit body (types → API → store → selectors → UI) before moving on to subsequent work.
-
-*   `[ ]` 87. **`[TYPES]` Align front-end \`SubmitStageDocumentFeedbackPayload\` with backend source-contribution contract**  
-    *   `[ ]` 87.a. **[READ]** Open `packages/types/src/dialectic.types.ts` and locate both:  
+    *   `[✅]` 77.c. `[TEST-UNIT]` Re-run the failing tests from Step 76 plus any impacted integration suites to confirm the store now manages doc-centric state and stores complete resource metadata.  
+    *   `[✅]` 77.d. `[LINT]` Lint `packages/store/src/dialecticStore.ts`.
+*   `[✅]` 78. **`[TEST-UNIT]` `packages/store/src/dialecticStore.selectors.test.ts` — RED for document resource selectors**  
+    *   `[✅]` 78.a. `[READ]` Note which selectors currently expose `dialectic_contributions` data to the UI (e.g., `selectContributionById`, `selectFocusedStageDocument`).  
+    *   `[✅]` 78.b. `[TEST-UNIT]` Add tests that assert new selectors (or updated ones) surface the edited document resource (content, timestamps, resource id) and that legacy contribution selectors no longer drive UI renders for the editable documents. **CRITICAL: Add explicit test assertions that new selectors return the complete `EditedDocumentResource` metadata (including `source_contribution_id`, `updated_at`, `resource_type`, `document_key`, and all other fields) from the `stageDocumentResources` map, not just the markdown content from `stageDocumentContent`. These tests must prove that selectors can access `source_contribution_id` and `updated_at` as required by Steps 84-85.** Leave these tests failing until the selector implementation is updated.  
+    *   `[✅]` 78.c. `[LINT]` Lint the selectors test file.
+*   `[✅]` 79. **`[STORE]` `packages/store/src/dialecticStore.selectors.ts` — GREEN for resource-first selectors**  
+    *   `[✅]` 79.a. `[READ]` Map each consumer component to the selectors it uses so we know which ones must now read from `stageDocumentContent`/resource maps.  
+    *   `[✅]` 79.b. `[STORE]` Update or add selectors (e.g., `selectStageDocumentResource`, `selectEditedDocumentByKey`) to pull from the normalized resource state introduced in Step 77, guaranteeing the UI never relies on stale `dialectic_contributions`. **CRITICAL: Add a new selector `selectStageDocumentResourceMetadata` (or extend existing selectors) that returns the complete `EditedDocumentResource` object from the `stageDocumentResources` map keyed by composite key. This selector must return the full resource metadata including `source_contribution_id`, `updated_at`, `resource_type`, `document_key`, `id`, `storage_path`, `mime_type`, `size_bytes`, `created_at`, and all other `EditedDocumentResource` fields. This is required so UI components (Steps 84-85) can display resource metadata like `source_contribution_id` and last modified timestamps.**  
+    *   `[ ]` 79.c. `[TEST-UNIT]` Re-run the Step 78 tests to prove the selectors return the new data including complete resource metadata.  
+    *   `[✅]` 79.d. `[LINT]` Lint the selectors implementation.
+*   `[✅]` 80. **`[TEST-UNIT]` `packages/store/src/dialecticStore.integration.test.ts` — RED for end-to-end edit flow**  
+    *   `[✅]` 80.a. `[READ]` Identify the scenarios that currently mock a contribution update when a user saves edits.  
+    *   `[✅]` 80.b. `[TEST-UNIT]` Extend the integration test to dispatch `saveContributionEdit`, assert that `stageDocumentContent` (and any derived selectors) reflect the edited markdown while `dialectic_contributions` remains untouched, and verify that downstream UI selectors see the new resource. Leave failing until the store + selector work is complete.  
+    *   `[✅]` 80.c. `[LINT]` Lint the integration test file.
+*   `[✅]` 81. **`[MOCK]` `apps/web/src/mocks/dialecticStore.mock.ts` — expose doc-centric edit helpers**  
+    *   `[✅]` 81.a. `[READ]` Review the mock store shape to see how `stageDocumentContent`, `saveContributionEdit`, and related helpers are currently stubbed.  
+    *   `[✅]` 81.b. `[MOCK]` Update the mock state to include the new normalized resource entries plus helper functions (`setStageDocumentResource`, etc.) so component tests can simulate edited documents without real contributions.  
+    *   `[✅]` 81.c. `[LINT]` Lint the mock file.
+*   `[✅]` 82. **`[TEST-UNIT]` `apps/web/src/components/dialectic/GeneratedContributionCard.test.tsx` — RED for UI expectations**  
+    *   `[✅]` 82.a. `[READ]` Identify assertions that presently look for `dialectic_contributions` changes after an edit or rely on `saveContributionEdit` returning a contribution id.  
+    *   `[✅]` 82.b. `[TEST-UNIT]` Update the tests to mock store selectors returning the new resource data, assert that the component renders `stageDocumentContent` entries, and verify that saving an edit triggers the correct store action plus optimistic UI updates. Leave tests failing until the component is refactored.  
+    *   `[✅]` 82.c. `[LINT]` Lint the component test file.
+*   `[✅]` 83. **`[UI]` `apps/web/src/components/dialectic/GeneratedContributionCard.tsx` — GREEN for resource-driven rendering**  
+    *   `[✅]` 83.a. `[READ]` Trace how the component currently derives `documentContent`, `isSaving`, and success/error toasts.  
+    *   `[✅]` 83.b. `[UI]` Replace contribution-based selectors with the new resource selectors from Step 79 so the card renders `stageDocumentContent[documentKey]`, updates immediately after an edit, and surfaces metadata from `EditedDocumentResource` (e.g., last updated timestamp). Ensure `saveContributionEdit` is invoked with the new `documentKey` payload.  
+    *   `[✅]` 83.c. `[TEST-UNIT]` Re-run the Step 82 tests to confirm the refactor is green.  
+    *   `[✅]` 83.d. `[LINT]` Lint the component.
+*   `[✅]` 84. **`[TEST-UNIT]` `apps/web/src/components/dialectic/SessionContributionsDisplayCard.test.tsx` — RED for document list expectations**  
+    *   `[✅]` 84.a. `[READ]` Determine how the card presently inspects `dialectic_contributions` to render document summaries and statuses.  
+    *   `[✅]` 84.b. `[TEST-UNIT]` Update the tests to mock the store returning document resources per model/document key, assert that the card now renders from `stageDocumentContent`, and proves that edited documents reflect the resource metadata (e.g., `source_contribution_id`, last modified). Leave failing until the component changes.  
+    *   `[✅]` 84.c. `[LINT]` Lint the test file.
+*   `[✅]` 85. **`[UI]` `apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx` — GREEN for resource list rendering**  
+    *   `[✅]` 85.a. `[READ]` Map the props/state used to build the per-model document grids, noting where contribution data is threaded in.  
+    *   `[✅]` 85.b. `[UI]` Rebuild the data derivation so the card consumes the new selectors from Step 79, ensures optimistic updates when `saveContributionEdit` resolves, and surfaces document-level metadata (e.g., version status) from the resource row.  
+    *   `[✅]` 85.c. `[TEST-UNIT]` Re-run the Step 84 tests to confirm the component renders the new resource data.  
+    *   `[✅]` 85.d. `[LINT]` Lint the component file.
+*   `[✅]` 86. **`[COMMIT]` fix(FE): Port saveContributionEdit to document resources end-to-end**  
+    *   `[✅]` 86.a. Draft a commit that captures all type, API, store, and UI changes plus their tests, referencing the checklist steps above.  
+    *   `[✅]` 86.b. Summarize the new doc-centric edit flow in the commit body (types → API → store → selectors → UI) before moving on to subsequent work.
+*   `[✅]` 87. **`[TYPES]` Align front-end \`SubmitStageDocumentFeedbackPayload\` with backend source-contribution contract**  
+    *   `[✅]` 87.a. **[READ]** Open `packages/types/src/dialectic.types.ts` and locate both:  
         * The shared `SubmitStageDocumentFeedbackPayload` interface.  
         * The `DialecticStoreApi` / `DialecticStoreFunctions` signatures that reference it.  
-    *   `[ ]` 87.b. **[RED – TYPES]** Note that the front-end payload currently exposes only `{ sessionId, stageSlug, iterationNumber, modelId, documentKey, feedback }` while the backend contract uses `feedbackContent` and expects a linkage field for the targeted contribution. Document this mismatch in a brief code comment above the interface so future refactors can standardize naming, but do not attempt to fix the naming in this step.  
-    *   `[ ]` 87.c. **[GREEN – TYPES]** Extend the front-end `SubmitStageDocumentFeedbackPayload` interface with an optional `sourceContributionId?: string | null;` property so clients can carry the ID of the contribution (or `null` when the feedback is not tied to a contribution). Ensure the new field flows through the `DialecticStoreApi.submitStageDocumentFeedback` and `DialecticStoreFunctions.submitStageDocumentFeedback` signatures without introducing defaults.  
-    *   `[ ]` 87.d. **[LINT]** Run the types package linter scoped to `packages/types/src/dialectic.types.ts` and resolve any formatting or unused-import issues introduced by the new field.  
-
-*   `[ ]` 88. **`[TEST-UNIT][API]` Prove the API client forwards \`sourceContributionId\` unchanged**  
-    *   `[ ]` 88.a. **[READ]** In `packages/api/src/dialectic.api.feedback.test.ts`, re-read the `describe('submitStageDocumentFeedback', ...)` block and note how the tests currently build a `SubmitStageDocumentFeedbackPayload` with `feedback` but no contribution linkage, asserting that `mockApiClient.post` is called with `{ action: 'submitStageDocumentFeedback', payload }`.  
-    *   `[ ]` 88.b. **[RED]** Update the existing “successful submission” and “API call fails” tests to construct payloads that include the new optional `sourceContributionId` field in two scenarios:  
+    *   `[✅]` 87.b. **[RED – TYPES]** Note that the front-end payload currently exposes only `{ sessionId, stageSlug, iterationNumber, modelId, documentKey, feedback }` while the backend contract uses `feedbackContent` and expects a linkage field for the targeted contribution. Document this mismatch in a brief code comment above the interface so future refactors can standardize naming, but do not attempt to fix the naming in this step.  
+    *   `[✅]` 87.c. **[GREEN – TYPES]** Extend the front-end `SubmitStageDocumentFeedbackPayload` interface with an optional `sourceContributionId?: string | null;` property so clients can carry the ID of the contribution (or `null` when the feedback is not tied to a contribution). Ensure the new field flows through the `DialecticStoreApi.submitStageDocumentFeedback` and `DialecticStoreFunctions.submitStageDocumentFeedback` signatures without introducing defaults.  
+    *   `[✅]` 87.d. **[LINT]** Run the types package linter scoped to `packages/types/src/dialectic.types.ts` and resolve any formatting or unused-import issues introduced by the new field.  
+*   `[✅]` 88. **`[TEST-UNIT][API]` Prove the API client forwards \`sourceContributionId\` unchanged**  
+    *   `[✅]` 88.a. **[READ]** In `packages/api/src/dialectic.api.feedback.test.ts`, re-read the `describe('submitStageDocumentFeedback', ...)` block and note how the tests currently build a `SubmitStageDocumentFeedbackPayload` with `feedback` but no contribution linkage, asserting that `mockApiClient.post` is called with `{ action: 'submitStageDocumentFeedback', payload }`.  
+    *   `[✅]` 88.b. **[RED]** Update the existing “successful submission” and “API call fails” tests to construct payloads that include the new optional `sourceContributionId` field in two scenarios:  
         * A canonical case where `sourceContributionId: 'contrib-feedback-source'` is provided.  
         * A case where the field is omitted or explicitly `null`, proving the type and client tolerate the absence of a linkage.  
       Extend the expectations so each test asserts that `mockApiClient.post` was called with the payload object containing the exact `sourceContributionId` value provided in the test. Until the types are aligned and the API client continues to spread `payload` unchanged, these expectations should fail to compile or execute, proving the RED state.  
-    *   `[ ]` 88.c. **[GREEN]** In `packages/api/src/dialectic.api.ts`, confirm the `submitStageDocumentFeedback` method simply forwards the full payload object, including `sourceContributionId`, into the `DialecticServiceActionPayload` without filtering or remapping fields. If any intermediate destructuring omits the new property, update it to spread `payload` so the new field is preserved.  
-    *   `[ ]` 88.d. **[LINT]** Run the API package tests and linter scoped to `packages/api/src/dialectic.api.feedback.test.ts` and `packages/api/src/dialectic.api.ts`, resolving any errors until the new expectations pass and the files are lint-clean.  
-
-*   `[ ]` 89. **`[MOCK][API]` Ensure the Dialectic API mock accepts the enriched payload**  
-    *   `[ ]` 89.a. **[READ]** Open `packages/api/src/mocks/dialectic.api.mock.ts` and review the `MockDialecticApiClient` type plus the `createMockDialecticClient` factory, focusing on the `submitStageDocumentFeedback` mock signature.  
-    *   `[ ]` 89.b. **[RED]** Confirm that the mock’s call sites in tests (including feedback-related suites and store tests) now construct `SubmitStageDocumentFeedbackPayload` objects using the updated types from Step 87. If any call sites omit required fields or fail to compile, document them as RED and do not patch behavior here.  
-    *   `[ ]` 89.c. **[GREEN]** Update the mock’s type declarations (return type of `submitStageDocumentFeedback`) to rely on the shared `SubmitStageDocumentFeedbackPayload` and ensure the mock function signature accepts the new `sourceContributionId` field without narrowing or stripping it. No behavioral change is required beyond type alignment.  
-    *   `[ ]` 89.d. **[LINT]** Run the linter on `packages/api/src/mocks/dialectic.api.mock.ts` and fix any style or import issues introduced by the type updates.  
-
-*   `[ ]` 90. **`[TEST-UNIT][STORE]` Require the store to forward \`sourceContributionId\` when submitting a single document’s feedback**  
-    *   `[ ]` 90.a. **[READ]** Open `packages/store/src/dialecticStore.documents.test.ts` and focus on the `describe('submitStageDocumentFeedback', ...)` suite, noting how it currently:  
+    *   `[✅]` 88.c. **[GREEN]** In `packages/api/src/dialectic.api.ts`, confirm the `submitStageDocumentFeedback` method simply forwards the full payload object, including `sourceContributionId`, into the `DialecticServiceActionPayload` without filtering or remapping fields. If any intermediate destructuring omits the new property, update it to spread `payload` so the new field is preserved.  
+    *   `[✅]` 88.d. **[LINT]** Run the API package tests and linter scoped to `packages/api/src/dialectic.api.feedback.test.ts` and `packages/api/src/dialectic.api.ts`, resolving any errors until the new expectations pass and the files are lint-clean.  
+*   `[✅]` 89. **`[MOCK][API]` Ensure the Dialectic API mock accepts the enriched payload**  
+    *   `[✅]` 89.a. **[READ]** Open `packages/api/src/mocks/dialectic.api.mock.ts` and review the `MockDialecticApiClient` type plus the `createMockDialecticClient` factory, focusing on the `submitStageDocumentFeedback` mock signature.  
+    *   `[✅]` 89.b. **[RED]** Confirm that the mock’s call sites in tests (including feedback-related suites and store tests) now construct `SubmitStageDocumentFeedbackPayload` objects using the updated types from Step 87. If any call sites omit required fields or fail to compile, document them as RED and do not patch behavior here.  
+    *   `[✅]` 89.c. **[GREEN]** Update the mock’s type declarations (return type of `submitStageDocumentFeedback`) to rely on the shared `SubmitStageDocumentFeedbackPayload` and ensure the mock function signature accepts the new `sourceContributionId` field without narrowing or stripping it. No behavioral change is required beyond type alignment.  
+    *   `[✅]` 89.d. **[LINT]** Run the linter on `packages/api/src/mocks/dialectic.api.mock.ts` and fix any style or import issues introduced by the type updates.  
+*   `[✅]` 90. **`[TEST-UNIT][STORE]` Require the store to forward \`sourceContributionId\` when submitting a single document’s feedback**  
+    *   `[✅]` 90.a. **[READ]** Open `packages/store/src/dialecticStore.documents.test.ts` and focus on the `describe('submitStageDocumentFeedback', ...)` suite, noting how it currently:  
         * Constructs `SubmitStageDocumentFeedbackPayload` objects containing only the composite key and `feedback`.  
         * Asserts that `mockDialecticClient.submitStageDocumentFeedback` is called with that payload, and that store flags are toggled appropriately.  
-    *   `[ ]` 90.b. **[RED]** Extend the canonical “API called with correct payload” test to seed `stageDocumentContent` (or the appropriate normalized resource map) with a document entry whose underlying resource metadata includes a `source_contribution_id` such as `'contrib-doc-123'`. Then assert that:  
+    *   `[✅]` 90.b. **[RED]** Extend the canonical “API called with correct payload” test to seed `stageDocumentContent` (or the appropriate normalized resource map) with a document entry whose underlying resource metadata includes a `source_contribution_id` such as `'contrib-doc-123'`. Then assert that:  
         * The store’s `submitStageDocumentFeedback` action still receives a payload with `{ sessionId, stageSlug, iterationNumber, modelId, documentKey, feedback }` from the UI.  
         * The call to `mockDialecticClient.submitStageDocumentFeedback` now includes `sourceContributionId: 'contrib-doc-123'`, proving enrichment happens inside the store.  
       Add a second test that seeds a document with no linkage and asserts the API call carries `sourceContributionId: null` (or omits the field according to the chosen contract). Both tests must fail until the store logic is updated in Step 91.  
-    *   `[ ]` 90.c. **[GREEN]** Do not modify the store implementation in this step; leave the failing tests in place to drive the refactor in the next step.  
-    *   `[ ]` 90.d. **[LINT]** Run the linter for `packages/store/src/dialecticStore.documents.test.ts` and resolve any new warnings (unused imports, formatting) introduced by the RED assertions.  
-
-*   `[ ]` 91. **`[STORE]` Enrich \`submitStageDocumentFeedbackLogic\` with \`sourceContributionId\` from document resources**  
-    *   `[ ]` 91.a. **[READ]** In `packages/store/src/dialecticStore.documents.ts`, re-read `submitStageDocumentFeedbackLogic` and the surrounding helpers that manage `stageDocumentContent` and `StageDocumentCompositeKey` derivation. Identify where the logic currently:  
+    *   `[✅]` 90.c. **[GREEN]** Do not modify the store implementation in this step; leave the failing tests in place to drive the refactor in the next step.  
+    *   `[✅]` 90.d. **[LINT]** Run the linter for `packages/store/src/dialecticStore.documents.test.ts` and resolve any new warnings (unused imports, formatting) introduced by the RED assertions.  
+*   `[✅]` 91. **`[STORE]` Enrich \`submitStageDocumentFeedbackLogic\` with \`sourceContributionId\` from document resources**  
+    *   `[✅]` 91.a. **[READ]** In `packages/store/src/dialecticStore.documents.ts`, re-read `submitStageDocumentFeedbackLogic` and the surrounding helpers that manage `stageDocumentContent` and `StageDocumentCompositeKey` derivation. Identify where the logic currently:  
         * Accepts a `SubmitStageDocumentFeedbackPayload` from the UI.  
         * Calls `api.dialectic().submitStageDocumentFeedback(payload)` with no enrichment.  
-    *   `[ ]` 91.b. **[RED]** Confirm the tests from Step 90 are still failing because `sourceContributionId` is undefined in the API call, even when the store has resource metadata for the targeted document. Do not proceed if these tests are green.  
-    *   `[ ]` 91.c. **[GREEN]** Refactor `submitStageDocumentFeedbackLogic` so that before calling the API client it:  
+    *   `[✅]` 91.b. **[RED]** Confirm the tests from Step 90 are still failing because `sourceContributionId` is undefined in the API call, even when the store has resource metadata for the targeted document. Do not proceed if these tests are green.  
+    *   `[✅ ]` 91.c. **[GREEN]** Refactor `submitStageDocumentFeedbackLogic` so that before calling the API client it:  
         * Locates the normalized document resource associated with the incoming composite key (using existing helpers such as `getStageDocumentKey` and the `stageDocumentContent` map or other resource maps that include `source_contribution_id`).  
         * Derives a local `const sourceContributionId = resolvedResource?.source_contribution_id ?? null;`.  
         * Constructs a new payload object that spreads the original UI payload and adds the derived `sourceContributionId` field.  
         * Passes this enriched payload into `api.dialectic().submitStageDocumentFeedback`, leaving all other behavior (flags, errors) unchanged.  
       Ensure no defaults are applied beyond the explicit `?? null` and that enrichment is purely additive.  
-    *   `[ ]` 91.d. **[LINT]** Run the linter for `packages/store/src/dialecticStore.documents.ts` and fix any issues introduced by the new logic. Re-run the Step 90 tests to confirm they now pass.  
-
-*   `[ ]` 92. **`[TEST-UNIT][STORE]` Require \`submitStageResponses\` orchestration to propagate \`sourceContributionId\` for each dirty document**  
-    *   `[ ]` 92.a. **[READ]** Open `packages/store/src/dialecticStore.contribution.test.ts` and locate the test that proves `submitStageResponses` flushes dirty document feedback drafts by calling `api.dialectic().submitStageDocumentFeedback` before advancing the stage. Note the existing `expectedPayload1`/`expectedPayload2` objects, which currently lack `sourceContributionId`.  
-    *   `[ ]` 92.b. **[RED]** Update that test to:  
+    *   `[✅]` 91.d. **[LINT]** Run the linter for `packages/store/src/dialecticStore.documents.ts` and fix any issues introduced by the new logic. Re-run the Step 90 tests to confirm they now pass.  
+*   `[✅]` 92. **`[TEST-UNIT][STORE]` Require \`submitStageResponses\` orchestration to propagate \`sourceContributionId\` for each dirty document**  
+    *   `[✅]` 92.a. **[READ]** Open `packages/store/src/dialecticStore.contribution.test.ts` and locate the test that proves `submitStageResponses` flushes dirty document feedback drafts by calling `api.dialectic().submitStageDocumentFeedback` before advancing the stage. Note the existing `expectedPayload1`/`expectedPayload2` objects, which currently lack `sourceContributionId`.  
+    *   `[✅]` 92.b. **[RED]** Update that test to:  
         * Seed `stageDocumentContent` (and any related metadata maps) so the two dirty documents under test each have a known `source_contribution_id` (e.g., `'contrib-doc-1'` and `'contrib-doc-3'`).  
         * Extend `expectedPayload1` and `expectedPayload2` to include `sourceContributionId` equal to these IDs.  
         * Assert that `api.dialectic().submitStageDocumentFeedback` is called with these enriched payloads for each dirty document.  
       The test must now fail until the orchestration uses the updated logic from Step 91 to enrich payloads when called via `submitStageResponses`.  
-    *   `[ ]` 92.c. **[GREEN]** If the orchestration already delegates to `submitStageDocumentFeedbackLogic` (and thus picks up the enrichment automatically), adjust only the test setup so it seeds the correct resource metadata and relies on the existing logic; no implementation changes should be required. If the orchestration bypasses the logic, refactor it to call the same helper used by the direct store action so enrichment is centralized.  
-    *   `[ ]` 92.d. **[LINT]** Run the linter for `packages/store/src/dialecticStore.contribution.test.ts` and fix any new warnings. Confirm the updated test suite passes once enrichment is wired correctly.  
-
-*   `[ ]` 93. **`[MOCK][UI]` Align the web dialectic store mock with the enriched feedback payload**  
-    *   `[ ]` 93.a. **[READ]** Open `apps/web/src/mocks/dialecticStore.mock.ts` and identify the `submitStageDocumentFeedback` mock and any default payload shapes it assumes. Note how the mock is used in `GeneratedContributionCard.test.tsx` and other UI tests.  
-    *   `[ ]` 93.b. **[RED]** After updating the shared types in Step 87, verify the mock’s signature compiles against the new `SubmitStageDocumentFeedbackPayload` interface. If any tests or mock implementations still assume the old shape (missing `sourceContributionId`), mark them as RED.  
-    *   `[ ]` 93.c. **[GREEN]** Update the mock so its function signature accepts the new optional `sourceContributionId` property without forcing callers to pass it explicitly. Where tests assert on the payload, keep the expectations focused on the composite key and `feedback` fields; do not require `sourceContributionId` at the UI layer, as enrichment is now the store’s responsibility.  
-    *   `[ ]` 93.d. **[LINT]** Lint `apps/web/src/mocks/dialecticStore.mock.ts` and resolve any issues introduced by the signature changes.  
-
-*   `[ ]` 94. **`[TEST-UNIT][UI]` Keep `GeneratedContributionCard` feedback submits compatible with enriched payloads**  
-    *   `[ ]` 94.a. **[READ]** Open `apps/web/src/components/dialectic/GeneratedContributionCard.test.tsx` and re-read the tests that exercise `handleSaveFeedback`, noting how they currently:  
+    *   `[✅]` 92.c. **[GREEN]** If the orchestration already delegates to `submitStageDocumentFeedbackLogic` (and thus picks up the enrichment automatically), adjust only the test setup so it seeds the correct resource metadata and relies on the existing logic; no implementation changes should be required. If the orchestration bypasses the logic, refactor it to call the same helper used by the direct store action so enrichment is centralized.  
+    *   `[✅]` 92.d. **[LINT]** Run the linter for `packages/store/src/dialecticStore.contribution.test.ts` and fix any new warnings. Confirm the updated test suite passes once enrichment is wired correctly.  
+*   `[✅]` 93. **`[MOCK][UI]` Align the web dialectic store mock with the enriched feedback payload**  
+    *   `[✅]` 93.a. **[READ]** Open `apps/web/src/mocks/dialecticStore.mock.ts` and identify the `submitStageDocumentFeedback` mock and any default payload shapes it assumes. Note how the mock is used in `GeneratedContributionCard.test.tsx` and other UI tests.  
+    *   `[✅]` 93.b. **[RED]** After updating the shared types in Step 87, verify the mock’s signature compiles against the new `SubmitStageDocumentFeedbackPayload` interface. If any tests or mock implementations still assume the old shape (missing `sourceContributionId`), mark them as RED.  
+    *   `[✅]` 93.c. **[GREEN]** Update the mock so its function signature accepts the new optional `sourceContributionId` property without forcing callers to pass it explicitly. Where tests assert on the payload, keep the expectations focused on the composite key and `feedback` fields; do not require `sourceContributionId` at the UI layer, as enrichment is now the store’s responsibility.  
+    *   `[✅]` 93.d. **[LINT]** Lint `apps/web/src/mocks/dialecticStore.mock.ts` and resolve any issues introduced by the signature changes.  
+*   `[✅]` 94. **`[TEST-UNIT][UI]` Keep `GeneratedContributionCard` feedback submits compatible with enriched payloads**  
+    *   `[✅]` 94.a. **[READ]** Open `apps/web/src/components/dialectic/GeneratedContributionCard.test.tsx` and re-read the tests that exercise `handleSaveFeedback`, noting how they currently:  
         * Mock the dialectic store, including `submitStageDocumentFeedback`, via `apps/web/src/mocks/dialecticStore.mock.ts`.  
         * Assert that saving feedback calls `submitStageDocumentFeedback` with a payload that matches the `StageDocumentCompositeKey` plus `feedback`.  
-    *   `[ ]` 94.b. **[RED]** Update the expectations so they explicitly allow the store to receive an enriched payload that includes `sourceContributionId` in addition to the composite key and `feedback` fields. Concretely, change assertions to use object-matchers (or equivalent) that check the five-key identity and feedback content, while not failing if `sourceContributionId` is present. The tests should now fail if the component drops or mutates the composite key fields when the underlying store type changes.  
-    *   `[ ]` 94.c. **[GREEN]** Ensure `GeneratedContributionCard` continues to call `submitStageDocumentFeedback` exactly once per successful save, passing `{ ...compositeKey, feedback: currentDraft }` so TypeScript infers a `SubmitStageDocumentFeedbackPayload` and the store can enrich with `sourceContributionId` transparently. No UI-layer logic should attempt to compute or override `sourceContributionId`.  
-    *   `[ ]` 94.d. **[LINT]** Run the linter for `apps/web/src/components/dialectic/GeneratedContributionCard.test.tsx` and fix any style or import issues introduced by the updated expectations.  
+    *   `[✅]` 94.b. **[RED]** Update the expectations so they explicitly allow the store to receive an enriched payload that includes `sourceContributionId` in addition to the composite key and `feedback` fields. Concretely, change assertions to use object-matchers (or equivalent) that check the five-key identity and feedback content, while not failing if `sourceContributionId` is present. The tests should now fail if the component drops or mutates the composite key fields when the underlying store type changes.  
+    *   `[✅]` 94.c. **[GREEN]** Ensure `GeneratedContributionCard` continues to call `submitStageDocumentFeedback` exactly once per successful save, passing `{ ...compositeKey, feedback: currentDraft }` so TypeScript infers a `SubmitStageDocumentFeedbackPayload` and the store can enrich with `sourceContributionId` transparently. No UI-layer logic should attempt to compute or override `sourceContributionId`.  
+    *   `[✅]` 94.d. **[LINT]** Run the linter for `apps/web/src/components/dialectic/GeneratedContributionCard.test.tsx` and fix any style or import issues introduced by the updated expectations.  
+*   `[✅]` 95. **`[UI]` Confirm `GeneratedContributionCard` consumes the updated store contract without leaking backend details**  
+    *   `[✅]` 95.a. **[READ]** Re-open `apps/web/src/components/dialectic/GeneratedContributionCard.tsx` and trace the props/state mapping from `useDialecticStore`, focusing on how `submitStageDocumentFeedback` is selected and how the payload for `handleSaveFeedback` is constructed.  
+    *   `[✅]` 95.b. **[RED]** Verify that the component does not introduce its own `SubmitStageDocumentFeedbackPayload` type alias or narrow the payload shape in a way that would exclude `sourceContributionId` (e.g., by manually typing the argument as a smaller object). If any such narrowing exists, document it as RED, as it would prevent the store from receiving the enriched field.  
+    *   `[✅]` 95.c. **[GREEN]** Rely on the store function’s type signature to type the payload—either by leaving the argument object inline or, if an explicit type is required, by importing and using `SubmitStageDocumentFeedbackPayload` from `@paynless/types` so the component remains compatible with the enriched contract. Ensure `handleSaveFeedback` continues to pass only the composite key and `feedback`, leaving `sourceContributionId` to be supplied by the store.  
+    *   `[✅]` 95.d. **[LINT]** Lint `apps/web/src/components/dialectic/GeneratedContributionCard.tsx` and resolve any issues introduced by type-import changes or formatting updates, keeping to the project’s no-defaults, no-casts standard.  
 
-*   `[ ]` 95. **`[UI]` Confirm `GeneratedContributionCard` consumes the updated store contract without leaking backend details**  
-    *   `[ ]` 95.a. **[READ]** Re-open `apps/web/src/components/dialectic/GeneratedContributionCard.tsx` and trace the props/state mapping from `useDialecticStore`, focusing on how `submitStageDocumentFeedback` is selected and how the payload for `handleSaveFeedback` is constructed.  
-    *   `[ ]` 95.b. **[RED]** Verify that the component does not introduce its own `SubmitStageDocumentFeedbackPayload` type alias or narrow the payload shape in a way that would exclude `sourceContributionId` (e.g., by manually typing the argument as a smaller object). If any such narrowing exists, document it as RED, as it would prevent the store from receiving the enriched field.  
-    *   `[ ]` 95.c. **[GREEN]** Rely on the store function’s type signature to type the payload—either by leaving the argument object inline or, if an explicit type is required, by importing and using `SubmitStageDocumentFeedbackPayload` from `@paynless/types` so the component remains compatible with the enriched contract. Ensure `handleSaveFeedback` continues to pass only the composite key and `feedback`, leaving `sourceContributionId` to be supplied by the store.  
-    *   `[ ]` 95.d. **[LINT]** Lint `apps/web/src/components/dialectic/GeneratedContributionCard.tsx` and resolve any issues introduced by type-import changes or formatting updates, keeping to the project’s no-defaults, no-casts standard.  
+
+* Change Submit Responses button to detect when in the last stage and instead provide Export and Iterate from Plan
+* Fix SessionInfoCard to never display Export Final

@@ -15,6 +15,7 @@ import {
   type SubmitStageResponsesPayload,
   type SubmitStageResponsesResponse,
   type SaveContributionEditPayload,
+  type SaveContributionEditSuccessResponse,
   type DialecticContribution,
   type DialecticDomain,
   type UpdateSessionModelsPayload,
@@ -46,6 +47,7 @@ import {
   type SubmitStageDocumentFeedbackPayload,
   type ListStageDocumentsPayload,
   StartSessionSuccessResponse,
+  type EditedDocumentResource,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { useWalletStore } from './walletStore';
@@ -72,6 +74,7 @@ import {
 	submitStageDocumentFeedbackLogic,
 	selectStageDocumentFeedbackLogic,
 	hydrateStageProgressLogic,
+	createVersionInfo,
 } from './dialecticStore.documents';
 
 type FocusedDocumentKeyParams = Pick<SetFocusedStageDocumentPayload, 'sessionId' | 'stageSlug' | 'modelId'>;
@@ -177,6 +180,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	stageRunProgress: {},
 	focusedStageDocument: {},
 	stageDocumentContent: {},
+	stageDocumentResources: {},
 	stageDocumentVersions: {},
 	stageDocumentFeedback: {},
 	isLoadingStageDocumentFeedback: false,
@@ -1358,7 +1362,7 @@ export const useDialecticStore = create<DialecticStore>()(
 	submitStageDocumentFeedback: async (
 		payload: SubmitStageDocumentFeedbackPayload,
 	): Promise<ApiResponse<{ success: boolean }>> => {
-		return await submitStageDocumentFeedbackLogic(set, payload);
+		return await submitStageDocumentFeedbackLogic(get, set, payload);
 	},
 
 	resetSubmitStageDocumentFeedbackError: () => {
@@ -1991,7 +1995,7 @@ export const useDialecticStore = create<DialecticStore>()(
 		}
 	},
 
-  saveContributionEdit: async (payload: SaveContributionEditPayload): Promise<ApiResponse<DialecticContribution>> => {
+  saveContributionEdit: async (payload: SaveContributionEditPayload): Promise<ApiResponse<SaveContributionEditSuccessResponse>> => {
     set({ isSavingContributionEdit: true, saveContributionEditError: null });
 
     try {
@@ -2001,24 +2005,88 @@ export const useDialecticStore = create<DialecticStore>()(
         set({ isSavingContributionEdit: false, saveContributionEditError: response.error });
         return response;
       } else {
-        const updatedContribution = response.data;
-        logger.info('[DialecticStore] Successfully saved contribution edit.', { contributionId: updatedContribution?.id });
+        const responseData = response.data;
+        if (!responseData) {
+          const noDataError: ApiError = {
+            message: 'No data returned from saveContributionEdit',
+            code: 'NO_DATA_RETURNED',
+          };
+          logger.error('[DialecticStore] No data returned from saveContributionEdit');
+          set({ isSavingContributionEdit: false, saveContributionEditError: noDataError });
+          return { data: undefined, error: noDataError, status: 500 };
+        }
+
+        const { resource } = responseData;
+        logger.info('[DialecticStore] Successfully saved contribution edit.', { resourceId: resource.id });
         
         set(state => {
-          if (state.currentProjectDetail && state.currentProjectDetail.dialectic_sessions && updatedContribution) {
+          if (state.currentProjectDetail && state.currentProjectDetail.dialectic_sessions && resource) {
             const sessionIndex = state.currentProjectDetail.dialectic_sessions.findIndex(
-              session => session.id === updatedContribution.session_id
+              session => session.id === resource.session_id
             );
             if (sessionIndex !== -1) {
               const session = state.currentProjectDetail.dialectic_sessions[sessionIndex];
               if (session && session.dialectic_contributions) {
-                // Find the index of the ORIGINAL contribution that was edited
-                const contributionIndex = session.dialectic_contributions.findIndex(
+                // Find the original contribution to get modelId and toggle isLatestEdit
+                const originalContributionIndex = session.dialectic_contributions.findIndex(
                   c => c.id === payload.originalContributionIdToEdit
                 );
-                if (contributionIndex !== -1) {
-                  // Replace the old contribution object with the new one from the API
-                  session.dialectic_contributions[contributionIndex] = updatedContribution;
+                if (originalContributionIndex !== -1) {
+                  const originalContribution = session.dialectic_contributions[originalContributionIndex];
+                  // Toggle isLatestEdit flag on original contribution (don't replace it)
+                  originalContribution.is_latest_edit = false;
+                  
+                  // Derive composite key using resource fields + modelId from original contribution
+                  // Extract documentKey - use from resource if available, otherwise derive from payload
+                  const documentKey = resource.document_key ?? payload.documentKey ?? originalContribution.contribution_type ?? '';
+                  if (!documentKey) {
+                    logger.error('[DialecticStore] Cannot determine documentKey for stageDocumentContent update', { resource, payload });
+                  } else {
+                    const sessionId = resource.session_id ?? payload.sessionId;
+                    const stageSlug = resource.stage_slug ?? '';
+                    const iterationNumber = resource.iteration_number ?? 1;
+                    if (!sessionId || !stageSlug || !documentKey) {
+                      logger.error('[DialecticStore] Missing required fields for composite key', { 
+                        resource, 
+                        payload, 
+                        sessionId, 
+                        stageSlug, 
+                        documentKey 
+                      });
+                    } else {
+                      const modelId = originalContribution.model_id ?? '';
+                      if (!modelId) {
+                        logger.error('[DialecticStore] Missing modelId for composite key', { 
+                          resource, 
+                          originalContribution 
+                        });
+                      } else {
+                        const compositeKey: StageDocumentCompositeKey = {
+                          sessionId,
+                          stageSlug,
+                          iterationNumber,
+                          modelId,
+                          documentKey,
+                        };
+                        
+                        // Update stageDocumentContent with the edited markdown
+                        const versionInfo = createVersionInfo(resource.id);
+                        const documentEntry = ensureStageDocumentContent(state, compositeKey, {
+                          baselineMarkdown: payload.editedContentText,
+                          version: versionInfo,
+                        });
+                        documentEntry.currentDraftMarkdown = payload.editedContentText;
+                        documentEntry.isDirty = false;
+                        documentEntry.isLoading = false;
+                        documentEntry.error = null;
+                        
+                        // Store the complete EditedDocumentResource metadata in stageDocumentResources
+                        // This is required so UI components can access source_contribution_id and updated_at
+                        const serializedKey = getStageDocumentKey(compositeKey);
+                        state.stageDocumentResources[serializedKey] = resource;
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -2037,6 +2105,29 @@ export const useDialecticStore = create<DialecticStore>()(
       set({ isSavingContributionEdit: false, saveContributionEditError: networkError });
       return { data: undefined, error: networkError, status: 0 };
     }
+  },
+
+  updateStageDocumentResource: (
+    key: StageDocumentCompositeKey,
+    resource: EditedDocumentResource,
+    editedContentText: string,
+  ): void => {
+    set((state) => {
+      const versionInfo = createVersionInfo(resource.id);
+      const documentEntry = ensureStageDocumentContent(state, key, {
+        baselineMarkdown: editedContentText,
+        version: versionInfo,
+      });
+      documentEntry.currentDraftMarkdown = editedContentText;
+      documentEntry.isDirty = false;
+      documentEntry.isLoading = false;
+      documentEntry.error = null;
+      
+      // Store the complete EditedDocumentResource metadata in stageDocumentResources
+      // This is required so UI components can access source_contribution_id and updated_at
+      const serializedKey = getStageDocumentKey(key);
+      state.stageDocumentResources[serializedKey] = resource;
+    });
   },
 
 	fetchAndSetCurrentSessionDetails: async (sessionId: string) => {

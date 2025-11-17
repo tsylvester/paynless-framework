@@ -285,13 +285,32 @@ export async function submitStageResponses(
         return { error: { message: "Internal server error: input.document_key is undefined or null.", status: 500 }, status: 500 };
       }
       if (input.type === 'document') {
-        const { data: requiredArtifact, error: artifactError } = await dbClient
+        let resourceQuery = dbClient
           .from('dialectic_project_resources')
           .select('id')
           .eq('project_id', project.id)
-          .eq('resource_description', input.document_key) // simplistic check, might need refinement
+          .eq('resource_type', 'rendered_document');
+
+        if (payload.sessionId) {
+          resourceQuery = resourceQuery.eq('session_id', payload.sessionId);
+        }
+
+        if (payload.stageSlug) {
+          resourceQuery = resourceQuery.eq('stage_slug', payload.stageSlug);
+        }
+
+        if (iterationNumber !== undefined) {
+          resourceQuery = resourceQuery.eq('iteration_number', iterationNumber);
+        }
+
+        if (input.document_key) {
+          resourceQuery = resourceQuery.ilike('file_name', `%${input.document_key}%`);
+        }
+
+        const { data: requiredArtifact, error: artifactError } = await resourceQuery
           .limit(1)
-          .single();
+          .maybeSingle();
+
         if (artifactError || !requiredArtifact) {
           logger.warn(`[submitStageResponses] Precondition failed for next stage: missing required document '${input.document_key}'.`);
           return { error: { message: "Preconditions for the next stage are not met.", status: 412 }, status: 412 };

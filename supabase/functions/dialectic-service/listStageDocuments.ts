@@ -55,15 +55,14 @@ export async function listStageDocuments(
     };
   }
 
-  // 2. Extract job IDs to create a specific filter for the next query
-  const jobIds = jobs.map((job) => job.id);
-
-  // 3. Fetch all relevant rendered resources using a highly-specific filter
+  // 2. Fetch all relevant rendered resources using column-based filters
   const { data: resources, error: resourcesError } = await dbClient
     .from('dialectic_project_resources')
-    .select('id, resource_description')
-    .eq('resource_description->>type', 'rendered_document')
-    .filter('resource_description->>job_id', 'in', `(${jobIds.map((id) => `"${id}"`).join(',')})`);
+    .select('id, resource_description, source_contribution_id')
+    .eq('resource_type', 'rendered_document')
+    .eq('session_id', sessionId)
+    .eq('stage_slug', stageSlug)
+    .eq('iteration_number', iterationNumber);
 
   if (resourcesError) {
     return {
@@ -74,20 +73,36 @@ export async function listStageDocuments(
     };
   }
 
-  // 4. Create a lookup map for rendered resources by job_id
-  const resourceMapByJobId = new Map<string, string>();
+  // 3. Create lookup maps for rendered resources
+  // Map by document_key (fallback correlation method)
+  const resourceMapByDocumentKey = new Map<string, string>();
+  // Map by source_contribution_id (preferred correlation when available)
+  const resourceMapBySourceContributionId = new Map<string, string>();
+
   if (resources) {
     for (const resource of resources) {
+      // Extract document_key from resource_description for fallback correlation
       if (
         isRecord(resource.resource_description) &&
-        typeof resource.resource_description.job_id === 'string'
+        typeof resource.resource_description.document_key === 'string'
       ) {
-        resourceMapByJobId.set(resource.resource_description.job_id, resource.id);
+        resourceMapByDocumentKey.set(
+          resource.resource_description.document_key,
+          resource.id,
+        );
+      }
+
+      // Use source_contribution_id for preferred correlation when available
+      if (resource.source_contribution_id) {
+        resourceMapBySourceContributionId.set(
+          resource.source_contribution_id,
+          resource.id,
+        );
       }
     }
   }
 
-  // 5. Filter, normalize, and combine the data
+  // 4. Filter, normalize, and combine the data
   const documents: StageDocumentDescriptorDto[] = [];
   for (const job of jobs) {
     if (
@@ -95,10 +110,28 @@ export async function listStageDocuments(
       typeof job.payload.document_key === 'string' &&
       typeof job.payload.model_id === 'string'
     ) {
+      // Correlate resource to job: prefer source_contribution_id, fall back to document_key
+      let lastRenderedResourceId: string | null = null;
+
+      // First, try correlation via source_contribution_id if job payload includes it
+      if (
+        typeof job.payload.sourceContributionId === 'string' &&
+        resourceMapBySourceContributionId.has(job.payload.sourceContributionId)
+      ) {
+        lastRenderedResourceId = resourceMapBySourceContributionId.get(
+          job.payload.sourceContributionId,
+        ) || null;
+      } else {
+        // Fall back to document_key correlation
+        lastRenderedResourceId = resourceMapByDocumentKey.get(
+          job.payload.document_key,
+        ) || null;
+      }
+
       documents.push({
         documentKey: job.payload.document_key,
         modelId: job.payload.model_id,
-        lastRenderedResourceId: resourceMapByJobId.get(job.id) || null,
+        lastRenderedResourceId,
       });
     }
   }

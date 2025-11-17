@@ -232,7 +232,14 @@ Deno.test('FileManagerService', async (t) => {
         assertEquals(insertData.file_name, expectedPathParts.fileName);
         assert(typeof insertData.resource_description === 'object' && insertData.resource_description !== null, 'resource_description should be an object');
         assertEquals(insertData.resource_description, { type: context.pathContext.fileType, originalDescription: context.description });
-        assertEquals(insertData.source_contribution_id, undefined);
+        
+        // Assert full column contract - resource_type must always be written
+        assertEquals(insertData.resource_type, String(context.pathContext.fileType));
+        // For GeneralResource without explicit session metadata, session_id should be present if provided, or null if not
+        assertEquals(insertData.session_id, context.pathContext.sessionId ?? null);
+        assertEquals(insertData.stage_slug, context.pathContext.stageSlug ?? null);
+        assertEquals(insertData.iteration_number, context.pathContext.iteration ?? null);
+        assertEquals(insertData.source_contribution_id, null);
       } finally {
         afterEach()
       }
@@ -256,7 +263,7 @@ Deno.test('FileManagerService', async (t) => {
         iteration: 2,
         stageSlug: 'thesis',
         fileType: FileType.SeedPrompt,
-        sourceContributionId: 'seed-contribution-123',
+        // sourceContributionId should be null for this test case
       };
 
       const seedPromptContext: ResourceUploadContext = {
@@ -277,11 +284,12 @@ Deno.test('FileManagerService', async (t) => {
       assertExists(insertSpy);
       const insertData = insertSpy.calls[0].args[0];
 
+      // Assert full column contract for SeedPrompt with session metadata
       assertEquals(insertData.resource_type, 'seed_prompt');
       assertEquals(insertData.session_id, seedPromptPathContext.sessionId);
       assertEquals(insertData.stage_slug, seedPromptPathContext.stageSlug);
       assertEquals(insertData.iteration_number, seedPromptPathContext.iteration);
-      assertEquals(insertData.source_contribution_id, seedPromptPathContext.sourceContributionId);
+      assertEquals(insertData.source_contribution_id, null);
     } finally {
       afterEach();
     }
@@ -1168,6 +1176,7 @@ Deno.test('FileManagerService', async (t) => {
         fileContent: '{}',
         mimeType: 'application/json',
         description: `Test for ${fileType}`,
+        resourceTypeForDb: 'planner_prompt',
       };
 
       const { record, error } = await fileManager.uploadAndRegisterFile(plannerContext);
@@ -1185,6 +1194,12 @@ Deno.test('FileManagerService', async (t) => {
       const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert;
       assertExists(insertSpy, "Insert spy for 'dialectic_project_resources' should exist");
       const insertData = insertSpy.calls[0].args[0];
+      
+      // Assert full column contract for continuation-backed planner prompt
+      assertEquals(insertData.resource_type, 'planner_prompt');
+      assertEquals(insertData.session_id, plannerPathContext.sessionId);
+      assertEquals(insertData.stage_slug, plannerPathContext.stageSlug);
+      assertEquals(insertData.iteration_number, plannerPathContext.iteration);
       assertEquals(insertData.source_contribution_id, plannerPathContext.sourceContributionId);
     } finally {
       afterEach();
@@ -1727,3 +1742,4 @@ Deno.test('FileManagerService', async (t) => {
   });
 
 });
+
