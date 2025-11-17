@@ -201,7 +201,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 1, 'synthesis_prepare_pairwise_header', 'prepare-pairwise-synthesis-header', 'Prepare Pairwise Synthesis Header', 'Generate HeaderContext JSON that guides pairwise synthesis turns across thesis lineages and antithesis critiques.',
-        'PLAN', 'Planner', v_pairwise_planner_prompt_id, 'HeaderContext', 'all_to_one',
+        'PLAN', 'Planner', v_pairwise_planner_prompt_id, 'header_context', 'all_to_one',
         '[
             { "type": "seed_prompt", "slug": "synthesis", "document_key": "seed_prompt", "required": true },
             { "type": "document", "slug": "thesis", "document_key": "business_case", "required": true, "multiple": true },
@@ -368,7 +368,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 2, 2, 'synthesis_pairwise_business_case', 'synthesis_pairwise_business_case', 'pairwise-synthesis-business-case', 'Pairwise Synthesis – Business Case', 'Combine the thesis business case with critiques and comparison vector signals into a resolved narrative.',
-        'EXECUTE', 'Turn', v_pairwise_business_prompt_id, 'AssembledDocumentJson', 'per_source_document',
+        'EXECUTE', 'Turn', v_pairwise_business_prompt_id, 'assembled_document_json', 'per_source_document',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context_pairwise", "required": true },
             { "type": "document", "slug": "thesis", "document_key": "business_case", "required": true },
@@ -419,7 +419,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 2, 2, 'synthesis_pairwise_feature_spec', 'synthesis_pairwise_feature_spec', 'pairwise-synthesis-feature-spec', 'Pairwise Synthesis – Feature Spec', 'Merge feature scope with feasibility, non-functional insights, and comparison signals.',
-        'EXECUTE', 'Turn', v_pairwise_feature_prompt_id, 'AssembledDocumentJson', 'per_source_document',
+        'EXECUTE', 'Turn', v_pairwise_feature_prompt_id, 'assembled_document_json', 'per_source_document',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context_pairwise", "required": true },
             { "type": "document", "slug": "thesis", "document_key": "feature_spec", "required": true },
@@ -479,7 +479,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 2, 2, 'synthesis_pairwise_technical_approach', 'synthesis_pairwise_technical_approach', 'pairwise-synthesis-technical-approach', 'Pairwise Synthesis – Technical Approach', 'Combine thesis technical approach with antithesis risk and dependency findings.',
-        'EXECUTE', 'Turn', v_pairwise_technical_prompt_id, 'AssembledDocumentJson', 'per_source_document',
+        'EXECUTE', 'Turn', v_pairwise_technical_prompt_id, 'assembled_document_json', 'per_source_document',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context_pairwise", "required": true },
             { "type": "document", "slug": "thesis", "document_key": "technical_approach", "required": true },
@@ -527,7 +527,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 2, 2, 'synthesis_pairwise_success_metrics', 'synthesis_pairwise_success_metrics', 'pairwise-synthesis-success-metrics', 'Pairwise Synthesis – Success Metrics', 'Combine thesis success metrics with antithesis critique signals into a resolved set of measurable outcomes.',
-        'EXECUTE', 'Turn', v_pairwise_metrics_prompt_id, 'AssembledDocumentJson', 'per_source_document',
+        'EXECUTE', 'Turn', v_pairwise_metrics_prompt_id, 'assembled_document_json', 'per_source_document',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context_pairwise", "required": true },
             { "type": "document", "slug": "thesis", "document_key": "success_metrics", "required": true },
@@ -582,7 +582,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 3, 3, 'synthesis_document_business_case', 'synthesis_document_business_case', 'synthesis-document-business-case', 'Synthesize Business Case Across Models', 'Synthesize the final business case from pairwise outputs.',
-        'EXECUTE', 'Turn', v_doc_business_prompt_id, 'AssembledDocumentJson', 'all_to_one',
+        'EXECUTE', 'Turn', v_doc_business_prompt_id, 'assembled_document_json', 'all_to_one',
         '[
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_pairwise_business_case", "required": true, "multiple": true }
         ]'::jsonb, 
@@ -628,7 +628,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 3, 3, 'synthesis_document_feature_spec', 'synthesis_document_feature_spec', 'synthesis-document-feature-spec', 'Synthesize Feature Spec Across Models', 'Synthesize the final feature spec from pairwise outputs.',
-        'EXECUTE', 'Turn', v_doc_feature_prompt_id, 'AssembledDocumentJson', 'all_to_one',
+        'EXECUTE', 'Turn', v_doc_feature_prompt_id, 'assembled_document_json', 'all_to_one',
         '[
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_pairwise_feature_spec", "required": true, "multiple": true }
         ]'::jsonb, 
@@ -677,7 +677,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 3, 3, 'synthesis_document_technical_approach', 'synthesis_document_technical_approach', 'synthesis-document-technical-approach', 'Synthesize Technical Approach Across Models', 'Synthesize the final technical approach from pairwise outputs.',
-        'EXECUTE', 'Turn', v_doc_technical_prompt_id, 'AssembledDocumentJson', 'all_to_one',
+        'EXECUTE', 'Turn', v_doc_technical_prompt_id, 'assembled_document_json', 'all_to_one',
         '[
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_pairwise_technical_approach", "required": true, "multiple": true }
         ]'::jsonb, 
@@ -712,7 +712,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 3, 3, 'synthesis_document_success_metrics', 'synthesis_document_success_metrics', 'synthesis-document-success-metrics', 'Synthesize Success Metrics Across Models', 'Synthesize the final success metrics from pairwise outputs.',
-        'EXECUTE', 'Turn', v_doc_metrics_prompt_id, 'AssembledDocumentJson', 'all_to_one',
+        'EXECUTE', 'Turn', v_doc_metrics_prompt_id, 'assembled_document_json', 'all_to_one',
         '[
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_pairwise_success_metrics", "required": true, "multiple": true }
         ]'::jsonb, 
@@ -757,7 +757,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 4, 'generate_final_synthesis_header', 'generate-final-synthesis-header', 'Generate Final Synthesis Header', 'Generate the final HeaderContext for Synthesis stage deliverables.',
-        'PLAN', 'Planner', v_final_header_prompt_id, 'HeaderContext', 'all_to_one',
+        'PLAN', 'Planner', v_final_header_prompt_id, 'header_context', 'all_to_one',
         '[
             { "type": "seed_prompt", "slug": "synthesis", "document_key": "seed_prompt", "required": true },
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_business_case", "required": true, "multiple": true },
@@ -938,7 +938,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 5, 5, 'product_requirements', 'product_requirements', 'render-product_requirements', 'Render Final PRD', 'Renders the final Product Requirements Document from the consolidated synthesis artifacts.',
-        'EXECUTE', 'Turn', v_product_requirements_prompt_id, 'RenderedDocument', 'all_to_one',
+        'EXECUTE', 'Turn', v_product_requirements_prompt_id, 'rendered_document', 'all_to_one',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context", "required": true },
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_business_case", "required": true, "multiple": true },
@@ -1017,7 +1017,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 5, 5, 'system_architecture', 'system_architecture', 'render-system-architecture-overview', 'Render Final System Architecture Overview', 'Renders the final System Architecture Overview from the consolidated synthesis artifacts.',
-        'EXECUTE', 'Turn', v_system_architecture_prompt_id, 'RenderedDocument', 'all_to_one',
+        'EXECUTE', 'Turn', v_system_architecture_prompt_id, 'rendered_document', 'all_to_one',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context", "required": true },
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_technical_approach", "required": true, "multiple": true },
@@ -1069,7 +1069,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 5, 5, 'tech_stack', 'tech_stack', 'render-tech-stack-recommendations', 'Render Final Tech Stack Recommendations', 'Renders the final Tech Stack Recommendations from the consolidated synthesis artifacts.',
-        'EXECUTE', 'Turn', v_tech_stack_prompt_id, 'RenderedDocument', 'all_to_one',
+        'EXECUTE', 'Turn', v_tech_stack_prompt_id, 'rendered_document', 'all_to_one',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context", "required": true },
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_technical_approach", "required": true, "multiple": true },

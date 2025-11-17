@@ -184,7 +184,7 @@ export type PromptTemplate = Omit<SystemPromptsRow, 'variables_required'> & {
 // Stage Recipe Contracts (Frontend)
 export type RecipeJobType = 'PLAN' | 'EXECUTE' | 'RENDER';
 export type RecipePromptType = 'Planner' | 'Turn';
-export type RecipeOutputType = 'HeaderContext' | 'AssembledDocumentJson' | 'RenderedDocument';
+export type RecipeOutputType = 'header_context' | 'assembled_document_json' | 'rendered_document';
 export type RecipeGranularity = 'all_to_one' | 'per_source_document' | 'one_to_many' | 'many_to_one';
 
 export interface InputRequirement {

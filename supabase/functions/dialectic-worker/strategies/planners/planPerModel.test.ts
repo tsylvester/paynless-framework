@@ -202,3 +202,22 @@ Deno.test(
 		);
 	}
 );
+
+Deno.test('planPerModel includes planner_metadata with recipe_step_id in child payloads', () => {
+	const mockRecipeStepWithId: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		id: 'recipe-step-model-789',
+	};
+
+	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, mockRecipeStepWithId, 'user-jwt-123');
+
+	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+	const job = childJobs[0];
+	assertExists(job, 'Child job should exist');
+	assertExists(job.planner_metadata, 'Child job should include planner_metadata');
+	assertEquals(
+		job.planner_metadata?.recipe_step_id,
+		'recipe-step-model-789',
+		'planner_metadata.recipe_step_id should match the recipe step id',
+	);
+});

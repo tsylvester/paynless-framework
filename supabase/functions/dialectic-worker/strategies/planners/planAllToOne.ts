@@ -1,7 +1,6 @@
 // supabase/functions/dialectic-worker/strategies/planners/planAllToOne.ts
 import type { DialecticExecuteJobPayload, GranularityPlannerFn } from "../../../dialectic-service/dialectic.interface.ts";
 import { createCanonicalPathParams } from "../canonical_context_builder.ts";
-import { isDialecticStageRecipeStep } from "../../../_shared/utils/type-guards/type_guards.dialectic.recipe.ts";
 import { isContributionType } from "../../../_shared/utils/type-guards/type_guards.dialectic.ts";
 import { isModelContributionFileType } from "../../../_shared/utils/type-guards/type_guards.file_manager.ts";
 
@@ -19,9 +18,9 @@ export const planAllToOne: GranularityPlannerFn = (
         throw new Error(`planAllToOne requires a valid ContributionType stageSlug, but received: ${stageSlug}`);
     }
 
-    if (!isDialecticStageRecipeStep(recipeStep) || !recipeStep.prompt_template_id) {
+    if (!recipeStep.prompt_template_id) {
         throw new Error(
-            `planAllToOne received an invalid recipe step. Expected a DialecticStageRecipeStep with a prompt_template_id. Received: ${JSON.stringify(
+            `planAllToOne received an invalid recipe step. Expected a recipe step with a prompt_template_id. Received: ${JSON.stringify(
                 recipeStep,
                 null,
                 2
@@ -38,6 +37,10 @@ export const planAllToOne: GranularityPlannerFn = (
     if(!isModelContributionFileType(recipeStep.output_type)) {
         throw new Error(`Invalid output_type for planAllToOne: ${recipeStep.output_type}`);
     }
+    if(!recipeStep.id) {
+        throw new Error(`Invalid recipe step for planAllToOne: id is missing.`);
+    }
+
     const newPayload: DialecticExecuteJobPayload = {
         // Inherit core context
         projectId: parentJob.payload.projectId,
@@ -55,7 +58,9 @@ export const planAllToOne: GranularityPlannerFn = (
             document_ids: documentIds,
         },
         walletId: parentJob.payload.walletId,
+        planner_metadata: { recipe_step_id: recipeStep.id },
     };
 
     return [newPayload];
 }; 
+

@@ -89,6 +89,7 @@ export const planPerModel: GranularityPlannerFn = (
 		inputs,
 		sourceContributionId,
 		walletId: parentJob.payload.walletId,
+		planner_metadata: { recipe_step_id: recipeStep.id },
 	};
 
 	childPayloads.push(newPayload);

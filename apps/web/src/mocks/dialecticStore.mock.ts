@@ -134,6 +134,8 @@ export const selectStepList = (
   });
 };
 
+export const selectValidMarkdownDocumentKeys = vi.fn<[DialecticStateValues, string], Set<string>>().mockReturnValue(new Set<string>());
+
 export const selectStageRunProgress = (
   state: DialecticStateValues,
   sessionId: string,

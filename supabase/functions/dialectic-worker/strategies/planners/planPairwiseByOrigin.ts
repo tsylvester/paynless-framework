@@ -24,6 +24,9 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 			`Invalid recipe step for planPairwiseByOrigin: output_type is missing.`
 		);
 	}
+	if (!recipeStep.id) {
+		throw new Error(`Invalid recipe step for planPairwiseByOrigin: id is missing.`);
+	}
 
 	const stageSlug = parentJob.payload.stageSlug;
 	if (!stageSlug || !isContributionType(stageSlug)) {
@@ -105,6 +108,7 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 				isIntermediate: true,
 				walletId: parentJob.payload.walletId,
 				sourceContributionId: antithesisDoc.id,
+				planner_metadata: { recipe_step_id: recipeStep.id },
 			};
 
 			childPayloads.push(newPayload);

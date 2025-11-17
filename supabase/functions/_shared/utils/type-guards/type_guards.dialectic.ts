@@ -834,6 +834,7 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
     if (('isIntermediate' in payload) && typeof payload.isIntermediate !== 'boolean') throw new Error('Invalid isIntermediate flag.');
     if (('user_jwt' in payload) && typeof payload.user_jwt !== 'string') throw new Error('Invalid user_jwt.');
     if (('target_contribution_id' in payload) && typeof payload.target_contribution_id !== 'string') throw new Error('Invalid target_contribution_id.');
+    if (('sourceContributionId' in payload) && payload.sourceContributionId !== null && typeof payload.sourceContributionId !== 'string') throw new Error('Invalid sourceContributionId.');
 
     // Legacy property check
     if ('originalFileName' in payload) throw new Error('Legacy property originalFileName is not allowed.');
@@ -842,7 +843,7 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
     const allowedKeys = new Set<string>([
         'sessionId', 'projectId', 'model_id', 'walletId', 'stageSlug', 'iterationNumber',
         'job_type', 'output_type', 'canonicalPathParams', 'inputs', 'prompt_template_id',
-        'document_key', 'branch_key', 'parallel_group', 'planner_metadata',
+        'sourceContributionId', 'document_key', 'branch_key', 'parallel_group', 'planner_metadata',
         'document_relationships', 'isIntermediate', 'user_jwt', 'target_contribution_id',
         // Base job payload fields that may be present on execute jobs
         'continueUntilComplete', 'maxRetries', 'continuation_count', 'is_test_job'

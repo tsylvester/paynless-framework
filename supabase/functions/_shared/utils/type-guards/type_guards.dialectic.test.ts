@@ -583,6 +583,14 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
         const p = { ...basePayload, target_contribution_id: 'target-id' };
         assert(isDialecticExecuteJobPayload(p));
     });
+    await t.step('should pass with a valid optional sourceContributionId from DialecticBaseJobPayload', () => {
+        const p = { ...basePayload, sourceContributionId: 'contrib-1' };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with a null optional sourceContributionId from DialecticBaseJobPayload', () => {
+        const p = { ...basePayload, sourceContributionId: null };
+        assert(isDialecticExecuteJobPayload(p));
+    });
 
     // Base job payload extras should be permitted on execute payloads
     await t.step('should pass when base payload fields are present', () => {

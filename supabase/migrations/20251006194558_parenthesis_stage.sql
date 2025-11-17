@@ -240,7 +240,7 @@ DECLARE
         'PLAN',
         'Planner',
         v_planner_prompt_id,
-        'HeaderContext',
+        'header_context',
         'all_to_one',
         '[
           {"type":"seed_prompt","slug":"parenthesis","document_key":"seed_prompt","required":true},
@@ -430,7 +430,7 @@ DECLARE
         'PLAN',
         'Planner',
         v_planner_prompt_id,
-        'HeaderContext',
+        'header_context',
         'all_to_one',
         '[
           {"type":"seed_prompt","slug":"parenthesis","document_key":"seed_prompt","required":true},
@@ -616,7 +616,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_technical_requirements_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
@@ -758,7 +758,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_technical_requirements_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
@@ -895,7 +895,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_master_plan_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
@@ -1044,7 +1044,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_master_plan_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
@@ -1188,7 +1188,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_milestone_schema_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
@@ -1345,7 +1345,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_milestone_schema_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},

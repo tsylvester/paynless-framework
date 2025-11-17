@@ -85,6 +85,7 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
                 source_group: groupId,
             },
             walletId: parentJob.payload.walletId,
+            planner_metadata: { recipe_step_id: recipeStep.id },
             sourceContributionId: derivedSourceContributionId,
         };
         childPayloads.push(newPayload);

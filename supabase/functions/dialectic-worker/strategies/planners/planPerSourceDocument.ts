@@ -108,6 +108,7 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 			inputs,
 			user_jwt: parentJwt,
 			walletId: parentJob.payload.walletId,
+			planner_metadata: { recipe_step_id: recipeStep.id },
 		};
 		const derivedSourceContributionId = deriveSourceContributionId(
 			doc.id,

@@ -7,13 +7,14 @@ import {
   RelevanceRule,
   OutputRule,
   BranchKey,
-  OutputType, 
   JobType, 
   PromptType, 
-  GranularityStrategy, 
+  GranularityStrategy,
+  OutputType,
 } from "./dialectic.interface.ts";
 import { isInputRule, isRelevanceRule, isOutputRule } from "../_shared/utils/type-guards/type_guards.dialectic.recipe.ts";
 import { isRecord } from "../_shared/utils/type-guards/type_guards.common.ts";
+import { FileType } from "../_shared/types/file_manager.types.ts";
 
 export async function getStageRecipe(
   payload: { stageSlug: string },
@@ -85,13 +86,15 @@ export async function getStageRecipe(
     if (!isGranularity(s.granularity_strategy)) return { status: 500, error: { message: `Invalid granularity_strategy for step_key=${s.step_key}: ${String(s.granularity_strategy)}` } };
     const granularity: GranularityStrategy = s.granularity_strategy;
 
-    // Map output_type from ModelContributionFileTypes to OutputType
-    let mappedOutputType: OutputType;
+    // Validate output_type against FileType enum values (snake_case)
     const rawType = String(s.output_type);
-    if (rawType === OutputType.HeaderContext) mappedOutputType = OutputType.HeaderContext;
-    else if (rawType === OutputType.AssembledDocumentJson) mappedOutputType = OutputType.AssembledDocumentJson;
-    else if (rawType === OutputType.RenderedDocument) mappedOutputType = OutputType.RenderedDocument;
+    console.error(`[getStageRecipe] Validating output_type for step_key=${s.step_key}: rawType="${rawType}", FileType.HeaderContext="${FileType.HeaderContext}", FileType.AssembledDocumentJson="${FileType.AssembledDocumentJson}", FileType.RenderedDocument="${FileType.RenderedDocument}"`);
+    let mappedOutputType: OutputType;
+    if (rawType === FileType.HeaderContext) mappedOutputType = FileType.HeaderContext;
+    else if (rawType === FileType.AssembledDocumentJson) mappedOutputType = FileType.AssembledDocumentJson;
+    else if (rawType === FileType.RenderedDocument) mappedOutputType = FileType.RenderedDocument;
     else {
+      console.error(`[getStageRecipe] Unknown output_type for step_key=${s.step_key}: ${rawType}`);
       return { status: 500, error: { message: `Unknown output_type for step_key=${s.step_key}: ${rawType}` } };
     }
 

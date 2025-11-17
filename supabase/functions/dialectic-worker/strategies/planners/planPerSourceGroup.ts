@@ -71,6 +71,7 @@ export const planPerSourceGroup: GranularityPlannerFn = (
             isIntermediate: recipeStep.output_type !== FileType.Synthesis,
             walletId: parentJob.payload.walletId,
             sourceContributionId: anchorDoc.id,
+            planner_metadata: { recipe_step_id: recipeStep.id },
         };
 
         childPayloads.push(newPayload);

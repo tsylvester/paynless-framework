@@ -10,6 +10,7 @@ import type {
 
 import {
     initializeMockDialecticState,
+    selectValidMarkdownDocumentKeys,
     setDialecticStateValues,
 } from '../../mocks/dialecticStore.mock';
 
@@ -90,7 +91,7 @@ const buildPlannerStep = (): DialecticStageRecipeStep => {
         prompt_type: 'Planner',
         inputs_required: plannerInputs,
         outputs_required: plannerOutputs,
-        output_type: 'HeaderContext',
+        output_type: 'header_context',
         granularity_strategy: 'all_to_one',
     };
 };
@@ -116,7 +117,7 @@ const buildDraftStep = (): DialecticStageRecipeStep => {
         prompt_type: 'Turn',
         inputs_required: draftInputs,
         outputs_required: draftOutputs,
-        output_type: 'AssembledDocumentJson',
+        output_type: 'assembled_document_json',
         granularity_strategy: 'per_source_document',
     };
 };
@@ -142,7 +143,7 @@ const buildRenderStep = (): DialecticStageRecipeStep => {
         prompt_type: 'Planner',
         inputs_required: renderInputs,
         outputs_required: renderOutputs,
-        output_type: 'RenderedDocument',
+        output_type: 'rendered_document',
         granularity_strategy: 'all_to_one',
     };
 };
@@ -166,7 +167,7 @@ const buildSecondaryRenderStep = (): DialecticStageRecipeStep => {
         prompt_type: 'Planner',
         inputs_required: [],
         outputs_required: secondaryOutputs,
-        output_type: 'RenderedDocument',
+        output_type: 'rendered_document',
         granularity_strategy: 'all_to_one',
     };
 };
@@ -205,7 +206,7 @@ const buildRenderStepWithHeaderContext = (): DialecticStageRecipeStep => {
         prompt_type: 'Planner',
         inputs_required: [],
         outputs_required: outputs,
-        output_type: 'RenderedDocument',
+        output_type: 'rendered_document',
         granularity_strategy: 'all_to_one',
     };
 };
@@ -253,6 +254,8 @@ describe('StageRunChecklist', () => {
     it('surfaces a failure icon when a document status is failed', () => {
         const recipe = createRecipe([buildRenderStep()]);
 
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
         const stepStatuses: StepStatuses = {
             render_document: 'failed',
         };
@@ -285,6 +288,8 @@ describe('StageRunChecklist', () => {
             buildRenderStep(),
             buildSecondaryRenderStep(),
         ]);
+
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered', 'synthesis_document_secondary']));
 
         const stepStatuses: StepStatuses = {
             draft_document: 'completed',
@@ -338,6 +343,8 @@ describe('StageRunChecklist', () => {
     it('renders a condensed header without legacy checklist framing', () => {
         const recipe = createRecipe([buildPlannerStep(), buildRenderStep()]);
 
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
         const stepStatuses: StepStatuses = {
             planner_header: 'completed',
             render_document: 'completed',
@@ -380,6 +387,8 @@ describe('StageRunChecklist', () => {
     it('renders minimal document rows and forwards selection payloads', () => {
         const recipe = createRecipe([buildRenderStep()]);
 
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
         const stepStatuses: StepStatuses = {
             render_document: 'in_progress',
         };
@@ -421,6 +430,8 @@ describe('StageRunChecklist', () => {
     it('renders a single empty-state message when no markdown documents exist', () => {
         const recipe = createRecipe([buildDraftStep()]);
 
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set<string>());
+
         const stepStatuses: StepStatuses = {
             draft_document: 'completed',
         };
@@ -450,6 +461,8 @@ describe('StageRunChecklist', () => {
     });
 
     it('renders guard state when prerequisites are missing', () => {
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set<string>());
+
         setDialecticStateValues({
             activeContextSessionId: sessionId,
             activeStageSlug: stageSlug,
@@ -477,6 +490,8 @@ describe('StageRunChecklist', () => {
 
     it('renders markdown deliverables when progress entry is unavailable', () => {
         const recipe = createRecipe([buildRenderStep(), buildSecondaryRenderStep()]);
+
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered', 'synthesis_document_secondary']));
 
         setDialecticStateValues({
             activeContextSessionId: sessionId,
@@ -509,6 +524,9 @@ describe('StageRunChecklist', () => {
 
     it('renders guard state when active session or stage context is missing', () => {
         const recipe = createRecipe([buildPlannerStep(), buildDraftStep()]);
+
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set<string>());
+
         const progressEntry = createProgressEntry(
             {
                 planner_header: 'completed',
@@ -542,6 +560,8 @@ describe('StageRunChecklist', () => {
 
     it('does not render checklist when progress exists for a different iteration', () => {
         const recipe = createRecipe([buildPlannerStep(), buildDraftStep()]);
+
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set<string>());
 
         const mismatchedProgressKey = `${sessionId}:${recipe.stageSlug}:${iterationNumber + 1}`;
 
@@ -582,6 +602,8 @@ describe('StageRunChecklist', () => {
         const recipe = createRecipe([buildPlannerStep(), buildDraftStep()]);
         const alternateRecipe = createRecipe([buildPlannerStep()], alternateStageSlug);
 
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set<string>());
+
         const alternateProgressKey = `${sessionId}:${alternateRecipe.stageSlug}:${iterationNumber}`;
 
         setDialecticStateValues({
@@ -621,6 +643,8 @@ describe('StageRunChecklist', () => {
         const blankModelId = '';
         const recipe = createRecipe([buildRenderStep()]);
 
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
         const stepStatuses: StepStatuses = {
             render_document: 'completed',
         };
@@ -658,6 +682,8 @@ describe('StageRunChecklist', () => {
     it('renders planned markdown documents before generation begins', () => {
         const recipe = createRecipe([buildRenderStep(), buildSecondaryRenderStep()]);
 
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered', 'synthesis_document_secondary']));
+
         const stepStatuses: StepStatuses = {
             render_document: 'not_started',
             render_document_secondary: 'not_started',
@@ -691,6 +717,8 @@ describe('StageRunChecklist', () => {
 
     it('exposes full-width constrained layout hooks for StageTabCard embedding', () => {
         const recipe = createRecipe([buildRenderStep()]);
+
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
 
         const stepStatuses: StepStatuses = {
             render_document: 'completed',
@@ -734,6 +762,8 @@ describe('StageRunChecklist', () => {
     it('scopes accordion controls inside the checklist container', () => {
         const recipe = createRecipe([buildRenderStep()]);
 
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
         const stepStatuses: StepStatuses = {
             render_document: 'completed',
         };
@@ -772,6 +802,8 @@ describe('StageRunChecklist', () => {
     it('matches checklist container size to the parent card', () => {
         const recipe = createRecipe([buildRenderStep()]);
 
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
         const stepStatuses: StepStatuses = {
             render_document: 'completed',
         };
@@ -807,6 +839,8 @@ describe('StageRunChecklist', () => {
 
     it('omits header_context artifacts even when they share a markdown step', () => {
         const recipe = createRecipe([buildRenderStepWithHeaderContext()]);
+
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
 
         const stepStatuses: StepStatuses = {
             render_document_with_header: 'failed',
@@ -844,5 +878,91 @@ describe('StageRunChecklist', () => {
         expect(screen.getByTestId('document-synthesis_document_rendered')).toBeInTheDocument();
         expect(screen.queryByTestId('document-synthesis_plan_header')).toBeNull();
         expect(screen.getByText('Completed 0 of 1 documents')).toBeInTheDocument();
+    });
+
+    it('uses selectValidMarkdownDocumentKeys as the source of truth and does not duplicate filtering logic', () => {
+        const recipe = createRecipe([
+            buildDraftStep(), // JSON output - should be excluded by selector
+            buildRenderStep(), // Markdown output - should be included by selector
+            buildSecondaryRenderStep(), // Markdown output - should be included by selector
+        ]);
+
+        // Mock selector to return only the markdown document keys (simulating the selector's filtering)
+        const expectedMarkdownKeys = new Set(['synthesis_document_rendered', 'synthesis_document_secondary']);
+        selectValidMarkdownDocumentKeys.mockReturnValue(expectedMarkdownKeys);
+
+        const stepStatuses: StepStatuses = {
+            draft_document: 'completed',
+            render_document: 'completed',
+            render_document_secondary: 'completed',
+        };
+
+        const documents: StageRunDocuments = {
+            synthesis_document_outline: {
+                status: 'completed',
+                job_id: 'job-outline',
+                latestRenderedResourceId: 'resource-outline',
+                modelId: modelIdA,
+                versionHash: 'hash-outline',
+                lastRenderedResourceId: 'resource-outline',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+            },
+            synthesis_document_rendered: {
+                status: 'completed',
+                job_id: 'job-render',
+                latestRenderedResourceId: 'resource-render',
+                modelId: modelIdA,
+                versionHash: 'hash-render',
+                lastRenderedResourceId: 'resource-render',
+                lastRenderAtIso: '2025-01-01T00:00:01.000Z',
+            },
+            synthesis_document_secondary: {
+                status: 'completed',
+                job_id: 'job-secondary',
+                latestRenderedResourceId: 'resource-secondary',
+                modelId: modelIdA,
+                versionHash: 'hash-secondary',
+                lastRenderedResourceId: 'resource-secondary',
+                lastRenderAtIso: '2025-01-01T00:00:02.000Z',
+            },
+        };
+
+        const progressEntry = createProgressEntry(stepStatuses, documents);
+        setChecklistState(recipe, progressEntry);
+
+        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+
+        // Assert selector was called with correct parameters
+        expect(selectValidMarkdownDocumentKeys).toHaveBeenCalledWith(
+            expect.any(Object), // state
+            stageSlug,
+        );
+
+        // Assert component uses selector's return value as source of truth
+        // The component should only render documents that are in the selector's Set
+        expect(screen.getByTestId('document-synthesis_document_rendered')).toBeInTheDocument();
+        expect(screen.getByTestId('document-synthesis_document_secondary')).toBeInTheDocument();
+        expect(screen.queryByTestId('document-synthesis_document_outline')).toBeNull();
+
+        // Assert component does NOT duplicate filtering - it should trust the selector
+        // If the selector returns a key, it should appear even if the step has non-markdown outputs
+        // This test will fail if the component re-filters steps instead of using the selector's Set
+        const renderedDocumentKeys = screen
+            .getAllByTestId(/^document-/)
+            .map((el) => {
+                const testId = el.getAttribute('data-testid');
+                return testId ? testId.replace('document-', '') : '';
+            })
+            .filter((key): key is string => key.length > 0);
+        
+        // Component should only render keys from the selector's Set
+        renderedDocumentKeys.forEach((key) => {
+            expect(expectedMarkdownKeys.has(key)).toBe(true);
+        });
+
+        // Component should render all keys from the selector's Set
+        expectedMarkdownKeys.forEach((key) => {
+            expect(screen.getByTestId(`document-${key}`)).toBeInTheDocument();
+        });
     });
 });

@@ -4,6 +4,7 @@ import {
 	selectStageRunProgress,
 	selectFocusedStageDocument,
 	selectStageDocumentResource,
+	selectValidMarkdownDocumentKeys,
 } from "@paynless/store";
 import {
 	StageDocumentCompositeKey,
@@ -124,6 +125,20 @@ export const GeneratedContributionCard: React.FC<
 		const entry = modelCatalog.find((model) => model.id === modelId);
 		return entry?.model_name ?? modelId;
 	}, [modelCatalog, modelId]);
+
+	const validMarkdownDocumentKeys = useDialecticStore((state) => {
+		if (!stageSlug) {
+			return new Set<string>();
+		}
+		return selectValidMarkdownDocumentKeys(state, stageSlug);
+	});
+
+	const isValidMarkdownDocument = useMemo(() => {
+		if (!focusedDocument?.documentKey) {
+			return false;
+		}
+		return validMarkdownDocumentKeys.has(focusedDocument.documentKey);
+	}, [focusedDocument?.documentKey, validMarkdownDocumentKeys]);
 
 	const compositeKey: StageDocumentCompositeKey | null = useMemo(() => {
 		if (
@@ -327,7 +342,7 @@ export const GeneratedContributionCard: React.FC<
 					onDocumentSelect={handleDocumentSelect}
 				/>
 
-				{focusedDocument ? (
+				{focusedDocument && isValidMarkdownDocument ? (
 					<div className="space-y-4">
 						<div className="space-y-1">
 							<p className="text-sm font-medium text-muted-foreground">

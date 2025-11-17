@@ -11,6 +11,7 @@ import {
   StageRunChecklistProps,
   SaveContributionEditPayload,
   DialecticContribution,
+  DialecticStageRecipe,
 } from '@paynless/types';
 // --- MOCKS ---
 
@@ -29,26 +30,33 @@ vi.mock('@paynless/store', async (importOriginal) => {
   const mockStoreExports = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>('@/mocks/dialecticStore.mock');
   const actualStoreModule = await importOriginal<typeof import('@paynless/store')>();
   
-  // Capture the real selector in a closure variable
-  const realSelector = actualStoreModule.selectStageDocumentResource;
+  // Capture the real selectors in closure variables
+  const realSelectStageDocumentResource = actualStoreModule.selectStageDocumentResource;
+  const realSelectValidMarkdownDocumentKeys = actualStoreModule.selectValidMarkdownDocumentKeys;
   
-  // Use the actual selector implementation so it reads from state
-  // Tests can still spy on it to verify it's called
-  // The mock calls through to the real function by default
-  const mockSelector = vi.fn((...args: Parameters<typeof actualStoreModule.selectStageDocumentResource>) => {
-    return realSelector(...args);
+  // Use the actual selector implementations so they read from state
+  // Tests can still spy on them to verify they're called
+  // The mocks call through to the real functions by default
+  const mockSelectStageDocumentResource = vi.fn((...args: Parameters<typeof actualStoreModule.selectStageDocumentResource>) => {
+    return realSelectStageDocumentResource(...args);
+  });
+  
+  const mockSelectValidMarkdownDocumentKeys = vi.fn((...args: Parameters<typeof actualStoreModule.selectValidMarkdownDocumentKeys>) => {
+    return realSelectValidMarkdownDocumentKeys(...args);
   });
   
   return { 
     ...actualStoreModule, 
     ...mockStoreExports,
-    selectStageDocumentResource: mockSelector,
+    selectStageDocumentResource: mockSelectStageDocumentResource,
+    selectValidMarkdownDocumentKeys: mockSelectValidMarkdownDocumentKeys,
   };
 });
 
 // Get reference to the mocked selector after module is loaded
-import { selectStageDocumentResource } from '@paynless/store';
+import { selectStageDocumentResource, selectValidMarkdownDocumentKeys } from '@paynless/store';
 const mockSelectStageDocumentResource = vi.mocked(selectStageDocumentResource);
+const mockSelectValidMarkdownDocumentKeys = vi.mocked(selectValidMarkdownDocumentKeys);
 
 // Mock child components
 vi.mock('@/components/common/TextInputArea', () => ({
@@ -127,6 +135,83 @@ const docB1: StageRunDocumentDescriptor = {
 
 const buildFocusKey = (modelId: string) => `${mockSessionId}:${mockStageSlug}:${modelId}`;
 
+// Recipe with test document keys as valid markdown outputs
+const defaultTestRecipe: DialecticStageRecipe = {
+  stageSlug: mockStageSlug,
+  instanceId: 'instance-test',
+  steps: [
+    {
+      id: 'step-doc-a1',
+      step_key: 'step_doc_a1',
+      step_slug: 'step-doc-a1',
+      step_name: 'Document A1 Step',
+      execution_order: 1,
+      parallel_group: 1,
+      branch_key: 'branch-1',
+      job_type: 'EXECUTE',
+      prompt_type: 'Turn',
+      prompt_template_id: 'prompt-1',
+      output_type: 'assembled_document_json',
+      granularity_strategy: 'per_source_document',
+      inputs_required: [],
+      inputs_relevance: [],
+      outputs_required: [
+        {
+          document_key: docA1Key,
+          artifact_class: 'rendered_document',
+          file_type: 'markdown',
+        },
+      ],
+    },
+    {
+      id: 'step-doc-a2',
+      step_key: 'step_doc_a2',
+      step_slug: 'step-doc-a2',
+      step_name: 'Document A2 Step',
+      execution_order: 2,
+      parallel_group: 2,
+      branch_key: 'branch-2',
+      job_type: 'EXECUTE',
+      prompt_type: 'Turn',
+      prompt_template_id: 'prompt-2',
+      output_type: 'assembled_document_json',
+      granularity_strategy: 'per_source_document',
+      inputs_required: [],
+      inputs_relevance: [],
+      outputs_required: [
+        {
+          document_key: docA2Key,
+          artifact_class: 'rendered_document',
+          file_type: 'markdown',
+        },
+      ],
+    },
+    {
+      id: 'step-doc-b1',
+      step_key: 'step_doc_b1',
+      step_slug: 'step-doc-b1',
+      step_name: 'Document B1 Step',
+      execution_order: 3,
+      parallel_group: 3,
+      branch_key: 'branch-3',
+      job_type: 'EXECUTE',
+      prompt_type: 'Turn',
+      prompt_template_id: 'prompt-3',
+      output_type: 'assembled_document_json',
+      granularity_strategy: 'per_source_document',
+      inputs_required: [],
+      inputs_relevance: [],
+      outputs_required: [
+        {
+          document_key: docB1Key,
+          artifact_class: 'rendered_document',
+          file_type: 'markdown',
+        },
+      ],
+    },
+  ],
+};
+
 const setupStore = ({
   focusedDocument = null,
   content = '',
@@ -134,6 +219,7 @@ const setupStore = ({
   isLoading = false,
   contribution = null,
   sourceContributionId = null,
+  recipesByStageSlug = {},
 }: {
   focusedDocument?: { modelId: string; documentKey: string } | null;
   content?: string;
@@ -141,7 +227,13 @@ const setupStore = ({
   isLoading?: boolean;
   contribution?: DialecticContribution | null;
   sourceContributionId?: string | null;
+  recipesByStageSlug?: Record<string, DialecticStageRecipe>;
 }) => {
+  // Merge default recipe with provided recipes (provided recipes take precedence)
+  const mergedRecipesByStageSlug: Record<string, DialecticStageRecipe> = {
+    [mockStageSlug]: defaultTestRecipe,
+    ...recipesByStageSlug,
+  };
   const documents = {
     [docA1Key]: docA1,
     [docA2Key]: docA2,
@@ -203,6 +295,7 @@ const setupStore = ({
       [buildFocusKey(focusedDocument.modelId)]: focusedDocument,
     } : {},
     stageDocumentContent: contentState,
+    recipesByStageSlug: mergedRecipesByStageSlug,
   });
 };
 
@@ -211,6 +304,7 @@ describe('GeneratedContributionCard', () => {
     vi.clearAllMocks();
     stageRunChecklistMock.mockClear();
     mockSelectStageDocumentResource.mockClear();
+    mockSelectValidMarkdownDocumentKeys.mockClear();
   });
 
   it('renders model and document metadata when its model has a focused document', async () => {
@@ -664,7 +758,131 @@ describe('GeneratedContributionCard', () => {
       expect(activeSessionDetail?.dialectic_contributions).toEqual([]);
     });
   });
+
+  describe('markdown document validation', () => {
+    const validMarkdownDocumentKey = 'draft_document_markdown';
+    const invalidNonMarkdownDocumentKey = 'HeaderContext';
+
+    const recipeWithMixedOutputs: DialecticStageRecipe = {
+      stageSlug: mockStageSlug,
+      instanceId: 'instance-mixed',
+      steps: [
+        {
+          id: 'step-markdown-1',
+          step_key: 'markdown_step_1',
+          step_slug: 'markdown-step-1',
+          step_name: 'Markdown Step 1',
+          execution_order: 1,
+          parallel_group: 1,
+          branch_key: 'branch-1',
+          job_type: 'EXECUTE',
+          prompt_type: 'Turn',
+          prompt_template_id: 'prompt-1',
+          output_type: 'assembled_document_json',
+          granularity_strategy: 'per_source_document',
+          inputs_required: [],
+          inputs_relevance: [],
+          outputs_required: [
+            {
+              document_key: validMarkdownDocumentKey,
+              artifact_class: 'rendered_document',
+              file_type: 'markdown',
+            },
+          ],
+        },
+        {
+          id: 'step-json',
+          step_key: 'json_step',
+          step_slug: 'json-step',
+          step_name: 'JSON Step',
+          execution_order: 2,
+          parallel_group: 2,
+          branch_key: 'branch-2',
+          job_type: 'PLAN',
+          prompt_type: 'Planner',
+          prompt_template_id: 'prompt-2',
+          output_type: 'header_context',
+          granularity_strategy: 'all_to_one',
+          inputs_required: [],
+          inputs_relevance: [],
+          outputs_required: [
+            {
+              document_key: invalidNonMarkdownDocumentKey,
+              artifact_class: 'header_context',
+              file_type: 'json',
+            },
+          ],
+        },
+      ],
+    };
+
+    it('does not render document content section when focusedDocument has documentKey not in valid markdown documents', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: invalidNonMarkdownDocumentKey },
+        content: 'HeaderContext content',
+        recipesByStageSlug: {
+          [mockStageSlug]: recipeWithMixedOutputs,
+        },
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      // Assert the placeholder is rendered
+      expect(
+        await screen.findByText(/Select a document to view its content and provide feedback./i),
+      ).toBeInTheDocument();
+
+      // Assert document content section elements are NOT rendered
+      expect(screen.queryByLabelText(/Document Content/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /save edit/i })).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText(/Enter feedback for HeaderContext/i)).not.toBeInTheDocument();
+    });
+
+    it('renders document content section normally when focusedDocument has valid markdown documentKey', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: validMarkdownDocumentKey },
+        content: 'Document content',
+        recipesByStageSlug: {
+          [mockStageSlug]: recipeWithMixedOutputs,
+        },
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      // Assert document content section is rendered
+      expect(await screen.findByText(/Document: draft_document_markdown/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Document Content/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /save edit/i })).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/Enter feedback for draft_document_markdown/i)).toBeInTheDocument();
+
+      // Assert placeholder is NOT rendered
+      expect(
+        screen.queryByText(/Select a document to view its content and provide feedback./i),
+      ).not.toBeInTheDocument();
+    });
+
+    it('renders placeholder when focusedDocument is null', () => {
+      setupStore({
+        focusedDocument: null,
+        recipesByStageSlug: {
+          [mockStageSlug]: recipeWithMixedOutputs,
+        },
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      expect(
+        screen.getByText(/Select a document to view its content and provide feedback./i),
+      ).toBeInTheDocument();
+
+      // Assert document content section elements are NOT rendered
+      expect(screen.queryByLabelText(/Document Content/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /save edit/i })).not.toBeInTheDocument();
+    });
+  });
 });
+
+
 
 
 

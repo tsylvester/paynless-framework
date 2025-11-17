@@ -1,6 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
 import type {
-  DialecticStageRecipeStep,
   SetFocusedStageDocumentPayload,
   StageDocumentEntry,
   StageRunChecklistProps,
@@ -14,6 +13,7 @@ import {
   selectStepList,
   selectStageRunProgress,
   selectStageDocumentChecklist,
+  selectValidMarkdownDocumentKeys,
 } from '@paynless/store';
 
 import { Card } from '@/components/ui/card';
@@ -72,118 +72,6 @@ const toPlainArray = (value: unknown): unknown[] => {
   return [value];
 };
 
-const isMarkdownTemplate = (value: string): boolean => {
-  const lower = value.toLowerCase();
-  return lower.endsWith('.md') || lower.endsWith('.markdown');
-};
-
-const extractMarkdownDocumentDescriptorsFromRule = (
-  rawRule: unknown,
-  stepKey: string,
-  descriptors: Map<string, string>,
-): void => {
-  if (!isPlainRecord(rawRule)) {
-    return;
-  }
-
-  const register = (documentKey: unknown) => {
-    if (typeof documentKey === 'string' && documentKey.trim().length > 0 && !descriptors.has(documentKey)) {
-      descriptors.set(documentKey, stepKey);
-    }
-  };
-
-  const legacyDocumentKey = rawRule['document_key'];
-  const legacyFileType = rawRule['file_type'];
-  if (legacyFileType === 'markdown') {
-    register(legacyDocumentKey);
-  }
-
-  const evaluateDocumentEntry = (entry: unknown) => {
-    if (!isPlainRecord(entry)) {
-      return;
-    }
-
-    const documentKey = entry['document_key'];
-    const fileType = entry['file_type'];
-    const templateFilename = entry['template_filename'];
-
-    if (fileType === 'markdown') {
-      register(documentKey);
-      return;
-    }
-
-    if (typeof templateFilename === 'string' && isMarkdownTemplate(templateFilename)) {
-      register(documentKey);
-    }
-  };
-
-  const documents = toPlainArray(rawRule['documents']);
-  documents.forEach(evaluateDocumentEntry);
-
-  const assembledJson = toPlainArray(rawRule['assembled_json']);
-  assembledJson.forEach(evaluateDocumentEntry);
-
-  const filesToGenerate = toPlainArray(rawRule['files_to_generate']);
-  filesToGenerate.forEach((entry) => {
-    if (!isPlainRecord(entry)) {
-      return;
-    }
-
-    const documentKey = entry['from_document_key'];
-    const templateFilename = entry['template_filename'];
-    if (
-      typeof documentKey === 'string' &&
-      documentKey.trim().length > 0 &&
-      typeof templateFilename === 'string' &&
-      isMarkdownTemplate(templateFilename)
-    ) {
-      register(documentKey);
-    }
-  });
-};
-
-const collectMarkdownDocumentDescriptors = (
-  steps: DialecticStageRecipeStep[],
-): MarkdownDocumentDescriptor[] => {
-  const descriptors = new Map<string, string>();
-
-  steps.forEach((step) => {
-    if (!step.outputs_required) {
-      return;
-    }
-
-    let rawOutputs: unknown = step.outputs_required;
-
-    if (typeof rawOutputs === 'string') {
-      try {
-        rawOutputs = JSON.parse(rawOutputs);
-      } catch (error) {
-        console.warn(
-          '[StageRunChecklist] Failed to parse outputs_required JSON',
-          { stepKey: step.step_key, raw: rawOutputs, error },
-        );
-        return;
-      }
-    }
-
-    const rules = toPlainArray(rawOutputs);
-    console.debug('[StageRunChecklist] Parsed outputs_required', {
-      stepKey: step.step_key,
-      ruleCount: rules.length,
-      sampleRule: rules[0],
-    });
-
-    rules.forEach((rule) => {
-      extractMarkdownDocumentDescriptorsFromRule(rule, step.step_key, descriptors);
-    });
-  });
-
-  return Array.from(descriptors.entries()).map(([documentKey, stepKey]) => ({
-    documentKey,
-    stepKey,
-  }));
-};
-
 const buildFocusedDocumentKey = (sessionId: string, stageSlug: string, modelId: string): string =>
   `${sessionId}:${stageSlug}:${modelId}`;
 
@@ -206,10 +94,92 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
     activeStageSlug ? selectStepList(state, activeStageSlug) : []
   );
 
-  const markdownDocumentDescriptors = useMemo(
-    () => collectMarkdownDocumentDescriptors(steps),
-    [steps],
+  const validMarkdownDocumentKeys = useDialecticStore((state) =>
+    activeStageSlug ? selectValidMarkdownDocumentKeys(state, activeStageSlug) : new Set<string>()
   );
+
+  const markdownDocumentDescriptors = useMemo(() => {
+    if (!activeStageSlug) {
+      return [];
+    }
+
+    const documentKeyToStepKeyMap = new Map<string, string>();
+
+    steps.forEach((step) => {
+      if (!step.outputs_required) {
+        return;
+      }
+
+      let rawOutputs: unknown = step.outputs_required;
+
+      if (typeof rawOutputs === 'string') {
+        try {
+          rawOutputs = JSON.parse(rawOutputs);
+        } catch {
+          return;
+        }
+      }
+
+      const rules = toPlainArray(rawOutputs);
+      rules.forEach((rule) => {
+        if (!isPlainRecord(rule)) {
+          return;
+        }
+
+        const registerDocumentKey = (documentKey: unknown) => {
+          if (
+            typeof documentKey === 'string' &&
+            documentKey.trim().length > 0 &&
+            !documentKeyToStepKeyMap.has(documentKey)
+          ) {
+            documentKeyToStepKeyMap.set(documentKey, step.step_key);
+          }
+        };
+
+        const extractDocumentKey = (entry: unknown) => {
+          if (!isPlainRecord(entry)) {
+            return;
+          }
+          const documentKey = entry['document_key'];
+          if (typeof documentKey === 'string' && documentKey.trim().length > 0) {
+            registerDocumentKey(documentKey);
+          }
+        };
+
+        const legacyDocumentKey = rule['document_key'];
+        if (typeof legacyDocumentKey === 'string' && legacyDocumentKey.trim().length > 0) {
+          registerDocumentKey(legacyDocumentKey);
+        }
+
+        const documents = toPlainArray(rule['documents']);
+        documents.forEach(extractDocumentKey);
+
+        const assembledJson = toPlainArray(rule['assembled_json']);
+        assembledJson.forEach(extractDocumentKey);
+
+        const filesToGenerate = toPlainArray(rule['files_to_generate']);
+        filesToGenerate.forEach((entry) => {
+          if (!isPlainRecord(entry)) {
+            return;
+          }
+          const documentKey = entry['from_document_key'];
+          if (typeof documentKey === 'string' && documentKey.trim().length > 0) {
+            registerDocumentKey(documentKey);
+          }
+        });
+      });
+    });
+
+    const descriptors: MarkdownDocumentDescriptor[] = [];
+    validMarkdownDocumentKeys.forEach((documentKey) => {
+      const stepKey = documentKeyToStepKeyMap.get(documentKey);
+      if (stepKey) {
+        descriptors.push({ documentKey, stepKey });
+      }
+    });
+
+    return descriptors;
+  }, [activeStageSlug, validMarkdownDocumentKeys, steps]);
 
   const markdownDescriptorMap = useMemo(() => {
     const descriptors = new Map<string, MarkdownDocumentDescriptor>();
@@ -217,14 +187,6 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
       descriptors.set(descriptor.documentKey, descriptor);
     });
     return descriptors;
-  }, [markdownDocumentDescriptors]);
-
-  const markdownStepKeys = useMemo(() => {
-    const keys = new Set<string>();
-    markdownDocumentDescriptors.forEach(({ stepKey }) => {
-      keys.add(stepKey);
-    });
-    return keys;
   }, [markdownDocumentDescriptors]);
 
   const progress = useDialecticStore((state) =>
@@ -281,7 +243,7 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
     return Array.from(documentsByKey.values()).sort((left, right) =>
       left.entry.documentKey.localeCompare(right.entry.documentKey),
     );
-  }, [documentChecklist, markdownDescriptorMap, markdownStepKeys, modelId]);
+  }, [documentChecklist, markdownDescriptorMap, modelId]);
 
   const totalDocuments = checklistDocuments.length;
 
@@ -446,3 +408,4 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
 };
 
 export { StageRunChecklist };
+

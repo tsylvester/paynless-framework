@@ -514,4 +514,26 @@ Deno.test('planPairwiseByOrigin Test Case B: The Passing Case (Describes the cor
 		assertEquals(child.sourceContributionId, child.inputs?.antithesis_id);
 	});
 });
+
+Deno.test('planPairwiseByOrigin includes planner_metadata with recipe_step_id in child payloads', () => {
+	const mockRecipeStepWithId: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		id: 'recipe-step-pairwise-456',
+	};
+
+	const childJobs = planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, mockRecipeStepWithId, 'user-jwt-123');
+	
+	assertEquals(childJobs.length, 3, 'Should create 3 child jobs for the 3 pairs');
+	
+	// Assert that every job in the returned payload array includes planner_metadata with recipe_step_id
+	childJobs.forEach(job => {
+		assertExists(job, 'Child job should exist');
+		assertExists(job.planner_metadata, 'Child job should include planner_metadata');
+		assertEquals(
+			job.planner_metadata?.recipe_step_id,
+			'recipe-step-pairwise-456',
+			'planner_metadata.recipe_step_id should match the recipe step id',
+		);
+	});
+});
  

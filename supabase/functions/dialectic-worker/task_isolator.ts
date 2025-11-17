@@ -538,6 +538,7 @@ export async function planComplexStage(
     }
 
     // 1. Fetch source documents required for this specific step.
+    deps.logger.info(`[planComplexStage] Step '${recipeStep.step_slug}' (key: '${recipeStep.step_key}') inputs_required: ${JSON.stringify(recipeStep.inputs_required)}`);
     const sourceDocuments = await findSourceDocuments(
         dbClient, 
         parentJob, 

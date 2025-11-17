@@ -621,11 +621,12 @@ export enum BranchKey {
   advisor_recommendations = 'advisor_recommendations',
 }
 
-export enum OutputType {
-  RenderedDocument = 'RenderedDocument',
-  HeaderContext = 'HeaderContext',
-  AssembledDocumentJson = 'AssembledDocumentJson',
-}
+// OutputType is now a type alias for a subset of FileType to avoid confusion
+// Use FileType.HeaderContext, FileType.RenderedDocument, FileType.AssembledDocumentJson directly
+export type OutputType = 
+  | FileType.HeaderContext
+  | FileType.RenderedDocument
+  | FileType.AssembledDocumentJson;
 
 /**
  * Tracks the progress of a multi-step job.

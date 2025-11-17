@@ -899,3 +899,147 @@ export const selectStageDocumentResourceMetadataByKey = (
 ): EditedDocumentResource | undefined => {
     return state.stageDocumentResources[compositeKey];
 };
+
+/**
+ * Helper to check if a value is a plain record object
+ */
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null;
+
+/**
+ * Helper to convert a value to a plain array
+ */
+const toPlainArray = (value: unknown): unknown[] => {
+    if (Array.isArray(value)) {
+        return value;
+    }
+    if (value === null || value === undefined) {
+        return [];
+    }
+    return [value];
+};
+
+/**
+ * Helper to check if a filename is a markdown template
+ */
+const isMarkdownTemplate = (value: string): boolean => {
+    const lower = value.toLowerCase();
+    return lower.endsWith('.md') || lower.endsWith('.markdown');
+};
+
+/**
+ * Extract markdown document keys from a single rule object
+ */
+const extractMarkdownDocumentKeysFromRule = (
+    rawRule: unknown,
+    documentKeys: Set<string>
+): void => {
+    if (!isPlainRecord(rawRule)) {
+        return;
+    }
+
+    const register = (documentKey: unknown) => {
+        if (typeof documentKey === 'string' && documentKey.trim().length > 0) {
+            documentKeys.add(documentKey);
+        }
+    };
+
+    // Handle legacy document_key/file_type at root level
+    const legacyDocumentKey = rawRule['document_key'];
+    const legacyFileType = rawRule['file_type'];
+    if (legacyFileType === 'markdown') {
+        register(legacyDocumentKey);
+    }
+
+    // Helper to evaluate a document entry
+    const evaluateDocumentEntry = (entry: unknown) => {
+        if (!isPlainRecord(entry)) {
+            return;
+        }
+
+        const documentKey = entry['document_key'];
+        const fileType = entry['file_type'];
+        const templateFilename = entry['template_filename'];
+
+        if (fileType === 'markdown') {
+            register(documentKey);
+            return;
+        }
+
+        if (typeof templateFilename === 'string' && isMarkdownTemplate(templateFilename)) {
+            register(documentKey);
+        }
+    };
+
+    // Handle documents array
+    const documents = toPlainArray(rawRule['documents']);
+    documents.forEach(evaluateDocumentEntry);
+
+    // Handle assembled_json array
+    const assembledJson = toPlainArray(rawRule['assembled_json']);
+    assembledJson.forEach(evaluateDocumentEntry);
+
+    // Handle files_to_generate array
+    const filesToGenerate = toPlainArray(rawRule['files_to_generate']);
+    filesToGenerate.forEach((entry) => {
+        if (!isPlainRecord(entry)) {
+            return;
+        }
+
+        const documentKey = entry['from_document_key'];
+        const templateFilename = entry['template_filename'];
+        if (
+            typeof documentKey === 'string' &&
+            documentKey.trim().length > 0 &&
+            typeof templateFilename === 'string' &&
+            isMarkdownTemplate(templateFilename)
+        ) {
+            register(documentKey);
+        }
+    });
+};
+
+/**
+ * Selector to get valid markdown document keys for a stage.
+ * Returns a Set<string> containing all document keys that are markdown files,
+ * extracted from the stage's recipe steps outputs_required fields.
+ * 
+ * This selector filters recipe steps to identify valid markdown document keys,
+ * handling both legacy document_key/file_type patterns and modern structured outputs.
+ * 
+ * @param state - The dialectic state values
+ * @param stageSlug - The stage slug to get markdown document keys for
+ * @returns A Set<string> containing valid markdown document keys for the stage
+ */
+export const selectValidMarkdownDocumentKeys = createSelector(
+    [selectRecipeSteps],
+    (steps): Set<string> => {
+        const documentKeys = new Set<string>();
+
+        steps.forEach((step) => {
+            if (!step.outputs_required) {
+                return;
+            }
+
+            let rawOutputs: unknown = step.outputs_required;
+
+            // Handle string JSONB - parse if needed
+            if (typeof rawOutputs === 'string') {
+                try {
+                    rawOutputs = JSON.parse(rawOutputs);
+                } catch {
+                    // If parsing fails, skip this step
+                    return;
+                }
+            }
+
+            // Convert to array and process each rule
+            const rules = toPlainArray(rawOutputs);
+            rules.forEach((rule) => {
+                extractMarkdownDocumentKeysFromRule(rule, documentKeys);
+            });
+        });
+
+        return documentKeys;
+    }
+);

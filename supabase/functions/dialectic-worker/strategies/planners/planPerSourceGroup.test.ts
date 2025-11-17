@@ -178,3 +178,18 @@ Deno.test('planPerSourceGroup throws when a source group lacks its canonical anc
         'planPerSourceGroup missing anchor SourceDocument for group thesis-2',
     );
 });
+
+Deno.test('planPerSourceGroup should include planner_metadata.recipe_step_id in all child payloads', () => {
+    const mockRecipeStep: DialecticRecipeStep = {
+        ...MOCK_RECIPE_STEP,
+        id: 'recipe-step-group-123',
+    };
+
+    const childJobs = planPerSourceGroup(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, mockRecipeStep, 'user-jwt-123');
+
+    assertEquals(childJobs.length > 0, true, 'Planner should produce at least one job');
+    for (const job of childJobs) {
+        assertExists(job.planner_metadata, 'planner_metadata should exist on child job payload');
+        assertEquals(job.planner_metadata?.recipe_step_id, 'recipe-step-group-123', 'planner_metadata.recipe_step_id should match recipe step id');
+    }
+});

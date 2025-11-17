@@ -160,7 +160,7 @@ BEGIN
         'PLAN',
         'Planner',
         v_plan_prompt_id,
-        'HeaderContext',
+        'header_context',
         'all_to_one',
         '[{"type":"seed_prompt","slug":"thesis","document_key":"seed_prompt","required":true}]'::jsonb,
         '[{"document_key":"seed_prompt","relevance":1.0}]'::jsonb,
@@ -322,7 +322,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_business_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.7}]'::jsonb,
@@ -373,6 +373,20 @@ BEGIN
             outputs_required = EXCLUDED.outputs_required,
             updated_at = now()
     RETURNING id INTO v_business_step_id;
+    
+    INSERT INTO public.dialectic_recipe_template_edges (
+        id,
+        template_id,
+        from_step_id,
+        to_step_id
+    ) VALUES (
+        gen_random_uuid(),
+        v_template_id,
+        v_planner_step_id,
+        v_business_step_id
+    )
+    ON CONFLICT (template_id, from_step_id, to_step_id) DO NOTHING;
+
 
     -- Upsert the document template for the feature spec prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
@@ -470,7 +484,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_feature_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.65}]'::jsonb,
@@ -628,7 +642,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_technical_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.6}]'::jsonb,
@@ -785,7 +799,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_success_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.8}]'::jsonb,
@@ -919,7 +933,7 @@ BEGIN
         'PLAN',
         'Planner',
         v_plan_prompt_id,
-        'HeaderContext',
+        'header_context',
         'all_to_one',
         '[{"type":"seed_prompt","slug":"thesis","document_key":"seed_prompt","required":true}]'::jsonb,
         '[{"document_key":"seed_prompt","relevance":1.0}]'::jsonb,
@@ -1044,7 +1058,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_business_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.7}]'::jsonb,
@@ -1116,7 +1130,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_feature_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.65}]'::jsonb,
@@ -1184,7 +1198,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_technical_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.6}]'::jsonb,
@@ -1251,7 +1265,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_success_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.8}]'::jsonb,

@@ -258,7 +258,7 @@ DECLARE
         'PLAN',
         'Planner',
         v_planner_prompt_id,
-        'HeaderContext',
+        'header_context',
         'all_to_one',
         '[
           {"type":"seed_prompt","slug":"paralysis","document_key":"seed_prompt","required":true},
@@ -338,7 +338,7 @@ DECLARE
         'PLAN',
         'Planner',
         v_planner_prompt_id,
-        'HeaderContext',
+        'header_context',
         'all_to_one',
         '[
           {"type":"seed_prompt","slug":"paralysis","document_key":"seed_prompt","required":true},
@@ -427,7 +427,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_actionable_checklist_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[
           {"type":"header_context","slug":"paralysis","document_key":"header_context","required":true},
@@ -511,7 +511,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_actionable_checklist_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[
           {"type":"header_context","slug":"paralysis","document_key":"header_context","required":true},
@@ -606,7 +606,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_updated_master_plan_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[
           {"type":"header_context","slug":"paralysis","document_key":"header_context","required":true},
@@ -685,7 +685,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_updated_master_plan_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[
           {"type":"header_context","slug":"paralysis","document_key":"header_context","required":true},
@@ -775,7 +775,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_advisor_recommendations_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[
           {"type":"project_resource","slug":"project","document_key":"initial_user_prompt","required":true},
@@ -856,7 +856,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_advisor_recommendations_prompt_id,
-        'RenderedDocument',
+        'rendered_document',
         'per_source_document',
         '[
           {"type":"document","slug":"synthesis","document_key":"product_requirements","required":true,"multiple":true},

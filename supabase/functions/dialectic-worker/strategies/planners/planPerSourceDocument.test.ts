@@ -501,10 +501,36 @@ Deno.test('planPerSourceDocument threads sourceContributionId for known source d
 		(payload) => payload.inputs?.thesis_id === brandNewDocId
 	);
 	assertExists(netNewPayload, 'Expected payload for net-new document');
-	assertEquals(
-		netNewPayload.sourceContributionId,
-		undefined,
-		'Net-new documents must not declare a sourceContributionId'
+		assertEquals(
+			netNewPayload.sourceContributionId,
+			undefined,
+			'Net-new documents must not declare a sourceContributionId'
+		);
+});
+
+Deno.test('planPerSourceDocument includes planner_metadata with recipe_step_id in all child payloads', () => {
+	const mockRecipeStepWithId: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		id: 'recipe-step-456',
+	};
+
+	const childJobs = planPerSourceDocument(
+		MOCK_SOURCE_DOCS,
+		MOCK_PARENT_JOB,
+		mockRecipeStepWithId,
+		'user-jwt-123'
 	);
+
+	assertEquals(childJobs.length, 2, 'Should create 2 child jobs, one for each source doc');
+	
+	for (const job of childJobs) {
+		assertExists(job, 'Child job should exist');
+		assertExists(job.planner_metadata, 'Child job should include planner_metadata');
+		assertEquals(
+			job.planner_metadata?.recipe_step_id,
+			'recipe-step-456',
+			'planner_metadata.recipe_step_id should match the recipe step id for every child job',
+		);
+	}
 });
  

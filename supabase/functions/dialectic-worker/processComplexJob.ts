@@ -122,6 +122,9 @@ export async function processComplexJob(
         edges = (edgeRows ?? []).map((e) => ({ from_step_id: e.from_step_id, to_step_id: e.to_step_id }));
     }
 
+    deps.logger.info(`[processComplexJob] Loaded ${steps.length} steps and ${edges.length} edges`);
+    deps.logger.info(`[processComplexJob] Edges: ${JSON.stringify(edges.map(e => ({ from: e.from_step_id, to: e.to_step_id })))}`);
+
     // 3. Determine readiness by looking at completed child jobs and the DAG
     const { data: completedChildren, error: childrenError } = await dbClient
         .from('dialectic_generation_jobs')
@@ -158,6 +161,17 @@ export async function processComplexJob(
         const set = predecessors.get(e.to_step_id) ?? new Set<string>();
         set.add(e.from_step_id);
         predecessors.set(e.to_step_id, set);
+    }
+
+    // Log predecessor map for debugging
+    for (const [stepId, slug] of stepSlugById.entries()) {
+        const predIds = predecessors.get(stepId);
+        if (predIds && predIds.size > 0) {
+            const predSlugs = Array.from(predIds).map(id => stepSlugById.get(id) || id);
+            deps.logger.info(`[processComplexJob] Step '${slug}' (id: ${stepId}) has ${predIds.size} predecessor(s): [${predSlugs.join(', ')}]`);
+        } else {
+            deps.logger.info(`[processComplexJob] Step '${slug}' (id: ${stepId}) has NO predecessors`);
+        }
     }
 
     const isSkipped = (s: DialecticRecipeTemplateStep | DialecticStageRecipeStep): boolean => {
@@ -220,6 +234,23 @@ export async function processComplexJob(
     // Log the first step for continuity with prior messages
     const firstReady = readySteps[0];
     deps.logger.info(`[processComplexJob] Processing step '${firstReady.step_slug}' for job ${parentJobId}`);
+    deps.logger.info(`[processComplexJob] Total ready steps: ${readySteps.length}, step slugs: [${readySteps.map(s => s.step_slug).join(', ')}]`);
+    for (const step of readySteps) {
+        deps.logger.info(`[processComplexJob] Ready step '${step.step_slug}' inputs_required: ${JSON.stringify(step.inputs_required)}`);
+    }
+
+    // CRITICAL VALIDATION: If multiple steps are ready initially (no completed steps yet), only the header_context generator should be ready.
+    // All other steps require header_context as input, so they should have the header_context generator as a predecessor.
+    if (completedStepSlugs.size === 0 && readySteps.length > 1) {
+        const stepsRequiringHeader = readySteps.filter(s => 
+            s.inputs_required && s.inputs_required.some(r => r.type === 'header_context')
+        );
+        if (stepsRequiringHeader.length > 0) {
+            const errorMsg = `[processComplexJob] CRITICAL BUG: Multiple steps are ready initially, including steps that require header_context. This indicates the DAG edges are not set up correctly. Ready steps requiring header_context: [${stepsRequiringHeader.map(s => s.step_slug).join(', ')}]. This should never happen - these steps should have 'build-stage-header' as a predecessor.`;
+            deps.logger.error(errorMsg);
+            // Don't throw here - let it fail naturally so we can see the full error, but log it clearly
+        }
+    }
 
 	// Emit planner_started notification with required context
 	await deps.notificationService.sendDocumentCentricNotification({
@@ -238,13 +269,16 @@ export async function processComplexJob(
         }
         // 5. Delegate to the planner for each ready step and aggregate child jobs.
         const plannedChildrenArrays = await Promise.all(
-            readySteps.map((recipeStep) => deps.planComplexStage!(
-                dbClient,
-                job,
-                deps,
-                recipeStep,
-                authToken,
-            ))
+            readySteps.map((recipeStep) => {
+                deps.logger.info(`[processComplexJob] Calling planComplexStage for step '${recipeStep.step_slug}' with inputs_required: ${JSON.stringify(recipeStep.inputs_required)}`);
+                return deps.planComplexStage!(
+                    dbClient,
+                    job,
+                    deps,
+                    recipeStep,
+                    authToken,
+                );
+            })
         );
         const childJobs = plannedChildrenArrays.flat();
 

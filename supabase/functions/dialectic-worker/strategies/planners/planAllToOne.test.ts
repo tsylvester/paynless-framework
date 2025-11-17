@@ -5,6 +5,7 @@ import type {
     DialecticPlanJobPayload,
     DialecticExecuteJobPayload,
     DialecticStageRecipeStep,
+    DialecticRecipeTemplateStep,
     SourceDocument,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { planAllToOne } from './planAllToOne.ts';
@@ -127,3 +128,77 @@ Deno.test('planAllToOne surfaces sourceContributionId for aggregated source docu
         'Aggregated planner payload must expose the originating contribution id',
     );
 });
+
+Deno.test('planAllToOne accepts DialecticRecipeTemplateStep (not just DialecticStageRecipeStep)', () => {
+    const MOCK_TEMPLATE_RECIPE_STEP: DialecticRecipeTemplateStep = {
+        id: 'template-step-id-123',
+        template_id: 'template-id-456',
+        step_number: 1,
+        step_key: 'thesis_build_stage_header',
+        step_slug: 'build-stage-header',
+        step_name: 'Build Stage Header',
+        step_description: 'Generate HeaderContext JSON that orchestrates downstream Thesis documents.',
+        prompt_template_id: 'template-planner-prompt-id',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        output_type: FileType.HeaderContext,
+        granularity_strategy: 'all_to_one',
+        inputs_required: [
+            {
+                type: 'seed_prompt',
+                slug: 'thesis',
+                document_key: FileType.SeedPrompt,
+                required: true,
+            },
+        ],
+        inputs_relevance: [
+            {
+                document_key: FileType.SeedPrompt,
+                relevance: 1.0,
+            },
+        ],
+        outputs_required: {
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        parallel_group: null,
+        branch_key: null,
+    };
+
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_TEMPLATE_RECIPE_STEP, 'user-jwt-123');
+    
+    assertEquals(childJobs.length, 1, 'Should create exactly one child job for template step');
+    const job1 = childJobs[0];
+    assertExists(job1);
+    assertEquals(job1.job_type, 'execute');
+    assertEquals(job1.output_type, FileType.HeaderContext, 'Output type should be correctly assigned from the template recipe step');
+    assertEquals(job1.prompt_template_id, 'template-planner-prompt-id', 'The prompt_template_id from the template recipe step should be used.');
+    assertExists(job1.inputs?.document_ids, 'Inputs should contain document_ids');
+    assertEquals(job1.inputs?.document_ids?.length, 3, 'Should include all source document IDs');
+});
+
+Deno.test('planAllToOne includes planner_metadata with recipe_step_id in child payloads', () => {
+    const mockRecipeStepWithId: DialecticStageRecipeStep = {
+        ...MOCK_RECIPE_STEP,
+        id: 'recipe-step-123',
+    };
+
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, mockRecipeStepWithId, 'user-jwt-123');
+    
+    assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    assertExists(job.planner_metadata, 'Child job should include planner_metadata');
+    assertEquals(
+        job.planner_metadata?.recipe_step_id,
+        'recipe-step-123',
+        'planner_metadata.recipe_step_id should match the recipe step id',
+    );
+});
+
