@@ -167,7 +167,7 @@ describe('planComplexStage', () => {
             resource_description: { "description": "A test resource file", type: 'document', document_key: FileType.business_case },
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            iteration_number: null,
+            iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
@@ -1411,3 +1411,4 @@ describe('planComplexStage', () => {
         );
     });
 });
+

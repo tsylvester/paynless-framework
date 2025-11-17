@@ -8,6 +8,7 @@ import type {
 import type { AssembledPrompt } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
 import type { ServiceError } from '../_shared/types.ts';
 import { logger } from '../_shared/logger.ts';
+import { downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
 
 export async function getSessionDetails(
   payload: GetSessionDetailsPayload,
@@ -71,61 +72,65 @@ export async function getSessionDetails(
     }
 
     // Step 4: Fetch the seed prompt for the current stage, iteration, and session
+    // Seed prompt is required for the application to function - if it's missing, return an error
     let activeSeedPrompt: AssembledPrompt | null = null;
     if (session.current_stage_id && session.dialectic_stages?.slug) {
       // First, find the resource metadata in the database
-      const query = dbClient
+      logger.info(`getSessionDetails: Querying for seed prompt with iteration_number = ${session.iteration_count}`);
+      const { data: seedPromptResource, error: resourceError } = await dbClient
         .from('dialectic_project_resources')
         .select('id, storage_path, file_name, storage_bucket')
         .eq('project_id', session.project_id)
         .eq('resource_type', 'seed_prompt')
         .eq('session_id', sessionId)
-        .eq('stage_slug', session.dialectic_stages.slug);
-
-      // For the initial seed prompt, iteration_number may be null even if session.iteration_count is 1
-      if (session.iteration_count === 1) {
-        logger.info('getSessionDetails: Querying for initial seed prompt with iteration_number IS NULL');
-        query.is('iteration_number', null);
-      } else {
-        logger.info(`getSessionDetails: Querying for seed prompt with iteration_number = ${session.iteration_count}`);
-        query.eq('iteration_number', session.iteration_count);
-      }
-
-      const { data: seedPromptResource, error: resourceError } = await query
+        .eq('stage_slug', session.dialectic_stages.slug)
+        .eq('iteration_number', session.iteration_count)
         .single();
 
       if (resourceError) {
-        logger.error('getSessionDetails: Error fetching seed prompt resource', { sessionId, stageId: session.current_stage_id, error: resourceError });
-        // Non-fatal, continue without the prompt
+        logger.error('getSessionDetails: Error fetching seed prompt resource', { sessionId, stageId: session.current_stage_id, iterationCount: session.iteration_count, error: resourceError });
+        if (resourceError.code === 'PGRST116') {
+          return { error: { message: 'Seed prompt is required but not found.', code: 'MISSING_REQUIRED_RESOURCE' }, status: 500 };
+        }
+        return { error: { message: 'Failed to fetch seed prompt resource.', code: 'DB_ERROR', details: resourceError.message }, status: 500 };
       }
 
-      if (seedPromptResource?.storage_path && seedPromptResource?.file_name && seedPromptResource?.storage_bucket) {
-        // If resource is found, download its content from storage
-        const fullStoragePath = `${seedPromptResource.storage_path}/${seedPromptResource.file_name}`;
-        const { data: blob, error: downloadError } = await dbClient.storage
-          .from(seedPromptResource.storage_bucket)
-          .download(fullStoragePath);
+      if (!seedPromptResource || !seedPromptResource.storage_path || !seedPromptResource.file_name || !seedPromptResource.storage_bucket) {
+        logger.error('getSessionDetails: Seed prompt resource found but missing required fields', { sessionId, stageId: session.current_stage_id, seedPromptResource });
+        return { error: { message: 'Seed prompt is required but not found.', code: 'MISSING_REQUIRED_RESOURCE' }, status: 500 };
+      }
 
-        if (downloadError) {
-          logger.error('getSessionDetails: Error downloading seed prompt content from storage', { sessionId, storagePath: fullStoragePath, error: downloadError });
-          // Non-fatal, continue without the prompt
-        }
+      // Download the seed prompt content from storage
+      const fullStoragePath = `${seedPromptResource.storage_path}/${seedPromptResource.file_name}`;
+      const { data: fileArrayBuffer, error: downloadError } = await downloadFromStorage(
+        dbClient,
+        seedPromptResource.storage_bucket,
+        fullStoragePath
+      );
 
-        if (blob) {
-          try {
-            const promptContent = await blob.text();
-            activeSeedPrompt = {
-              promptContent: promptContent,
-              source_prompt_resource_id: seedPromptResource.id,
-            };
-          } catch (e: unknown) {
-            let errorMessage = 'An unknown error occurred while reading the prompt content.';
-            if (e instanceof Error) {
-              errorMessage = e.message;
-            }
-            logger.error('getSessionDetails: Error reading blob content as text', { sessionId, error: errorMessage });
-          }
+      if (downloadError) {
+        logger.error('getSessionDetails: Error downloading seed prompt content from storage', { sessionId, storagePath: fullStoragePath, error: downloadError });
+        return { error: { message: 'Failed to download seed prompt content from storage.', code: 'STORAGE_ERROR', details: downloadError.message }, status: 500 };
+      }
+
+      if (!fileArrayBuffer) {
+        logger.error('getSessionDetails: Seed prompt content is null after download', { sessionId, storagePath: fullStoragePath });
+        return { error: { message: 'Seed prompt content is required but not found.', code: 'MISSING_REQUIRED_RESOURCE' }, status: 500 };
+      }
+
+      try {
+        const promptContent = new TextDecoder().decode(fileArrayBuffer);
+        activeSeedPrompt = {
+          promptContent: promptContent,
+          source_prompt_resource_id: seedPromptResource.id,
+        };
+      } catch (e: unknown) {
+        let errorMessage = 'An unknown error occurred while reading the prompt content.';
+        if (e instanceof Error) {
+          errorMessage = e.message;
         }
+        logger.error('getSessionDetails: Error decoding prompt content from ArrayBuffer', { sessionId, error: errorMessage });
+        return { error: { message: 'Failed to read seed prompt content.', code: 'PARSE_ERROR', details: errorMessage }, status: 500 };
       }
     }
     

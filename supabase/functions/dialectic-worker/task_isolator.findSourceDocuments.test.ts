@@ -885,6 +885,261 @@ describe('findSourceDocuments', () => {
         assertEquals(ids, ['header-context-contribution', 'header-context-resource']);
     });
 
+    it("filters seed_prompt resources by iteration_number", async () => {
+        const rule: InputRule[] = [{ type: 'seed_prompt', slug: 'test-stage' }];
+        const iteration1SeedPrompt: DialecticProjectResourceRow = {
+            id: 'seed-prompt-iter-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'seed-iter-1.txt',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/plain',
+            size_bytes: 123,
+            resource_description: { "description": "Seed prompt iteration 1", type: 'seed_prompt' },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'seed_prompt',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        const iteration2SeedPrompt: DialecticProjectResourceRow = {
+            id: 'seed-prompt-iter-2',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'seed-iter-2.txt',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/plain',
+            size_bytes: 124,
+            resource_description: { "description": "Seed prompt iteration 2", type: 'seed_prompt' },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 2,
+            resource_type: 'seed_prompt',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasIterationFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'iteration_number' &&
+                                filter.value === 1,
+                        );
+                        if (!hasIterationFilter) {
+                            return Promise.resolve({
+                                data: [iteration1SeedPrompt, iteration2SeedPrompt],
+                                error: null,
+                                count: 2,
+                                status: 200,
+                                statusText: 'OK',
+                            });
+                        }
+
+                        return Promise.resolve({
+                            data: [iteration1SeedPrompt],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+            mockDownloadFromStorage,
+        );
+
+        assertEquals(documents.length, 1);
+        assertEquals(documents[0].id, 'seed-prompt-iter-1');
+        assertEquals(documents[0].iteration_number, 1);
+        assertEquals(documents.some((doc) => doc.id === 'seed-prompt-iter-2'), false);
+    });
+
+    it("filters header_context resources by iteration_number", async () => {
+        const rule: InputRule[] = [{ type: 'header_context', slug: 'test-stage' }];
+        const iteration1HeaderContext: DialecticProjectResourceRow = {
+            id: 'header-context-iter-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'header-iter-1.json',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'application/json',
+            size_bytes: 80,
+            resource_description: { "description": "Header context iteration 1", type: 'header_context' },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'header_context',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        const iteration2HeaderContext: DialecticProjectResourceRow = {
+            id: 'header-context-iter-2',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'header-iter-2.json',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'application/json',
+            size_bytes: 81,
+            resource_description: { "description": "Header context iteration 2", type: 'header_context' },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 2,
+            resource_type: 'header_context',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasIterationFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'iteration_number' &&
+                                filter.value === 1,
+                        );
+                        if (!hasIterationFilter) {
+                            return Promise.resolve({
+                                data: [iteration1HeaderContext, iteration2HeaderContext],
+                                error: null,
+                                count: 2,
+                                status: 200,
+                                statusText: 'OK',
+                            });
+                        }
+
+                        return Promise.resolve({
+                            data: [iteration1HeaderContext],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+            mockDownloadFromStorage,
+        );
+
+        assertEquals(documents.length, 1);
+        assertEquals(documents[0].id, 'header-context-iter-1');
+        assertEquals(documents[0].iteration_number, 1);
+        assertEquals(documents.some((doc) => doc.id === 'header-context-iter-2'), false);
+    });
+
+    it("filters project_resource resources by iteration_number", async () => {
+        const rule: InputRule[] = [{ type: 'project_resource', slug: 'test-stage', document_key: FileType.GeneralResource }];
+        const iteration1ProjectResource: DialecticProjectResourceRow = {
+            id: 'project-resource-iter-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'resource-iter-1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 3072,
+            resource_description: { type: 'project_resource', document_key: FileType.GeneralResource },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'project_resource',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        const iteration2ProjectResource: DialecticProjectResourceRow = {
+            id: 'project-resource-iter-2',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'resource-iter-2.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 3073,
+            resource_description: { type: 'project_resource', document_key: FileType.GeneralResource },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 2,
+            resource_type: 'project_resource',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasIterationFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'iteration_number' &&
+                                filter.value === 1,
+                        );
+                        if (!hasIterationFilter) {
+                            return Promise.resolve({
+                                data: [iteration1ProjectResource, iteration2ProjectResource],
+                                error: null,
+                                count: 2,
+                                status: 200,
+                                statusText: 'OK',
+                            });
+                        }
+
+                        return Promise.resolve({
+                            data: [iteration1ProjectResource],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+            mockDownloadFromStorage,
+        );
+
+        assertEquals(documents.length, 1);
+        assertEquals(documents[0].id, 'project-resource-iter-1');
+        assertEquals(documents[0].iteration_number, 1);
+        assertEquals(documents.some((doc) => doc.id === 'project-resource-iter-2'), false);
+    });
+
     it("returns the expected 'project_resource' row when available", async () => {
         const rules: InputRule[] = [{ type: 'project_resource', slug: 'test-stage', document_key: FileType.GeneralResource }];
 
@@ -1171,6 +1426,155 @@ describe('findSourceDocuments', () => {
 
         assertEquals(documents.length, 1);
         assertEquals(documents[0].id, projectResource.id);
+    });
+
+    it('filters rendered_document resources by iteration_number', async () => {
+        const rule: InputRule[] = [
+            {
+                type: 'document',
+                slug: 'test-stage',
+                document_key: FileType.technical_approach,
+            },
+        ];
+
+        const iteration2ParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+            ...mockParentJob,
+            payload: {
+                job_type: 'PLAN',
+                model_id: 'model-1',
+                projectId: 'proj-1',
+                sessionId: 'sess-1',
+                stageSlug: 'test-stage',
+                iterationNumber: 2,
+                walletId: 'wallet-1',
+                continueUntilComplete: false,
+                maxRetries: 3,
+                continuation_count: 0,
+                user_jwt: 'parent-jwt-default',
+            },
+            iteration_number: 2,
+        };
+
+        const iteration1Document: DialecticProjectResourceRow = {
+            id: 'rendered-doc-iter-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_technical_approach_iter1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 4096,
+            resource_description: {
+                type: 'rendered_document',
+                document_key: FileType.technical_approach,
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: 'contrib-iter-1',
+            stage_slug: 'test-stage',
+        };
+
+        const iteration2Document: DialecticProjectResourceRow = {
+            id: 'rendered-doc-iter-2',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_technical_approach_iter2.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 4097,
+            resource_description: {
+                type: 'rendered_document',
+                document_key: FileType.technical_approach,
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 2,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: 'contrib-iter-2',
+            stage_slug: 'test-stage',
+        };
+
+        const iteration3Document: DialecticProjectResourceRow = {
+            id: 'rendered-doc-iter-3',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_technical_approach_iter3.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 4098,
+            resource_description: {
+                type: 'rendered_document',
+                document_key: FileType.technical_approach,
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 3,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: 'contrib-iter-3',
+            stage_slug: 'test-stage',
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasIterationFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'iteration_number' &&
+                                filter.value === 2,
+                        );
+                        if (!hasIterationFilter) {
+                            return Promise.resolve({
+                                data: [iteration1Document, iteration2Document, iteration3Document],
+                                error: null,
+                                count: 3,
+                                status: 200,
+                                statusText: 'OK',
+                            });
+                        }
+
+                        return Promise.resolve({
+                            data: [iteration2Document],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+                dialectic_contributions: {
+                    select: () =>
+                        Promise.resolve({
+                            data: [],
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        }),
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            iteration2ParentJob,
+            rule,
+            mockDownloadFromStorage,
+        );
+
+        assertEquals(documents.length, 1);
+        assertEquals(documents[0].id, 'rendered-doc-iter-2');
+        assertEquals(documents[0].iteration_number, 2);
+        assertEquals(documents.some((doc) => doc.id === 'rendered-doc-iter-1'), false);
+        assertEquals(documents.some((doc) => doc.id === 'rendered-doc-iter-3'), false);
     });
 
     it('does not filter by source_contribution_id for project resources without linkage', async () => {

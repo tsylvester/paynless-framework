@@ -67,6 +67,7 @@ import type {
     DialecticStageRecipe,
     AssembledPrompt,
     StageDocumentContentState,
+    StageRenderedDocumentDescriptor,
 } from '@paynless/types';
 
 const mockThesisStage: DialecticStage = {
@@ -1522,6 +1523,106 @@ describe('selectIsStageReadyForSessionIteration', () => {
         });
 
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(true);
+    });
+
+    it('should return true when required document exists in stageRunProgress.documents for the source stage', () => {
+        const sourceStageSlug = 'thesis';
+        const targetStageSlug = 'synthesis';
+        const sourceProgressKey = `${sessionId}:${sourceStageSlug}:${iterationNumber}`;
+        const targetProgressKey = `${sessionId}:${targetStageSlug}:${iterationNumber}`;
+        
+        const requiredDocument: StageRenderedDocumentDescriptor = {
+            descriptorType: 'rendered',
+            status: 'completed',
+            job_id: 'job-doc-complete',
+            latestRenderedResourceId: 'res-doc-complete',
+            modelId: 'model-1',
+            versionHash: 'hash-doc-complete',
+            lastRenderedResourceId: 'res-doc-complete',
+            lastRenderAtIso: new Date().toISOString(),
+            stepKey: 'doc_step',
+        };
+
+        const recipeRequiringDocument: DialecticStageRecipe = {
+            stageSlug: targetStageSlug,
+            instanceId: 'instance-2',
+            steps: [
+                {
+                    id: 'step-require-doc',
+                    step_key: 'require_doc_step',
+                    step_slug: 'require-doc-step',
+                    step_name: 'Require Document Step',
+                    execution_order: 1,
+                    parallel_group: 1,
+                    branch_key: 'branch-require-doc',
+                    job_type: 'EXECUTE',
+                    prompt_type: 'Turn',
+                    prompt_template_id: 'prompt-3',
+                    output_type: 'AssembledDocumentJson',
+                    granularity_strategy: 'per_source_document',
+                    inputs_required: [
+                        { type: 'document', document_key: 'business_case', required: true, slug: `${sourceStageSlug}.business_case` },
+                    ],
+                    inputs_relevance: [],
+                    outputs_required: [],
+                },
+            ],
+        };
+
+        const targetProcessTemplate: DialecticProcessTemplate = {
+            ...mockProcessTemplate,
+            stages: [
+                ...mockProcessTemplate.stages!,
+                {
+                    id: 'stage-synthesis',
+                    slug: targetStageSlug,
+                    display_name: 'Synthesis',
+                    description: 'The synthesis stage',
+                    default_system_prompt_id: null,
+                    created_at: new Date().toISOString(),
+                    expected_output_template_ids: [],
+                    recipe_template_id: null,
+                    active_recipe_instance_id: null,
+                },
+            ],
+        };
+
+        const sessionWithoutContribution: DialecticSession = {
+            ...(projectWithResource.dialectic_sessions![0]),
+            dialectic_contributions: [],
+            feedback: [],
+        };
+
+        const state = buildState({
+            activeSeedPrompt: mockSeedPrompt,
+            currentProcessTemplate: targetProcessTemplate,
+            currentProjectDetail: {
+                ...projectWithResource,
+                dialectic_sessions: [sessionWithoutContribution],
+            },
+            recipesByStageSlug: {
+                [sourceStageSlug]: requiredSeedPromptRecipe,
+                [targetStageSlug]: recipeRequiringDocument,
+            },
+            stageRunProgress: {
+                [sourceProgressKey]: {
+                    stepStatuses: {
+                        seed_step: 'completed',
+                    },
+                    documents: {
+                        'business_case': requiredDocument,
+                    },
+                },
+                [targetProgressKey]: {
+                    stepStatuses: {
+                        require_doc_step: 'not_started',
+                    },
+                    documents: {},
+                },
+            },
+        });
+
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, targetStageSlug, iterationNumber)).toBe(true);
     });
 }); 
 

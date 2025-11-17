@@ -168,7 +168,7 @@ describe('planComplexStage', () => {
             resource_description: { "description": "A test resource file", "type": "document", "document_key": FileType.business_case },
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            iteration_number: null,
+            iteration_number: 1,
             resource_type: 'document',
             session_id: null,
             source_contribution_id: null,
@@ -942,6 +942,9 @@ describe('planComplexStage', () => {
             if (typeof mockParentJob.payload.stageSlug !== 'string') {
                 throw new Error('mockParentJob.payload.stageSlug must be defined as a string. Fix the data flow upstream.');
             }
+            if (typeof mockParentJob.payload.iterationNumber !== 'number') {
+                throw new Error('mockParentJob.payload.iterationNumber must be defined as a number. Fix the data flow upstream.');
+            }
             const unlinkedResource: DialecticProjectResourceRow = {
                 ...mockProjectResources[0],
                 id: 'unlinked-project-resource-1',
@@ -949,6 +952,7 @@ describe('planComplexStage', () => {
                 resource_type: 'project_resource',
                 session_id: mockParentJob.payload.sessionId,
                 stage_slug: mockParentJob.payload.stageSlug,
+                iteration_number: mockParentJob.payload.iterationNumber,
                 source_contribution_id: null,
                 file_name: 'sess-1_test-stage_general_resource.md',
                 resource_description: {
@@ -1015,6 +1019,10 @@ describe('planComplexStage', () => {
                 hasFilter('stage_slug', 'test-stage'),
                 'Expected stage_slug filter for project_resource',
             );
+            assert(
+                hasFilter('iteration_number', mockParentJob.payload.iterationNumber),
+                'Expected iteration_number filter for project_resource',
+            );
 
             const hasNonNullSourceContributionFilter = calls.some((args) =>
                 Array.isArray(args) &&
@@ -1039,6 +1047,9 @@ describe('planComplexStage', () => {
             if (typeof mockParentJob.payload.stageSlug !== 'string') {
                 throw new Error('mockParentJob.payload.stageSlug must be defined as a string. Fix the data flow upstream.');
             }
+            if (typeof mockParentJob.payload.iterationNumber !== 'number') {
+                throw new Error('mockParentJob.payload.iterationNumber must be defined as a number. Fix the data flow upstream.');
+            }
             const seedPromptResource: DialecticProjectResourceRow = {
                 ...mockProjectResources[0],
                 id: 'seed-prompt-1',
@@ -1046,6 +1057,7 @@ describe('planComplexStage', () => {
                 resource_type: 'seed_prompt',
                 session_id: mockParentJob.payload.sessionId,
                 stage_slug: mockParentJob.payload.stageSlug,
+                iteration_number: mockParentJob.payload.iterationNumber,
                 source_contribution_id: null,
                 file_name: 'test-stage_seed_prompt.md',
                 resource_description: {
@@ -1108,6 +1120,10 @@ describe('planComplexStage', () => {
             assert(
                 hasFilter('stage_slug', 'test-stage'),
                 'Expected stage_slug filter for seed_prompt',
+            );
+            assert(
+                hasFilter('iteration_number', mockParentJob.payload.iterationNumber),
+                'Expected iteration_number filter for seed_prompt',
             );
         });
 

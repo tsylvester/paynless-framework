@@ -299,6 +299,8 @@ export async function findSourceDocuments(
                     resourceQuery = resourceQuery.eq('stage_slug', stageSlugCandidate);
                 }
 
+                resourceQuery = resourceQuery.eq('iteration_number', normalizedIterationNumber);
+
                 if (rule.document_key) {
                     const documentKey = rule.document_key;
                     resourceQuery = resourceQuery.ilike('file_name', `%${documentKey}%`);
@@ -367,6 +369,8 @@ export async function findSourceDocuments(
                 if (shouldFilterByStage) {
                     resourceQuery = resourceQuery.eq('stage_slug', stageSlugCandidate);
                 }
+
+                resourceQuery = resourceQuery.eq('iteration_number', normalizedIterationNumber);
 
                 if (rule.document_key) {
                     const documentKey = rule.document_key;

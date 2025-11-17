@@ -364,10 +364,20 @@ export const selectIsStageReadyForSessionIteration = createSelector(
                 }
 
                 if (requirement.type === 'document') {
+                    const sourceStageSlug = deriveRequirementStageSlug(requirement.slug);
+                    const sourceProgressKey = `${sessionId}:${sourceStageSlug}:${iterationNumber}`;
+                    const sourceProgressEntry = stageRunProgressMap[sourceProgressKey];
+                    
+                    if (sourceProgressEntry && sourceProgressEntry.documents && requirement.document_key) {
+                        const documentDescriptor = sourceProgressEntry.documents[requirement.document_key];
+                        if (documentDescriptor && documentDescriptor.status === 'completed') {
+                            continue;
+                        }
+                    }
+                    
                     const contributions = Array.isArray(projectSession.dialectic_contributions)
                         ? projectSession.dialectic_contributions
                         : [];
-                    const sourceStageSlug = deriveRequirementStageSlug(requirement.slug);
                     const hasDocument = contributions.some((contribution) => {
                         if (contribution.iteration_number !== iterationNumber) {
                             return false;
