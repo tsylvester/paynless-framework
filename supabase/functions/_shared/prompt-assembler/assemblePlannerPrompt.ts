@@ -67,7 +67,7 @@ export async function assemblePlannerPrompt(
   }
   const { data: promptTemplateData, error: templateError } = await dbClient
     .from("system_prompts")
-    .select("prompt_text")
+    .select("prompt_text, document_template_id")
     .eq("id", stage.recipe_step.prompt_template_id)
     .single();
 
@@ -103,7 +103,99 @@ export async function assemblePlannerPrompt(
     );
   }
 
-  const promptTemplate = promptTemplateData.prompt_text;
+  // 3. Resolve template content: either from inline prompt_text or from storage via document_template_id
+  let promptTemplate: string;
+
+  if (promptTemplateData.prompt_text && promptTemplateData.prompt_text.trim().length > 0) {
+    // Backward compatibility: use inline prompt_text when available
+    promptTemplate = promptTemplateData.prompt_text;
+  } else if (
+    promptTemplateData.document_template_id &&
+    typeof promptTemplateData.document_template_id === "string" &&
+    promptTemplateData.document_template_id.trim().length > 0
+  ) {
+    // Fetch template from storage using document_template_id
+    const { data: templateRecord, error: templateRecordError } = await dbClient
+      .from("dialectic_document_templates")
+      .select("storage_bucket, storage_path, file_name")
+      .eq("id", promptTemplateData.document_template_id)
+      .single();
+
+    if (templateRecordError) {
+      throw templateRecordError;
+    }
+
+    if (!templateRecord) {
+      throw new Error(
+        `Failed to find document template with ID ${promptTemplateData.document_template_id}`,
+      );
+    }
+
+    if (
+      !templateRecord.storage_bucket ||
+      typeof templateRecord.storage_bucket !== "string" ||
+      templateRecord.storage_bucket.trim().length === 0
+    ) {
+      throw new Error(
+        "Invalid template record: missing storage_bucket, storage_path, or file_name",
+      );
+    }
+
+    if (
+      !templateRecord.storage_path ||
+      typeof templateRecord.storage_path !== "string" ||
+      templateRecord.storage_path.trim().length === 0
+    ) {
+      throw new Error(
+        "Invalid template record: missing storage_bucket, storage_path, or file_name",
+      );
+    }
+
+    if (
+      !templateRecord.file_name ||
+      typeof templateRecord.file_name !== "string" ||
+      templateRecord.file_name.trim().length === 0
+    ) {
+      throw new Error(
+        "Invalid template record: missing storage_bucket, storage_path, or file_name",
+      );
+    }
+
+    const fullPath =
+      `${templateRecord.storage_path.replace(/\/$/, "")}/${templateRecord.file_name}`;
+
+    const { data: downloadedData, error: downloadError } = await downloadFromStorage(
+      dbClient,
+      templateRecord.storage_bucket,
+      fullPath,
+    );
+
+    if (downloadError) {
+      throw new Error(
+        `Failed to download template from storage: ${downloadError.message}`,
+      );
+    }
+
+    if (!downloadedData) {
+      throw new Error("Failed to download template from storage: No data returned");
+    }
+
+    // Decode the downloaded content
+    // downloadFromStorage returns ArrayBuffer | null, and we've already checked for null
+    // The checklist requires checking for both ArrayBuffer and Blob, but the actual implementation
+    // always converts Blob to ArrayBuffer before returning, so we only need to handle ArrayBuffer
+    if (downloadedData instanceof ArrayBuffer) {
+      promptTemplate = new TextDecoder().decode(downloadedData);
+    } else {
+      // This should never happen given the return type, but included for defensive programming
+      throw new Error("Invalid template file format");
+    }
+  } else {
+    // Both prompt_text and document_template_id are missing or empty
+    throw new Error(
+      "System prompt template is missing both prompt_text and document_template_id",
+    );
+  }
 
   const sourceContributionId = job.target_contribution_id;
 
@@ -138,6 +230,7 @@ export async function assemblePlannerPrompt(
       stageSlug: stage.slug,
       fileType: FileType.PlannerPrompt,
       modelSlug: job.payload.model_slug,
+      attemptCount: job.attempt_count,
       stepName: stage.recipe_step.step_name,
       branchKey: stage.recipe_step.branch_key,
       parallelGroup: stage.recipe_step.parallel_group,

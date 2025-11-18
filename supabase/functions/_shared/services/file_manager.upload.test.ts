@@ -184,7 +184,7 @@ Deno.test('FileManagerService', async (t) => {
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
             dialectic_project_resources: {
-              insert: { data: [{ 
+              upsert: { data: [{ 
                 id: 'resource-123', 
                 project_id: 'project-uuid-123', 
                 user_id: 'user-uuid-789', 
@@ -221,9 +221,10 @@ Deno.test('FileManagerService', async (t) => {
         assertEquals(record?.id, 'resource-123')
 
         assertEquals(setup.spies.fromSpy.calls[0].args[0], 'dialectic_project_resources')
-        const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert
-        assertExists(insertSpy);
-        const insertData = insertSpy.calls[0].args[0];
+        const upsertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.upsert
+        assertExists(upsertSpy);
+        const upsertArgs = upsertSpy.calls[0].args;
+        const insertData = upsertArgs[0];
         assertEquals(insertData.project_id, 'project-uuid-123')
         
         // constructStoragePath now returns an object
@@ -251,7 +252,7 @@ Deno.test('FileManagerService', async (t) => {
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
           dialectic_project_resources: {
-            insert: { data: [{ id: 'seed-resource-id' }], error: null },
+            upsert: { data: [{ id: 'seed-resource-id' }], error: null },
           },
         },
       };
@@ -280,9 +281,10 @@ Deno.test('FileManagerService', async (t) => {
       assertEquals(error, null);
       assertExists(record);
 
-      const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert;
-      assertExists(insertSpy);
-      const insertData = insertSpy.calls[0].args[0];
+      const upsertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.upsert;
+      assertExists(upsertSpy);
+      const upsertArgs = upsertSpy.calls[0].args;
+      const insertData = upsertArgs[0];
 
       // Assert full column contract for SeedPrompt with session metadata
       assertEquals(insertData.resource_type, 'seed_prompt');
@@ -370,7 +372,7 @@ Deno.test('FileManagerService', async (t) => {
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
             dialectic_project_resources: {
-              insert: { data: [{ 
+              upsert: { data: [{ 
                 id: 'resource-123', 
                 project_id: 'project-uuid-123', 
                 user_id: 'user-uuid-789', 
@@ -407,9 +409,10 @@ Deno.test('FileManagerService', async (t) => {
         assertEquals(record?.id, 'resource-123')
 
         assertEquals(setup.spies.fromSpy.calls[0].args[0], 'dialectic_project_resources')
-        const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert
-        assertExists(insertSpy);
-        const insertData = insertSpy.calls[0].args[0];
+        const upsertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.upsert
+        assertExists(upsertSpy);
+        const upsertArgs = upsertSpy.calls[0].args;
+        const insertData = upsertArgs[0];
         assertEquals(insertData.project_id, 'project-uuid-123')
         
         // constructStoragePath now returns an object
@@ -867,7 +870,7 @@ Deno.test('FileManagerService', async (t) => {
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
             dialectic_project_resources: { // Simulating this table for initial_user_prompt
-              insert: { data: null, error: { message: 'Simulated DB insert error', name: 'XXYYZ' } },
+              upsert: { data: null, error: { message: 'Simulated DB insert error', name: 'XXYYZ' } },
             },
           },
           storageMock: {
@@ -1142,7 +1145,7 @@ Deno.test('FileManagerService', async (t) => {
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
           dialectic_project_resources: {
-            insert: { data: [{ id: `contrib-${fileType}` }], error: null },
+            upsert: { data: [{ id: `contrib-${fileType}` }], error: null },
           },
         },
       };
@@ -1191,9 +1194,10 @@ Deno.test('FileManagerService', async (t) => {
       const contributionTableCall = fromSpyCalls.find((call) => call.args[0] === 'dialectic_project_resources');
       assertExists(contributionTableCall, `'dialectic_project_resources' table was not targeted for ${fileType}`);
 
-      const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert;
-      assertExists(insertSpy, "Insert spy for 'dialectic_project_resources' should exist");
-      const insertData = insertSpy.calls[0].args[0];
+      const upsertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.upsert;
+      assertExists(upsertSpy, "Upsert spy for 'dialectic_project_resources' should exist");
+      const upsertArgs = upsertSpy.calls[0].args;
+      const insertData = upsertArgs[0];
       
       // Assert full column contract for continuation-backed planner prompt
       assertEquals(insertData.resource_type, 'planner_prompt');
@@ -1234,11 +1238,11 @@ Deno.test('FileManagerService', async (t) => {
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
           dialectic_project_resources: {
-            insert: { data: [{ id: `contrib-${fileType}` }], error: null },
+            upsert: { data: [{ id: `contrib-${fileType}` }], error: null },
           },
         },
       };
-  
+
       // Custom setup for spy injection
       originalEnvGet = Deno.env.get.bind(Deno.env);
       envStub = stub(Deno.env, 'get', (key: string): string | undefined => {
@@ -1249,7 +1253,7 @@ Deno.test('FileManagerService', async (t) => {
       fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, {
         constructStoragePath: mockConstructStoragePath,
       });
-  
+
       const contributionMetadata: ContributionMetadata = {
         iterationNumber: 1,
         modelIdUsed: 'model-id-123',
@@ -1388,11 +1392,11 @@ Deno.test('FileManagerService', async (t) => {
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
           dialectic_project_resources: {
-            insert: { data: [{ id: `contrib-${fileType}` }], error: null },
+            upsert: { data: [{ id: `contrib-${fileType}` }], error: null },
           },
         },
       };
-  
+
       originalEnvGet = Deno.env.get.bind(Deno.env);
       envStub = stub(Deno.env, 'get', (key: string): string | undefined => {
         if (key === 'SB_CONTENT_STORAGE_BUCKET') return 'test-bucket';
@@ -1465,11 +1469,11 @@ Deno.test('FileManagerService', async (t) => {
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
           dialectic_project_resources: {
-            insert: { data: [{ id: `contrib-${fileType}` }], error: null },
+            upsert: { data: [{ id: `contrib-${fileType}` }], error: null },
           },
         },
       };
-  
+
       originalEnvGet = Deno.env.get.bind(Deno.env);
       envStub = stub(Deno.env, 'get', (key: string): string | undefined => {
         if (key === 'SB_CONTENT_STORAGE_BUCKET') return 'test-bucket';

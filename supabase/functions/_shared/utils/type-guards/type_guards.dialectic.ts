@@ -835,6 +835,7 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
     if (('user_jwt' in payload) && typeof payload.user_jwt !== 'string') throw new Error('Invalid user_jwt.');
     if (('target_contribution_id' in payload) && typeof payload.target_contribution_id !== 'string') throw new Error('Invalid target_contribution_id.');
     if (('sourceContributionId' in payload) && payload.sourceContributionId !== null && typeof payload.sourceContributionId !== 'string') throw new Error('Invalid sourceContributionId.');
+    if (('model_slug' in payload) && typeof payload.model_slug !== 'string') throw new Error('Invalid model_slug.');
 
     // Legacy property check
     if ('originalFileName' in payload) throw new Error('Legacy property originalFileName is not allowed.');
@@ -846,7 +847,7 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
         'sourceContributionId', 'document_key', 'branch_key', 'parallel_group', 'planner_metadata',
         'document_relationships', 'isIntermediate', 'user_jwt', 'target_contribution_id',
         // Base job payload fields that may be present on execute jobs
-        'continueUntilComplete', 'maxRetries', 'continuation_count', 'is_test_job'
+        'continueUntilComplete', 'maxRetries', 'continuation_count', 'is_test_job', 'model_slug'
     ]);
 
     const unknownKeys = Object.keys(payload).filter(key => !allowedKeys.has(key));
@@ -889,13 +890,16 @@ export function isDialecticJobPayload(payload: unknown): payload is DialecticJob
     if ('prompt' in payload && typeof payload.prompt !== 'string') {
         return false;
     }
+    if ('model_slug' in payload && typeof payload.model_slug !== 'string') {
+        return false;
+    }
     
     // Ensure that if other properties exist, they are of the correct type.
     // This part is crucial for robust validation beyond the required fields.
     const allowedKeys: (keyof DialecticJobPayload)[] = [
         'sessionId', 'projectId', 'model_id', 'stageSlug', 
         'iterationNumber', 'walletId', 'continueUntilComplete', 'maxRetries', 
-        'continuation_count', 'target_contribution_id', 'job_type'
+        'continuation_count', 'target_contribution_id', 'job_type', 'model_slug'
     ];
 
     for (const key in payload) {

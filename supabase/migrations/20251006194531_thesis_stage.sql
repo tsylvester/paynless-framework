@@ -26,6 +26,10 @@ DECLARE
     v_doc_template_id UUID;
     v_domain_id UUID;
 BEGIN
+    -- Allow prompt_text to be NULL to support document_template_id fallback
+    ALTER TABLE public.system_prompts
+    ALTER COLUMN prompt_text DROP NOT NULL;
+    
     -- Get the domain_id for 'Software Development'
     SELECT id INTO v_domain_id FROM public.dialectic_domains WHERE name = 'Software Development' LIMIT 1;
     
@@ -48,7 +52,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'thesis_planner_header_v1',
-        $PROMPT$\path=docs/prompts/thesis/thesis_planner_header_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Planner template that assembles the Thesis HeaderContext artifact',
@@ -84,7 +88,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'thesis_business_case_turn_v1',
-        $PROMPT$\path=docs/prompts/thesis/thesis_business_case_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Thesis stage business case turn template',
@@ -407,7 +411,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'thesis_feature_spec_turn_v1',
-        $PROMPT$\path=docs/prompts/thesis/thesis_feature_spec_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Thesis stage feature spec turn template',
@@ -565,7 +569,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'thesis_technical_approach_turn_v1',
-        $PROMPT$\path=docs/prompts/thesis/thesis_technical_approach_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Thesis stage technical approach turn template',
@@ -722,7 +726,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'thesis_success_metrics_turn_v1',
-        $PROMPT$\path=docs/prompts/thesis/thesis_success_metrics_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Thesis stage success metrics turn template',

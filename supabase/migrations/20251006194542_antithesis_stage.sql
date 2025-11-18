@@ -33,6 +33,10 @@ DECLARE
     v_doc_template_id UUID;
     v_domain_id UUID;
 BEGIN
+    -- Allow prompt_text to be NULL to support document_template_id fallback
+    ALTER TABLE public.system_prompts
+    ALTER COLUMN prompt_text DROP NOT NULL;
+    
     -- Get the domain_id for 'Software Development'
     SELECT id INTO v_domain_id FROM public.dialectic_domains WHERE name = 'Software Development' LIMIT 1;
     
@@ -54,7 +58,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'antithesis_planner_review_v1',
-        $PROMPT$\path=docs/prompts/antithesis/antithesis_planner_review_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Planner template that assembles the Antithesis per-proposal HeaderContext artifact',
@@ -124,7 +128,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'antithesis_business_case_critique_turn_v1',
-        $PROMPT$\path=docs/prompts/antithesis/antithesis_business_case_critique_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Antithesis stage per-proposal critique turn template',
@@ -159,7 +163,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'antithesis_feasibility_assessment_turn_v1',
-        $PROMPT$\path=docs/prompts/antithesis/antithesis_feasibility_assessment_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Antithesis stage technical feasibility assessment turn template',
@@ -194,7 +198,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'antithesis_risk_register_turn_v1',
-        $PROMPT$\path=docs/prompts/antithesis/antithesis_risk_register_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Antithesis stage risk register turn template',
@@ -229,7 +233,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'antithesis_non_functional_requirements_turn_v1',
-        $PROMPT$\path=docs/prompts/antithesis/antithesis_non_functional_requirements_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Antithesis stage non-functional requirements review turn template',
@@ -264,7 +268,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'antithesis_dependency_map_turn_v1',
-        $PROMPT$\path=docs/prompts/antithesis/antithesis_dependency_map_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Antithesis stage dependency map turn template',
@@ -299,7 +303,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'antithesis_comparison_vector_turn_v1',
-        $PROMPT$\path=docs/prompts/antithesis/antithesis_comparison_vector_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Antithesis stage comparison vector turn template',

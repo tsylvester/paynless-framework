@@ -64,7 +64,7 @@ export const planPerSourceGroup: GranularityPlannerFn = (
             continueUntilComplete: parentJob.payload.continueUntilComplete,
             maxRetries: parentJob.payload.maxRetries,
             continuation_count: parentJob.payload.continuation_count,
-            target_contribution_id: parentJob.payload.target_contribution_id,
+            ...(typeof parentJob.payload.target_contribution_id === 'string' ? { target_contribution_id: parentJob.payload.target_contribution_id } : {}),
             is_test_job: parentJob.payload.is_test_job,
             sourceContributionId: anchorDoc.id,
             // Override job-specific properties

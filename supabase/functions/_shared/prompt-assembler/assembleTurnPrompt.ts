@@ -182,6 +182,7 @@ export async function assembleTurnPrompt(
       stageSlug: stage.slug,
       fileType: FileType.TurnPrompt,
       modelSlug: job.payload.model_slug,
+      attemptCount: job.attempt_count,
       documentKey: documentKey,
       stepName: stage.recipe_step.step_name,
       branchKey: stage.recipe_step.branch_key,

@@ -55,6 +55,10 @@ DECLARE
     v_instance_stack_step_id UUID;
 
 BEGIN
+    -- Allow prompt_text to be NULL to support document_template_id fallback
+    ALTER TABLE public.system_prompts
+    ALTER COLUMN prompt_text DROP NOT NULL;
+    
     -- Step 1: Get the domain_id for 'Software Development'
     SELECT id INTO v_domain_id FROM public.dialectic_domains WHERE name = 'Software Development' LIMIT 1;
 
@@ -65,7 +69,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_pairwise_header_planner_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_pairwise_header_planner_v1.md$PROMPT$, true, 1, 'Planner template that assembles the pairwise HeaderContext for Synthesis stage fan-out.', false, v_doc_template_id)
+    VALUES ('synthesis_pairwise_header_planner_v1', null, true, 1, 'Planner template that assembles the pairwise HeaderContext for Synthesis stage fan-out.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_pairwise_planner_prompt_id;
 
@@ -75,7 +79,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_pairwise_business_case_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_pairwise_business_case_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage pairwise business case synthesis turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_pairwise_business_case_turn_v1', null, true, 1, 'Synthesis stage pairwise business case synthesis turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_pairwise_business_prompt_id;
 
@@ -85,7 +89,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_pairwise_feature_spec_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_pairwise_feature_spec_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage pairwise feature spec synthesis turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_pairwise_feature_spec_turn_v1', null, true, 1, 'Synthesis stage pairwise feature spec synthesis turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_pairwise_feature_prompt_id;
 
@@ -95,7 +99,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_pairwise_technical_approach_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_pairwise_technical_approach_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage pairwise technical approach synthesis turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_pairwise_technical_approach_turn_v1', null, true, 1, 'Synthesis stage pairwise technical approach synthesis turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_pairwise_technical_prompt_id;
 
@@ -105,7 +109,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_pairwise_success_metrics_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_pairwise_success_metrics_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage pairwise success metrics synthesis turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_pairwise_success_metrics_turn_v1', null, true, 1, 'Synthesis stage pairwise success metrics synthesis turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_pairwise_metrics_prompt_id;
 
@@ -115,7 +119,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_document_business_case_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_document_business_case_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage document-level business case consolidation turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_document_business_case_turn_v1', null, true, 1, 'Synthesis stage document-level business case consolidation turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_doc_business_prompt_id;
 
@@ -125,7 +129,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_document_feature_spec_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_document_feature_spec_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage document-level feature spec consolidation turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_document_feature_spec_turn_v1', null, true, 1, 'Synthesis stage document-level feature spec consolidation turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_doc_feature_prompt_id;
 
@@ -135,7 +139,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_document_technical_approach_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_document_technical_approach_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage document-level technical approach consolidation turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_document_technical_approach_turn_v1', null, true, 1, 'Synthesis stage document-level technical approach consolidation turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_doc_technical_prompt_id;
 
@@ -145,7 +149,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_document_success_metrics_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_document_success_metrics_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage document-level success metrics consolidation turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_document_success_metrics_turn_v1', null, true, 1, 'Synthesis stage document-level success metrics consolidation turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_doc_metrics_prompt_id;
 
@@ -155,7 +159,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_final_header_planner_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_final_header_planner_v1.md$PROMPT$, true, 1, 'Planner template that prepares the final Synthesis HeaderContext before deliverable turns.', false, v_doc_template_id)
+    VALUES ('synthesis_final_header_planner_v1', null, true, 1, 'Planner template that prepares the final Synthesis HeaderContext before deliverable turns.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_final_header_prompt_id;
 
@@ -165,7 +169,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_product_requirements_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_product_requirements_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage final Product Requirements Document turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_product_requirements_turn_v1', null, true, 1, 'Synthesis stage final Product Requirements Document turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_product_requirements_prompt_id;
 
@@ -175,7 +179,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_system_architecture_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_system_architecture_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage final system architecture overview turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_system_architecture_turn_v1', null, true, 1, 'Synthesis stage final system architecture overview turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_system_architecture_prompt_id;
 
@@ -185,7 +189,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_tech_stack_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_tech_stack_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage final tech stack recommendations turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_tech_stack_turn_v1', null, true, 1, 'Synthesis stage final tech stack recommendations turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_tech_stack_prompt_id;
 

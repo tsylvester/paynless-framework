@@ -148,6 +148,7 @@ export async function assembleContinuationPrompt(
       stageSlug: stage.slug,
       fileType: fileType,
       modelSlug: modelSlug,
+      attemptCount: job.attempt_count,
       documentKey: typeof payload.document_key === "string"
         ? payload.document_key
         : undefined,

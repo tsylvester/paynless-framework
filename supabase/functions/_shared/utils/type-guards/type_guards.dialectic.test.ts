@@ -599,7 +599,12 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
             continueUntilComplete: true,
             maxRetries: 3,
             continuation_count: 1,
+            model_slug: 'test-model-slug',
         };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with a valid optional model_slug from DialecticBaseJobPayload', () => {
+        const p = { ...basePayload, model_slug: 'test-model-slug' };
         assert(isDialecticExecuteJobPayload(p));
     });
 
@@ -686,6 +691,10 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
         const p = { ...basePayload, target_contribution_id: 123 as any };
         assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid target_contribution_id.');
     });
+    await t.step('should throw if model_slug is of wrong type', () => {
+        const p = { ...basePayload, model_slug: 123 as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid model_slug.');
+    });
 
     // Test legacy property
     await t.step('should throw for legacy originalFileName property', () => {
@@ -729,6 +738,7 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
             prompt: 'Custom prompt for this job',
             continueUntilComplete: true,
             maxRetries: 3,
+            model_slug: 'test-model-slug',
         };
         assert(isDialecticJobPayload(payload));
     });
@@ -746,6 +756,7 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
             maxRetries: 5,
             continuation_count: 1,
             target_contribution_id: 'contrib-789',
+            model_slug: 'test-model-slug',
             prompt: 'Another custom prompt',
         };
         assert(isDialecticJobPayload(payload));
@@ -1118,6 +1129,26 @@ Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
     await t.step('should return true for a valid plan job payload', () => {
         const payload = {
             job_type: 'PLAN',
+        };
+        assert(isDialecticPlanJobPayload(payload));
+    });
+    await t.step('should return true for a valid plan job payload with base payload fields including model_slug', () => {
+        const payload = {
+            job_type: 'PLAN',
+            sessionId: 'test-session',
+            projectId: 'test-project',
+            model_id: 'model-123',
+            walletId: 'wallet-abc',
+            stageSlug: 'thesis',
+            iterationNumber: 1,
+            model_slug: 'test-model-slug',
+            user_jwt: 'test-jwt',
+            continueUntilComplete: true,
+            maxRetries: 3,
+            continuation_count: 1,
+            target_contribution_id: 'target-id',
+            is_test_job: false,
+            sourceContributionId: 'source-id',
         };
         assert(isDialecticPlanJobPayload(payload));
     });

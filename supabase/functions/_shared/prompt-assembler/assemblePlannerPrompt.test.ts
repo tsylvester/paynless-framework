@@ -319,6 +319,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             stageSlug: defaultStage.slug,
             fileType: FileType.PlannerPrompt,
             modelSlug: "claude-3-opus",
+            attemptCount: mockPlannerJob.attempt_count,
             stepName: "GeneratePlan",
             branchKey: null,
             parallelGroup: null,
@@ -1293,5 +1294,338 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     } finally {
       teardown();
     }
+  });
+
+  await t.step("should fetch template from storage when prompt_text is null and document_template_id exists", async () => {
+    const templateContent = "# Template Content\n\nThis is the actual template.";
+    const templateId = "template-uuid-123";
+    const storageBucket = "prompt-templates";
+    const storagePath = "docs/prompts/thesis/";
+    const fileName = "thesis_planner_header_v1.md";
+    const fullPath = `${storagePath}${fileName}`;
+
+    // Create a Blob with the template content for the mock storage download
+    const templateBlob = new Blob([templateContent], { type: "text/markdown" });
+
+    // Mock system_prompts with null prompt_text and document_template_id
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: {
+            data: [{
+              prompt_text: null,
+              document_template_id: templateId,
+            }],
+            error: null,
+          },
+        },
+        dialectic_document_templates: {
+          select: {
+            data: [{
+              id: templateId,
+              storage_bucket: storageBucket,
+              storage_path: storagePath,
+              file_name: fileName,
+            }],
+            error: null,
+          },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          },
+        },
+      },
+      storageMock: {
+        downloadResult: async (bucketId: string, path: string) => {
+          assertEquals(bucketId, storageBucket);
+          assertEquals(path, fullPath);
+          return { data: templateBlob, error: null };
+        },
+      },
+    };
+
+    const {
+      client,
+      fileManager,
+      gatherContextFn,
+      renderFn,
+    } = setup(config, defaultMockContext);
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-planner-resource-id-storage",
+      project_id: defaultProject.id,
+      file_name: "claude-3-opus_1_GeneratePlan_planner_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/planner_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock planner prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "planner_prompt",
+      source_contribution_id: null,
+    };
+
+    fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    try {
+      await assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+        gatherContext: gatherContextFn,
+        render: renderFn,
+      });
+
+      // Assert storage download was called with correct parameters via the Supabase client
+      const downloadSpy = mockSupabaseSetup!.spies.storage.from(storageBucket).downloadSpy;
+      assertSpyCalls(downloadSpy, 1);
+      assertSpyCall(downloadSpy, 0, {
+        args: [fullPath],
+      });
+
+      // Assert render was called with downloaded template content, not null or path string
+      assertSpyCalls(renderFn, 1);
+      const renderCallArgs = renderFn.calls[0].args;
+      const stageArgForRender = renderCallArgs[1];
+      assertEquals(
+        stageArgForRender.system_prompts!.prompt_text,
+        templateContent,
+      );
+
+      // Assert database was queried for document_template_id
+      const dbSpies = mockSupabaseSetup!.spies.getLatestQueryBuilderSpies(
+        "system_prompts",
+      )!;
+      assertSpyCall(dbSpies.select!, 0, {
+        args: ["prompt_text, document_template_id"],
+      });
+
+      // Assert dialectic_document_templates was queried
+      const templateDbSpies = mockSupabaseSetup!.spies.getLatestQueryBuilderSpies(
+        "dialectic_document_templates",
+      )!;
+      assertSpyCalls(templateDbSpies.select!, 1);
+      assertSpyCall(templateDbSpies.eq!, 0, {
+        args: ["id", templateId],
+      });
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should use inline prompt_text when present (backward compatibility)", async () => {
+    const inlineTemplateContent = "inline template content";
+    
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: {
+            data: [{
+              prompt_text: inlineTemplateContent,
+            }],
+            error: null,
+          },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          },
+        },
+      },
+    };
+
+    const {
+      client,
+      fileManager,
+      gatherContextFn,
+      renderFn,
+    } = setup(config, defaultMockContext);
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-planner-resource-id-inline",
+      project_id: defaultProject.id,
+      file_name: "claude-3-opus_1_GeneratePlan_planner_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/planner_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock planner prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "planner_prompt",
+      source_contribution_id: null,
+    };
+
+    fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    try {
+      await assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+        gatherContext: gatherContextFn,
+        render: renderFn,
+      });
+
+      // Assert render was called with inline template content
+      assertSpyCalls(renderFn, 1);
+      const renderCallArgs = renderFn.calls[0].args;
+      const stageArgForRender = renderCallArgs[1];
+      assertEquals(
+        stageArgForRender.system_prompts!.prompt_text,
+        inlineTemplateContent,
+      );
+
+      // Assert that no template download occurred (verify no storage.from calls for template bucket)
+      // The gatherContext call may use storage, but template-specific storage should not be called
+      // We verify backward compatibility by asserting the inline content is used
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should throw error when both prompt_text and document_template_id are null", async () => {
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: {
+            data: [{
+              prompt_text: null,
+              document_template_id: null,
+            }],
+            error: null,
+          },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          },
+        },
+      },
+    };
+
+    const {
+      client,
+      fileManager,
+      gatherContextFn,
+      renderFn,
+    } = setup(config, defaultMockContext);
+
+    const assembleFn = () =>
+      assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+        gatherContext: gatherContextFn,
+        render: renderFn,
+      });
+
+    await assertRejects(
+      assembleFn,
+      Error,
+      "System prompt template is missing both prompt_text and document_template_id",
+    );
+
+    teardown();
+  });
+
+  await t.step("should throw error when template download fails", async () => {
+    const templateId = "template-uuid-123";
+    const storageBucket = "prompt-templates";
+    const storagePath = "docs/prompts/thesis/";
+    const fileName = "thesis_planner_header_v1.md";
+    const fullPath = `${storagePath}${fileName}`;
+    const downloadError = new Error("File not found");
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: {
+            data: [{
+              prompt_text: null,
+              document_template_id: templateId,
+            }],
+            error: null,
+          },
+        },
+        dialectic_document_templates: {
+          select: {
+            data: [{
+              id: templateId,
+              storage_bucket: storageBucket,
+              storage_path: storagePath,
+              file_name: fileName,
+            }],
+            error: null,
+          },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          },
+        },
+      },
+      storageMock: {
+        downloadResult: async (bucketId: string, path: string) => {
+          assertEquals(bucketId, storageBucket);
+          assertEquals(path, fullPath);
+          return { data: null, error: downloadError };
+        },
+      },
+    };
+
+    const {
+      client,
+      fileManager,
+      gatherContextFn,
+      renderFn,
+    } = setup(config, defaultMockContext);
+
+    const assembleFn = () =>
+      assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+        gatherContext: gatherContextFn,
+        render: renderFn,
+      });
+
+    await assertRejects(
+      assembleFn,
+      Error,
+      "Failed to download template from storage",
+    );
+
+    teardown();
   });
 });

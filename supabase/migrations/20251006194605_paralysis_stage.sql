@@ -22,6 +22,10 @@ DECLARE
     v_updated_master_plan_doc_template_id UUID;
     v_advisor_recommendations_doc_template_id UUID;
     BEGIN
+    -- Allow prompt_text to be NULL to support document_template_id fallback
+    ALTER TABLE public.system_prompts
+    ALTER COLUMN prompt_text DROP NOT NULL;
+    
     -- Get the domain_id for 'Software Development'
     SELECT id INTO v_domain_id FROM public.dialectic_domains WHERE name = 'Software Development' LIMIT 1;
 
@@ -44,7 +48,7 @@ DECLARE
     ) VALUES (
         gen_random_uuid(),
         'paralysis_planner_header_v1',
-        $PROMPT$\path=docs/prompts/paralysis/paralysis_planner_header_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Planner template that assembles the Paralysis implementation HeaderContext artifact',
@@ -80,7 +84,7 @@ DECLARE
     ) VALUES (
         gen_random_uuid(),
         'paralysis_actionable_checklist_turn_v1',
-        $PROMPT$\path=docs/prompts/paralysis/paralysis_actionable_checklist_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Paralysis stage actionable checklist generation turn template',
@@ -116,7 +120,7 @@ DECLARE
     ) VALUES (
         gen_random_uuid(),
         'paralysis_updated_master_plan_turn_v1',
-        $PROMPT$\path=docs/prompts/paralysis/paralysis_updated_master_plan_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Paralysis stage updated master plan generation turn template',
@@ -152,7 +156,7 @@ DECLARE
     ) VALUES (
         gen_random_uuid(),
         'paralysis_advisor_recommendations_turn_v1',
-        $PROMPT$\path=docs/prompts/paralysis/paralysis_advisor_recommendations_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Paralysis stage advisor recommendations generation turn template',

@@ -101,7 +101,7 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 				continueUntilComplete: parentJob.payload.continueUntilComplete,
 				maxRetries: parentJob.payload.maxRetries,
 				continuation_count: parentJob.payload.continuation_count,
-				target_contribution_id: parentJob.payload.target_contribution_id,
+				...(typeof parentJob.payload.target_contribution_id === 'string' ? { target_contribution_id: parentJob.payload.target_contribution_id } : {}),
 				is_test_job: parentJob.payload.is_test_job,
 
 				// Set job-specific properties that override or supplement parent fields

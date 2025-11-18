@@ -188,28 +188,16 @@ export class FileManagerService {
           resource_description: resourceDescriptionForDb,
           source_contribution_id: pathContextForStorage.sourceContributionId ?? null,
         };
-        // Use upsert only for project export zip; otherwise, insert as before
-        if (pathContextForStorage.fileType === 'project_export_zip') {
-          const { data: newRecord, error: upsertError } = await this.supabase
-            .from(targetTable)
-            .upsert(recordData, { onConflict: 'storage_bucket,storage_path,file_name' })
-            .select()
-            .single();
-
-          if (upsertError) {
-            throw upsertError;
-          }
-          return { record: newRecord, error: null };
-        }
-
-        const { data: newRecord, error: insertError } = await this.supabase
+        // Use upsert for all project resources to handle duplicate storage paths gracefully
+        // The unique constraint on (storage_bucket, storage_path, file_name) will be respected
+        const { data: newRecord, error: upsertError } = await this.supabase
           .from(targetTable)
-          .insert(recordData)
+          .upsert(recordData, { onConflict: 'storage_bucket,storage_path,file_name' })
           .select()
           .single();
 
-        if (insertError) {
-          throw insertError;
+        if (upsertError) {
+          throw upsertError;
         }
         return { record: newRecord, error: null };
 
