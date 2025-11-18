@@ -471,35 +471,46 @@ Deno.test("PromptAssembler", async (t) => {
   );
 
   await t.step(
-    "assemble router should delegate to assembleTurnPrompt",
+    "assemble router should delegate to assemblePlannerPrompt when recipe step is PLAN even if payload is EXECUTE",
     async () => {
       try {
         const { client, fileManager } = setup({
           "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
         });
+        const assemblePlannerSpy = spy(mockAssemblePlannerPrompt);
+        const assembleTurnSpy = spy(mockAssembleTurnPrompt);
         const assembler = new PromptAssembler(
           client,
           fileManager!,
           undefined,
           undefined,
           undefined,
-          undefined,
-          mockAssembleTurnPrompt,
+          assemblePlannerSpy,
+          assembleTurnSpy,
         );
-        const turnSpy = spy(assembler, "assembleTurnPrompt");
 
         const options: AssemblePromptOptions = {
           project: mockProject,
           session: mockSession,
-          stage: mockStage,
+          stage: mockStage, // Has recipe_step.job_type === "PLAN" (line 125)
           projectInitialUserPrompt: "init prompt",
           iterationNumber: 1,
-          job: { ...mockJob, job_type: "EXECUTE" },
+          job: {
+            ...mockJob,
+            job_type: "EXECUTE",
+            payload: {
+              model_id: "model-1",
+              job_type: "EXECUTE", // EXECUTE payload (child job from planner)
+            },
+          },
         };
 
         await assembler.assemble(options);
 
-        assertSpyCalls(turnSpy, 1);
+        // Assert: Should route to assemblePlannerPrompt (recipe_step.job_type === "PLAN")
+        assertSpyCalls(assemblePlannerSpy, 1);
+        // Assert: Should NOT route to assembleTurnPrompt
+        assertSpyCalls(assembleTurnSpy, 0);
       } finally {
         teardown();
       }

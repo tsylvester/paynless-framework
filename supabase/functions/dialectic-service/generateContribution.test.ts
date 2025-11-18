@@ -118,6 +118,20 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
                     error: null
                 }
             },
+            'ai_providers': {
+                select: (state: MockQueryBuilderState) => {
+                    const idFilter = state.filters.find(f => f.column === 'id' && f.type === 'eq');
+                    if (!idFilter || !idFilter.value || typeof idFilter.value !== 'string') {
+                        return Promise.resolve({ data: null, error: new Error('Model not found'), count: 0, status: 406, statusText: 'OK' });
+                    }
+                    const modelNames: Record<string, string> = {
+                        'model-A': 'model-slug-A',
+                        'model-B': 'model-slug-B',
+                    };
+                    const modelName = modelNames[idFilter.value] || `slug-${idFilter.value}`;
+                    return Promise.resolve({ data: [{ name: modelName }], error: null, count: 1, status: 200, statusText: 'OK' });
+                }
+            },
             'dialectic_generation_jobs': {
                 insert: (_state: MockQueryBuilderState) => {
                     const job_id = mockJobIds[insertCallCount];
@@ -224,6 +238,12 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
             'dialectic_stages': {
                 select: {
                     data: [mockDbResponse],
+                    error: null
+                }
+            },
+            'ai_providers': {
+                select: {
+                    data: [{ name: `slug-${mockModelId}` }],
                     error: null
                 }
             },
@@ -378,6 +398,12 @@ Deno.test("generateContributions - Failure Path: Fails to enqueue a job", async 
             'dialectic_stages': {
                 select: {
                     data: [mockDbResponse], // Use a valid stage with one step
+                    error: null
+                }
+            },
+            'ai_providers': {
+                select: {
+                    data: [{ name: 'model-slug-fail' }],
                     error: null
                 }
             },
@@ -751,6 +777,20 @@ Deno.test("generateContributions - plan jobs carry payload.user_jwt equal to pro
                     error: null
                 }
             },
+            'ai_providers': {
+                select: (state: MockQueryBuilderState) => {
+                    const idFilter = state.filters.find(f => f.column === 'id' && f.type === 'eq');
+                    if (!idFilter || !idFilter.value || typeof idFilter.value !== 'string') {
+                        return Promise.resolve({ data: null, error: new Error('Model not found'), count: 0, status: 406, statusText: 'OK' });
+                    }
+                    const modelNames: Record<string, string> = {
+                        'model-A': 'model-slug-A',
+                        'model-B': 'model-slug-B',
+                    };
+                    const modelName = modelNames[idFilter.value] || `slug-${idFilter.value}`;
+                    return Promise.resolve({ data: [{ name: modelName }], error: null, count: 1, status: 200, statusText: 'OK' });
+                }
+            },
             'dialectic_generation_jobs': {
                 insert: (_state: MockQueryBuilderState) => {
                     const id = mockJobIds[insertIdx] || `job-${insertIdx}`;
@@ -804,6 +844,101 @@ Deno.test("generateContributions - plan jobs carry payload.user_jwt equal to pro
     }
 });
 
+Deno.test("generateContributions - plan jobs include model_slug from ai_providers query", async () => {
+    const mockSessionId = "sess-model-slug";
+    const mockProjectId = "proj-model-slug";
+    const mockUserId = "user-model-slug";
+    const mockModelId = "model-123";
+    const mockModelName = "test-model-slug";
+    const mockJobId = "job-model-slug";
+
+    const mockPayload: GenerateContributionsPayload = {
+        sessionId: mockSessionId,
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        projectId: mockProjectId,
+        walletId: 'wallet-1',
+    };
+
+    const mockDbResponse = createMockDbResponse(1);
+    assertEquals(isDatabaseRecipeSteps(mockDbResponse), true, "The mock DB response should be a valid DatabaseRecipeSteps object");
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        project_id: mockProjectId,
+                        selected_model_ids: [mockModelId],
+                        iteration_count: 1,
+                        current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
+            'dialectic_stages': {
+                select: {
+                    data: [mockDbResponse],
+                    error: null
+                }
+            },
+            'ai_providers': {
+                select: {
+                    data: [{ name: mockModelName }],
+                    error: null
+                }
+            },
+            'dialectic_generation_jobs': {
+                insert: { data: [{ id: mockJobId }], error: null }
+            },
+        },
+    });
+
+    const providedJwt = 'jwt.token.here';
+
+    const result = await generateContributions(
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockPayload,
+        { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
+        {
+            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
+            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(1), error: null }),
+            getExtensionFromMimeType: () => 'txt',
+            logger,
+            randomUUID: () => 'uuid',
+            fileManager: {
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
+            },
+            deleteFromStorage: () => Promise.resolve({ error: null }),
+        },
+        providedJwt
+    );
+
+    assertEquals(result.success, true, "Function should return success: true");
+
+    const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertExists(insertSpy, "Insert spy for dialectic_generation_jobs should exist");
+    assertEquals(insertSpy.callCount, 1, "Insert should be called exactly once");
+
+    const insertArg = insertSpy.callsArgs[0][0];
+    if (!isPlanJobInsert(insertArg)) {
+        fail(`insert payload shape mismatch. Got: ${JSON.stringify(insertArg)}`);
+    }
+
+    const payload = insertArg.payload;
+    assertEquals(payload.model_slug, mockModelName, "Job payload must include model_slug from ai_providers query");
+    assertEquals(payload.user_jwt, providedJwt, "Job payload must include user_jwt");
+    assertEquals(payload.model_id, mockModelId, "Job payload must include model_id");
+    assertEquals(payload.job_type, 'PLAN');
+    assertEquals(insertArg.job_type, 'PLAN');
+
+    // Verify ai_providers query was made
+    const aiProvidersSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('ai_providers', 'select');
+    assertExists(aiProvidersSpy, "Should query ai_providers table");
+    assertEquals(aiProvidersSpy.callCount, 1, "Should query ai_providers exactly once");
+});
+
 Deno.test("should create jobs with a top-level 'is_test_job' flag when specified", async () => {
     const mockSessionId = "test-session-is-test-job";
     const mockProjectId = "test-project-is-test-job";
@@ -839,6 +974,12 @@ Deno.test("should create jobs with a top-level 'is_test_job' flag when specified
             'dialectic_stages': {
                 select: {
                     data: [mockDbResponse], // Simple 1-step recipe
+                    error: null
+                }
+            },
+            'ai_providers': {
+                select: {
+                    data: [{ name: `slug-${mockModelId}` }],
                     error: null
                 }
             },
@@ -988,6 +1129,12 @@ Deno.test("generateContributions successfully enqueues jobs given a valid and co
             'dialectic_stages': {
                 select: {
                     data: [mockCorrectDbStageResponse],
+                    error: null
+                }
+            },
+            'ai_providers': {
+                select: {
+                    data: [{ name: 'slug-model-stateless' }],
                     error: null
                 }
             },

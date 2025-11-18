@@ -536,4 +536,62 @@ Deno.test('planPairwiseByOrigin includes planner_metadata with recipe_step_id in
 		);
 	});
 });
+
+Deno.test('planPairwiseByOrigin should inherit all fields from parent job payload', () => {
+	const parentJobWithAllFields: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		id: 'parent-job-123',
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		stage_slug: 'synthesis',
+		iteration_number: 1,
+		payload: {
+			job_type: 'PLAN',
+			projectId: 'project-xyz',
+			sessionId: 'session-abc',
+			stageSlug: 'synthesis',
+			iterationNumber: 1,
+			model_id: 'model-ghi',
+			walletId: 'wallet-default',
+			model_slug: 'parent-model-slug',
+			user_jwt: 'parent-jwt-token',
+		},
+		attempt_count: 0,
+		completed_at: null,
+		created_at: new Date().toISOString(),
+		error_details: null,
+		max_retries: 3,
+		parent_job_id: null,
+		prerequisite_job_id: null,
+		results: null,
+		started_at: null,
+		status: 'pending',
+		target_contribution_id: null,
+		is_test_job: false,
+		job_type: 'PLAN',
+	};
+
+	const childPayloads = planPairwiseByOrigin(
+		MOCK_SOURCE_DOCS,
+		parentJobWithAllFields,
+		MOCK_RECIPE_STEP,
+		'user-jwt-123'
+	);
+
+	assertEquals(childPayloads.length, 3, 'Should create 3 child jobs for the 3 pairs');
+
+	// Assert that every job in the returned payload array includes model_slug and user_jwt
+	childPayloads.forEach((job, index) => {
+		assertExists(job, `Child job ${index} should exist`);
+		assertEquals(
+			job.model_slug,
+			'parent-model-slug',
+			`Child job ${index} should inherit model_slug from parent job`
+		);
+		assertEquals(
+			job.user_jwt,
+			'parent-jwt-token',
+			`Child job ${index} should inherit user_jwt from parent job`
+		);
+	});
+});
  

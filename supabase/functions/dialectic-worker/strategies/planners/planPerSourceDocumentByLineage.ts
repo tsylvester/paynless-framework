@@ -12,7 +12,8 @@ import { isModelContributionFileType } from '../../../_shared/utils/type-guards/
 export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
     sourceDocs,
     parentJob,
-    recipeStep
+    recipeStep,
+    authToken
 ) => {
     if (!recipeStep.output_type) {
         throw new Error('planPerSourceDocumentByLineage requires a recipe step with a defined output_type.');
@@ -67,15 +68,25 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
             throw new Error(`Invalid output_type for planPerSourceDocumentByLineage: ${recipeStep.output_type}`);
         }
         const newPayload: DialecticExecuteJobPayload = {
+            // Inherit ALL fields from parent job payload (defensive programming)
             projectId: parentJob.payload.projectId,
             sessionId: parentJob.payload.sessionId,
-            stageSlug: parentJob.payload.stageSlug, // Propagate stageSlug
+            stageSlug: parentJob.payload.stageSlug,
             iterationNumber: parentJob.payload.iterationNumber,
+            model_id: parentJob.payload.model_id,
+            model_slug: parentJob.payload.model_slug,
+            user_jwt: parentJob.payload.user_jwt,
+            walletId: parentJob.payload.walletId,
+            continueUntilComplete: parentJob.payload.continueUntilComplete,
+            maxRetries: parentJob.payload.maxRetries,
+            continuation_count: parentJob.payload.continuation_count,
+            target_contribution_id: parentJob.payload.target_contribution_id,
+            is_test_job: parentJob.payload.is_test_job,
+            // Override job-specific properties
             job_type: 'execute',
             prompt_template_id: recipeStep.prompt_template_id,
             output_type: recipeStep.output_type,
             isIntermediate: recipeStep.output_type !== FileType.Synthesis,
-            model_id: parentJob.payload.model_id, // Inherit model from the parent planner job
             canonicalPathParams,
             inputs: {
                 // Pass all document IDs from the group as an array
@@ -84,7 +95,6 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
             document_relationships: {
                 source_group: groupId,
             },
-            walletId: parentJob.payload.walletId,
             planner_metadata: { recipe_step_id: recipeStep.id },
             sourceContributionId: derivedSourceContributionId,
         };

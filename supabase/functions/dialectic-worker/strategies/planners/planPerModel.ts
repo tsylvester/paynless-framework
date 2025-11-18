@@ -73,14 +73,21 @@ export const planPerModel: GranularityPlannerFn = (
 		throw new Error(`Invalid output_type for planPerModel: ${recipeStep.output_type}`);
 	}
 	const newPayload: DialecticExecuteJobPayload = {
-		// Inherit core context from the parent
+		// Inherit ALL fields from parent job payload (defensive programming)
 		projectId: parentJob.payload.projectId,
 		sessionId: parentJob.payload.sessionId,
 		stageSlug: parentJob.payload.stageSlug,
 		iterationNumber: parentJob.payload.iterationNumber,
 		model_id: modelId, // Assign the job to the specific model from the parent planner
-
-		// Set job-specific properties
+		model_slug: parentJob.payload.model_slug,
+		user_jwt: parentJob.payload.user_jwt,
+		walletId: parentJob.payload.walletId,
+		continueUntilComplete: parentJob.payload.continueUntilComplete,
+		maxRetries: parentJob.payload.maxRetries,
+		continuation_count: parentJob.payload.continuation_count,
+		target_contribution_id: parentJob.payload.target_contribution_id,
+		is_test_job: parentJob.payload.is_test_job,
+		// Override job-specific properties
 		job_type: 'execute',
 		prompt_template_id: recipeStep.prompt_template_id,
 		output_type: recipeStep.output_type,
@@ -88,7 +95,6 @@ export const planPerModel: GranularityPlannerFn = (
 		document_relationships: document_relationships,
 		inputs,
 		sourceContributionId,
-		walletId: parentJob.payload.walletId,
 		planner_metadata: { recipe_step_id: recipeStep.id },
 	};
 

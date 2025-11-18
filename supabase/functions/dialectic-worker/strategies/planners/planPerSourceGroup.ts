@@ -52,14 +52,22 @@ export const planPerSourceGroup: GranularityPlannerFn = (
             throw new Error(`Invalid output_type for planPerSourceGroup: ${recipeStep.output_type}`);
         }
         const newPayload: DialecticExecuteJobPayload = {
-            // Inherit core context
+            // Inherit ALL fields from parent job payload (defensive programming)
             projectId: parentJob.payload.projectId,
             sessionId: parentJob.payload.sessionId,
             stageSlug: parentJob.payload.stageSlug,
             iterationNumber: parentJob.payload.iterationNumber,
             model_id: parentJob.payload.model_id,
-
-            // Set job-specific properties
+            model_slug: parentJob.payload.model_slug,
+            user_jwt: parentJob.payload.user_jwt,
+            walletId: parentJob.payload.walletId,
+            continueUntilComplete: parentJob.payload.continueUntilComplete,
+            maxRetries: parentJob.payload.maxRetries,
+            continuation_count: parentJob.payload.continuation_count,
+            target_contribution_id: parentJob.payload.target_contribution_id,
+            is_test_job: parentJob.payload.is_test_job,
+            sourceContributionId: anchorDoc.id,
+            // Override job-specific properties
             job_type: 'execute',
             prompt_template_id: recipeStep.prompt_template_id,
             output_type: recipeStep.output_type,
@@ -69,8 +77,6 @@ export const planPerSourceGroup: GranularityPlannerFn = (
                 document_ids: documentIds,
             },
             isIntermediate: recipeStep.output_type !== FileType.Synthesis,
-            walletId: parentJob.payload.walletId,
-            sourceContributionId: anchorDoc.id,
             planner_metadata: { recipe_step_id: recipeStep.id },
         };
 

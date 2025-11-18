@@ -553,6 +553,7 @@ export interface GenerateContributionsPayload {
   target_contribution_id?: string;
   user_jwt?: string;
   is_test_job?: boolean;
+  model_slug?: string;
 }
 
 /**

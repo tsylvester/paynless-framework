@@ -221,3 +221,35 @@ Deno.test('planPerModel includes planner_metadata with recipe_step_id in child p
 		'planner_metadata.recipe_step_id should match the recipe step id',
 	);
 });
+
+Deno.test('planPerModel inherits all fields from parent job payload including model_slug and user_jwt', () => {
+	const parentWithAllFields: typeof MOCK_PARENT_JOB = JSON.parse(JSON.stringify(MOCK_PARENT_JOB));
+	Object.defineProperty(parentWithAllFields.payload, 'model_slug', {
+		value: 'parent-model-slug',
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	});
+	Object.defineProperty(parentWithAllFields.payload, 'user_jwt', {
+		value: 'parent-jwt-token',
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	});
+
+	const childJobs = planPerModel(MOCK_SOURCE_DOCS, parentWithAllFields, MOCK_RECIPE_STEP, 'ignored-param-jwt');
+
+	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+	const job = childJobs[0];
+	assertExists(job, 'Child job should exist');
+	assertEquals(
+		job.model_slug,
+		'parent-model-slug',
+		'Child payload must inherit model_slug from parent payload',
+	);
+	assertEquals(
+		job.user_jwt,
+		'parent-jwt-token',
+		'Child payload must inherit user_jwt from parent payload',
+	);
+});

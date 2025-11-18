@@ -547,3 +547,115 @@ Deno.test('planPerSourceDocumentByLineage includes planner_metadata with recipe_
         );
     }
 });
+
+Deno.test('planPerSourceDocumentByLineage should inherit all fields from parent job payload including model_slug and user_jwt', () => {
+    const getMockSourceDoc = (modelId: string | null, docId: string, sourceGroup: string | null = null): SourceDocument => ({
+        id: docId,
+        session_id: 'sess-id',
+        contribution_type: 'pairwise_synthesis_chunk',
+        model_id: modelId,
+        model_name: `model-${modelId}-name`,
+        content: `content for ${docId}`,
+        user_id: 'user-id',
+        stage: 'synthesis',
+        iteration_number: 1,
+        prompt_template_id_used: 'prompt-a',
+        seed_prompt_url: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        target_contribution_id: null,
+        tokens_used_input: 10,
+        tokens_used_output: 10,
+        processing_time_ms: 100,
+        error: null,
+        citations: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: `file-${docId}`,
+        storage_bucket: 'bucket',
+        storage_path: `path-${docId}`,
+        size_bytes: 100,
+        mime_type: 'text/plain',
+        document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
+        is_header: false,
+        source_prompt_resource_id: null,
+    });
+
+    const mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        id: 'parent-job-id',
+        created_at: new Date().toISOString(),
+        status: 'in_progress',
+        user_id: 'user-id',
+        session_id: 'sess-id',
+        iteration_number: 1,
+        parent_job_id: null,
+        attempt_count: 1,
+        max_retries: 3,
+        completed_at: null,
+        error_details: null,
+        prerequisite_job_id: null,
+        results: null,
+        stage_slug: 'synthesis',
+        started_at: new Date().toISOString(),
+        target_contribution_id: null,
+        payload: {
+            projectId: 'proj-id',
+            sessionId: 'sess-id',
+            stageSlug: 'synthesis',
+            job_type: 'PLAN',
+            model_id: 'model-a-id',
+            model_slug: 'parent-model-slug',
+            user_jwt: 'parent-jwt-token',
+            walletId: 'wallet-default',
+        },
+        is_test_job: false,
+        job_type: 'PLAN',
+    };
+
+    const mockRecipeStep: DialecticRecipeStep = {
+        id: 'recipe-step-id-123',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        template_id: 'template-id-abc',
+        step_key: 'test-step-key-1',
+        step_slug: 'test-step-slug-1',
+        step_description: 'Mock description 1',
+        step_number: 2,
+        step_name: 'test-step',
+        prompt_template_id: 'tmpl-12345',
+        output_type: FileType.ReducedSynthesis,
+        granularity_strategy: 'per_source_document_by_lineage',
+        inputs_required: [{ type: 'document', slug: 'pairwise_synthesis_chunk', document_key: FileType.PairwiseSynthesisChunk, required: true }],
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        branch_key: null,
+        parallel_group: null,
+        inputs_relevance: [],
+        outputs_required: { documents: [], assembled_json: [], files_to_generate: [] },
+    };
+
+    const sourceDocs = [
+        getMockSourceDoc('model-a-id', 'doc-a-id', 'group-a'),
+        getMockSourceDoc('model-b-id', 'doc-b-id', 'group-b'),
+    ];
+
+    const childPayloads = planPerSourceDocumentByLineage(sourceDocs, mockParentJob, mockRecipeStep, 'user-jwt-123');
+
+    assertEquals(childPayloads.length, 2, 'Should create 2 child jobs, one for each source group');
+
+    for (const job of childPayloads) {
+        assertExists(job, 'Child job should exist');
+        assertEquals(
+            job.model_slug,
+            'parent-model-slug',
+            'Child job should inherit model_slug from parent job payload'
+        );
+        assertEquals(
+            job.user_jwt,
+            'parent-jwt-token',
+            'Child job should inherit user_jwt from parent job payload'
+        );
+    }
+});

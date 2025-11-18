@@ -193,3 +193,46 @@ Deno.test('planPerSourceGroup should include planner_metadata.recipe_step_id in 
         assertEquals(job.planner_metadata?.recipe_step_id, 'recipe-step-group-123', 'planner_metadata.recipe_step_id should match recipe step id');
     }
 });
+
+Deno.test('planPerSourceGroup should inherit all fields from parent job payload including model_slug and user_jwt', () => {
+    const parent: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        id: 'parent-job-123',
+        session_id: 'session-abc',
+        user_id: 'user-def',
+        stage_slug: 'synthesis',
+        iteration_number: 1,
+        payload: {
+            job_type: 'PLAN',
+            projectId: 'project-xyz',
+            sessionId: 'session-abc',
+            stageSlug: 'synthesis',
+            iterationNumber: 1,
+            model_id: 'model-ghi',
+            walletId: 'wallet-default',
+            is_test_job: false,
+            model_slug: 'parent-model-slug',
+            user_jwt: 'parent-jwt-token',
+        },
+        attempt_count: 0,
+        completed_at: null,
+        created_at: '',
+        error_details: null,
+        max_retries: 3,
+        parent_job_id: null,
+        prerequisite_job_id: null,
+        results: null,
+        started_at: null,
+        status: 'pending',
+        target_contribution_id: null,
+        is_test_job: false,
+        job_type: 'PLAN',
+    };
+
+    const childJobs = planPerSourceGroup(MOCK_SOURCE_DOCS, parent, MOCK_RECIPE_STEP, 'ignored.jwt');
+
+    assertEquals(childJobs.length > 0, true, 'Planner should produce at least one job');
+    for (const job of childJobs) {
+        assertEquals(job.model_slug, 'parent-model-slug', 'Child payload must inherit model_slug from parent job payload');
+        assertEquals(job.user_jwt, 'parent-jwt-token', 'Child payload must inherit user_jwt from parent job payload');
+    }
+});

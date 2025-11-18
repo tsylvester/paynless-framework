@@ -42,25 +42,33 @@ export const planAllToOne: GranularityPlannerFn = (
     }
 
     const newPayload: DialecticExecuteJobPayload = {
-        // Inherit core context
+        // Inherit ALL fields from parent job payload (defensive programming)
         projectId: parentJob.payload.projectId,
         sessionId: parentJob.payload.sessionId,
         stageSlug: parentJob.payload.stageSlug,
         iterationNumber: parentJob.payload.iterationNumber,
         model_id: parentJob.payload.model_id,
-        output_type: recipeStep.output_type,
-        canonicalPathParams: createCanonicalPathParams(sourceDocs, recipeStep.output_type, anchorDocument, stageSlug),
+        model_slug: parentJob.payload.model_slug,
+        user_jwt: parentJob.payload.user_jwt,
+        walletId: parentJob.payload.walletId,
+        continueUntilComplete: parentJob.payload.continueUntilComplete,
+        maxRetries: parentJob.payload.maxRetries,
+        continuation_count: parentJob.payload.continuation_count,
+        target_contribution_id: parentJob.payload.target_contribution_id,
+        is_test_job: parentJob.payload.is_test_job,
         sourceContributionId: anchorDocument.id,
-        // Set job-specific properties
+        // Override job-specific properties
         job_type: 'execute',
         prompt_template_id: recipeStep.prompt_template_id,
+        output_type: recipeStep.output_type,
+        canonicalPathParams: createCanonicalPathParams(sourceDocs, recipeStep.output_type, anchorDocument, stageSlug),
         inputs: {
             document_ids: documentIds,
         },
-        walletId: parentJob.payload.walletId,
         planner_metadata: { recipe_step_id: recipeStep.id },
     };
 
     return [newPayload];
 }; 
+
 

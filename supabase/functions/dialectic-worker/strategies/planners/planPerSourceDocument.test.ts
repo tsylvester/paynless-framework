@@ -448,9 +448,64 @@ Deno.test('planPerSourceDocument throws when parent payload.user_jwt is missing 
 	assert(threwForEmpty, 'Expected an error when parent payload.user_jwt is empty');
 });
 
+Deno.test('planPerSourceDocument inherits model_slug from parent job payload', () => {
+	const parentWithModelSlug: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		id: 'parent-job-model-slug',
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		stage_slug: 'antithesis',
+		iteration_number: 1,
+		payload: {
+			job_type: 'PLAN',
+			projectId: 'project-xyz',
+			sessionId: 'session-abc',
+			stageSlug: 'antithesis',
+			iterationNumber: 1,
+			model_id: 'model-ghi',
+			model_slug: 'parent-model-slug',
+			walletId: 'wallet-default',
+			user_jwt: 'parent-jwt-token',
+		},
+		attempt_count: 0,
+		completed_at: null,
+		created_at: new Date().toISOString(),
+		error_details: null,
+		max_retries: 3,
+		parent_job_id: null,
+		prerequisite_job_id: null,
+		results: null,
+		started_at: null,
+		status: 'pending',
+		target_contribution_id: null,
+		is_test_job: false,
+		job_type: 'PLAN',
+	};
+
+	const childPayloads = planPerSourceDocument(
+		MOCK_SOURCE_DOCS,
+		parentWithModelSlug,
+		MOCK_RECIPE_STEP,
+		'user-jwt-123'
+	);
+
+	assertEquals(childPayloads.length, 2, 'Should create 2 child jobs, one for each source doc');
+	for (const payload of childPayloads) {
+		assertEquals(
+			payload.model_slug,
+			'parent-model-slug',
+			'Child payload must inherit model_slug from parent payload'
+		);
+		assertEquals(
+			payload.user_jwt,
+			'parent-jwt-token',
+			'Child payload must inherit user_jwt from parent payload'
+		);
+	}
+});
+
 // ==============================================
 // planner constructs child payloads with dynamic stage consistency
-// Assert payload.stageSlug equals the parent’s dynamic stage for every child
+// Assert payload.stageSlug equals the parent's dynamic stage for every child
 // ==============================================
 Deno.test('planPerSourceDocument constructs child payloads with dynamic stage consistency (payload.stageSlug === parent.payload.stageSlug)', () => {
 	const expectedStage = 'parenthesis'; // use a non-thesis simple stage

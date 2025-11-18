@@ -26,7 +26,7 @@ import { assemblePlannerPrompt } from "./assemblePlannerPrompt.ts";
 import { assembleTurnPrompt } from "./assembleTurnPrompt.ts";
 import { assembleContinuationPrompt } from "./assembleContinuationPrompt.ts";
 import { IFileManager } from "../types/file_manager.types.ts";
-import { isDialecticPlanJobPayload, isRecord } from "../utils/type_guards.ts";
+import { isRecord } from "../utils/type_guards.ts";
 import { RenderFn } from "./prompt-assembler.interface.ts";
 
 export class PromptAssembler implements IPromptAssembler {
@@ -96,8 +96,7 @@ export class PromptAssembler implements IPromptAssembler {
                 });
             } 
             
-            const { payload } = options.job;
-            if (isDialecticPlanJobPayload(payload)) {
+            if (options.stage.recipe_step.job_type === 'PLAN') {
                 return this.assemblePlannerPrompt({
                     dbClient: this.dbClient,
                     fileManager: this.fileManager,
