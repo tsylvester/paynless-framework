@@ -258,6 +258,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: "resolved prompt from storage",
           gatherContext: gatherContextFn,
           render: renderFn,
         });
@@ -285,7 +286,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         assertEquals(gatherArgs[3], defaultProject);
         assertEquals(gatherArgs[4], defaultSession);
         assertEquals(gatherArgs[5], defaultStage);
-        assertEquals(gatherArgs[6], defaultProject.initial_user_prompt);
+        assertEquals(gatherArgs[6], "resolved prompt from storage");
         assertEquals(gatherArgs[7], defaultSession.iteration_count);
 
         // 4. Assert rendering was performed with the overridden template and correct context
@@ -399,6 +400,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           gatherContext: gatherContextFn,
           render: renderFn,
         });
@@ -467,6 +469,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: stageWithOverlays,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           gatherContext: gatherContextFn,
           render: renderFn,
         });
@@ -534,6 +537,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           gatherContext: gatherContextFn,
           render: renderFn,
         });
@@ -590,6 +594,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           gatherContext: gatherContextFn,
           render: renderFn,
         });
@@ -637,6 +642,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           gatherContext: gatherContextFn,
           render: renderFn,
         });
@@ -685,6 +691,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           gatherContext: gatherContextFn,
           render: renderFn,
         });
@@ -729,6 +736,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           ...mockDeps,
         });
 
@@ -770,6 +778,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           ...mockDeps,
         }),
       Error,
@@ -809,6 +818,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: sessionWithNoModels,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           gatherContext: gatherContextFn,
           render: renderFn,
         });
@@ -856,6 +866,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             project: defaultProject,
             session: defaultSession,
             stage: defaultStage,
+            projectInitialUserPrompt: defaultProject.initial_user_prompt,
             gatherContext: gatherContextFn,
             render: renderFn,
           }),
@@ -922,6 +933,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: stageWithOverlays,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           ...mockDeps,
         });
 
@@ -969,6 +981,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           ...mockDeps,
         }),
       Error,
@@ -1011,6 +1024,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             project: defaultProject,
             session: defaultSession,
             stage: defaultStage,
+            projectInitialUserPrompt: defaultProject.initial_user_prompt,
             ...mockDeps,
           }),
         Error,
@@ -1055,6 +1069,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             project: defaultProject,
             session: defaultSession,
             stage: stageWithoutRecipe,
+            projectInitialUserPrompt: defaultProject.initial_user_prompt,
             ...mockDeps,
           }),
         Error,
@@ -1098,6 +1113,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             project: defaultProject,
             session: defaultSession,
             stage: defaultStage,
+            projectInitialUserPrompt: defaultProject.initial_user_prompt,
             gatherContext: gatherContextFn,
             render: renderFn,
           }),
@@ -1173,6 +1189,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         project: defaultProject,
         session: defaultSession,
         stage: stageWithKeys,
+        projectInitialUserPrompt: defaultProject.initial_user_prompt,
         gatherContext: gatherContextFn,
         render: renderFn,
       });
@@ -1220,6 +1237,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           gatherContext: gatherContextFn,
           render: renderFn,
         }),
@@ -1273,16 +1291,17 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     }
 
     try {
-      await assemblePlannerPrompt({
-        dbClient: client,
-        fileManager,
-        job: mockPlannerJob,
-        project: defaultProject,
-        session: defaultSession,
-        stage: defaultStage,
-        gatherContext: gatherContextFn,
-        render: renderFn,
-      });
+      await         assemblePlannerPrompt({
+          dbClient: client,
+          fileManager,
+          job: mockPlannerJob,
+          project: defaultProject,
+          session: defaultSession,
+          stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          gatherContext: gatherContextFn,
+          render: renderFn,
+        });
 
       assertSpyCalls(fileManager.uploadAndRegisterFile, 1);
       const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
@@ -1376,16 +1395,17 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
 
     try {
-      await assemblePlannerPrompt({
-        dbClient: client,
-        fileManager,
-        job: mockPlannerJob,
-        project: defaultProject,
-        session: defaultSession,
-        stage: defaultStage,
-        gatherContext: gatherContextFn,
-        render: renderFn,
-      });
+      await         assemblePlannerPrompt({
+          dbClient: client,
+          fileManager,
+          job: mockPlannerJob,
+          project: defaultProject,
+          session: defaultSession,
+          stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          gatherContext: gatherContextFn,
+          render: renderFn,
+        });
 
       // Assert storage download was called with correct parameters via the Supabase client
       const downloadSpy = mockSupabaseSetup!.spies.storage.from(storageBucket).downloadSpy;
@@ -1476,16 +1496,17 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
 
     try {
-      await assemblePlannerPrompt({
-        dbClient: client,
-        fileManager,
-        job: mockPlannerJob,
-        project: defaultProject,
-        session: defaultSession,
-        stage: defaultStage,
-        gatherContext: gatherContextFn,
-        render: renderFn,
-      });
+      await         assemblePlannerPrompt({
+          dbClient: client,
+          fileManager,
+          job: mockPlannerJob,
+          project: defaultProject,
+          session: defaultSession,
+          stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          gatherContext: gatherContextFn,
+          render: renderFn,
+        });
 
       // Assert render was called with inline template content
       assertSpyCalls(renderFn, 1);
@@ -1534,16 +1555,17 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     } = setup(config, defaultMockContext);
 
     const assembleFn = () =>
-      assemblePlannerPrompt({
-        dbClient: client,
-        fileManager,
-        job: mockPlannerJob,
-        project: defaultProject,
-        session: defaultSession,
-        stage: defaultStage,
-        gatherContext: gatherContextFn,
-        render: renderFn,
-      });
+        assemblePlannerPrompt({
+          dbClient: client,
+          fileManager,
+          job: mockPlannerJob,
+          project: defaultProject,
+          session: defaultSession,
+          stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          gatherContext: gatherContextFn,
+          render: renderFn,
+        });
 
     await assertRejects(
       assembleFn,
@@ -1609,16 +1631,17 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     } = setup(config, defaultMockContext);
 
     const assembleFn = () =>
-      assemblePlannerPrompt({
-        dbClient: client,
-        fileManager,
-        job: mockPlannerJob,
-        project: defaultProject,
-        session: defaultSession,
-        stage: defaultStage,
-        gatherContext: gatherContextFn,
-        render: renderFn,
-      });
+        assemblePlannerPrompt({
+          dbClient: client,
+          fileManager,
+          job: mockPlannerJob,
+          project: defaultProject,
+          session: defaultSession,
+          stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          gatherContext: gatherContextFn,
+          render: renderFn,
+        });
 
     await assertRejects(
       assembleFn,

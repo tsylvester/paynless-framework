@@ -292,6 +292,7 @@ Deno.test("PromptAssembler", async (t) => {
         stage: mockStage,
         gatherContext: assembler["gatherContextFn"],
         render: mockRenderFn,
+        projectInitialUserPrompt: "init prompt",
       };
 
       await assembler.assemblePlannerPrompt(deps);
@@ -633,6 +634,73 @@ Deno.test("PromptAssembler", async (t) => {
         );
       } finally {
         uploadSpy.restore();
+        teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "should pass projectInitialUserPrompt from options to assemblePlannerPrompt",
+    async () => {
+      try {
+        const { client, fileManager } = setup({
+          "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+        });
+        let capturedDeps: AssemblePlannerPromptDeps | undefined;
+        const assemblePlannerPromptFn = (
+          deps: AssemblePlannerPromptDeps,
+        ): Promise<AssembledPrompt> => {
+          capturedDeps = deps;
+          return Promise.resolve({
+            promptContent: "planner",
+            source_prompt_resource_id: "planner-id",
+          });
+        };
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          undefined,
+          assemblePlannerPromptFn,
+        );
+
+        const options: AssemblePromptOptions = {
+          project: mockProject,
+          session: mockSession,
+          stage: mockStage,
+          projectInitialUserPrompt: "resolved from storage",
+          iterationNumber: 1,
+          job: {
+            id: "job-id-planner",
+            created_at: new Date().toISOString(),
+            session_id: "session-id",
+            user_id: "user-id",
+            status: "pending",
+            parent_job_id: null,
+            error_details: null,
+            completed_at: null,
+            attempt_count: 0,
+            iteration_number: 1,
+            is_test_job: false,
+            stage_slug: "test-stage",
+            target_contribution_id: null,
+            max_retries: 3,
+            prerequisite_job_id: null,
+            results: null,
+            started_at: null,
+            job_type: "PLAN",
+            payload: {
+              job_type: "PLAN",
+              header_context_resource_id: "mock-header-id",
+            },
+          },
+        };
+
+        await assembler.assemble(options);
+
+        assertEquals(capturedDeps?.projectInitialUserPrompt, "resolved from storage");
+      } finally {
         teardown();
       }
     },

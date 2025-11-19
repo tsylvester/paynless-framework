@@ -47,6 +47,7 @@ export interface AssemblePlannerPromptDeps {
   project: ProjectContext;
   session: SessionContext;
   stage: StageContext;
+  projectInitialUserPrompt: string;
   gatherContext: GatherContextFn;
   render: RenderFn;
   sourceContributionId?: string | null;

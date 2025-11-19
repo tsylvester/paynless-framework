@@ -23,7 +23,10 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { ResourceDocuments } from "../_shared/types.ts";
 import { getMaxOutputTokens } from '../_shared/utils/affordability_utils.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
-import { TablesInsert } from '../types_db.ts';  
+import { TablesInsert } from '../types_db.ts';
+import { sanitizeJsonContent } from '../_shared/utils/jsonSanitizer.ts';
+import { isJsonSanitizationResult } from '../_shared/utils/type-guards/type_guards.jsonSanitizer.ts';
+import type { JsonSanitizationResult } from '../_shared/types/jsonSanitizer.interface.ts';
 export async function executeModelCallAndSave(
     params: ExecuteModelCallAndSaveParams,
 ) {
@@ -931,12 +934,43 @@ export async function executeModelCallAndSave(
     }
 
     // Unconditionally validate the response is parsable JSON before any other logic.
+    // First sanitize the content to handle common wrapper patterns (quotes, backticks, whitespace).
+    const sanitizationResult: JsonSanitizationResult = sanitizeJsonContent(aiResponse.content);
+    
+    if (!isJsonSanitizationResult(sanitizationResult)) {
+        // Type guard failure - log and retry
+        deps.logger.warn(`[executeModelCallAndSave] Invalid sanitization result for job ${job.id}. Triggering retry.`);
+        await deps.retryJob(
+            { logger: deps.logger, notificationService: deps.notificationService },
+            dbClient,
+            job,
+            job.attempt_count + 1,
+            [{
+                modelId: providerDetails.id,
+                api_identifier: providerDetails.api_identifier,
+                error: 'Invalid JSON sanitization result',
+                processingTimeMs: processingTimeMs,
+            }],
+            projectOwnerUserId
+        );
+        return;
+    }
+    
+    // Log sanitization event if sanitization was performed
+    if (sanitizationResult.wasSanitized) {
+        deps.logger.info(`[executeModelCallAndSave] JSON content sanitized for job ${job.id}`, { 
+            originalLength: sanitizationResult.originalLength, 
+            sanitizedLength: sanitizationResult.sanitized.length 
+        });
+    }
+    
+    // Attempt to parse the sanitized content
     let parsedContent: unknown;
     try {
-        parsedContent = JSON.parse(aiResponse.content);
+        parsedContent = JSON.parse(sanitizationResult.sanitized);
     } catch (e) {
-        // This handles a malformed JSON response, which is a retryable failure.
-        deps.logger.warn(`[executeModelCallAndSave] Malformed JSON response for job ${job.id}. Triggering retry.`, { error: e instanceof Error ? e.message : String(e) });
+        // This handles a malformed JSON response that cannot be fixed by sanitization, which is a retryable failure.
+        deps.logger.warn(`[executeModelCallAndSave] Malformed JSON response for job ${job.id} after sanitization. Triggering retry.`, { error: e instanceof Error ? e.message : String(e) });
         
         await deps.retryJob(
             { logger: deps.logger, notificationService: deps.notificationService },

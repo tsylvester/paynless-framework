@@ -4,6 +4,7 @@ import { renderPrompt } from "./prompt-renderer.ts"; // Function to be created
 import { RenderContext } from "./prompt-assembler/prompt-assembler.interface.ts";
 import { DialecticRecipeStep } from "../dialectic-service/dialectic.interface.ts";
 import { FileType } from "./types/file_manager.types.ts";
+import { OutputRule } from "../dialectic-service/dialectic.interface.ts";
 
 interface PromptRenderTestCase {
   name: string;
@@ -15,6 +16,14 @@ interface PromptRenderTestCase {
   expectedError?: string;
 }
 
+const mockOutputsRequired: OutputRule = {
+  documents: [{
+    document_key: FileType.business_case,
+    artifact_class: 'rendered_document',
+    file_type: 'markdown',
+    template_filename: 'business_case.md',
+  }],
+};
 const mockSimpleRecipeStep: DialecticRecipeStep = {
   id: "1",
   job_type: "EXECUTE",
@@ -27,7 +36,7 @@ const mockSimpleRecipeStep: DialecticRecipeStep = {
   output_type: FileType.business_case,
   inputs_required: [],
   inputs_relevance: [],
-  outputs_required: [{ type: FileType.business_case, document_key: "business_case" }],
+  outputs_required: mockOutputsRequired,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   prompt_template_id: "pt-exec-summary-123",
@@ -199,5 +208,119 @@ Deno.test("Prompt Rendering Utility", async (t) => {
     // Assert there are no remaining single-brace placeholders like {key}
     const hasPlaceholder = /\{[A-Za-z0-9_]+\}/.test(result);
     assertEquals(hasPlaceholder, false);
+  });
+
+  await t.step("should substitute double-brace placeholders without leaving extra braces", () => {
+    const basePromptText = "You are a {{role}}, act accordingly.";
+    const renderContext = {
+      ...mockBaseRenderContext,
+      role: "senior product strategist and technical architect",
+    };
+
+    const result = renderPrompt(
+      basePromptText,
+      renderContext,
+      null,
+      null,
+    );
+
+    const expectedOutput = "You are a senior product strategist and technical architect, act accordingly.";
+    assertEquals(result, expectedOutput);
+  });
+
+  await t.step("should support both single and double brace placeholders in the same template", () => {
+    const basePromptText = "User request: {{original_user_request}}. Context: {context_description}.";
+    const renderContext = {
+      ...mockBaseRenderContext,
+      original_user_request: "User wants a notepad app",
+      context_description: "I want to create a notepad app",
+    };
+
+    const result = renderPrompt(
+      basePromptText,
+      renderContext,
+      null,
+      null,
+    );
+
+    const expectedOutput = "User request: User wants a notepad app. Context: I want to create a notepad app.";
+    assertEquals(result, expectedOutput);
+  });
+
+  await t.step("should remove lines containing unknown double-brace placeholders", () => {
+    const basePromptText = "- **User Objective**: {{unknown_var}}\n- **Stage Role**: {{role}}";
+    const renderContext = {
+      ...mockBaseRenderContext,
+      role: "architect",
+    };
+
+    const result = renderPrompt(
+      basePromptText,
+      renderContext,
+      null,
+      null,
+    );
+
+    const expectedOutput = "- **Stage Role**: architect";
+    assertEquals(result, expectedOutput);
+  });
+
+  await t.step("should remove unknown double-brace placeholders in final cleanup", () => {
+    const basePromptText = "Known: {{role}}. Unknown: {{missing_var}}.";
+    const renderContext = {
+      ...mockBaseRenderContext,
+      role: "architect",
+    };
+
+    const result = renderPrompt(
+      basePromptText,
+      renderContext,
+      null,
+      null,
+    );
+
+    // Final cleanup removes entire lines containing unknown placeholders
+    const expectedOutput = "";
+    assertEquals(result, expectedOutput);
+  });
+
+  await t.step("should maintain backward compatibility with single-brace placeholders", () => {
+    const basePromptText = "Hello {name}! Welcome to {place}.";
+    const renderContext = {
+      ...mockBaseRenderContext,
+      name: "World",
+      place: "Earth",
+    };
+
+    const result = renderPrompt(
+      basePromptText,
+      renderContext,
+      null,
+      null,
+    );
+
+    const expectedOutput = "Hello World! Welcome to Earth.";
+    assertEquals(result, expectedOutput);
+  });
+
+  await t.step("should handle mixed single and double brace placeholders correctly", () => {
+    const basePromptText = "Double: {{role}}. Single: {stage_instructions}. Both: {{original_user_request}} and {domain}.";
+    const renderContext = {
+      ...mockBaseRenderContext,
+      role: "architect",
+      stage_instructions: "establish baseline",
+      original_user_request: "Create app",
+      domain: "Software Development",
+    };
+
+    const result = renderPrompt(
+      basePromptText,
+      renderContext,
+      null,
+      null,
+    );
+
+    const expectedOutput = "Double: architect. Single: establish baseline. Both: Create app and Software Development.";
+    assertEquals(result, expectedOutput);
   });
 }); 

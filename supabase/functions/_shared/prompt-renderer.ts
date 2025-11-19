@@ -64,6 +64,32 @@ export function renderPrompt(
   });
 
   // 5. Substitute remaining variables in the processed text
+  // First pass: handle double-brace placeholders {{key}}
+  for (const key in mergedVariables) {
+    if (Object.prototype.hasOwnProperty.call(mergedVariables, key)) {
+      const value = mergedVariables[key];
+      const escapedKey = escapeRegExp(key);
+      const placeholderRegex = new RegExp(`{{${escapedKey}}}`, 'g');
+
+      if (value === null || value === undefined || value === '') {
+        // Remove lines containing double-brace placeholders when value is empty
+        const lineRemovalRegex = new RegExp(`^.*{{${escapedKey}}}.*$\\n?`, "gm");
+        renderedText = renderedText.replace(lineRemovalRegex, '');
+      } else {
+        let stringValue;
+        if (Array.isArray(value) && value.every(item => typeof item === 'string')) {
+          stringValue = value.join(", ");
+        } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          stringValue = String(value);
+        } else {
+          stringValue = JSON.stringify(value);
+        }
+        renderedText = renderedText.replace(placeholderRegex, stringValue);
+      }
+    }
+  }
+
+  // Second pass: handle single-brace placeholders {key}
   for (const key in mergedVariables) {
     if (Object.prototype.hasOwnProperty.call(mergedVariables, key)) {
       const value = mergedVariables[key];
@@ -71,8 +97,8 @@ export function renderPrompt(
       const placeholderRegex = new RegExp(`{\\s*${escapedKey}\\s*}`, 'g');
 
       if (value === null || value === undefined || value === '') {
-        // This will now primarily handle single-line placeholders like list items
-        const lineRemovalRegex = new RegExp(`^.*${placeholderRegex.source}.*$\\n?`, "gm");
+        // Remove lines containing single-brace placeholders when value is empty
+        const lineRemovalRegex = new RegExp(`^.*{\\s*${escapedKey}\\s*}.*$\\n?`, "gm");
         renderedText = renderedText.replace(lineRemovalRegex, '');
       } else {
         let stringValue;
@@ -91,9 +117,11 @@ export function renderPrompt(
   // 6. Final cleanup of any leftover empty lines to avoid large gaps
   renderedText = renderedText.replace(/\n{3,}/g, '\n\n');
 
-  // 7. GREEN cleanup: remove any remaining lines that still contain single-brace placeholders like {key}
+  // 7. remove any remaining lines that still contain single-brace or double-brace placeholders
   //    This ensures unknown variables that were not supplied by overlays or dynamic context
   //    do not leak into the final prompt text sent to the model.
+  //    Remove entire lines containing unknown placeholders (both single and double brace)
+  renderedText = renderedText.replace(/^.*\{\{[A-Za-z0-9_]+\}\}.*$\n?/gm, '');
   renderedText = renderedText.replace(/^.*\{[A-Za-z0-9_]+\}.*$\n?/gm, '');
 
   // Normalize trailing whitespace

@@ -104,6 +104,7 @@ export class PromptAssembler implements IPromptAssembler {
                     project: options.project,
                     session: options.session,
                     stage: options.stage,
+                    projectInitialUserPrompt: options.projectInitialUserPrompt,
                     gatherContext: this.gatherContextFn,
                     render: this.renderFn,
                     sourceContributionId

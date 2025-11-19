@@ -16,6 +16,7 @@ export async function assemblePlannerPrompt(
     project,
     session,
     stage,
+    projectInitialUserPrompt,
     gatherContext,
     render,
   }: AssemblePlannerPromptDeps,
@@ -53,12 +54,6 @@ export async function assemblePlannerPrompt(
   if (!stage.recipe_step) {
     throw new Error("PRECONDITION_FAILED: Stage context is missing recipe_step.");
   }
-  if (typeof project.initial_user_prompt !== "string") {
-    throw new Error(
-      "PRECONDITION_FAILED: Project is missing initial_user_prompt.",
-    );
-  }
-  const initialUserPrompt = project.initial_user_prompt;
 
   if (!stage.recipe_step.prompt_template_id) {
     throw new Error(
@@ -206,7 +201,7 @@ export async function assemblePlannerPrompt(
     project,
     session,
     stage,
-    initialUserPrompt,
+    projectInitialUserPrompt,
     session.iteration_count,
   );
 
