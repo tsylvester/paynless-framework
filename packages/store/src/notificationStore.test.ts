@@ -202,6 +202,22 @@ const jobFailedNotification: Notification = {
     },
 };
 
+const documentCompletedNotification: Notification = {
+    ...baseDocumentEvent,
+    id: 'uuid-document-completed',
+    type: 'document_completed',
+    data: {
+        sessionId: 'sid-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        job_id: 'job-doc',
+        document_key: 'business_case',
+        modelId: 'model-doc',
+        step_key: 'execute-step-1',
+        latestRenderedResourceId: 'resource-456',
+    },
+};
+
 // --- Test Suite ---
 describe('notificationStore', () => {
     // Reset store state and mocks before each test
@@ -464,6 +480,29 @@ describe('notificationStore', () => {
                     modelId: 'model-doc',
                     step_key: 'execute-step-1',
                     error: { code: 'MODEL_FAILURE', message: 'LLM aborted early' },
+                });
+
+                expect(addNotificationSpy).not.toHaveBeenCalled();
+                addNotificationSpy.mockRestore();
+            });
+
+            it('should route document_completed events to dialectic store', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(documentCompletedNotification);
+                });
+
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
+                    type: 'document_completed',
+                    sessionId: 'sid-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-doc',
+                    document_key: 'business_case',
+                    modelId: 'model-doc',
+                    step_key: 'execute-step-1',
+                    latestRenderedResourceId: 'resource-456',
                 });
 
                 expect(addNotificationSpy).not.toHaveBeenCalled();

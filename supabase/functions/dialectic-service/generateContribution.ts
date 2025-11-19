@@ -17,7 +17,7 @@ export async function generateContributions(
     payload: GenerateContributionsPayload,
     user: User,
     _deps: GenerateContributionsDeps,
-    authToken?: string | null,
+    authToken: string,
 ): Promise<{ success: boolean; data?: { job_ids: string[] }; error?: { message: string; status?: number; details?: string; code?: string } }> {
 
     const { sessionId, iterationNumber = 1, stageSlug, continueUntilComplete, maxRetries = 3 } = payload;

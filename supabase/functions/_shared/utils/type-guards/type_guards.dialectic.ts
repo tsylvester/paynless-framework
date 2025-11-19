@@ -817,6 +817,7 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
     if (!('walletId' in payload) || typeof payload.walletId !== 'string') throw new Error('Missing or invalid walletId.');
     if (!('stageSlug' in payload) || typeof payload.stageSlug !== 'string') throw new Error('Invalid stageSlug.');
     if (!('iterationNumber' in payload) || typeof payload.iterationNumber !== 'number') throw new Error('Invalid iterationNumber.');
+    if (!('user_jwt' in payload) || typeof payload.user_jwt !== 'string' || payload.user_jwt.length === 0) throw new Error('Missing or invalid user_jwt.');
 
     // Required ExecuteJobPayload properties
     if (payload.job_type !== 'execute') throw new Error("Invalid job_type: expected 'execute'");
@@ -832,7 +833,6 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
     if (('planner_metadata' in payload) && payload.planner_metadata !== null && !isPlannerMetadata(payload.planner_metadata)) throw new Error('Invalid planner_metadata.');
     if (('document_relationships' in payload) && payload.document_relationships !== null && !isDocumentRelationships(payload.document_relationships)) throw new Error('Invalid document_relationships.');
     if (('isIntermediate' in payload) && typeof payload.isIntermediate !== 'boolean') throw new Error('Invalid isIntermediate flag.');
-    if (('user_jwt' in payload) && typeof payload.user_jwt !== 'string') throw new Error('Invalid user_jwt.');
     if (('target_contribution_id' in payload) && typeof payload.target_contribution_id !== 'string') throw new Error('Invalid target_contribution_id.');
     if (('sourceContributionId' in payload) && payload.sourceContributionId !== null && typeof payload.sourceContributionId !== 'string') throw new Error('Invalid sourceContributionId.');
     if (('model_slug' in payload) && typeof payload.model_slug !== 'string') throw new Error('Invalid model_slug.');
@@ -975,9 +975,11 @@ export function isDialecticJobRowArray(arr: unknown): arr is DialecticJobRow[] {
 
 export function isDialecticPlanJobPayload(payload: unknown): payload is DialecticPlanJobPayload {
     if (!isRecord(payload)) return false;
-    return (
-        payload.job_type === 'PLAN'
-    );
+    if (payload.job_type !== 'PLAN') return false;
+    if (!('user_jwt' in payload)) return false;
+    if (typeof payload.user_jwt !== 'string') return false;
+    if (payload.user_jwt.length === 0) return false;
+    return true;
 }
 
 
@@ -1157,6 +1159,7 @@ export function validatePayload(payload: Json): DialecticJobPayload {
     maxRetries: ('maxRetries' in payload && typeof payload.maxRetries === 'number') ? payload.maxRetries : undefined,
     continuation_count: ('continuation_count' in payload && typeof payload.continuation_count === 'number') ? payload.continuation_count : undefined,
     target_contribution_id: ('target_contribution_id' in payload && typeof payload.target_contribution_id === 'string') ? payload.target_contribution_id : undefined,
+    user_jwt: ('user_jwt' in payload && typeof payload.user_jwt === 'string') ? payload.user_jwt : '',
   };
   
   return validatedPayload;

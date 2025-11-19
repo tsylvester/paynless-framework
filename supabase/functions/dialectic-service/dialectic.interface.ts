@@ -551,7 +551,7 @@ export interface GenerateContributionsPayload {
   maxRetries?: number;
   continuation_count?: number;
   target_contribution_id?: string;
-  user_jwt?: string;
+  user_jwt: string;
   is_test_job?: boolean;
   model_slug?: string;
 }
@@ -696,7 +696,6 @@ export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
     planner_metadata?: DialecticStepPlannerMetadata | null;
     document_relationships?: DocumentRelationships | null;
     isIntermediate?: boolean;
-    user_jwt?: string;
 }
 
 export interface DialecticRenderJobPayload extends DialecticBaseJobPayload {

@@ -8,12 +8,12 @@ import {
   GetProjectDetailsPayload,
   GetSessionDetailsPayload,
   DialecticProject,
-  DialecticContribution,
   DomainOverlayDescriptor,
   StartSessionSuccessResponse,
   GetProjectResourceContentPayload,
   GetProjectResourceContentResponse,
   SaveContributionEditPayload,
+  SaveContributionEditSuccessResponse,
   SubmitStageResponsesPayload,
   SubmitStageResponsesResponse,
   SubmitStageResponsesDependencies,
@@ -160,7 +160,7 @@ export interface ActionHandlers {
     payload: GenerateContributionsPayload,
     user: User,
     deps: GenerateContributionsDeps,
-    authToken?: string | null
+    authToken: string
   ) => Promise<{
     success: boolean;
     data?: { job_ids: string[] };
@@ -177,7 +177,7 @@ export interface ActionHandlers {
   cloneProject: (dbClient: SupabaseClient, fileManager: IFileManager, originalProjectId: string, newProjectName: string | undefined, cloningUserId: string) => Promise<CloneProjectResult>;
   exportProject: (dbClient: SupabaseClient, fileManager: IFileManager, storageUtils: IStorageUtils, projectId: string, userId: string) => Promise<{ data?: { export_url: string }; error?: ServiceError; status?: number }>;
   getProjectResourceContent: (payload: GetProjectResourceContentPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetProjectResourceContentResponse; error?: ServiceError; status?: number }>;
-  saveContributionEdit: (payload: SaveContributionEditPayload, dbClient: SupabaseClient, user: User, logger: ILogger, deps: SaveContributionEditDeps) => Promise<{ data?: DialecticContribution; error?: ServiceError; status?: number }>;
+  saveContributionEdit: (payload: SaveContributionEditPayload, dbClient: SupabaseClient, user: User, logger: ILogger, deps: SaveContributionEditDeps) => Promise<{ data?: SaveContributionEditSuccessResponse; error?: ServiceError; status?: number }>;
   submitStageResponses: (payload: SubmitStageResponsesPayload, dbClient: SupabaseClient, user: User, dependencies: SubmitStageResponsesDependencies) => Promise<{ data?: SubmitStageResponsesResponse; error?: ServiceError; status?: number }>;
   listDomains: (dbClient: SupabaseClient) => Promise<{ data?: DialecticDomain[]; error?: ServiceError }>;
   fetchProcessTemplate: (dbClient: SupabaseClient, payload: FetchProcessTemplatePayload) => Promise<{ data?: DialecticProcessTemplate; error?: ServiceError; status?: number }>;
@@ -380,6 +380,11 @@ export async function handleRequest(
           if (!userForJson) {
             logger.error("[generateContributions handler] User object missing.");
             return createErrorResponse("User is required for generateContributions.", 401, req);
+          }
+
+          if (!authToken) {
+            logger.error("[generateContributions handler] Auth token missing.");
+            return createErrorResponse("Authentication token is required for generateContributions.", 401, req);
           }
 
           if (requestBody.action !== "generateContributions") {

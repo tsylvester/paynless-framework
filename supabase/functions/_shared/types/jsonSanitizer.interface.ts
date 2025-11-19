@@ -9,6 +9,8 @@ export interface JsonSanitizationResult {
     sanitized: string;
     /** A flag indicating whether any sanitization operations were performed (removal of wrappers, trimming, etc.). */
     wasSanitized: boolean;
+    /** A flag indicating whether structural fixes were applied (adding missing braces/brackets). */
+    wasStructurallyFixed: boolean;
     /** The original content length before sanitization for debugging/logging purposes. */
     originalLength: number;
 }

@@ -10,12 +10,14 @@ import type { JsonSanitizationResult } from '../../types/jsonSanitizer.interface
 const validJsonSanitizationResult: JsonSanitizationResult = {
     sanitized: '{"key": "value"}',
     wasSanitized: true,
+    wasStructurallyFixed: false,
     originalLength: 25,
 };
 
 const validJsonSanitizationResultNotSanitized: JsonSanitizationResult = {
     sanitized: '{"key": "value"}',
     wasSanitized: false,
+    wasStructurallyFixed: false,
     originalLength: 18,
 };
 
@@ -43,9 +45,18 @@ Deno.test('Type Guard: isJsonSanitizationResult', async (t) => {
         // Test missing sanitized
         const missingSanitized = {
             wasSanitized: validJsonSanitizationResult.wasSanitized,
+            wasStructurallyFixed: validJsonSanitizationResult.wasStructurallyFixed,
             originalLength: validJsonSanitizationResult.originalLength,
         } as JsonSanitizationResult;
         assert(!isJsonSanitizationResult(missingSanitized));
+
+        // Test missing wasStructurallyFixed
+        const missingWasStructurallyFixed = {
+            sanitized: validJsonSanitizationResult.sanitized,
+            wasSanitized: validJsonSanitizationResult.wasSanitized,
+            originalLength: validJsonSanitizationResult.originalLength,
+        } as JsonSanitizationResult;
+        assert(!isJsonSanitizationResult(missingWasStructurallyFixed));
     });
 
     await t.step('should return false for objects with incorrect types', () => {
@@ -69,9 +80,19 @@ Deno.test('Type Guard: isJsonSanitizationResult', async (t) => {
         const invalidOriginalLengthType = {
             sanitized: '{"key": "value"}',
             wasSanitized: false,
+            wasStructurallyFixed: false,
             originalLength: '25',
         } as unknown as JsonSanitizationResult;
         assert(!isJsonSanitizationResult(invalidOriginalLengthType));
+
+        // wasStructurallyFixed is not boolean
+        const invalidWasStructurallyFixedType = {
+            sanitized: '{"key": "value"}',
+            wasSanitized: false,
+            wasStructurallyFixed: 'false',
+            originalLength: 25,
+        } as unknown as JsonSanitizationResult;
+        assert(!isJsonSanitizationResult(invalidWasStructurallyFixedType));
     });
 
     await t.step('should return false for non-objects', () => {

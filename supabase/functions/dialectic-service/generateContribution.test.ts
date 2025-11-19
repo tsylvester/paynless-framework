@@ -97,6 +97,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
         projectId: mockProjectId,
         continueUntilComplete: true,
         walletId: 'test-wallet-id',
+        user_jwt: 'test-user-jwt',
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -220,6 +221,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
         projectId: mockProjectId,
         continueUntilComplete: true,
         walletId: 'test-wallet-id',
+        user_jwt: 'jwt.token.here',
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -314,6 +316,7 @@ Deno.test("generateContributions - Failure Path: Fails if stage recipe lookup fa
         stageSlug: 'thesis',
         iterationNumber: 1, // Add the required iteration number
         walletId: 'test-wallet-id',
+        user_jwt: 'jwt.token.here',
     };
     const dbError = { name: 'DBError', message: "Stage not found", details: "Query returned no rows", code: "PGRST116" };
 
@@ -375,6 +378,7 @@ Deno.test("generateContributions - Failure Path: Fails to enqueue a job", async 
         projectId: mockProjectId,
         iterationNumber: 1, // Add the missing iteration number
         walletId: 'test-wallet-id',
+        user_jwt: 'jwt.token.here',
     };
 
     const dbError = { name: 'DBError', message: "Database permission denied", details: "RLS policy violation", code: "42501" };
@@ -453,6 +457,7 @@ Deno.test("generateContributions - Validation: Fails if stageSlug is missing", a
         projectId: 'project-123',
         // stageSlug is intentionally omitted
         walletId: 'test-wallet-id',
+        user_jwt: 'jwt.token.here',
     };
 
     const mockSupabase = createMockSupabaseClient(); // No DB calls should be made
@@ -523,6 +528,7 @@ Deno.test("generateContributions - Validation: Fails if userId is missing", asyn
         stageSlug: 'thesis',
         projectId: 'project-123',
         walletId: 'test-wallet-id',
+        user_jwt: 'jwt.token.here',
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -543,7 +549,8 @@ Deno.test("generateContributions - Validation: Fails if userId is missing", asyn
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
-        }
+        },
+        'jwt.token.here'
     );
 
     assertEquals(result.success, false);
@@ -561,6 +568,7 @@ Deno.test("generateContributions - Validation: Fails if selectedModelIds is empt
         projectId: mockProjectId,
         iterationNumber: 1,
         walletId: 'test-wallet-id',
+        user_jwt: 'jwt.token.here',
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -656,7 +664,8 @@ Deno.test("generateContributions - Validation: Fails if walletId is missing (man
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
             deleteFromStorage: () => Promise.resolve({ error: null }),
-        }
+        },
+        'jwt.token.here'
     );
 
     // RED expectation: function should fail early with clear error and no job insert
@@ -682,6 +691,7 @@ Deno.test("generateContributions - Fails when authToken is missing and does not 
         iterationNumber: 1,
         projectId: mockProjectId,
         walletId: 'wallet-1',
+        user_jwt: 'jwt.token.here',
     };
 
     const mockDbResponse = createMockDbResponse(1);
@@ -738,6 +748,153 @@ Deno.test("generateContributions - Fails when authToken is missing and does not 
     assertEquals(insertSpy?.callCount ?? 0, 0);
 });
 
+Deno.test("generateContributions - should reject job creation when authToken is null", async () => {
+    const mockSessionId = "sess-null-auth";
+    const mockProjectId = "proj-null-auth";
+    const mockUserId = "user-null-auth";
+    const mockModelIds = ["model-X"];
+
+    const mockPayload: GenerateContributionsPayload = {
+        sessionId: mockSessionId,
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        projectId: mockProjectId,
+        walletId: 'wallet-1',
+        user_jwt: 'jwt-from-payload',
+    };
+
+    const mockDbResponse = createMockDbResponse(1);
+    assertEquals(isDatabaseRecipeSteps(mockDbResponse), true, "The mock DB response should be a valid DatabaseRecipeSteps object");
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        project_id: mockProjectId,
+                        selected_model_ids: mockModelIds,
+                        iteration_count: 1,
+                        current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
+            'dialectic_stages': {
+                select: {
+                    data: [mockDbResponse],
+                    error: null
+                }
+            },
+            'dialectic_generation_jobs': {
+                insert: { data: [{ id: 'should-not-insert' }], error: null }
+            },
+        },
+    });
+
+    const result = await generateContributions(
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockPayload,
+        { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
+        {
+            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
+            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(1), error: null }),
+            getExtensionFromMimeType: () => 'txt',
+            logger,
+            randomUUID: () => 'uuid',
+            fileManager: {
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
+            },
+            deleteFromStorage: () => Promise.resolve({ error: null }),
+        },
+        null as any // Type assertion to bypass TypeScript and test runtime validation
+    );
+
+    assertEquals(result.success, false);
+    assertEquals(result.error?.message, "authToken is required to create generation jobs.");
+    assertEquals(result.error?.status, 400);
+    const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertEquals(insertSpy?.callCount ?? 0, 0);
+});
+
+Deno.test("generateContributions - should reject job creation when authToken is undefined", async () => {
+    const mockSessionId = "sess-undefined-auth";
+    const mockProjectId = "proj-undefined-auth";
+    const mockUserId = "user-undefined-auth";
+    const mockModelIds = ["model-X"];
+
+    const mockPayload: GenerateContributionsPayload = {
+        sessionId: mockSessionId,
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        projectId: mockProjectId,
+        walletId: 'wallet-1',
+        user_jwt: 'jwt-from-payload',
+    };
+
+    const mockDbResponse = createMockDbResponse(1);
+    assertEquals(isDatabaseRecipeSteps(mockDbResponse), true, "The mock DB response should be a valid DatabaseRecipeSteps object");
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        project_id: mockProjectId,
+                        selected_model_ids: mockModelIds,
+                        iteration_count: 1,
+                        current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
+            'dialectic_stages': {
+                select: {
+                    data: [mockDbResponse],
+                    error: null
+                }
+            },
+            'dialectic_generation_jobs': {
+                insert: { data: [{ id: 'should-not-insert' }], error: null }
+            },
+        },
+    });
+
+    const result = await generateContributions(
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockPayload,
+        { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
+        {
+            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
+            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(1), error: null }),
+            getExtensionFromMimeType: () => 'txt',
+            logger,
+            randomUUID: () => 'uuid',
+            fileManager: {
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
+            },
+            deleteFromStorage: () => Promise.resolve({ error: null }),
+        },
+        undefined as any // Type assertion to bypass TypeScript and test runtime validation
+    );
+
+    assertEquals(result.success, false);
+    assertEquals(result.error?.message, "authToken is required to create generation jobs.");
+    assertEquals(result.error?.status, 400);
+    const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertEquals(insertSpy?.callCount ?? 0, 0);
+});
+
+// Type-level test documentation for step 131.c.iii:
+// After updating the function signature in step 131.f to require `authToken: string` (not optional),
+// TypeScript should emit a compile error when the authToken parameter is omitted from function calls.
+// Expected TypeScript error: "Expected 5 arguments, but got 4" or similar parameter count mismatch.
+// This test documents the requirement; it cannot be executed as a runtime test since TypeScript
+// compile errors occur during type checking, not at runtime. The fix in step 131.f will enforce
+// this at compile time by changing the function signature from `authToken?: string | null` to
+// `authToken: string`, making the parameter required.
+
 Deno.test("generateContributions - plan jobs carry payload.user_jwt equal to provided authToken", async () => {
     const mockSessionId = "sess-auth";
     const mockProjectId = "proj-auth";
@@ -753,6 +910,7 @@ Deno.test("generateContributions - plan jobs carry payload.user_jwt equal to pro
         projectId: mockProjectId,
         walletId: 'wallet-1',
         continueUntilComplete: true,
+        user_jwt: 'jwt.token.here',
     };
 
     const mockDbResponse = createMockDbResponse(2); // 2-step recipe
@@ -858,6 +1016,7 @@ Deno.test("generateContributions - plan jobs include model_slug from ai_provider
         iterationNumber: 1,
         projectId: mockProjectId,
         walletId: 'wallet-1',
+        user_jwt: 'jwt.token.here',
     };
 
     const mockDbResponse = createMockDbResponse(1);
@@ -953,6 +1112,7 @@ Deno.test("should create jobs with a top-level 'is_test_job' flag when specified
         projectId: mockProjectId,
         walletId: 'test-wallet-id',
         is_test_job: true,
+        user_jwt: 'jwt.token.here',
     };
 
     const mockDbResponse = createMockDbResponse(1);
@@ -1056,6 +1216,7 @@ Deno.test("generateContributions successfully enqueues jobs given a valid and co
         projectId: mockProjectId,
         continueUntilComplete: true,
         walletId: 'test-wallet-id',
+        user_jwt: 'jwt.token.here',
     };
 
     // The mock data represents the correct, nested data structure as defined by the database schema.

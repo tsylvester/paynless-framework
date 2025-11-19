@@ -36,6 +36,7 @@ import {
   type PlannerStartedPayload,
   type DocumentStartedPayload,
   type DocumentChunkCompletedPayload,
+	type DocumentCompletedPayload,
 	type RenderCompletedPayload,
 	type JobFailedPayload,
 	type SetFocusedStageDocumentPayload,
@@ -68,6 +69,7 @@ import {
 	handlePlannerStartedLogic,
 	handleDocumentStartedLogic,
 	handleDocumentChunkCompletedLogic,
+	handleDocumentCompletedLogic,
 	handleRenderCompletedLogic,
 	handleJobFailedLogic,
 	fetchStageDocumentFeedbackLogic,
@@ -1434,6 +1436,9 @@ export const useDialecticStore = create<DialecticStore>()(
         case 'document_chunk_completed':
             handlers._handleDocumentChunkCompleted(payload);
             break;
+        case 'document_completed':
+            handlers._handleDocumentCompleted(payload);
+            break;
         case 'render_completed':
             handlers._handleRenderCompleted(payload);
             break;
@@ -1453,6 +1458,9 @@ export const useDialecticStore = create<DialecticStore>()(
 
 	_handleDocumentChunkCompleted: (event: DocumentChunkCompletedPayload) =>
 		handleDocumentChunkCompletedLogic(get, set, event),
+
+	_handleDocumentCompleted: (event: DocumentCompletedPayload) =>
+		handleDocumentCompletedLogic(get, set, event),
 
 	_handleRenderCompleted: (event: RenderCompletedPayload) =>
 		handleRenderCompletedLogic(get, set, event),

@@ -600,6 +600,7 @@ export interface DialecticActions {
   _handlePlannerStarted: (event: PlannerStartedPayload) => void;
   _handleDocumentStarted: (event: DocumentStartedPayload) => void;
   _handleDocumentChunkCompleted: (event: DocumentChunkCompletedPayload) => void;
+  _handleDocumentCompleted: (event: DocumentCompletedPayload) => void;
   _handleRenderCompleted: (event: RenderCompletedPayload) => void;
   _handleJobFailed: (event: JobFailedPayload) => void;
   
@@ -670,7 +671,9 @@ export type DialecticNotificationTypes =
   | 'document_started'
   | 'document_chunk_completed'
   | 'render_completed'
-  | 'job_failed';
+  | 'job_failed'
+  | 'document_completed';
+
 export interface ContributionGenerationStartedPayload {
   // This is the overall contribution generation for the entire session stage. 
   type: 'contribution_generation_started';
@@ -776,6 +779,10 @@ export interface DocumentChunkCompletedPayload extends DocumentLifecyclePayload 
   continuationNumber?: number;
 }
 
+export interface DocumentCompletedPayload extends DocumentLifecyclePayload {
+  type: 'document_completed';
+}
+
 export interface RenderCompletedPayload extends DocumentLifecyclePayload {
   type: 'render_completed';
   latestRenderedResourceId: string;
@@ -798,6 +805,7 @@ ContributionGenerationStartedPayload
 | PlannerStartedPayload
 | DocumentStartedPayload
 | DocumentChunkCompletedPayload
+| DocumentCompletedPayload
 | RenderCompletedPayload
 | JobFailedPayload;
 

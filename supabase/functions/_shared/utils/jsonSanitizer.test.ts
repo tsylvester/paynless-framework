@@ -12,6 +12,7 @@ Deno.test('sanitizeJsonContent', async (t) => {
         const expected: JsonSanitizationResult = {
             sanitized: '{"key": "value"}',
             wasSanitized: false,
+            wasStructurallyFixed: false,
             originalLength: originalLength,
         };
 
@@ -29,6 +30,7 @@ Deno.test('sanitizeJsonContent', async (t) => {
         const expected: JsonSanitizationResult = {
             sanitized: '{"key": "value"}',
             wasSanitized: true,
+            wasStructurallyFixed: false,
             originalLength: originalLength,
         };
 
@@ -47,6 +49,7 @@ Deno.test('sanitizeJsonContent', async (t) => {
         const expected: JsonSanitizationResult = {
             sanitized: '{"key": "value"}',
             wasSanitized: true,
+            wasStructurallyFixed: false,
             originalLength: originalLength,
         };
 
@@ -65,6 +68,7 @@ Deno.test('sanitizeJsonContent', async (t) => {
         const expected: JsonSanitizationResult = {
             sanitized: '{"key": "value"}',
             wasSanitized: true,
+            wasStructurallyFixed: false,
             originalLength: originalLength,
         };
 
@@ -83,6 +87,7 @@ Deno.test('sanitizeJsonContent', async (t) => {
         const expected: JsonSanitizationResult = {
             sanitized: '{"key": "value"}',
             wasSanitized: false,
+            wasStructurallyFixed: false,
             originalLength: originalLength,
         };
 
@@ -100,6 +105,7 @@ Deno.test('sanitizeJsonContent', async (t) => {
         const expected: JsonSanitizationResult = {
             sanitized: '{"key": "value"}',
             wasSanitized: true,
+            wasStructurallyFixed: false,
             originalLength: originalLength,
         };
 
@@ -118,6 +124,7 @@ Deno.test('sanitizeJsonContent', async (t) => {
         const expected: JsonSanitizationResult = {
             sanitized: '{"key": "value"}',
             wasSanitized: true,
+            wasStructurallyFixed: false,
             originalLength: originalLength,
         };
 
@@ -135,6 +142,7 @@ Deno.test('sanitizeJsonContent', async (t) => {
         const expected: JsonSanitizationResult = {
             sanitized: '{"key": "value"}',
             wasSanitized: true,
+            wasStructurallyFixed: false,
             originalLength: originalLength,
         };
 
@@ -152,6 +160,7 @@ Deno.test('sanitizeJsonContent', async (t) => {
         const expected: JsonSanitizationResult = {
             sanitized: '{"key": "value"}',
             wasSanitized: true,
+            wasStructurallyFixed: false,
             originalLength: originalLength,
         };
 
@@ -169,6 +178,7 @@ Deno.test('sanitizeJsonContent', async (t) => {
         const expected: JsonSanitizationResult = {
             sanitized: '[{"key": "value"}]',
             wasSanitized: true,
+            wasStructurallyFixed: false,
             originalLength: originalLength,
         };
 
@@ -187,6 +197,7 @@ Deno.test('sanitizeJsonContent', async (t) => {
         const expected1: JsonSanitizationResult = {
             sanitized: '{}',
             wasSanitized: true,
+            wasStructurallyFixed: false,
             originalLength: originalLength1,
         };
 
@@ -202,12 +213,125 @@ Deno.test('sanitizeJsonContent', async (t) => {
         const expected2: JsonSanitizationResult = {
             sanitized: '[]',
             wasSanitized: true,
+            wasStructurallyFixed: false,
             originalLength: originalLength2,
         };
 
         assertEquals(result2.sanitized, expected2.sanitized);
         assertEquals(result2.wasSanitized, expected2.wasSanitized);
         assertEquals(result2.originalLength, expected2.originalLength);
+    });
+
+    await t.step('should fix missing opening brace for object', () => {
+        const rawContent = '"system_materials": {"key": "value"}';
+        const originalLength = rawContent.length;
+
+        const result: JsonSanitizationResult = sanitizeJsonContent(rawContent);
+
+        const expected: JsonSanitizationResult = {
+            sanitized: '{"system_materials": {"key": "value"}}',
+            wasSanitized: true,
+            wasStructurallyFixed: true,
+            originalLength: originalLength,
+        };
+
+        assertEquals(result.sanitized, expected.sanitized);
+        assertEquals(result.wasSanitized, expected.wasSanitized);
+        assertEquals(result.wasStructurallyFixed, expected.wasStructurallyFixed);
+        assertEquals(result.originalLength, expected.originalLength);
+        assert(JSON.parse(result.sanitized));
+    });
+
+    await t.step('should fix missing closing brace for object', () => {
+        const rawContent = '{"key": "value"';
+        const originalLength = rawContent.length;
+
+        const result: JsonSanitizationResult = sanitizeJsonContent(rawContent);
+
+        const expected: JsonSanitizationResult = {
+            sanitized: '{"key": "value"}',
+            wasSanitized: true,
+            wasStructurallyFixed: true,
+            originalLength: originalLength,
+        };
+
+        assertEquals(result.sanitized, expected.sanitized);
+        assertEquals(result.wasSanitized, expected.wasSanitized);
+        assertEquals(result.wasStructurallyFixed, expected.wasStructurallyFixed);
+        assertEquals(result.originalLength, expected.originalLength);
+        assert(JSON.parse(result.sanitized));
+    });
+
+    await t.step('should fix missing opening bracket for array', () => {
+        const rawContent = '"item1", "item2"]';
+        const originalLength = rawContent.length;
+
+        const result: JsonSanitizationResult = sanitizeJsonContent(rawContent);
+
+        const expected: JsonSanitizationResult = {
+            sanitized: '["item1", "item2"]',
+            wasSanitized: true,
+            wasStructurallyFixed: true,
+            originalLength: originalLength,
+        };
+
+        assertEquals(result.sanitized, expected.sanitized);
+        assertEquals(result.wasSanitized, expected.wasSanitized);
+        assertEquals(result.wasStructurallyFixed, expected.wasStructurallyFixed);
+        assertEquals(result.originalLength, expected.originalLength);
+        assert(Array.isArray(JSON.parse(result.sanitized)));
+    });
+
+    await t.step('should fix missing closing bracket for array', () => {
+        const rawContent = '["item1", "item2"';
+        const originalLength = rawContent.length;
+
+        const result: JsonSanitizationResult = sanitizeJsonContent(rawContent);
+
+        const expected: JsonSanitizationResult = {
+            sanitized: '["item1", "item2"]',
+            wasSanitized: true,
+            wasStructurallyFixed: true,
+            originalLength: originalLength,
+        };
+
+        assertEquals(result.sanitized, expected.sanitized);
+        assertEquals(result.wasSanitized, expected.wasSanitized);
+        assertEquals(result.wasStructurallyFixed, expected.wasStructurallyFixed);
+        assertEquals(result.originalLength, expected.originalLength);
+        assert(Array.isArray(JSON.parse(result.sanitized)));
+    });
+
+    await t.step('should fix missing opening brace after wrapper removal', () => {
+        const rawContent = '\'"system_materials": {"key": "value"}\'';
+        const originalLength = rawContent.length;
+
+        const result: JsonSanitizationResult = sanitizeJsonContent(rawContent);
+
+        const expected: JsonSanitizationResult = {
+            sanitized: '{"system_materials": {"key": "value"}}',
+            wasSanitized: true,
+            wasStructurallyFixed: true,
+            originalLength: originalLength,
+        };
+
+        assertEquals(result.sanitized, expected.sanitized);
+        assertEquals(result.wasSanitized, expected.wasSanitized);
+        assertEquals(result.wasStructurallyFixed, expected.wasStructurallyFixed);
+        assertEquals(result.originalLength, expected.originalLength);
+        assert(JSON.parse(result.sanitized));
+    });
+
+    await t.step('should not fix content that cannot be fixed by adding single brace', () => {
+        const rawContent = '{"key": "value" "another": "value"}';
+        const originalLength = rawContent.length;
+
+        const result: JsonSanitizationResult = sanitizeJsonContent(rawContent);
+
+        // Should not be structurally fixed since adding a single brace won't make it valid
+        assertEquals(result.wasStructurallyFixed, false);
+        // Should still attempt wrapper sanitization
+        assertEquals(result.wasSanitized, false);
     });
 });
 

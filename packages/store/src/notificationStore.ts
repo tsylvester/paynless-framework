@@ -193,6 +193,28 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                                 };
                             }
                             break;
+                        case 'document_completed':
+                            if (
+                                typeof data['sessionId'] === 'string' &&
+                                typeof data['stageSlug'] === 'string' &&
+                                typeof data['iterationNumber'] === 'number' &&
+                                typeof data['job_id'] === 'string' &&
+                                typeof data['document_key'] === 'string' &&
+                                typeof data['modelId'] === 'string'
+                            ) {
+                                eventPayload = {
+                                    type,
+                                    sessionId: data['sessionId'],
+                                    stageSlug: data['stageSlug'],
+                                    iterationNumber: data['iterationNumber'],
+                                    job_id: data['job_id'],
+                                    document_key: data['document_key'],
+                                    modelId: data['modelId'],
+                                    step_key: typeof data['step_key'] === 'string' ? data['step_key'] : undefined,
+                                    latestRenderedResourceId: typeof data['latestRenderedResourceId'] === 'string' ? data['latestRenderedResourceId'] : undefined,
+                                };
+                            }
+                            break;
                         case 'render_completed':
                             if (
                                 typeof data['sessionId'] === 'string' &&

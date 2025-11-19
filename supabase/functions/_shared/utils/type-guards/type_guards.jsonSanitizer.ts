@@ -12,6 +12,10 @@ export function isJsonSanitizationResult(value: unknown): value is JsonSanitizat
         return false;
     }
 
+    if (!('wasStructurallyFixed' in value) || typeof value.wasStructurallyFixed !== 'boolean') {
+        return false;
+    }
+
     if (!('originalLength' in value) || typeof value.originalLength !== 'number') {
         return false;
     }

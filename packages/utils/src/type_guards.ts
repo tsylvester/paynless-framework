@@ -129,6 +129,7 @@ export function isDialecticLifecycleEventType(x: unknown): x is DialecticNotific
     x === 'planner_started'
     || x === 'document_started'
     || x === 'document_chunk_completed'
+    || x === 'document_completed'
     || x === 'render_completed'
     || x === 'job_failed'
   ) {

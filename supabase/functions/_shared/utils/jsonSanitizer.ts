@@ -62,10 +62,109 @@ export function sanitizeJsonContent(rawContent: string): JsonSanitizationResult 
         wasSanitized = true;
     }
 
+    // Step 5: Attempt structural fixes for simple missing braces/brackets
+    let wasStructurallyFixed = false;
+    let structurallyFixed = sanitized;
+    
+    // Only attempt structural fixes if the content is not already valid JSON
+    try {
+        JSON.parse(sanitized);
+        // Content is already valid, no structural fix needed
+    } catch {
+        // Content is not valid JSON, attempt structural fixes
+        const trimmedContent = sanitized.trim();
+        
+        // Try fixes in order of likelihood:
+        // 1. Missing opening brace for object (most common case from terminal output)
+        if (!trimmedContent.startsWith('{') && !trimmedContent.startsWith('[')) {
+            // Try adding opening brace
+            const withOpeningBrace = `{${trimmedContent}`;
+            try {
+                JSON.parse(withOpeningBrace);
+                structurallyFixed = withOpeningBrace;
+                wasStructurallyFixed = true;
+                wasSanitized = true;
+            } catch {
+                // Opening brace alone didn't work, try adding both opening and closing
+                const withBothBraces = `{${trimmedContent}}`;
+                try {
+                    JSON.parse(withBothBraces);
+                    structurallyFixed = withBothBraces;
+                    wasStructurallyFixed = true;
+                    wasSanitized = true;
+                } catch {
+                    // Try closing brace only
+                    const withClosingBrace = `${trimmedContent}}`;
+                    try {
+                        JSON.parse(withClosingBrace);
+                        structurallyFixed = withClosingBrace;
+                        wasStructurallyFixed = true;
+                        wasSanitized = true;
+                    } catch {
+                        // Try opening bracket for array
+                        const withOpeningBracket = `[${trimmedContent}`;
+                        try {
+                            JSON.parse(withOpeningBracket);
+                            structurallyFixed = withOpeningBracket;
+                            wasStructurallyFixed = true;
+                            wasSanitized = true;
+                        } catch {
+                            // Try both brackets
+                            const withBothBrackets = `[${trimmedContent}]`;
+                            try {
+                                JSON.parse(withBothBrackets);
+                                structurallyFixed = withBothBrackets;
+                                wasStructurallyFixed = true;
+                                wasSanitized = true;
+                            } catch {
+                                // Try closing bracket only
+                                const withClosingBracket = `${trimmedContent}]`;
+                                try {
+                                    JSON.parse(withClosingBracket);
+                                    structurallyFixed = withClosingBracket;
+                                    wasStructurallyFixed = true;
+                                    wasSanitized = true;
+                                } catch {
+                                    // No structural fix worked, keep original sanitized content
+                                    structurallyFixed = sanitized;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (trimmedContent.startsWith('{') && !trimmedContent.endsWith('}')) {
+            // Has opening brace but missing closing brace
+            const withClosingBrace = `${trimmedContent}}`;
+            try {
+                JSON.parse(withClosingBrace);
+                structurallyFixed = withClosingBrace;
+                wasStructurallyFixed = true;
+                wasSanitized = true;
+            } catch {
+                // Closing brace didn't work, keep original
+                structurallyFixed = sanitized;
+            }
+        } else if (trimmedContent.startsWith('[') && !trimmedContent.endsWith(']')) {
+            // Has opening bracket but missing closing bracket
+            const withClosingBracket = `${trimmedContent}]`;
+            try {
+                JSON.parse(withClosingBracket);
+                structurallyFixed = withClosingBracket;
+                wasStructurallyFixed = true;
+                wasSanitized = true;
+            } catch {
+                // Closing bracket didn't work, keep original
+                structurallyFixed = sanitized;
+            }
+        }
+    }
+
     // Construct result using JsonSanitizationResult type (per 125.b.ii)
     const result: JsonSanitizationResult = {
-        sanitized: sanitized,
+        sanitized: structurallyFixed,
         wasSanitized: wasSanitized,
+        wasStructurallyFixed: wasStructurallyFixed,
         originalLength: originalLength
     };
 

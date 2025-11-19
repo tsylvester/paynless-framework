@@ -960,7 +960,8 @@ export async function executeModelCallAndSave(
     if (sanitizationResult.wasSanitized) {
         deps.logger.info(`[executeModelCallAndSave] JSON content sanitized for job ${job.id}`, { 
             originalLength: sanitizationResult.originalLength, 
-            sanitizedLength: sanitizationResult.sanitized.length 
+            sanitizedLength: sanitizationResult.sanitized.length,
+            wasStructurallyFixed: sanitizationResult.wasStructurallyFixed
         });
     }
     

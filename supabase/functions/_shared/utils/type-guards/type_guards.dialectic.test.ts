@@ -73,6 +73,7 @@ import {
     RenderedDocumentArtifact,
     AssembledJsonArtifact,
     EditedDocumentResource,
+    DialecticPlanJobPayload,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 import { ContinueReason, FinishReason } from '../../types.ts';
@@ -524,6 +525,7 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
             seed_prompt: 'resource-id-1',
         },
         prompt_template_id: 'prompt-template-123',
+        user_jwt: 'some-jwt',
     };
 
     await t.step('should return true for a valid payload and not throw', () => {
@@ -675,7 +677,7 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
     });
     await t.step('should throw if user_jwt is of wrong type', () => {
         const p = { ...basePayload, user_jwt: 123 as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid user_jwt.');
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid user_jwt.');
     });
     
     // Test optional inherited properties
@@ -712,6 +714,25 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
             () => isDialecticExecuteJobPayload(pollutedPayload),
             Error,
             'Payload contains unknown properties: step_info'
+        );
+    });
+
+    await t.step('should throw error when user_jwt is missing from execute job payload', () => {
+        const payloadWithoutUserJwt = { ...basePayload };
+        delete (payloadWithoutUserJwt as Partial<typeof basePayload>).user_jwt;
+        assertThrows(
+            () => isDialecticExecuteJobPayload(payloadWithoutUserJwt),
+            Error,
+            'Missing or invalid user_jwt.'
+        );
+    });
+
+    await t.step('should throw error when user_jwt is empty string in execute job payload', () => {
+        const payloadWithEmptyUserJwt = { ...basePayload, user_jwt: '' };
+        assertThrows(
+            () => isDialecticExecuteJobPayload(payloadWithEmptyUserJwt),
+            Error,
+            'Missing or invalid user_jwt.'
         );
     });
 });
@@ -1127,13 +1148,26 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
 
 Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
     await t.step('should return true for a valid plan job payload', () => {
-        const payload = {
+        const payload: DialecticPlanJobPayload = {
             job_type: 'PLAN',
+            user_jwt: 'test-jwt',
+            model_id: 'model-123',
+            sessionId: 'test-session',
+            projectId: 'test-project',
+            walletId: 'wallet-abc',
+            stageSlug: 'thesis',
+            iterationNumber: 1,
+            continueUntilComplete: true,
+            maxRetries: 3,
+            continuation_count: 1,
+            target_contribution_id: 'target-id',
+            is_test_job: false,
+            sourceContributionId: 'source-id',
         };
         assert(isDialecticPlanJobPayload(payload));
     });
     await t.step('should return true for a valid plan job payload with base payload fields including model_slug', () => {
-        const payload = {
+        const payload: DialecticPlanJobPayload = {
             job_type: 'PLAN',
             sessionId: 'test-session',
             projectId: 'test-project',
@@ -1178,6 +1212,33 @@ Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
         assert(!isDialecticPlanJobPayload(null));
         assert(!isDialecticPlanJobPayload("a string"));
         assert(!isDialecticPlanJobPayload(123));
+    });
+
+    await t.step('should return false when user_jwt is missing from plan job payload', () => {
+        const payload = {
+            job_type: 'PLAN',
+            sessionId: 'test-session',
+            projectId: 'test-project',
+            model_id: 'model-123',
+            walletId: 'wallet-abc',
+            stageSlug: 'thesis',
+            iterationNumber: 1,
+        };
+        assert(!isDialecticPlanJobPayload(payload));
+    });
+
+    await t.step('should return false when user_jwt is empty string in plan job payload', () => {
+        const payload = {
+            job_type: 'PLAN',
+            sessionId: 'test-session',
+            projectId: 'test-project',
+            model_id: 'model-123',
+            walletId: 'wallet-abc',
+            stageSlug: 'thesis',
+            iterationNumber: 1,
+            user_jwt: '',
+        };
+        assert(!isDialecticPlanJobPayload(payload));
     });
 });
 
