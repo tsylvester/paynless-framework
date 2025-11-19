@@ -27,6 +27,7 @@ import { TablesInsert } from '../types_db.ts';
 import { sanitizeJsonContent } from '../_shared/utils/jsonSanitizer.ts';
 import { isJsonSanitizationResult } from '../_shared/utils/type-guards/type_guards.jsonSanitizer.ts';
 import type { JsonSanitizationResult } from '../_shared/types/jsonSanitizer.interface.ts';
+import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
 export async function executeModelCallAndSave(
     params: ExecuteModelCallAndSaveParams,
 ) {
@@ -1114,6 +1115,62 @@ export async function executeModelCallAndSave(
 
     const contribution = savedResult.record;
 
+    // Conditionally enqueue RENDER job for markdown document outputs on every chunk completion
+    try {
+        const shouldRender = await shouldEnqueueRenderJob({ dbClient }, { outputType: output_type, stageSlug });
+        if (!shouldRender) {
+            deps.logger.info('[executeModelCallAndSave] Skipping RENDER job for non-markdown output type', { output_type, stageSlug });
+        } else {
+            // Derive a stable document identity from relationships when present; fallback to contribution.id
+            let documentIdentity: string = contribution.id;
+            if (isRecord(contribution.document_relationships)) {
+                const relObj = contribution.document_relationships;
+                for (const k of Object.keys(relObj)) {
+                    const v = relObj[k];
+                    if (typeof v === 'string' && v.trim() !== '') {
+                        documentIdentity = v;
+                        break;
+                    }
+                }
+            }
+
+            const renderPayload = {
+                projectId,
+                sessionId,
+                iterationNumber,
+                stageSlug,
+                documentIdentity,
+            };
+
+            const insertObj: TablesInsert<'dialectic_generation_jobs'> = {
+                job_type: 'RENDER',
+                session_id: job.session_id,
+                stage_slug: stageSlug,
+                iteration_number: iterationNumber,
+                parent_job_id: jobId,
+                payload: renderPayload,
+                is_test_job: job.is_test_job ?? false,
+                status: 'pending',
+                user_id: projectOwnerUserId,
+            };
+
+            const { data: renderInsertData, error: renderInsertError } = await dbClient
+                .from('dialectic_generation_jobs')
+                .insert(insertObj)
+                .select('*')
+                .single();
+
+            if (renderInsertError) {
+                deps.logger.error('[executeModelCallAndSave] Failed to enqueue RENDER job', { renderInsertError, insertObj });
+            } else {
+                const newId = isRecord(renderInsertData) && typeof renderInsertData['id'] === 'string' ? renderInsertData['id'] : undefined;
+                deps.logger.info('[executeModelCallAndSave] Enqueued RENDER job', { parent_job_id: jobId, render_job_id: newId });
+            }
+        }
+    } catch (e) {
+        deps.logger.error('[executeModelCallAndSave] CRITICAL: Exception while scheduling RENDER job', { error: e instanceof Error ? e.message : String(e) });
+    }
+
     if (typeof promptConstructionPayload.source_prompt_resource_id === 'string' && promptConstructionPayload.source_prompt_resource_id.trim().length > 0) {
         const { error: promptLinkUpdateError } = await dbClient
             .from('dialectic_project_resources')
@@ -1272,57 +1329,6 @@ export async function executeModelCallAndSave(
                 projectId: projectId,
                 job_id: jobId,
             }, projectOwnerUserId);
-        }
-
-        // Programmatically schedule a RENDER job after successful EXECUTE completion
-        try {
-            // Derive a stable document identity from relationships when present; fallback to contribution.id
-            let documentIdentity: string = contribution.id;
-            if (isRecord(contribution.document_relationships)) {
-                const relObj = contribution.document_relationships;
-                for (const k of Object.keys(relObj)) {
-                    const v = relObj[k];
-                    if (typeof v === 'string' && v.trim() !== '') {
-                        documentIdentity = v;
-                        break;
-                    }
-                }
-            }
-
-            const renderPayload = {
-                projectId,
-                sessionId,
-                iterationNumber,
-                stageSlug,
-                documentIdentity,
-            };
-
-            const insertObj: TablesInsert<'dialectic_generation_jobs'> = {
-                job_type: 'RENDER',
-                session_id: job.session_id,
-                stage_slug: stageSlug,
-                iteration_number: iterationNumber,
-                parent_job_id: jobId,
-                payload: renderPayload,
-                is_test_job: job.is_test_job ?? false,
-                status: 'pending',
-                user_id: projectOwnerUserId,
-            };
-
-            const { data: renderInsertData, error: renderInsertError } = await dbClient
-                .from('dialectic_generation_jobs')
-                .insert(insertObj)
-                .select('*')
-                .single();
-
-            if (renderInsertError) {
-                deps.logger.error('[executeModelCallAndSave] Failed to enqueue RENDER job', { renderInsertError, insertObj });
-            } else {
-                const newId = isRecord(renderInsertData) && typeof renderInsertData['id'] === 'string' ? renderInsertData['id'] : undefined;
-                deps.logger.info('[executeModelCallAndSave] Enqueued RENDER job', { parent_job_id: jobId, render_job_id: newId });
-            }
-        } catch (e) {
-            deps.logger.error('[executeModelCallAndSave] CRITICAL: Exception while scheduling RENDER job', { error: e instanceof Error ? e.message : String(e) });
         }
     }
 

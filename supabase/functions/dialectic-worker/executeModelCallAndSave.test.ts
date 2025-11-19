@@ -1943,8 +1943,62 @@ Deno.test('executeModelCallAndSave - scoped selection includes only artifacts ma
 
 // On successful EXECUTE completion, insert a RENDER job with correct payload
 Deno.test('executeModelCallAndSave - schedules RENDER job after success with renderer identity payload', async () => {
+  const mockStage = {
+    id: 'stage-1',
+    slug: 'test-stage',
+    display_name: 'Test Stage',
+    description: null,
+    default_system_prompt_id: null,
+    recipe_template_id: 'template-1',
+    active_recipe_instance_id: 'instance-1',
+    expected_output_template_ids: [],
+    created_at: new Date().toISOString(),
+  };
+
+  const mockInstance = {
+    id: 'instance-1',
+    stage_id: 'stage-1',
+    template_id: 'template-1',
+    is_cloned: false,
+    cloned_at: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const mockStep = {
+    id: 'step-1',
+    template_id: 'template-1',
+    step_number: 1,
+    step_key: 'execute_business_case',
+    step_slug: 'execute-business-case',
+    step_name: 'Execute Business Case',
+    step_description: null,
+    job_type: 'EXECUTE',
+    prompt_type: 'Turn',
+    prompt_template_id: null,
+    output_type: 'business_case',
+    granularity_strategy: 'per_source_document',
+    inputs_required: [],
+    inputs_relevance: [],
+    outputs_required: {
+      documents: [
+        {
+          document_key: 'business_case',
+          file_type: 'markdown',
+        },
+      ],
+    },
+    parallel_group: null,
+    branch_key: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
   const { client: dbClient, spies } = setupMockClient({
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    'dialectic_stages': { select: { data: [mockStage], error: null } },
+    'dialectic_stage_recipe_instances': { select: { data: [mockInstance], error: null } },
+    'dialectic_recipe_template_steps': { select: { data: [mockStep], error: null } },
   });
 
   // Ensure saved contribution carries a true-root identity
@@ -1955,7 +2009,13 @@ Deno.test('executeModelCallAndSave - schedules RENDER job after success with ren
   const deps = getMockDeps();
   deps.fileManager = fileManager;
 
-  const job = createMockJob(testPayload);
+  // Use a markdown output type so RENDER job is enqueued
+  const renderPayload: DialecticExecuteJobPayload = {
+    ...testPayload,
+    output_type: FileType.business_case,
+  };
+
+  const job = createMockJob(renderPayload);
   const params: ExecuteModelCallAndSaveParams = {
     dbClient: dbClient as unknown as SupabaseClient<Database>,
     deps,
@@ -1988,13 +2048,15 @@ Deno.test('executeModelCallAndSave - schedules RENDER job after success with ren
   // Payload must include required renderer identity fields; no step_info allowed
   const pl = inserted['payload'];
   assert(isRecord(pl), 'Inserted payload.payload must be an object');
-  assertEquals(pl['projectId'], testPayload.projectId);
-  assertEquals(pl['sessionId'], testPayload.sessionId);
-  assertEquals(pl['iterationNumber'], testPayload.iterationNumber);
-  assertEquals(pl['stageSlug'], testPayload.stageSlug);
+  assertEquals(pl['projectId'], renderPayload.projectId);
+  assertEquals(pl['sessionId'], renderPayload.sessionId);
+  assertEquals(pl['iterationNumber'], renderPayload.iterationNumber);
+  assertEquals(pl['stageSlug'], renderPayload.stageSlug);
   assertEquals(pl['documentIdentity'], 'doc-root-abc');
   assert(!('step_info' in pl), 'Payload must not include deprecated step_info');
 });
+
+
 
 
 
