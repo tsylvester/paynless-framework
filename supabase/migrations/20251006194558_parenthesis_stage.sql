@@ -616,11 +616,11 @@ DECLARE
         'generate-technical_requirements',
         'generate-technical_requirements',
         'Generate Technical Requirements Document',
-        'Produce the updated TRD that aligns synthesized architecture with the planner’s milestone breakdown.',
+        'Produce the updated TRD that aligns synthesized architecture with the planners milestone breakdown.',
         'EXECUTE',
         'Turn',
         v_technical_requirements_prompt_id,
-        'rendered_document',
+        'technical_requirements',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
@@ -762,7 +762,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_technical_requirements_prompt_id,
-        'rendered_document',
+        'technical_requirements',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
@@ -899,7 +899,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_master_plan_prompt_id,
-        'rendered_document',
+        'master_plan',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
@@ -1048,7 +1048,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_master_plan_prompt_id,
-        'rendered_document',
+        'master_plan',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
@@ -1192,7 +1192,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_milestone_schema_prompt_id,
-        'rendered_document',
+        'milestone_schema',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
@@ -1349,7 +1349,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_milestone_schema_prompt_id,
-        'rendered_document',
+        'milestone_schema',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},

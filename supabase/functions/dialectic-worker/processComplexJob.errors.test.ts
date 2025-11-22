@@ -147,6 +147,7 @@ describe('processComplexJob', () => {
             stageSlug: 'antithesis',
             model_id: 'model-id-complex',
             walletId: 'wallet-id-complex',
+            user_jwt: 'user-jwt-complex',
         };
 
         if (!isJson(mockPayload)) {

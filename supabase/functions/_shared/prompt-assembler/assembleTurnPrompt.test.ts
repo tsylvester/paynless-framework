@@ -15,6 +15,7 @@ import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
   type MockSupabaseClientSetup,
+  type MockQueryBuilderState,
 } from "../supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../../types_db.ts";
@@ -31,7 +32,11 @@ import { GatherContextFn } from "./gatherContext.ts";
 const STAGE_SLUG = "synthesis";
 const BUSINESS_CASE_DOCUMENT_KEY = FileType.business_case;
 const TECHNICAL_DESIGN_DOCUMENT_KEY = FileType.system_architecture;
-const HEADER_CONTEXT_RESOURCE_ID = "header-context-id";
+const HEADER_CONTEXT_CONTRIBUTION_ID = "header-context-contrib-id";
+const HEADER_CONTEXT_STORAGE_BUCKET = "dialectic_contributions";
+const HEADER_CONTEXT_STORAGE_PATH = "path/to/header";
+const HEADER_CONTEXT_FILE_NAME = "header_context.json";
+const EXPECTED_TEMPLATE_BUCKET = "test-bucket"; // Must match environment variable value from setup() stub
 
 const baseRecipeStep: DialecticStageRecipeStep = {
   id: "step-123",
@@ -182,6 +187,60 @@ Deno.test("assembleTurnPrompt", async (t) => {
     recipe_template_id: null,
   };
 
+  const createHeaderContextContributionMock = (
+    contributionId: string = HEADER_CONTEXT_CONTRIBUTION_ID,
+    storageBucket: string = HEADER_CONTEXT_STORAGE_BUCKET,
+    storagePath: string = HEADER_CONTEXT_STORAGE_PATH,
+    fileName: string = HEADER_CONTEXT_FILE_NAME,
+  ) => {
+    return {
+      select: async (state: MockQueryBuilderState) => {
+        const idFilter = state.filters.find((f) => f.type === 'eq' && f.column === 'id' && f.value === contributionId);
+        if (idFilter) {
+          return {
+            data: [{
+              id: contributionId,
+              storage_bucket: storageBucket,
+              storage_path: storagePath,
+              file_name: fileName,
+              contribution_type: "header_context",
+              session_id: defaultSession.id,
+              iteration_number: 1,
+              stage: defaultStage.slug,
+              is_latest_edit: true,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              user_id: defaultProject.user_id,
+              model_id: "model-123",
+              model_name: "Test Model",
+              edit_version: 1,
+              mime_type: "application/json",
+              size_bytes: 100,
+              raw_response_storage_path: null,
+              prompt_template_id_used: null,
+              seed_prompt_url: null,
+              original_model_contribution_id: null,
+              target_contribution_id: null,
+              tokens_used_input: null,
+              tokens_used_output: null,
+              processing_time_ms: null,
+              error: null,
+              citations: null,
+              document_relationships: null,
+              source_prompt_resource_id: null,
+              is_header: false,
+            }],
+            error: null,
+            count: 1,
+            status: 200,
+            statusText: "OK"
+          };
+        }
+        return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+      }
+    };
+  };
+
   const mockTurnJob: DialecticJobRow = {
     id: "job-turn-123",
     job_type: 'EXECUTE',
@@ -194,7 +253,9 @@ Deno.test("assembleTurnPrompt", async (t) => {
         stageSlug: defaultStage.slug,
         iterationNumber: 1,
         walletId: "wallet-123",
-        header_context_resource_id: HEADER_CONTEXT_RESOURCE_ID,
+        inputs: {
+          header_context_id: HEADER_CONTEXT_CONTRIBUTION_ID,
+        },
         document_key: BUSINESS_CASE_DOCUMENT_KEY,
         document_specific_data: {
             title: "Project Executive Summary",
@@ -263,17 +324,20 @@ Deno.test("assembleTurnPrompt", async (t) => {
                 { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
               ],
             }
-          }
+          },
+          dialectic_contributions: createHeaderContextContributionMock(),
         },
         storageMock: {
             downloadResult: (bucket, path) => {
-                if (path.includes("header-context-id")) {
+                const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+                if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                     return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
                 }
-                if (path.includes("summary_template.md")) {
+                // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
+                if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
                     return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
                 }
-                return Promise.resolve({ data: null, error: new Error("File not found in mock") });
+                return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
             },
         }
       };
@@ -341,16 +405,19 @@ Deno.test("assembleTurnPrompt", async (t) => {
             ],
           },
         },
+        dialectic_contributions: createHeaderContextContributionMock(),
       },
       storageMock: {
         downloadResult: (bucket, path) => {
-          if (path.includes("header-context-id")) {
+          const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+          if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
             return Promise.resolve({
               data: new Blob([JSON.stringify(headerContextContent)]),
               error: null,
             });
           }
-          if (path.includes("summary_template.md")) {
+          // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
+          if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
             return Promise.resolve({
               data: new Blob([documentTemplateContent]),
               error: null,
@@ -358,7 +425,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
           }
           return Promise.resolve({
             data: null,
-            error: new Error("File not found in mock"),
+            error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`),
           });
         },
       },
@@ -414,7 +481,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
                 { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
               ],
             }
-          }
+          },
+          dialectic_contributions: createHeaderContextContributionMock(),
         },
         storageMock: {
             downloadResult: () => Promise.resolve({ data: null, error: new Error("Storage Error") }),
@@ -453,18 +521,13 @@ Deno.test("assembleTurnPrompt", async (t) => {
       user_domain_overlay_values: userOverlay,
     };
 
+    if (!isRecord(mockTurnJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
     const jobForDesignDoc: DialecticJobRow = {
         ...mockTurnJob,
         payload: {
-            job_type: "EXECUTE",
-            model_id: "model-123",
-            model_slug: "test-model",
-            projectId: defaultProject.id,
-            sessionId: defaultSession.id,
-            stageSlug: defaultStage.slug,
-            iterationNumber: 1,
-            walletId: "wallet-123",
-            header_context_resource_id: HEADER_CONTEXT_RESOURCE_ID,
+            ...mockTurnJob.payload,
             document_key: TECHNICAL_DESIGN_DOCUMENT_KEY,
             document_specific_data: {
                 title: "Technical Design",
@@ -502,17 +565,20 @@ Deno.test("assembleTurnPrompt", async (t) => {
               { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
             ],
           }
-        }
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
       },
       storageMock: {
           downloadResult: (bucket, path) => {
-              if (path.includes("header-context-id")) {
+              const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+              if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                   return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
               }
-              if (path.includes("design_template.md")) {
+              // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
+              if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("design_template.md")) {
                   return Promise.resolve({ data: new Blob([designTemplateContent]), error: null });
               }
-              return Promise.resolve({ data: null, error: new Error("File not found in mock") });
+              return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
           },
       }
     };
@@ -548,15 +614,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
                 { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
               ],
             }
-          }
+          },
+          dialectic_contributions: createHeaderContextContributionMock(),
         },
         storageMock: {
             downloadResult: (bucket, path) => {
-                if (path.includes("header-context-id")) {
+                const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+                if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                     return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
                 }
-                // Fail the template download
-                return Promise.resolve({ data: null, error: new Error("Template Not Found") });
+                // Validate bucket name matches environment variable value - this test should fail if bucket is wrong
+                if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
+                    // Fail the template download (this is the expected behavior for this test)
+                    return Promise.resolve({ data: null, error: new Error("Template Not Found") });
+                }
+                return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
             },
         }
       };
@@ -625,19 +697,22 @@ Deno.test("assembleTurnPrompt", async (t) => {
               { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
             ],
           }
-        }
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
       },
-      storageMock: {
-          downloadResult: (bucket, path) => {
-              if (path.includes("header-context-id")) {
-                  return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
-              }
-              if (path.includes("summary_template.md")) {
-                  return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
-              }
-              return Promise.resolve({ data: null, error: new Error("File not found in mock") });
-          },
-      }
+        storageMock: {
+            downloadResult: (bucket, path) => {
+                const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+                if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
+                    return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
+                }
+                // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
+                if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
+                    return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
+                }
+                return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
+            },
+        }
     };
     const { client } = setup(config);
     // This test simulates a failure during the final step of saving the assembled prompt.
@@ -675,7 +750,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
                 { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
               ],
             }
-          }
+          },
+          dialectic_contributions: createHeaderContextContributionMock(),
         },
         storageMock: {
             downloadResult: () => Promise.resolve({ data: new Blob(["{ not json }"]), error: null }),
@@ -718,11 +794,13 @@ Deno.test("assembleTurnPrompt", async (t) => {
               { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
             ],
           }
-        }
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
       },
       storageMock: {
           downloadResult: (bucket, path) => {
-              if (path.includes("header-context-id")) {
+              const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+              if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                   return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
               }
               return Promise.resolve({ data: null, error: new Error("File not found in mock") });
@@ -833,13 +911,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
     }
   });
 
-  await t.step("should throw PRECONDITION_FAILED if job payload is missing header_context_resource_id", async () => {
+  await t.step("should throw PRECONDITION_FAILED if job payload inputs is missing header_context_id", async () => {
     const { client } = setup();
     if(!isRecord(mockTurnJob.payload)) {
       throw new Error("Job payload is not valid JSON");
     }
     const payload = { ...mockTurnJob.payload };
-    delete payload.header_context_resource_id;
+    if (isRecord(payload.inputs)) {
+      delete payload.inputs.header_context_id;
+    }
     const jobWithMissingHeaderId: DialecticJobRow = {
         ...mockTurnJob,
         payload
@@ -862,7 +942,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
             await assembleTurnPrompt(deps);
         },
         Error,
-        "PRECONDITION_FAILED: Job payload is missing 'header_context_resource_id'."
+        "PRECONDITION_FAILED: Job payload inputs is missing 'header_context_id'."
     );
     } finally {
       teardown();
@@ -935,18 +1015,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
               { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
             ],
           }
-        }
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
       },
       storageMock: {
           downloadResult: (bucket, path) => {
-              if (path.includes("header-context-id")) {
+              const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+              if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                   return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
               }
+              // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
               // This test explicitly uses the 'technical_design' key and its corresponding template.
-              if (path.includes("design_template.md")) {
+              if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("design_template.md")) {
                   return Promise.resolve({ data: new Blob([designTemplateContent]), error: null });
               }
-              return Promise.resolve({ data: null, error: new Error("File not found in mock") });
+              return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
           },
       }
     };
@@ -957,10 +1040,16 @@ Deno.test("assembleTurnPrompt", async (t) => {
     if(!isRecord(mockTurnJob.payload)) {
       throw new Error("Job payload is not valid JSON");
     }
+    if(!isRecord(mockTurnJob.payload.inputs)) {
+      throw new Error("Job payload inputs is not valid JSON");
+    }
     const jobForDesignDoc: DialecticJobRow = {
         ...mockTurnJob,
         payload: {
             ...mockTurnJob.payload,
+            inputs: {
+                header_context_id: HEADER_CONTEXT_CONTRIBUTION_ID,
+            },
             document_key: TECHNICAL_DESIGN_DOCUMENT_KEY,
             document_specific_data: { custom_style: "minimalist" },
             model_slug: "test-model",
@@ -989,12 +1078,32 @@ Deno.test("assembleTurnPrompt", async (t) => {
   });
 
   await t.step("should throw PRECONDITION_FAILED if job payload is missing 'model_id'", async () => {
-    const { client } = setup();
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
+      },
+    };
+    const { client } = setup(config);
     if(!isRecord(mockTurnJob.payload)) {
       throw new Error("Job payload is not valid JSON");
     }
-    const payload = { ...mockTurnJob.payload };
-    delete payload.model_id;
+    if(!isRecord(mockTurnJob.payload.inputs)) {
+      throw new Error("Job payload inputs is not valid JSON");
+    }
+    const payload = { 
+      ...mockTurnJob.payload,
+      inputs: {
+        header_context_id: HEADER_CONTEXT_CONTRIBUTION_ID,
+      },
+    };
+    delete (payload as Record<string, unknown>).model_id;
     const jobWithMissingModelSlug: DialecticJobRow = {
         ...mockTurnJob,
         payload,
@@ -1053,11 +1162,13 @@ Deno.test("assembleTurnPrompt", async (t) => {
                 { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
               ],
             }
-          }
+          },
+          dialectic_contributions: createHeaderContextContributionMock(),
         },
         storageMock: {
             downloadResult: (bucket, path) => {
-                if (path.includes("header-context-id")) {
+                const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+                if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                     return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
                 }
                 if (path.includes("design_template.md")) {
@@ -1074,10 +1185,16 @@ Deno.test("assembleTurnPrompt", async (t) => {
       if(!isRecord(mockTurnJob.payload)) {
         throw new Error("Job payload is not valid JSON");
       }
+      if(!isRecord(mockTurnJob.payload.inputs)) {
+        throw new Error("Job payload inputs is not valid JSON");
+      }
       const jobForDesignDoc: DialecticJobRow = {
           ...mockTurnJob,
           payload: {
               ...mockTurnJob.payload,
+              inputs: {
+                  header_context_id: HEADER_CONTEXT_CONTRIBUTION_ID,
+              },
               document_key: TECHNICAL_DESIGN_DOCUMENT_KEY,
               document_specific_data: { custom_style: "brutalist" },
               model_slug: "test-model",
@@ -1106,12 +1223,32 @@ Deno.test("assembleTurnPrompt", async (t) => {
   });
 
   await t.step("should throw PRECONDITION_FAILED if job payload is missing 'model_id'", async () => {
-    const { client } = setup();
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
+      },
+    };
+    const { client } = setup(config);
     if(!isRecord(mockTurnJob.payload)) {
       throw new Error("Job payload is not valid JSON");
     }
-    const payload = { ...mockTurnJob.payload };
-    delete payload.model_id;
+    if(!isRecord(mockTurnJob.payload.inputs)) {
+      throw new Error("Job payload inputs is not valid JSON");
+    }
+    const payload = { 
+      ...mockTurnJob.payload,
+      inputs: {
+        header_context_id: HEADER_CONTEXT_CONTRIBUTION_ID,
+      },
+    };
+    delete (payload as Record<string, unknown>).model_id;
     const jobWithMissingModelSlug: DialecticJobRow = {
         ...mockTurnJob,
         payload,
@@ -1141,18 +1278,42 @@ Deno.test("assembleTurnPrompt", async (t) => {
   });
 
   await t.step("should throw PRECONDITION_FAILED if stage context is missing 'recipe_step'", async () => {
-    const { client } = setup();
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
+      },
+    };
+    const { client } = setup(config);
     const stageWithoutRecipe: StageContext = {
       ...defaultStage,
       recipe_step: undefined,
     } as unknown as StageContext;
 
+    if(!isRecord(mockTurnJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
+    const jobWithInputs: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        inputs: {
+          header_context_id: HEADER_CONTEXT_CONTRIBUTION_ID,
+        },
+      },
+    };
     try {
       await assertRejects(
         async () => {
             const deps: AssembleTurnPromptDeps = {
                 dbClient: client,
-                job: mockTurnJob,
+                job: jobWithInputs,
                 project: defaultProject,
                 session: defaultSession,
                 stage: stageWithoutRecipe,
@@ -1187,22 +1348,37 @@ Deno.test("assembleTurnPrompt", async (t) => {
               { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
             ],
           }
-        }
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
       },
       storageMock: {
           downloadResult: (bucket, path) => {
-              if (path.includes("header-context-id")) {
+              const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+              if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                   return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
               }
+              // Validate bucket name matches environment variable value - this test should fail if bucket is wrong
               // This test should fail at template download from storage
-              if (path.includes("summary_template.md")) {
+              if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
                   return Promise.resolve({ data: null, error: new Error("Template Not Found from Storage") });
               }
-              return Promise.resolve({ data: null, error: new Error("Unexpected file request in mock") });
+              return Promise.resolve({ data: null, error: new Error(`Unexpected file request in mock (bucket: ${bucket}, path: ${path})`) });
           },
       }
     };
     const { client } = setup(config);
+    if(!isRecord(mockTurnJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
+    const jobWithInputs: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        inputs: {
+          header_context_id: HEADER_CONTEXT_CONTRIBUTION_ID,
+        },
+      },
+    };
 
     try {
       // assembleTurnPrompt uses storage, not DB for templates.
@@ -1211,7 +1387,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
         async () => {
             const deps: AssembleTurnPromptDeps = {
                 dbClient: client,
-                job: mockTurnJob,
+                job: jobWithInputs,
                 project: defaultProject,
                 session: defaultSession,
                 stage: stageWithMissingTemplate,
@@ -1259,23 +1435,38 @@ Deno.test("assembleTurnPrompt", async (t) => {
               { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
             ],
           }
-        }
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
       },
-      storageMock: {
-          downloadResult: (bucket, path) => {
-              if (path.includes("header-context-id")) {
-                  return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
-              }
-              if (path.includes("summary_template.md")) {
-                  return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
-              }
-              return Promise.resolve({ data: null, error: new Error("File not found in mock") });
-          },
-      }
+        storageMock: {
+            downloadResult: (bucket, path) => {
+                const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+                if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
+                    return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
+                }
+                // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
+                if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
+                    return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
+                }
+                return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
+            },
+        }
     };
   
     const { client } = setup(config);
     mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+    if(!isRecord(mockTurnJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
+    const jobWithInputs: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        inputs: {
+          header_context_id: HEADER_CONTEXT_CONTRIBUTION_ID,
+        },
+      },
+    };
   
     // This test explicitly verifies that the function can run successfully
     // when the only required input is the header context, proving it doesn't
@@ -1287,7 +1478,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
-        job: mockTurnJob,
+        job: jobWithInputs,
         project: defaultProject,
         session: defaultSession,
         stage: stageWithNoExtraInputs,
@@ -1334,19 +1525,22 @@ Deno.test("assembleTurnPrompt", async (t) => {
               { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
             ],
           }
-        }
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
       },
-      storageMock: {
-          downloadResult: (bucket, path) => {
-              if (path.includes("header-context-id")) {
-                  return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
-              }
-              if (path.includes("summary_template.md")) {
-                  return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
-              }
-              return Promise.resolve({ data: null, error: new Error("File not found in mock") });
-          },
-      }
+        storageMock: {
+            downloadResult: (bucket, path) => {
+                const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+                if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
+                    return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
+                }
+                // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
+                if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
+                    return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
+                }
+                return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
+            },
+        }
     };
     const { client } = setup(config);
     mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
@@ -1354,6 +1548,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
     if(!isRecord(mockTurnJob.payload)) {
       throw new Error("Job payload is not valid JSON");
     }
+    const jobWithInputs: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        inputs: {
+          header_context_id: HEADER_CONTEXT_CONTRIBUTION_ID,
+        },
+      },
+    };
     const stageWithNoStepName: StageContext = {
       ...defaultStage,
       recipe_step: {
@@ -1365,7 +1568,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
-        job: mockTurnJob,
+        job: jobWithInputs,
         project: defaultProject,
         session: defaultSession,
         stage: stageWithNoStepName,
@@ -1389,10 +1592,19 @@ Deno.test("assembleTurnPrompt", async (t) => {
     if (!isRecord(mockTurnJob.payload)) {
       throw new Error("Job payload is not valid JSON");
     }
+    if(!isRecord(mockTurnJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
+    if(!isRecord(mockTurnJob.payload.inputs)) {
+      throw new Error("Job payload inputs is not valid JSON");
+    }
     const jobWithStepInfo: DialecticJobRow = {
       ...mockTurnJob,
       payload: {
         ...mockTurnJob.payload,
+        inputs: {
+          header_context_id: HEADER_CONTEXT_CONTRIBUTION_ID,
+        },
         step_info: { old_data: "value" },
       },
     };
@@ -1450,23 +1662,38 @@ Deno.test("assembleTurnPrompt", async (t) => {
               { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
             ],
           }
-        }
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
       },
-      storageMock: {
-          downloadResult: (bucket, path) => {
-              if (path.includes("header-context-id")) {
-                  return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
-              }
-              if (path.includes("summary_template.md")) {
-                  return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
-              }
-              return Promise.resolve({ data: null, error: new Error("File not found in mock") });
-          },
-      }
+        storageMock: {
+            downloadResult: (bucket, path) => {
+                const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+                if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
+                    return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
+                }
+                // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
+                if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
+                    return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
+                }
+                return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
+            },
+        }
     };
 
     const { client } = setup(config);
     mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+    if(!isRecord(mockTurnJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
+    const jobWithInputs: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        inputs: {
+          header_context_id: HEADER_CONTEXT_CONTRIBUTION_ID,
+        },
+      },
+    };
 
     const branchKey = "feature_branch_a";
     const parallelGroup = 1;
@@ -1483,7 +1710,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
-        job: mockTurnJob,
+        job: jobWithInputs,
         project: defaultProject,
         session: defaultSession,
         stage: stageWithBranchingInfo,
@@ -1499,6 +1726,549 @@ Deno.test("assembleTurnPrompt", async (t) => {
       assertEquals(uploadContext.pathContext.branchKey, branchKey, "branchKey was not passed correctly to the file manager.");
       assertEquals(uploadContext.pathContext.parallelGroup, parallelGroup, "parallelGroup was not passed correctly to the file manager.");
 
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should query header context by contribution ID from inputs and use contribution's storage bucket", async () => {
+    const contributionId = "contrib-123";
+    const contributionStorageBucket = "dialectic_contributions";
+    const contributionStoragePath = "path/to/header";
+    const contributionFileName = "header_context.json";
+    const fullStoragePath = `${contributionStoragePath}/${contributionFileName}`;
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-turn-resource-id-contrib",
+      project_id: defaultProject.id,
+      file_name: "turn_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/turn_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock turn prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "turn_prompt",
+      source_contribution_id: null,
+      feedback_type: "test",
+      target_contribution_id: null,
+    };
+
+    const downloadSpy = spy((bucket: string, path: string) => {
+      if (bucket === contributionStorageBucket && path === fullStoragePath) {
+        return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
+      }
+      // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
+      if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
+        return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
+      }
+      return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
+    });
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        },
+        dialectic_contributions: {
+          select: async (state: MockQueryBuilderState) => {
+            const idFilter = state.filters.find((f) => f.type === 'eq' && f.column === 'id' && f.value === contributionId);
+            if (idFilter) {
+              return {
+                data: [{
+                  id: contributionId,
+                  storage_bucket: contributionStorageBucket,
+                  storage_path: contributionStoragePath,
+                  file_name: contributionFileName,
+                  contribution_type: "header_context",
+                  session_id: defaultSession.id,
+                  iteration_number: 1,
+                  stage: defaultStage.slug,
+                  is_latest_edit: true,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                  user_id: defaultProject.user_id,
+                  model_id: "model-123",
+                  model_name: "Test Model",
+                  edit_version: 1,
+                  mime_type: "application/json",
+                  size_bytes: 100,
+                  raw_response_storage_path: null,
+                  prompt_template_id_used: null,
+                  seed_prompt_url: null,
+                  original_model_contribution_id: null,
+                  target_contribution_id: null,
+                  tokens_used_input: null,
+                  tokens_used_output: null,
+                  processing_time_ms: null,
+                  error: null,
+                  citations: null,
+                  document_relationships: null,
+                  source_prompt_resource_id: null,
+                  is_header: false,
+                }],
+                error: null,
+                count: 1,
+                status: 200,
+                statusText: "OK"
+              };
+            }
+            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+          }
+        }
+      },
+      storageMock: {
+        downloadResult: downloadSpy,
+      }
+    };
+
+    const { client } = setup(config);
+    mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    if (!isRecord(mockTurnJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
+
+    const jobWithInputs: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        inputs: {
+          header_context_id: contributionId,
+        },
+      },
+    };
+    delete (jobWithInputs.payload as any).header_context_resource_id;
+
+    try {
+      const deps: AssembleTurnPromptDeps = {
+        dbClient: client,
+        job: jobWithInputs,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+      };
+      const result: AssembledPrompt = await assembleTurnPrompt(deps);
+
+      const expectedPromptContent = "## Project Executive Summary\n\nCover these points: Problem, Solution, Market";
+      assertEquals(result.promptContent, expectedPromptContent);
+      assertEquals(result.source_prompt_resource_id, mockFileRecord.id);
+
+      assert(downloadSpy.calls.length >= 1, "downloadFromStorage should be called at least once");
+      const headerDownloadCall = downloadSpy.calls.find((call: any) => 
+        call.args[0] === contributionStorageBucket && call.args[1] === fullStoragePath
+      );
+      assert(headerDownloadCall !== undefined, `downloadFromStorage should be called with bucket "${contributionStorageBucket}" and path "${fullStoragePath}"`);
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should successfully validate that inputs.header_context_id is present", async () => {
+    const { client } = setup();
+    if (!isRecord(mockTurnJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
+    const payload = { ...mockTurnJob.payload };
+    delete payload.header_context_resource_id;
+    const jobWithMissingInputs: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...payload,
+        inputs: {},
+      },
+    };
+
+    try {
+      await assertRejects(
+        async () => {
+          const deps: AssembleTurnPromptDeps = {
+            dbClient: client,
+            job: jobWithMissingInputs,
+            project: defaultProject,
+            session: defaultSession,
+            stage: defaultStage,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+          };
+          await assembleTurnPrompt(deps);
+        },
+        Error,
+        "PRECONDITION_FAILED: Job payload inputs is missing 'header_context_id'."
+      );
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should successfully validate that the contribution exists in the database", async () => {
+    const contributionId = "contrib-not-found";
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        },
+        dialectic_contributions: {
+          select: async () => {
+            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+          }
+        }
+      },
+    };
+
+    const { client } = setup(config);
+    if (!isRecord(mockTurnJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
+    const jobWithInvalidContributionId: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        inputs: {
+          header_context_id: contributionId,
+        },
+      },
+    };
+    delete (jobWithInvalidContributionId.payload as any).header_context_resource_id;
+
+    try {
+      await assertRejects(
+        async () => {
+          const deps: AssembleTurnPromptDeps = {
+            dbClient: client,
+            job: jobWithInvalidContributionId,
+            project: defaultProject,
+            session: defaultSession,
+            stage: defaultStage,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+          };
+          await assembleTurnPrompt(deps);
+        },
+        Error,
+        `Header context contribution with id '${contributionId}' not found in database.`
+      );
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should successfully validate that the contribution has storage_bucket", async () => {
+    const contributionId = "contrib-no-bucket";
+    const contributionStoragePath = "path/to/header";
+    const contributionFileName = "header_context.json";
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        },
+        dialectic_contributions: {
+          select: async (state: MockQueryBuilderState) => {
+            const idFilter = state.filters.find((f) => f.type === 'eq' && f.column === 'id' && f.value === contributionId);
+            if (idFilter) {
+              return {
+                data: [{
+                  id: contributionId,
+                  storage_bucket: null,
+                  storage_path: contributionStoragePath,
+                  file_name: contributionFileName,
+                  contribution_type: "header_context",
+                  session_id: defaultSession.id,
+                  iteration_number: 1,
+                  stage: defaultStage.slug,
+                  is_latest_edit: true,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                  user_id: defaultProject.user_id,
+                  model_id: "model-123",
+                  model_name: "Test Model",
+                  edit_version: 1,
+                  mime_type: "application/json",
+                  size_bytes: 100,
+                  raw_response_storage_path: null,
+                  prompt_template_id_used: null,
+                  seed_prompt_url: null,
+                  original_model_contribution_id: null,
+                  target_contribution_id: null,
+                  tokens_used_input: null,
+                  tokens_used_output: null,
+                  processing_time_ms: null,
+                  error: null,
+                  citations: null,
+                  document_relationships: null,
+                  source_prompt_resource_id: null,
+                  is_header: false,
+                }],
+                error: null,
+                count: 1,
+                status: 200,
+                statusText: "OK"
+              };
+            }
+            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+          }
+        }
+      },
+    };
+
+    const { client } = setup(config);
+    if (!isRecord(mockTurnJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
+    const jobWithInvalidContribution: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        inputs: {
+          header_context_id: contributionId,
+        },
+      },
+    };
+    delete (jobWithInvalidContribution.payload as any).header_context_resource_id;
+
+    try {
+      await assertRejects(
+        async () => {
+          const deps: AssembleTurnPromptDeps = {
+            dbClient: client,
+            job: jobWithInvalidContribution,
+            project: defaultProject,
+            session: defaultSession,
+            stage: defaultStage,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+          };
+          await assembleTurnPrompt(deps);
+        },
+        Error,
+        `Header context contribution '${contributionId}' is missing required storage_bucket.`
+      );
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should successfully validate that the contribution has storage_path", async () => {
+    const contributionId = "contrib-no-path";
+    const contributionStorageBucket = "dialectic_contributions";
+    const contributionFileName = "header_context.json";
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        },
+        dialectic_contributions: {
+          select: async (state: MockQueryBuilderState) => {
+            const idFilter = state.filters.find((f) => f.type === 'eq' && f.column === 'id' && f.value === contributionId);
+            if (idFilter) {
+              return {
+                data: [{
+                  id: contributionId,
+                  storage_bucket: contributionStorageBucket,
+                  storage_path: null,
+                  file_name: contributionFileName,
+                  contribution_type: "header_context",
+                  session_id: defaultSession.id,
+                  iteration_number: 1,
+                  stage: defaultStage.slug,
+                  is_latest_edit: true,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                  user_id: defaultProject.user_id,
+                  model_id: "model-123",
+                  model_name: "Test Model",
+                  edit_version: 1,
+                  mime_type: "application/json",
+                  size_bytes: 100,
+                  raw_response_storage_path: null,
+                  prompt_template_id_used: null,
+                  seed_prompt_url: null,
+                  original_model_contribution_id: null,
+                  target_contribution_id: null,
+                  tokens_used_input: null,
+                  tokens_used_output: null,
+                  processing_time_ms: null,
+                  error: null,
+                  citations: null,
+                  document_relationships: null,
+                  source_prompt_resource_id: null,
+                  is_header: false,
+                }],
+                error: null,
+                count: 1,
+                status: 200,
+                statusText: "OK"
+              };
+            }
+            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+          }
+        }
+      },
+    };
+
+    const { client } = setup(config);
+    if (!isRecord(mockTurnJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
+    const jobWithInvalidContribution: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        inputs: {
+          header_context_id: contributionId,
+        },
+      },
+    };
+    delete (jobWithInvalidContribution.payload as any).header_context_resource_id;
+
+    try {
+      await assertRejects(
+        async () => {
+          const deps: AssembleTurnPromptDeps = {
+            dbClient: client,
+            job: jobWithInvalidContribution,
+            project: defaultProject,
+            session: defaultSession,
+            stage: defaultStage,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+          };
+          await assembleTurnPrompt(deps);
+        },
+        Error,
+        `Header context contribution '${contributionId}' is missing required storage_path.`
+      );
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should successfully validate that the contribution has file_name", async () => {
+    const contributionId = "contrib-no-filename";
+    const contributionStorageBucket = "dialectic_contributions";
+    const contributionStoragePath = "path/to/header";
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        },
+        dialectic_contributions: {
+          select: async (state: MockQueryBuilderState) => {
+            const idFilter = state.filters.find((f) => f.type === 'eq' && f.column === 'id' && f.value === contributionId);
+            if (idFilter) {
+              return {
+                data: [{
+                  id: contributionId,
+                  storage_bucket: contributionStorageBucket,
+                  storage_path: contributionStoragePath,
+                  file_name: null,
+                  contribution_type: "header_context",
+                  session_id: defaultSession.id,
+                  iteration_number: 1,
+                  stage: defaultStage.slug,
+                  is_latest_edit: true,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                  user_id: defaultProject.user_id,
+                  model_id: "model-123",
+                  model_name: "Test Model",
+                  edit_version: 1,
+                  mime_type: "application/json",
+                  size_bytes: 100,
+                  raw_response_storage_path: null,
+                  prompt_template_id_used: null,
+                  seed_prompt_url: null,
+                  original_model_contribution_id: null,
+                  target_contribution_id: null,
+                  tokens_used_input: null,
+                  tokens_used_output: null,
+                  processing_time_ms: null,
+                  error: null,
+                  citations: null,
+                  document_relationships: null,
+                  source_prompt_resource_id: null,
+                  is_header: false,
+                }],
+                error: null,
+                count: 1,
+                status: 200,
+                statusText: "OK"
+              };
+            }
+            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+          }
+        }
+      },
+    };
+
+    const { client } = setup(config);
+    if (!isRecord(mockTurnJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
+    const jobWithInvalidContribution: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        inputs: {
+          header_context_id: contributionId,
+        },
+      },
+    };
+    delete (jobWithInvalidContribution.payload as any).header_context_resource_id;
+
+    try {
+      await assertRejects(
+        async () => {
+          const deps: AssembleTurnPromptDeps = {
+            dbClient: client,
+            job: jobWithInvalidContribution,
+            project: defaultProject,
+            session: defaultSession,
+            stage: defaultStage,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+          };
+          await assembleTurnPrompt(deps);
+        },
+        Error,
+        `Header context contribution '${contributionId}' is missing required file_name.`
+      );
     } finally {
       teardown();
     }

@@ -41,6 +41,39 @@ export const planAllToOne: GranularityPlannerFn = (
         throw new Error(`Invalid recipe step for planAllToOne: id is missing.`);
     }
 
+    // Extract and validate document_key from recipeStep.outputs_required.documents[0].document_key
+    // ONLY IF the step outputs documents (i.e., if outputs_required.documents exists and has at least one item)
+    let documentKey: string | undefined;
+    
+    // Check if the step outputs documents: verify that outputs_required exists, is an object, has a documents property that is an array, and the array has at least one item
+    const outputsDocuments = recipeStep.outputs_required &&
+        typeof recipeStep.outputs_required === 'object' &&
+        Array.isArray(recipeStep.outputs_required.documents) &&
+        recipeStep.outputs_required.documents.length > 0;
+    
+    if (outputsDocuments && recipeStep.outputs_required && Array.isArray(recipeStep.outputs_required.documents) && recipeStep.outputs_required.documents.length > 0) {
+        // If the step outputs documents, extract and validate document_key
+        const firstDocument = recipeStep.outputs_required.documents[0];
+        if (!firstDocument || typeof firstDocument !== 'object') {
+            throw new Error('planAllToOne requires recipeStep.outputs_required.documents[0].document_key but it is missing');
+        }
+        if (!('document_key' in firstDocument)) {
+            throw new Error('planAllToOne requires recipeStep.outputs_required.documents[0].document_key but it is missing');
+        }
+        const rawDocumentKey = firstDocument.document_key;
+        if (rawDocumentKey === null || rawDocumentKey === undefined) {
+            throw new Error(`planAllToOne requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
+        }
+        if (typeof rawDocumentKey !== 'string') {
+            throw new Error(`planAllToOne requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
+        }
+        if (rawDocumentKey.length === 0) {
+            throw new Error(`planAllToOne requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: '${rawDocumentKey}'`);
+        }
+        documentKey = rawDocumentKey;
+    }
+    // If the step does not output documents, documentKey remains undefined
+
     const newPayload: DialecticExecuteJobPayload = {
         // Inherit ALL fields from parent job payload (defensive programming)
         projectId: parentJob.payload.projectId,
@@ -66,9 +99,9 @@ export const planAllToOne: GranularityPlannerFn = (
             document_ids: documentIds,
         },
         planner_metadata: { recipe_step_id: recipeStep.id },
+        ...(documentKey ? { document_key: documentKey } : {}),
     };
 
     return [newPayload];
 }; 
-
 

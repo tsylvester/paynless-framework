@@ -139,7 +139,168 @@ CREATE TRIGGER on_job_retrying
 COMMENT ON TRIGGER on_job_retrying ON public.dialectic_generation_jobs
 IS 'When a job status is updated to retrying, this trigger checks retry limits and either marks the job as failed (if limits exceeded) or re-invokes the dialectic-worker Edge Function to process the retry.';
 
-COMMENT ON FUNCTION public.handle_job_retrying() IS 'Handles job retry logic: checks if attempt_count exceeds max_retries, and either marks job as failed or invokes the worker for retry processing.';
+COMMENT ON FUNCTION public.handle_job_retrying() IS 'DEPRECATED: This function is deprecated in favor of the generic invoke_worker_on_status_change() function. Handles job retry logic: checks if attempt_count exceeds max_retries, and either marks job as failed or invokes the worker for retry processing.';
+
+-- Generic trigger to invoke worker when job status changes to any status that requires processing
+-- This replaces the specialized on_job_retrying trigger and extends worker invocation to cover
+-- all status transitions that require processing: pending (via UPDATE), pending_next_step,
+-- pending_continuation, and retrying.
+-- This ensures that:
+-- - PLAN jobs reaching pending_next_step after all child jobs complete (set by handle_job_completion)
+--   are processed by the worker for the next recipe step
+-- - Continuation jobs reaching pending_continuation (set by continueJob function) are processed
+-- - Jobs being retried (set by retryJob function) are processed with retry limit checking
+-- - Jobs set to pending when prerequisites complete (set by handle_job_completion) are processed
+CREATE OR REPLACE FUNCTION public.invoke_worker_on_status_change()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_final_url text;
+  v_local_dev_url text := 'http://host.docker.internal:54321';
+  v_project_ref text;
+  v_user_jwt text;
+  v_body jsonb;
+  v_attempt_count integer;
+  v_max_retries integer;
+  v_statuses_requiring_worker text[] := ARRAY['pending', 'pending_next_step', 'pending_continuation', 'retrying'];
+BEGIN
+  -- Only process when status transitions to one that requires worker invocation
+  -- AND the status actually changed (not on every update)
+  IF (NEW.status = ANY(v_statuses_requiring_worker)) AND (OLD.status IS NULL OR OLD.status != NEW.status) THEN
+    
+    -- Extract retry limits from the job row (only needed for retrying status)
+    v_attempt_count := NEW.attempt_count;
+    v_max_retries := NEW.max_retries;
+    
+    -- Handle special retry limit checking for retrying status
+    IF NEW.status = 'retrying' THEN
+      -- Check if retries are exhausted
+      -- attempt_count represents the number of attempts completed (0 = original attempt, 1+ = retries)
+      -- max_retries is the maximum number of retries allowed (default 3)
+      -- Total attempts allowed = max_retries + 1 (1 original + max_retries retries)
+      -- When retryJob sets status to 'retrying', it has already incremented attempt_count
+      -- So if attempt_count >= max_retries + 1, we've exceeded the limit
+      -- Example: max_retries=3, attempt_count=4 means we've done 1 original + 3 retries + trying a 4th retry
+      IF v_attempt_count >= (v_max_retries + 1) THEN
+        -- Mark job as failed - retries exhausted
+        UPDATE public.dialectic_generation_jobs
+        SET 
+          status = 'retry_loop_failed',
+          completed_at = now(),
+          error_details = jsonb_build_object(
+            'finalError', 'Retry limit exceeded',
+            'attempt_count', v_attempt_count,
+            'max_retries', v_max_retries,
+            'message', format('Job exceeded maximum retry limit. Attempt count: %s, Max retries: %s', v_attempt_count, v_max_retries)
+          )
+        WHERE id = NEW.id;
+        
+        RETURN NEW;
+      END IF;
+    END IF;
+    
+    -- Skip test jobs
+    IF COALESCE(NEW.is_test_job, false) THEN
+      INSERT INTO public.dialectic_trigger_logs (job_id, log_message)
+      VALUES (NEW.id, format('Test job detected. Skipping HTTP worker invocation for status: %s.', NEW.status));
+      RETURN NEW;
+    END IF;
+    
+    -- Determine the worker URL (reusing logic from invoke_dialectic_worker)
+    BEGIN
+      SELECT ds.decrypted_secret INTO v_project_ref
+      FROM vault.decrypted_secrets ds
+      WHERE ds.name = 'SUPABASE_URL';
+      
+      IF v_project_ref IS NOT NULL THEN
+        v_final_url := 'https://' || v_project_ref || '.supabase.co/functions/v1/dialectic-worker';
+      ELSE
+        v_final_url := v_local_dev_url || '/functions/v1/dialectic-worker';
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      v_final_url := v_local_dev_url || '/functions/v1/dialectic-worker';
+    END;
+    
+    -- Extract user JWT from the job payload
+    v_user_jwt := NEW.payload ->> 'user_jwt';
+    
+    -- Prepare the body for the worker
+    v_body := jsonb_build_object(
+      'table', TG_TABLE_NAME,
+      'type', TG_OP,
+      'record', row_to_json(NEW)
+    );
+    
+    -- Log the invocation attempt
+    INSERT INTO public.dialectic_trigger_logs (job_id, log_message, error_details)
+    VALUES (NEW.id, format('Preparing HTTP call for status: %s', NEW.status), 
+            jsonb_build_object('url', v_final_url, 'jwt_exists', v_user_jwt IS NOT NULL, 
+                              'status', NEW.status, 'old_status', OLD.status,
+                              'attempt_count', v_attempt_count, 'max_retries', v_max_retries)::text);
+    
+    IF v_user_jwt IS NULL THEN
+      INSERT INTO public.dialectic_trigger_logs (job_id, log_message)
+      VALUES (NEW.id, format('Trigger fired for status %s, but user_jwt was not found in the payload.', NEW.status));
+    END IF;
+    
+    -- Check if pg_net extension is available before attempting HTTP call
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_net') THEN
+      
+      -- Attempt to call the dialectic worker via HTTP
+      BEGIN
+        PERFORM net.http_post(
+          url:= v_final_url,
+          headers:=jsonb_build_object(
+            'Content-Type', 'application/json',
+            'Authorization', 'Bearer ' || v_user_jwt
+          ),
+          body:=v_body
+        );
+        
+        INSERT INTO public.dialectic_trigger_logs (job_id, log_message, error_details)
+        VALUES (NEW.id, 'invoke_worker_on_status_change: after_post',
+                jsonb_build_object('url', v_final_url, 'status', NEW.status, 
+                                 'old_status', OLD.status, 'attempt_count', v_attempt_count)::text);
+        
+      EXCEPTION WHEN OTHERS THEN
+        INSERT INTO public.dialectic_trigger_logs (job_id, log_message, error_details)
+        VALUES (NEW.id, 'invoke_worker_on_status_change: post_failed',
+                jsonb_build_object('url', v_final_url, 'error', SQLERRM, 
+                                 'status', NEW.status, 'old_status', OLD.status, 'attempt_count', v_attempt_count)::text);
+        RAISE WARNING 'Failed to invoke dialectic worker via HTTP for status %: %', NEW.status, SQLERRM;
+      END;
+    ELSE
+      RAISE NOTICE 'Dialectic worker status change trigger fired for job % with status %, but pg_net extension is not available in this environment', NEW.id, NEW.status;
+    END IF;
+  END IF;
+  
+  RETURN NEW;
+END;
+$$;
+
+-- Create the generic trigger that fires on status changes
+-- This replaces the specialized on_job_retrying trigger
+DROP TRIGGER IF EXISTS on_job_status_change ON public.dialectic_generation_jobs;
+
+CREATE TRIGGER on_job_status_change
+  AFTER UPDATE OF status ON public.dialectic_generation_jobs
+  FOR EACH ROW
+  WHEN (NEW.status IN ('pending', 'pending_next_step', 'pending_continuation', 'retrying') AND (OLD.status IS NULL OR OLD.status != NEW.status))
+  EXECUTE FUNCTION public.invoke_worker_on_status_change();
+
+COMMENT ON TRIGGER on_job_status_change ON public.dialectic_generation_jobs
+IS 'Generic trigger that invokes the dialectic-worker Edge Function when job status changes to any status requiring processing: pending (via UPDATE), pending_next_step (PLAN jobs after children complete), pending_continuation (continuation jobs), or retrying (with retry limit checking). Replaces the specialized on_job_retrying trigger.';
+
+COMMENT ON FUNCTION public.invoke_worker_on_status_change() IS 'Generic trigger function that invokes the dialectic-worker Edge Function for status changes requiring processing. Handles retry limit checking for retrying status, skips test jobs, and logs all invocation attempts.';
+
+-- DEPRECATE: Drop the old specialized on_job_retrying trigger
+-- The generic on_job_status_change trigger now handles all status changes requiring worker invocation,
+-- including retrying status with the same retry limit checking logic.
+-- Note: handle_job_retrying() function is deprecated but kept for reference; on_job_retrying trigger is dropped.
+DROP TRIGGER IF EXISTS on_job_retrying ON public.dialectic_generation_jobs;
 
 -- Fix Recipe Stall: Exclude RENDER Jobs from Sibling Counts
 -- RENDER jobs are ALWAYS side-effects and NEVER block recipe continuation.

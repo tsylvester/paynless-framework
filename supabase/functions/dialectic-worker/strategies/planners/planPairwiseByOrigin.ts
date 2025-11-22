@@ -28,6 +28,10 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 		throw new Error(`Invalid recipe step for planPairwiseByOrigin: id is missing.`);
 	}
 
+	if (!isModelContributionFileType(recipeStep.output_type)) {
+		throw new Error(`Invalid output_type for planPairwiseByOrigin: ${recipeStep.output_type}`);
+	}
+
 	const stageSlug = parentJob.payload.stageSlug;
 	if (!stageSlug || !isContributionType(stageSlug)) {
 		throw new Error(
@@ -48,6 +52,39 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 			`Invalid inputs for planPairwiseByOrigin: Required 'antithesis' documents are missing.`
 		);
 	}
+
+	// Extract and validate document_key from recipeStep.outputs_required.documents[0].document_key
+	// ONLY IF the step outputs documents (i.e., if outputs_required.documents exists and has at least one item)
+	let documentKey: string | undefined;
+	
+	// Check if the step outputs documents: verify that outputs_required exists, is an object, has a documents property that is an array, and the array has at least one item
+	const outputsDocuments = recipeStep.outputs_required &&
+		typeof recipeStep.outputs_required === 'object' &&
+		Array.isArray(recipeStep.outputs_required.documents) &&
+		recipeStep.outputs_required.documents.length > 0;
+	
+	if (outputsDocuments && recipeStep.outputs_required && Array.isArray(recipeStep.outputs_required.documents) && recipeStep.outputs_required.documents.length > 0) {
+		// If the step outputs documents, extract and validate document_key
+		const firstDocument = recipeStep.outputs_required.documents[0];
+		if (!firstDocument || typeof firstDocument !== 'object') {
+			throw new Error('planPairwiseByOrigin requires recipeStep.outputs_required.documents[0].document_key but it is missing');
+		}
+		if (!('document_key' in firstDocument)) {
+			throw new Error('planPairwiseByOrigin requires recipeStep.outputs_required.documents[0].document_key but it is missing');
+		}
+		const rawDocumentKey = firstDocument.document_key;
+		if (rawDocumentKey === null || rawDocumentKey === undefined) {
+			throw new Error(`planPairwiseByOrigin requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
+		}
+		if (typeof rawDocumentKey !== 'string') {
+			throw new Error(`planPairwiseByOrigin requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
+		}
+		if (rawDocumentKey.length === 0) {
+			throw new Error(`planPairwiseByOrigin requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: '${rawDocumentKey}'`);
+		}
+		documentKey = rawDocumentKey;
+	}
+	// If the step does not output documents, documentKey remains undefined
 
 	for (const thesisDoc of thesis) {
 		const relatedAntitheses = findRelatedContributions(antithesis, thesisDoc.id);
@@ -85,9 +122,6 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 			// Ensure source_group is correctly populated
 			document_relationships.source_group = thesisDoc.id;
 
-			if(!isModelContributionFileType(recipeStep.output_type)) {
-				throw new Error(`Invalid output_type for planPairwiseByOrigin: ${recipeStep.output_type}`);
-			}
 			const newPayload: DialecticExecuteJobPayload = {
 				// Inherit ALL fields from parent payload first (defensive programming)
 				projectId: parentJob.payload.projectId,
@@ -114,6 +148,7 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 				isIntermediate: true,
 				sourceContributionId: antithesisDoc.id,
 				planner_metadata: { recipe_step_id: recipeStep.id },
+				...(documentKey ? { document_key: documentKey } : {}),
 			};
 
 			childPayloads.push(newPayload);

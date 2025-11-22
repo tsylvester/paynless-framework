@@ -567,6 +567,7 @@ describe('planComplexStage', () => {
                 sourceAnchorModelSlug: 'Test Model',
                 stageSlug: 'test-stage',
             },
+            user_jwt: 'user-jwt-123',
         };
         const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
         mockDeps.getGranularityPlanner = () => plannerFn;
@@ -764,6 +765,7 @@ describe('planComplexStage', () => {
             maxRetries: 3,
             continuation_count: 0,
             canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+            user_jwt: 'user-jwt-123',
         };
         const malformedPayload = { an_invalid: 'payload' };
 
@@ -857,6 +859,7 @@ describe('planComplexStage', () => {
                 maxRetries: 3,
                 continuation_count: 0,
                 canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+                user_jwt: 'user-jwt-123',
             }];
         };
         mockDeps.getGranularityPlanner = () => plannerFn;
@@ -1170,6 +1173,7 @@ describe('planComplexStage', () => {
         const MOCK_AUTH_TOKEN = 'mock-user-jwt-for-test';
 
         // 2. Arrange: Define a simple planner that returns a valid payload.
+        // The planner must inherit user_jwt from the parent payload.
         const mockExecutePayload: DialecticExecuteJobPayload = {
             job_type: 'execute',
             prompt_template_id: 'test-prompt',
@@ -1185,6 +1189,7 @@ describe('planComplexStage', () => {
             maxRetries: 3,
             continuation_count: 0,
             canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+            user_jwt: mockParentJob.payload.user_jwt,
         };
         const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
         mockDeps.getGranularityPlanner = () => plannerFn;
@@ -1202,7 +1207,7 @@ describe('planComplexStage', () => {
         assertEquals(childJobs.length, 1);
         const childPayload = childJobs[0].payload;
         assert(isDialecticExecuteJobPayload(childPayload), 'Payload should be a valid execute job payload');
-        assertEquals(childPayload.user_jwt, 'parent-jwt-default', "The user_jwt was not correctly inherited from the parent payload.");
+        assertEquals(childPayload.user_jwt, mockParentJob.payload.user_jwt, "The user_jwt was not correctly inherited from the parent payload.");
         assertEquals(Object.hasOwn(childPayload, 'step_info'), false);
     });
 
@@ -1217,6 +1222,7 @@ describe('planComplexStage', () => {
         // Inject the primary JWT into the parent job's payload.
         Object.defineProperty(mockParentJob.payload, 'user_jwt', { value: PARENT_JWT, configurable: true, enumerable: true, writable: true });
 
+        // The planner must inherit user_jwt from the parent payload.
         const mockExecutePayload: DialecticExecuteJobPayload = {
             job_type: 'execute',
             prompt_template_id: 'test-prompt',
@@ -1232,6 +1238,7 @@ describe('planComplexStage', () => {
             maxRetries: 3,
             continuation_count: 0,
             canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+            user_jwt: mockParentJob.payload.user_jwt,
         };
         const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
         mockDeps.getGranularityPlanner = () => plannerFn;
@@ -1249,7 +1256,7 @@ describe('planComplexStage', () => {
         assertEquals(childJobs.length, 1);
         const payload = childJobs[0].payload;
         assert(isDialecticExecuteJobPayload(payload));
-        assertEquals(payload.user_jwt, PARENT_JWT);
+        assertEquals(payload.user_jwt, mockParentJob.payload.user_jwt);
         assertEquals(Object.hasOwn(payload, 'step_info'), false);
     });
 
@@ -1282,6 +1289,7 @@ describe('planComplexStage', () => {
             maxRetries: 3,
             continuation_count: 0,
             canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+            user_jwt: 'user-jwt-123',
         }];
         mockDeps.getGranularityPlanner = () => plannerFn;
 
@@ -1317,6 +1325,7 @@ describe('planComplexStage', () => {
             maxRetries: 3,
             continuation_count: 0,
             canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+            user_jwt: 'user-jwt-123',
         }];
         mockDeps.getGranularityPlanner = () => plannerFn;
 
@@ -1352,6 +1361,7 @@ describe('planComplexStage', () => {
             maxRetries: 3,
             continuation_count: 0,
             canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+            user_jwt: 'user-jwt-123',
         }];
         mockDeps.getGranularityPlanner = () => plannerFn;
 
@@ -1395,6 +1405,7 @@ describe('planComplexStage', () => {
             maxRetries: 3,
             continuation_count: 0,
             canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+            user_jwt: 'user-jwt-123',
         }];
         mockDeps.getGranularityPlanner = () => plannerFn;
 
@@ -1411,4 +1422,5 @@ describe('planComplexStage', () => {
         );
     });
 });
+
 

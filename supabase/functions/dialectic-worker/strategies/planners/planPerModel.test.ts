@@ -4,6 +4,7 @@ import {
 	assertExists,
 	assert,
 	assertThrows,
+	assertRejects,
 } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import type {
 	DialecticJobRow,
@@ -74,6 +75,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
 		iterationNumber: 1,
 		model_id: 'model-parent',
 		walletId: 'wallet-default',
+		user_jwt: 'user-jwt-123',
 	},
 	attempt_count: 0,
 	completed_at: null,
@@ -102,7 +104,16 @@ const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
 	job_type: 'EXECUTE',
 	inputs_required: [{ type: 'document', slug: 'synthesis', document_key: FileType.product_requirements, required: true }],
 	inputs_relevance: [],
-	outputs_required: { documents: [], assembled_json: [], files_to_generate: [] },
+	outputs_required: {
+		documents: [{
+			artifact_class: 'rendered_document',
+			file_type: 'markdown',
+			document_key: FileType.Synthesis,
+			template_filename: 'synthesis.md',
+		}],
+		assembled_json: [],
+		files_to_generate: [],
+	},
 	granularity_strategy: 'per_model',
 	output_type: FileType.technical_requirements,
 	created_at: new Date().toISOString(),
@@ -251,5 +262,153 @@ Deno.test('planPerModel inherits all fields from parent job payload including mo
 		job.user_jwt,
 		'parent-jwt-token',
 		'Child payload must inherit user_jwt from parent payload',
+	);
+});
+
+Deno.test('planPerModel sets document_key in payload when recipeStep.outputs_required.documents[0].document_key is present', () => {
+	const recipeStepWithDocumentKey: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: 'synthesis' as FileType,
+				template_filename: 'synthesis.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [],
+		},
+	};
+
+	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithDocumentKey, 'user-jwt-123');
+	
+	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+	const job = childJobs[0];
+	assertExists(job, 'Child job should exist');
+	assertEquals(
+		job.document_key,
+		'synthesis',
+		'document_key should be extracted from recipeStep.outputs_required.documents[0].document_key',
+	);
+});
+
+Deno.test('planPerModel does NOT set document_key when outputs_required.documents array is empty', () => {
+	const recipeStepWithEmptyDocuments: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		outputs_required: {
+			documents: [],
+			assembled_json: [],
+			files_to_generate: [],
+		},
+	};
+
+	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithEmptyDocuments, 'user-jwt-123');
+	
+	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+	const job = childJobs[0];
+	assertExists(job, 'Child job should exist');
+	assert(
+		!('document_key' in job) || job.document_key === undefined || job.document_key === null,
+		'document_key should NOT be set when documents array is empty (step does not output documents)',
+	);
+});
+
+Deno.test('planPerModel throws error when outputs_required.documents[0] is missing document_key property', async () => {
+	const recipeStepWithoutDocumentKey = {
+		...MOCK_RECIPE_STEP,
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				template_filename: 'synthesis.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [],
+		},
+	} as unknown as DialecticStageRecipeStep;
+
+	await assertRejects(
+		async () => {
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithoutDocumentKey, 'user-jwt-123');
+		},
+		Error,
+		'planPerModel requires recipeStep.outputs_required.documents[0].document_key but it is missing',
+		'Should throw error when documents[0] is missing document_key property',
+	);
+});
+
+Deno.test('planPerModel throws error when outputs_required.documents[0].document_key is null', async () => {
+	const recipeStepWithNullDocumentKey: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: null as unknown as FileType,
+				template_filename: 'synthesis.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [],
+		},
+	};
+
+	await assertRejects(
+		async () => {
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithNullDocumentKey, 'user-jwt-123');
+		},
+		Error,
+		'planPerModel requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string',
+		'Should throw error when document_key is null',
+	);
+});
+
+Deno.test('planPerModel throws error when outputs_required.documents[0].document_key is empty string', async () => {
+	const recipeStepWithEmptyDocumentKey: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: '' as unknown as FileType,
+				template_filename: 'synthesis.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [],
+		},
+	};
+
+	await assertRejects(
+		async () => {
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithEmptyDocumentKey, 'user-jwt-123');
+		},
+		Error,
+		'planPerModel requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string',
+		'Should throw error when document_key is empty string',
+	);
+});
+
+Deno.test('planPerModel does NOT set document_key when outputs_required is missing documents property', () => {
+	const recipeStepWithoutDocumentsProperty: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		outputs_required: {
+			header_context_artifact: {
+				type: 'header_context',
+				document_key: FileType.HeaderContext,
+				artifact_class: 'header_context',
+				file_type: 'json',
+			},
+			assembled_json: [],
+			files_to_generate: [],
+		} as unknown as DialecticStageRecipeStep['outputs_required'],
+	};
+
+	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithoutDocumentsProperty, 'user-jwt-123');
+	
+	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+	const job = childJobs[0];
+	assertExists(job, 'Child job should exist');
+	assert(
+		!('document_key' in job) || job.document_key === undefined || job.document_key === null,
+		'document_key should NOT be set when outputs_required is missing documents property (step does not output documents)',
 	);
 });

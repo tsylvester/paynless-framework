@@ -6,6 +6,7 @@ import {
   isUserFeedbackContext,
   isModelContributionFileType,
   isResourceContext,
+  isOutputType,
 } from './type_guards.file_manager.ts'
 import {
   CanonicalPathParams,
@@ -200,5 +201,50 @@ Deno.test('Type Guard: isModelContributionFileType', async (t) => {
     assert(!isModelContributionFileType(FileType.ProjectReadme))
     assert(!isModelContributionFileType(FileType.SeedPrompt))
     assert(!isModelContributionFileType(FileType.PlannerPrompt))
+  })
+})
+
+Deno.test('Type Guard: isOutputType', async (t) => {
+  await t.step('returns true for renderable output types', () => {
+    assert(isOutputType(FileType.business_case))
+    assert(isOutputType(FileType.feature_spec))
+    assert(isOutputType(FileType.technical_approach))
+    assert(isOutputType(FileType.success_metrics))
+    assert(isOutputType(FileType.business_case_critique))
+    assert(isOutputType(FileType.technical_feasibility_assessment))
+    assert(isOutputType(FileType.risk_register))
+    assert(isOutputType(FileType.non_functional_requirements))
+    assert(isOutputType(FileType.dependency_map))
+    assert(isOutputType(FileType.comparison_vector))
+    assert(isOutputType(FileType.product_requirements))
+    assert(isOutputType(FileType.system_architecture))
+    assert(isOutputType(FileType.tech_stack))
+    assert(isOutputType(FileType.technical_requirements))
+    assert(isOutputType(FileType.master_plan))
+    assert(isOutputType(FileType.milestone_schema))
+    assert(isOutputType(FileType.updated_master_plan))
+    assert(isOutputType(FileType.actionable_checklist))
+    assert(isOutputType(FileType.advisor_recommendations))
+  })
+
+  await t.step('returns false for backend-only model contribution file types', () => {
+    assert(!isOutputType(FileType.HeaderContext))
+    assert(!isOutputType(FileType.ModelContributionRawJson))
+    assert(!isOutputType(FileType.PairwiseSynthesisChunk))
+    assert(!isOutputType(FileType.ReducedSynthesis))
+    assert(!isOutputType(FileType.Synthesis))
+    assert(!isOutputType(FileType.header_context_pairwise))
+    assert(!isOutputType(FileType.SynthesisHeaderContext))
+  })
+
+  await t.step('returns false for intermediate synthesis types', () => {
+    assert(!isOutputType(FileType.synthesis_pairwise_business_case))
+    assert(!isOutputType(FileType.synthesis_pairwise_feature_spec))
+    assert(!isOutputType(FileType.synthesis_pairwise_technical_approach))
+    assert(!isOutputType(FileType.synthesis_pairwise_success_metrics))
+    assert(!isOutputType(FileType.synthesis_document_business_case))
+    assert(!isOutputType(FileType.synthesis_document_feature_spec))
+    assert(!isOutputType(FileType.synthesis_document_technical_approach))
+    assert(!isOutputType(FileType.synthesis_document_success_metrics))
   })
 })

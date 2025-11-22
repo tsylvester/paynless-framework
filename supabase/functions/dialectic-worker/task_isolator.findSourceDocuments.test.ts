@@ -196,70 +196,116 @@ describe('findSourceDocuments', () => {
         assertEquals(documents[0].id, 'seed-prompt-resource-id');
     });
 
-    it("successfully returns a 'header_context' from dialectic_project_resources", async () => {
+    it("successfully returns a 'header_context' from dialectic_contributions", async () => {
         const rule: InputRule[] = [{ type: 'header_context', slug: 'test-stage' }];
-        const mockHeaderContextResource: DialecticProjectResourceRow = {
-            id: 'header-context-resource-id',
-            project_id: 'proj-1',
+        const mockHeaderContextContribution: DialecticContributionRow = {
+            id: 'header-context-contribution-id',
+            session_id: 'sess-1',
             user_id: 'user-123',
-            file_name: 'header.json',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'application/json',
-            size_bytes: 80,
-            resource_description: { "description": "A test header context", type: 'header_context' },
+            stage: 'test-stage',
+            iteration_number: 1,
+            model_id: 'model-1',
+            model_name: 'Test Model',
+            prompt_template_id_used: 'prompt-1',
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 10,
+            tokens_used_output: 20,
+            processing_time_ms: 100,
+            error: null,
+            citations: null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            iteration_number: 1,
-            resource_type: 'header_context',
-            session_id: 'sess-1',
-            source_contribution_id: null,
-            stage_slug: 'test-stage',
+            contribution_type: 'header_context',
+            file_name: 'header.json',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            size_bytes: 80,
+            mime_type: 'application/json',
+            document_relationships: null,
+            is_header: true,
+            source_prompt_resource_id: null,
         };
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
-                dialectic_contributions: {
+                dialectic_project_resources: {
                     select: () =>
                         Promise.resolve({
                             data: null,
-                            error: new Error('header_context test must not query contributions'),
+                            error: new Error('header_context test must not query project_resources'),
                             count: 0,
                             status: 500,
                             statusText: 'Intentional Failure',
                         }),
                 },
-                dialectic_project_resources: {
+                dialectic_contributions: {
                     select: (state: MockQueryBuilderState) => {
-                        const hasProjectFilter = state.filters.some(
+                        const hasSessionFilter = state.filters.some(
                             (filter) =>
                                 filter.type === 'eq' &&
-                                filter.column === 'project_id' &&
-                                filter.value === mockHeaderContextResource.project_id,
+                                filter.column === 'session_id' &&
+                                filter.value === mockHeaderContextContribution.session_id,
                         );
-                        if (!hasProjectFilter) {
+                        if (!hasSessionFilter) {
                             return Promise.resolve({
                                 data: null,
-                                error: new Error('header_context queries must scope by project_id'),
+                                error: new Error('header_context queries must scope by session_id'),
                                 count: 0,
                                 status: 400,
-                                statusText: 'Missing project_id filter',
+                                statusText: 'Missing session_id filter',
                             });
                         }
 
-                        const hasResourceTypeFilter = state.filters.some(
+                        const hasIterationFilter = state.filters.some(
                             (filter) =>
                                 filter.type === 'eq' &&
-                                filter.column === 'resource_type' &&
-                                filter.value === 'header_context',
+                                filter.column === 'iteration_number' &&
+                                filter.value === mockHeaderContextContribution.iteration_number,
                         );
-                        if (!hasResourceTypeFilter) {
+                        if (!hasIterationFilter) {
                             return Promise.resolve({
                                 data: null,
-                                error: new Error('header_context queries must filter by resource_type'),
+                                error: new Error('header_context queries must filter by iteration_number'),
                                 count: 0,
                                 status: 400,
-                                statusText: 'Missing resource_type filter',
+                                statusText: 'Missing iteration_number filter',
+                            });
+                        }
+
+                        const hasLatestEditFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'is_latest_edit' &&
+                                filter.value === true,
+                        );
+                        if (!hasLatestEditFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('header_context queries must filter by is_latest_edit'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing is_latest_edit filter',
+                            });
+                        }
+
+                        const hasContributionTypeFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'contribution_type' &&
+                                filter.value === 'header_context',
+                        );
+                        if (!hasContributionTypeFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('header_context queries must filter by contribution_type'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing contribution_type filter',
                             });
                         }
 
@@ -267,7 +313,7 @@ describe('findSourceDocuments', () => {
                         const hasStageFilter = state.filters.some(
                             (filter) =>
                                 filter.type === 'eq' &&
-                                filter.column === 'stage_slug' &&
+                                filter.column === 'stage' &&
                                 filter.value === expectedStageSlug,
                         );
                         if (!hasStageFilter) {
@@ -276,32 +322,12 @@ describe('findSourceDocuments', () => {
                                 error: new Error('header_context queries must filter by rule.slug'),
                                 count: 0,
                                 status: 400,
-                                statusText: 'Missing stage_slug filter',
-                            });
-                        }
-
-                        const hasJsonPathFilter = state.filters.some((filter) => {
-                            if (typeof filter.column === 'string' && filter.column.includes('resource_description->>')) {
-                                return true;
-                            }
-                            if (typeof filter.filters === 'string' && filter.filters.includes('resource_description->>')) {
-                                return true;
-                            }
-                            return false;
-                        });
-
-                        if (hasJsonPathFilter) {
-                            return Promise.resolve({
-                                data: null,
-                                error: new Error('header_context queries must not use JSON-path predicates on resource_description'),
-                                count: 0,
-                                status: 400,
-                                statusText: 'JSON-path filter detected',
+                                statusText: 'Missing stage filter',
                             });
                         }
 
                         return Promise.resolve({
-                            data: [mockHeaderContextResource],
+                            data: [mockHeaderContextContribution],
                             error: null,
                             count: 1,
                             status: 200,
@@ -320,7 +346,7 @@ describe('findSourceDocuments', () => {
         );
 
         assertEquals(documents.length, 1);
-        assertEquals(documents[0].id, 'header-context-resource-id');
+        assertEquals(documents[0].id, 'header-context-contribution-id');
     });
 
     it("successfully returns a document from contributions using the 'slug' property", async () => {
@@ -775,33 +801,14 @@ describe('findSourceDocuments', () => {
         assertEquals(ids, ['contribution-success-metrics', 'resource-success-metrics']);
     });
 
-    it('falls back to header_context contributions when the resource was already consumed', async () => {
+    it('returns multiple header_context contributions when multiple rules require them', async () => {
         const rules: InputRule[] = [
             { type: 'header_context', slug: 'test-stage', document_key: FileType.HeaderContext },
             { type: 'header_context', slug: 'test-stage', document_key: FileType.HeaderContext },
         ];
 
-        const projectResource: DialecticProjectResourceRow = {
-            id: 'header-context-resource',
-            project_id: 'proj-1',
-            user_id: 'user-123',
-            file_name: 'sess-1_test-stage_header_context.json',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'application/json',
-            size_bytes: 1024,
-            resource_description: { type: 'header_context', document_key: FileType.HeaderContext },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            iteration_number: 1,
-            resource_type: 'header_context',
-            session_id: 'sess-1',
-            source_contribution_id: null,
-            stage_slug: 'test-stage',
-        };
-
-        const fallbackContribution: DialecticContributionRow = {
-            id: 'header-context-contribution',
+        const contribution1: DialecticContributionRow = {
+            id: 'header-context-contribution-1',
             session_id: 'sess-1',
             user_id: 'user-123',
             stage: 'test-stage',
@@ -823,10 +830,43 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'sess-1_test-stage_header_context_from_contribution.json',
+            file_name: 'sess-1_test-stage_header_context_v1.json',
             storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
             size_bytes: 2048,
+            mime_type: 'application/json',
+            document_relationships: null,
+            is_header: true,
+            source_prompt_resource_id: null,
+        };
+
+        const contribution2: DialecticContributionRow = {
+            id: 'header-context-contribution-2',
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            stage: 'test-stage',
+            iteration_number: 1,
+            model_id: 'model-3',
+            model_name: 'Planner Model',
+            prompt_template_id_used: 'prompt-planner',
+            seed_prompt_url: null,
+            edit_version: 2,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 100,
+            tokens_used_output: 200,
+            processing_time_ms: 180,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: 'header_context',
+            file_name: 'sess-1_test-stage_header_context_v2.json',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            size_bytes: 2049,
             mime_type: 'application/json',
             document_relationships: null,
             is_header: true,
@@ -838,11 +878,11 @@ describe('findSourceDocuments', () => {
                 dialectic_project_resources: {
                     select: () =>
                         Promise.resolve({
-                            data: [projectResource],
-                            error: null,
-                            count: 1,
-                            status: 200,
-                            statusText: 'OK',
+                            data: null,
+                            error: new Error('header_context test must not query project_resources'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
                         }),
                 },
                 dialectic_contributions: {
@@ -854,7 +894,7 @@ describe('findSourceDocuments', () => {
                         if (!hasContributionTypeFilter) {
                             return Promise.resolve({
                                 data: null,
-                                error: new Error('header_context fallback must filter by contribution_type'),
+                                error: new Error('header_context queries must filter by contribution_type'),
                                 count: 0,
                                 status: 400,
                                 statusText: 'Missing contribution_type filter',
@@ -862,9 +902,9 @@ describe('findSourceDocuments', () => {
                         }
 
                         return Promise.resolve({
-                            data: [fallbackContribution],
+                            data: [contribution1, contribution2],
                             error: null,
-                            count: 1,
+                            count: 2,
                             status: 200,
                             statusText: 'OK',
                         });
@@ -882,7 +922,7 @@ describe('findSourceDocuments', () => {
 
         assertEquals(documents.length, 2);
         const ids = documents.map((doc) => doc.id).sort();
-        assertEquals(ids, ['header-context-contribution', 'header-context-resource']);
+        assertEquals(ids, ['header-context-contribution-1', 'header-context-contribution-2']);
     });
 
     it("filters seed_prompt resources by iteration_number", async () => {
@@ -970,49 +1010,87 @@ describe('findSourceDocuments', () => {
         assertEquals(documents.some((doc) => doc.id === 'seed-prompt-iter-2'), false);
     });
 
-    it("filters header_context resources by iteration_number", async () => {
+    it("filters header_context contributions by iteration_number", async () => {
         const rule: InputRule[] = [{ type: 'header_context', slug: 'test-stage' }];
-        const iteration1HeaderContext: DialecticProjectResourceRow = {
+        const iteration1HeaderContext: DialecticContributionRow = {
             id: 'header-context-iter-1',
-            project_id: 'proj-1',
+            session_id: 'sess-1',
             user_id: 'user-123',
+            stage: 'test-stage',
+            iteration_number: 1,
+            model_id: 'model-1',
+            model_name: 'Test Model',
+            prompt_template_id_used: 'prompt-1',
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 10,
+            tokens_used_output: 20,
+            processing_time_ms: 100,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: 'header_context',
             file_name: 'header-iter-1.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'application/json',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
             size_bytes: 80,
-            resource_description: { "description": "Header context iteration 1", type: 'header_context' },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            iteration_number: 1,
-            resource_type: 'header_context',
-            session_id: 'sess-1',
-            source_contribution_id: null,
-            stage_slug: 'test-stage',
+            mime_type: 'application/json',
+            document_relationships: null,
+            is_header: true,
+            source_prompt_resource_id: null,
         };
 
-        const iteration2HeaderContext: DialecticProjectResourceRow = {
+        const iteration2HeaderContext: DialecticContributionRow = {
             id: 'header-context-iter-2',
-            project_id: 'proj-1',
+            session_id: 'sess-1',
             user_id: 'user-123',
-            file_name: 'header-iter-2.json',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'application/json',
-            size_bytes: 81,
-            resource_description: { "description": "Header context iteration 2", type: 'header_context' },
+            stage: 'test-stage',
+            iteration_number: 2,
+            model_id: 'model-1',
+            model_name: 'Test Model',
+            prompt_template_id_used: 'prompt-1',
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 10,
+            tokens_used_output: 20,
+            processing_time_ms: 100,
+            error: null,
+            citations: null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            iteration_number: 2,
-            resource_type: 'header_context',
-            session_id: 'sess-1',
-            source_contribution_id: null,
-            stage_slug: 'test-stage',
+            contribution_type: 'header_context',
+            file_name: 'header-iter-2.json',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_2/test-stage/_work/context',
+            size_bytes: 81,
+            mime_type: 'application/json',
+            document_relationships: null,
+            is_header: true,
+            source_prompt_resource_id: null,
         };
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 dialectic_project_resources: {
+                    select: () =>
+                        Promise.resolve({
+                            data: null,
+                            error: new Error('header_context test must not query project_resources'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
+                        }),
+                },
+                dialectic_contributions: {
                     select: (state: MockQueryBuilderState) => {
                         const hasIterationFilter = state.filters.some(
                             (filter) =>

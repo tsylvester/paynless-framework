@@ -10,11 +10,11 @@ import {
   JobType, 
   PromptType, 
   GranularityStrategy,
-  OutputType,
 } from "./dialectic.interface.ts";
 import { isInputRule, isRelevanceRule, isOutputRule } from "../_shared/utils/type-guards/type_guards.dialectic.recipe.ts";
 import { isRecord } from "../_shared/utils/type-guards/type_guards.common.ts";
-import { FileType } from "../_shared/types/file_manager.types.ts";
+import type { ModelContributionFileTypes } from "../_shared/types/file_manager.types.ts";
+import { isModelContributionFileType, isFileType } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
 
 export async function getStageRecipe(
   payload: { stageSlug: string },
@@ -86,17 +86,30 @@ export async function getStageRecipe(
     if (!isGranularity(s.granularity_strategy)) return { status: 500, error: { message: `Invalid granularity_strategy for step_key=${s.step_key}: ${String(s.granularity_strategy)}` } };
     const granularity: GranularityStrategy = s.granularity_strategy;
 
-    // Validate output_type against FileType enum values (snake_case)
+    // Validate output_type: must be a ModelContributionFileType, and if renderable, include in DTO
     const rawType = String(s.output_type);
-    console.error(`[getStageRecipe] Validating output_type for step_key=${s.step_key}: rawType="${rawType}", FileType.HeaderContext="${FileType.HeaderContext}", FileType.AssembledDocumentJson="${FileType.AssembledDocumentJson}", FileType.RenderedDocument="${FileType.RenderedDocument}"`);
-    let mappedOutputType: OutputType;
-    if (rawType === FileType.HeaderContext) mappedOutputType = FileType.HeaderContext;
-    else if (rawType === FileType.AssembledDocumentJson) mappedOutputType = FileType.AssembledDocumentJson;
-    else if (rawType === FileType.RenderedDocument) mappedOutputType = FileType.RenderedDocument;
-    else {
-      console.error(`[getStageRecipe] Unknown output_type for step_key=${s.step_key}: ${rawType}`);
-      return { status: 500, error: { message: `Unknown output_type for step_key=${s.step_key}: ${rawType}` } };
+    
+    // First check if it's a valid FileType at all (if not, this is a data integrity error)
+    if (!isFileType(rawType)) {
+      return { status: 500, error: { message: `Invalid output_type for step_key=${s.step_key}: ${rawType} is not a valid FileType` } };
     }
+    
+    // If it's a valid FileType but not a ModelContributionFileType, handle based on type
+    if (!isModelContributionFileType(rawType)) {
+      // 'rendered_document' for EXECUTE jobs is a data integrity error (migrations should have fixed this)
+      // This should cause an error, not be filtered out silently
+      if (rawType === 'rendered_document' && jobType === 'EXECUTE') {
+        return { status: 500, error: { message: `Invalid output_type for step_key=${s.step_key}: ${rawType} is not a ModelContributionFileType` } };
+      }
+      // Other backend-only types (like assembled_document_json) should be filtered out silently
+      // These are legitimate intermediate types that should not appear in the frontend DTO
+      console.error(`[getStageRecipe] Filtering out step with backend-only output_type for step_key=${s.step_key}: ${rawType} is not a ModelContributionFileType (backend-only type)`);
+      continue;
+    }
+    
+    // At this point, rawType is validated as a ModelContributionFileType
+    // All steps are included in the DTO - frontend needs all steps (including PLAN with header_context) to track progress
+    const mappedOutputType: ModelContributionFileTypes = rawType;
 
     // Validate arrays and elements
     if (!Array.isArray(s.inputs_required)) {
@@ -183,4 +196,6 @@ export async function getStageRecipe(
 
   return { status: 200, data: response };
 }
+
+
 

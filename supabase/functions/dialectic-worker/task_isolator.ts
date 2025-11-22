@@ -354,8 +354,47 @@ export async function findSourceDocuments(
                 sourceRecords = selectRecordsForRule(dedupedContributions, allowMultipleMatches, usedRecordKeys);
                 break;
             }
+            case 'header_context': {
+                let contributionQuery = dbClient.from('dialectic_contributions')
+                    .select('*')
+                    .eq('session_id', sessionId)
+                    .eq('iteration_number', normalizedIterationNumber)
+                    .eq('is_latest_edit', true)
+                    .eq('contribution_type', 'header_context');
+
+                if (shouldFilterByStage) {
+                    contributionQuery = contributionQuery.eq('stage', stageSlugCandidate);
+                }
+
+                if (rule.document_key) {
+                    const documentKey = rule.document_key;
+                    contributionQuery = contributionQuery.ilike('file_name', `%${documentKey}%`);
+                }
+
+                const { data: headerContributions, error: headerError } = await contributionQuery;
+                if (headerError) {
+                    throw new Error(
+                        `Failed to fetch source documents for type '${rule.type}' from contributions: ${headerError.message}`,
+                    );
+                }
+
+                const headerRecordsRaw = (headerContributions ?? []);
+                ensureRecordsHaveStorage(headerRecordsRaw);
+                const headerRecords = sortRecordsByRecency(headerRecordsRaw);
+                const filteredHeaderContributions = filterRecordsByDocumentKey(headerRecords, rule.document_key);
+                const hasDocumentKey = typeof rule.document_key === 'string' && rule.document_key.length > 0;
+                const headerCandidates = hasDocumentKey
+                    ? filteredHeaderContributions
+                    : (filteredHeaderContributions.length > 0 ? filteredHeaderContributions : headerRecords);
+                const dedupedHeaderContributions = dedupeByFileName(headerCandidates);
+                sourceRecords = selectRecordsForRule(
+                    dedupedHeaderContributions,
+                    allowMultipleMatches,
+                    usedRecordKeys,
+                );
+                break;
+            }
             case 'seed_prompt':
-            case 'header_context':
             case 'project_resource': {
                 let resourceQuery = dbClient.from('dialectic_project_resources')
                     .select('*')
@@ -391,43 +430,11 @@ export async function findSourceDocuments(
                 const resourceCandidates = hasDocumentKey && filteredResources.length === 0
                     ? resourceRecords
                     : (filteredResources.length > 0 ? filteredResources : resourceRecords);
-                let effectiveRecords = selectRecordsForRule(
+                const effectiveRecords = selectRecordsForRule(
                     dedupeByFileName(resourceCandidates),
                     allowMultipleMatches,
                     usedRecordKeys,
                 );
-
-                if (effectiveRecords.length === 0 && rule.type === 'header_context') {
-                    let contributionQuery = dbClient.from('dialectic_contributions')
-                        .select('*')
-                        .eq('session_id', sessionId)
-                        .eq('iteration_number', normalizedIterationNumber)
-                        .eq('is_latest_edit', true)
-                        .eq('contribution_type', 'header_context');
-
-                    if (shouldFilterByStage) {
-                        contributionQuery = contributionQuery.eq('stage', stageSlugCandidate);
-                    }
-                    const { data: headerContributions, error: headerError } = await contributionQuery;
-                    if (headerError) {
-                        throw new Error(
-                            `Failed to fetch source documents for type '${rule.type}' from contributions: ${headerError.message}`,
-                        );
-                    }
-                    const headerRecordsRaw = (headerContributions ?? []);
-                    ensureRecordsHaveStorage(headerRecordsRaw);
-                    const headerRecords = sortRecordsByRecency(headerRecordsRaw);
-                    const filteredHeaderContributions = filterRecordsByDocumentKey(headerRecords, rule.document_key);
-                    const headerCandidates = hasDocumentKey
-                        ? filteredHeaderContributions
-                        : (filteredHeaderContributions.length > 0 ? filteredHeaderContributions : headerRecords);
-                    const dedupedHeaderContributions = dedupeByFileName(headerCandidates);
-                    effectiveRecords = selectRecordsForRule(
-                        dedupedHeaderContributions,
-                        allowMultipleMatches,
-                        usedRecordKeys,
-                    );
-                }
 
                 sourceRecords = effectiveRecords;
                 break;
@@ -515,17 +522,13 @@ export async function planComplexStage(
 
     //deps.logger.info(`[task_isolator] [planComplexStage] Planning step "${recipeStep.name}" for parent job ID: ${parentJob.id}`);
     
-    // Enforce presence of user_jwt on the parent payload (no healing, no fallback)
-    let parentJwt: string | undefined = undefined;
+    // Validate presence of user_jwt on the parent payload (planners will use it directly)
     {
         const desc = Object.getOwnPropertyDescriptor(parentJob.payload, 'user_jwt');
         const potential = desc ? desc.value : undefined;
-        if (typeof potential === 'string' && potential.length > 0) {
-            parentJwt = potential;
+        if (typeof potential !== 'string' || potential.length === 0) {
+            throw new Error('parent payload.user_jwt is required');
         }
-    }
-    if (!parentJwt) {
-        throw new Error('parent payload.user_jwt is required');
     }
 
     // Validate stageSlug correctness: must exist on payload and match row if present
@@ -569,11 +572,8 @@ export async function planComplexStage(
     const childJobsToInsert: DialecticJobRow[] = [];
     for (const payload of childJobPayloads) {
         try {
-            // 1. Enrichment Stage: Add the JWT first, then validate full shape
-            const candidatePayload: DialecticExecuteJobPayload = {
-                ...payload,
-                user_jwt: parentJwt,
-            };
+            // 1. Use payload as-is (planners are responsible for including user_jwt and step_slug)
+            const candidatePayload: DialecticExecuteJobPayload = payload;
 
             // 2. Shape Check on enriched payload
             if (!isDialecticExecuteJobPayload(candidatePayload)) {

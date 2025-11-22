@@ -136,13 +136,7 @@ export async function processComplexJob(
         throw new Error(`Failed to fetch completed child jobs for parent ${parentJobId}: ${childrenError.message}`);
     }
 
-    const completedStepSlugs = new Set<string>();
-    for (const child of completedChildren) {
-        if (isRecord(child.payload) && typeof child.payload.step_slug === 'string') {
-            completedStepSlugs.add(child.payload.step_slug);
-        }
-    }
-    // Build predecessor map from edges
+    // Build step ID to step slug mapping first (needed for tracking completed steps)
     const stepIdToStep = new Map<string, DialecticRecipeTemplateStep | DialecticStageRecipeStep>();
     const stepSlugById = new Map<string, string>();
     for (const s of steps) {
@@ -156,6 +150,21 @@ export async function processComplexJob(
             stepSlugById.set(s.id, s.step_slug);
         }
     }
+
+    // Track completed steps by looking up step_slug from planner_metadata.recipe_step_id
+    const completedStepSlugs = new Set<string>();
+    for (const child of completedChildren) {
+        if (isRecord(child.payload)) {
+            const plannerMetadata = child.payload.planner_metadata;
+            if (isRecord(plannerMetadata) && typeof plannerMetadata.recipe_step_id === 'string') {
+                const stepSlug = stepSlugById.get(plannerMetadata.recipe_step_id);
+                if (stepSlug) {
+                    completedStepSlugs.add(stepSlug);
+                }
+            }
+        }
+    }
+    // Build predecessor map from edges
     const predecessors = new Map<string, Set<string>>();
     for (const e of edges) {
         const set = predecessors.get(e.to_step_id) ?? new Set<string>();
@@ -346,5 +355,6 @@ export async function processComplexJob(
         } catch { /* best-effort notification */ }
     }
 }
+
 
 

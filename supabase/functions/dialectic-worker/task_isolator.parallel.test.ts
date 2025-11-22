@@ -762,8 +762,8 @@ describe('planComplexStage', () => {
     
             // Arrange:
             // 1. The planner returns a minimal payload with the CORRECT context. 
-            //    The function under test is responsible for enriching it with the JWT.
-            const minimalPayload: Omit<DialecticExecuteJobPayload, 'user_jwt'> = {
+            //    The planner is responsible for including user_jwt from the parent payload.
+            const minimalPayload: DialecticExecuteJobPayload = {
                 job_type: 'execute',
                 prompt_template_id: 'p1',
                 output_type: FileType.business_case,
@@ -775,6 +775,7 @@ describe('planComplexStage', () => {
                 stageSlug: mockParentJob.payload.stageSlug,
                 iterationNumber: mockParentJob.payload.iterationNumber,
                 walletId: mockParentJob.payload.walletId,
+                user_jwt: mockParentJob.payload.user_jwt,
                 canonicalPathParams: { contributionType: 'thesis', stageSlug: 'st1' },
             };
             const plannerFn = () => [minimalPayload];
@@ -1127,34 +1128,53 @@ describe('planComplexStage', () => {
             );
         });
 
-        it('uses column predicates when fetching header_context resources', async () => {
+        it('uses column predicates when fetching header_context contributions', async () => {
             // Arrange:
-            // 1. Seed a header_context resource that matches the column predicates.
+            // 1. Seed a header_context contribution that matches the column predicates.
             if (!isDialecticPlanJobPayload(mockParentJob.payload)) {
                 throw new Error('mockParentJob.payload must be a valid DialecticPlanJobPayload');
             }
             if (typeof mockParentJob.payload.stageSlug !== 'string') {
                 throw new Error('mockParentJob.payload.stageSlug must be defined as a string. Fix the data flow upstream.');
             }
-            const headerContextResource: DialecticProjectResourceRow = {
-                ...mockProjectResources[0],
+            if (typeof mockParentJob.payload.iterationNumber !== 'number') {
+                throw new Error('mockParentJob.payload.iterationNumber must be defined as a number. Fix the data flow upstream.');
+            }
+            const headerContextContribution: DialecticContributionRow = {
                 id: 'header-context-1',
-                project_id: mockParentJob.payload.projectId,
-                resource_type: 'header_context',
                 session_id: mockParentJob.payload.sessionId,
-                stage_slug: mockParentJob.payload.stageSlug,
-                source_contribution_id: null,
-                file_name: 'sess-1_test-stage_header_context.json',
-                resource_description: {
-                    description: 'Header context for test stage',
-                    type: 'header_context',
-                },
+                user_id: 'user-123',
+                stage: mockParentJob.payload.stageSlug,
+                iteration_number: mockParentJob.payload.iterationNumber,
+                model_id: 'model-1',
+                model_name: 'Test Model',
+                prompt_template_id_used: 'prompt-1',
+                seed_prompt_url: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                original_model_contribution_id: null,
+                raw_response_storage_path: null,
+                target_contribution_id: null,
+                tokens_used_input: 10,
+                tokens_used_output: 20,
+                processing_time_ms: 100,
+                error: null,
+                citations: null,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                contribution_type: 'header_context',
+                file_name: 'sess-1_test-stage_header_context.json',
+                storage_bucket: 'test-bucket',
+                storage_path: `projects/${mockParentJob.payload.projectId}/sessions/${mockParentJob.payload.sessionId}/iteration_${mockParentJob.payload.iterationNumber}/${mockParentJob.payload.stageSlug}/_work/context`,
+                size_bytes: 80,
+                mime_type: 'application/json',
+                document_relationships: null,
+                is_header: true,
+                source_prompt_resource_id: null,
             };
-            mockProjectResources = [headerContextResource];
+            mockContributions = [headerContextContribution];
 
-            // 2. Use a header_context rule so the resource query is exercised.
+            // 2. Use a header_context rule so the contribution query is exercised.
             mockRecipeStep.inputs_required = [{
                 type: 'header_context',
                 slug: 'test-stage',
@@ -1176,7 +1196,7 @@ describe('planComplexStage', () => {
             // Assert:
             // Use the Supabase mock spies to verify column-based predicates.
             const eqHistory = mockSupabase.spies.getHistoricQueryBuilderSpies(
-                'dialectic_project_resources',
+                'dialectic_contributions',
                 'eq',
             );
             assertExists(eqHistory);
@@ -1191,24 +1211,29 @@ describe('planComplexStage', () => {
                 );
 
             assert(
-                hasFilter('resource_type', 'header_context'),
-                'Expected resource_type filter for header_context',
-            );
-            assert(
-                hasFilter('project_id', mockParentJob.payload.projectId),
-                'Expected project_id filter for header_context',
+                hasFilter('contribution_type', 'header_context'),
+                'Expected contribution_type filter for header_context',
             );
             assert(
                 hasFilter('session_id', mockParentJob.payload.sessionId),
                 'Expected session_id filter for header_context',
             );
             assert(
-                hasFilter('stage_slug', 'test-stage'),
-                'Expected stage_slug filter for header_context',
+                hasFilter('iteration_number', mockParentJob.payload.iterationNumber),
+                'Expected iteration_number filter for header_context',
+            );
+            assert(
+                hasFilter('is_latest_edit', true),
+                'Expected is_latest_edit filter for header_context',
+            );
+            assert(
+                hasFilter('stage', 'test-stage'),
+                'Expected stage filter for header_context',
             );
         });
     });
 
 }); 
+
 
 

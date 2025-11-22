@@ -147,7 +147,7 @@ export interface StageRecipeStepDto {
   job_type: JobType;
   prompt_type: PromptType;
   prompt_template_id?: string | null;
-  output_type: OutputType; // Mapped from ModelContributionFileTypes
+  output_type: ModelContributionFileTypes; // All ModelContributionFileTypes (including backend-only types like header_context for PLAN steps)
   granularity_strategy: GranularityStrategy;
   inputs_required: InputRule[];
   inputs_relevance?: RelevanceRule[];
@@ -273,7 +273,8 @@ export type ContributionType =
   | 'paralysis'
   | 'pairwise_synthesis_chunk'
   | 'reduced_synthesis'
-  | 'rag_context_summary';
+  | 'rag_context_summary'
+  | 'header_context';
 
 
 export interface DialecticSessionModel {
@@ -622,12 +623,30 @@ export enum BranchKey {
   advisor_recommendations = 'advisor_recommendations',
 }
 
-// OutputType is now a type alias for a subset of FileType to avoid confusion
-// Use FileType.HeaderContext, FileType.RenderedDocument, FileType.AssembledDocumentJson directly
-export type OutputType = 
-  | FileType.HeaderContext
-  | FileType.RenderedDocument
-  | FileType.AssembledDocumentJson;
+// OutputType represents FileTypes that become RenderedDocument (user-facing rendered documents)
+// This is a subset of ModelContributionFileTypes that excludes backend-only and intermediate types
+// Backend-only types excluded: HeaderContext, AssembledDocumentJson, ModelContributionRawJson,
+// PairwiseSynthesisChunk, ReducedSynthesis, Synthesis, header_context_pairwise, SynthesisHeaderContext
+export type OutputType =
+  | FileType.business_case
+  | FileType.feature_spec
+  | FileType.technical_approach
+  | FileType.success_metrics
+  | FileType.business_case_critique
+  | FileType.technical_feasibility_assessment
+  | FileType.risk_register
+  | FileType.non_functional_requirements
+  | FileType.dependency_map
+  | FileType.comparison_vector
+  | FileType.product_requirements
+  | FileType.system_architecture
+  | FileType.tech_stack
+  | FileType.technical_requirements
+  | FileType.master_plan
+  | FileType.milestone_schema
+  | FileType.updated_master_plan
+  | FileType.actionable_checklist
+  | FileType.advisor_recommendations;
 
 /**
  * Tracks the progress of a multi-step job.

@@ -79,18 +79,57 @@ export async function assembleContinuationPrompt(
 
   // 2. Fetch Header Context (if applicable)
   let headerContext: HeaderContext | null = null;
-  const headerResourceId = job.payload?.header_context_resource_id;
+  const inputs = isRecord(job.payload.inputs) ? job.payload.inputs : null;
+  const headerContextId = inputs?.header_context_id;
 
-  if (typeof headerResourceId === "string") {
+  if (typeof headerContextId === "string" && headerContextId.trim().length > 0) {
+    // Query contribution by ID to get storage details
+    const { data: headerContrib, error: contribError } = await dbClient
+      .from("dialectic_contributions")
+      .select("id, storage_bucket, storage_path, file_name, contribution_type")
+      .eq("id", headerContextId)
+      .single();
+
+    if (contribError || !headerContrib) {
+      throw new Error(
+        `Header context contribution with id '${headerContextId}' not found in database: ${contribError?.message}`,
+      );
+    }
+
+    if (headerContrib.contribution_type !== "header_context") {
+      throw new Error(
+        `Contribution '${headerContextId}' is not a header_context contribution (found '${headerContrib.contribution_type}').`,
+      );
+    }
+
+    if (typeof headerContrib.storage_bucket !== "string" || !headerContrib.storage_bucket) {
+      throw new Error(
+        `Header context contribution '${headerContextId}' is missing required storage_bucket.`,
+      );
+    }
+
+    if (typeof headerContrib.storage_path !== "string" || !headerContrib.storage_path) {
+      throw new Error(
+        `Header context contribution '${headerContextId}' is missing required storage_path.`,
+      );
+    }
+
+    // Construct storage path
+    const fileName = headerContrib.file_name || "";
+    const pathToDownload = fileName
+      ? `${headerContrib.storage_path}/${fileName}`
+      : headerContrib.storage_path;
+
+    // Download using the contribution's bucket
     const { data: buffer, error } = await downloadFromStorage(
       dbClient,
-      "dialectic_project_resources",
-      headerResourceId,
+      headerContrib.storage_bucket,
+      pathToDownload,
     );
 
     if (error || !buffer) {
       throw new Error(
-        `Failed to fetch HeaderContext with ID ${headerResourceId}: ${error?.message}`,
+        `Failed to download header context file from storage: ${error?.message}`,
       );
     }
 

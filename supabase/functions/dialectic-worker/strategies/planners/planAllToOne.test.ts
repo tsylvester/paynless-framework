@@ -1,5 +1,5 @@
 // supabase/functions/dialectic-worker/strategies/planners/planAllToOne.test.ts
-import { assertEquals, assertExists, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
+import { assertEquals, assertExists, assert, assertRejects } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import type {
     DialecticJobRow,
     DialecticPlanJobPayload,
@@ -32,6 +32,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
         iterationNumber: 1,
         model_id: 'model-ghi',
         walletId: 'wallet-default',
+        user_jwt: 'user-jwt-123',
     },
     attempt_count: 0, completed_at: null, created_at: '', error_details: null, max_retries: 3, parent_job_id: null, prerequisite_job_id: null, results: null, started_at: null, status: 'pending', target_contribution_id: null, is_test_job: false, job_type: 'PLAN'
 };
@@ -48,7 +49,16 @@ const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
     job_type: 'EXECUTE',
     inputs_required: [],
     inputs_relevance: [],
-    outputs_required: { documents: [], assembled_json: [], files_to_generate: [] },
+    outputs_required: {
+        documents: [{
+            artifact_class: 'rendered_document',
+            file_type: 'markdown',
+            document_key: FileType.Synthesis,
+            template_filename: 'synthesis.md',
+        }],
+        assembled_json: [],
+        files_to_generate: [],
+    },
     granularity_strategy: 'all_to_one',
     output_type: FileType.Synthesis,
     created_at: new Date().toISOString(),
@@ -158,12 +168,14 @@ Deno.test('planAllToOne accepts DialecticRecipeTemplateStep (not just DialecticS
             },
         ],
         outputs_required: {
-            header_context_artifact: {
-                type: 'header_context',
-                document_key: 'header_context',
-                artifact_class: 'header_context',
+            documents: [{
+                artifact_class: 'rendered_document',
                 file_type: 'json',
-            },
+                document_key: FileType.HeaderContext,
+                template_filename: 'header_context.json',
+            }],
+            assembled_json: [],
+            files_to_generate: [],
         },
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -233,4 +245,171 @@ Deno.test('planAllToOne inherits all fields from parent job payload including mo
         'Child payload must inherit user_jwt from parent payload',
     );
 });
+
+Deno.test('planAllToOne sets document_key in payload when recipeStep.outputs_required.documents[0].document_key is present', () => {
+    const recipeStepWithDocumentKey: DialecticStageRecipeStep = {
+        ...MOCK_RECIPE_STEP,
+        outputs_required: {
+            documents: [{
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                document_key: FileType.business_case,
+                template_filename: 'business_case.md',
+            }],
+            assembled_json: [],
+            files_to_generate: [],
+        },
+    };
+
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithDocumentKey, 'user-jwt-123');
+    
+    assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    assertEquals(
+        job.document_key,
+        FileType.business_case,
+        'document_key should be extracted from recipeStep.outputs_required.documents[0].document_key',
+    );
+});
+
+Deno.test('planAllToOne does NOT set document_key when outputs_required.documents array is empty', () => {
+    const recipeStepWithEmptyDocuments: DialecticStageRecipeStep = {
+        ...MOCK_RECIPE_STEP,
+        outputs_required: {
+            documents: [],
+            assembled_json: [],
+            files_to_generate: [],
+        },
+    };
+
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithEmptyDocuments, 'user-jwt-123');
+    
+    assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    assert(
+        !('document_key' in job) || job.document_key === undefined || job.document_key === null,
+        'document_key should NOT be set when documents array is empty (step does not output documents)',
+    );
+});
+
+Deno.test('planAllToOne does NOT set document_key when outputs_required is missing documents property', () => {
+    const recipeStepWithoutDocumentsProperty: DialecticStageRecipeStep = {
+        ...MOCK_RECIPE_STEP,
+        outputs_required: {
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: FileType.HeaderContext,
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            assembled_json: [],
+            files_to_generate: [],
+        } as unknown as DialecticStageRecipeStep['outputs_required'],
+    };
+
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithoutDocumentsProperty, 'user-jwt-123');
+    
+    assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    assert(
+        !('document_key' in job) || job.document_key === undefined || job.document_key === null,
+        'document_key should NOT be set when outputs_required is missing documents property (step does not output documents)',
+    );
+});
+
+Deno.test('planAllToOne throws error when outputs_required.documents[0] is missing document_key property', async () => {
+    const recipeStepWithoutDocumentKey = {
+        ...MOCK_RECIPE_STEP,
+        outputs_required: {
+            documents: [{
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                template_filename: 'business_case.md',
+            }],
+            assembled_json: [],
+            files_to_generate: [],
+        },
+    } as unknown as DialecticStageRecipeStep;
+
+    await assertRejects(
+        async () => {
+            planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithoutDocumentKey, 'user-jwt-123');
+        },
+        Error,
+        'planAllToOne requires recipeStep.outputs_required.documents[0].document_key but it is missing',
+        'Should throw error when documents[0] is missing document_key property',
+    );
+});
+
+Deno.test('planAllToOne throws error when outputs_required.documents[0].document_key is null', async () => {
+    const recipeStepWithNullDocumentKey: DialecticStageRecipeStep = {
+        ...MOCK_RECIPE_STEP,
+        outputs_required: {
+            documents: [{
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                document_key: null as unknown as FileType,
+                template_filename: 'business_case.md',
+            }],
+            assembled_json: [],
+            files_to_generate: [],
+        },
+    };
+
+    await assertRejects(
+        async () => {
+            planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithNullDocumentKey, 'user-jwt-123');
+        },
+        Error,
+        'planAllToOne requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string',
+        'Should throw error when document_key is null',
+    );
+});
+
+Deno.test('planAllToOne throws error when outputs_required.documents[0].document_key is empty string', async () => {
+    const recipeStepWithEmptyDocumentKey: DialecticStageRecipeStep = {
+        ...MOCK_RECIPE_STEP,
+        outputs_required: {
+            documents: [{
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                document_key: '' as unknown as FileType,
+                template_filename: 'business_case.md',
+            }],
+            assembled_json: [],
+            files_to_generate: [],
+        },
+    };
+
+    await assertRejects(
+        async () => {
+            planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithEmptyDocumentKey, 'user-jwt-123');
+        },
+        Error,
+        'planAllToOne requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string',
+        'Should throw error when document_key is empty string',
+    );
+});
+
+Deno.test('planAllToOne does NOT set document_key when outputs_required is missing or undefined', () => {
+    const recipeStepWithoutOutputsRequired: DialecticStageRecipeStep = {
+        ...MOCK_RECIPE_STEP,
+        outputs_required: undefined as unknown as DialecticStageRecipeStep['outputs_required'],
+    };
+
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithoutOutputsRequired, 'user-jwt-123');
+    
+    assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    assert(
+        !('document_key' in job) || job.document_key === undefined || job.document_key === null,
+        'document_key should NOT be set when outputs_required is missing or undefined (step does not output documents)',
+    );
+});
+
+
 

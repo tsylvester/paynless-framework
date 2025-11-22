@@ -431,7 +431,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_actionable_checklist_prompt_id,
-        'rendered_document',
+        'actionable_checklist',
         'per_source_document',
         '[
           {"type":"header_context","slug":"paralysis","document_key":"header_context","required":true},
@@ -515,7 +515,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_actionable_checklist_prompt_id,
-        'rendered_document',
+        'actionable_checklist',
         'per_source_document',
         '[
           {"type":"header_context","slug":"paralysis","document_key":"header_context","required":true},
@@ -610,7 +610,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_updated_master_plan_prompt_id,
-        'rendered_document',
+        'updated_master_plan',
         'per_source_document',
         '[
           {"type":"header_context","slug":"paralysis","document_key":"header_context","required":true},
@@ -689,7 +689,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_updated_master_plan_prompt_id,
-        'rendered_document',
+        'updated_master_plan',
         'per_source_document',
         '[
           {"type":"header_context","slug":"paralysis","document_key":"header_context","required":true},
@@ -779,7 +779,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_advisor_recommendations_prompt_id,
-        'rendered_document',
+        'advisor_recommendations',
         'per_source_document',
         '[
           {"type":"project_resource","slug":"project","document_key":"initial_user_prompt","required":true},
@@ -860,7 +860,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_advisor_recommendations_prompt_id,
-        'rendered_document',
+        'advisor_recommendations',
         'per_source_document',
         '[
           {"type":"document","slug":"synthesis","document_key":"product_requirements","required":true,"multiple":true},

@@ -197,6 +197,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
 		iterationNumber: 1,
 		model_id: 'model-ghi',
 		walletId: 'wallet-default',
+		user_jwt: 'user-jwt-123',
 	},
 	attempt_count: 0,
 	completed_at: null,
@@ -230,7 +231,16 @@ const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
 		required: true,
 	}],
 	inputs_relevance: [],
-	outputs_required: { documents: [], assembled_json: [], files_to_generate: [] },
+	outputs_required: {
+		documents: [{
+			artifact_class: 'rendered_document',
+			file_type: 'markdown',
+			document_key: FileType.PairwiseSynthesisChunk,
+			template_filename: 'pairwise_synthesis_chunk.md',
+		}],
+		assembled_json: [],
+		files_to_generate: [],
+	},
 	granularity_strategy: 'pairwise_by_origin',
 	output_type: FileType.PairwiseSynthesisChunk,
 	created_at: new Date().toISOString(),
@@ -292,6 +302,9 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 	assertEquals(job1Payload.canonicalPathParams.pairedModelSlug, 'Model GHI');
 	assertEquals(job1Payload.canonicalPathParams.sourceModelSlugs?.sort(), ['Model ABC', 'Model GHI'].sort());
 	assert(!('originalFileName' in job1Payload));
+	
+	// Check document_key is set
+	assertEquals(job1Payload.document_key, FileType.PairwiseSynthesisChunk, 'document_key should be set from outputs_required.documents[0].document_key');
 
 
 	// --- Check Job 2 (thesis-1 vs antithesis-1b) ---
@@ -377,6 +390,7 @@ Deno.test('planPairwiseByOrigin constructs child payloads with dynamic stage con
 	for (const child of childPayloads) {
 		assertEquals(child.stageSlug, expectedStage);
 		assertEquals(child.sourceContributionId, child.inputs?.antithesis_id);
+		assertEquals(child.document_key, FileType.PairwiseSynthesisChunk, 'document_key should be set from outputs_required.documents[0].document_key');
 	}
 });
 
@@ -441,6 +455,7 @@ Deno.test('planPairwiseByOrigin Test Case A: The Failing Case (Proves the bug ex
 			iterationNumber: 1,
 			model_id: 'parent-model-id', // The parent planner belongs to this model
 			walletId: 'wallet-default',
+			user_jwt: 'user-jwt-123',
 		},
 		attempt_count: 0,
 		completed_at: null,
@@ -489,6 +504,7 @@ Deno.test('planPairwiseByOrigin Test Case B: The Passing Case (Describes the cor
 			iterationNumber: 1,
 			model_id: 'parent-model-id', // The parent planner belongs to this model
 			walletId: 'wallet-default',
+			user_jwt: 'user-jwt-123',
 		},
 		attempt_count: 0,
 		completed_at: null,
@@ -534,6 +550,7 @@ Deno.test('planPairwiseByOrigin includes planner_metadata with recipe_step_id in
 			'recipe-step-pairwise-456',
 			'planner_metadata.recipe_step_id should match the recipe step id',
 		);
+		assertEquals(job.document_key, FileType.PairwiseSynthesisChunk, 'document_key should be set from outputs_required.documents[0].document_key');
 	});
 });
 
@@ -592,6 +609,141 @@ Deno.test('planPairwiseByOrigin should inherit all fields from parent job payloa
 			'parent-jwt-token',
 			`Child job ${index} should inherit user_jwt from parent job`
 		);
+		assertEquals(job.document_key, FileType.PairwiseSynthesisChunk, `Child job ${index} should have document_key set from outputs_required.documents[0].document_key`);
 	});
+});
+
+Deno.test('planPairwiseByOrigin should set document_key in payload when outputs_required.documents[0].document_key is valid', () => {
+	const mockRecipeStepWithDocumentKey: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.PairwiseSynthesisChunk,
+				template_filename: 'pairwise_synthesis_chunk.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [],
+		},
+	};
+
+	const childPayloads = planPairwiseByOrigin(
+		MOCK_SOURCE_DOCS,
+		MOCK_PARENT_JOB,
+		mockRecipeStepWithDocumentKey,
+		'user-jwt-123'
+	);
+
+	assertEquals(childPayloads.length, 3, 'Should create 3 child jobs for the 3 pairs');
+
+	// Assert that every payload has document_key set correctly
+	childPayloads.forEach((payload, index) => {
+		assertExists(
+			payload,
+			`Child payload ${index} should exist`
+		);
+		assertEquals(
+			payload.document_key,
+			FileType.PairwiseSynthesisChunk,
+			`Child payload ${index} should have document_key set to FileType.PairwiseSynthesisChunk`
+		);
+	});
+});
+
+Deno.test('planPairwiseByOrigin does NOT set document_key when outputs_required.documents array is empty', () => {
+	const mockRecipeStepWithEmptyDocuments: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		outputs_required: {
+			documents: [],
+			assembled_json: [],
+			files_to_generate: [],
+		},
+	};
+
+	const childPayloads = planPairwiseByOrigin(
+		MOCK_SOURCE_DOCS,
+		MOCK_PARENT_JOB,
+		mockRecipeStepWithEmptyDocuments,
+		'user-jwt-123'
+	);
+
+	assertEquals(childPayloads.length, 3, 'Should create 3 child jobs for the 3 pairs');
+
+	// Assert that document_key is NOT set when documents array is empty (step does not output documents)
+	childPayloads.forEach((payload, index) => {
+		assertExists(
+			payload,
+			`Child payload ${index} should exist`
+		);
+		assert(
+			!('document_key' in payload) || payload.document_key === undefined || payload.document_key === null,
+			`Child payload ${index} should NOT have document_key set when documents array is empty (step does not output documents)`
+		);
+	});
+});
+
+Deno.test('planPairwiseByOrigin does NOT set document_key when outputs_required is missing documents property', () => {
+	const mockRecipeStepWithoutDocumentsProperty: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		outputs_required: {
+			assembled_json: [],
+			files_to_generate: [],
+		},
+	};
+
+	const childPayloads = planPairwiseByOrigin(
+		MOCK_SOURCE_DOCS,
+		MOCK_PARENT_JOB,
+		mockRecipeStepWithoutDocumentsProperty,
+		'user-jwt-123'
+	);
+
+	assertEquals(childPayloads.length, 3, 'Should create 3 child jobs for the 3 pairs');
+
+	// Assert that document_key is NOT set when outputs_required is missing documents property (step does not output documents)
+	childPayloads.forEach((payload, index) => {
+		assertExists(
+			payload,
+			`Child payload ${index} should exist`
+		);
+		assert(
+			!('document_key' in payload) || payload.document_key === undefined || payload.document_key === null,
+			`Child payload ${index} should NOT have document_key set when outputs_required is missing documents property (step does not output documents)`
+		);
+	});
+});
+
+Deno.test('planPairwiseByOrigin should throw an error when outputs_required.documents[0] is missing document_key property', () => {
+	const mockRecipeStepWithoutDocumentKey: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.PairwiseSynthesisChunk,
+				template_filename: 'pairwise_synthesis_chunk.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [],
+		},
+	};
+	// Remove document_key property to test validation
+	if (mockRecipeStepWithoutDocumentKey.outputs_required?.documents?.[0] && 'document_key' in mockRecipeStepWithoutDocumentKey.outputs_required.documents[0]) {
+		delete (mockRecipeStepWithoutDocumentKey.outputs_required.documents[0] as { document_key?: FileType }).document_key;
+	}
+
+	assertThrows(
+		() => {
+			planPairwiseByOrigin(
+				MOCK_SOURCE_DOCS,
+				MOCK_PARENT_JOB,
+				mockRecipeStepWithoutDocumentKey,
+				'user-jwt-123'
+			);
+		},
+		Error,
+		'planPairwiseByOrigin requires recipeStep.outputs_required.documents[0].document_key but it is missing'
+	);
 });
  

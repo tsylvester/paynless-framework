@@ -942,7 +942,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 5, 5, 'product_requirements', 'product_requirements', 'render-product_requirements', 'Render Final PRD', 'Renders the final Product Requirements Document from the consolidated synthesis artifacts.',
-        'EXECUTE', 'Turn', v_product_requirements_prompt_id, 'rendered_document', 'all_to_one',
+        'EXECUTE', 'Turn', v_product_requirements_prompt_id, 'product_requirements', 'all_to_one',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context", "required": true },
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_business_case", "required": true, "multiple": true },
@@ -1021,7 +1021,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 5, 5, 'system_architecture', 'system_architecture', 'render-system-architecture-overview', 'Render Final System Architecture Overview', 'Renders the final System Architecture Overview from the consolidated synthesis artifacts.',
-        'EXECUTE', 'Turn', v_system_architecture_prompt_id, 'rendered_document', 'all_to_one',
+        'EXECUTE', 'Turn', v_system_architecture_prompt_id, 'system_architecture', 'all_to_one',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context", "required": true },
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_technical_approach", "required": true, "multiple": true },
@@ -1073,7 +1073,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 5, 5, 'tech_stack', 'tech_stack', 'render-tech-stack-recommendations', 'Render Final Tech Stack Recommendations', 'Renders the final Tech Stack Recommendations from the consolidated synthesis artifacts.',
-        'EXECUTE', 'Turn', v_tech_stack_prompt_id, 'rendered_document', 'all_to_one',
+        'EXECUTE', 'Turn', v_tech_stack_prompt_id, 'tech_stack', 'all_to_one',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context", "required": true },
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_technical_approach", "required": true, "multiple": true },

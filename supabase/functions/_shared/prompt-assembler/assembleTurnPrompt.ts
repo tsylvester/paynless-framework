@@ -44,9 +44,14 @@ export async function assembleTurnPrompt(
       "PRECONDITION_FAILED: Legacy 'step_info' object found in job payload.",
     );
   }
-  if (typeof job.payload.header_context_resource_id !== "string") {
+  if (!isRecord(job.payload.inputs)) {
     throw new Error(
-      "PRECONDITION_FAILED: Job payload is missing 'header_context_resource_id'.",
+      "PRECONDITION_FAILED: Job payload inputs is missing or not a valid record.",
+    );
+  }
+  if (typeof job.payload.inputs.header_context_id !== "string") {
+    throw new Error(
+      "PRECONDITION_FAILED: Job payload inputs is missing 'header_context_id'.",
     );
   }
   if (typeof job.payload.document_key !== "string") {
@@ -74,11 +79,54 @@ export async function assembleTurnPrompt(
     );
   }
 
-  // 3. Fetch Header Context from Storage
+  // 3. Fetch Header Context Contribution from Database
+  const headerContextId = job.payload.inputs.header_context_id;
+  const { data: headerContrib, error: contribError } = await dbClient
+    .from("dialectic_contributions")
+    .select("id, storage_bucket, storage_path, file_name, contribution_type")
+    .eq("id", headerContextId)
+    .single();
+
+  if (contribError || !headerContrib) {
+    throw new Error(
+      `Header context contribution with id '${headerContextId}' not found in database.`,
+    );
+  }
+
+  if (headerContrib.contribution_type !== "header_context") {
+    throw new Error(
+      `Contribution '${headerContextId}' is not a header_context contribution (found '${headerContrib.contribution_type}').`,
+    );
+  }
+
+  if (typeof headerContrib.storage_bucket !== "string" || !headerContrib.storage_bucket) {
+    throw new Error(
+      `Header context contribution '${headerContextId}' is missing required storage_bucket.`,
+    );
+  }
+
+  if (typeof headerContrib.storage_path !== "string" || !headerContrib.storage_path) {
+    throw new Error(
+      `Header context contribution '${headerContextId}' is missing required storage_path.`,
+    );
+  }
+
+  if (typeof headerContrib.file_name !== "string" || !headerContrib.file_name) {
+    throw new Error(
+      `Header context contribution '${headerContextId}' is missing required file_name.`,
+    );
+  }
+
+  // 4. Construct Storage Path and Download Header Context
+  const fileName = headerContrib.file_name || "";
+  const pathToDownload = fileName
+    ? `${headerContrib.storage_path}/${fileName}`
+    : headerContrib.storage_path;
+
   const { data: headerBlob, error: headerError } = await downloadFromStorage(
     dbClient,
-    "SB_CONTENT_STORAGE_BUCKET",
-    job.payload.header_context_resource_id,
+    headerContrib.storage_bucket,
+    pathToDownload,
   );
   if (headerError || !headerBlob) {
     throw new Error(
@@ -107,7 +155,7 @@ export async function assembleTurnPrompt(
     );
   }
 
-  // 4. Find and Fetch Document Template
+  // 5. Find and Fetch Document Template
   const documentKey = job.payload.document_key;
   const docInfo = headerContext.files_to_generate?.find(
     (f) => f.document_key === documentKey,
@@ -118,10 +166,17 @@ export async function assembleTurnPrompt(
     );
   }
 
+  const contentStorageBucket = Deno.env.get("SB_CONTENT_STORAGE_BUCKET");
+  if (!contentStorageBucket) {
+    throw new Error(
+      "SB_CONTENT_STORAGE_BUCKET environment variable is not set - fail loud and hard, no fallbacks",
+    );
+  }
+
   const { data: templateBlob, error: templateError } =
     await downloadFromStorage(
       dbClient,
-      "SB_CONTENT_STORAGE_BUCKET",
+      contentStorageBucket,
       docInfo.template_filename,
     );
   if (templateError || !templateBlob) {
@@ -139,7 +194,7 @@ export async function assembleTurnPrompt(
     throw new Error("Invalid format for document template file.");
   }
 
-  // 5. Render the Prompt
+  // 6. Render the Prompt
   const documentSpecificData = isRecord(job.payload.document_specific_data)
     ? job.payload.document_specific_data
     : {};
@@ -156,7 +211,7 @@ export async function assembleTurnPrompt(
   if (typeof job.payload.model_slug !== "string") {
     throw new Error("PRECONDITION_FAILED: Job payload is missing 'model_slug'.");
   }
-  // 6. Persist the Assembled Prompt
+  // 7. Persist the Assembled Prompt
   let sourceContributionId: string | undefined;
   if ("target_contribution_id" in job.payload) {
     const rawTargetContributionId = job.payload.target_contribution_id;
@@ -203,7 +258,7 @@ export async function assembleTurnPrompt(
     );
   }
 
-  // 7. Return the Final AssembledPrompt
+  // 8. Return the Final AssembledPrompt
   return {
     promptContent: renderedPrompt,
     source_prompt_resource_id: response.record.id,

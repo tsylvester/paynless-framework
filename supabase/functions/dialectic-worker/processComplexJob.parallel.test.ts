@@ -11,6 +11,7 @@ import {
     DialecticJobRow, 
     GranularityPlannerFn, 
     DialecticPlanJobPayload, 
+    DialecticExecuteJobPayload,
     IDialecticJobDeps, 
     UnifiedAIResponse, 
     DialecticRecipeTemplateStep,
@@ -27,6 +28,7 @@ import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts
 import { describe, it, beforeEach } from 'https://deno.land/std@0.170.0/testing/bdd.ts';
 import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
+import { isModelContributionFileType } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
 import { DialecticStageRecipeStep, IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
 
 const mockClonedRecipeSteps: DialecticStageRecipeStep[] = [
@@ -293,6 +295,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             stageSlug: 'antithesis',
             model_id: 'model-id-cloned',
             walletId: 'wallet-id-cloned',
+            user_jwt: 'user-jwt-cloned',
         };
         if (!isJson(mockPayload)) {
             throw new Error('Test setup failed: mockPayload is not valid JSON');
@@ -376,9 +379,37 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
         
         const firstClonedStep = mockClonedRecipeSteps[0];
+        if (!isModelContributionFileType(firstClonedStep.output_type)) {
+            throw new Error(`Test setup failed: firstClonedStep.output_type '${firstClonedStep.output_type}' is not a valid ModelContributionFileTypes`);
+        }
+        const completedChildJobForStep1Payload: DialecticExecuteJobPayload = {
+            job_type: 'execute',
+            prompt_template_id: firstClonedStep.prompt_template_id!,
+            inputs: {},
+            output_type: firstClonedStep.output_type,
+            projectId: 'project-id-cloned',
+            sessionId: 'session-id-cloned',
+            stageSlug: 'antithesis',
+            model_id: 'model-id-cloned',
+            iterationNumber: 1,
+            continueUntilComplete: false,
+            walletId: 'wallet-id-cloned',
+            user_jwt: 'user-jwt-cloned',
+            canonicalPathParams: {
+                contributionType: 'thesis',
+                stageSlug: 'antithesis',
+            },
+            planner_metadata: {
+                recipe_step_id: firstClonedStep.id,
+                recipe_template_id: undefined,
+            },
+        };
+        if (!isJson(completedChildJobForStep1Payload)) {
+            throw new Error('Test setup failed: completedChildJobForStep1Payload is not valid JSON');
+        }
         const completedChildJobForStep1: DialecticJobRow = {
             id: 'child-step-1-cloned-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-            payload: { step_slug: firstClonedStep.step_slug },
+            payload: completedChildJobForStep1Payload,
             iteration_number: 1, status: 'completed',
             attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
             completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: wakingJob.id,
@@ -415,16 +446,46 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
     });
 
     it('should complete the parent job after the final step of a CLONED recipe', async () => {
-        const completedChildJobsForAllSteps = mockClonedRecipeSteps.map((step) => ({
-            id: `child-${step.id}-complete`, user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-            payload: { step_slug: step.step_slug },
-            iteration_number: 1, status: 'completed',
-            attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
-            completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
-            target_contribution_id: null, prerequisite_job_id: null,
-            is_test_job: false,
-            job_type: 'EXECUTE',
-        }));
+        const completedChildJobsForAllSteps = mockClonedRecipeSteps.map((step) => {
+            if (!isModelContributionFileType(step.output_type)) {
+                throw new Error(`Test setup failed: step.output_type '${step.output_type}' is not a valid ModelContributionFileTypes`);
+            }
+            const completedPayload: DialecticExecuteJobPayload = {
+                job_type: 'execute',
+                prompt_template_id: step.prompt_template_id!,
+                inputs: {},
+                output_type: step.output_type,
+                projectId: 'project-id-cloned',
+                sessionId: 'session-id-cloned',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-cloned',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-cloned',
+                user_jwt: 'user-jwt-cloned',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: step.id,
+                    recipe_template_id: undefined,
+                },
+            };
+            if (!isJson(completedPayload)) {
+                throw new Error(`Test setup failed: completedPayload for step ${step.id} is not valid JSON`);
+            }
+            return {
+                id: `child-${step.id}-complete`, user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
+                payload: completedPayload,
+                iteration_number: 1, status: 'completed',
+                attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
+                completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
+                target_contribution_id: null, prerequisite_job_id: null,
+                is_test_job: false,
+                job_type: 'EXECUTE',
+            };
+        });
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
             ...mockSupabase,
@@ -535,9 +596,37 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
     
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
         
+        if (!isModelContributionFileType(step1.output_type)) {
+            throw new Error(`Test setup failed: step1.output_type '${step1.output_type}' is not a valid ModelContributionFileTypes`);
+        }
+        const completedChildJobForStep1Payload: DialecticExecuteJobPayload = {
+            job_type: 'execute',
+            prompt_template_id: step1.prompt_template_id!,
+            inputs: {},
+            output_type: step1.output_type,
+            projectId: 'project-id-cloned',
+            sessionId: 'session-id-cloned',
+            stageSlug: 'antithesis',
+            model_id: 'model-id-cloned',
+            iterationNumber: 1,
+            continueUntilComplete: false,
+            walletId: 'wallet-id-cloned',
+            user_jwt: 'user-jwt-cloned',
+            canonicalPathParams: {
+                contributionType: 'thesis',
+                stageSlug: 'antithesis',
+            },
+            planner_metadata: {
+                recipe_step_id: step1.id,
+                recipe_template_id: undefined,
+            },
+        };
+        if (!isJson(completedChildJobForStep1Payload)) {
+            throw new Error('Test setup failed: completedChildJobForStep1Payload is not valid JSON');
+        }
         const completedChildJobForStep1: DialecticJobRow = {
             id: 'child-step-1-cloned-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-            payload: { step_slug: step1.step_slug },
+            payload: completedChildJobForStep1Payload,
             iteration_number: 1, status: 'completed',
             attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
             completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: wakingJob.id,
@@ -618,6 +707,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             stageSlug: 'antithesis',
             model_id: 'model-id-parallel',
             walletId: 'wallet-id-parallel',
+            user_jwt: 'user-jwt-parallel',
         };
         if (!isJson(mockPayload)) {
             throw new Error('Test setup failed: mockPayload is not valid JSON');
@@ -691,9 +781,38 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
 
     it('should enqueue all parallel steps when their single dependency is met (fork)', async () => {
         // Arrange: Step 1 is complete.
+        const step1 = mockParallelTemplateRecipeSteps.find(s => s.step_slug === 'step-one')!;
+        if (!isModelContributionFileType(step1.output_type)) {
+            throw new Error(`Test setup failed: step1.output_type '${step1.output_type}' is not a valid ModelContributionFileTypes`);
+        }
+        const completedChildJobForStep1Payload: DialecticExecuteJobPayload = {
+            job_type: 'execute',
+            prompt_template_id: step1.prompt_template_id!,
+            inputs: {},
+            output_type: step1.output_type,
+            projectId: 'project-id-parallel',
+            sessionId: 'session-id-parallel',
+            stageSlug: 'antithesis',
+            model_id: 'model-id-parallel',
+            iterationNumber: 1,
+            continueUntilComplete: false,
+            walletId: 'wallet-id-parallel',
+            user_jwt: 'user-jwt-parallel',
+            canonicalPathParams: {
+                contributionType: 'thesis',
+                stageSlug: 'antithesis',
+            },
+            planner_metadata: {
+                recipe_step_id: step1.id,
+                recipe_template_id: 'parallel-template-1',
+            },
+        };
+        if (!isJson(completedChildJobForStep1Payload)) {
+            throw new Error('Test setup failed: completedChildJobForStep1Payload is not valid JSON');
+        }
         const completedChildJobForStep1: DialecticJobRow = {
             id: 'child-step-1-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-            payload: { step_slug: 'step-one' },
+            payload: completedChildJobForStep1Payload,
             iteration_number: 1, status: 'completed',
             attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
             completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -719,10 +838,47 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
 
     it('should NOT enqueue the join step when only one of two parallel dependencies is met', async () => {
         // Arrange: Step 2a is complete, but 2b is not.
+        const step1 = mockParallelTemplateRecipeSteps.find(s => s.step_slug === 'step-one')!;
+        const step2a = mockParallelTemplateRecipeSteps.find(s => s.step_slug === 'step-two-a')!;
+        
+        const createPayload = (step: DialecticRecipeTemplateStep): DialecticExecuteJobPayload => {
+            if (!isModelContributionFileType(step.output_type)) {
+                throw new Error(`Test setup failed: step.output_type '${step.output_type}' is not a valid ModelContributionFileTypes`);
+            }
+            return {
+                job_type: 'execute',
+                prompt_template_id: step.prompt_template_id!,
+                inputs: {},
+                output_type: step.output_type,
+                projectId: 'project-id-parallel',
+                sessionId: 'session-id-parallel',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-parallel',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-parallel',
+                user_jwt: 'user-jwt-parallel',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: step.id,
+                    recipe_template_id: 'parallel-template-1',
+                },
+            };
+        };
+
+        const payload1 = createPayload(step1);
+        const payload2a = createPayload(step2a);
+        if (!isJson(payload1) || !isJson(payload2a)) {
+            throw new Error('Test setup failed: payloads are not valid JSON');
+        }
+
         const completedChildJobs: DialecticJobRow[] = [
             {
                 id: 'child-step-1-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-one' },
+                payload: payload1,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -730,7 +886,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             },
             {
                 id: 'child-step-2a-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-two-a' },
+                payload: payload2a,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -757,10 +913,49 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
 
     it('should enqueue the join step when all parallel dependencies are met (join)', async () => {
         // Arrange: Both steps 2a and 2b are complete.
+        const step1 = mockParallelTemplateRecipeSteps.find(s => s.step_slug === 'step-one')!;
+        const step2a = mockParallelTemplateRecipeSteps.find(s => s.step_slug === 'step-two-a')!;
+        const step2b = mockParallelTemplateRecipeSteps.find(s => s.step_slug === 'step-two-b')!;
+        
+        const createPayload = (step: DialecticRecipeTemplateStep): DialecticExecuteJobPayload => {
+            if (!isModelContributionFileType(step.output_type)) {
+                throw new Error(`Test setup failed: step.output_type '${step.output_type}' is not a valid ModelContributionFileTypes`);
+            }
+            return {
+                job_type: 'execute',
+                prompt_template_id: step.prompt_template_id!,
+                inputs: {},
+                output_type: step.output_type,
+                projectId: 'project-id-parallel',
+                sessionId: 'session-id-parallel',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-parallel',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-parallel',
+                user_jwt: 'user-jwt-parallel',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: step.id,
+                    recipe_template_id: 'parallel-template-1',
+                },
+            };
+        };
+
+        const payload1 = createPayload(step1);
+        const payload2a = createPayload(step2a);
+        const payload2b = createPayload(step2b);
+        if (!isJson(payload1) || !isJson(payload2a) || !isJson(payload2b)) {
+            throw new Error('Test setup failed: payloads are not valid JSON');
+        }
+
         const completedChildJobs: DialecticJobRow[] = [
              {
                 id: 'child-step-1-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-one' },
+                payload: payload1,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -768,7 +963,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             },
             {
                 id: 'child-step-2a-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-two-a' },
+                payload: payload2a,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -776,7 +971,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             },
              {
                 id: 'child-step-2b-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-two-b' },
+                payload: payload2b,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -994,6 +1189,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             stageSlug: 'antithesis',
             model_id: 'model-id-cloned-parallel',
             walletId: 'wallet-id-cloned-parallel',
+            user_jwt: 'user-jwt-cloned-parallel',
         };
         if (!isJson(mockPayload)) {
             throw new Error('Test setup failed: mockPayload is not valid JSON');
@@ -1066,9 +1262,38 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
     });
 
     it('should enqueue all parallel steps when their single dependency is met (fork)', async () => {
+        const step1 = mockParallelClonedRecipeSteps.find(s => s.step_slug === 'step-one')!;
+        if (!isModelContributionFileType(step1.output_type)) {
+            throw new Error(`Test setup failed: step1.output_type '${step1.output_type}' is not a valid ModelContributionFileTypes`);
+        }
+        const completedChildJobForStep1Payload: DialecticExecuteJobPayload = {
+            job_type: 'execute',
+            prompt_template_id: step1.prompt_template_id!,
+            inputs: {},
+            output_type: step1.output_type,
+            projectId: 'project-id-cloned-parallel',
+            sessionId: 'session-id-cloned-parallel',
+            stageSlug: 'antithesis',
+            model_id: 'model-id-cloned-parallel',
+            iterationNumber: 1,
+            continueUntilComplete: false,
+            walletId: 'wallet-id-cloned-parallel',
+            user_jwt: 'user-jwt-cloned-parallel',
+            canonicalPathParams: {
+                contributionType: 'thesis',
+                stageSlug: 'antithesis',
+            },
+            planner_metadata: {
+                recipe_step_id: step1.id,
+                recipe_template_id: undefined,
+            },
+        };
+        if (!isJson(completedChildJobForStep1Payload)) {
+            throw new Error('Test setup failed: completedChildJobForStep1Payload is not valid JSON');
+        }
         const completedChildJobForStep1: DialecticJobRow = {
             id: 'child-cloned-step-1-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-            payload: { step_slug: 'step-one' },
+            payload: completedChildJobForStep1Payload,
             iteration_number: 1, status: 'completed',
             attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
             completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -1090,10 +1315,47 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
     });
 
     it('should NOT enqueue the join step when only one of two parallel dependencies is met', async () => {
+        const step1 = mockParallelClonedRecipeSteps.find(s => s.step_slug === 'step-one')!;
+        const step2a = mockParallelClonedRecipeSteps.find(s => s.step_slug === 'step-two-a')!;
+        
+        const createPayload = (step: DialecticStageRecipeStep): DialecticExecuteJobPayload => {
+            if (!isModelContributionFileType(step.output_type)) {
+                throw new Error(`Test setup failed: step.output_type '${step.output_type}' is not a valid ModelContributionFileTypes`);
+            }
+            return {
+                job_type: 'execute',
+                prompt_template_id: step.prompt_template_id!,
+                inputs: {},
+                output_type: step.output_type,
+                projectId: 'project-id-cloned-parallel',
+                sessionId: 'session-id-cloned-parallel',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-cloned-parallel',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-cloned-parallel',
+                user_jwt: 'user-jwt-cloned-parallel',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: step.id,
+                    recipe_template_id: undefined,
+                },
+            };
+        };
+
+        const payload1 = createPayload(step1);
+        const payload2a = createPayload(step2a);
+        if (!isJson(payload1) || !isJson(payload2a)) {
+            throw new Error('Test setup failed: payloads are not valid JSON');
+        }
+
         const completedChildJobs: DialecticJobRow[] = [
             {
                 id: 'child-cloned-step-1-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-one' },
+                payload: payload1,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -1101,7 +1363,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             },
             {
                 id: 'child-cloned-step-2a-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-two-a' },
+                payload: payload2a,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -1125,10 +1387,49 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
     });
 
     it('should enqueue the join step when all parallel dependencies are met (join)', async () => {
+        const step1 = mockParallelClonedRecipeSteps.find(s => s.step_slug === 'step-one')!;
+        const step2a = mockParallelClonedRecipeSteps.find(s => s.step_slug === 'step-two-a')!;
+        const step2b = mockParallelClonedRecipeSteps.find(s => s.step_slug === 'step-two-b')!;
+        
+        const createPayload = (step: DialecticStageRecipeStep): DialecticExecuteJobPayload => {
+            if (!isModelContributionFileType(step.output_type)) {
+                throw new Error(`Test setup failed: step.output_type '${step.output_type}' is not a valid ModelContributionFileTypes`);
+            }
+            return {
+                job_type: 'execute',
+                prompt_template_id: step.prompt_template_id!,
+                inputs: {},
+                output_type: step.output_type,
+                projectId: 'project-id-cloned-parallel',
+                sessionId: 'session-id-cloned-parallel',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-cloned-parallel',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-cloned-parallel',
+                user_jwt: 'user-jwt-cloned-parallel',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: step.id,
+                    recipe_template_id: undefined,
+                },
+            };
+        };
+
+        const payload1 = createPayload(step1);
+        const payload2a = createPayload(step2a);
+        const payload2b = createPayload(step2b);
+        if (!isJson(payload1) || !isJson(payload2a) || !isJson(payload2b)) {
+            throw new Error('Test setup failed: payloads are not valid JSON');
+        }
+
         const completedChildJobs: DialecticJobRow[] = [
              {
                 id: 'child-cloned-step-1-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-one' },
+                payload: payload1,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -1136,7 +1437,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             },
             {
                 id: 'child-cloned-step-2a-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-two-a' },
+                payload: payload2a,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -1144,7 +1445,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             },
              {
                 id: 'child-cloned-step-2b-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-two-b' },
+                payload: payload2b,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,

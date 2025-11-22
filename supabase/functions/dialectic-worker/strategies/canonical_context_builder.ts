@@ -7,6 +7,7 @@ const intermediateFileTypeMap: Partial<Record<FileType, ContributionType>> = {
     [FileType.PairwiseSynthesisChunk]: 'pairwise_synthesis_chunk',
     [FileType.ReducedSynthesis]: 'reduced_synthesis',
     [FileType.RagContextSummary]: 'rag_context_summary',
+    [FileType.HeaderContext]: 'header_context',
 };
 
 export function createCanonicalPathParams(

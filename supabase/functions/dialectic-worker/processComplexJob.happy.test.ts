@@ -14,6 +14,7 @@ import {
     IDialecticJobDeps, 
     UnifiedAIResponse, 
     DialecticRecipeTemplateStep,
+    DialecticExecuteJobPayload,
 } from '../dialectic-service/dialectic.interface.ts';
 import { createMockJobProcessors, MockJobProcessorsSpies } from '../_shared/dialectic.mock.ts';
 import { isRecord, isJson } from '../_shared/utils/type_guards.ts';
@@ -159,6 +160,7 @@ describe('processComplexJob', () => {
             stageSlug: 'antithesis',
             model_id: 'model-id-complex',
             walletId: 'wallet-id-complex',
+            user_jwt: 'user-jwt-complex',
         };
 
         if (!isJson(mockPayload)) {
@@ -532,9 +534,34 @@ describe('processComplexJob', () => {
         // - Add context to the job payload to indicate that step 1 is complete.
         //   The NEW logic will determine this by seeing a completed child job for the first step.
         const firstStep = mockTemplateRecipeSteps[0];
+        const completedChildJobForStep1Payload: DialecticExecuteJobPayload = {
+            job_type: 'execute',
+            prompt_template_id: 'prompt-template-1',
+            inputs: {},
+            output_type: FileType.business_case,
+            projectId: 'project-id-complex',
+            sessionId: 'session-id-complex',
+            stageSlug: 'antithesis',
+            model_id: 'model-id-complex',
+            iterationNumber: 1,
+            continueUntilComplete: false,
+            walletId: 'wallet-id-complex',
+            user_jwt: 'user-jwt-123',
+            canonicalPathParams: {
+                contributionType: 'thesis',
+                stageSlug: 'antithesis',
+            },
+            planner_metadata: {
+                recipe_step_id: firstStep.id, // New logic uses planner_metadata.recipe_step_id
+                recipe_template_id: 'template-uuid-1',
+            },
+        };
+        if (!isJson(completedChildJobForStep1Payload)) {
+            throw new Error('Test setup failed: completedChildJobForStep1Payload is not valid JSON');
+        }
         const completedChildJobForStep1: DialecticJobRow = {
             id: 'child-step-1-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-            payload: { step_slug: firstStep.step_slug }, // New logic will look for this
+            payload: completedChildJobForStep1Payload,
             iteration_number: 1, status: 'completed',
             attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
             completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: wakingJob.id,
@@ -581,9 +608,34 @@ describe('processComplexJob', () => {
         // Arrange:
         // - Set up the job context to be on the final step of the recipe.
         const completedChildJobsForAllSteps = mockTemplateRecipeSteps.map((step, i) => {
+            const completedPayload: DialecticExecuteJobPayload = {
+                job_type: 'execute',
+                prompt_template_id: step.prompt_template_id!,
+                inputs: {},
+                output_type: step.output_type,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: step.id, // New logic uses planner_metadata.recipe_step_id
+                    recipe_template_id: 'template-uuid-1',
+                },
+            };
+            if (!isJson(completedPayload)) {
+                throw new Error(`Test setup failed: completedPayload for step ${i} is not valid JSON`);
+            }
             return {
                 id: `child-step-${i}-complete`, user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: step.step_slug },
+                payload: completedPayload,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -618,5 +670,156 @@ describe('processComplexJob', () => {
         const finalUpdateCallArgs = updateSpy.callsArgs[updateSpy.callCount - 1];
         assert(isRecord(finalUpdateCallArgs[0]));
         assertEquals(finalUpdateCallArgs[0].status, 'completed');
+    });
+
+    it('should track completed steps using planner_metadata.recipe_step_id instead of step_slug', async () => {
+        // This test proves the target state: processComplexJob correctly tracks completed steps
+        // by looking up planner_metadata.recipe_step_id and mapping it to step_slug via stepSlugById.
+        // This prevents infinite loops where completed steps are re-planned.
+        
+        // Arrange:
+        // - Create a recipe with header_context step (build-stage-header) and a dependent step (business_case)
+        const headerContextStep: DialecticRecipeTemplateStep = {
+            step_key: 'build-stage-header-key',
+            step_name: 'Build Stage Header',
+            id: 'header-context-step-id',
+            template_id: 'template-uuid-1',
+            step_slug: 'build-stage-header',
+            job_type: 'PLAN',
+            prompt_type: 'Turn',
+            prompt_template_id: 'prompt-template-header',
+            output_type: FileType.HeaderContext,
+            granularity_strategy: 'all_to_one',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: {},
+            step_number: 1,
+            parallel_group: null,
+            branch_key: null,
+            step_description: 'Generate header context',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        };
+
+        const businessCaseStep: DialecticRecipeTemplateStep = {
+            step_key: 'business-case-key',
+            step_name: 'Business Case',
+            id: 'business-case-step-id',
+            template_id: 'template-uuid-1',
+            step_slug: 'business_case',
+            job_type: 'PLAN',
+            prompt_type: 'Turn',
+            prompt_template_id: 'prompt-template-business',
+            output_type: FileType.business_case,
+            granularity_strategy: 'per_source_document',
+            inputs_required: [
+                { type: 'header_context', required: true, slug: 'build-stage-header' }
+            ],
+            inputs_relevance: [],
+            outputs_required: {},
+            step_number: 2,
+            parallel_group: null,
+            branch_key: null,
+            step_description: 'Generate business case',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        };
+
+        const testRecipeSteps = [headerContextStep, businessCaseStep];
+        const testRecipeEdges = [
+            {
+                id: 'edge-header-to-business',
+                template_id: 'template-uuid-1',
+                from_step_id: 'header-context-step-id',
+                to_step_id: 'business-case-step-id',
+                created_at: new Date().toISOString(),
+            },
+        ];
+
+        // - Create a completed child job for header_context with planner_metadata.recipe_step_id (NOT step_slug)
+        const completedHeaderContextPayload: DialecticExecuteJobPayload = {
+            job_type: 'execute',
+            prompt_template_id: 'prompt-template-header',
+            inputs: {},
+            output_type: FileType.HeaderContext,
+            projectId: 'project-id-complex',
+            sessionId: 'session-id-complex',
+            stageSlug: 'antithesis',
+            model_id: 'model-id-complex',
+            iterationNumber: 1,
+            continueUntilComplete: false,
+            walletId: 'wallet-id-complex',
+            user_jwt: 'user-jwt-123',
+            canonicalPathParams: {
+                contributionType: 'thesis',
+                stageSlug: 'antithesis',
+            },
+            planner_metadata: {
+                recipe_step_id: 'header-context-step-id', // This is what processComplexJob should use
+                recipe_template_id: 'template-uuid-1',
+            },
+        };
+
+        if (!isJson(completedHeaderContextPayload)) {
+            throw new Error('completedHeaderContextPayload is not a valid JSON object');
+        }
+        const completedHeaderContextJob: DialecticJobRow = {
+            id: 'child-header-context-complete',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: completedHeaderContextPayload,
+            iteration_number: 1,
+            status: 'completed',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const wakingJob = { ...mockParentJob, status: 'waiting_for_children' };
+
+        const customSupabase = createMockSupabaseClient(wakingJob.user_id, {
+            ...mockSupabase,
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: testRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: testRecipeEdges, error: null } },
+                'dialectic_generation_jobs': { 
+                    select: { data: [completedHeaderContextJob], error: null },
+                    update: { data: [{}], error: null },
+                },
+            }
+        });
+
+        // - Set up planComplexStage to return empty array (we just want to verify which step it was called with)
+        mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
+
+        // Act:
+        // - Call processComplexJob
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+
+        // Assert:
+        // - planComplexStage was called ONCE with the SECOND step (business_case), NOT the first step (header_context)
+        //   This proves that processComplexJob correctly identified header_context as complete using planner_metadata.recipe_step_id
+        assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1, 'planComplexStage should be called exactly once');
+        const calledStep = mockProcessorSpies.planComplexStage.calls[0].args[3];
+        assertEquals(calledStep.step_slug, 'business_case', 'planComplexStage should be called with business_case step, not header_context');
+        assertEquals(calledStep.id, 'business-case-step-id', 'planComplexStage should be called with business_case step ID');
+        
+        // - Verify header_context step is NOT called (preventing infinite loop)
+        const headerContextWasCalled = mockProcessorSpies.planComplexStage.calls.some(
+            call => call.args[3].step_slug === 'build-stage-header'
+        );
+        assert(!headerContextWasCalled, 'planComplexStage should NOT be called with header_context step, proving it was recognized as complete');
     });
 });

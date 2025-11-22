@@ -129,7 +129,16 @@ const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
 	job_type: 'EXECUTE',
 	inputs_required: [{ type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true }],
 	inputs_relevance: [],
-	outputs_required: { documents: [], assembled_json: [], files_to_generate: [] },	
+	outputs_required: {
+		documents: [{
+			artifact_class: 'rendered_document',
+			file_type: 'markdown',
+			document_key: FileType.business_case_critique,
+			template_filename: 'business_case_critique.md',
+		}],
+		assembled_json: [],
+		files_to_generate: [],
+	},
 	granularity_strategy: 'per_source_document',
 	output_type: FileType.business_case_critique,
 	created_at: new Date().toISOString(),
@@ -587,5 +596,112 @@ Deno.test('planPerSourceDocument includes planner_metadata with recipe_step_id i
 			'planner_metadata.recipe_step_id should match the recipe step id for every child job',
 		);
 	}
+});
+
+// ==============================================
+// document_key extraction and validation tests
+// ==============================================
+
+Deno.test('planPerSourceDocument sets document_key in payload when recipeStep.outputs_required.documents[0].document_key is present', () => {
+	const recipeStepWithDocumentKey: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.business_case_critique,
+				template_filename: 'business_case_critique.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [],
+		},
+	};
+
+	const childPayloads = planPerSourceDocument(
+		MOCK_SOURCE_DOCS,
+		MOCK_PARENT_JOB,
+		recipeStepWithDocumentKey,
+		'user-jwt-123'
+	);
+
+	assertEquals(childPayloads.length, 2, 'Should create 2 child jobs, one for each source doc');
+	for (const payload of childPayloads) {
+		assertEquals(
+			payload.document_key,
+			FileType.business_case_critique,
+			'document_key should be extracted from recipeStep.outputs_required.documents[0].document_key',
+		);
+	}
+});
+
+Deno.test('planPerSourceDocument does NOT set document_key when outputs_required.documents array is empty', () => {
+	const recipeStepWithEmptyDocuments: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		outputs_required: {
+			documents: [],
+			assembled_json: [],
+			files_to_generate: [],
+		},
+	};
+
+	const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithEmptyDocuments, 'user-jwt-123');
+	
+	assertEquals(childPayloads.length, 2, 'Should create 2 child jobs, one for each source doc');
+	for (const payload of childPayloads) {
+		assert(
+			!('document_key' in payload) || payload.document_key === undefined || payload.document_key === null,
+			'document_key should NOT be set when documents array is empty (step does not output documents)',
+		);
+	}
+});
+
+Deno.test('planPerSourceDocument does NOT set document_key when outputs_required is missing documents property', () => {
+	const recipeStepWithoutDocumentsProperty: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		outputs_required: {
+			header_context_artifact: {
+				type: 'header_context',
+				document_key: FileType.HeaderContext,
+				artifact_class: 'header_context',
+				file_type: 'json',
+			},
+			assembled_json: [],
+			files_to_generate: [],
+		} as unknown as DialecticStageRecipeStep['outputs_required'],
+	};
+
+	const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithoutDocumentsProperty, 'user-jwt-123');
+	
+	assertEquals(childPayloads.length, 2, 'Should create 2 child jobs, one for each source doc');
+	for (const payload of childPayloads) {
+		assert(
+			!('document_key' in payload) || payload.document_key === undefined || payload.document_key === null,
+			'document_key should NOT be set when outputs_required is missing documents property (step does not output documents)',
+		);
+	}
+});
+
+Deno.test('planPerSourceDocument throws error when outputs_required.documents[0] is missing document_key property', () => {
+	const recipeStepWithoutDocumentKey = {
+		...MOCK_RECIPE_STEP,
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				template_filename: 'business_case_critique.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [],
+		},
+	} as unknown as DialecticStageRecipeStep;
+
+	assertThrows(
+		() => {
+			planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithoutDocumentKey, 'user-jwt-123');
+		},
+		Error,
+		'planPerSourceDocument requires recipeStep.outputs_required.documents[0].document_key but it is missing',
+		'Should throw error when documents[0] is missing document_key property',
+	);
 });
  
