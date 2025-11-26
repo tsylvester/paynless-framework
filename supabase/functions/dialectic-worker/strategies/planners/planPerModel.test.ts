@@ -12,6 +12,8 @@ import type {
 	DialecticPlanJobPayload,
 	DialecticStageRecipeStep,
 	DialecticExecuteJobPayload,
+	DialecticRecipeTemplateStep,
+	ContextForDocument,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { planPerModel } from './planPerModel.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
@@ -112,7 +114,10 @@ const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
 			template_filename: 'synthesis.md',
 		}],
 		assembled_json: [],
-		files_to_generate: [],
+		files_to_generate: [{
+			from_document_key: FileType.Synthesis,
+			template_filename: 'synthesis.md',
+		}],
 	},
 	granularity_strategy: 'per_model',
 	output_type: FileType.technical_requirements,
@@ -141,18 +146,20 @@ Deno.test('planPerModel should create a single job with correct properties', () 
 	const jobPayload = childPayloads[0];
 	assertExists(jobPayload);
 
-	// This assertion will fail because the source uses `prompt_template_name`
-	assertEquals(jobPayload.prompt_template_id, MOCK_RECIPE_STEP.prompt_template_id);
-	assert(!('prompt_template_name' in jobPayload), 'The deprecated prompt_template_name property should not be present');
-
-	assertEquals(jobPayload.output_type, MOCK_RECIPE_STEP.output_type);
-	assertEquals(jobPayload.model_id, MOCK_PARENT_JOB.payload.model_id, "Child job's model_id should match the parent job's model_id");
 	assertEquals(jobPayload.job_type, 'execute');
-	assertEquals(
-		jobPayload.sourceContributionId,
-		MOCK_SOURCE_DOCS[0].id,
-		'sourceContributionId should match the anchor document id when provided'
-	);
+	if (jobPayload.job_type === 'execute') {
+		assertEquals(jobPayload.prompt_template_id, MOCK_RECIPE_STEP.prompt_template_id);
+		assert(!('prompt_template_name' in jobPayload), 'The deprecated prompt_template_name property should not be present');
+		assertEquals(jobPayload.output_type, MOCK_RECIPE_STEP.output_type);
+		assertEquals(jobPayload.model_id, MOCK_PARENT_JOB.payload.model_id, "Child job's model_id should match the parent job's model_id");
+		assertEquals(
+			jobPayload.sourceContributionId,
+			MOCK_SOURCE_DOCS[0].id,
+			'sourceContributionId should match the anchor document id when provided'
+		);
+	} else {
+		throw new Error('Expected EXECUTE job');
+	}
 });
 
 Deno.test('planPerModel should throw an error if sourceDocs are empty', () => {
@@ -225,12 +232,16 @@ Deno.test('planPerModel includes planner_metadata with recipe_step_id in child p
 	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
 	const job = childJobs[0];
 	assertExists(job, 'Child job should exist');
-	assertExists(job.planner_metadata, 'Child job should include planner_metadata');
-	assertEquals(
-		job.planner_metadata?.recipe_step_id,
-		'recipe-step-model-789',
-		'planner_metadata.recipe_step_id should match the recipe step id',
-	);
+	if (job.job_type === 'execute') {
+		assertExists(job.planner_metadata, 'Child job should include planner_metadata');
+		assertEquals(
+			job.planner_metadata?.recipe_step_id,
+			'recipe-step-model-789',
+			'planner_metadata.recipe_step_id should match the recipe step id',
+		);
+	} else {
+		throw new Error('Expected EXECUTE job');
+	}
 });
 
 Deno.test('planPerModel inherits all fields from parent job payload including model_slug and user_jwt', () => {
@@ -272,11 +283,14 @@ Deno.test('planPerModel sets document_key in payload when recipeStep.outputs_req
 			documents: [{
 				artifact_class: 'rendered_document',
 				file_type: 'markdown',
-				document_key: 'synthesis' as FileType,
+				document_key: FileType.Synthesis,
 				template_filename: 'synthesis.md',
 			}],
 			assembled_json: [],
-			files_to_generate: [],
+			files_to_generate: [{
+				from_document_key: FileType.Synthesis,
+				template_filename: 'synthesis.md',
+			}],
 		},
 	};
 
@@ -285,31 +299,37 @@ Deno.test('planPerModel sets document_key in payload when recipeStep.outputs_req
 	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
 	const job = childJobs[0];
 	assertExists(job, 'Child job should exist');
-	assertEquals(
-		job.document_key,
-		'synthesis',
-		'document_key should be extracted from recipeStep.outputs_required.documents[0].document_key',
-	);
+	if (job.job_type === 'execute') {
+		assertEquals(
+			job.document_key,
+			'synthesis',
+			'document_key should be extracted from recipeStep.outputs_required.documents[0].document_key',
+		);
+	} else {
+		throw new Error('Expected EXECUTE job');
+	}
 });
 
-Deno.test('planPerModel does NOT set document_key when outputs_required.documents array is empty', () => {
+Deno.test('planPerModel throws error when outputs_required.documents array is empty for EXECUTE job', async () => {
 	const recipeStepWithEmptyDocuments: DialecticStageRecipeStep = {
 		...MOCK_RECIPE_STEP,
 		outputs_required: {
 			documents: [],
 			assembled_json: [],
-			files_to_generate: [],
+			files_to_generate: [{
+				from_document_key: FileType.Synthesis,
+				template_filename: 'synthesis.md',
+			}],
 		},
-	};
+	} as unknown as DialecticStageRecipeStep;
 
-	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithEmptyDocuments, 'user-jwt-123');
-	
-	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
-	const job = childJobs[0];
-	assertExists(job, 'Child job should exist');
-	assert(
-		!('document_key' in job) || job.document_key === undefined || job.document_key === null,
-		'document_key should NOT be set when documents array is empty (step does not output documents)',
+	await assertRejects(
+		async () => {
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithEmptyDocuments, 'user-jwt-123');
+		},
+		Error,
+		'planPerModel requires recipeStep.outputs_required.documents to have at least one entry for EXECUTE jobs',
+		'Should throw error when documents array is empty for EXECUTE job',
 	);
 });
 
@@ -323,7 +343,10 @@ Deno.test('planPerModel throws error when outputs_required.documents[0] is missi
 				template_filename: 'synthesis.md',
 			}],
 			assembled_json: [],
-			files_to_generate: [],
+			files_to_generate: [{
+				from_document_key: FileType.Synthesis,
+				template_filename: 'synthesis.md',
+			}],
 		},
 	} as unknown as DialecticStageRecipeStep;
 
@@ -348,7 +371,10 @@ Deno.test('planPerModel throws error when outputs_required.documents[0].document
 				template_filename: 'synthesis.md',
 			}],
 			assembled_json: [],
-			files_to_generate: [],
+			files_to_generate: [{
+				from_document_key: FileType.Synthesis,
+				template_filename: 'synthesis.md',
+			}],
 		},
 	};
 
@@ -373,7 +399,10 @@ Deno.test('planPerModel throws error when outputs_required.documents[0].document
 				template_filename: 'synthesis.md',
 			}],
 			assembled_json: [],
-			files_to_generate: [],
+			files_to_generate: [{
+				from_document_key: FileType.Synthesis,
+				template_filename: 'synthesis.md',
+			}],
 		},
 	};
 
@@ -387,7 +416,7 @@ Deno.test('planPerModel throws error when outputs_required.documents[0].document
 	);
 });
 
-Deno.test('planPerModel does NOT set document_key when outputs_required is missing documents property', () => {
+Deno.test('planPerModel throws error when outputs_required is missing documents property for EXECUTE job', async () => {
 	const recipeStepWithoutDocumentsProperty: DialecticStageRecipeStep = {
 		...MOCK_RECIPE_STEP,
 		outputs_required: {
@@ -398,17 +427,251 @@ Deno.test('planPerModel does NOT set document_key when outputs_required is missi
 				file_type: 'json',
 			},
 			assembled_json: [],
-			files_to_generate: [],
+			files_to_generate: [{
+				from_document_key: FileType.Synthesis,
+				template_filename: 'synthesis.md',
+			}],
 		} as unknown as DialecticStageRecipeStep['outputs_required'],
 	};
 
-	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithoutDocumentsProperty, 'user-jwt-123');
+	await assertRejects(
+		async () => {
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithoutDocumentsProperty, 'user-jwt-123');
+		},
+		Error,
+		'planPerModel requires recipeStep.outputs_required.documents for EXECUTE jobs, but documents is missing',
+		'Should throw error when documents property is missing for EXECUTE job',
+	);
+});
+
+Deno.test('planPerModel includes context_for_documents in payload for PLAN jobs with valid context_for_documents', () => {
+	const planRecipeStep: DialecticRecipeTemplateStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'PLAN',
+		output_type: FileType.HeaderContext,
+		outputs_required: {
+			context_for_documents: [
+				{
+					document_key: FileType.business_case,
+					content_to_include: {
+						field1: '',
+						field2: [],
+					},
+				},
+			],
+			documents: [],
+			assembled_json: [],
+			files_to_generate: [],
+		},
+		step_number: 1,
+		template_id: 'template-id-123',
+	};
+
+	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStep, 'user-jwt-123');
 	
 	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
 	const job = childJobs[0];
 	assertExists(job, 'Child job should exist');
-	assert(
-		!('document_key' in job) || job.document_key === undefined || job.document_key === null,
-		'document_key should NOT be set when outputs_required is missing documents property (step does not output documents)',
+	const planPayload = job;
+	assertExists(planPayload.context_for_documents, 'PLAN job payload should include context_for_documents');
+	assertEquals(planPayload.context_for_documents.length, 1, 'context_for_documents should have one entry');
+	assertEquals(planPayload.context_for_documents[0].document_key, FileType.business_case, 'document_key should match');
+});
+
+Deno.test('planPerModel throws error for PLAN job when context_for_documents is missing', async () => {
+	const planRecipeStepWithoutContext: DialecticRecipeTemplateStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'PLAN',
+		output_type: FileType.HeaderContext,
+		outputs_required: {
+			documents: [],
+			assembled_json: [],
+			files_to_generate: [],
+		},
+		step_number: 1,
+		template_id: 'template-id-123',
+	} as unknown as DialecticRecipeTemplateStep;
+
+	await assertRejects(
+		async () => {
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStepWithoutContext, 'user-jwt-123');
+		},
+		Error,
+		'planPerModel requires',
+		'Should throw error when context_for_documents is missing for PLAN job',
+	);
+});
+
+Deno.test('planPerModel throws error for PLAN job when context_for_documents entry is missing document_key', async () => {
+	const planRecipeStepWithoutDocumentKey: DialecticRecipeTemplateStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'PLAN',
+		output_type: FileType.HeaderContext,
+		outputs_required: {
+			context_for_documents: [
+				{
+					content_to_include: {
+						field1: '',
+					},
+				} as unknown as ContextForDocument,
+			],
+			documents: [],
+			assembled_json: [],
+			files_to_generate: [],
+		},
+		step_number: 1,
+		template_id: 'template-id-123',
+	} as unknown as DialecticRecipeTemplateStep;
+
+	await assertRejects(
+		async () => {
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStepWithoutDocumentKey, 'user-jwt-123');
+		},
+		Error,
+		'planPerModel requires',
+		'Should throw error when context_for_documents entry is missing document_key',
+	);
+});
+
+Deno.test('planPerModel throws error for PLAN job when context_for_documents entry is missing content_to_include', async () => {
+	const planRecipeStepWithoutContentToInclude: DialecticRecipeTemplateStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'PLAN',
+		output_type: FileType.HeaderContext,
+		outputs_required: {
+			context_for_documents: [
+				{
+					document_key: FileType.business_case,
+				} as unknown as ContextForDocument,
+			],
+			documents: [],
+			assembled_json: [],
+			files_to_generate: [],
+		},
+		step_number: 1,
+		template_id: 'template-id-123',
+	} as unknown as DialecticRecipeTemplateStep;
+
+	await assertRejects(
+		async () => {
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStepWithoutContentToInclude, 'user-jwt-123');
+		},
+		Error,
+		'planPerModel requires',
+		'Should throw error when context_for_documents entry is missing content_to_include',
+	);
+});
+
+Deno.test('planPerModel successfully creates payload for EXECUTE job with valid files_to_generate', () => {
+	const executeRecipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.business_case,
+				template_filename: 'thesis_business_case.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [
+				{
+					from_document_key: FileType.business_case,
+					template_filename: 'thesis_business_case.md',
+				},
+			],
+		},
+	};
+
+	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, 'user-jwt-123');
+	
+	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+	const job = childJobs[0];
+	assertExists(job, 'Child job should exist');
+	assertEquals(job.job_type, 'execute', 'Job type should be execute');
+});
+
+Deno.test('planPerModel throws error for EXECUTE job when files_to_generate is missing', async () => {
+	const executeRecipeStepWithoutFiles: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.business_case,
+				template_filename: 'thesis_business_case.md',
+			}],
+			assembled_json: [],
+		},
+	} as unknown as DialecticStageRecipeStep;
+
+	await assertRejects(
+		async () => {
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStepWithoutFiles, 'user-jwt-123');
+		},
+		Error,
+		'planPerModel requires',
+		'Should throw error when files_to_generate is missing for EXECUTE job',
+	);
+});
+
+Deno.test('planPerModel throws error for EXECUTE job when files_to_generate entry is missing from_document_key', async () => {
+	const executeRecipeStepWithoutFromDocumentKey: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.business_case,
+				template_filename: 'thesis_business_case.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [
+				{
+					template_filename: 'thesis_business_case.md',
+				} as unknown as { from_document_key: FileType; template_filename: string },
+			],
+		},
+	} as unknown as DialecticStageRecipeStep;
+
+	await assertRejects(
+		async () => {
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStepWithoutFromDocumentKey, 'user-jwt-123');
+		},
+		Error,
+		'planPerModel requires',
+		'Should throw error when files_to_generate entry is missing from_document_key',
+	);
+});
+
+Deno.test('planPerModel throws error for EXECUTE job when files_to_generate entry is missing template_filename', async () => {
+	const executeRecipeStepWithoutTemplateFilename: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.business_case,
+				template_filename: 'thesis_business_case.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [
+				{
+					from_document_key: FileType.business_case,
+				} as unknown as { from_document_key: FileType; template_filename: string },
+			],
+		},
+	} as unknown as DialecticStageRecipeStep;
+
+	await assertRejects(
+		async () => {
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStepWithoutTemplateFilename, 'user-jwt-123');
+		},
+		Error,
+		'planPerModel requires',
+		'Should throw error when files_to_generate entry is missing template_filename',
 	);
 });

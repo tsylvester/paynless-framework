@@ -4,6 +4,11 @@
 {executive_summary}
 {{/section:executive_summary}}
 
+{{#section:mvp_description}}
+# MVP Description
+{mvp_description}
+{{/section:mvp_description}}
+
 {{#section:user_problem_validation}}
 # User Problem Validation
 {user_problem_validation}

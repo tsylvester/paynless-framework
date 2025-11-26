@@ -1421,6 +1421,119 @@ describe('planComplexStage', () => {
             'parent payload.stageSlug is required'
         );
     });
+
+    it('should correctly create PLAN child jobs when planner returns PLAN payload for PLAN recipe step', async () => {
+        // Arrange: Add seed_prompt resource required by the recipe step
+        const seedPromptResource: DialecticProjectResourceRow = {
+            id: 'seed-prompt-resource-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'seed_prompt.txt',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/plain',
+            size_bytes: 100,
+            resource_description: { description: 'Seed prompt for thesis stage' },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'seed_prompt',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'thesis',
+        };
+        mockProjectResources.push(seedPromptResource);
+
+        // Arrange: Create a PLAN recipe step (like 'build-stage-header' that generates header_context)
+        const planRecipeStep: DialecticRecipeStep = {
+            id: 'step-plan-header',
+            instance_id: 'instance-uuid-456',
+            template_step_id: 'template-step-plan',
+            step_key: 'thesis_build_stage_header',
+            step_slug: 'build-stage-header',
+            step_name: 'Build Stage Header',
+            step_description: 'Generate HeaderContext JSON',
+            job_type: 'PLAN',
+            prompt_type: 'Planner',
+            prompt_template_id: 'planner-prompt-uuid',
+            output_type: FileType.HeaderContext,
+            granularity_strategy: 'all_to_one',
+            inputs_required: [{ type: 'seed_prompt', slug: 'thesis', required: true }],
+            inputs_relevance: [],
+            outputs_required: {
+                context_for_documents: [
+                    {
+                        document_key: FileType.business_case,
+                        content_to_include: { field1: '', field2: '' },
+                    },
+                ],
+            },
+            config_override: {},
+            object_filter: {},
+            output_overrides: {},
+            is_skipped: false,
+            execution_order: 1,
+            parallel_group: null,
+            branch_key: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        };
+
+        // Arrange: Mock a planner that returns PLAN payload (like planAllToOne when recipeStep.job_type === 'PLAN')
+        const planPayload: DialecticPlanJobPayload = {
+            job_type: 'PLAN',
+            projectId: mockParentJob.payload.projectId,
+            sessionId: mockParentJob.payload.sessionId,
+            stageSlug: mockParentJob.payload.stageSlug,
+            iterationNumber: mockParentJob.payload.iterationNumber,
+            model_id: mockParentJob.payload.model_id,
+            model_slug: mockParentJob.payload.model_id,
+            user_jwt: mockParentJob.payload.user_jwt,
+            walletId: mockParentJob.payload.walletId,
+            continueUntilComplete: mockParentJob.payload.continueUntilComplete,
+            maxRetries: mockParentJob.payload.maxRetries,
+            continuation_count: mockParentJob.payload.continuation_count,
+            is_test_job: false,
+            context_for_documents: [
+                {
+                    document_key: FileType.business_case,
+                    content_to_include: { field1: '', field2: '' },
+                },
+            ],
+        };
+
+        const plannerFn: GranularityPlannerFn = () => [planPayload];
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        // Act: Call planComplexStage with PLAN recipe step
+        const childJobs = await planComplexStage(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockDeps,
+            planRecipeStep,
+            'user-jwt-123'
+        );
+
+        // Assert: Child job should be created with job_type: 'PLAN' (not hardcoded 'EXECUTE')
+        assertEquals(childJobs.length, 1, 'Should create one PLAN child job');
+        const childJob = childJobs[0];
+        assertEquals(childJob.job_type, 'PLAN', 'Child job row should have job_type: PLAN, not hardcoded EXECUTE');
+        assertEquals(childJob.parent_job_id, mockParentJob.id);
+
+        // Assert: Payload should be valid DialecticPlanJobPayload
+        assert(isDialecticPlanJobPayload(childJob.payload), 'Child job payload should be valid DialecticPlanJobPayload');
+        const payload = childJob.payload;
+        assertEquals(payload.job_type, 'PLAN', 'Payload should have job_type: PLAN');
+        assertExists(payload.context_for_documents, 'PLAN payload should have context_for_documents');
+        assertEquals(payload.context_for_documents?.length, 1);
+        assertEquals(payload.context_for_documents?.[0].document_key, FileType.business_case);
+
+        // Assert: All context fields inherited from parent
+        assertEquals(payload.projectId, mockParentJob.payload.projectId);
+        assertEquals(payload.sessionId, mockParentJob.payload.sessionId);
+        assertEquals(payload.stageSlug, mockParentJob.payload.stageSlug);
+        assertEquals(payload.user_jwt, mockParentJob.payload.user_jwt);
+    });
 });
 
 

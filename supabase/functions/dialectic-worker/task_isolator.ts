@@ -11,7 +11,7 @@ import {
     DialecticFeedbackRow,
 } from '../dialectic-service/dialectic.interface.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
-import { isDialecticExecuteJobPayload, isJson, isDocumentRelationships } from '../_shared/utils/type_guards.ts';
+import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload, isJson, isDocumentRelationships } from '../_shared/utils/type_guards.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
 import type { DialecticStageRecipeStep, DialecticRecipeTemplateStep } from '../dialectic-service/dialectic.interface.ts';
 import { Database } from '../types_db.ts';
@@ -564,7 +564,7 @@ export async function planComplexStage(
     if (!Array.isArray(plannedPayloads)) {
         throw new Error(`Planner for strategy '${recipeStep.granularity_strategy}' returned a non-array value.`);
     }
-    const childJobPayloads: DialecticExecuteJobPayload[] = plannedPayloads;
+    const childJobPayloads: (DialecticExecuteJobPayload | DialecticPlanJobPayload)[] = plannedPayloads;
     
     //deps.logger.info(`[task_isolator] [planComplexStage] Planner returned ${childJobPayloads.length} payloads. Content: ${JSON.stringify(childJobPayloads, null, 2)}`);
 
@@ -572,31 +572,36 @@ export async function planComplexStage(
     const childJobsToInsert: DialecticJobRow[] = [];
     for (const payload of childJobPayloads) {
         try {
-            // 1. Use payload as-is (planners are responsible for including user_jwt and step_slug)
-            const candidatePayload: DialecticExecuteJobPayload = payload;
+            // 1. Determine payload type and validate shape
+            let jobType: 'PLAN' | 'EXECUTE';
+            let validatedPayload: DialecticExecuteJobPayload | DialecticPlanJobPayload;
 
-            // 2. Shape Check on enriched payload
-            if (!isDialecticExecuteJobPayload(candidatePayload)) {
+            if (isDialecticPlanJobPayload(payload)) {
+                jobType = 'PLAN';
+                validatedPayload = payload;
+            } else if (isDialecticExecuteJobPayload(payload)) {
+                jobType = 'EXECUTE';
+                validatedPayload = payload;
+            } else {
                 deps.logger.warn(`[task_isolator] Skipping malformed payload from planner due to invalid shape: ${JSON.stringify(payload)}`);
                 continue;
             }
 
-            // 3. Context Check: Ensure planner's payload matches the authoritative parent context.
+            // 2. Context Check: Ensure planner's payload matches the authoritative parent context.
             const parentPayload = parentJob.payload;
             const contextMismatches: string[] = [];
-            if (candidatePayload.projectId !== parentPayload.projectId) contextMismatches.push('projectId');
-            if (candidatePayload.sessionId !== parentPayload.sessionId) contextMismatches.push('sessionId');
-            if (candidatePayload.stageSlug !== parentPayload.stageSlug) contextMismatches.push('stageSlug');
-            if (candidatePayload.iterationNumber !== parentPayload.iterationNumber) contextMismatches.push('iterationNumber');
-            if (candidatePayload.walletId !== parentPayload.walletId) contextMismatches.push('walletId');
+            if (validatedPayload.projectId !== parentPayload.projectId) contextMismatches.push('projectId');
+            if (validatedPayload.sessionId !== parentPayload.sessionId) contextMismatches.push('sessionId');
+            if (validatedPayload.stageSlug !== parentPayload.stageSlug) contextMismatches.push('stageSlug');
+            if (validatedPayload.iterationNumber !== parentPayload.iterationNumber) contextMismatches.push('iterationNumber');
+            if (validatedPayload.walletId !== parentPayload.walletId) contextMismatches.push('walletId');
 
             if (contextMismatches.length > 0) {
-                deps.logger.warn(`[task_isolator] Skipping payload with mismatched context. Fields: ${contextMismatches.join(', ')}`, { parent: parentPayload, received: candidatePayload });
+                deps.logger.warn(`[task_isolator] Skipping payload with mismatched context. Fields: ${contextMismatches.join(', ')}`, { parent: parentPayload, received: validatedPayload });
                 continue;
             }
 
-            if (!isJson(candidatePayload)) {
-                // This should be an unreachable state if DialecticExecuteJobPayload is properly defined.
+            if (!isJson(validatedPayload)) {
                 throw new Error('FATAL: Constructed child job payload is not a valid JSON object.');
             }
 
@@ -620,9 +625,9 @@ export async function planComplexStage(
                 error_details: null,
                 target_contribution_id: null,
                 prerequisite_job_id: null,
-                payload: candidatePayload,
+                payload: validatedPayload,
                 is_test_job: false,
-                job_type: 'EXECUTE',
+                job_type: jobType,
             });
         } catch (error) {
             deps.logger.warn(`[task_isolator] Error processing payload, skipping. Error: ${error instanceof Error ? error.message : String(error)}`, { payload: JSON.stringify(payload) });

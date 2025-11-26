@@ -280,6 +280,7 @@ BEGIN
                         "weaknesses": [],
                         "opportunities": [],
                         "threats": [],
+                        "critique_alignment": "",
                         "next_steps": "",
                         "proposal_references": [],
                         "resolved_positions": [],
@@ -301,6 +302,8 @@ BEGIN
                                 "acceptance_criteria": [],
                                 "dependencies": [],
                                 "success_metrics": [],
+                                "risk_mitigation": "",
+                                "open_questions": "",
                                 "feasibility_insights": [],
                                 "non_functional_alignment": [],
                                 "score_adjustments": []
@@ -321,6 +324,7 @@ BEGIN
                         "data": "",
                         "deployment": "",
                         "sequencing": "",
+                        "architecture_alignment": [],
                         "risk_mitigations": [],
                         "dependency_resolution": [],
                         "open_questions": []
@@ -339,30 +343,12 @@ BEGIN
                         "lagging_indicators": [],
                         "guardrails": [],
                         "measurement_plan": "",
-                        "risk_signals": "",
+                        "risk_signals": [],
                         "next_steps": "",
                         "metric_alignment": [],
                         "tradeoffs": [],
                         "validation_checks": []
                     }
-                }
-            ],
-            "files_to_generate": [
-                {
-                    "template_filename": "synthesis_pairwise_business_case.json",
-                    "from_document_key": "synthesis_pairwise_business_case"
-                },
-                {
-                    "template_filename": "synthesis_pairwise_feature_spec.json",
-                    "from_document_key": "synthesis_pairwise_feature_spec"
-                },
-                {
-                    "template_filename": "synthesis_pairwise_technical_approach.json",
-                    "from_document_key": "synthesis_pairwise_technical_approach"
-                },
-                {
-                    "template_filename": "synthesis_pairwise_success_metrics.json",
-                    "from_document_key": "synthesis_pairwise_success_metrics"
                 }
             ]
         }'::jsonb
@@ -400,6 +386,9 @@ BEGIN
                         "<derived from antithesis reviewer or reviewer combination>"
                     ],
                     "content_to_include": {
+                        "thesis_document": "business_case",
+                        "critique_document": "business_case_critique",
+                        "comparison_signal": "comparison_vector",
                         "executive_summary": "",
                         "user_problem_validation": "",
                         "market_opportunity": "",
@@ -410,11 +399,18 @@ BEGIN
                         "weaknesses": [],
                         "opportunities": [],
                         "threats": [],
+                        "critique_alignment": "",
                         "resolved_positions": [],
                         "open_questions": [],
                         "next_steps": "",
                         "proposal_references": []
                     }
+                }
+            ],
+            "files_to_generate": [
+                {
+                    "template_filename": "synthesis_pairwise_business_case.json",
+                    "from_document_key": "synthesis_pairwise_business_case"
                 }
             ]
         }'::jsonb
@@ -457,10 +453,10 @@ BEGIN
                         "<derived from antithesis reviewer or reviewer combination>"
                     ],
                     "content_to_include": {
-                        "feature_scope": [],
-                        "feasibility_insights": [],
-                        "non_functional_alignment": [],
-                        "score_adjustments": [],
+                        "thesis_document": "feature_spec",
+                        "feasibility_document": "technical_feasibility_assessment",
+                        "nfr_document": "non_functional_requirements",
+                        "comparison_signal": "comparison_vector",
                         "features": [
                             {
                                 "feature_name": "",
@@ -470,11 +466,21 @@ BEGIN
                                 "dependencies": [],
                                 "success_metrics": [],
                                 "risk_mitigation": "",
-                                "open_questions": ""
+                                "open_questions": "",
+                                "feasibility_insights": [],
+                                "non_functional_alignment": [],
+                                "score_adjustments": []
                             }
                         ],
+                        "feature_scope": [],
                         "tradeoffs": []
                     }
+                }
+            ],
+            "files_to_generate": [
+                {
+                    "template_filename": "synthesis_pairwise_feature_spec.json",
+                    "from_document_key": "synthesis_pairwise_feature_spec"
                 }
             ]
         }'::jsonb
@@ -513,16 +519,25 @@ BEGIN
                         "<derived from antithesis reviewer or reviewer combination>"
                     ],
                     "content_to_include": {
-                        "architecture_alignment": [],
-                        "risk_mitigations": [],
-                        "dependency_resolution": [],
+                        "thesis_document": "technical_approach",
+                        "risk_document": "risk_register",
+                        "dependency_document": "dependency_map",
                         "architecture": "",
                         "components": [],
                         "data": "",
                         "deployment": "",
                         "sequencing": "",
+                        "architecture_alignment": [],
+                        "risk_mitigations": [],
+                        "dependency_resolution": [],
                         "open_questions": []
                     }
+                }
+            ],
+            "files_to_generate": [
+                {
+                    "template_filename": "synthesis_pairwise_technical_approach.json",
+                    "from_document_key": "synthesis_pairwise_technical_approach"
                 }
             ]
         }'::jsonb
@@ -577,6 +592,12 @@ BEGIN
                         "tradeoffs": [],
                         "validation_checks": []
                     }
+                }
+            ],
+            "files_to_generate": [
+                {
+                    "template_filename": "synthesis_pairwise_success_metrics.json",
+                    "from_document_key": "synthesis_pairwise_success_metrics"
                 }
             ]
         }'::jsonb
@@ -890,7 +911,8 @@ BEGIN
                         "scalability_plan": [],
                         "resilience_strategy": [],
                         "compliance_controls": [],
-                        "open_questions": []
+                        "open_questions": [],
+                        "rationale": ""
                     }
                 },
                 {
@@ -919,20 +941,6 @@ BEGIN
                         "open_questions": [],
                         "next_steps": []
                     }
-                }
-            ],
-            "files_to_generate": [
-                {
-                    "template_filename": "synthesis_product_requirements_document.md",
-                    "from_document_key": "product_requirements"
-                },
-                {
-                    "template_filename": "synthesis_system_architecture.md",
-                    "from_document_key": "system_architecture"
-                },
-                {
-                    "template_filename": "synthesis_tech_stack.md",
-                    "from_document_key": "tech_stack"
                 }
             ]
         }'::jsonb
@@ -1014,6 +1022,12 @@ BEGIN
                         "stakeholder_communications": []
                     }
                 }
+            ],
+            "files_to_generate": [
+                {
+                    "template_filename": "synthesis_product_requirements_document.md",
+                    "from_document_key": "product_requirements"
+                }
             ]
         }'::jsonb
     ) ON CONFLICT (template_id, step_key) DO UPDATE SET updated_at = now() RETURNING id INTO v_product_requirements_step_id;
@@ -1063,8 +1077,15 @@ BEGIN
                         "scalability_plan": [],
                         "resilience_strategy": [],
                         "compliance_controls": [],
-                        "open_questions": []
+                        "open_questions": [],
+                        "rationale": ""
                     }
+                }
+            ],
+            "files_to_generate": [
+                {
+                    "template_filename": "synthesis_system_architecture.md",
+                    "from_document_key": "system_architecture"
                 }
             ]
         }'::jsonb
@@ -1097,28 +1118,36 @@ BEGIN
                     "file_type": "markdown",
                     "lineage_key": "<>",
                     "source_model_slug": "<>",
-                    "content_to_include": [
-                        {
-                            "component_name": "",
-                            "recommended_option": "",
-                            "rationale": "",
-                            "alternatives": [],
-                            "tradeoffs": [],
-                            "risk_signals": [],
-                            "integration_requirements": [],
-                            "operational_owners": [],
-                            "migration_plan": []
-                        }
-                    ],
-                    "frontend_stack": {},
-                    "backend_stack": {},
-                    "data_platform": {},
-                    "devops_tooling": {},
-                    "security_tooling": {},
-                    "shared_libraries": [],
-                    "third_party_services": [],
-                    "open_questions": [],
-                    "next_steps": []
+                    "content_to_include": {
+                        "frontend_stack": {},
+                        "backend_stack": {},
+                        "data_platform": {},
+                        "devops_tooling": {},
+                        "security_tooling": {},
+                        "shared_libraries": [],
+                        "third_party_services": [],
+                        "components": [
+                            {
+                                "component_name": "",
+                                "recommended_option": "",
+                                "rationale": "",
+                                "alternatives": [],
+                                "tradeoffs": [],
+                                "risk_signals": [],
+                                "integration_requirements": [],
+                                "operational_owners": [],
+                                "migration_plan": []
+                            }
+                        ],
+                        "open_questions": [],
+                        "next_steps": []
+                    }
+                }
+            ],
+            "files_to_generate": [
+                {
+                    "template_filename": "synthesis_tech_stack.md",
+                    "from_document_key": "tech_stack"
                 }
             ]
         }'::jsonb

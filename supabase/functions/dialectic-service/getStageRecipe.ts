@@ -134,7 +134,22 @@ export async function getStageRecipe(
 
     const outputsRequired: OutputRule[] = [];
     if (!isOutputRule(s.outputs_required)) return { status: 500, error: { message: `Malformed outputs_required for step_key=${s.step_key}` } };
+    
+    // LOG: Check if files_to_generate exists in raw database output
+    console.log(`[getStageRecipe] step_key=${s.step_key}, outputs_required has files_to_generate:`, 'files_to_generate' in s.outputs_required);
+    if ('files_to_generate' in s.outputs_required) {
+      console.log(`[getStageRecipe] step_key=${s.step_key}, files_to_generate value:`, JSON.stringify(s.outputs_required.files_to_generate));
+    } else {
+      console.log(`[getStageRecipe] step_key=${s.step_key}, outputs_required keys:`, Object.keys(s.outputs_required));
+    }
+    
     outputsRequired.push(s.outputs_required);
+    
+    // LOG: Verify files_to_generate is still present after push
+    console.log(`[getStageRecipe] step_key=${s.step_key}, outputsRequired[0] has files_to_generate:`, 'files_to_generate' in outputsRequired[0]);
+    if ('files_to_generate' in outputsRequired[0]) {
+      console.log(`[getStageRecipe] step_key=${s.step_key}, outputsRequired[0].files_to_generate:`, JSON.stringify(outputsRequired[0].files_to_generate));
+    }
 
     // Validate nullable simple fields
     if (!isNumOrNull(s.parallel_group)) {

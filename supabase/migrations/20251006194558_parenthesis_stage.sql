@@ -295,11 +295,14 @@ DECLARE
             {
               "document_key": "technical_requirements",
               "content_to_include": {
-                "subsystems": [],
-                "apis": [],
-                "schemas": [],
+                "index": [],
+                "subsystems": [{"name": "", "objective": "", "implementation_notes": ""}],
+                "apis": [{"name": "", "description": "", "contracts": []}],
+                "schemas": [{"name": "", "columns": [], "indexes": [], "rls": []}],
                 "proposed_file_tree": "",
                 "architecture_overview": "",
+                "delta_summary": "",
+                "iteration_notes": "",
                 "feature_scope": [],
                 "feasibility_insights": [],
                 "non_functional_alignment": [],
@@ -326,13 +329,39 @@ DECLARE
                 "devops_tooling": {},
                 "security_tooling": {},
                 "shared_libraries": [],
-                "third_party_services": []
+                "third_party_services": [],
+                "executive_summary": ""
               }
             },
             {
               "document_key": "master_plan",
               "content_to_include": {
-                "phases": [],
+                "index": [],
+                "phases": [
+                  {
+                    "name": "",
+                    "objective": "",
+                    "milestones": [
+                      {
+                        "id": "",
+                        "title": "",
+                        "objective": "",
+                        "inputs": [],
+                        "outputs": [],
+                        "dependencies": [],
+                        "acceptance_criteria": [],
+                        "status": "[ ]",
+                        "coverage_notes": "",
+                        "iteration_delta": ""
+                      }
+                    ]
+                  }
+                ],
+                "status_summary": {
+                  "completed": [],
+                  "in_progress": [],
+                  "up_next": []
+                },
                 "status_markers": {
                   "unstarted": "[ ]",
                   "in_progress": "[🚧]",
@@ -346,7 +375,6 @@ DECLARE
                 },
                 "feature_scope": [],
                 "features": [],
-                "executive_summary": "",
                 "mvp_description": "",
                 "market_opportunity": "",
                 "competitive_analysis": "",
@@ -362,21 +390,67 @@ DECLARE
                 "devops_tooling": {},
                 "security_tooling": {},
                 "shared_libraries": [],
-                "third_party_services": []
+                "third_party_services": [],
+                "executive_summary": ""
               }
             },
             {
               "document_key": "milestone_schema",
               "content_to_include": {
+                "index": [],
                 "fields": [
-                  "id",
-                  "title",
-                  "objective",
-                  "dependencies",
-                  "acceptance_criteria",
-                  "status"
+                  {
+                    "name": "id",
+                    "type": "string",
+                    "description": "Stable milestone identifier (e.g., M1, M1.a)"
+                  },
+                  {
+                    "name": "title",
+                    "type": "string",
+                    "description": "Short milestone name"
+                  },
+                  {
+                    "name": "objective",
+                    "type": "string",
+                    "description": "Narrative summary of milestone goal"
+                  },
+                  {
+                    "name": "dependencies",
+                    "type": "string[]",
+                    "description": "List of prerequisite milestone IDs"
+                  },
+                  {
+                    "name": "acceptance_criteria",
+                    "type": "string[]",
+                    "description": "Checklist of validation outcomes"
+                  },
+                  {
+                    "name": "inputs",
+                    "type": "string[]",
+                    "description": "Artifacts required before work begins"
+                  },
+                  {
+                    "name": "outputs",
+                    "type": "string[]",
+                    "description": "Artifacts produced when milestone completes"
+                  },
+                  {
+                    "name": "status",
+                    "type": "enum",
+                    "values": ["[ ]", "[🚧]", "[✅]"],
+                    "description": "Current completion status"
+                  }
                 ],
                 "style_guide_notes": "Use standardized checklist markers, component labels when relevant, and keep scope at milestone granularity; detailed steps will be generated in the next stage.",
+                "validation_rules": [
+                  "Status must be one of [ ], [🚧], [✅]",
+                  "Dependencies must reference existing milestone IDs",
+                  "Acceptance criteria must be non-empty for every milestone"
+                ],
+                "iteration_guidance": {
+                  "reuse_policy": "Carry forward schema; append new fields under migration log if expanded",
+                  "versioning": "Increment schema_version when fields change"
+                },
                 "features": [],
                 "feasibility_insights": [],
                 "non_functional_alignment": [],
@@ -386,7 +460,8 @@ DECLARE
                 "dependency_resolution": [],
                 "component_details": [],
                 "integration_requirements": [],
-                "migration_context": []
+                "migration_context": [],
+                "executive_summary": ""
               }
             }
           ]
@@ -485,11 +560,14 @@ DECLARE
             {
               "document_key": "technical_requirements",
               "content_to_include": {
-                "subsystems": [],
-                "apis": [],
-                "schemas": [],
+                "index": [],
+                "subsystems": [{"name": "", "objective": "", "implementation_notes": ""}],
+                "apis": [{"name": "", "description": "", "contracts": []}],
+                "schemas": [{"name": "", "columns": [], "indexes": [], "rls": []}],
                 "proposed_file_tree": "",
                 "architecture_overview": "",
+                "delta_summary": "",
+                "iteration_notes": "",
                 "feature_scope": [],
                 "feasibility_insights": [],
                 "non_functional_alignment": [],
@@ -516,13 +594,39 @@ DECLARE
                 "devops_tooling": {},
                 "security_tooling": {},
                 "shared_libraries": [],
-                "third_party_services": []
+                "third_party_services": [],
+                "executive_summary": ""
               }
             },
             {
               "document_key": "master_plan",
               "content_to_include": {
-                "phases": [],
+                "index": [],
+                "phases": [
+                  {
+                    "name": "",
+                    "objective": "",
+                    "milestones": [
+                      {
+                        "id": "",
+                        "title": "",
+                        "objective": "",
+                        "inputs": [],
+                        "outputs": [],
+                        "dependencies": [],
+                        "acceptance_criteria": [],
+                        "status": "[ ]",
+                        "coverage_notes": "",
+                        "iteration_delta": ""
+                      }
+                    ]
+                  }
+                ],
+                "status_summary": {
+                  "completed": [],
+                  "in_progress": [],
+                  "up_next": []
+                },
                 "status_markers": {
                   "unstarted": "[ ]",
                   "in_progress": "[🚧]",
@@ -536,7 +640,6 @@ DECLARE
                 },
                 "feature_scope": [],
                 "features": [],
-                "executive_summary": "",
                 "mvp_description": "",
                 "market_opportunity": "",
                 "competitive_analysis": "",
@@ -552,21 +655,67 @@ DECLARE
                 "devops_tooling": {},
                 "security_tooling": {},
                 "shared_libraries": [],
-                "third_party_services": []
+                "third_party_services": [],
+                "executive_summary": ""
               }
             },
             {
               "document_key": "milestone_schema",
               "content_to_include": {
+                "index": [],
                 "fields": [
-                  "id",
-                  "title",
-                  "objective",
-                  "dependencies",
-                  "acceptance_criteria",
-                  "status"
+                  {
+                    "name": "id",
+                    "type": "string",
+                    "description": "Stable milestone identifier (e.g., M1, M1.a)"
+                  },
+                  {
+                    "name": "title",
+                    "type": "string",
+                    "description": "Short milestone name"
+                  },
+                  {
+                    "name": "objective",
+                    "type": "string",
+                    "description": "Narrative summary of milestone goal"
+                  },
+                  {
+                    "name": "dependencies",
+                    "type": "string[]",
+                    "description": "List of prerequisite milestone IDs"
+                  },
+                  {
+                    "name": "acceptance_criteria",
+                    "type": "string[]",
+                    "description": "Checklist of validation outcomes"
+                  },
+                  {
+                    "name": "inputs",
+                    "type": "string[]",
+                    "description": "Artifacts required before work begins"
+                  },
+                  {
+                    "name": "outputs",
+                    "type": "string[]",
+                    "description": "Artifacts produced when milestone completes"
+                  },
+                  {
+                    "name": "status",
+                    "type": "enum",
+                    "values": ["[ ]", "[🚧]", "[✅]"],
+                    "description": "Current completion status"
+                  }
                 ],
                 "style_guide_notes": "Use standardized checklist markers, component labels when relevant, and keep scope at milestone granularity; detailed steps will be generated in the next stage.",
+                "validation_rules": [
+                  "Status must be one of [ ], [🚧], [✅]",
+                  "Dependencies must reference existing milestone IDs",
+                  "Acceptance criteria must be non-empty for every milestone"
+                ],
+                "iteration_guidance": {
+                  "reuse_policy": "Carry forward schema; append new fields under migration log if expanded",
+                  "versioning": "Increment schema_version when fields change"
+                },
                 "features": [],
                 "feasibility_insights": [],
                 "non_functional_alignment": [],
@@ -576,7 +725,8 @@ DECLARE
                 "dependency_resolution": [],
                 "component_details": [],
                 "integration_requirements": [],
-                "migration_context": []
+                "migration_context": [],
+                "executive_summary": ""
               }
             }
           ]
@@ -653,14 +803,41 @@ DECLARE
               "file_type": "markdown",
               "content_to_include": {
                 "index": [],
-                "executive_summary": "",
                 "subsystems": [{"name": "", "objective": "", "implementation_notes": ""}],
                 "apis": [{"name": "", "description": "", "contracts": []}],
                 "schemas": [{"name": "", "columns": [], "indexes": [], "rls": []}],
                 "proposed_file_tree": "",
                 "architecture_overview": "",
                 "delta_summary": "",
-                "iteration_notes": ""
+                "iteration_notes": "",
+                "feature_scope": [],
+                "feasibility_insights": [],
+                "non_functional_alignment": [],
+                "outcome_alignment": "",
+                "north_star_metric": "",
+                "primary_kpis": [],
+                "guardrails": [],
+                "measurement_plan": "",
+                "architecture_summary": "",
+                "architecture": "",
+                "services": [],
+                "components": [],
+                "data_flows": [],
+                "interfaces": [],
+                "integration_points": [],
+                "dependency_resolution": [],
+                "security_measures": [],
+                "observability_strategy": [],
+                "scalability_plan": [],
+                "resilience_strategy": [],
+                "frontend_stack": {},
+                "backend_stack": {},
+                "data_platform": {},
+                "devops_tooling": {},
+                "security_tooling": {},
+                "shared_libraries": [],
+                "third_party_services": [],
+                "executive_summary": ""
               }
             }
           ],
@@ -795,14 +972,41 @@ DECLARE
               "file_type": "markdown",
               "content_to_include": {
                 "index": [],
-                "executive_summary": "",
                 "subsystems": [{"name": "", "objective": "", "implementation_notes": ""}],
                 "apis": [{"name": "", "description": "", "contracts": []}],
                 "schemas": [{"name": "", "columns": [], "indexes": [], "rls": []}],
                 "proposed_file_tree": "",
                 "architecture_overview": "",
                 "delta_summary": "",
-                "iteration_notes": ""
+                "iteration_notes": "",
+                "feature_scope": [],
+                "feasibility_insights": [],
+                "non_functional_alignment": [],
+                "outcome_alignment": "",
+                "north_star_metric": "",
+                "primary_kpis": [],
+                "guardrails": [],
+                "measurement_plan": "",
+                "architecture_summary": "",
+                "architecture": "",
+                "services": [],
+                "components": [],
+                "data_flows": [],
+                "interfaces": [],
+                "integration_points": [],
+                "dependency_resolution": [],
+                "security_measures": [],
+                "observability_strategy": [],
+                "scalability_plan": [],
+                "resilience_strategy": [],
+                "frontend_stack": {},
+                "backend_stack": {},
+                "data_platform": {},
+                "devops_tooling": {},
+                "security_tooling": {},
+                "shared_libraries": [],
+                "third_party_services": [],
+                "executive_summary": ""
               }
             }
           ],
@@ -928,20 +1132,28 @@ DECLARE
               "file_type": "markdown",
               "content_to_include": {
                 "index": [],
-                "executive_summary": "",
                 "phases": [
                   {
                     "name": "",
                     "objective": "",
+                    "technical_context": "",
+                    "implementation_strategy": "",
                     "milestones": [
                       {
                         "id": "",
                         "title": "",
                         "objective": "",
+                        "description": "",
+                        "technical_complexity": "",
+                        "effort_estimate": "",
+                        "implementation_approach": "",
+                        "test_strategy": "",
+                        "component_labels": [],
                         "inputs": [],
                         "outputs": [],
                         "dependencies": [],
                         "acceptance_criteria": [],
+                        "validation": [],
                         "status": "[ ]",
                         "coverage_notes": "",
                         "iteration_delta": ""
@@ -953,7 +1165,41 @@ DECLARE
                   "completed": [],
                   "in_progress": [],
                   "up_next": []
-                }
+                },
+                "status_markers": {
+                  "unstarted": "[ ]",
+                  "in_progress": "[🚧]",
+                  "completed": "[✅]"
+                },
+                "dependency_rules": [],
+                "generation_limits": {
+                  "max_steps": 200,
+                  "target_steps": "120-180",
+                  "max_output_lines": "600-800"
+                },
+                "feature_scope": [],
+                "features": [],
+                "mvp_description": "",
+                "market_opportunity": "",
+                "competitive_analysis": "",
+                "technical_context": "",
+                "implementation_context": "",
+                "test_framework": "",
+                "component_mapping": "",
+                "architecture_summary": "",
+                "architecture": "",
+                "services": [],
+                "components": [],
+                "integration_points": [],
+                "dependency_resolution": [],
+                "frontend_stack": {},
+                "backend_stack": {},
+                "data_platform": {},
+                "devops_tooling": {},
+                "security_tooling": {},
+                "shared_libraries": [],
+                "third_party_services": [],
+                "executive_summary": ""
               }
             }
           ],
@@ -1077,20 +1323,28 @@ DECLARE
               "file_type": "markdown",
               "content_to_include": {
                 "index": [],
-                "executive_summary": "",
                 "phases": [
                   {
                     "name": "",
                     "objective": "",
+                    "technical_context": "",
+                    "implementation_strategy": "",
                     "milestones": [
                       {
                         "id": "",
                         "title": "",
                         "objective": "",
+                        "description": "",
+                        "technical_complexity": "",
+                        "effort_estimate": "",
+                        "implementation_approach": "",
+                        "test_strategy": "",
+                        "component_labels": [],
                         "inputs": [],
                         "outputs": [],
                         "dependencies": [],
                         "acceptance_criteria": [],
+                        "validation": [],
                         "status": "[ ]",
                         "coverage_notes": "",
                         "iteration_delta": ""
@@ -1102,7 +1356,41 @@ DECLARE
                   "completed": [],
                   "in_progress": [],
                   "up_next": []
-                }
+                },
+                "status_markers": {
+                  "unstarted": "[ ]",
+                  "in_progress": "[🚧]",
+                  "completed": "[✅]"
+                },
+                "dependency_rules": [],
+                "generation_limits": {
+                  "max_steps": 200,
+                  "target_steps": "120-180",
+                  "max_output_lines": "600-800"
+                },
+                "feature_scope": [],
+                "features": [],
+                "mvp_description": "",
+                "market_opportunity": "",
+                "competitive_analysis": "",
+                "technical_context": "",
+                "implementation_context": "",
+                "test_framework": "",
+                "component_mapping": "",
+                "architecture_summary": "",
+                "architecture": "",
+                "services": [],
+                "components": [],
+                "integration_points": [],
+                "dependency_resolution": [],
+                "frontend_stack": {},
+                "backend_stack": {},
+                "data_platform": {},
+                "devops_tooling": {},
+                "security_tooling": {},
+                "shared_libraries": [],
+                "third_party_services": [],
+                "executive_summary": ""
               }
             }
           ],
@@ -1217,7 +1505,6 @@ DECLARE
               "file_type": "markdown",
               "content_to_include": {
                 "index": [],
-                "executive_summary": "",
                 "fields": [
                   {
                     "name": "id",
@@ -1270,7 +1557,18 @@ DECLARE
                 "iteration_guidance": {
                   "reuse_policy": "Carry forward schema; append new fields under migration log if expanded",
                   "versioning": "Increment schema_version when fields change"
-                }
+                },
+                "features": [],
+                "feasibility_insights": [],
+                "non_functional_alignment": [],
+                "architecture_summary": "",
+                "services": [],
+                "components": [],
+                "dependency_resolution": [],
+                "component_details": [],
+                "integration_requirements": [],
+                "migration_context": [],
+                "executive_summary": ""
               }
             }
           ],
@@ -1374,7 +1672,6 @@ DECLARE
               "file_type": "markdown",
               "content_to_include": {
                 "index": [],
-                "executive_summary": "",
                 "fields": [
                   {
                     "name": "id",
@@ -1427,7 +1724,18 @@ DECLARE
                 "iteration_guidance": {
                   "reuse_policy": "Carry forward schema; append new fields under migration log if expanded",
                   "versioning": "Increment schema_version when fields change"
-                }
+                },
+                "features": [],
+                "feasibility_insights": [],
+                "non_functional_alignment": [],
+                "architecture_summary": "",
+                "services": [],
+                "components": [],
+                "dependency_resolution": [],
+                "component_details": [],
+                "integration_requirements": [],
+                "migration_context": [],
+                "executive_summary": ""
               }
             }
           ],
@@ -1604,80 +1912,5 @@ DECLARE
         v_milestone_schema_doc_template_id
     ]
     WHERE slug = 'parenthesis';
-
--- Step 4.a: Seed Parenthesis document templates
-INSERT INTO public.dialectic_document_templates (
-    id,
-    name,
-    domain_id,
-    description,
-    storage_bucket,
-    storage_path,
-    file_name
-) VALUES (
-    gen_random_uuid(),
-    'parenthesis_technical_requirements',
-    v_domain_id,
-    'Markdown template for the Parenthesis Technical Requirements Document.',
-    'prompt-templates',
-    'docs/templates/parenthesis/',
-    'parenthesis_technical_requirements.md'
-)
-ON CONFLICT (name, domain_id) DO UPDATE
-    SET description = EXCLUDED.description,
-        storage_bucket = EXCLUDED.storage_bucket,
-        storage_path = EXCLUDED.storage_path,
-        file_name = EXCLUDED.file_name,
-        updated_at = now();
-
-INSERT INTO public.dialectic_document_templates (
-    id,
-    name,
-    domain_id,
-    description,
-    storage_bucket,
-    storage_path,
-    file_name
-) VALUES (
-    gen_random_uuid(),
-    'parenthesis_master_plan',
-    v_domain_id,
-    'Markdown template for the Parenthesis Master Plan.',
-    'prompt-templates',
-    'docs/templates/parenthesis/',
-    'parenthesis_master_plan.md'
-)
-ON CONFLICT (name, domain_id) DO UPDATE
-    SET description = EXCLUDED.description,
-        storage_bucket = EXCLUDED.storage_bucket,
-        storage_path = EXCLUDED.storage_path,
-        file_name = EXCLUDED.file_name,
-        updated_at = now();
-
-INSERT INTO public.dialectic_document_templates (
-    id,
-    name,
-    domain_id,
-    description,
-    storage_bucket,
-    storage_path,
-    file_name
-) VALUES (
-    gen_random_uuid(),
-    'parenthesis_milestone_schema',
-    v_domain_id,
-    'Markdown template for the Parenthesis Milestone Schema.',
-    'prompt-templates',
-    'docs/templates/parenthesis/',
-    'parenthesis_milestone_schema.md'
-)
-ON CONFLICT (name, domain_id) DO UPDATE
-    SET description = EXCLUDED.description,
-        storage_bucket = EXCLUDED.storage_bucket,
-        storage_path = EXCLUDED.storage_path,
-        file_name = EXCLUDED.file_name,
-        updated_at = now();
-        
-    -- Step 3.c: Record migration provenance
-    -- Note: Migration ID 20251006194558_parenthesis_stage.sql applied to establish parenthesis_v1 recipe
-END $$;
+END;
+$$;

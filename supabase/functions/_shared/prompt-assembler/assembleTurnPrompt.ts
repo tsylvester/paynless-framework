@@ -6,15 +6,9 @@ import { isRecord } from "../utils/type_guards.ts";
 import { FileManagerResponse, FileType } from "../types/file_manager.types.ts";
 import { downloadFromStorage } from "../supabase_storage_utils.ts";
 import { renderPrompt } from "../prompt-renderer.ts";
-
-// Helper type for the parsed header context content
-type HeaderContext = {
-  system_materials: Record<string, unknown>;
-  files_to_generate: {
-    document_key: string;
-    template_filename: string;
-  }[];
-};
+import { HeaderContext, OutputRule } from "../../dialectic-service/dialectic.interface.ts";
+import { isHeaderContext, isContentToInclude, isOutputRule } from "../utils/type-guards/type_guards.dialectic.ts";
+import { compareContentToIncludeStructure, getStructureKeys } from "../utils/content_to_include_structure.ts";
 
 export async function assembleTurnPrompt(
   {
@@ -144,7 +138,11 @@ export async function assembleTurnPrompt(
     } else {
       throw new Error("Invalid format for header context file.");
     }
-    headerContext = JSON.parse(headerContent);
+    const parsedContext = JSON.parse(headerContent);
+    if (!isHeaderContext(parsedContext)) {
+      throw new Error("Parsed header context does not conform to HeaderContext interface structure.");
+    }
+    headerContext = parsedContext;
   } catch (e: unknown) {
     let errorMessage = "An unknown error occurred while parsing JSON.";
     if (e instanceof Error) {
@@ -155,14 +153,104 @@ export async function assembleTurnPrompt(
     );
   }
 
-  // 5. Find and Fetch Document Template
+  // 5. Get files_to_generate from Recipe Step and Find Document Template
   const documentKey = job.payload.document_key;
-  const docInfo = headerContext.files_to_generate?.find(
-    (f) => f.document_key === documentKey,
+  
+  // Validate and narrow outputs_required type
+  if (!stage.recipe_step.outputs_required) {
+    throw new Error(
+      `Recipe step missing outputs_required for document_key '${documentKey}'. EXECUTE recipe steps must have outputs_required.`,
+    );
+  }
+  
+  // Type guard: ensure outputs_required is an OutputRule object (not an array)
+  if (!isOutputRule(stage.recipe_step.outputs_required)) {
+    throw new Error(
+      `Recipe step outputs_required is malformed for document_key '${documentKey}'. outputs_required must be an OutputRule object.`,
+    );
+  }
+  
+  const outputsRequired: OutputRule = stage.recipe_step.outputs_required;
+  
+  // Get files_to_generate from recipe step (execution instructions)
+  const filesToGenerate = outputsRequired.files_to_generate;
+  if (!filesToGenerate || !Array.isArray(filesToGenerate) || filesToGenerate.length === 0) {
+    throw new Error(
+      `Recipe step missing files_to_generate for document_key '${documentKey}'. EXECUTE recipe steps must have files_to_generate in outputs_required.`,
+    );
+  }
+
+  // Find the file generation instruction for this document
+  const docInfo = filesToGenerate.find(
+    (f) => f.from_document_key === documentKey,
   );
   if (!docInfo) {
     throw new Error(
-      `Document key '${documentKey}' from job payload not found in header context's files_to_generate.`,
+      `No files_to_generate entry found with from_document_key '${documentKey}' in recipe step.`,
+    );
+  }
+
+  // Get alignment details from header_context (filled by PLAN job)
+  if (!headerContext.context_for_documents || !Array.isArray(headerContext.context_for_documents) || headerContext.context_for_documents.length === 0) {
+    throw new Error(
+      `Header context is missing context_for_documents array. Header context must include context_for_documents with alignment details.`,
+    );
+  }
+
+  const contextForDoc = headerContext.context_for_documents.find(
+    (d) => d.document_key === documentKey,
+  );
+  if (!contextForDoc) {
+    throw new Error(
+      `No context_for_documents entry found for document_key '${documentKey}' in header_context. The PLAN job must generate alignment details for all documents in files_to_generate.`,
+    );
+  }
+
+  // Validate that files_to_generate[].from_document_key matches context_for_documents[].document_key
+  if (docInfo.from_document_key !== contextForDoc.document_key) {
+    throw new Error(
+      `PLAN ↔ EXECUTE structure mapping violation: files_to_generate[].from_document_key '${docInfo.from_document_key}' does not match context_for_documents[].document_key '${contextForDoc.document_key}'.`,
+    );
+  }
+
+  // Validate content_to_include structure conforms to ContentToInclude type
+  if (!isContentToInclude(contextForDoc.content_to_include)) {
+    throw new Error(
+      `content_to_include structure for document_key '${documentKey}' does not conform to ContentToInclude type. Content must be an object (not array at top level) with values of type string, string[], boolean, number, or nested ContentToInclude structures.`,
+    );
+  }
+
+  // Validate structure matching: Compare context_for_documents.content_to_include structure
+  // with recipe step's documents[].content_to_include structure for the same document_key
+  if (outputsRequired.documents && Array.isArray(outputsRequired.documents)) {
+    const recipeDoc = outputsRequired.documents.find(
+      (d) => d.document_key === documentKey && 'content_to_include' in d
+    );
+    
+    if (recipeDoc && 'content_to_include' in recipeDoc && recipeDoc.content_to_include) {
+      const recipeContentToInclude = recipeDoc.content_to_include;
+      const contextContentToInclude = contextForDoc.content_to_include;
+      
+      // Compare structure (keys, nested structure, array positions)
+      if (!compareContentToIncludeStructure(recipeContentToInclude, contextContentToInclude)) {
+        throw new Error(
+          `assembleTurnPrompt requires content_to_include structure for document_key '${documentKey}' to match the recipe step's expected structure. ` +
+          `Recipe step has structure: ${JSON.stringify(getStructureKeys(recipeContentToInclude))}, ` +
+          `but header_context has structure: ${JSON.stringify(getStructureKeys(contextContentToInclude))}.`
+        );
+      }
+    }
+  }
+
+  // Validate that content_to_include has been filled in (not empty model)
+  if (
+    !contextForDoc.content_to_include ||
+    (typeof contextForDoc.content_to_include === "object" &&
+      !Array.isArray(contextForDoc.content_to_include) &&
+      Object.keys(contextForDoc.content_to_include).length === 0)
+  ) {
+    throw new Error(
+      `content_to_include not filled in for document_key '${documentKey}' in header_context. The PLAN job must populate alignment details in context_for_documents before EXECUTE jobs can use them.`,
     );
   }
 
@@ -198,8 +286,13 @@ export async function assembleTurnPrompt(
   const documentSpecificData = isRecord(job.payload.document_specific_data)
     ? job.payload.document_specific_data
     : {};
+  
+  // Merge alignment details from context_for_documents into renderContext
+  // Merge order: system_materials -> alignment -> user_domain_overlay_values -> document_specific_data
+  // User domain overlay values override alignment details, and document-specific data overrides everything
   const renderContext = {
     ...headerContext.system_materials,
+    ...contextForDoc.content_to_include,
     ...(isRecord(project.user_domain_overlay_values)
       ? project.user_domain_overlay_values
       : {}),
@@ -264,4 +357,3 @@ export async function assembleTurnPrompt(
     source_prompt_resource_id: response.record.id,
   };
 }
-

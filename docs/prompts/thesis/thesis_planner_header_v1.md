@@ -36,7 +36,7 @@ Generate a JSON object with this exact structure. Replace all placeholder descri
 ```json
 {
   "system_materials": {
-    "executive_summary": "REQUIRED: Generate an outline/index of all outputs in this response and how they connect to the objective. Base this on the User Objective and Stage Instructions.",
+    "executive_summary": "REQUIRED: Generate an outline/index of all outputs in this response and how they connect to the objective. Complete this last, after all other elements are filled, so that the summary refers to the actual content generated.",
     "input_artifacts_summary": "REQUIRED: Generate a brief, faithful summary of the user prompt and referenced materials from the User Objective.",
     "stage_rationale": "REQUIRED: Generate an explanation of why these choices align with constraints, standards, and stakeholder needs. Consider the Stage Role and Stage Instructions.",
     "progress_update": "REQUIRED: For continuation turns, generate a summary of what is complete vs remaining. Omit this field entirely on first turn (do not include it in the JSON).",
@@ -68,43 +68,63 @@ Generate a JSON object with this exact structure. Replace all placeholder descri
     {
       "document_key": "business_case",
       "content_to_include": {
-        "market_opportunity": "REQUIRED: Generate actual market opportunity analysis based on the User Objective and Stage Role.",
-        "user_problem_validation": "REQUIRED: Generate actual user problem validation based on the User Objective.",
-        "competitive_analysis": "REQUIRED: Generate actual competitive analysis based on the User Objective and domain context.",
-        "differentiation_&_value_proposition": "REQUIRED: Generate actual differentiation and value proposition based on the User Objective.",
-        "risks_&_mitigation": "REQUIRED: Generate actual risks and mitigation strategies based on the User Objective and Stage Instructions.",
-        "strengths": "REQUIRED: Generate actual strengths analysis based on the User Objective.",
-        "weaknesses": "REQUIRED: Generate actual weaknesses analysis based on the User Objective.",
-        "opportunities": "REQUIRED: Generate actual opportunities analysis based on the User Objective.",
-        "threats": "REQUIRED: Generate actual threats analysis based on the User Objective.",
-        "next_steps": "REQUIRED: Generate actual next steps based on the User Objective and Stage Instructions."
+        "market_opportunity": "",
+        "user_problem_validation": "",
+        "competitive_analysis": "",
+        "differentiation_&_value_proposition": "",
+        "risks_&_mitigation": "",
+        "strengths": "",
+        "weaknesses": "",
+        "opportunities": "",
+        "threats": "",
+        "next_steps": "",
+        "proposal_references": [],
+        "executive_summary": ""
       }
     },
     {
       "document_key": "feature_spec",
-      "content_to_include": [
-        {
-          "feature_name": "REQUIRED: Generate actual feature names based on the User Objective and Expected Output Artifacts.",
-          "user_stories": "REQUIRED: Generate actual user stories as an array. Each story should follow the format: 'As a <role>, I want <goal> so that <reason>.' Base stories on the User Objective."
-        }
-      ]
+      "content_to_include": {
+        "features": [
+          {
+            "feature_name": "",
+            "feature_objective": "",
+            "user_stories": [],
+            "acceptance_criteria": [],
+            "dependencies": [],
+            "success_metrics": []
+          }
+        ]
+      }
     },
     {
       "document_key": "technical_approach",
       "content_to_include": {
-        "architecture": "REQUIRED: Generate actual architecture description based on the User Objective, Stage Role, and technical requirements.",
-        "components": "REQUIRED: Generate actual components description based on the User Objective and technical requirements.",
-        "data": "REQUIRED: Generate actual data architecture description based on the User Objective and technical requirements.",
-        "deployment": "REQUIRED: Generate actual deployment strategy based on the User Objective and technical requirements.",
-        "sequencing": "REQUIRED: Generate actual implementation sequencing based on the User Objective and Stage Instructions."
+        "architecture": "",
+        "components": "",
+        "data": "",
+        "deployment": "",
+        "sequencing": "",
+        "risk_mitigation": "",
+        "open_questions": ""
       }
     },
     {
       "document_key": "success_metrics",
       "content_to_include": {
-        "REPLACE_WITH_METRIC_NAME_1": "REQUIRED: Generate an actual success metric. Replace the key 'REPLACE_WITH_METRIC_NAME_1' with a meaningful metric name (e.g., 'user_adoption_rate', 'performance_improvement', 'cost_reduction') and replace this description with the actual metric description based on the User Objective and Expected Output Artifacts.",
-        "REPLACE_WITH_METRIC_NAME_2": "REQUIRED: Generate another actual success metric. Replace the key 'REPLACE_WITH_METRIC_NAME_2' with a meaningful metric name and replace this description with the actual metric description.",
-        "REPLACE_WITH_METRIC_NAME_3": "OPTIONAL but recommended: Generate a third success metric. Replace both the key and description with actual values. You may include additional metrics beyond these three if relevant."
+        "outcome_alignment": "",
+        "north_star_metric": "",
+        "primary_kpis": "",
+        "leading_indicators": "",
+        "lagging_indicators": "",
+        "guardrails": "",
+        "measurement_plan": "",
+        "risk_signals": "",
+        "next_steps": "",
+        "data_sources": [],
+        "reporting_cadence": "",
+        "ownership": "",
+        "escalation_plan": ""
       }
     }
   ]

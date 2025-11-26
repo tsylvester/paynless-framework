@@ -29,6 +29,7 @@ import {
 import {
   DialecticJobRow,
   DialecticRecipeStep,
+  ContextForDocument,
 } from "../../dialectic-service/dialectic.interface.ts";
 import { assertSpyCall, assertSpyCalls } from "jsr:@std/testing@0.225.1/mock";
 import { isRecord } from "../utils/type_guards.ts";
@@ -1647,6 +1648,265 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       assembleFn,
       Error,
       "Failed to download template from storage",
+    );
+
+    teardown();
+  });
+
+  await t.step("should include context_for_documents in PLAN prompts when recipe step has context_for_documents", async () => {
+    const contextForDocuments: ContextForDocument[] = [
+      {
+        document_key: FileType.business_case,
+        content_to_include: {
+          field1: "",
+          field2: [],
+        },
+      },
+      {
+        document_key: FileType.feature_spec,
+        content_to_include: {
+          features: [{ name: "", stories: [] }],
+        },
+      },
+    ];
+
+    const recipeStepWithContext: DialecticRecipeStep = {
+      ...mockRecipeStep,
+      outputs_required: {
+        context_for_documents: contextForDocuments,
+      },
+    };
+
+    const stageWithContext: StageContext = {
+      ...defaultStage,
+      recipe_step: recipeStepWithContext,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: { data: [{ prompt_text: plannerPromptText }], error: null },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
+      },
+    };
+
+    const {
+      client,
+      fileManager,
+      gatherContextFn,
+      renderFn,
+    } = setup(config, defaultMockContext);
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-planner-resource-id-context",
+      project_id: defaultProject.id,
+      file_name: "claude-3-opus_1_GeneratePlan_planner_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/planner_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock planner prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "planner_prompt",
+      source_contribution_id: null,
+    };
+
+    fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    try {
+      await assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: stageWithContext,
+        projectInitialUserPrompt: defaultProject.initial_user_prompt,
+        gatherContext: gatherContextFn,
+        render: renderFn,
+      });
+
+      assertSpyCalls(renderFn, 1);
+      const renderCallArgs = renderFn.calls[0].args;
+      const contextArg = renderCallArgs[2];
+      
+      assert(isRecord(contextArg), "Context argument must be a record");
+      assert('context_for_documents' in contextArg, "Context passed to render must include context_for_documents");
+      const contextForDocsValue = contextArg['context_for_documents'];
+      assert(isRecord(contextForDocsValue), "context_for_documents must be an object with _instructions and documents");
+      assert('documents' in contextForDocsValue, "context_for_documents must have documents property");
+      assert('_instructions' in contextForDocsValue, "context_for_documents must have _instructions property");
+      assertEquals(contextForDocsValue.documents, contextForDocuments);
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should include instructions telling agent to fill in content_to_include objects with alignment values", async () => {
+    const contextForDocuments: ContextForDocument[] = [
+      {
+        document_key: FileType.business_case,
+        content_to_include: {
+          field1: "",
+          field2: [],
+        },
+      },
+    ];
+
+    const recipeStepWithContext: DialecticRecipeStep = {
+      ...mockRecipeStep,
+      outputs_required: {
+        context_for_documents: contextForDocuments,
+      },
+    };
+
+    const stageWithContext: StageContext = {
+      ...defaultStage,
+      recipe_step: recipeStepWithContext,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: { data: [{ prompt_text: plannerPromptText }], error: null },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
+      },
+    };
+
+    const {
+      client,
+      fileManager,
+      gatherContextFn,
+      renderFn,
+    } = setup(config, defaultMockContext);
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-planner-resource-id-instructions",
+      project_id: defaultProject.id,
+      file_name: "claude-3-opus_1_GeneratePlan_planner_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/planner_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock planner prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "planner_prompt",
+      source_contribution_id: null,
+    };
+
+    fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    try {
+      await assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: stageWithContext,
+        projectInitialUserPrompt: defaultProject.initial_user_prompt,
+        gatherContext: gatherContextFn,
+        render: renderFn,
+      });
+
+      assertSpyCalls(renderFn, 1);
+      const renderCallArgs = renderFn.calls[0].args;
+      const contextArg = renderCallArgs[2];
+      
+      assert(isRecord(contextArg), "Context argument must be a record");
+      assert('context_for_documents' in contextArg, "Context passed to render must include context_for_documents");
+      const contextForDocsValue = contextArg['context_for_documents'];
+      assert(isRecord(contextForDocsValue), "context_for_documents must be an object with _instructions and documents");
+      assert('_instructions' in contextForDocsValue, "context_for_documents must have _instructions property");
+      const instructionsValue = contextForDocsValue['_instructions'];
+      assert(typeof instructionsValue === 'string', "_instructions must be a string");
+      assert(
+        instructionsValue.includes('fill in') ||
+        instructionsValue.includes('alignment') ||
+        instructionsValue.includes('header_context'),
+        "Context passed to render must include instructions telling agent to fill in content_to_include objects with alignment values"
+      );
+      assert('documents' in contextForDocsValue, "context_for_documents must have documents property");
+      assertEquals(contextForDocsValue.documents, contextForDocuments);
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should throw an error when recipe_step.outputs_required is missing context_for_documents for PLAN jobs", async () => {
+    const recipeStepWithoutContext: DialecticRecipeStep = {
+      ...mockRecipeStep,
+      outputs_required: {},
+    };
+
+    const stageWithoutContext: StageContext = {
+      ...defaultStage,
+      recipe_step: recipeStepWithoutContext,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: { data: [{ prompt_text: plannerPromptText }], error: null },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
+      },
+    };
+
+    const {
+      client,
+      fileManager,
+      gatherContextFn,
+      renderFn,
+    } = setup(config, defaultMockContext);
+
+    const assembleFn = () =>
+      assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: stageWithoutContext,
+        projectInitialUserPrompt: defaultProject.initial_user_prompt,
+        gatherContext: gatherContextFn,
+        render: renderFn,
+      });
+
+    await assertRejects(
+      assembleFn,
+      Error,
+      "PRECONDITION_FAILED: PLAN job requires context_for_documents in recipe_step.outputs_required",
     );
 
     teardown();

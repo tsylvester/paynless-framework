@@ -211,17 +211,25 @@ BEGIN
                   "weaknesses": "",
                   "opportunities": "",
                   "threats": "",
-                  "next_steps": ""
+                  "next_steps": "",
+                  "proposal_references": [],
+                  "executive_summary": ""
                 }
               },
              {
                "document_key": "feature_spec",
-               "content_to_include": [
-                 {
-                   "feature_name": "",
-                   "user_stories": []
-                 }
-               ]
+               "content_to_include": {
+                 "features": [
+                   {
+                     "feature_name": "",
+                     "feature_objective": "",
+                     "user_stories": [],
+                     "acceptance_criteria": [],
+                     "dependencies": [],
+                     "success_metrics": []
+                   }
+                 ]
+               }
              },
              {
                "document_key": "technical_approach",
@@ -230,7 +238,9 @@ BEGIN
                 "components": "",
                 "data": "",
                 "deployment": "",
-                "sequencing": ""
+                "sequencing": "",
+                "risk_mitigation": "",
+                "open_questions": ""
               }
              },
              {
@@ -244,7 +254,11 @@ BEGIN
                 "guardrails": "",
                 "measurement_plan": "",
                 "risk_signals": "",
-                "next_steps": ""
+                "next_steps": "",
+                "data_sources": [],
+                "reporting_cadence": "",
+                "ownership": "",
+                "escalation_plan": ""
               }
              }
            ]
@@ -338,7 +352,6 @@ BEGIN
                "artifact_class": "rendered_document",
                "file_type": "markdown",
                "content_to_include": {
-                 "executive_summary": "",
                  "market_opportunity": "",
                  "user_problem_validation": "",
                  "competitive_analysis": "",
@@ -348,7 +361,9 @@ BEGIN
                  "weaknesses": "",
                  "opportunities": "",
                  "threats": "",
-                 "next_steps": ""
+                 "next_steps": "",
+                 "proposal_references": [],
+                 "executive_summary": ""
                }
              }
            ],
@@ -499,21 +514,23 @@ BEGIN
                "template_filename": "thesis_feature_spec.md",
                "artifact_class": "rendered_document",
                "file_type": "markdown",
-               "content_to_include": [
-                 {
-                   "feature_name": "",
-                   "feature_objective": "",
-                   "user_stories": [],
-                   "acceptance_criteria": [],
-                   "dependencies": [],
-                   "success_metrics": []
-                 }
-               ]
+               "content_to_include": {
+                 "features": [
+                   {
+                     "feature_name": "",
+                     "feature_objective": "",
+                     "user_stories": [],
+                     "acceptance_criteria": [],
+                     "dependencies": [],
+                     "success_metrics": []
+                   }
+                 ]
+               }
              }
            ],
            "files_to_generate": [
              {
-               "template_filename": "thesis_product_requirements_document.md",
+               "template_filename": "thesis_feature_spec.md",
                "from_document_key": "feature_spec"
              }
            ]
@@ -670,7 +687,7 @@ BEGIN
            ],
            "files_to_generate": [
              {
-               "template_filename": "thesis_implementation_plan_proposal.md",
+               "template_filename": "thesis_technical_approach.md",
                "from_document_key": "technical_approach"
              }
            ]
@@ -984,17 +1001,25 @@ BEGIN
                   "weaknesses": "",
                   "opportunities": "",
                   "threats": "",
-                  "next_steps": ""
+                  "next_steps": "",
+                  "proposal_references": [],
+                  "executive_summary": ""
                 }
               },
              {
                "document_key": "feature_spec",
-               "content_to_include": [
-                 {
-                   "feature_name": "",
-                   "user_stories": []
-                 }
-               ]
+               "content_to_include": {
+                 "features": [
+                   {
+                     "feature_name": "",
+                     "feature_objective": "",
+                     "user_stories": [],
+                     "acceptance_criteria": [],
+                     "dependencies": [],
+                     "success_metrics": []
+                   }
+                 ]
+               }
              },
              {
                "document_key": "technical_approach",
@@ -1003,7 +1028,9 @@ BEGIN
                 "components": "",
                 "data": "",
                 "deployment": "",
-                "sequencing": ""
+                "sequencing": "",
+                "risk_mitigation": "",
+                "open_questions": ""
               }
              },
              {
@@ -1019,7 +1046,9 @@ BEGIN
                 "risk_signals": "",
                 "next_steps": "",
                 "data_sources": [],
-                "reporting_cadence": ""
+                "reporting_cadence": "",
+                "ownership": "",
+                "escalation_plan": ""
               }
              }
            ]
@@ -1074,7 +1103,6 @@ BEGIN
                "artifact_class": "rendered_document",
                "file_type": "markdown",
                "content_to_include": {
-                 "executive_summary": "",
                  "market_opportunity": "",
                  "user_problem_validation": "",
                  "competitive_analysis": "",
@@ -1085,7 +1113,8 @@ BEGIN
                  "opportunities": "",
                  "threats": "",
                  "next_steps": "",
-                 "proposal_references": []
+                 "proposal_references": [],
+                 "executive_summary": ""
                }
              }
            ],
@@ -1145,21 +1174,23 @@ BEGIN
                "template_filename": "thesis_feature_spec.md",
                "artifact_class": "rendered_document",
                "file_type": "markdown",
-               "content_to_include": [
-                 {
-                   "feature_name": "",
-                   "feature_objective": "",
-                   "user_stories": [],
-                   "acceptance_criteria": [],
-                   "dependencies": [],
-                   "success_metrics": []
-                 }
-               ]
+               "content_to_include": {
+                 "features": [
+                   {
+                     "feature_name": "",
+                     "feature_objective": "",
+                     "user_stories": [],
+                     "acceptance_criteria": [],
+                     "dependencies": [],
+                     "success_metrics": []
+                   }
+                 ]
+               }
              }
            ],
            "files_to_generate": [
              {
-               "template_filename": "thesis_product_requirements_document.md",
+               "template_filename": "thesis_feature_spec.md",
                "from_document_key": "feature_spec"
              }
            ]
@@ -1226,7 +1257,7 @@ BEGIN
            ],
            "files_to_generate": [
              {
-               "template_filename": "thesis_implementation_plan_proposal.md",
+               "template_filename": "thesis_technical_approach.md",
                "from_document_key": "technical_approach"
              }
            ]

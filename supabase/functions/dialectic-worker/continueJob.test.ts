@@ -1275,7 +1275,7 @@ Deno.test("continueJob enqueues with full original payload preserved and overlay
   // (JWT enforcement tests defined below)
 
 Deno.test('continueJob enforces user_jwt presence: missing user_jwt fails and does not insert', async () => {
-    const payload: DialecticJobPayload = { 
+    const payload = { 
         job_type: 'execute',
         sessionId: 'session-1',
         projectId: 'project-1',
@@ -1290,7 +1290,8 @@ Deno.test('continueJob enforces user_jwt presence: missing user_jwt fails and do
         walletId: 'wallet-1',
         maxRetries: 5,
         canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
-    };
+        // user_jwt is intentionally omitted to test missing case
+    } as unknown as DialecticJobPayload;
 
     const job = createMockJob(payload);
     const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };

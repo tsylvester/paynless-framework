@@ -40,11 +40,14 @@
     "input_artifacts_summary": "TRD sections used, Master Plan phase/milestone references",
     "stage_rationale": "explain ordering, TDD emphasis, and how checklist conforms to style guide",
     "progress_update": "summarize completed vs remaining milestones; denote updated statuses in Master Plan",
+    "generation_limits": {"max_steps": 200, "target_steps": "120-180", "max_output_lines": "600-800"},
     "document_order": [
       "actionable_checklist",
       "updated_master_plan",
       "advisor_recommendations"
     ],
+    "current_document": "actionable_checklist",
+    "exhaustiveness_requirement": "extreme detail; no summaries; each step includes inputs, outputs, validation; follow the style guide exactly",
     "validation_checkpoint": [
       "checklist uses style guide (status, numbering, labels)",
       "steps are atomic and testable",
@@ -79,15 +82,7 @@
     {
       "document_key": "actionable_checklist",
       "content_to_include": {
-        "milestone_ids": [],
-        "inputs_required": ["technical_requirements", "master_plan"],
-        "tdd_sequence": ["RED", "GREEN", "REFACTOR"],
-        "status_markers": ["[ ]", "[🚧]", "[✅]"],
-        "generation_limits": {
-          "max_steps": 200,
-          "target_steps": "120-180",
-          "max_output_lines": "600-800"
-        }
+        "milestone_ids": ["<list the next milestone(s) to detail from the master_plan and milestone_schema>"]
       }
     },
     {

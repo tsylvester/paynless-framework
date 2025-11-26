@@ -61,7 +61,21 @@
       "content_to_include": {
         "thesis_document": "business_case",
         "critique_document": "business_case_critique",
-        "comparison_signal": "comparison_vector"
+        "comparison_signal": "comparison_vector",
+        "executive_summary": "",
+        "user_problem_validation": "",
+        "market_opportunity": "",
+        "competitive_analysis": "",
+        "differentiation_&_value_proposition": "",
+        "risks_&_mitigation": "",
+        "strengths": [],
+        "weaknesses": [],
+        "opportunities": [],
+        "threats": [],
+        "next_steps": "",
+        "proposal_references": [],
+        "resolved_positions": [],
+        "open_questions": []
       }
     },
     {
@@ -70,7 +84,24 @@
         "thesis_document": "feature_spec",
         "feasibility_document": "technical_feasibility_assessment",
         "nfr_document": "non_functional_requirements",
-        "comparison_signal": "comparison_vector"
+        "comparison_signal": "comparison_vector",
+        "features": [
+          {
+            "feature_name": "",
+            "feature_objective": "",
+            "user_stories": [],
+            "acceptance_criteria": [],
+            "dependencies": [],
+            "success_metrics": [],
+            "risk_mitigation": "",
+            "open_questions": "",
+            "feasibility_insights": [],
+            "non_functional_alignment": [],
+            "score_adjustments": []
+          }
+        ],
+        "feature_scope": [],
+        "tradeoffs": []
       }
     },
     {
@@ -78,7 +109,15 @@
       "content_to_include": {
         "thesis_document": "technical_approach",
         "risk_document": "risk_register",
-        "dependency_document": "dependency_map"
+        "dependency_document": "dependency_map",
+        "architecture": "",
+        "components": [],
+        "data": "",
+        "deployment": "",
+        "sequencing": "",
+        "risk_mitigations": [],
+        "dependency_resolution": [],
+        "open_questions": []
       }
     },
     {
@@ -86,10 +125,22 @@
       "content_to_include": {
         "thesis_document": "success_metrics",
         "critique_document": "business_case_critique",
-        "comparison_signal": "comparison_vector"
+        "comparison_signal": "comparison_vector",
+        "outcome_alignment": "",
+        "north_star_metric": "",
+        "primary_kpis": [],
+        "leading_indicators": [],
+        "lagging_indicators": [],
+        "guardrails": [],
+        "measurement_plan": "",
+        "risk_signals": [],
+        "next_steps": "",
+        "metric_alignment": [],
+        "tradeoffs": [],
+        "validation_checks": []
       }
     }
-  ],
+  ]
 }
 ```
 

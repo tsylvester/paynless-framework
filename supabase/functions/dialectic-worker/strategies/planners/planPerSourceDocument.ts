@@ -2,11 +2,13 @@
 // Cache-busting comment: 2025-08-04T04:20:05
 import type {
 	DialecticExecuteJobPayload,
+	DialecticPlanJobPayload,
 	DocumentRelationships,
 	GranularityPlannerFn,
+	ContextForDocument,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
-import { isContributionType } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
+import { isContributionType, isContentToInclude } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 import { isModelContributionFileType } from '../../../_shared/utils/type-guards/type_guards.file_manager.ts';
 
 const deriveSourceContributionId = (
@@ -63,68 +65,66 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 		);
 	}
 
-	// Extract and validate document_key from recipeStep.outputs_required.documents[0].document_key
-	// ONLY IF the step outputs documents (i.e., if outputs_required.documents exists and has at least one item)
-	let documentKey: string | undefined;
-	
-	// Check if the step outputs documents: verify that outputs_required exists, is an object, has a documents property that is an array, and the array has at least one item
-	const outputsDocuments = recipeStep.outputs_required &&
-		typeof recipeStep.outputs_required === 'object' &&
-		Array.isArray(recipeStep.outputs_required.documents) &&
-		recipeStep.outputs_required.documents.length > 0;
-	
-	if (outputsDocuments && recipeStep.outputs_required && Array.isArray(recipeStep.outputs_required.documents) && recipeStep.outputs_required.documents.length > 0) {
-		// If the step outputs documents, extract and validate document_key
-		const firstDocument = recipeStep.outputs_required.documents[0];
-		if (!firstDocument || typeof firstDocument !== 'object') {
-			throw new Error('planPerSourceDocument requires recipeStep.outputs_required.documents[0].document_key but it is missing');
-		}
-		if (!('document_key' in firstDocument)) {
-			throw new Error('planPerSourceDocument requires recipeStep.outputs_required.documents[0].document_key but it is missing');
-		}
-		const rawDocumentKey = firstDocument.document_key;
-		if (rawDocumentKey === null || rawDocumentKey === undefined) {
-			throw new Error(`planPerSourceDocument requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
-		}
-		if (typeof rawDocumentKey !== 'string') {
-			throw new Error(`planPerSourceDocument requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
-		}
-		if (rawDocumentKey.length === 0) {
-			throw new Error(`planPerSourceDocument requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: '${rawDocumentKey}'`);
-		}
-		documentKey = rawDocumentKey;
+	// Validate job_type is either 'PLAN' or 'EXECUTE'
+	if (recipeStep.job_type !== 'PLAN' && recipeStep.job_type !== 'EXECUTE') {
+		throw new Error(`planPerSourceDocument requires job_type to be 'PLAN' or 'EXECUTE', received: ${recipeStep.job_type}`);
 	}
-	// If the step does not output documents, documentKey remains undefined
 
-	const childPayloads: DialecticExecuteJobPayload[] = [];
-
-	console.log(
-		'[planPerSourceDocument] Received sourceDocs:',
-		JSON.stringify(sourceDocs, null, 2)
-	);
-	for (const doc of sourceDocs) {
-		console.log(`[planPerSourceDocument] Processing doc: ${doc.id}`);
-
-		const canonicalPathParams = createCanonicalPathParams(
-			[doc],
-			recipeStep.output_type,
-			doc,
-			stageSlug
-		);
-		console.log(
-			`[planPerSourceDocument] Created canonicalPathParams for doc ${doc.id}:`,
-			JSON.stringify(canonicalPathParams, null, 2)
-		);
-
-		const inputs: Record<string, string> = {};
-		if (doc.contribution_type) {
-			inputs[`${doc.contribution_type}_id`] = doc.id;
+	// Handle PLAN and EXECUTE jobs separately
+	if (recipeStep.job_type === 'PLAN') {
+		// Validate context_for_documents for PLAN jobs
+		if (!recipeStep.outputs_required) {
+			throw new Error('planPerSourceDocument requires recipeStep.outputs_required.context_for_documents for PLAN jobs, but outputs_required is missing');
 		}
-
-		if(!isModelContributionFileType(recipeStep.output_type)) {
-			throw new Error(`Invalid output_type for planPerSourceDocument: ${recipeStep.output_type}`);
+		
+		const contextForDocuments = recipeStep.outputs_required.context_for_documents;
+		if (!contextForDocuments) {
+			throw new Error('planPerSourceDocument requires recipeStep.outputs_required.context_for_documents for PLAN jobs, but context_for_documents is missing');
 		}
-		const newPayload: DialecticExecuteJobPayload = {
+		
+		if (!Array.isArray(contextForDocuments)) {
+			throw new Error('planPerSourceDocument requires recipeStep.outputs_required.context_for_documents to be an array for PLAN jobs');
+		}
+		
+		if (contextForDocuments.length === 0) {
+			throw new Error('planPerSourceDocument requires recipeStep.outputs_required.context_for_documents to have at least one entry for PLAN jobs');
+		}
+		
+		// Validate each context_for_documents entry and construct properly typed array
+		const validatedContextForDocuments: ContextForDocument[] = [];
+		for (let i = 0; i < contextForDocuments.length; i++) {
+			const entry = contextForDocuments[i];
+			
+			if (!entry || typeof entry !== 'object') {
+				throw new Error(`planPerSourceDocument requires context_for_documents[${i}] to be an object`);
+			}
+			
+			if (!('document_key' in entry) || typeof entry.document_key !== 'string' || entry.document_key.length === 0) {
+				throw new Error(`planPerSourceDocument requires context_for_documents[${i}].document_key to be a non-empty string`);
+			}
+			
+			if (!('content_to_include' in entry)) {
+				throw new Error(`planPerSourceDocument requires context_for_documents[${i}].content_to_include object model, but it is missing`);
+			}
+			
+			if (Array.isArray(entry.content_to_include)) {
+				throw new Error(`planPerSourceDocument requires context_for_documents[${i}].content_to_include to be an object, not an array at top level`);
+			}
+			
+			if (!isContentToInclude(entry.content_to_include)) {
+				throw new Error(`planPerSourceDocument requires context_for_documents[${i}].content_to_include to conform to ContentToInclude type structure`);
+			}
+			
+			// Construct properly typed ContextForDocument object
+			const validatedEntry: ContextForDocument = {
+				document_key: entry.document_key,
+				content_to_include: entry.content_to_include,
+			};
+			validatedContextForDocuments.push(validatedEntry);
+		}
+		
+		// Create PLAN job payload
+		const planPayload: DialecticPlanJobPayload = {
 			// Inherit ALL fields from parent job payload (defensive programming)
 			projectId: parentJob.payload.projectId,
 			sessionId: parentJob.payload.sessionId,
@@ -132,44 +132,188 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 			iterationNumber: parentJob.payload.iterationNumber,
 			model_id: parentJob.payload.model_id,
 			model_slug: parentJob.payload.model_slug,
-			user_jwt: parentJwt, // Use the validated parentJwt
+			user_jwt: parentJwt,
 			walletId: parentJob.payload.walletId,
 			continueUntilComplete: parentJob.payload.continueUntilComplete,
 			maxRetries: parentJob.payload.maxRetries,
 			continuation_count: parentJob.payload.continuation_count,
-			...(typeof parentJob.payload.target_contribution_id === 'string' ? { target_contribution_id: parentJob.payload.target_contribution_id } : {}),
+			// Conditionally include target_contribution_id only if parent has a valid string value
+			...(typeof parentJob.payload.target_contribution_id === 'string' && parentJob.payload.target_contribution_id.length > 0
+				? { target_contribution_id: parentJob.payload.target_contribution_id }
+				: {}),
 			is_test_job: parentJob.payload.is_test_job,
-			// Override job-specific properties
-			job_type: 'execute',
-			prompt_template_id: recipeStep.prompt_template_id,
-			output_type: recipeStep.output_type,
-			canonicalPathParams, // Use the new contract
-			document_relationships: { source_group: doc.id },
-			inputs,
-			planner_metadata: { recipe_step_id: recipeStep.id },
-			...(documentKey ? { document_key: documentKey } : {}),
+			job_type: 'PLAN',
+			context_for_documents: validatedContextForDocuments,
 		};
-		const derivedSourceContributionId = deriveSourceContributionId(
-			doc.id,
-			doc.document_relationships
-		);
-		if (derivedSourceContributionId) {
-			newPayload.sourceContributionId = derivedSourceContributionId;
-		}
-		console.log(
-			`[planPerSourceDocument] Constructed newPayload for doc ${doc.id}:`,
-			JSON.stringify(newPayload, null, 2)
-		);
-
-		childPayloads.push(newPayload);
-		console.log(
-			`[planPerSourceDocument] Pushed payload for doc ${doc.id}. childPayloads length: ${childPayloads.length}`
-		);
+		
+		return [planPayload];
 	}
 
-	console.log(
-		`[planPerSourceDocument] Returning ${childPayloads.length} payloads:`,
-		JSON.stringify(childPayloads, null, 2)
-	);
-	return childPayloads;
+	// Handle EXECUTE jobs
+	if (recipeStep.job_type === 'EXECUTE') {
+		// Validate files_to_generate for EXECUTE jobs
+		if (!recipeStep.outputs_required) {
+			throw new Error('planPerSourceDocument requires recipeStep.outputs_required.files_to_generate for EXECUTE jobs, but outputs_required is missing');
+		}
+		
+		const filesToGenerate = recipeStep.outputs_required.files_to_generate;
+		if (!filesToGenerate) {
+			throw new Error('planPerSourceDocument requires recipeStep.outputs_required.files_to_generate for EXECUTE jobs, but files_to_generate is missing');
+		}
+		
+		if (!Array.isArray(filesToGenerate)) {
+			throw new Error('planPerSourceDocument requires recipeStep.outputs_required.files_to_generate to be an array for EXECUTE jobs');
+		}
+		
+		if (filesToGenerate.length === 0) {
+			throw new Error('planPerSourceDocument requires recipeStep.outputs_required.files_to_generate to have at least one entry for EXECUTE jobs');
+		}
+		
+		// Validate documents array for EXECUTE jobs
+		const documents = recipeStep.outputs_required.documents;
+		if (!documents) {
+			throw new Error('planPerSourceDocument requires recipeStep.outputs_required.documents for EXECUTE jobs, but documents is missing');
+		}
+		
+		if (!Array.isArray(documents)) {
+			throw new Error('planPerSourceDocument requires recipeStep.outputs_required.documents to be an array for EXECUTE jobs');
+		}
+		
+		if (documents.length === 0) {
+			throw new Error('planPerSourceDocument requires recipeStep.outputs_required.documents to have at least one entry for EXECUTE jobs');
+		}
+		
+		// Validate each files_to_generate entry
+		for (let i = 0; i < filesToGenerate.length; i++) {
+			const file = filesToGenerate[i];
+			
+			if (!file || typeof file !== 'object') {
+				throw new Error(`planPerSourceDocument requires files_to_generate[${i}] to be an object`);
+			}
+			
+			if (!('from_document_key' in file) || typeof file.from_document_key !== 'string' || file.from_document_key.length === 0) {
+				throw new Error(`planPerSourceDocument requires files_to_generate[${i}].from_document_key to be a non-empty string`);
+			}
+			
+			if (!('template_filename' in file) || typeof file.template_filename !== 'string' || file.template_filename.length === 0) {
+				throw new Error(`planPerSourceDocument requires files_to_generate[${i}].template_filename to be a non-empty string`);
+			}
+		}
+
+		// Extract and validate document_key from recipeStep.outputs_required.documents[0].document_key
+		// ONLY IF the step outputs documents (i.e., if outputs_required.documents exists and has at least one item)
+		let documentKey: string | undefined;
+	
+		// Check if the step outputs documents: verify that outputs_required exists, is an object, has a documents property that is an array, and the array has at least one item
+		const outputsDocuments = recipeStep.outputs_required &&
+			typeof recipeStep.outputs_required === 'object' &&
+			Array.isArray(recipeStep.outputs_required.documents) &&
+			recipeStep.outputs_required.documents.length > 0;
+		
+		if (outputsDocuments && recipeStep.outputs_required && Array.isArray(recipeStep.outputs_required.documents) && recipeStep.outputs_required.documents.length > 0) {
+			// If the step outputs documents, extract and validate document_key
+			const firstDocument = recipeStep.outputs_required.documents[0];
+			if (!firstDocument || typeof firstDocument !== 'object') {
+				throw new Error('planPerSourceDocument requires recipeStep.outputs_required.documents[0].document_key but it is missing');
+			}
+			if (!('document_key' in firstDocument)) {
+				throw new Error('planPerSourceDocument requires recipeStep.outputs_required.documents[0].document_key but it is missing');
+			}
+			const rawDocumentKey = firstDocument.document_key;
+			if (rawDocumentKey === null || rawDocumentKey === undefined) {
+				throw new Error(`planPerSourceDocument requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
+			}
+			if (typeof rawDocumentKey !== 'string') {
+				throw new Error(`planPerSourceDocument requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
+			}
+			if (rawDocumentKey.length === 0) {
+				throw new Error(`planPerSourceDocument requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: '${rawDocumentKey}'`);
+			}
+			documentKey = rawDocumentKey;
+		}
+		// If the step does not output documents, documentKey remains undefined
+
+		const childPayloads: DialecticExecuteJobPayload[] = [];
+
+		console.log(
+			'[planPerSourceDocument] Received sourceDocs:',
+			JSON.stringify(sourceDocs, null, 2)
+		);
+		for (const doc of sourceDocs) {
+			console.log(`[planPerSourceDocument] Processing doc: ${doc.id}`);
+
+			const canonicalPathParams = createCanonicalPathParams(
+				[doc],
+				recipeStep.output_type,
+				doc,
+				stageSlug
+			);
+			console.log(
+				`[planPerSourceDocument] Created canonicalPathParams for doc ${doc.id}:`,
+				JSON.stringify(canonicalPathParams, null, 2)
+			);
+
+			const inputs: Record<string, string> = {};
+			if (doc.contribution_type) {
+				inputs[`${doc.contribution_type}_id`] = doc.id;
+			}
+
+			if(!isModelContributionFileType(recipeStep.output_type)) {
+				throw new Error(`Invalid output_type for planPerSourceDocument: ${recipeStep.output_type}`);
+			}
+			const newPayload: DialecticExecuteJobPayload = {
+				// Inherit ALL fields from parent job payload (defensive programming)
+				projectId: parentJob.payload.projectId,
+				sessionId: parentJob.payload.sessionId,
+				stageSlug: parentJob.payload.stageSlug,
+				iterationNumber: parentJob.payload.iterationNumber,
+				model_id: parentJob.payload.model_id,
+				model_slug: parentJob.payload.model_slug,
+				user_jwt: parentJwt, // Use the validated parentJwt
+				walletId: parentJob.payload.walletId,
+				continueUntilComplete: parentJob.payload.continueUntilComplete,
+				maxRetries: parentJob.payload.maxRetries,
+				continuation_count: parentJob.payload.continuation_count,
+				// Conditionally include target_contribution_id only if parent has a valid string value
+				...(typeof parentJob.payload.target_contribution_id === 'string' && parentJob.payload.target_contribution_id.length > 0
+					? { target_contribution_id: parentJob.payload.target_contribution_id }
+					: {}),
+				is_test_job: parentJob.payload.is_test_job,
+				// Override job-specific properties
+				job_type: 'execute',
+				prompt_template_id: recipeStep.prompt_template_id,
+				output_type: recipeStep.output_type,
+				canonicalPathParams, // Use the new contract
+				document_relationships: { source_group: doc.id },
+				inputs,
+				planner_metadata: { recipe_step_id: recipeStep.id },
+				document_key: documentKey,
+			};
+			const derivedSourceContributionId = deriveSourceContributionId(
+				doc.id,
+				doc.document_relationships
+			);
+			if (derivedSourceContributionId) {
+				newPayload.sourceContributionId = derivedSourceContributionId;
+			}
+			console.log(
+				`[planPerSourceDocument] Constructed newPayload for doc ${doc.id}:`,
+				JSON.stringify(newPayload, null, 2)
+			);
+
+			childPayloads.push(newPayload);
+			console.log(
+				`[planPerSourceDocument] Pushed payload for doc ${doc.id}. childPayloads length: ${childPayloads.length}`
+			);
+		}
+
+		console.log(
+			`[planPerSourceDocument] Returning ${childPayloads.length} payloads:`,
+			JSON.stringify(childPayloads, null, 2)
+		);
+		return childPayloads;
+	}
+	
+	// This should never be reached due to job_type validation above, but TypeScript requires it
+	throw new Error(`planPerSourceDocument: unreachable code reached with job_type: ${recipeStep.job_type}`);
 }; 

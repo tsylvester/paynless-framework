@@ -25,6 +25,7 @@ import {
     isJobInsert,
     isPlanJobInsert,
     isHeaderContext,
+    isContentToInclude,
     isDialecticContinueReason,
     isStageWithRecipeSteps,
     isDatabaseRecipeSteps,
@@ -645,6 +646,22 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
         const p = { ...basePayload, inputs: 'invalid' as any };
         assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid inputs.');
     });
+    await t.step('should throw if prompt_template_id is missing', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticExecuteJobPayload>).prompt_template_id;
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid prompt_template_id.');
+    });
+    await t.step('should throw if prompt_template_id is null', () => {
+        const p = { ...basePayload, prompt_template_id: null as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid prompt_template_id.');
+    });
+    await t.step('should throw if prompt_template_id is undefined', () => {
+        const p = { ...basePayload, prompt_template_id: undefined as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid prompt_template_id.');
+    });
+    await t.step('should throw if prompt_template_id is empty string', () => {
+        const p = { ...basePayload, prompt_template_id: '' };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid prompt_template_id.');
+    });
 
     // Test optional/nullable properties of DialecticExecuteJobPayload
     await t.step('should throw if prompt_template_name is of wrong type', () => {
@@ -696,6 +713,28 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
     await t.step('should throw if model_slug is of wrong type', () => {
         const p = { ...basePayload, model_slug: 123 as any };
         assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid model_slug.');
+    });
+    await t.step('should pass with a valid optional prompt_template_name', () => {
+        const p = { ...basePayload, prompt_template_name: 'test-template-name' };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with a valid optional context_for_documents array', () => {
+        const contextForDocs: ContextForDocument[] = [
+            {
+                document_key: FileType.business_case,
+                content_to_include: { section: '' }
+            }
+        ];
+        const p = { ...basePayload, context_for_documents: contextForDocs };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with a null optional context_for_documents', () => {
+        const p = { ...basePayload, context_for_documents: null };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should throw if context_for_documents is of wrong type', () => {
+        const p = { ...basePayload, context_for_documents: 'invalid' as any };
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error);
     });
 
     // Test legacy property
@@ -1931,6 +1970,88 @@ Deno.test('Type Guard: isHeaderContext', async (t) => {
         };
         assert(!isHeaderContext(invalid));
     });
+
+    await t.step('should return false for an object that has files_to_generate property', () => {
+        const invalid = {
+            ...baseContext,
+            files_to_generate: [
+                {
+                    template_filename: 'test.md',
+                    from_document_key: FileType.business_case
+                }
+            ]
+        };
+        assert(!isHeaderContext(invalid));
+    });
+
+    await t.step('should return false for an object missing system_materials', () => {
+        const invalid = {
+            header_context_artifact: baseContext.header_context_artifact,
+            context_for_documents: baseContext.context_for_documents
+        };
+        assert(!isHeaderContext(invalid));
+    });
+
+    await t.step('should return false for an object missing header_context_artifact', () => {
+        const invalid = {
+            system_materials: baseContext.system_materials,
+            context_for_documents: baseContext.context_for_documents
+        };
+        assert(!isHeaderContext(invalid));
+    });
+
+    await t.step('should return false for an object missing context_for_documents', () => {
+        const invalid = {
+            system_materials: baseContext.system_materials,
+            header_context_artifact: baseContext.header_context_artifact
+        };
+        assert(!isHeaderContext(invalid));
+    });
+
+    await t.step('should return false for an object where context_for_documents is not an array', () => {
+        const invalid = {
+            ...baseContext,
+            context_for_documents: 'not-an-array'
+        };
+        assert(!isHeaderContext(invalid));
+    });
+
+    await t.step('should return false for an object where context_for_documents contains invalid entries (missing document_key)', () => {
+        const invalid = {
+            ...baseContext,
+            context_for_documents: [
+                {
+                    content_to_include: { section: '' }
+                }
+            ]
+        };
+        assert(!isHeaderContext(invalid));
+    });
+
+    await t.step('should return false for an object where context_for_documents contains invalid entries (missing content_to_include)', () => {
+        const invalid = {
+            ...baseContext,
+            context_for_documents: [
+                {
+                    document_key: FileType.business_case
+                }
+            ]
+        };
+        assert(!isHeaderContext(invalid));
+    });
+
+    await t.step('should return false for an object where context_for_documents contains invalid entries (invalid content_to_include structure - array at top level)', () => {
+        const invalid = {
+            ...baseContext,
+            context_for_documents: [
+                {
+                    document_key: FileType.business_case,
+                    content_to_include: ['string1', 'string2'] // Invalid: array at top level, must be object
+                }
+            ]
+        };
+        assert(!isHeaderContext(invalid));
+    });
 });
 
 Deno.test('Type Guard: isDialecticContinueReason', async (t) => {
@@ -2365,15 +2486,17 @@ Deno.test('Type Guard: isOutputRule', async (t) => {
             context_for_documents: [
                 {
                     document_key: FileType.feature_spec,
-                    content_to_include: [
-                        {
-                            feature_name: "Test Feature",
-                            user_stories: [
-                                "As a user, I can do X.",
-                                "As an admin, I can do Y."
-                            ]
-                        }
-                    ]
+                    content_to_include: {
+                        features: [
+                            {
+                                feature_name: "Test Feature",
+                                user_stories: [
+                                    "As a user, I can do X.",
+                                    "As an admin, I can do Y."
+                                ]
+                            }
+                        ]
+                    }
                 },
                 {
                     document_key: FileType.technical_approach,
@@ -2704,10 +2827,12 @@ Deno.test('Type Guard: isContextForDocument', async (t) => {
         assert(isContextForDocument(validContext));
     });
 
-    await t.step('should return true when content_to_include is an array', () => {
+    await t.step('should return true when content_to_include contains an array of objects', () => {
         const contextWithArray: ContextForDocument = {
             document_key: FileType.feature_spec,
-            content_to_include: [{ feature_name: "", user_stories: [] }],
+            content_to_include: {
+                features: [{ feature_name: "", user_stories: [] }]
+            },
         };
         assert(isContextForDocument(contextWithArray));
     });
@@ -3089,3 +3214,115 @@ Deno.test('Type Guard: isAssembledJsonArtifact', async (t) => {
         assert(!isAssembledJsonArtifact(invalid));
     });
 });
+
+Deno.test('Type Guard: isContentToInclude', async (t) => {
+    await t.step('should return true for simple objects with string values', () => {
+        const valid = { field1: '', field2: 'value' };
+        assert(isContentToInclude(valid));
+    });
+
+    await t.step('should return true for objects with string arrays', () => {
+        const valid = { field1: [], field2: ['value1', 'value2'] };
+        assert(isContentToInclude(valid));
+    });
+
+    await t.step('should return true for objects with nested objects', () => {
+        const valid = {
+            dimensions: {
+                feasibility: {
+                    score: 0,
+                    rationale: ''
+                }
+            }
+        };
+        assert(isContentToInclude(valid));
+    });
+
+    await t.step('should return true for objects with arrays of objects', () => {
+        const valid = {
+            features: [
+                { name: '', stories: [] },
+                { name: 'feature2', stories: ['story1'] }
+            ]
+        };
+        assert(isContentToInclude(valid));
+    });
+
+    await t.step('should return true for mixed structures combining all types', () => {
+        const valid = {
+            string_field: 'value',
+            array_field: ['item1', 'item2'],
+            boolean_field: true,
+            number_field: 42,
+            nested_object: {
+                nested_string: '',
+                nested_array: []
+            },
+            array_of_objects: [
+                { key: 'value1' },
+                { key: 'value2' }
+            ]
+        };
+        assert(isContentToInclude(valid));
+    });
+
+    await t.step('should return false for arrays at top level', () => {
+        const invalid = ['string1', 'string2'];
+        assert(!isContentToInclude(invalid));
+    });
+
+    await t.step('should return false for null', () => {
+        assert(!isContentToInclude(null));
+    });
+
+    await t.step('should return false for undefined', () => {
+        assert(!isContentToInclude(undefined));
+    });
+
+    await t.step('should return false for functions', () => {
+        assert(!isContentToInclude(() => {}));
+    });
+
+    await t.step('should return false for objects with null values', () => {
+        const invalid = { field1: null };
+        assert(!isContentToInclude(invalid));
+    });
+
+    await t.step('should return false for objects with undefined values', () => {
+        const invalid = { field1: undefined };
+        assert(!isContentToInclude(invalid));
+    });
+
+    await t.step('should correctly validate deeply nested structures', () => {
+        const valid = {
+            level1: {
+                level2: {
+                    level3: {
+                        level4: {
+                            string_value: 'deep'
+                        }
+                    }
+                }
+            }
+        };
+        assert(isContentToInclude(valid));
+    });
+
+    await t.step('should return false for arrays with mixed types', () => {
+        const invalid = {
+            mixed_array: ['string', 123, true]
+        };
+        assert(!isContentToInclude(invalid));
+    });
+
+    await t.step('should return false for arrays with invalid objects', () => {
+        const invalid = {
+            array_of_invalid: [
+                { valid_key: 'value' },
+                { invalid_key: null }
+            ]
+        };
+        assert(!isContentToInclude(invalid));
+    });
+});
+

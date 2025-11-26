@@ -7,6 +7,8 @@ import { downloadFromStorage } from "../supabase_storage_utils.ts";
 import { gatherInputsForStage } from "./gatherInputsForStage.ts";
 import { renderPrompt } from "../prompt-renderer.ts";
 import { FileType } from "../types/file_manager.types.ts";
+import { ContextForDocument } from "../../dialectic-service/dialectic.interface.ts";
+import { isContextForDocumentArray } from "../utils/type-guards/type_guards.dialectic.ts";
 
 export async function assemblePlannerPrompt(
   {
@@ -205,6 +207,61 @@ export async function assemblePlannerPrompt(
     session.iteration_count,
   );
 
+  // Extract and validate context_for_documents from recipe step for PLAN jobs
+  if (!stage.recipe_step.outputs_required) {
+    throw new Error(
+      "PRECONDITION_FAILED: PLAN job requires context_for_documents in recipe_step.outputs_required",
+    );
+  }
+
+  if (!isRecord(stage.recipe_step.outputs_required)) {
+    throw new Error(
+      "PRECONDITION_FAILED: PLAN job requires context_for_documents in recipe_step.outputs_required",
+    );
+  }
+
+  if (!('context_for_documents' in stage.recipe_step.outputs_required)) {
+    throw new Error(
+      "PRECONDITION_FAILED: PLAN job requires context_for_documents in recipe_step.outputs_required",
+    );
+  }
+
+  const contextForDocumentsValue = stage.recipe_step.outputs_required['context_for_documents'];
+
+  if (!isContextForDocumentArray(contextForDocumentsValue)) {
+    throw new Error(
+      "PRECONDITION_FAILED: PLAN job requires context_for_documents in recipe_step.outputs_required to be an array of ContextForDocument objects",
+    );
+  }
+
+  if (contextForDocumentsValue.length === 0) {
+    throw new Error(
+      "PRECONDITION_FAILED: PLAN job requires context_for_documents in recipe_step.outputs_required to contain at least one entry",
+    );
+  }
+
+  const contextForDocuments: ContextForDocument[] = contextForDocumentsValue;
+
+  // Create instructions for the agent to fill in content_to_include objects
+  const contextForDocumentsInstructions = `You must fill in the content_to_include objects in the context_for_documents array with specific alignment values. These alignment details ensure cross-document coordination:
+
+1. Fill in each content_to_include object with shared terminology, consistent values, and coordinated decisions that will be used across all documents in this step group.
+2. Produce a header_context artifact with completed content_to_include objects containing these alignment values.
+3. Ensure all documents in the step group will use these alignment details when they are generated.
+
+The context_for_documents array below contains empty content_to_include object models that you must fill in with specific alignment values.`;
+
+  // Extend context with context_for_documents wrapped in an object that includes instructions
+  // This embeds the instructions as a predicate property (_instructions) within the structure
+  // so they are consumed together when {{context_for_documents}} is rendered
+  const extendedContext = {
+    ...context,
+    context_for_documents: {
+      _instructions: contextForDocumentsInstructions,
+      documents: contextForDocuments,
+    },
+  };
+
   const stageWithOverride = {
     ...stage,
     system_prompts: { prompt_text: promptTemplate },
@@ -213,7 +270,7 @@ export async function assemblePlannerPrompt(
   const renderedPrompt = render(
     renderPrompt,
     stageWithOverride,
-    context,
+    extendedContext,
     project.user_domain_overlay_values,
   );
 

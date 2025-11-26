@@ -5,6 +5,7 @@ import {
 import { isRecord } from "../utils/type_guards.ts";
 import { downloadFromStorage } from "../supabase_storage_utils.ts";
 import { FileType } from "../types/file_manager.types.ts";
+import { HeaderContext } from "../../dialectic-service/dialectic.interface.ts";
 
 export const MOCK_CONTINUATION_INSTRUCTION_EXPLICIT =
   "Please continue the following text, ensuring you complete the thought without repetition:";
@@ -12,10 +13,6 @@ export const MOCK_CONTINUATION_INSTRUCTION_INCOMPLETE_JSON =
   "The previous response was an incomplete JSON object. Please complete the following JSON object, ensuring it is syntactically valid:";
 export const MOCK_CONTINUATION_INSTRUCTION_MALFORMED_JSON =
   "The previous response was a malformed JSON object. Please correct the following JSON object, ensuring it is syntactically valid:";
-
-type HeaderContext = {
-  system_materials: Record<string, unknown>;
-};
 
 function getJsonCorrectiveInstruction(content: string): string | null {
   if (!content.trim().startsWith("{") && !content.trim().startsWith("[")) {

@@ -86,12 +86,21 @@
     {
       "document_key": "business_case_critique",
       "content_to_include": {
+        "fit_to_original_user_request": "",
         "strengths": [],
         "weaknesses": [],
         "opportunities": [],
         "threats": [],
+        "problems": [],
+        "obstacles": [],
+        "errors": [],
+        "omissions": [],
+        "discrepancies": [],
+        "areas_for_improvement": [],
+        "feasibility": "",
         "recommendations": [],
-        "notes": []
+        "notes": [],
+        "executive_summary": ""
       }
     },
     {
@@ -121,14 +130,16 @@
     },
     {
       "document_key": "non_functional_requirements",
-      "content_to_include": [
-        "security",
-        "performance",
-        "reliability",
-        "scalability",
-        "maintainability",
-        "compliance"
-      ]
+      "content_to_include": {
+        "categories": [
+          "security",
+          "performance",
+          "reliability",
+          "scalability",
+          "maintainability",
+          "compliance"
+        ]
+      }
     },
     {
       "document_key": "dependency_map",
@@ -141,6 +152,10 @@
     {
       "document_key": "comparison_vector",
       "content_to_include": {
+        "proposal": {
+          "lineage_key": "",
+          "source_model_slug": ""
+        },
         "dimensions": {
           "feasibility": { "score": 0, "rationale": "" },
           "complexity": { "score": 0, "rationale": "" },

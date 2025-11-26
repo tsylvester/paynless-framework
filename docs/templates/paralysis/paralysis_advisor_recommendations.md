@@ -1,23 +1,34 @@
 # Advisor Recommendations
 
-{{#section:options}}
-## Options
-{options}
-{{/section:options}}
+{{#section:comparison_matrix}}
+## Comparison Matrix
+{comparison_matrix}
+{{/section:comparison_matrix}}
 
 {{#section:analysis}}
 ## Analysis
-{analysis}
+
+### Summary
+{analysis.summary}
+
+### Tradeoffs
+{analysis.tradeoffs}
+
+### Consensus
+{analysis.consensus}
 {{/section:analysis}}
 
 {{#section:recommendation}}
 ## Recommendation
-{recommendation}
+
+### Rankings
+{recommendation.rankings}
+
+### Tie Breakers
+{recommendation.tie_breakers}
 {{/section:recommendation}}
 
 {{#section:_extra_content}}
 ## Additional Content
 {_extra_content}
 {{/section:_extra_content}}
-
-

@@ -504,10 +504,26 @@ BEGIN
              {
                "document_key": "business_case_critique",
                "content_to_include": {
+                 "executive_summary": "",
+                 "fit_to_original_user_request": "",
+                 "user_problem_validation": "",
+                 "market_opportunity": "",
+                 "competitive_analysis": "",
+                 "differentiation_value_proposition": "",
+                 "risks_mitigation": "",
                  "strengths": [],
                  "weaknesses": [],
                  "opportunities": [],
                  "threats": [],
+                 "problems": [],
+                 "obstacles": [],
+                 "errors": [],
+                 "omissions": [],
+                 "discrepancies": [],
+                 "areas_for_improvement": [],
+                 "feasibility": "",
+                 "next_steps": "",
+                 "proposal_references": "",
                  "recommendations": [],
                  "notes": []
                }
@@ -515,6 +531,7 @@ BEGIN
              {
                "document_key": "technical_feasibility_assessment",
                "content_to_include": {
+                 "summary": "",
                  "constraint_checklist": [
                    "team",
                    "timeline",
@@ -522,43 +539,73 @@ BEGIN
                    "integration",
                    "compliance"
                  ],
-                 "findings": []
+                 "findings": [],
+                 "architecture": "",
+                 "components": "",
+                 "data": "",
+                 "deployment": "",
+                 "sequencing": "",
+                 "risk_mitigation": "",
+                 "open_questions": ""
                }
              },
              {
                "document_key": "risk_register",
                "content_to_include": {
+                 "overview": "",
                  "required_fields": [
                    "risk",
                    "impact",
                    "likelihood",
                    "mitigation"
                  ],
-                 "seed_examples": []
+                 "seed_examples": [],
+                 "mitigation_plan": "",
+                 "notes": ""
                }
              },
              {
                "document_key": "non_functional_requirements",
-               "content_to_include": [
-                 "security",
-                 "performance",
-                 "reliability",
-                 "scalability",
-                 "maintainability",
-                 "compliance"
-               ]
+               "content_to_include": {
+                 "overview": "",
+                 "categories": [
+                   "security",
+                   "performance",
+                   "reliability",
+                   "scalability",
+                   "maintainability",
+                   "compliance"
+                 ],
+                 "outcome_alignment": "",
+                 "primary_kpis": "",
+                 "leading_indicators": "",
+                 "lagging_indicators": "",
+                 "measurement_plan": "",
+                 "risk_signals": "",
+                 "guardrails": "",
+                 "next_steps": ""
+               }
              },
              {
                "document_key": "dependency_map",
                "content_to_include": {
+                 "overview": "",
                  "components": [],
                  "integration_points": [],
-                 "conflict_flags": []
+                 "conflict_flags": [],
+                 "dependencies": "",
+                 "sequencing": "",
+                 "risk_mitigation": "",
+                 "open_questions": ""
                }
              },
              {
                "document_key": "comparison_vector",
                "content_to_include": {
+                 "proposal": {
+                   "lineage_key": "",
+                   "source_model_slug": ""
+                 },
                  "dimensions": {
                    "feasibility": { "score": 0, "rationale": "" },
                    "complexity": { "score": 0, "rationale": "" },
@@ -683,10 +730,26 @@ BEGIN
              {
                "document_key": "business_case_critique",
                "content_to_include": {
+                 "executive_summary": "",
+                 "fit_to_original_user_request": "",
+                 "user_problem_validation": "",
+                 "market_opportunity": "",
+                 "competitive_analysis": "",
+                 "differentiation_value_proposition": "",
+                 "risks_mitigation": "",
                  "strengths": [],
                  "weaknesses": [],
                  "opportunities": [],
                  "threats": [],
+                 "problems": [],
+                 "obstacles": [],
+                 "errors": [],
+                 "omissions": [],
+                 "discrepancies": [],
+                 "areas_for_improvement": [],
+                 "feasibility": "",
+                 "next_steps": "",
+                 "proposal_references": "",
                  "recommendations": [],
                  "notes": []
                }
@@ -694,6 +757,7 @@ BEGIN
              {
                "document_key": "technical_feasibility_assessment",
                "content_to_include": {
+                 "summary": "",
                  "constraint_checklist": [
                    "team",
                    "timeline",
@@ -701,43 +765,73 @@ BEGIN
                    "integration",
                    "compliance"
                  ],
-                 "findings": []
+                 "findings": [],
+                 "architecture": "",
+                 "components": "",
+                 "data": "",
+                 "deployment": "",
+                 "sequencing": "",
+                 "risk_mitigation": "",
+                 "open_questions": ""
                }
              },
              {
                "document_key": "risk_register",
                "content_to_include": {
+                 "overview": "",
                  "required_fields": [
                    "risk",
                    "impact",
                    "likelihood",
                    "mitigation"
                  ],
-                 "seed_examples": []
+                 "seed_examples": [],
+                 "mitigation_plan": "",
+                 "notes": ""
                }
              },
              {
                "document_key": "non_functional_requirements",
-               "content_to_include": [
-                 "security",
-                 "performance",
-                 "reliability",
-                 "scalability",
-                 "maintainability",
-                 "compliance"
-               ]
+               "content_to_include": {
+                 "overview": "",
+                 "categories": [
+                   "security",
+                   "performance",
+                   "reliability",
+                   "scalability",
+                   "maintainability",
+                   "compliance"
+                 ],
+                 "outcome_alignment": "",
+                 "primary_kpis": "",
+                 "leading_indicators": "",
+                 "lagging_indicators": "",
+                 "measurement_plan": "",
+                 "risk_signals": "",
+                 "guardrails": "",
+                 "next_steps": ""
+               }
              },
              {
                "document_key": "dependency_map",
                "content_to_include": {
+                 "overview": "",
                  "components": [],
                  "integration_points": [],
-                 "conflict_flags": []
+                 "conflict_flags": [],
+                 "dependencies": "",
+                 "sequencing": "",
+                 "risk_mitigation": "",
+                 "open_questions": ""
                }
              },
              {
                "document_key": "comparison_vector",
                "content_to_include": {
+                 "proposal": {
+                   "lineage_key": "",
+                   "source_model_slug": ""
+                 },
                  "dimensions": {
                    "feasibility": { "score": 0, "rationale": "" },
                    "complexity": { "score": 0, "rationale": "" },
@@ -810,7 +904,6 @@ BEGIN
               "artifact_class": "rendered_document",
               "file_type": "markdown",
               "content_to_include": {
-                "executive_summary": "",  
                 "fit_to_original_user_request": "",
                 "strengths": [],
                 "weaknesses": [],
@@ -824,7 +917,8 @@ BEGIN
                 "areas_for_improvement": [],
                 "feasibility": "",
                 "recommendations": [],
-                "notes": []
+                "notes": [],
+                "executive_summary": ""
               }
             }
           ],
@@ -894,20 +988,21 @@ BEGIN
               "artifact_class": "rendered_document",
               "file_type": "markdown",
               "content_to_include": {
+                "fit_to_original_user_request": "",
                 "strengths": [],
                 "weaknesses": [],
                 "opportunities": [],
                 "threats": [],
-                "recommendations": [],
-                "notes": [],
-                "fit_to_original_user_request": "",
                 "problems": [],
                 "obstacles": [],
                 "errors": [],
                 "omissions": [],
                 "discrepancies": [],
                 "areas_for_improvement": [],
-                "feasibility": ""
+                "feasibility": "",
+                "recommendations": [],
+                "notes": [],
+                "executive_summary": ""
               }
             }
           ],
@@ -974,25 +1069,38 @@ BEGIN
                "artifact_class": "rendered_document",
                "lineage_key": "<from the filename of the file being critiqued>",
                "source_model_slug": "<from the filename of the file being critiqued>",
-               "file_type": "markdown",
-               "content_to_include": {
-                 "constraint_checklist": [
-                   "team",
-                   "timeline",
-                   "cost",
-                   "integration",
-                   "compliance"
-                 ],
-                 "findings": []
-               }
-             }
-           ],
-           "files_to_generate": [
-             {
-               "template_filename": "antithesis_feasibility_assessment.md",
-               "from_document_key": "technical_feasibility_assessment"
-             }
-           ]
+              "file_type": "markdown",
+              "content_to_include": {
+                "summary": "",
+                "constraint_checklist": [
+                  "team",
+                  "timeline",
+                  "cost",
+                  "integration",
+                  "compliance"
+                ],
+                "team": "",
+                "timeline": "",
+                "cost": "",
+                "integration": "",
+                "compliance": "",
+                "findings": [],
+                "architecture": "",
+                "components": "",
+                "data": "",
+                "deployment": "",
+                "sequencing": "",
+                "risk_mitigation": "",
+                "open_questions": ""
+              }
+            }
+          ],
+          "files_to_generate": [
+            {
+              "template_filename": "antithesis_feasibility_assessment.md",
+              "from_document_key": "technical_feasibility_assessment"
+            }
+          ]
         }'::jsonb
     )
     ON CONFLICT (template_id, step_key) DO UPDATE
@@ -1055,6 +1163,7 @@ BEGIN
               "source_model_slug": "<from the filename of the file being critiqued>",
               "file_type": "markdown",
               "content_to_include": {
+                "summary": "",
                 "constraint_checklist": [
                   "team",
                   "timeline",
@@ -1062,7 +1171,19 @@ BEGIN
                   "integration",
                   "compliance"
                 ],
-                "findings": []
+                "team": "",
+                "timeline": "",
+                "cost": "",
+                "integration": "",
+                "compliance": "",
+                "findings": [],
+                "architecture": "",
+                "components": "",
+                "data": "",
+                "deployment": "",
+                "sequencing": "",
+                "risk_mitigation": "",
+                "open_questions": ""
               }
             }
           ],
@@ -1129,23 +1250,31 @@ BEGIN
                "artifact_class": "rendered_document",
                "lineage_key": "<from the filename of the file being critiqued>",
                "source_model_slug": "<from the filename of the file being critiqued>",
-               "file_type": "markdown",
-               "content_to_include": [
-                 {
-                   "risk": "",
-                   "impact": "",
-                   "likelihood": "",
-                   "mitigation": ""
-                 }
-               ]
-             }
-           ],
-           "files_to_generate": [
-             {
-               "template_filename": "antithesis_risk_register.md",
-               "from_document_key": "risk_register"
-             }
-           ]
+              "file_type": "markdown",
+              "content_to_include": {
+                "overview": "",
+                "required_fields": [
+                  "risk",
+                  "impact",
+                  "likelihood",
+                  "mitigation"
+                ],
+                "risk": "",
+                "impact": "",
+                "likelihood": "",
+                "mitigation": "",
+                "seed_examples": [],
+                "mitigation_plan": "",
+                "notes": ""
+              }
+            }
+          ],
+          "files_to_generate": [
+            {
+              "template_filename": "antithesis_risk_register.md",
+              "from_document_key": "risk_register"
+            }
+          ]
         }'::jsonb
     )
     ON CONFLICT (template_id, step_key) DO UPDATE
@@ -1207,14 +1336,22 @@ BEGIN
               "lineage_key": "<from the filename of the file being critiqued>",
               "source_model_slug": "<from the filename of the file being critiqued>",
               "file_type": "markdown",
-              "content_to_include": [
-                {
-                  "risk": "",
-                  "impact": "",
-                  "likelihood": "",
-                  "mitigation": ""
-                }
-              ]
+              "content_to_include": {
+                "overview": "",
+                "required_fields": [
+                  "risk",
+                  "impact",
+                  "likelihood",
+                  "mitigation"
+                ],
+                "risk": "",
+                "impact": "",
+                "likelihood": "",
+                "mitigation": "",
+                "seed_examples": [],
+                "mitigation_plan": "",
+                "notes": ""
+              }
             }
           ],
           "files_to_generate": [
@@ -1280,23 +1417,40 @@ BEGIN
                "artifact_class": "rendered_document",
                "lineage_key": "<from the filename of the file being critiqued>",
                "source_model_slug": "<from the filename of the file being critiqued>",
-               "file_type": "markdown",
-               "content_to_include": [
-                 "security",
-                 "performance",
-                 "reliability",
-                 "scalability",
-                 "maintainability",
-                 "compliance"
-               ]
-             }
-           ],
-           "files_to_generate": [
-             {
-               "template_filename": "antithesis_non_functional_requirements.md",
-               "from_document_key": "non_functional_requirements"
-             }
-           ]
+              "file_type": "markdown",
+              "content_to_include": {
+                "overview": "",
+                "categories": [
+                  "security",
+                  "performance",
+                  "reliability",
+                  "scalability",
+                  "maintainability",
+                  "compliance"
+                ],
+                "security": "",
+                "performance": "",
+                "reliability": "",
+                "scalability": "",
+                "maintainability": "",
+                "compliance": "",
+                "outcome_alignment": "",
+                "primary_kpis": "",
+                "leading_indicators": "",
+                "lagging_indicators": "",
+                "measurement_plan": "",
+                "risk_signals": "",
+                "guardrails": "",
+                "next_steps": ""
+              }
+            }
+          ],
+          "files_to_generate": [
+            {
+              "template_filename": "antithesis_non_functional_requirements.md",
+              "from_document_key": "non_functional_requirements"
+            }
+          ]
         }'::jsonb
     )
     ON CONFLICT (template_id, step_key) DO UPDATE
@@ -1358,14 +1512,31 @@ BEGIN
               "lineage_key": "<from the filename of the file being critiqued>",
               "source_model_slug": "<from the filename of the file being critiqued>",
               "file_type": "markdown",
-              "content_to_include": [
-                "security",
-                "performance",
-                "reliability",
-                "scalability",
-                "maintainability",
-                "compliance"
-              ]
+              "content_to_include": {
+                "overview": "",
+                "categories": [
+                  "security",
+                  "performance",
+                  "reliability",
+                  "scalability",
+                  "maintainability",
+                  "compliance"
+                ],
+                "security": "",
+                "performance": "",
+                "reliability": "",
+                "scalability": "",
+                "maintainability": "",
+                "compliance": "",
+                "outcome_alignment": "",
+                "primary_kpis": "",
+                "leading_indicators": "",
+                "lagging_indicators": "",
+                "measurement_plan": "",
+                "risk_signals": "",
+                "guardrails": "",
+                "next_steps": ""
+              }
             }
           ],
           "files_to_generate": [
@@ -1433,9 +1604,14 @@ BEGIN
                "source_model_slug": "<from the filename of the file being critiqued>",
                "file_type": "markdown",
                "content_to_include": {
+                 "overview": "",
                  "components": [],
                  "integration_points": [],
-                 "conflict_flags": []
+                 "conflict_flags": [],
+                 "dependencies": "",
+                 "sequencing": "",
+                 "risk_mitigation": "",
+                 "open_questions": ""
                }
              }
            ],
@@ -1507,9 +1683,14 @@ BEGIN
               "source_model_slug": "<from the filename of the file being critiqued>",
               "file_type": "markdown",
               "content_to_include": {
+                "overview": "",
                 "components": [],
                 "integration_points": [],
-                "conflict_flags": []
+                "conflict_flags": [],
+                "dependencies": "",
+                "sequencing": "",
+                "risk_mitigation": "",
+                "open_questions": ""
               }
             }
           ],

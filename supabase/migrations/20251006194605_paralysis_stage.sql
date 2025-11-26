@@ -461,7 +461,39 @@ DECLARE
               "document_key": "actionable_checklist",
               "template_filename": "paralysis_actionable_checklist.md",
               "artifact_class": "rendered_document",
-              "file_type": "markdown"
+              "file_type": "markdown",
+              "content_to_include": {
+                "milestone_ids": [],
+                "index": [],
+                "milestone_summary": "",
+                "milestone_reference": {
+                  "id": "",
+                  "phase": "",
+                  "dependencies": ""
+                },
+                "steps": [
+                  {
+                    "status": "",
+                    "component_label": "",
+                    "numbering": "",
+                    "title": "",
+                    "description": "",
+                    "inputs": "",
+                    "outputs": "",
+                    "validation": "",
+                    "red_test": "",
+                    "implementation": "",
+                    "green_test": "",
+                    "refactor": "",
+                    "commit_message": ""
+                  }
+                ],
+                "generation_limits": {
+                  "max_steps": 200,
+                  "target_steps": "120-180",
+                  "max_output_lines": "600-800"
+                }
+              }
             }
           ],
           "assembled_json": [
@@ -475,7 +507,10 @@ DECLARE
                 "steps[].inputs",
                 "steps[].outputs",
                 "steps[].validation",
-                "steps[].tdd_sequence",
+                "steps[].red_test",
+                "steps[].implementation",
+                "steps[].green_test",
+                "steps[].refactor",
                 "steps[].dependencies"
               ]
             }
@@ -545,7 +580,39 @@ DECLARE
               "document_key": "actionable_checklist",
               "template_filename": "paralysis_actionable_checklist.md",
               "artifact_class": "rendered_document",
-              "file_type": "markdown"
+              "file_type": "markdown",
+              "content_to_include": {
+                "milestone_ids": [],
+                "index": [],
+                "milestone_summary": "",
+                "milestone_reference": {
+                  "id": "",
+                  "phase": "",
+                  "dependencies": ""
+                },
+                "steps": [
+                  {
+                    "status": "",
+                    "component_label": "",
+                    "numbering": "",
+                    "title": "",
+                    "description": "",
+                    "inputs": "",
+                    "outputs": "",
+                    "validation": "",
+                    "red_test": "",
+                    "implementation": "",
+                    "green_test": "",
+                    "refactor": "",
+                    "commit_message": ""
+                  }
+                ],
+                "generation_limits": {
+                  "max_steps": 200,
+                  "target_steps": "120-180",
+                  "max_output_lines": "600-800"
+                }
+              }
             }
           ],
           "assembled_json": [
@@ -559,7 +626,10 @@ DECLARE
                 "steps[].inputs",
                 "steps[].outputs",
                 "steps[].validation",
-                "steps[].tdd_sequence",
+                "steps[].red_test",
+                "steps[].implementation",
+                "steps[].green_test",
+                "steps[].refactor",
                 "steps[].dependencies"
               ]
             }
@@ -636,7 +706,8 @@ DECLARE
               "document_key": "updated_master_plan",
               "template_filename": "paralysis_updated_master_plan.md",
               "artifact_class": "rendered_document",
-              "file_type": "markdown"
+              "file_type": "markdown",
+              "content_to_include": {"preserve_completed": true, "set_in_progress": "[🚧]", "future_status": "[ ]", "capture_iteration_delta": true}
             }
           ],
           "assembled_json": [
@@ -650,6 +721,9 @@ DECLARE
                 "phases[].milestones[].objective",
                 "phases[].milestones[].dependencies",
                 "phases[].milestones[].acceptance_criteria",
+                "status_summary.completed[]",
+                "status_summary.in_progress[]",
+                "status_summary.up_next[]",
                 "iteration_delta"
               ]
             }
@@ -715,7 +789,8 @@ DECLARE
               "document_key": "updated_master_plan",
               "template_filename": "paralysis_updated_master_plan.md",
               "artifact_class": "rendered_document",
-              "file_type": "markdown"
+              "file_type": "markdown",
+              "content_to_include": {"preserve_completed": true, "set_in_progress": "[🚧]", "future_status": "[ ]", "capture_iteration_delta": true}
             }
           ],
           "assembled_json": [
@@ -729,6 +804,9 @@ DECLARE
                 "phases[].milestones[].objective",
                 "phases[].milestones[].dependencies",
                 "phases[].milestones[].acceptance_criteria",
+                "status_summary.completed[]",
+                "status_summary.in_progress[]",
+                "status_summary.up_next[]",
                 "iteration_delta"
               ]
             }
@@ -803,7 +881,8 @@ DECLARE
               "document_key": "advisor_recommendations",
               "template_filename": "paralysis_advisor_recommendations.md",
               "artifact_class": "rendered_document",
-              "file_type": "markdown"
+              "file_type": "markdown",
+              "content_to_include": {"require_comparison_matrix": true, "summarize_tradeoffs": true, "capture_final_recommendation": true, "tie_breaker_guidance": true}
             }
           ],
           "assembled_json": [
@@ -811,12 +890,12 @@ DECLARE
               "document_key": "advisor_recommendations",
               "artifact_class": "assembled_document_json",
               "fields": [
-                "options[].id",
-                "options[].scores[].dimension",
-                "options[].scores[].weight",
-                "options[].scores[].value",
-                "options[].scores[].rationale",
-                "options[].preferred",
+                "comparison_matrix[].id",
+                "comparison_matrix[].scores[].dimension",
+                "comparison_matrix[].scores[].weight",
+                "comparison_matrix[].scores[].value",
+                "comparison_matrix[].scores[].rationale",
+                "comparison_matrix[].preferred",
                 "analysis.summary",
                 "analysis.tradeoffs",
                 "analysis.consensus",
@@ -882,7 +961,8 @@ DECLARE
               "document_key": "advisor_recommendations",
               "template_filename": "paralysis_advisor_recommendations.md",
               "artifact_class": "rendered_document",
-              "file_type": "markdown"
+              "file_type": "markdown",
+              "content_to_include": {"require_comparison_matrix": true, "summarize_tradeoffs": true, "capture_final_recommendation": true, "tie_breaker_guidance": true}
             }
           ],
           "assembled_json": [
@@ -890,12 +970,12 @@ DECLARE
               "document_key": "advisor_recommendations",
               "artifact_class": "assembled_document_json",
               "fields": [
-                "options[].id",
-                "options[].scores[].dimension",
-                "options[].scores[].weight",
-                "options[].scores[].value",
-                "options[].scores[].rationale",
-                "options[].preferred",
+                "comparison_matrix[].id",
+                "comparison_matrix[].scores[].dimension",
+                "comparison_matrix[].scores[].weight",
+                "comparison_matrix[].scores[].value",
+                "comparison_matrix[].scores[].rationale",
+                "comparison_matrix[].preferred",
                 "analysis.summary",
                 "analysis.tradeoffs",
                 "analysis.consensus",

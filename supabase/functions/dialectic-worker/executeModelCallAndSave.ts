@@ -1030,7 +1030,7 @@ export async function executeModelCallAndSave(
         }
     }
 
-    const contentForStorage: string = aiResponse.content;
+    const contentForStorage: string = sanitizationResult.sanitized;
     
     // This is the correct implementation. The semantic relationships are inherited
     // directly from the job payload. The structural link for continuations is
