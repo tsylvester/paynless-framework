@@ -126,12 +126,6 @@ const StageCard: React.FC<StageCardProps> = ({
 									Completed
 								</span>
 							)}
-							<span
-								data-testid={`stage-progress-count-${stage.slug}`}
-								className="text-muted-foreground"
-							>
-								{`${progress.completedDocuments} / ${progress.totalDocuments} documents`}
-							</span>
 						</div>
 					)}
 				</div>

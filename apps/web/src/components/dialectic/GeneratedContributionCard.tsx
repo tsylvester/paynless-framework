@@ -327,7 +327,7 @@ export const GeneratedContributionCard: React.FC<
 						<p className="text-sm font-medium text-muted-foreground">Model</p>
 						<h3 className="text-lg font-semibold text-foreground">{modelName}</h3>
 					</div>
-					{documentDescriptor && (
+					{documentDescriptor && isValidMarkdownDocument && (
 						<Badge variant="secondary">
 							{formatStatusLabel(documentDescriptor.status)}
 						</Badge>

@@ -329,7 +329,7 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
             className="justify-between rounded-none px-0 py-1 text-sm font-normal text-muted-foreground hover:no-underline"
           >
             <span aria-live="polite" role="status" className="text-left">
-              {`Completed ${completedDocuments} of ${totalDocuments} documents`}
+              {`${completedDocuments} / ${totalDocuments} Documents`}
             </span>
           </AccordionTrigger>
           <AccordionContent

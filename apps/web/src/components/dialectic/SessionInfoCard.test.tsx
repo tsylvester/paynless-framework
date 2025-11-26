@@ -388,4 +388,203 @@ describe('SessionInfoCard', () => {
       expect(screen.getByText('Loading Session Information...')).toBeInTheDocument();
     });
   });
+
+  describe('Step 6.b: Export Final button is never displayed', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      resetAiStoreMock();
+      initializeMockWalletStore();
+    });
+
+    it('does not render "Export Final" button even when isFinalStageInProcess is true', () => {
+      // Step 6.b.i: Create a test case that mocks store state with isFinalStageInProcess set to true
+      // by setting up a project with process template transitions where the current stage has no outgoing transitions
+      const finalStage: DialecticStage = {
+        id: 'final-stage-id',
+        slug: 'synthesis',
+        display_name: 'Synthesis',
+        description: 'Final synthesis stage',
+        default_system_prompt_id: 'p1',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: 'now',
+      };
+
+      const projectWithFinalStage: DialecticProject = {
+        ...mockProject,
+        dialectic_process_templates: {
+          ...mockProject.dialectic_process_templates!,
+          transitions: [
+            // Include transitions that do NOT have source_stage_id === finalStage.id
+            // This makes finalStage the final stage (no outgoing transitions)
+            {
+              source_stage_id: 'thesis-stage-id',
+              target_stage_id: 'antithesis-stage-id',
+              condition_description: null,
+              created_at: 'now',
+              id: 'transition-1',
+              process_template_id: 'pt-1',
+            },
+            {
+              source_stage_id: 'antithesis-stage-id',
+              target_stage_id: finalStage.id,
+              condition_description: null,
+              created_at: 'now',
+              id: 'transition-2',
+              process_template_id: 'pt-1',
+            },
+            // No transition where source_stage_id === finalStage.id
+          ],
+        },
+      };
+
+      // Step 6.b.ii: Mock project to be non-null and render SessionInfoCard
+      setupMockStore({
+        currentProjectDetail: projectWithFinalStage,
+        activeContextStage: finalStage,
+        activeSessionDetail: {
+          ...mockSession,
+          current_stage_id: finalStage.id,
+        },
+      });
+
+      renderComponent();
+
+      // Step 6.b.iii: Assert that the "Export Final" button is NOT rendered,
+      // even when isFinalStageInProcess is true
+      expect(screen.queryByText('Export Final')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /export final/i })).not.toBeInTheDocument();
+
+      // Step 6.b.iv: Assert that the always-visible "Export" button (lines 247-257) is still rendered
+      const exportButton = screen.getByRole('button', { name: /export/i });
+      expect(exportButton).toBeInTheDocument();
+      expect(exportButton).toHaveTextContent(/export/i);
+      // Verify it's the always-visible export button (not "Export Final")
+      expect(exportButton).not.toHaveTextContent('Export Final');
+    });
+  });
+
+  describe('Step 6.e: Always-visible Export button is rendered in all stages', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      resetAiStoreMock();
+      initializeMockWalletStore();
+    });
+
+    it('renders Export button in final stage (isFinalStageInProcess is true)', () => {
+      // Step 6.e.i: Create test case for final stage
+      const finalStage: DialecticStage = {
+        id: 'final-stage-id',
+        slug: 'synthesis',
+        display_name: 'Synthesis',
+        description: 'Final synthesis stage',
+        default_system_prompt_id: 'p1',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: 'now',
+      };
+
+      const projectWithFinalStage: DialecticProject = {
+        ...mockProject,
+        dialectic_process_templates: {
+          ...mockProject.dialectic_process_templates!,
+          transitions: [
+            {
+              source_stage_id: 'thesis-stage-id',
+              target_stage_id: 'antithesis-stage-id',
+              condition_description: null,
+              created_at: 'now',
+              id: 'transition-1',
+              process_template_id: 'pt-1',
+            },
+            {
+              source_stage_id: 'antithesis-stage-id',
+              target_stage_id: finalStage.id,
+              condition_description: null,
+              created_at: 'now',
+              id: 'transition-2',
+              process_template_id: 'pt-1',
+            },
+            // No transition where source_stage_id === finalStage.id
+          ],
+        },
+      };
+
+      setupMockStore({
+        currentProjectDetail: projectWithFinalStage,
+        activeContextStage: finalStage,
+        activeSessionDetail: {
+          ...mockSession,
+          current_stage_id: finalStage.id,
+        },
+      });
+
+      renderComponent();
+
+      // Step 6.e.ii: Assert that the always-visible "Export" button is rendered
+      const exportButton = screen.getByRole('button', { name: /export/i });
+      expect(exportButton).toBeInTheDocument();
+      expect(exportButton).toHaveTextContent(/export/i);
+      expect(exportButton).not.toHaveTextContent('Export Final');
+    });
+
+    it('renders Export button in non-final stage (isFinalStageInProcess is false)', () => {
+      // Step 6.e.i: Create test case for non-final stage
+      const nonFinalStage: DialecticStage = {
+        id: 'thesis-stage-id',
+        slug: 'thesis',
+        display_name: 'Thesis',
+        description: 'Non-final thesis stage',
+        default_system_prompt_id: 'p1',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: 'now',
+      };
+
+      const projectWithNonFinalStage: DialecticProject = {
+        ...mockProject,
+        dialectic_process_templates: {
+          ...mockProject.dialectic_process_templates!,
+          transitions: [
+            {
+              source_stage_id: nonFinalStage.id,
+              target_stage_id: 'antithesis-stage-id',
+              condition_description: null,
+              created_at: 'now',
+              id: 'transition-1',
+              process_template_id: 'pt-1',
+            },
+            {
+              source_stage_id: 'antithesis-stage-id',
+              target_stage_id: 'synthesis-stage-id',
+              condition_description: null,
+              created_at: 'now',
+              id: 'transition-2',
+              process_template_id: 'pt-1',
+            },
+          ],
+        },
+      };
+
+      setupMockStore({
+        currentProjectDetail: projectWithNonFinalStage,
+        activeContextStage: nonFinalStage,
+        activeSessionDetail: {
+          ...mockSession,
+          current_stage_id: nonFinalStage.id,
+        },
+      });
+
+      renderComponent();
+
+      // Step 6.e.ii: Assert that the always-visible "Export" button is rendered
+      const exportButton = screen.getByRole('button', { name: /export/i });
+      expect(exportButton).toBeInTheDocument();
+      expect(exportButton).toHaveTextContent(/export/i);
+      expect(exportButton).not.toHaveTextContent('Export Final');
+    });
+  });
 }); 

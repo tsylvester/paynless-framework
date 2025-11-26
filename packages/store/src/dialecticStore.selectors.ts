@@ -688,11 +688,14 @@ export const selectStageProgressSummary = (
 
     const documentEntries = progress.documents;
 
-    const documentKeys = Object.keys(documentEntries).filter((key) => {
+    const allDocumentKeys = Object.keys(documentEntries).filter((key) => {
         if (!modelId) return true;
         const documentDescriptor = documentEntries[key];
         return documentDescriptor?.modelId === modelId;
     });
+
+    const validMarkdownKeys = selectValidMarkdownDocumentKeys(state, stageSlug);
+    const documentKeys = allDocumentKeys.filter((key) => validMarkdownKeys.has(key));
 
     let completedDocuments = 0;
     const outstandingDocuments: string[] = [];

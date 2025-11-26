@@ -9,6 +9,8 @@ import {
   DialecticProcessTemplate,
   StageRunChecklistProps,
   StageRunDocumentDescriptor,
+  DialecticStageRecipe,
+  DialecticStageRecipeStep,
 } from '@paynless/types';
 import { initializeMockDialecticState, getDialecticStoreState } from '../../mocks/dialecticStore.mock';
 
@@ -123,6 +125,47 @@ const createStageRunProgressEntry = (
   };
 };
 
+const createRecipeWithMarkdownDocuments = (
+  documentKeys: string[],
+  stageSlug: string = mockStages[0].slug,
+  instanceId: string = 'instance-test'
+): DialecticStageRecipe => {
+  const steps: DialecticStageRecipeStep[] = documentKeys.map((documentKey, index) => ({
+    id: `step-${index + 1}`,
+    step_key: `generate_${documentKey}`,
+    step_slug: `generate-${documentKey}`,
+    step_name: `Generate ${documentKey}`,
+    execution_order: index + 1,
+    parallel_group: 1,
+    branch_key: 'document',
+    job_type: 'EXECUTE',
+    prompt_type: 'Turn',
+    inputs_required: [],
+    outputs_required: JSON.parse(
+      JSON.stringify([
+        {
+          documents: [
+            {
+              document_key: documentKey,
+              artifact_class: 'rendered_document',
+              file_type: 'markdown',
+              template_filename: `${documentKey}.md`,
+            },
+          ],
+        },
+      ])
+    ),
+    output_type: 'rendered_document',
+    granularity_strategy: 'all_to_one',
+  }));
+
+  return {
+    stageSlug,
+    instanceId,
+    steps,
+  };
+};
+
 const stageRunChecklistRenderMock = vi.fn((props: StageRunChecklistProps) => props);
 const recordedStageRunChecklistProps: StageRunChecklistProps[] = [];
 
@@ -227,9 +270,13 @@ describe('StageTabCard', () => {
     expect(storeActions.setActiveStage).toHaveBeenCalledWith('analysis');
   });
 
-  it('shows completed label and document totals when all documents are finished', () => {
+  it('shows completed label when all documents are finished', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
+    const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
+      recipesByStageSlug: {
+        [mockStages[0].slug]: recipe,
+      },
       stageRunProgress: {
         [progressKey]: createStageRunProgressEntry({
           'document-one': 'completed',
@@ -243,12 +290,16 @@ describe('StageTabCard', () => {
     const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
     expect(within(hypothesisCard).getByTestId('stage-progress-summary-hypothesis')).toBeInTheDocument();
     expect(within(hypothesisCard).getByTestId('stage-progress-label-hypothesis').textContent).toBe('Completed');
-    expect(within(hypothesisCard).getByTestId('stage-progress-count-hypothesis').textContent).toBe('2 / 2 documents');
+    expect(within(hypothesisCard).queryByTestId('stage-progress-count-hypothesis')).toBeNull();
   });
 
   it('omits completed label when any document is still generating', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
+    const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
+      recipesByStageSlug: {
+        [mockStages[0].slug]: recipe,
+      },
       stageRunProgress: {
         [progressKey]: createStageRunProgressEntry({
           'document-one': 'completed',
@@ -260,13 +311,18 @@ describe('StageTabCard', () => {
     renderComponent();
 
     const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
+    expect(within(hypothesisCard).getByTestId('stage-progress-summary-hypothesis')).toBeInTheDocument();
     expect(within(hypothesisCard).queryByTestId('stage-progress-label-hypothesis')).toBeNull();
-    expect(within(hypothesisCard).getByTestId('stage-progress-count-hypothesis').textContent).toBe('1 / 2 documents');
+    expect(within(hypothesisCard).queryByTestId('stage-progress-count-hypothesis')).toBeNull();
   });
 
   it('omits completed label when any document has failed', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
+    const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
+      recipesByStageSlug: {
+        [mockStages[0].slug]: recipe,
+      },
       stageRunProgress: {
         [progressKey]: createStageRunProgressEntry({
           'document-one': 'completed',
@@ -278,8 +334,9 @@ describe('StageTabCard', () => {
     renderComponent();
 
     const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
+    expect(within(hypothesisCard).getByTestId('stage-progress-summary-hypothesis')).toBeInTheDocument();
     expect(within(hypothesisCard).queryByTestId('stage-progress-label-hypothesis')).toBeNull();
-    expect(within(hypothesisCard).getByTestId('stage-progress-count-hypothesis').textContent).toBe('1 / 2 documents');
+    expect(within(hypothesisCard).queryByTestId('stage-progress-count-hypothesis')).toBeNull();
   });
 
   it('renders a StageRunChecklist for each selected model and forwards checklist selections', () => {
@@ -363,5 +420,31 @@ describe('StageTabCard', () => {
     // Ensure no intermediate accordion is rendered by this component
     const accordions = checklistWrapper.querySelectorAll('[data-testid*="accordion"]');
     expect(accordions.length).toBe(0);
+  });
+
+  it('does not display document count but still shows completion label when complete', () => {
+    const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
+    const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
+    setupStore({
+      recipesByStageSlug: {
+        [mockStages[0].slug]: recipe,
+      },
+      stageRunProgress: {
+        [progressKey]: createStageRunProgressEntry({
+          'document-one': 'completed',
+          'document-two': 'completed',
+        }),
+      },
+    });
+
+    renderComponent();
+
+    const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
+    const countElement = within(hypothesisCard).queryByTestId('stage-progress-count-hypothesis');
+    const labelElement = within(hypothesisCard).queryByTestId('stage-progress-label-hypothesis');
+
+    expect(countElement).toBeNull();
+    expect(labelElement).toBeInTheDocument();
+    expect(labelElement?.textContent).toBe('Completed');
   });
 });

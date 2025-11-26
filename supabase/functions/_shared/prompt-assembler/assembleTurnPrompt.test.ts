@@ -36,7 +36,12 @@ const HEADER_CONTEXT_CONTRIBUTION_ID = "header-context-contrib-id";
 const HEADER_CONTEXT_STORAGE_BUCKET = "dialectic_contributions";
 const HEADER_CONTEXT_STORAGE_PATH = "path/to/header";
 const HEADER_CONTEXT_FILE_NAME = "header_context.json";
-const EXPECTED_TEMPLATE_BUCKET = "test-bucket"; // Must match environment variable value from setup() stub
+
+// Template storage constants - these match what's in the database
+const TEMPLATE_STORAGE_BUCKET = "prompt-templates";
+const TEMPLATE_STORAGE_PATH = "templates/synthesis";
+// Prompt storage constants - for agent-facing prompt files
+const PROMPT_STORAGE_PATH = "docs/prompts/synthesis";
 
 const baseRecipeStep: DialecticStageRecipeStep = {
   id: "step-123",
@@ -86,7 +91,6 @@ const defaultRecipeStep: DialecticStageRecipeStep = buildRecipeStep();
 
 Deno.test("assembleTurnPrompt", async (t) => {
   let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
-  let denoEnvStub: any = null;
   const consoleSpies: { error?: Spy<Console>; warn?: Spy<Console> } = {};
   
   const mockGatherContext: GatherContextFn = spy(async () => { return { 
@@ -110,13 +114,6 @@ Deno.test("assembleTurnPrompt", async (t) => {
   const setup = (
     config: MockSupabaseDataConfig = {},
   ) => {
-    denoEnvStub = stub(Deno.env, "get", (key: string) => {
-      if (key === "SB_CONTENT_STORAGE_BUCKET") {
-        return "test-bucket";
-      }
-      return undefined;
-    });
-
     mockSupabaseSetup = createMockSupabaseClient(undefined, config);
 
     consoleSpies.error = spy(console, "error");
@@ -130,7 +127,6 @@ Deno.test("assembleTurnPrompt", async (t) => {
   };
 
   const teardown = () => {
-    denoEnvStub?.restore();
     consoleSpies.error?.restore();
     consoleSpies.warn?.restore();
     
@@ -239,6 +235,90 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
   };
 
+  // Helper to construct the expected prompt file path based on stage and document_key
+  // This matches what createTemplateMock constructs for the file_name
+  const getPromptFilePath = (stageSlug: string, documentKey: string): string => {
+    return `${PROMPT_STORAGE_PATH}/${stageSlug}_${documentKey}_turn_v1.md`;
+  };
+
+  const createTemplateMock = () => {
+    return {
+      select: async (state: MockQueryBuilderState) => {
+        // REQUIRED: storage_path filter MUST contain docs/prompts/{stage_slug}/
+        const storagePathFilter = state.filters.find((f) => 
+          (f.type === 'ilike' || f.type === 'like') && 
+          f.column === 'storage_path' && 
+          typeof f.value === 'string' &&
+          f.value.includes('docs/prompts/')
+        );
+        
+        if (!storagePathFilter || typeof storagePathFilter.value !== 'string') {
+          return { data: null, error: null, count: 0, status: 200, statusText: "OK" };
+        }
+        
+        // Extract stage_slug from storage_path pattern (e.g., 'docs/prompts/{stage_slug}/%')
+        const storagePathPattern = storagePathFilter.value;
+        const stageSlugMatch = storagePathPattern.match(/docs\/prompts\/([^/%]+)/);
+        if (!stageSlugMatch) {
+          return { data: null, error: null, count: 0, status: 200, statusText: "OK" };
+        }
+        const stageSlug = stageSlugMatch[1];
+        
+        // REQUIRED: file_name filter MUST contain document_key (we verify the filter exists, not the exact value)
+        const fileNameFilter = state.filters.find((f) => 
+          (f.type === 'ilike' || f.type === 'like' || f.type === 'eq') && 
+          f.column === 'file_name' && 
+          typeof f.value === 'string'
+        );
+        
+        if (!fileNameFilter || typeof fileNameFilter.value !== 'string') {
+          return { data: null, error: null, count: 0, status: 200, statusText: "OK" };
+        }
+        
+        // Extract document_key from filename pattern - filename MUST contain document_key
+        // Pattern might be like: '%business_case%' or exact match containing the key
+        const fileNamePattern = fileNameFilter.value.replace(/%/g, '').toLowerCase();
+        
+        // REQUIRED: is_active filter
+        const isActiveFilter = state.filters.find((f) => f.type === 'eq' && f.column === 'is_active' && f.value === true);
+        if (!isActiveFilter) {
+          return { data: null, error: null, count: 0, status: 200, statusText: "OK" };
+        }
+        
+        // Optional: domain_id filter
+        const domainIdFilter = state.filters.find((f) => f.type === 'eq' && f.column === 'domain_id');
+        const domainId = domainIdFilter ? domainIdFilter.value : (defaultProject.selected_domain_id || null);
+        
+        // Return mock record that satisfies the filters
+        // We construct a filename that contains the document_key (extracted from pattern or generic)
+        // The exact pattern doesn't matter as long as it contains the document_key
+        const documentKeyFromPattern = fileNamePattern.match(/([a-z_]+)/)?.[1] || 'document';
+        const mockFileName = fileNamePattern.includes('.md') 
+          ? fileNamePattern 
+          : `${stageSlug}_${documentKeyFromPattern}_turn_v1.md`;
+        
+        return {
+          data: [{
+            id: `template-${mockFileName.replace(/[^a-z0-9]/gi, '-')}`,
+            domain_id: domainId,
+            name: mockFileName.replace('.md', '').replace(/_/g, ' '),
+            description: `Prompt template for ${mockFileName}`,
+            file_name: mockFileName,
+            storage_bucket: TEMPLATE_STORAGE_BUCKET,
+            storage_path: `docs/prompts/${stageSlug}/`,
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }],
+          error: null,
+          count: 1,
+          status: 200,
+          statusText: "OK"
+        };
+      }
+    };
+  };
+
   const mockTurnJob: DialecticJobRow = {
     id: "job-turn-123",
     job_type: 'EXECUTE',
@@ -343,6 +423,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
             }
           },
           dialectic_contributions: createHeaderContextContributionMock(),
+          dialectic_document_templates: createTemplateMock(),
         },
         storageMock: {
             downloadResult: (bucket, path) => {
@@ -350,8 +431,9 @@ Deno.test("assembleTurnPrompt", async (t) => {
                 if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                     return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
                 }
-                // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
-                if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
+                // The template mock returns files in docs/prompts/{stage_slug}/ with filenames like {stage_slug}_{document_key}_turn_v1.md
+                const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+                if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
                     return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
                 }
                 return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
@@ -423,6 +505,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
           },
         },
         dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
       },
       storageMock: {
         downloadResult: (bucket, path) => {
@@ -433,8 +516,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
               error: null,
             });
           }
-          // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
-          if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
+          const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+          if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
             return Promise.resolve({
               data: new Blob([documentTemplateContent]),
               error: null,
@@ -601,6 +684,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
           }
         },
         dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
       },
       storageMock: {
           downloadResult: (bucket, path) => {
@@ -608,8 +692,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
               if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                   return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
               }
-              // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
-              if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("design_template.md")) {
+              const fullPromptPath = getPromptFilePath(STAGE_SLUG, TECHNICAL_DESIGN_DOCUMENT_KEY);
+              if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
                   return Promise.resolve({ data: new Blob([designTemplateContent]), error: null });
               }
               return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
@@ -650,6 +734,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
             }
           },
           dialectic_contributions: createHeaderContextContributionMock(),
+          dialectic_document_templates: createTemplateMock(),
         },
         storageMock: {
             downloadResult: (bucket, path) => {
@@ -657,8 +742,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
                 if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                     return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
                 }
-                // Validate bucket name matches environment variable value - this test should fail if bucket is wrong
-                if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
+                const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+                if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
                     // Fail the template download (this is the expected behavior for this test)
                     return Promise.resolve({ data: null, error: new Error("Template Not Found") });
                 }
@@ -733,6 +818,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
           }
         },
         dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
       },
         storageMock: {
             downloadResult: (bucket, path) => {
@@ -740,8 +826,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
                 if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                     return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
                 }
-                // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
-                if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
+                const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+                if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
                     return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
                 }
                 return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
@@ -1065,6 +1151,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
           }
         },
         dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
       },
       storageMock: {
           downloadResult: (bucket, path) => {
@@ -1072,16 +1159,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
               if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                   return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
               }
-              // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
-              // This test explicitly uses the 'technical_design' key and its corresponding template.
-              if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("design_template.md")) {
+              const fullPromptPath = getPromptFilePath(STAGE_SLUG, TECHNICAL_DESIGN_DOCUMENT_KEY);
+              if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
                   return Promise.resolve({ data: new Blob([designTemplateContent]), error: null });
               }
               return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
           },
       }
     };
-  
+
     const { client } = setup(config);
     mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
@@ -1226,6 +1312,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
             }
           },
           dialectic_contributions: createHeaderContextContributionMock(),
+          dialectic_document_templates: createTemplateMock(),
         },
         storageMock: {
             downloadResult: (bucket, path) => {
@@ -1233,7 +1320,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
                 if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                     return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
                 }
-                if (path.includes("design_template.md")) {
+                const fullPromptPath = getPromptFilePath(STAGE_SLUG, TECHNICAL_DESIGN_DOCUMENT_KEY);
+                if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
                     return Promise.resolve({ data: new Blob([designTemplateContent]), error: null });
                 }
                 return Promise.resolve({ data: null, error: new Error("File not found in mock") });
@@ -1412,6 +1500,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
           }
         },
         dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
       },
       storageMock: {
           downloadResult: (bucket, path) => {
@@ -1419,9 +1508,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
               if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                   return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
               }
-              // Validate bucket name matches environment variable value - this test should fail if bucket is wrong
-              // This test should fail at template download from storage
-              if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
+              const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+              if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
                   return Promise.resolve({ data: null, error: new Error("Template Not Found from Storage") });
               }
               return Promise.resolve({ data: null, error: new Error(`Unexpected file request in mock (bucket: ${bucket}, path: ${path})`) });
@@ -1443,7 +1531,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
 
     try {
-      // assembleTurnPrompt uses storage, not DB for templates.
+      // assembleTurnPrompt queries database for template metadata, then downloads from storage.
       // This test verifies that a storage failure during template fetch is handled correctly.
       await assertRejects(
         async () => {
@@ -1499,6 +1587,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
           }
         },
         dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
       },
         storageMock: {
             downloadResult: (bucket, path) => {
@@ -1506,15 +1595,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
                 if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                     return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
                 }
-                // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
-                if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
+                const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+                if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
                     return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
                 }
                 return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
             },
         }
     };
-  
+
     const { client } = setup(config);
     mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
     if(!isRecord(mockTurnJob.payload)) {
@@ -1589,6 +1678,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
           }
         },
         dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
       },
         storageMock: {
             downloadResult: (bucket, path) => {
@@ -1596,8 +1686,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
                 if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                     return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
                 }
-                // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
-                if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
+                const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+                if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
                     return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
                 }
                 return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
@@ -1726,6 +1816,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
           }
         },
         dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
       },
         storageMock: {
             downloadResult: (bucket, path) => {
@@ -1733,8 +1824,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
                 if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
                     return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
                 }
-                // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
-                if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
+                const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+                if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
                     return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
                 }
                 return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
@@ -1825,8 +1916,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
       if (bucket === contributionStorageBucket && path === fullStoragePath) {
         return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
       }
-      // Validate bucket name matches environment variable value, not literal string "SB_CONTENT_STORAGE_BUCKET"
-      if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("summary_template.md")) {
+      const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+      if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
         return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
       }
       return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
@@ -1841,6 +1932,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
             ],
           }
         },
+        dialectic_document_templates: createTemplateMock(),
         dialectic_contributions: {
           select: async (state: MockQueryBuilderState) => {
             const idFilter = state.filters.find((f) => f.type === 'eq' && f.column === 'id' && f.value === contributionId);
@@ -2407,6 +2499,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
           }
         },
         dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
       },
       storageMock: {
         downloadResult: (bucket, path) => {
@@ -2414,7 +2507,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
           if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
             return Promise.resolve({ data: new Blob([JSON.stringify(headerContextWithAlignment)]), error: null });
           }
-          if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("thesis_business_case.md")) {
+          const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+          if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
             const templateContent = "Template with {field1} and {field2}";
             return Promise.resolve({ data: new Blob([templateContent]), error: null });
           }
@@ -2919,7 +3013,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
       if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
         return Promise.resolve({ data: new Blob([JSON.stringify(headerContextWithAlignment)]), error: null });
       }
-      if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("thesis_business_case.md")) {
+      const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+      if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
         const templateContent = "Template from recipe step";
         return Promise.resolve({ data: new Blob([templateContent]), error: null });
       }
@@ -2936,6 +3031,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
           }
         },
         dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
       },
       storageMock: {
         downloadResult: downloadSpy,
@@ -2975,9 +3071,9 @@ Deno.test("assembleTurnPrompt", async (t) => {
 
       assert(downloadSpy.calls.length >= 2, "downloadFromStorage should be called at least twice (header context and template)");
       const templateDownloadCall = downloadSpy.calls.find((call: any) => 
-        call.args[1] && call.args[1].includes("thesis_business_case.md")
+        call.args[1] && call.args[1].includes(`${STAGE_SLUG}_${BUSINESS_CASE_DOCUMENT_KEY}_turn_v1.md`)
       );
-      assert(templateDownloadCall !== undefined, "downloadFromStorage should be called with template_filename from recipe step");
+      assert(templateDownloadCall !== undefined, "downloadFromStorage should be called with prompt file path based on stage slug and document_key");
     } finally {
       teardown();
     }
@@ -3265,6 +3361,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
           }
         },
         dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
       },
       storageMock: {
         downloadResult: (bucket, path) => {
@@ -3272,7 +3369,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
           if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
             return Promise.resolve({ data: new Blob([JSON.stringify(headerContextWithAlignment)]), error: null });
           }
-          if (bucket === EXPECTED_TEMPLATE_BUCKET && path.includes("thesis_business_case.md")) {
+          const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+          if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
             return Promise.resolve({ data: new Blob([templateContent]), error: null });
           }
           return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });

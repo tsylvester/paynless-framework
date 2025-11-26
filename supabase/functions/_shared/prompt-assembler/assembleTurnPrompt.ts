@@ -9,6 +9,7 @@ import { renderPrompt } from "../prompt-renderer.ts";
 import { HeaderContext, OutputRule } from "../../dialectic-service/dialectic.interface.ts";
 import { isHeaderContext, isContentToInclude, isOutputRule } from "../utils/type-guards/type_guards.dialectic.ts";
 import { compareContentToIncludeStructure, getStructureKeys } from "../utils/content_to_include_structure.ts";
+import type { Database } from "../../types_db.ts";
 
 export async function assembleTurnPrompt(
   {
@@ -254,22 +255,53 @@ export async function assembleTurnPrompt(
     );
   }
 
-  const contentStorageBucket = Deno.env.get("SB_CONTENT_STORAGE_BUCKET");
-  if (!contentStorageBucket) {
+  // Query database for template storage information
+  // We must filter by storage_path to ensure we only get prompt files (agent-facing) 
+  // and not template files (user-facing). Prompt files are in docs/prompts/{stage_slug}/,
+  // while template files are in docs/templates/{stage_slug}/.
+  // We also filter by document_key in filename to ensure precise matching.
+  type DocumentTemplateRow = Database['public']['Tables']['dialectic_document_templates']['Row'];
+  const templateFileName = docInfo.template_filename;
+  let templateQuery = dbClient
+    .from('dialectic_document_templates')
+    .select('*')
+    .ilike('storage_path', `docs/prompts/${stage.slug}/%`)
+    .ilike('file_name', `%${documentKey}%`)
+    .eq('is_active', true);
+
+  // Optionally filter by domain_id to ensure we get the correct template for the project's domain
+  if (project.selected_domain_id) {
+    templateQuery = templateQuery.eq('domain_id', project.selected_domain_id);
+  }
+
+  const { data: templateRow, error: templateErr } = await templateQuery
+    .maybeSingle<DocumentTemplateRow>();
+
+  if (templateErr || !templateRow) {
     throw new Error(
-      "SB_CONTENT_STORAGE_BUCKET environment variable is not set - fail loud and hard, no fallbacks",
+      `No template mapping found for storage_path='docs/prompts/${stage.slug}/%' file_name containing '${documentKey}'${project.selected_domain_id ? ` domain_id='${project.selected_domain_id}'` : ''}: ${templateErr ? (templateErr).message ?? 'unknown error' : 'not found'}`
     );
   }
+
+  const templateBucket = templateRow.storage_bucket;
+  const templateStoragePath = templateRow.storage_path;
+  const templateFile = templateRow.file_name;
+
+  if (!templateBucket || !templateStoragePath || !templateFile) {
+    throw new Error(`Invalid template row: ${JSON.stringify(templateRow)}`);
+  }
+
+  const fullTemplatePath = `${templateStoragePath.replace(/\/$/, '')}/${templateFile}`;
 
   const { data: templateBlob, error: templateError } =
     await downloadFromStorage(
       dbClient,
-      contentStorageBucket,
-      docInfo.template_filename,
+      templateBucket,
+      fullTemplatePath,
     );
   if (templateError || !templateBlob) {
     throw new Error(
-      `Failed to download document template file ${docInfo.template_filename} from storage: ${templateError?.message}`,
+      `Failed to download document template file ${templateFileName} from storage: ${templateError?.message}`,
     );
   }
 

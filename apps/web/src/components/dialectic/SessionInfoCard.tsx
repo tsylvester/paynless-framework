@@ -283,18 +283,6 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
 								)}
 							</Button>
 						)}
-
-					{/* Final stage export button */}
-					{isFinalStageInProcess && project && (
-						<ExportProjectButton
-							projectId={project.id}
-							variant="default"
-							size="sm"
-							className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 shadow-lg shadow-emerald-600/25"
-						>
-							Export Final
-						</ExportProjectButton>
-					)}
 				</div>
 			</div>
 

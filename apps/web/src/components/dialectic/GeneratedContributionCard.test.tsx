@@ -879,6 +879,59 @@ describe('GeneratedContributionCard', () => {
       expect(screen.queryByLabelText(/Document Content/i)).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /save edit/i })).not.toBeInTheDocument();
     });
+
+    it('does not display status badge for non-document artifacts', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: invalidNonMarkdownDocumentKey },
+        content: 'HeaderContext content',
+        recipesByStageSlug: {
+          [mockStageSlug]: recipeWithMixedOutputs,
+        },
+      });
+
+      // Add header_context document to stageRunProgress documents map with 'completed' status
+      const { stageRunProgress } = getDialecticStoreState();
+      const progressKey = `${mockSessionId}:${mockStageSlug}:${iterationNumber}`;
+      const headerContextDocument: StageRunDocumentDescriptor = {
+        modelId: modelA,
+        status: 'completed',
+        job_id: 'job-header-context',
+        latestRenderedResourceId: 'path/to/header.json',
+        versionHash: 'hash-header',
+        lastRenderedResourceId: 'path/to/header.json',
+        lastRenderAtIso: '2023-01-01T00:00:00Z',
+      };
+
+      if (stageRunProgress?.[progressKey]) {
+        stageRunProgress[progressKey] = {
+          ...stageRunProgress[progressKey],
+          documents: {
+            ...stageRunProgress[progressKey].documents,
+            [invalidNonMarkdownDocumentKey]: headerContextDocument,
+          },
+        };
+      }
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      // Assert that the status badge (Badge component with status text) is NOT rendered
+      // The status badge should show "Completed" for a completed document, but it should not
+      // appear when isValidMarkdownDocument is false
+      expect(screen.queryByText('Completed')).not.toBeInTheDocument();
+      
+      // Verify that the Badge component with status text is not present in the header
+      // The model name should still be visible
+      expect(screen.getByText(/Model Alpha/i)).toBeInTheDocument();
+      
+      // But no status badge should be rendered for non-document artifacts
+      const badges = screen.queryAllByRole('status');
+      const statusBadges = badges.filter(badge => 
+        badge.textContent === 'Completed' || 
+        badge.textContent === 'In Progress' ||
+        badge.textContent === 'Generating'
+      );
+      expect(statusBadges.length).toBe(0);
+    });
   });
 });
 

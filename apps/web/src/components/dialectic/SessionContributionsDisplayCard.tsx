@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from "react";
 import {
 	useDialecticStore,
 	selectIsLoadingProjectDetail,
-	selectContributionGenerationStatus,
 	selectProjectDetailError,
 	selectFeedbackForStageIteration,
 	selectCurrentProjectDetail,
@@ -138,9 +137,6 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	const isLoadingCurrentProjectDetail = useDialecticStore(
 		selectIsLoadingProjectDetail,
 	);
-	const contributionGenerationStatus = useDialecticStore(
-		selectContributionGenerationStatus,
-	);
 	const projectDetailError = useDialecticStore(selectProjectDetailError);
 	const generationError = useDialecticStore(
 		(state) => state.generateContributionsError,
@@ -230,6 +226,19 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 
   const canSubmitStageResponses = stageProgressSummary?.isComplete === true;
 
+  const isLastStage = useMemo(() => {
+    // Handle edge cases: empty sortedStages or null activeStage
+    if (!sortedStages || sortedStages.length === 0) {
+      return false;
+    }
+    if (!activeStage) {
+      return false;
+    }
+    // Check if activeStage.slug matches the last stage in sortedStages
+    const lastStage = sortedStages[sortedStages.length - 1];
+    return activeStage.slug === lastStage?.slug;
+  }, [sortedStages, activeStage]);
+
   const formatDocumentStatus = (status: string): string =>
     status
       .split('_')
@@ -292,10 +301,13 @@ const failedDocumentKeys = useMemo(() => {
   return Array.from(new Set(fallback));
 }, [documentGroups, stageProgressSummary]);
 
-const isGenerating =
-  contributionGenerationStatus === 'generating' &&
-  failedDocumentKeys.length === 0 &&
-  !generationError;
+const hasGeneratingDocuments = useMemo(() => {
+  return documentGroups.some(([, documents]) =>
+    documents.some((document) => document.status === 'generating')
+  );
+}, [documentGroups]);
+
+const isGenerating = hasGeneratingDocuments && failedDocumentKeys.length === 0 && !generationError;
 
   const hasDocuments = useMemo(
     () => documentGroups.some(([, documents]) => documents.length > 0),
@@ -387,13 +399,15 @@ const isGenerating =
   const renderSubmitButton = () => (
     <Button
       onClick={handleSubmitResponses}
-      disabled={isSubmitting || !canSubmitStageResponses}
-      className={cn({ 'animate-pulse': !isSubmitting && canSubmitStageResponses })}
+      disabled={isSubmitting || !canSubmitStageResponses || isLastStage}
+      className={cn({ 'animate-pulse': !isSubmitting && canSubmitStageResponses && !isLastStage })}
     >
       {isSubmitting ? (
         <>
           <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...
         </>
+      ) : isLastStage ? (
+        'Project Complete - Final Stage'
       ) : (
         'Submit Responses & Advance Stage'
       )}
@@ -471,20 +485,14 @@ const isGenerating =
           <div className="space-y-2">
             <h2 className="text-2xl font-light tracking-tight">{getDisplayName(activeStage)}</h2>
             <p className="text-muted-foreground leading-relaxed">{activeStage.description}</p>
-            {stageProgressSummary && (
-              <div className="text-sm text-muted-foreground">
-                Completed {stageProgressSummary.completedDocuments} of{' '}
-                {stageProgressSummary.totalDocuments} documents
-                {stageProgressSummary.outstandingDocuments.length > 0 && (
-                  <div className="text-xs">
-                    Outstanding: {stageProgressSummary.outstandingDocuments.join(', ')}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
           <div className="flex flex-col items-end gap-2">
             {renderSubmitButton()}
+            {isLastStage && canSubmitStageResponses && (
+              <Badge variant="secondary" className="bg-emerald-100 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-100">
+                Project Complete - All stages finished
+              </Badge>
+            )}
             {feedbackForStageIteration && (
               <Button
                 variant="outline"
@@ -644,6 +652,11 @@ const isGenerating =
 
       <div data-testid="card-footer" className="space-y-4">
         {renderSubmitButton()}
+        {isLastStage && canSubmitStageResponses && (
+          <Badge variant="secondary" className="bg-emerald-100 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-100">
+            Project Complete - All stages finished
+          </Badge>
+        )}
         {(submissionSuccessMessage || submissionError) && (
           <div className="space-y-4">
             {submissionSuccessMessage && (
