@@ -21,6 +21,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { StageRunChecklist } from "./StageRunChecklist";
+import { isDocumentHighlighted } from "@paynless/utils";
 
 const getStageDocumentKey = (key: StageDocumentCompositeKey): string =>
 	`${key.sessionId}:${key.stageSlug}:${key.iterationNumber}:${key.modelId}:${key.documentKey}`;
@@ -342,7 +343,7 @@ export const GeneratedContributionCard: React.FC<
 					onDocumentSelect={handleDocumentSelect}
 				/>
 
-				{focusedDocument && isValidMarkdownDocument ? (
+				{focusedDocument && isValidMarkdownDocument && sessionId && stageSlug && isDocumentHighlighted(sessionId, stageSlug, modelId, focusedDocument.documentKey, focusedStageDocumentMap) ? (
 					<div className="space-y-4">
 						<div className="space-y-1">
 							<p className="text-sm font-medium text-muted-foreground">

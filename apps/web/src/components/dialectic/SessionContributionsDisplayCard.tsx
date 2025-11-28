@@ -20,6 +20,7 @@ import {
 	StageDocumentContentState,
 	EditedDocumentResource,
 } from "@paynless/types";
+import { isDocumentHighlighted } from "@paynless/utils";
 import {
 	Card,
 	CardContent,
@@ -112,6 +113,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	const stageDocumentContent = useDialecticStore((state) => state.stageDocumentContent);
 	const stageDocumentResources = useDialecticStore((state) => state.stageDocumentResources);
 	const modelCatalog = useDialecticStore((state) => state.modelCatalog);
+	const focusedStageDocument = useDialecticStore((state) => state.focusedStageDocument);
 
   const activeStage = useMemo(() => {
 	return processTemplate?.stages?.find((s) => s.slug === activeStageSlug) || null;
@@ -287,6 +289,26 @@ export const SessionContributionsDisplayCard: React.FC = () => {
     [documentsByModel],
   );
 
+  const filteredDocumentGroups = useMemo(() => {
+    if (!session || !activeStage) {
+      return [];
+    }
+    return documentGroups
+      .map(([modelId, documents]) => {
+        const filteredDocuments = documents.filter((document) =>
+          isDocumentHighlighted(
+            session.id,
+            activeStage.slug,
+            modelId,
+            document.documentKey,
+            focusedStageDocument,
+          ),
+        );
+        return filteredDocuments.length > 0 ? ([modelId, filteredDocuments] as const) : null;
+      })
+      .filter((group): group is [string, StageDocumentChecklistEntry[]] => group !== null);
+  }, [documentGroups, session, activeStage, focusedStageDocument]);
+
 const failedDocumentKeys = useMemo(() => {
   if (stageProgressSummary?.hasFailed) {
     return stageProgressSummary.failedDocumentKeys;
@@ -310,8 +332,8 @@ const hasGeneratingDocuments = useMemo(() => {
 const isGenerating = hasGeneratingDocuments && failedDocumentKeys.length === 0 && !generationError;
 
   const hasDocuments = useMemo(
-    () => documentGroups.some(([, documents]) => documents.length > 0),
-    [documentGroups],
+    () => filteredDocumentGroups.some(([, documents]) => documents.length > 0),
+    [filteredDocumentGroups],
   );
 
 	// Select feedback metadata for the current stage and iteration
@@ -549,7 +571,7 @@ const isGenerating = hasGeneratingDocuments && failedDocumentKeys.length === 0 &
 
       <div className="space-y-6">
         {hasDocuments ? (
-          documentGroups.map(([modelId, documents]) => {
+          filteredDocumentGroups.map(([modelId, documents]) => {
             if (!documents || documents.length === 0) {
               return null;
             }

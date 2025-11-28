@@ -333,6 +333,16 @@ describe('SessionContributionsDisplayCard', () => {
       );
 
       seedBaseStore(progress, {
+        focusedStageDocument: {
+          [`${sessionId}:${stageSlug}:model-a`]: {
+            modelId: 'model-a',
+            documentKey: 'draft_document_outline_model_a',
+          },
+          [`${sessionId}:${stageSlug}:model-b`]: {
+            modelId: 'model-b',
+            documentKey: 'draft_document_outline_model_b',
+          },
+        },
         stageDocumentContent: {
           [buildStageDocumentKey('model-a', 'draft_document_outline_model_a')]:
             buildStageDocumentContent(),
@@ -364,6 +374,12 @@ describe('SessionContributionsDisplayCard', () => {
       );
 
       seedBaseStore(progress, {
+        focusedStageDocument: {
+          [`${sessionId}:${stageSlug}:model-a`]: {
+            modelId: 'model-a',
+            documentKey,
+          },
+        },
         stageDocumentContent: {
           [buildStageDocumentKey('model-a', documentKey)]: buildStageDocumentContent(),
         },
@@ -1056,6 +1072,12 @@ describe('SessionContributionsDisplayCard', () => {
       });
 
       seedBaseStore(progress, {
+        focusedStageDocument: {
+          [`${sessionId}:${stageSlug}:model-a`]: {
+            modelId: 'model-a',
+            documentKey,
+          },
+        },
         stageDocumentContent: {
           [buildStageDocumentKey('model-a', documentKey)]: buildStageDocumentContent(),
         },
@@ -1100,6 +1122,12 @@ describe('SessionContributionsDisplayCard', () => {
       );
 
       seedBaseStore(progress, {
+        focusedStageDocument: {
+          [`${sessionId}:${stageSlug}:model-a`]: {
+            modelId: 'model-a',
+            documentKey,
+          },
+        },
         stageDocumentContent: {
           [buildStageDocumentKey('model-a', documentKey)]: buildStageDocumentContent({
             currentDraftMarkdown: 'Edited content',
@@ -1150,6 +1178,12 @@ describe('SessionContributionsDisplayCard', () => {
       );
 
       seedBaseStore(progress, {
+        focusedStageDocument: {
+          [`${sessionId}:${stageSlug}:model-a`]: {
+            modelId: 'model-a',
+            documentKey,
+          },
+        },
         stageDocumentContent: {
           [buildStageDocumentKey('model-a', documentKey)]: buildStageDocumentContent({
             baselineMarkdown: documentContent,
@@ -1752,6 +1786,166 @@ describe('SessionContributionsDisplayCard', () => {
 
       // 5.e.iii: Assert "Project Complete" notice is NOT displayed when not in last stage
       expect(screen.queryByText('Project Complete - All stages finished')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Step 38.j: Document highlighting filtering', () => {
+    it('renders only highlighted documents when multiple documents exist for a model', () => {
+      // 38.j.i: Mock store state with multiple documents in documentsByModel for a model
+      // but only one document is highlighted in focusedStageDocument
+      const modelId = 'model-a';
+      const businessCaseKey = 'business_case';
+      const featureSpecKey = 'feature_spec';
+      const focusKey = `${sessionId}:${stageSlug}:${modelId}`;
+
+      const progress = buildStageRunProgress(
+        {},
+        {
+          [businessCaseKey]: buildStageDocumentDescriptor(modelId),
+          [featureSpecKey]: buildStageDocumentDescriptor(modelId),
+        },
+      );
+
+      seedBaseStore(progress, {
+        focusedStageDocument: {
+          [focusKey]: { modelId, documentKey: businessCaseKey },
+        },
+        stageDocumentContent: {
+          [buildStageDocumentKey(modelId, businessCaseKey)]: buildStageDocumentContent(),
+          [buildStageDocumentKey(modelId, featureSpecKey)]: buildStageDocumentContent(),
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      // 38.j.ii: Assert that only the highlighted document has a Card component rendered
+      expect(
+        screen.getByTestId(`stage-document-card-${modelId}-${businessCaseKey}`),
+      ).toBeInTheDocument();
+
+      // 38.j.iii: Assert that the non-highlighted document does NOT have a Card component rendered
+      expect(
+        screen.queryByTestId(`stage-document-card-${modelId}-${featureSpecKey}`),
+      ).not.toBeInTheDocument();
+    });
+
+    it('renders no document cards when no documents are highlighted', () => {
+      // 38.j.iv: Create a test case where no documents are highlighted
+      const modelId = 'model1';
+      const businessCaseKey = 'business_case';
+      const featureSpecKey = 'feature_spec';
+
+      const progress = buildStageRunProgress(
+        {},
+        {
+          [businessCaseKey]: buildStageDocumentDescriptor(modelId),
+          [featureSpecKey]: buildStageDocumentDescriptor(modelId),
+        },
+      );
+
+      seedBaseStore(progress, {
+        focusedStageDocument: {}, // Empty object - no documents highlighted
+        stageDocumentContent: {
+          [buildStageDocumentKey(modelId, businessCaseKey)]: buildStageDocumentContent(),
+          [buildStageDocumentKey(modelId, featureSpecKey)]: buildStageDocumentContent(),
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      // Assert that no document cards are rendered (only the "No documents generated yet" message)
+      expect(
+        screen.queryByTestId(`stage-document-card-${modelId}-${businessCaseKey}`),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId(`stage-document-card-${modelId}-${featureSpecKey}`),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText('No documents generated yet.')).toBeInTheDocument();
+    });
+
+    it('renders no document cards when focusedStageDocument is undefined', () => {
+      // 38.j.iv: Test case where focusedStageDocument is undefined
+      const modelId = 'model1';
+      const businessCaseKey = 'business_case';
+
+      const progress = buildStageRunProgress(
+        {},
+        {
+          [businessCaseKey]: buildStageDocumentDescriptor(modelId),
+        },
+      );
+
+      seedBaseStore(progress, {
+        focusedStageDocument: undefined, // Undefined - no documents highlighted
+        stageDocumentContent: {
+          [buildStageDocumentKey(modelId, businessCaseKey)]: buildStageDocumentContent(),
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      // Assert that no document cards are rendered
+      expect(
+        screen.queryByTestId(`stage-document-card-${modelId}-${businessCaseKey}`),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText('No documents generated yet.')).toBeInTheDocument();
+    });
+
+    it('renders only highlighted documents for each model when multiple models have different highlighted documents', () => {
+      // 38.j.v: Create a test case with multiple models, where each model has different highlighted documents
+      const modelA = 'model-a';
+      const modelB = 'model-b';
+      const businessCaseKey = 'business_case';
+      const featureSpecKey = 'feature_spec';
+      const focusKeyA = `${sessionId}:${stageSlug}:${modelA}`;
+      const focusKeyB = `${sessionId}:${stageSlug}:${modelB}`;
+
+      const progress = buildStageRunProgress(
+        {},
+        {
+          [`${businessCaseKey}_model_a`]: buildStageDocumentDescriptor(modelA),
+          [`${featureSpecKey}_model_a`]: buildStageDocumentDescriptor(modelA),
+          [`${businessCaseKey}_model_b`]: buildStageDocumentDescriptor(modelB),
+          [`${featureSpecKey}_model_b`]: buildStageDocumentDescriptor(modelB),
+        },
+      );
+
+      seedBaseStore(progress, {
+        focusedStageDocument: {
+          // model-a has business_case highlighted
+          [focusKeyA]: { modelId: modelA, documentKey: `${businessCaseKey}_model_a` },
+          // model-b has feature_spec highlighted
+          [focusKeyB]: { modelId: modelB, documentKey: `${featureSpecKey}_model_b` },
+        },
+        stageDocumentContent: {
+          [buildStageDocumentKey(modelA, `${businessCaseKey}_model_a`)]: buildStageDocumentContent(),
+          [buildStageDocumentKey(modelA, `${featureSpecKey}_model_a`)]: buildStageDocumentContent(),
+          [buildStageDocumentKey(modelB, `${businessCaseKey}_model_b`)]: buildStageDocumentContent(),
+          [buildStageDocumentKey(modelB, `${featureSpecKey}_model_b`)]: buildStageDocumentContent(),
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      // Verify only highlighted documents are rendered for each model
+      // model-a: only business_case should be rendered
+      expect(
+        screen.getByTestId(`stage-document-card-${modelA}-${businessCaseKey}_model_a`),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByTestId(`stage-document-card-${modelA}-${featureSpecKey}_model_a`),
+      ).not.toBeInTheDocument();
+
+      // model-b: only feature_spec should be rendered
+      expect(
+        screen.getByTestId(`stage-document-card-${modelB}-${featureSpecKey}_model_b`),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByTestId(`stage-document-card-${modelB}-${businessCaseKey}_model_b`),
+      ).not.toBeInTheDocument();
+
+      // This test must fail because SessionContributionsDisplayCard currently renders all documents
+      // regardless of highlighting status
     });
   });
 });

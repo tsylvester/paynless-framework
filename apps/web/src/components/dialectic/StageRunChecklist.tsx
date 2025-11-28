@@ -16,6 +16,7 @@ import {
   selectValidMarkdownDocumentKeys,
 } from '@paynless/store';
 
+import { isDocumentHighlighted } from '@paynless/utils';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -71,9 +72,6 @@ const toPlainArray = (value: unknown): unknown[] => {
   }
   return [value];
 };
-
-const buildFocusedDocumentKey = (sessionId: string, stageSlug: string, modelId: string): string =>
-  `${sessionId}:${stageSlug}:${modelId}`;
 
 const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
   focusedStageDocumentMap,
@@ -346,15 +344,15 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
                   const documentModelId = entry.modelId ?? null;
                   const isSelectable = Boolean(documentModelId);
 
-                  const focusKey =
-                    activeSessionId && activeStageSlug && documentModelId
-                      ? buildFocusedDocumentKey(activeSessionId, activeStageSlug, documentModelId)
-                      : null;
-
-                  const isActive = Boolean(
-                    focusKey &&
-                      effectiveFocusedStageDocumentMap &&
-                      effectiveFocusedStageDocumentMap[focusKey]?.documentKey === entry.documentKey,
+                  if(!documentModelId) {
+                    return null;
+                  }
+                  const isActive = isDocumentHighlighted(
+                    activeSessionId,
+                    activeStageSlug,
+                    documentModelId,
+                    entry.documentKey,
+                    effectiveFocusedStageDocumentMap,
                   );
 
                   return (

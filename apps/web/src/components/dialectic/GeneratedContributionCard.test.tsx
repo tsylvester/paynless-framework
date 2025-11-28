@@ -33,6 +33,7 @@ vi.mock('@paynless/store', async (importOriginal) => {
   // Capture the real selectors in closure variables
   const realSelectStageDocumentResource = actualStoreModule.selectStageDocumentResource;
   const realSelectValidMarkdownDocumentKeys = actualStoreModule.selectValidMarkdownDocumentKeys;
+  const realSelectFocusedStageDocument = actualStoreModule.selectFocusedStageDocument;
   
   // Use the actual selector implementations so they read from state
   // Tests can still spy on them to verify they're called
@@ -44,19 +45,25 @@ vi.mock('@paynless/store', async (importOriginal) => {
   const mockSelectValidMarkdownDocumentKeys = vi.fn((...args: Parameters<typeof actualStoreModule.selectValidMarkdownDocumentKeys>) => {
     return realSelectValidMarkdownDocumentKeys(...args);
   });
+
+  const mockSelectFocusedStageDocument = vi.fn((...args: Parameters<typeof actualStoreModule.selectFocusedStageDocument>) => {
+    return realSelectFocusedStageDocument(...args);
+  });
   
   return { 
     ...actualStoreModule, 
     ...mockStoreExports,
     selectStageDocumentResource: mockSelectStageDocumentResource,
     selectValidMarkdownDocumentKeys: mockSelectValidMarkdownDocumentKeys,
+    selectFocusedStageDocument: mockSelectFocusedStageDocument,
   };
 });
 
 // Get reference to the mocked selector after module is loaded
-import { selectStageDocumentResource, selectValidMarkdownDocumentKeys } from '@paynless/store';
+import { selectStageDocumentResource, selectValidMarkdownDocumentKeys, selectFocusedStageDocument } from '@paynless/store';
 const mockSelectStageDocumentResource = vi.mocked(selectStageDocumentResource);
 const mockSelectValidMarkdownDocumentKeys = vi.mocked(selectValidMarkdownDocumentKeys);
+const mockSelectFocusedStageDocument = vi.mocked(selectFocusedStageDocument);
 
 // Mock child components
 vi.mock('@/components/common/TextInputArea', () => ({
@@ -89,6 +96,20 @@ vi.mock('./StageRunChecklist', () => ({
     );
   },
 }));
+
+const mockIsDocumentHighlighted = vi.fn<[string, string, string, string, Record<string, { modelId: string; documentKey: string } | null> | null | undefined], boolean>();
+
+vi.mock('@paynless/utils', async (importOriginal) => {
+  const actualUtils = await importOriginal<typeof import('@paynless/utils')>();
+  return {
+    ...actualUtils,
+    isDocumentHighlighted: (...args) => {
+      const result = actualUtils.isDocumentHighlighted(...args);
+      mockIsDocumentHighlighted(...args);
+      return result;
+    },
+  };
+});
 
 // --- TEST SETUP ---
 
@@ -220,6 +241,7 @@ const setupStore = ({
   contribution = null,
   sourceContributionId = null,
   recipesByStageSlug = {},
+  focusedStageDocumentMap = undefined,
 }: {
   focusedDocument?: { modelId: string; documentKey: string } | null;
   content?: string;
@@ -228,6 +250,7 @@ const setupStore = ({
   contribution?: DialecticContribution | null;
   sourceContributionId?: string | null;
   recipesByStageSlug?: Record<string, DialecticStageRecipe>;
+  focusedStageDocumentMap?: Record<string, { modelId: string; documentKey: string } | null> | null;
 }) => {
   // Merge default recipe with provided recipes (provided recipes take precedence)
   const mergedRecipesByStageSlug: Record<string, DialecticStageRecipe> = {
@@ -291,9 +314,13 @@ const setupStore = ({
         documents: documents,
       },
     },
-    focusedStageDocument: focusedDocument ? {
-      [buildFocusKey(focusedDocument.modelId)]: focusedDocument,
-    } : {},
+    focusedStageDocument: focusedStageDocumentMap !== undefined
+      ? focusedStageDocumentMap
+      : focusedDocument
+        ? {
+            [buildFocusKey(focusedDocument.modelId)]: focusedDocument,
+          }
+        : {},
     stageDocumentContent: contentState,
     recipesByStageSlug: mergedRecipesByStageSlug,
   });
@@ -305,6 +332,8 @@ describe('GeneratedContributionCard', () => {
     stageRunChecklistMock.mockClear();
     mockSelectStageDocumentResource.mockClear();
     mockSelectValidMarkdownDocumentKeys.mockClear();
+    mockSelectFocusedStageDocument.mockClear();
+    mockIsDocumentHighlighted.mockClear();
   });
 
   it('renders model and document metadata when its model has a focused document', async () => {
@@ -931,6 +960,199 @@ describe('GeneratedContributionCard', () => {
         badge.textContent === 'Generating'
       );
       expect(statusBadges.length).toBe(0);
+    });
+  });
+
+  describe('document highlighting validation', () => {
+    it('does not render document content when selectFocusedStageDocument returns a document but focusedStageDocumentMap has no entry', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Document A1 baseline',
+        focusedStageDocumentMap: {},
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      expect(
+        await screen.findByText(/Select a document to view its content and provide feedback./i),
+      ).toBeInTheDocument();
+
+      expect(screen.queryByText(/Document: doc-a1/i)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/Document Content/i)).not.toBeInTheDocument();
+    });
+
+    it('renders document content when focusedStageDocumentMap has entry matching selectFocusedStageDocument', async () => {
+      const focusKey = buildFocusKey(modelA);
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Document A1 baseline',
+        focusedStageDocumentMap: {
+          [focusKey]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      expect(await screen.findByText(/Document: doc-a1/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Document Content/i)).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Document A1 baseline')).toBeInTheDocument();
+
+      expect(
+        screen.queryByText(/Select a document to view its content and provide feedback./i),
+      ).not.toBeInTheDocument();
+    });
+
+    it('does not render document content when selectFocusedStageDocument returns a document but focusedStageDocumentMap has different documentKey', async () => {
+      const focusKey = buildFocusKey(modelA);
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Document A1 baseline',
+        focusedStageDocumentMap: {
+          [focusKey]: { modelId: modelA, documentKey: docA2Key },
+        },
+      });
+
+      mockSelectFocusedStageDocument.mockReturnValue({ modelId: modelA, documentKey: docA1Key });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      expect(
+        await screen.findByText(/Select a document to view its content and provide feedback./i),
+      ).toBeInTheDocument();
+
+      expect(screen.queryByText(/Document: doc-a1/i)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/Document Content/i)).not.toBeInTheDocument();
+    });
+
+    it('does not render document content when focusedDocument is null', () => {
+      setupStore({
+        focusedDocument: null,
+        focusedStageDocumentMap: {},
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      expect(
+        screen.getByText(/Select a document to view its content and provide feedback./i),
+      ).toBeInTheDocument();
+
+      expect(screen.queryByLabelText(/Document Content/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /save edit/i })).not.toBeInTheDocument();
+    });
+
+    it('does not render document content when focusedDocument exists but document is not highlighted in checklist', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Document A1 baseline',
+        focusedStageDocumentMap: null,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      expect(
+        await screen.findByText(/Select a document to view its content and provide feedback./i),
+      ).toBeInTheDocument();
+
+      expect(screen.queryByText(/Document: doc-a1/i)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/Document Content/i)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('shared utility function integration', () => {
+    it('calls isDocumentHighlighted from @paynless/utils with correct parameters when checking if document content should be rendered', async () => {
+      const focusKey = buildFocusKey(modelA);
+      const focusedStageDocumentMap = {
+        [focusKey]: { modelId: modelA, documentKey: docA1Key },
+      };
+
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Document A1 baseline',
+        focusedStageDocumentMap,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      await waitFor(() => {
+        expect(mockIsDocumentHighlighted).toHaveBeenCalledWith(
+          mockSessionId,
+          mockStageSlug,
+          modelA,
+          docA1Key,
+          focusedStageDocumentMap,
+        );
+      });
+
+      expect(await screen.findByText(/Document: doc-a1/i)).toBeInTheDocument();
+    });
+
+    it('verifies highlighting behavior matches StageRunChecklist behavior when using same focusedStageDocumentMap state', async () => {
+      const focusKey = buildFocusKey(modelA);
+      const focusedStageDocumentMap = {
+        [focusKey]: { modelId: modelA, documentKey: docA1Key },
+      };
+
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Document A1 baseline',
+        focusedStageDocumentMap,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      await waitFor(() => {
+        expect(mockIsDocumentHighlighted).toHaveBeenCalled();
+      });
+
+      const callArgs = mockIsDocumentHighlighted.mock.calls[0];
+      expect(callArgs).toBeDefined();
+      expect(callArgs?.[0]).toBe(mockSessionId);
+      expect(callArgs?.[1]).toBe(mockStageSlug);
+      expect(callArgs?.[2]).toBe(modelA);
+      expect(callArgs?.[3]).toBe(docA1Key);
+      expect(callArgs?.[4]).toBe(focusedStageDocumentMap);
+
+      expect(await screen.findByText(/Document: doc-a1/i)).toBeInTheDocument();
+
+      const checklistProps = stageRunChecklistMock.mock.calls[0]?.[0];
+      expect(checklistProps).toBeDefined();
+      expect(checklistProps?.focusedStageDocumentMap).toEqual(focusedStageDocumentMap);
+    });
+
+    it('ensures highlighting logic is consistent between GeneratedContributionCard and StageRunChecklist by using same shared utility function', async () => {
+      const focusKeyA = buildFocusKey(modelA);
+      const focusKeyB = buildFocusKey(modelB);
+      const focusedStageDocumentMap = {
+        [focusKeyA]: { modelId: modelA, documentKey: docA1Key },
+        [focusKeyB]: { modelId: modelB, documentKey: docB1Key },
+      };
+
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Document A1 baseline',
+        focusedStageDocumentMap,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      await waitFor(() => {
+        expect(mockIsDocumentHighlighted).toHaveBeenCalled();
+      });
+
+      const callArgs = mockIsDocumentHighlighted.mock.calls[0];
+      expect(callArgs).toBeDefined();
+      const [sessionId, stageSlug, modelId, documentKey, map] = callArgs!;
+
+      expect(sessionId).toBe(mockSessionId);
+      expect(stageSlug).toBe(mockStageSlug);
+      expect(modelId).toBe(modelA);
+      expect(documentKey).toBe(docA1Key);
+      expect(map).toBe(focusedStageDocumentMap);
+
+      const checklistProps = stageRunChecklistMock.mock.calls[0]?.[0];
+      expect(checklistProps?.focusedStageDocumentMap).toBe(focusedStageDocumentMap);
+
+      expect(await screen.findByText(/Document: doc-a1/i)).toBeInTheDocument();
     });
   });
 });

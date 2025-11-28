@@ -66,11 +66,34 @@ describe('Selectors - Recipes', () => {
     outputs_required: [{ document_key: 'header_ctx_b', artifact_class: 'header_context', file_type: 'json' }],
   };
 
+  const stepC: DialecticStageRecipeStep = {
+    id: 'step-c',
+    step_key: 'c_key',
+    step_slug: 'c-slug',
+    step_name: 'C',
+    execution_order: 3,
+    parallel_group: 3,
+    branch_key: 'branch_c',
+    job_type: 'EXECUTE',
+    prompt_type: 'Turn',
+    prompt_template_id: 'pt-c',
+    output_type: 'rendered_document',
+    granularity_strategy: 'per_source_document',
+    inputs_required: [],
+    inputs_relevance: [],
+    outputs_required: [
+      { document_key: 'doc_a', artifact_class: 'rendered_document', file_type: 'markdown' },
+      { document_key: 'doc_b', artifact_class: 'rendered_document', file_type: 'markdown' },
+      { document_key: 'doc_c', artifact_class: 'rendered_document', file_type: 'markdown' },
+      { document_key: 'doc_d', artifact_class: 'rendered_document', file_type: 'markdown' },
+    ],
+  };
+
   const recipe: DialecticStageRecipe = {
     stageSlug,
     instanceId: 'instance-123',
     // Intentionally out-of-order array to verify ordering behavior in selector
-    steps: [stepB, stepA],
+    steps: [stepB, stepA, stepC],
   };
 
   const makeState = (overrides?: Partial<DialecticStateValues>): DialecticStateValues => ({
@@ -92,11 +115,13 @@ describe('Selectors - Recipes', () => {
   it('selectStepList returns steps ordered by execution_order and exposes parallel_group/branch_key', () => {
     const state = makeState();
     const list = selectStepList(state, stageSlug);
-    expect(list.map(s => s.step_key)).toEqual(['a_key', 'b_key']);
+    expect(list.map(s => s.step_key)).toEqual(['a_key', 'b_key', 'c_key']);
     expect(list[0].parallel_group).toBe(1);
     expect(list[0].branch_key).toBe('branch_a');
     expect(list[1].parallel_group).toBe(2);
     expect(list[1].branch_key).toBe('branch_b');
+    expect(list[2].parallel_group).toBe(3);
+    expect(list[2].branch_key).toBe('branch_c');
   });
 
   describe('stage run progress selectors', () => {

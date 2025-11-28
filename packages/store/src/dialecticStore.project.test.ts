@@ -73,7 +73,6 @@ describe('useDialecticStore', () => {
                     description: 'A standard process template',
                     created_at: '2023-01-01T00:00:00Z',
                     starting_stage_id: 'stage-1',
-                    domain_id: 'dom-1'
                 },
                 isLoadingProcessTemplate: false,
                 processTemplateError: null,
@@ -181,7 +180,6 @@ describe('useDialecticStore', () => {
                 description: 'A standard process template',
                 created_at: '2023-01-01T00:00:00Z',
                 starting_stage_id: 'stage-1',
-                domain_id: 'dom-1'
             },
             isLoadingProcessTemplate: false,
             processTemplateError: null,
@@ -345,6 +343,7 @@ describe('useDialecticStore', () => {
                 // For this test, assuming they can be omitted if nullable or not directly relevant to the core assertions
                 stages: [],
                 transitions: [],
+                starting_stage_id: 'stage-detail-1',
             },
             // The following are store-specific states, not part of DB response for DialecticProject typically
             isLoadingProcessTemplate: false,
@@ -362,7 +361,17 @@ describe('useDialecticStore', () => {
             useDialecticStore.setState({
                 activeContextProjectId: 'old-project-id',
                 activeContextSessionId: 'old-session-id',
-                activeContextStage: { id: 'old-stage', name: 'Old Stage' },
+                activeContextStage: { 
+                    id: 'old-stage', 
+                    slug: 'old-stage', 
+                    display_name: 'Old Stage', 
+                    description: 'Old Stage', 
+                    created_at: new Date().toISOString(), 
+                    expected_output_template_ids: [], 
+                    recipe_template_id: null, 
+                    active_recipe_instance_id: null,
+                    default_system_prompt_id: null,
+                },
                 selectedModelIds: ['old-model-1'],
             });
 
@@ -733,7 +742,7 @@ describe('useDialecticStore', () => {
 
     describe('exportDialecticProject action', () => {
         const projectIdToExport = 'projToExport';
-        const mockExportData = { export_url: 'http://example.com/export.zip' };
+        const mockExportData = { export_url: 'http://example.com/export.zip', file_name: 'export.zip' };
 
         beforeEach(() => {
             useDialecticStore.setState({
@@ -744,7 +753,7 @@ describe('useDialecticStore', () => {
 
         it('should export a project and return data on success', async () => {
             // Assuming exportProject API returns some data, like a URL or file content
-            const mockResponse: ApiResponse<{ export_url: string }> = { data: mockExportData, status: 200 };
+            const mockResponse: ApiResponse<{ export_url: string; file_name: string }> = { data: mockExportData, status: 200 };
             mockDialecticApi.exportProject.mockResolvedValue(mockResponse);
 
             const { exportDialecticProject } = useDialecticStore.getState();
@@ -830,7 +839,6 @@ describe('useDialecticStore', () => {
                 description: 'A standard process template',
                 created_at: '2023-01-01T00:00:00Z',
                 starting_stage_id: 'stage-1',
-                domain_id: 'dom-1'
             },
             isLoadingProcessTemplate: false,
             processTemplateError: null,

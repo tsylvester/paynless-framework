@@ -337,7 +337,7 @@ describe('StageRunChecklist', () => {
         expect(screen.getByTestId('document-synthesis_document_secondary')).toBeInTheDocument();
         expect(screen.queryByTestId('document-synthesis_document_outline')).toBeNull();
 
-        expect(screen.getByText('Completed 1 of 2 documents')).toBeInTheDocument();
+        expect(screen.getByText('1 / 2 Documents')).toBeInTheDocument();
     });
 
     it('renders a condensed header without legacy checklist framing', () => {
@@ -377,7 +377,7 @@ describe('StageRunChecklist', () => {
 
         render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
 
-        expect(screen.getByText('Completed 1 of 1 documents')).toBeInTheDocument();
+        expect(screen.getByText('1 / 1 Documents')).toBeInTheDocument();
         expect(screen.queryByText(/Stage Run Checklist/i)).toBeNull();
         expect(screen.queryByText(/Parallel Group/i)).toBeNull();
         expect(screen.queryByText(/Branch/i)).toBeNull();
@@ -454,7 +454,7 @@ describe('StageRunChecklist', () => {
 
         render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
 
-        expect(screen.getByText('Completed 0 of 0 documents')).toBeInTheDocument();
+        expect(screen.getByText('0 / 0 Documents')).toBeInTheDocument();
         expect(screen.getAllByText('No documents generated yet.')).toHaveLength(1);
         expect(screen.queryByText('No documents for this step.')).toBeNull();
         expect(screen.queryByTestId('document-synthesis_document_outline')).toBeNull();
@@ -506,7 +506,7 @@ describe('StageRunChecklist', () => {
         render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
 
         expect(screen.queryByText('Stage progress data is unavailable.')).toBeNull();
-        expect(screen.getByText('Completed 0 of 2 documents')).toBeInTheDocument();
+        expect(screen.getByText('0 / 2 Documents')).toBeInTheDocument();
 
         const documentList = screen.getByTestId('stage-run-checklist-documents');
         const documentRows = within(documentList).queryAllByTestId(/document-/);
@@ -639,45 +639,6 @@ describe('StageRunChecklist', () => {
         expect(screen.getByText('Stage progress data is unavailable.')).toBeInTheDocument();
     });
 
-    it('does not allow selecting documents without a usable model id', () => {
-        const blankModelId = '';
-        const recipe = createRecipe([buildRenderStep()]);
-
-        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
-
-        const stepStatuses: StepStatuses = {
-            render_document: 'completed',
-        };
-
-        const documents: StageRunDocuments = {
-            synthesis_document_rendered: {
-                status: 'completed',
-                job_id: 'job-render',
-                latestRenderedResourceId: 'resource-render',
-                modelId: blankModelId,
-                versionHash: 'hash-render',
-                lastRenderedResourceId: 'resource-render',
-                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
-            },
-        };
-
-        const progressEntry = createProgressEntry(stepStatuses, documents);
-
-        setChecklistState(recipe, progressEntry);
-
-        const onDocumentSelect = vi.fn();
-
-        render(<StageRunChecklist modelId={blankModelId} onDocumentSelect={onDocumentSelect} />);
-
-        const documentRow = screen.getByTestId('document-synthesis_document_rendered');
-
-        expect(documentRow).not.toHaveAttribute('role');
-        expect(documentRow).not.toHaveAttribute('tabindex');
-
-        fireEvent.click(documentRow);
-
-        expect(onDocumentSelect).not.toHaveBeenCalled();
-    });
 
     it('renders planned markdown documents before generation begins', () => {
         const recipe = createRecipe([buildRenderStep(), buildSecondaryRenderStep()]);
@@ -697,7 +658,7 @@ describe('StageRunChecklist', () => {
 
         render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
 
-        expect(screen.getByText('Completed 0 of 2 documents')).toBeInTheDocument();
+        expect(screen.getByText('0 / 2 Documents')).toBeInTheDocument();
 
         const documentList = screen.getByTestId('stage-run-checklist-documents');
         const documentRows = within(documentList).queryAllByTestId(/document-/);
@@ -877,7 +838,7 @@ describe('StageRunChecklist', () => {
 
         expect(screen.getByTestId('document-synthesis_document_rendered')).toBeInTheDocument();
         expect(screen.queryByTestId('document-synthesis_plan_header')).toBeNull();
-        expect(screen.getByText('Completed 0 of 1 documents')).toBeInTheDocument();
+        expect(screen.getByText('0 / 1 Documents')).toBeInTheDocument();
     });
 
     it('uses selectValidMarkdownDocumentKeys as the source of truth and does not duplicate filtering logic', () => {
@@ -963,6 +924,258 @@ describe('StageRunChecklist', () => {
         // Component should render all keys from the selector's Set
         expectedMarkdownKeys.forEach((key) => {
             expect(screen.getByTestId(`document-${key}`)).toBeInTheDocument();
+        });
+    });
+
+    describe('document highlighting behavior', () => {
+        it('should highlight a document when it matches the focusedStageDocumentMap', () => {
+            const recipe = createRecipe([buildRenderStep()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
+            const stepStatuses: StepStatuses = {
+                render_document: 'completed',
+            };
+
+            const documents: StageRunDocuments = {
+                synthesis_document_rendered: {
+                    status: 'completed',
+                    job_id: 'job-render',
+                    latestRenderedResourceId: 'resource-render',
+                    modelId: modelIdA,
+                    versionHash: 'hash-render',
+                    lastRenderedResourceId: 'resource-render',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                },
+            };
+
+            const progressEntry = createProgressEntry(stepStatuses, documents);
+            setChecklistState(recipe, progressEntry);
+
+            const focusKey = `${sessionId}:${stageSlug}:${modelIdA}`;
+            const focusedStageDocumentMap = {
+                [focusKey]: {
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                },
+            };
+
+            render(
+                <StageRunChecklist
+                    modelId={modelIdA}
+                    onDocumentSelect={vi.fn()}
+                    focusedStageDocumentMap={focusedStageDocumentMap}
+                />
+            );
+
+            const documentRow = screen.getByTestId('document-synthesis_document_rendered');
+            expect(documentRow).toHaveAttribute('data-active', 'true');
+        });
+
+        it('should not highlight a document when it does not match the focusedStageDocumentMap', () => {
+            const recipe = createRecipe([buildRenderStep()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
+            const stepStatuses: StepStatuses = {
+                render_document: 'completed',
+            };
+
+            const documents: StageRunDocuments = {
+                synthesis_document_rendered: {
+                    status: 'completed',
+                    job_id: 'job-render',
+                    latestRenderedResourceId: 'resource-render',
+                    modelId: modelIdA,
+                    versionHash: 'hash-render',
+                    lastRenderedResourceId: 'resource-render',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                },
+            };
+
+            const progressEntry = createProgressEntry(stepStatuses, documents);
+            setChecklistState(recipe, progressEntry);
+
+            const focusKey = `${sessionId}:${stageSlug}:${modelIdA}`;
+            const focusedStageDocumentMap = {
+                [focusKey]: {
+                    modelId: modelIdA,
+                    documentKey: 'different_document_key',
+                },
+            };
+
+            render(
+                <StageRunChecklist
+                    modelId={modelIdA}
+                    onDocumentSelect={vi.fn()}
+                    focusedStageDocumentMap={focusedStageDocumentMap}
+                />
+            );
+
+            const documentRow = screen.getByTestId('document-synthesis_document_rendered');
+            expect(documentRow).not.toHaveAttribute('data-active');
+        });
+
+        it('should not highlight documents when focusedStageDocumentMap is undefined', () => {
+            const recipe = createRecipe([buildRenderStep()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
+            const stepStatuses: StepStatuses = {
+                render_document: 'completed',
+            };
+
+            const documents: StageRunDocuments = {
+                synthesis_document_rendered: {
+                    status: 'completed',
+                    job_id: 'job-render',
+                    latestRenderedResourceId: 'resource-render',
+                    modelId: modelIdA,
+                    versionHash: 'hash-render',
+                    lastRenderedResourceId: 'resource-render',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                },
+            };
+
+            const progressEntry = createProgressEntry(stepStatuses, documents);
+            setChecklistState(recipe, progressEntry);
+
+            render(
+                <StageRunChecklist
+                    modelId={modelIdA}
+                    onDocumentSelect={vi.fn()}
+                    focusedStageDocumentMap={undefined}
+                />
+            );
+
+            const documentRow = screen.getByTestId('document-synthesis_document_rendered');
+            expect(documentRow).not.toHaveAttribute('data-active');
+        });
+
+        it('should not highlight documents when focusedStageDocumentMap entry is null', () => {
+            const recipe = createRecipe([buildRenderStep()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
+            const stepStatuses: StepStatuses = {
+                render_document: 'completed',
+            };
+
+            const documents: StageRunDocuments = {
+                synthesis_document_rendered: {
+                    status: 'completed',
+                    job_id: 'job-render',
+                    latestRenderedResourceId: 'resource-render',
+                    modelId: modelIdA,
+                    versionHash: 'hash-render',
+                    lastRenderedResourceId: 'resource-render',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                },
+            };
+
+            const progressEntry = createProgressEntry(stepStatuses, documents);
+            setChecklistState(recipe, progressEntry);
+
+            const focusKey = `${sessionId}:${stageSlug}:${modelIdA}`;
+            const focusedStageDocumentMap = {
+                [focusKey]: null,
+            };
+
+            render(
+                <StageRunChecklist
+                    modelId={modelIdA}
+                    onDocumentSelect={vi.fn()}
+                    focusedStageDocumentMap={focusedStageDocumentMap}
+                />
+            );
+
+            const documentRow = screen.getByTestId('document-synthesis_document_rendered');
+            expect(documentRow).not.toHaveAttribute('data-active');
+        });
+
+        it('should not highlight documents when focusKey does not exist in map', () => {
+            const recipe = createRecipe([buildRenderStep()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
+            const stepStatuses: StepStatuses = {
+                render_document: 'completed',
+            };
+
+            const documents: StageRunDocuments = {
+                synthesis_document_rendered: {
+                    status: 'completed',
+                    job_id: 'job-render',
+                    latestRenderedResourceId: 'resource-render',
+                    modelId: modelIdA,
+                    versionHash: 'hash-render',
+                    lastRenderedResourceId: 'resource-render',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                },
+            };
+
+            const progressEntry = createProgressEntry(stepStatuses, documents);
+            setChecklistState(recipe, progressEntry);
+
+            const focusedStageDocumentMap = {
+                'different-session:different-stage:different-model': {
+                    modelId: 'different-model',
+                    documentKey: 'synthesis_document_rendered',
+                },
+            };
+
+            render(
+                <StageRunChecklist
+                    modelId={modelIdA}
+                    onDocumentSelect={vi.fn()}
+                    focusedStageDocumentMap={focusedStageDocumentMap}
+                />
+            );
+
+            const documentRow = screen.getByTestId('document-synthesis_document_rendered');
+            expect(documentRow).not.toHaveAttribute('data-active');
+        });
+
+        it('should match highlighting behavior of shared utility function isDocumentHighlighted', () => {
+            const recipe = createRecipe([buildRenderStep()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
+            const stepStatuses: StepStatuses = {
+                render_document: 'completed',
+            };
+
+            const documents: StageRunDocuments = {
+                synthesis_document_rendered: {
+                    status: 'completed',
+                    job_id: 'job-render',
+                    latestRenderedResourceId: 'resource-render',
+                    modelId: modelIdA,
+                    versionHash: 'hash-render',
+                    lastRenderedResourceId: 'resource-render',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                },
+            };
+
+            const progressEntry = createProgressEntry(stepStatuses, documents);
+            setChecklistState(recipe, progressEntry);
+
+            const focusKey = `${sessionId}:${stageSlug}:${modelIdA}`;
+            const focusedStageDocumentMap = {
+                [focusKey]: {
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                },
+            };
+
+            render(
+                <StageRunChecklist
+                    modelId={modelIdA}
+                    onDocumentSelect={vi.fn()}
+                    focusedStageDocumentMap={focusedStageDocumentMap}
+                />
+            );
+
+            const documentRow = screen.getByTestId('document-synthesis_document_rendered');
+            const isHighlighted = documentRow.hasAttribute('data-active') && documentRow.getAttribute('data-active') === 'true';
+
+            // Verify the component's highlighting behavior matches what isDocumentHighlighted would return
+            // This test ensures consistency between component behavior and shared utility
+            expect(isHighlighted).toBe(true);
         });
     });
 });

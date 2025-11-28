@@ -840,6 +840,612 @@ describe('notificationStore', () => {
                 handleIncomingNotificationSpy.mockRestore();
             });
         });
+
+        describe('Optional field extraction for all event types', () => {
+            describe('Extract all optional fields when present in notification data', () => {
+                it('extracts latestRenderedResourceId for document_started when present', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-doc-started-with-resource',
+                        type: 'document_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            step_key: 'execute-step-1',
+                            latestRenderedResourceId: 'resource-123',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'document_started',
+                            latestRenderedResourceId: 'resource-123',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for planner_started when present', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-planner-with-resource',
+                        type: 'planner_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-planner',
+                            document_key: 'global_header',
+                            modelId: 'model-planner',
+                            step_key: 'planner-step-1',
+                            latestRenderedResourceId: 'resource-456',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'planner_started',
+                            latestRenderedResourceId: 'resource-456',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for document_chunk_completed when present', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-chunk-with-resource',
+                        type: 'document_chunk_completed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            step_key: 'execute-step-1',
+                            isFinalChunk: false,
+                            continuationNumber: 2,
+                            latestRenderedResourceId: 'resource-789',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'document_chunk_completed',
+                            latestRenderedResourceId: 'resource-789',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for job_failed when present', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-job-failed-with-resource',
+                        type: 'job_failed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            step_key: 'execute-step-1',
+                            error: { code: 'MODEL_FAILURE', message: 'LLM aborted early' },
+                            latestRenderedResourceId: 'resource-999',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'job_failed',
+                            latestRenderedResourceId: 'resource-999',
+                        })
+                    );
+                });
+
+                it('extracts error for contribution_generation_retrying when present', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-retrying-with-error',
+                        type: 'contribution_generation_retrying',
+                        data: {
+                            sessionId: 'sid-123',
+                            modelId: 'model-1',
+                            iterationNumber: 1,
+                            job_id: 'job-retry',
+                            error: 'Connection timeout',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'contribution_generation_retrying',
+                            error: 'Connection timeout',
+                        })
+                    );
+                });
+
+                it('extracts job_id and modelId for contribution_generation_failed when present', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-failed-with-optional',
+                        type: 'contribution_generation_failed',
+                        data: {
+                            sessionId: 'sid-123',
+                            job_id: 'job-failed',
+                            modelId: 'model-failed',
+                            error: { code: 'MODEL_ERROR', message: 'Model unavailable' },
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'contribution_generation_failed',
+                            job_id: 'job-failed',
+                            modelId: 'model-failed',
+                        })
+                    );
+                });
+            });
+
+            describe('Validation failures prevent invalid notifications from being added', () => {
+                it('does not add WALLET_TRANSACTION notification when walletId is missing', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-invalid-1',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            newBalance: '1000',
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('does not add WALLET_TRANSACTION notification when newBalance is missing', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-invalid-2',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('does not add WALLET_TRANSACTION notification when walletId has invalid type', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-invalid-3',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 123,
+                            newBalance: '1000',
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+            });
+
+            describe('Optional fields extracted when present and undefined when missing', () => {
+                it('extracts latestRenderedResourceId when present for document_started', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-doc-started-with-resource',
+                        type: 'document_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            latestRenderedResourceId: 'resource-present',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            latestRenderedResourceId: 'resource-present',
+                        })
+                    );
+                });
+
+                it('sets latestRenderedResourceId to undefined when missing for document_started', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-doc-started-no-resource',
+                        type: 'document_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    const callArgs = mockHandleDialecticLifecycleEvent.mock.calls[0][0];
+                    expect(callArgs.latestRenderedResourceId).toBeUndefined();
+                });
+
+                it('handles latestRenderedResourceId as null when type allows null for document_completed', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-doc-completed-null-resource',
+                        type: 'document_completed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            latestRenderedResourceId: null,
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            latestRenderedResourceId: null,
+                        })
+                    );
+                });
+
+                it('extracts step_key when present for planner_started', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-planner-with-step-key',
+                        type: 'planner_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-planner',
+                            document_key: 'global_header',
+                            modelId: 'model-planner',
+                            step_key: 'planner-step-1',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            step_key: 'planner-step-1',
+                        })
+                    );
+                });
+
+                it('sets step_key to undefined when missing for planner_started', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-planner-no-step-key',
+                        type: 'planner_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-planner',
+                            document_key: 'global_header',
+                            modelId: 'model-planner',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    const callArgs = mockHandleDialecticLifecycleEvent.mock.calls[0][0];
+                    expect(callArgs.step_key).toBeUndefined();
+                });
+
+                it('extracts isFinalChunk and continuationNumber when present for document_chunk_completed', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-chunk-with-optional',
+                        type: 'document_chunk_completed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            isFinalChunk: true,
+                            continuationNumber: 5,
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            isFinalChunk: true,
+                            continuationNumber: 5,
+                        })
+                    );
+                });
+
+                it('sets isFinalChunk and continuationNumber to undefined when missing for document_chunk_completed', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-chunk-no-optional',
+                        type: 'document_chunk_completed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    const callArgs = mockHandleDialecticLifecycleEvent.mock.calls[0][0];
+                    expect(callArgs.isFinalChunk).toBeUndefined();
+                    expect(callArgs.continuationNumber).toBeUndefined();
+                });
+            });
+
+            describe('Base type optional fields extracted consistently across extending types', () => {
+                it('extracts latestRenderedResourceId for document_started extending DocumentLifecyclePayload', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-doc-started-base-field',
+                        type: 'document_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            latestRenderedResourceId: 'resource-consistent-1',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'document_started',
+                            latestRenderedResourceId: 'resource-consistent-1',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for document_completed extending DocumentLifecyclePayload', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-doc-completed-base-field',
+                        type: 'document_completed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            latestRenderedResourceId: 'resource-consistent-2',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'document_completed',
+                            latestRenderedResourceId: 'resource-consistent-2',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for document_chunk_completed extending DocumentLifecyclePayload', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-chunk-completed-base-field',
+                        type: 'document_chunk_completed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            latestRenderedResourceId: 'resource-consistent-3',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'document_chunk_completed',
+                            latestRenderedResourceId: 'resource-consistent-3',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for render_completed extending DocumentLifecyclePayload', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-render-completed-base-field',
+                        type: 'render_completed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-render',
+                            document_key: 'business_case',
+                            modelId: 'model-render',
+                            latestRenderedResourceId: 'resource-consistent-4',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'render_completed',
+                            latestRenderedResourceId: 'resource-consistent-4',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for planner_started extending DocumentLifecyclePayload', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-planner-started-base-field',
+                        type: 'planner_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-planner',
+                            document_key: 'global_header',
+                            modelId: 'model-planner',
+                            latestRenderedResourceId: 'resource-consistent-5',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'planner_started',
+                            latestRenderedResourceId: 'resource-consistent-5',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for job_failed extending DocumentLifecyclePayload', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-job-failed-base-field',
+                        type: 'job_failed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            error: { code: 'MODEL_FAILURE', message: 'LLM aborted early' },
+                            latestRenderedResourceId: 'resource-consistent-6',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'job_failed',
+                            latestRenderedResourceId: 'resource-consistent-6',
+                        })
+                    );
+                });
+            });
+        });
         // ------------------------------------
     });
 }); 
