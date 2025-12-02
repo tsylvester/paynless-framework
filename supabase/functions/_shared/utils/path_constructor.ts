@@ -1,4 +1,5 @@
 import { FileType, type PathContext } from '../types/file_manager.types.ts';
+import { isDocumentKey } from './type-guards/type_guards.file_manager.ts';
 
 /**
  * Defines the structure for a constructed path, separating directory and filename.
@@ -68,6 +69,39 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     documentKey,
     stepName,
   } = context;
+
+  // Validate ALL required values for document file types BEFORE any path construction logic
+  if (isDocumentKey(fileType)) {
+    const missingValues: string[] = [];
+    
+    if (!projectId || typeof projectId !== 'string' || projectId.trim() === '') {
+      missingValues.push('projectId (string, non-empty)');
+    }
+    if (!rawSessionId || typeof rawSessionId !== 'string' || rawSessionId.trim() === '') {
+      missingValues.push('sessionId (string, non-empty)');
+    }
+    if (iteration === undefined || typeof iteration !== 'number') {
+      missingValues.push('iteration (number)');
+    }
+    if (!rawStageSlug || typeof rawStageSlug !== 'string' || rawStageSlug.trim() === '') {
+      missingValues.push('stageSlug (string, non-empty)');
+    }
+    if (!rawModelSlug || typeof rawModelSlug !== 'string' || rawModelSlug.trim() === '') {
+      missingValues.push('modelSlug (string, non-empty)');
+    }
+    if (attemptCount === undefined || typeof attemptCount !== 'number') {
+      missingValues.push('attemptCount (number)');
+    }
+    if (!documentKey || typeof documentKey !== 'string' || documentKey.trim() === '') {
+      missingValues.push('documentKey (string, non-empty)');
+    }
+    
+    if (missingValues.length > 0) {
+      throw new Error(
+        `constructStoragePath requires all of the following values for document file type '${fileType}': projectId (string, non-empty), sessionId (string, non-empty), iteration (number), stageSlug (string, non-empty), modelSlug (string, non-empty), attemptCount (number), documentKey (string, non-empty). Missing or invalid: ${missingValues.join(', ')}`
+      );
+    }
+  }
 
   const projectRoot = projectId;
   const shortSessionId = rawSessionId ? generateShortId(rawSessionId) : undefined;
@@ -210,8 +244,36 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     case FileType.updated_master_plan:
     case FileType.actionable_checklist:
     case FileType.advisor_recommendations: {
-      // For fileType calls, infer contributionType.
-      const effectiveContributionType = documentKey ?? contributionType ?? fileType;
+      // For document file types, use documentKey directly (guaranteed present after validation).
+      // For non-document file types, determine effectiveContributionType explicitly without fallbacks.
+      // Special case: document file types used as antithesis/pairwise/reduced synthesis should use contributionType for switch logic.
+      let effectiveContributionType: string;
+      if (isDocumentKey(fileType)) {
+        // documentKey is guaranteed to be present and non-empty after validation
+        // TypeScript doesn't narrow across the validation block, so we assert the validated state
+        if (!documentKey || typeof documentKey !== 'string' || documentKey.trim() === '') {
+          throw new Error(`constructStoragePath: documentKey validation failed for document file type ${fileType}`);
+        }
+        // For document file types used as special contribution types (antithesis, pairwise, reduced),
+        // use contributionType for the switch logic, but still validate documentKey is present.
+        if (contributionType === 'antithesis' || contributionType === 'pairwise_synthesis_chunk' || contributionType === 'reduced_synthesis') {
+          effectiveContributionType = contributionType;
+        } else {
+          effectiveContributionType = documentKey;
+        }
+      } else {
+        // For non-document file types, determine the value explicitly based on fileType
+        if (fileType === FileType.PairwiseSynthesisChunk || fileType === FileType.ReducedSynthesis) {
+          // These file types use themselves as the contribution type
+          effectiveContributionType = fileType;
+        } else if (contributionType && typeof contributionType === 'string') {
+          // Use contributionType if explicitly provided
+          effectiveContributionType = contributionType;
+        } else {
+          // Use fileType as string (fileType is always available, no fallback needed)
+          effectiveContributionType = fileType;
+        }
+      }
       const contributionTypeSanitized = sanitizeForPath(effectiveContributionType);
       
       // We must re-validate context with the now-known effectiveContributionType
@@ -270,7 +332,17 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
           break;
         }
         default: // Covers thesis, synthesis, parenthesis, paralysis, and all document keys
-          baseFileName = `${modelSlugSanitized}_${attemptCount}_${contributionTypeSanitized}`;
+          // For document file types, use documentKey directly in filename
+          if (isDocumentKey(fileType)) {
+            // documentKey is guaranteed to be present and non-empty after validation
+            // Re-check for TypeScript type narrowing (validation already occurred above)
+            if (typeof documentKey !== 'string' || documentKey.trim() === '') {
+              throw new Error(`constructStoragePath: documentKey validation failed for document file type ${fileType}`);
+            }
+            baseFileName = `${modelSlugSanitized}_${attemptCount}_${sanitizeForPath(documentKey)}`;
+          } else {
+            baseFileName = `${modelSlugSanitized}_${attemptCount}_${contributionTypeSanitized}`;
+          }
           break;
       }
       
@@ -290,14 +362,6 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
         effectiveContributionType === FileType.synthesis_document_technical_approach ||
         effectiveContributionType === FileType.synthesis_document_success_metrics;
 
-      const isDocument = [
-        FileType.business_case, FileType.feature_spec, FileType.technical_approach, FileType.success_metrics,
-        FileType.business_case_critique, FileType.technical_feasibility_assessment, FileType.risk_register, FileType.non_functional_requirements, FileType.dependency_map, FileType.comparison_vector,
-        FileType.product_requirements, FileType.system_architecture, FileType.tech_stack,
-        FileType.technical_requirements, FileType.milestone_schema,
-        FileType.updated_master_plan, FileType.actionable_checklist, FileType.advisor_recommendations
-      ].includes(fileType);
-
       if (isIntermediate || isContinuation) {
         storagePath = (fileType === FileType.ModelContributionRawJson)
           ? `${stageRootPath}/_work/raw_responses`
@@ -305,7 +369,7 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       } else {
         if (fileType === FileType.ModelContributionRawJson) {
           storagePath = `${stageRootPath}/raw_responses`;
-        } else if (isDocument || documentKey) {
+        } else if (isDocumentKey(fileType) || documentKey) {
           storagePath = `${stageRootPath}/documents`;
         } else {
           storagePath = stageRootPath;

@@ -128,7 +128,7 @@ export async function processComplexJob(
     // 3. Determine readiness by looking at completed child jobs and the DAG
     const { data: completedChildren, error: childrenError } = await dbClient
         .from('dialectic_generation_jobs')
-        .select('payload')
+        .select('id, payload')
         .eq('parent_job_id', parentJobId)
         .eq('status', 'completed');
 
@@ -154,14 +154,23 @@ export async function processComplexJob(
     // Track completed steps by looking up step_slug from planner_metadata.recipe_step_id
     const completedStepSlugs = new Set<string>();
     for (const child of completedChildren) {
-        if (isRecord(child.payload)) {
-            const plannerMetadata = child.payload.planner_metadata;
-            if (isRecord(plannerMetadata) && typeof plannerMetadata.recipe_step_id === 'string') {
-                const stepSlug = stepSlugById.get(plannerMetadata.recipe_step_id);
-                if (stepSlug) {
-                    completedStepSlugs.add(stepSlug);
-                }
-            }
+        // Validate that completed child jobs have required planner_metadata
+        if (!isRecord(child.payload)) {
+            throw new Error(`processComplexJob cannot track completion for child job ${child.id} because planner_metadata.recipe_step_id is missing or invalid. Completed child jobs MUST have planner_metadata with a non-empty recipe_step_id to enable step completion tracking.`);
+        }
+        
+        if (!isRecord(child.payload.planner_metadata)) {
+            throw new Error(`processComplexJob cannot track completion for child job ${child.id} because planner_metadata.recipe_step_id is missing or invalid. Completed child jobs MUST have planner_metadata with a non-empty recipe_step_id to enable step completion tracking.`);
+        }
+        
+        const recipeStepId = child.payload.planner_metadata.recipe_step_id;
+        if (typeof recipeStepId !== 'string' || recipeStepId === '') {
+            throw new Error(`processComplexJob cannot track completion for child job ${child.id} because planner_metadata.recipe_step_id is missing or invalid. Completed child jobs MUST have planner_metadata with a non-empty recipe_step_id to enable step completion tracking.`);
+        }
+        
+        const stepSlug = stepSlugById.get(recipeStepId);
+        if (stepSlug) {
+            completedStepSlugs.add(stepSlug);
         }
     }
     // Build predecessor map from edges
@@ -216,8 +225,11 @@ export async function processComplexJob(
         }
     }
 
+    // Filter out already-completed steps from readySteps
+    const filteredReadySteps = readySteps.filter(step => !completedStepSlugs.has(step.step_slug));
+
     // If no ready steps remain, either we're waiting on siblings or all steps are complete
-    if (readySteps.length === 0) {
+    if (filteredReadySteps.length === 0) {
         // Check if all non-skipped, validated steps are completed → complete the parent job
         const validatedSteps = Array.from(stepIdToStep.values());
         const allDone = validatedSteps
@@ -230,7 +242,7 @@ export async function processComplexJob(
     }
 
     // Choose deterministic order for planning (execution_order for instance, step_number for template) but plan all
-    readySteps.sort((a, b) => {
+    filteredReadySteps.sort((a, b) => {
         const ao = ('execution_order' in a && typeof a.execution_order === 'number')
             ? a.execution_order
             : ('step_number' in a && typeof a.step_number === 'number') ? a.step_number : 0;
@@ -241,17 +253,17 @@ export async function processComplexJob(
     });
 
     // Log the first step for continuity with prior messages
-    const firstReady = readySteps[0];
+    const firstReady = filteredReadySteps[0];
     deps.logger.info(`[processComplexJob] Processing step '${firstReady.step_slug}' for job ${parentJobId}`);
-    deps.logger.info(`[processComplexJob] Total ready steps: ${readySteps.length}, step slugs: [${readySteps.map(s => s.step_slug).join(', ')}]`);
-    for (const step of readySteps) {
+    deps.logger.info(`[processComplexJob] Total ready steps: ${filteredReadySteps.length}, step slugs: [${filteredReadySteps.map(s => s.step_slug).join(', ')}]`);
+    for (const step of filteredReadySteps) {
         deps.logger.info(`[processComplexJob] Ready step '${step.step_slug}' inputs_required: ${JSON.stringify(step.inputs_required)}`);
     }
 
     // CRITICAL VALIDATION: If multiple steps are ready initially (no completed steps yet), only the header_context generator should be ready.
     // All other steps require header_context as input, so they should have the header_context generator as a predecessor.
-    if (completedStepSlugs.size === 0 && readySteps.length > 1) {
-        const stepsRequiringHeader = readySteps.filter(s => 
+    if (completedStepSlugs.size === 0 && filteredReadySteps.length > 1) {
+        const stepsRequiringHeader = filteredReadySteps.filter(s => 
             s.inputs_required && s.inputs_required.some(r => r.type === 'header_context')
         );
         if (stepsRequiringHeader.length > 0) {
@@ -278,7 +290,7 @@ export async function processComplexJob(
         }
         // 5. Delegate to the planner for each ready step and aggregate child jobs.
         const plannedChildrenArrays = await Promise.all(
-            readySteps.map((recipeStep) => {
+            filteredReadySteps.map((recipeStep) => {
                 deps.logger.info(`[processComplexJob] Calling planComplexStage for step '${recipeStep.step_slug}' with inputs_required: ${JSON.stringify(recipeStep.inputs_required)}`);
                 return deps.planComplexStage!(
                     dbClient,

@@ -7,6 +7,7 @@ import {
   isModelContributionFileType,
   isResourceContext,
   isOutputType,
+  isDocumentKey,
 } from './type_guards.file_manager.ts'
 import {
   CanonicalPathParams,
@@ -246,5 +247,53 @@ Deno.test('Type Guard: isOutputType', async (t) => {
     assert(!isOutputType(FileType.synthesis_document_feature_spec))
     assert(!isOutputType(FileType.synthesis_document_technical_approach))
     assert(!isOutputType(FileType.synthesis_document_success_metrics))
+  })
+})
+
+Deno.test('Type Guard: isDocumentKey', async (t) => {
+  await t.step('40.c.i: returns true for all DocumentKey file types', () => {
+    assert(isDocumentKey(FileType.business_case))
+    assert(isDocumentKey(FileType.feature_spec))
+    assert(isDocumentKey(FileType.technical_approach))
+    assert(isDocumentKey(FileType.success_metrics))
+    assert(isDocumentKey(FileType.business_case_critique))
+    assert(isDocumentKey(FileType.technical_feasibility_assessment))
+    assert(isDocumentKey(FileType.risk_register))
+    assert(isDocumentKey(FileType.non_functional_requirements))
+    assert(isDocumentKey(FileType.dependency_map))
+    assert(isDocumentKey(FileType.comparison_vector))
+    assert(isDocumentKey(FileType.product_requirements))
+    assert(isDocumentKey(FileType.system_architecture))
+    assert(isDocumentKey(FileType.tech_stack))
+    assert(isDocumentKey(FileType.technical_requirements))
+    assert(isDocumentKey(FileType.master_plan))
+    assert(isDocumentKey(FileType.milestone_schema))
+    assert(isDocumentKey(FileType.updated_master_plan))
+    assert(isDocumentKey(FileType.actionable_checklist))
+    assert(isDocumentKey(FileType.advisor_recommendations))
+  })
+
+  await t.step('40.c.ii: returns false for non-DocumentKey file types', () => {
+    assert(!isDocumentKey(FileType.HeaderContext))
+    assert(!isDocumentKey(FileType.ModelContributionRawJson))
+    assert(!isDocumentKey(FileType.PairwiseSynthesisChunk))
+    assert(!isDocumentKey(FileType.ReducedSynthesis))
+    assert(!isDocumentKey(FileType.Synthesis))
+    assert(!isDocumentKey(FileType.header_context_pairwise))
+    assert(!isDocumentKey(FileType.SynthesisHeaderContext))
+    assert(!isDocumentKey(FileType.synthesis_pairwise_business_case))
+    assert(!isDocumentKey(FileType.synthesis_pairwise_feature_spec))
+    assert(!isDocumentKey(FileType.synthesis_pairwise_technical_approach))
+    assert(!isDocumentKey(FileType.synthesis_pairwise_success_metrics))
+    assert(!isDocumentKey(FileType.synthesis_document_business_case))
+    assert(!isDocumentKey(FileType.synthesis_document_feature_spec))
+    assert(!isDocumentKey(FileType.synthesis_document_technical_approach))
+    assert(!isDocumentKey(FileType.synthesis_document_success_metrics))
+    assert(!isDocumentKey(FileType.ProjectReadme))
+    assert(!isDocumentKey(FileType.SeedPrompt))
+    assert(!isDocumentKey(FileType.PlannerPrompt))
+    assert(!isDocumentKey(FileType.TurnPrompt))
+    assert(!isDocumentKey(FileType.AssembledDocumentJson))
+    assert(!isDocumentKey(FileType.RenderedDocument))
   })
 })

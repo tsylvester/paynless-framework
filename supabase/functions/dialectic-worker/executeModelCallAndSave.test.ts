@@ -958,11 +958,18 @@ Deno.test('executeModelCallAndSave - emits document_completed when finish_reason
     rawProviderResponse: { finish_reason: 'stop' },
   }));
 
+  // Use a document file type with document_key
+  const documentPayload: DialecticExecuteJobPayload = {
+    ...testPayload,
+    output_type: FileType.business_case,
+    document_key: 'business_case',
+  };
+
   const params: ExecuteModelCallAndSaveParams = {
     dbClient: dbClient as unknown as SupabaseClient<Database>,
     deps,
     authToken: 'auth-token',
-    job: createMockJob(testPayload),
+    job: createMockJob(documentPayload),
     projectOwnerUserId: 'user-789',
     providerDetails: mockProviderData,
     promptConstructionPayload: buildPromptPayload(),
@@ -977,12 +984,12 @@ Deno.test('executeModelCallAndSave - emits document_completed when finish_reason
   const [payloadArg, targetUserId] = sendDocEventSpy.calls[0].args;
   assert(isRecord(payloadArg));
   assertEquals(payloadArg.type, 'document_completed');
-  assertEquals(payloadArg.sessionId, testPayload.sessionId);
-  assertEquals(payloadArg.stageSlug, testPayload.stageSlug);
+  assertEquals(payloadArg.sessionId, documentPayload.sessionId);
+  assertEquals(payloadArg.stageSlug, documentPayload.stageSlug);
   assertEquals(payloadArg.job_id, 'job-id-123');
-  assertEquals(payloadArg.document_key, String(testPayload.output_type));
-  assertEquals(payloadArg.modelId, testPayload.model_id);
-  assertEquals(payloadArg.iterationNumber, testPayload.iterationNumber);
+  assertEquals(payloadArg.document_key, documentPayload.document_key);
+  assertEquals(payloadArg.modelId, documentPayload.model_id);
+  assertEquals(payloadArg.iterationNumber, documentPayload.iterationNumber);
   assertEquals(targetUserId, 'user-789');
 
   callUnifiedAISpy.restore();
@@ -999,11 +1006,14 @@ Deno.test('executeModelCallAndSave - emits document_chunk_completed for continua
   const sendDocEventSpy = spy(deps.notificationService, 'sendDocumentCentricNotification');
 
   // Continuation job payload with required document_relationships
-  const continuationPayload = {
+  // Use a document file type with document_key for document_chunk_completed event
+  const continuationPayload: DialecticExecuteJobPayload = {
     ...testPayload,
+    output_type: FileType.business_case,
+    document_key: 'business_case',
     target_contribution_id: 'root-123',
     continuation_count: 2,
-    document_relationships: { thesis: 'root-123', isContinuation: true, turnIndex: 2 },
+    document_relationships: { thesis: 'root-123' },
   };
 
   // Stub model to return a non-final finish_reason (requires continuation), but we only assert chunk event
@@ -1036,12 +1046,12 @@ Deno.test('executeModelCallAndSave - emits document_chunk_completed for continua
   const [payloadArg, targetUserId] = sendDocEventSpy.calls[0].args;
   assert(isRecord(payloadArg));
   assertEquals(payloadArg.type, 'document_chunk_completed');
-  assertEquals(payloadArg.sessionId, testPayload.sessionId);
-  assertEquals(payloadArg.stageSlug, testPayload.stageSlug);
+  assertEquals(payloadArg.sessionId, continuationPayload.sessionId);
+  assertEquals(payloadArg.stageSlug, continuationPayload.stageSlug);
   assertEquals(payloadArg.job_id, 'job-id-123');
-  assertEquals(payloadArg.document_key, String(testPayload.output_type));
-  assertEquals(payloadArg.modelId, testPayload.model_id);
-  assertEquals(payloadArg.iterationNumber, testPayload.iterationNumber);
+  assertEquals(payloadArg.document_key, continuationPayload.document_key);
+  assertEquals(payloadArg.modelId, continuationPayload.model_id);
+  assertEquals(payloadArg.iterationNumber, continuationPayload.iterationNumber);
   assertEquals(targetUserId, 'user-789');
 
   callUnifiedAISpy.restore();
@@ -2013,6 +2023,7 @@ Deno.test('executeModelCallAndSave - schedules RENDER job after success with ren
   const renderPayload: DialecticExecuteJobPayload = {
     ...testPayload,
     output_type: FileType.business_case,
+    document_key: 'business_case',
   };
 
   const job = createMockJob(renderPayload);

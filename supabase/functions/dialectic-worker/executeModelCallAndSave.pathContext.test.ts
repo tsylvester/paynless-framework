@@ -1,0 +1,731 @@
+import {
+    assertEquals,
+    assert,
+    assertRejects,
+} from 'https://deno.land/std@0.170.0/testing/asserts.ts';
+import { spy, stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
+import type { Database } from '../types_db.ts';
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
+import { mockContribution } from './executeModelCallAndSave.test.ts';
+import {
+    isRecord,
+} from '../_shared/utils/type_guards.ts';
+import { isModelContributionContext } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
+import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
+import type { 
+    SelectedAiProvider, 
+    DialecticExecuteJobPayload,
+} from '../dialectic-service/dialectic.interface.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
+
+// Import shared test helpers from main test file
+import {
+    buildExecuteParams,
+    createMockJob,
+    mockProviderData,
+    mockFullProviderData,
+    setupMockClient,
+    getMockDeps,
+} from './executeModelCallAndSave.test.ts';
+
+Deno.test('executeModelCallAndSave - pathContext validation - 41.b.i: ALL required values present for document file type', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    });
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    const deps = getMockDeps();
+    deps.fileManager = fileManager;
+
+    const payload: DialecticExecuteJobPayload = {
+        job_type: 'execute',
+        prompt_template_id: 'test-prompt',
+        inputs: {},
+        output_type: FileType.business_case,
+        projectId: 'project-123',
+        sessionId: 'session-123',
+        stageSlug: 'thesis',
+        model_id: 'model-def',
+        iterationNumber: 1,
+        continueUntilComplete: false,
+        walletId: 'wallet-ghi',
+        user_jwt: 'jwt.token.here',
+        document_key: 'business_case',
+        canonicalPathParams: {
+            contributionType: 'thesis',
+            stageSlug: 'thesis',
+        },
+    };
+
+    const job = createMockJob(payload, {
+        attempt_count: 0,
+        job_type: 'EXECUTE',
+    });
+
+    const providerDetails: SelectedAiProvider = {
+        id: 'model-def',
+        provider: 'mock-provider',
+        name: 'Mock AI',
+        api_identifier: 'claude-opus',
+    };
+
+    const callUnifiedAISpy = stub(deps, 'callUnifiedAIModel', async () => ({
+        content: '{"content": "AI response content"}',
+        contentType: 'application/json',
+        inputTokens: 10,
+        outputTokens: 20,
+        processingTimeMs: 100,
+        finish_reason: 'stop',
+        rawProviderResponse: { mock: 'response' },
+    }));
+
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        job,
+        providerDetails,
+    });
+
+    await executeModelCallAndSave(params);
+
+    assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
+    const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+    assert(isModelContributionContext(uploadContext), 'uploadContext should be ModelContributionUploadContext');
+    
+    assertEquals(uploadContext.pathContext.documentKey, 'business_case', 'pathContext.documentKey should be "business_case"');
+    assertEquals(uploadContext.pathContext.projectId, 'project-123', 'pathContext.projectId should be "project-123"');
+    assertEquals(uploadContext.pathContext.sessionId, 'session-123', 'pathContext.sessionId should be "session-123"');
+    assertEquals(uploadContext.pathContext.iteration, 1, 'pathContext.iteration should be 1');
+    assertEquals(uploadContext.pathContext.stageSlug, 'thesis', 'pathContext.stageSlug should be "thesis"');
+    assertEquals(uploadContext.pathContext.modelSlug, 'claude-opus', 'pathContext.modelSlug should be "claude-opus"');
+    assertEquals(uploadContext.pathContext.attemptCount, 0, 'pathContext.attemptCount should be 0');
+
+    callUnifiedAISpy.restore();
+    clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - notification document_key - 41.b.ii: document_completed notification uses document_key from payload', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    });
+
+    const deps = getMockDeps();
+    const sendDocEventSpy = spy(deps.notificationService, 'sendDocumentCentricNotification');
+
+    const callUnifiedAISpy = stub(deps, 'callUnifiedAIModel', async () => ({
+        content: '{"content": "AI response content"}',
+        contentType: 'application/json',
+        inputTokens: 10,
+        outputTokens: 20,
+        processingTimeMs: 100,
+        finish_reason: 'stop',
+        rawProviderResponse: { finish_reason: 'stop' },
+    }));
+
+    const payload: DialecticExecuteJobPayload = {
+        job_type: 'execute',
+        prompt_template_id: 'test-prompt',
+        inputs: {},
+        output_type: FileType.feature_spec,
+        projectId: 'project-123',
+        sessionId: 'session-123',
+        stageSlug: 'thesis',
+        model_id: 'model-def',
+        iterationNumber: 1,
+        continueUntilComplete: false,
+        walletId: 'wallet-ghi',
+        user_jwt: 'jwt.token.here',
+        document_key: 'feature_spec',
+        canonicalPathParams: {
+            contributionType: 'thesis',
+            stageSlug: 'thesis',
+        },
+    };
+
+    const job = createMockJob(payload, {
+        attempt_count: 0,
+        job_type: 'EXECUTE',
+    });
+
+    const providerDetails: SelectedAiProvider = {
+        id: 'model-def',
+        provider: 'mock-provider',
+        name: 'Mock AI',
+        api_identifier: 'claude-opus',
+    };
+
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        job,
+        providerDetails,
+    });
+
+    await executeModelCallAndSave(params);
+
+    assertEquals(sendDocEventSpy.calls.length, 1, 'Expected a document_completed event emission');
+    const [payloadArg] = sendDocEventSpy.calls[0].args;
+    assert(isRecord(payloadArg), 'notification payload should be a record');
+    assertEquals(payloadArg.type, 'document_completed', 'notification type should be document_completed');
+    assertEquals(payloadArg.document_key, 'feature_spec', 'notification.document_key should be "feature_spec" (from payload), not String(output_type)');
+
+    callUnifiedAISpy.restore();
+    sendDocEventSpy.restore();
+    clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.a: throws error when document_key is undefined for document file type', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    });
+
+    const deps = getMockDeps();
+
+    const payload: DialecticExecuteJobPayload = {
+        job_type: 'execute',
+        prompt_template_id: 'test-prompt',
+        inputs: {},
+        output_type: FileType.business_case,
+        projectId: 'project-123',
+        sessionId: 'session-123',
+        stageSlug: 'thesis',
+        model_id: 'model-def',
+        iterationNumber: 1,
+        continueUntilComplete: false,
+        walletId: 'wallet-ghi',
+        user_jwt: 'jwt.token.here',
+        // document_key is undefined (missing)
+        canonicalPathParams: {
+            contributionType: 'thesis',
+            stageSlug: 'thesis',
+        },
+    };
+
+    const job = createMockJob(payload, {
+        attempt_count: 0,
+        job_type: 'EXECUTE',
+    });
+
+    const providerDetails: SelectedAiProvider = {
+        id: 'model-def',
+        provider: 'mock-provider',
+        name: 'Mock AI',
+        api_identifier: 'claude-opus',
+    };
+
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        job,
+        providerDetails,
+    });
+
+    await assertRejects(
+        async () => await executeModelCallAndSave(params),
+        Error,
+        'document_key',
+        'Should throw error indicating document_key is required and missing'
+    );
+
+    clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.b: throws error when document_key is empty string for document file type', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    });
+
+    const deps = getMockDeps();
+
+    const payload: DialecticExecuteJobPayload = {
+        job_type: 'execute',
+        prompt_template_id: 'test-prompt',
+        inputs: {},
+        output_type: FileType.business_case,
+        projectId: 'project-123',
+        sessionId: 'session-123',
+        stageSlug: 'thesis',
+        model_id: 'model-def',
+        iterationNumber: 1,
+        continueUntilComplete: false,
+        walletId: 'wallet-ghi',
+        user_jwt: 'jwt.token.here',
+        document_key: '', // empty string
+        canonicalPathParams: {
+            contributionType: 'thesis',
+            stageSlug: 'thesis',
+        },
+    };
+
+    const job = createMockJob(payload, {
+        attempt_count: 0,
+        job_type: 'EXECUTE',
+    });
+
+    const providerDetails: SelectedAiProvider = {
+        id: 'model-def',
+        provider: 'mock-provider',
+        name: 'Mock AI',
+        api_identifier: 'claude-opus',
+    };
+
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        job,
+        providerDetails,
+    });
+
+    await assertRejects(
+        async () => await executeModelCallAndSave(params),
+        Error,
+        'document_key',
+        'Should throw error indicating document_key must be non-empty'
+    );
+
+    clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.c: throws error when projectId is undefined for document file type', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    });
+
+    const deps = getMockDeps();
+
+    const payload: DialecticExecuteJobPayload = {
+        job_type: 'execute',
+        prompt_template_id: 'test-prompt',
+        inputs: {},
+        output_type: FileType.business_case,
+        projectId: 'project-123',
+        sessionId: 'session-123',
+        stageSlug: 'thesis',
+        model_id: 'model-def',
+        iterationNumber: 1,
+        continueUntilComplete: false,
+        walletId: 'wallet-ghi',
+        user_jwt: 'jwt.token.here',
+        document_key: 'business_case',
+        canonicalPathParams: {
+            contributionType: 'thesis',
+            stageSlug: 'thesis',
+        },
+    };
+    // Delete projectId to test validation error
+    delete (payload as unknown as Record<string, unknown>).projectId;
+
+    const job = createMockJob(payload, {
+        attempt_count: 0,
+        job_type: 'EXECUTE',
+    });
+
+    const providerDetails: SelectedAiProvider = {
+        id: 'model-def',
+        provider: 'mock-provider',
+        name: 'Mock AI',
+        api_identifier: 'claude-opus',
+    };
+
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        job,
+        providerDetails,
+    });
+
+    await assertRejects(
+        async () => await executeModelCallAndSave(params),
+        Error,
+        'projectId',
+        'Should throw error indicating projectId is required and missing'
+    );
+
+    clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.d: throws error when sessionId is undefined for document file type', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    });
+
+    const deps = getMockDeps();
+
+    const payload: DialecticExecuteJobPayload = {
+        job_type: 'execute',
+        prompt_template_id: 'test-prompt',
+        inputs: {},
+        output_type: FileType.business_case,
+        projectId: 'project-123',
+        sessionId: 'session-123',
+        stageSlug: 'thesis',
+        model_id: 'model-def',
+        iterationNumber: 1,
+        continueUntilComplete: false,
+        walletId: 'wallet-ghi',
+        user_jwt: 'jwt.token.here',
+        document_key: 'business_case',
+        canonicalPathParams: {
+            contributionType: 'thesis',
+            stageSlug: 'thesis',
+        },
+    };
+    // Delete sessionId to test validation error
+    delete (payload as unknown as Record<string, unknown>).sessionId;
+
+    const job = createMockJob(payload, {
+        attempt_count: 0,
+        job_type: 'EXECUTE',
+    });
+
+    const providerDetails: SelectedAiProvider = {
+        id: 'model-def',
+        provider: 'mock-provider',
+        name: 'Mock AI',
+        api_identifier: 'claude-opus',
+    };
+
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        job,
+        providerDetails,
+    });
+
+    await assertRejects(
+        async () => await executeModelCallAndSave(params),
+        Error,
+        'sessionId',
+        'Should throw error indicating sessionId is required and missing'
+    );
+
+    clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.e: throws error when iterationNumber is undefined for document file type', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    });
+
+    const deps = getMockDeps();
+
+    const payload: DialecticExecuteJobPayload = {
+        job_type: 'execute',
+        prompt_template_id: 'test-prompt',
+        inputs: {},
+        output_type: FileType.business_case,
+        projectId: 'project-123',
+        sessionId: 'session-123',
+        stageSlug: 'thesis',
+        model_id: 'model-def',
+        // iterationNumber is undefined (missing)
+        continueUntilComplete: false,
+        walletId: 'wallet-ghi',
+        user_jwt: 'jwt.token.here',
+        document_key: 'business_case',
+        canonicalPathParams: {
+            contributionType: 'thesis',
+            stageSlug: 'thesis',
+        },
+    };
+
+    const job = createMockJob(payload, {
+        attempt_count: 0,
+        job_type: 'EXECUTE',
+    });
+
+    const providerDetails: SelectedAiProvider = {
+        id: 'model-def',
+        provider: 'mock-provider',
+        name: 'Mock AI',
+        api_identifier: 'claude-opus',
+    };
+
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        job,
+        providerDetails,
+    });
+
+    await assertRejects(
+        async () => await executeModelCallAndSave(params),
+        Error,
+        'iterationNumber',
+        'Should throw error indicating iterationNumber is required and missing'
+    );
+
+    clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.f: throws error when canonicalPathParams is undefined for document file type', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    });
+
+    const deps = getMockDeps();
+
+    const payload: DialecticExecuteJobPayload = {
+        job_type: 'execute',
+        prompt_template_id: 'test-prompt',
+        inputs: {},
+        output_type: FileType.business_case,
+        projectId: 'project-123',
+        sessionId: 'session-123',
+        stageSlug: 'thesis',
+        model_id: 'model-def',
+        iterationNumber: 1,
+        continueUntilComplete: false,
+        walletId: 'wallet-ghi',
+        user_jwt: 'jwt.token.here',
+        document_key: 'business_case',
+        canonicalPathParams: {
+            contributionType: 'thesis',
+            stageSlug: 'thesis',
+        },
+    };
+    // Delete canonicalPathParams to test validation error
+    delete (payload as unknown as Record<string, unknown>).canonicalPathParams;
+
+    const job = createMockJob(payload, {
+        attempt_count: 0,
+        job_type: 'EXECUTE',
+    });
+
+    const providerDetails: SelectedAiProvider = {
+        id: 'model-def',
+        provider: 'mock-provider',
+        name: 'Mock AI',
+        api_identifier: 'claude-opus',
+    };
+
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        job,
+        providerDetails,
+    });
+
+    await assertRejects(
+        async () => await executeModelCallAndSave(params),
+        Error,
+        'canonicalPathParams',
+        'Should throw error indicating canonicalPathParams is required and missing'
+    );
+
+    clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.g: throws error when canonicalPathParams.stageSlug is undefined for document file type', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    });
+
+    const deps = getMockDeps();
+
+    const payload: DialecticExecuteJobPayload = {
+        job_type: 'execute',
+        prompt_template_id: 'test-prompt',
+        inputs: {},
+        output_type: FileType.business_case,
+        projectId: 'project-123',
+        sessionId: 'session-123',
+        stageSlug: 'thesis',
+        model_id: 'model-def',
+        iterationNumber: 1,
+        continueUntilComplete: false,
+        walletId: 'wallet-ghi',
+        user_jwt: 'jwt.token.here',
+        document_key: 'business_case',
+        canonicalPathParams: {
+            contributionType: 'thesis',
+            stageSlug: 'thesis',
+        },
+    };
+    // Delete stageSlug from canonicalPathParams to test validation error
+    if (payload.canonicalPathParams && isRecord(payload.canonicalPathParams)) {
+        delete (payload.canonicalPathParams as unknown as Record<string, unknown>).stageSlug;
+    }
+
+    const job = createMockJob(payload, {
+        attempt_count: 0,
+        job_type: 'EXECUTE',
+    });
+
+    const providerDetails: SelectedAiProvider = {
+        id: 'model-def',
+        provider: 'mock-provider',
+        name: 'Mock AI',
+        api_identifier: 'claude-opus',
+    };
+
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        job,
+        providerDetails,
+    });
+
+    await assertRejects(
+        async () => await executeModelCallAndSave(params),
+        Error,
+        'stageSlug',
+        'Should throw error indicating canonicalPathParams.stageSlug is required and missing'
+    );
+
+    clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.h: throws error when attempt_count is undefined for document file type', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    });
+
+    const deps = getMockDeps();
+
+    const payload: DialecticExecuteJobPayload = {
+        job_type: 'execute',
+        prompt_template_id: 'test-prompt',
+        inputs: {},
+        output_type: FileType.business_case,
+        projectId: 'project-123',
+        sessionId: 'session-123',
+        stageSlug: 'thesis',
+        model_id: 'model-def',
+        iterationNumber: 1,
+        continueUntilComplete: false,
+        walletId: 'wallet-ghi',
+        user_jwt: 'jwt.token.here',
+        document_key: 'business_case',
+        canonicalPathParams: {
+            contributionType: 'thesis',
+            stageSlug: 'thesis',
+        },
+    };
+
+    const job = createMockJob(payload, {
+        attempt_count: undefined, // explicitly undefined to test validation
+        job_type: 'EXECUTE',
+    });
+
+    const providerDetails: SelectedAiProvider = {
+        id: 'model-def',
+        provider: 'mock-provider',
+        name: 'Mock AI',
+        api_identifier: 'claude-opus',
+    };
+
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        job,
+        providerDetails,
+    });
+
+    await assertRejects(
+        async () => await executeModelCallAndSave(params),
+        Error,
+        'attempt_count',
+        'Should throw error indicating attempt_count is required and missing'
+    );
+
+    clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.i: throws error when providerDetails.api_identifier is undefined for document file type', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    });
+
+    const deps = getMockDeps();
+
+    const payload: DialecticExecuteJobPayload = {
+        job_type: 'execute',
+        prompt_template_id: 'test-prompt',
+        inputs: {},
+        output_type: FileType.business_case,
+        projectId: 'project-123',
+        sessionId: 'session-123',
+        stageSlug: 'thesis',
+        model_id: 'model-def',
+        iterationNumber: 1,
+        continueUntilComplete: false,
+        walletId: 'wallet-ghi',
+        user_jwt: 'jwt.token.here',
+        document_key: 'business_case',
+        canonicalPathParams: {
+            contributionType: 'thesis',
+            stageSlug: 'thesis',
+        },
+    };
+
+    const job = createMockJob(payload, {
+        attempt_count: 0,
+        job_type: 'EXECUTE',
+    });
+
+    const providerDetails: SelectedAiProvider = {
+        id: 'model-def',
+        provider: 'mock-provider',
+        name: 'Mock AI',
+        api_identifier: '', // empty string (invalid)
+    };
+
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        job,
+        providerDetails,
+    });
+
+    await assertRejects(
+        async () => await executeModelCallAndSave(params),
+        Error,
+        'api_identifier',
+        'Should throw error indicating providerDetails.api_identifier is required and must be non-empty'
+    );
+
+    clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - non-document file types - 41.b.iv: does NOT throw error when document_key is undefined for non-document file type', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    });
+
+    const deps = getMockDeps();
+    const callUnifiedAISpy = stub(deps, 'callUnifiedAIModel', async () => ({
+        content: '{"content": "AI response content"}',
+        contentType: 'application/json',
+        inputTokens: 10,
+        outputTokens: 20,
+        processingTimeMs: 100,
+        finish_reason: 'stop',
+        rawProviderResponse: { mock: 'response' },
+    }));
+
+    const payload: DialecticExecuteJobPayload = {
+        job_type: 'execute',
+        prompt_template_id: 'test-prompt',
+        inputs: {},
+        output_type: FileType.HeaderContext, // non-document file type
+        projectId: 'project-123',
+        sessionId: 'session-123',
+        stageSlug: 'thesis',
+        model_id: 'model-def',
+        iterationNumber: 1,
+        continueUntilComplete: false,
+        walletId: 'wallet-ghi',
+        user_jwt: 'jwt.token.here',
+        // document_key is undefined (not required for non-document file types)
+        canonicalPathParams: {
+            contributionType: 'thesis',
+            stageSlug: 'thesis',
+        },
+    };
+
+    const job = createMockJob(payload, {
+        attempt_count: 0,
+        job_type: 'EXECUTE',
+    });
+
+    const providerDetails: SelectedAiProvider = {
+        id: 'model-def',
+        provider: 'mock-provider',
+        name: 'Mock AI',
+        api_identifier: 'claude-opus',
+    };
+
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        job,
+        providerDetails,
+    });
+
+    // Should NOT throw an error for non-document file types when document_key is missing
+    await executeModelCallAndSave(params);
+    // If we reach here, the test passes (no error was thrown)
+
+    callUnifiedAISpy.restore();
+    clearAllStubs?.();
+});
+

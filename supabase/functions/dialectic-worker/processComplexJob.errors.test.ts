@@ -12,6 +12,7 @@ import {
     DialecticJobRow, 
     GranularityPlannerFn, 
     DialecticPlanJobPayload, 
+    DialecticExecuteJobPayload,
     IDialecticJobDeps, 
     UnifiedAIResponse, 
     DialecticRecipeTemplateStep,
@@ -538,5 +539,209 @@ describe('processComplexJob', () => {
         assert(isRecord(secondUpdateArgs) && 'status' in secondUpdateArgs && 'error_details' in secondUpdateArgs);
         assertEquals(secondUpdateArgs.status, 'failed');
         assert(JSON.stringify(secondUpdateArgs.error_details).includes('Failed to update parent job status: DB update failed!'));
+    });
+
+    // Step 42.b.iv: Test that throws error when planner_metadata is undefined
+    it('should throw an error when a completed child job has planner_metadata: undefined', async () => {
+        // Arrange:
+        // - Create a PLAN job with a completed child job that has planner_metadata: undefined
+        const completedChildJobWithoutMetadata: DialecticJobRow = {
+            id: 'child-without-metadata',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                // planner_metadata is deliberately omitted (undefined)
+            },
+            iteration_number: 1,
+            status: 'completed',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [completedChildJobWithoutMetadata], error: null },
+                },
+            },
+        });
+
+        // Act & Assert:
+        // - processComplexJob should throw an error indicating planner_metadata is required
+        await assertRejects(
+            async () => {
+                await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+            },
+            Error,
+            'planner_metadata.recipe_step_id is missing or invalid'
+        );
+    });
+
+    // Step 42.b.v: Test that throws error when planner_metadata is empty object (missing recipe_step_id)
+    it('should throw an error when a completed child job has planner_metadata: {} (missing recipe_step_id)', async () => {
+        // Arrange:
+        // - Create a PLAN job with a completed child job that has planner_metadata: {} (empty object)
+        const completedChildJobWithEmptyMetadata: DialecticJobRow = {
+            id: 'child-with-empty-metadata',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {}, // Empty object, missing recipe_step_id
+            },
+            iteration_number: 1,
+            status: 'completed',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [completedChildJobWithEmptyMetadata], error: null },
+                },
+            },
+        });
+
+        // Act & Assert:
+        // - processComplexJob should throw an error indicating planner_metadata.recipe_step_id is required
+        await assertRejects(
+            async () => {
+                await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+            },
+            Error,
+            'planner_metadata.recipe_step_id is missing or invalid'
+        );
+    });
+
+    // Step 42.b.vi: Test that throws error when planner_metadata.recipe_step_id is empty string
+    it('should throw an error when a completed child job has planner_metadata: { recipe_step_id: "" } (empty string)', async () => {
+        // Arrange:
+        // - Create a PLAN job with a completed child job that has planner_metadata.recipe_step_id: '' (empty string)
+        const completedChildJobWithEmptyRecipeStepId: DialecticJobRow = {
+            id: 'child-with-empty-recipe-step-id',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: '', // Empty string
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'completed',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [completedChildJobWithEmptyRecipeStepId], error: null },
+                },
+            },
+        });
+
+        // Act & Assert:
+        // - processComplexJob should throw an error indicating planner_metadata.recipe_step_id must be non-empty
+        await assertRejects(
+            async () => {
+                await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+            },
+            Error,
+            'planner_metadata.recipe_step_id is missing or invalid'
+        );
     });
 });

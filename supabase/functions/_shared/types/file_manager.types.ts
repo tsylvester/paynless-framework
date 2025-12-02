@@ -163,6 +163,32 @@ export type ModelContributionFileTypes =
   | FileType.actionable_checklist
   | FileType.advisor_recommendations
 
+/**
+ * A union type representing FileType enum members that are valid documentKey values.
+ * These are the document file types that require documentKey to be present and non-empty
+ * when constructing storage paths.
+ */
+export type DocumentKey =
+  | FileType.business_case
+  | FileType.feature_spec
+  | FileType.technical_approach
+  | FileType.success_metrics
+  | FileType.business_case_critique
+  | FileType.technical_feasibility_assessment
+  | FileType.risk_register
+  | FileType.non_functional_requirements
+  | FileType.dependency_map
+  | FileType.comparison_vector
+  | FileType.product_requirements
+  | FileType.system_architecture
+  | FileType.tech_stack
+  | FileType.technical_requirements
+  | FileType.master_plan
+  | FileType.milestone_schema
+  | FileType.updated_master_plan
+  | FileType.actionable_checklist
+  | FileType.advisor_recommendations
+
 export type UserFeedbackFileTypes = FileType.UserFeedback;
 
 export type ResourceFileTypes = 

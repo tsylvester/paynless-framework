@@ -248,6 +248,7 @@ Deno.test('should enqueue RENDER job for markdown document output type', async (
     const businessCasePayload: DialecticExecuteJobPayload = {
         ...testPayload,
         output_type: FileType.business_case,
+        document_key: 'business_case',
     };
 
     const job = createMockJob(businessCasePayload);
@@ -386,6 +387,7 @@ Deno.test('should enqueue RENDER job on every chunk completion, not just final c
     const continuationPayload: DialecticExecuteJobPayload = {
         ...testPayload,
         output_type: FileType.business_case,
+        document_key: 'business_case',
         target_contribution_id: 'contrib-root-123',
         continueUntilComplete: true,
         continuation_count: 1,

@@ -210,6 +210,7 @@ export function deconstructStoragePath(
     info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
     info.modelSlug = matches[5];
     info.attemptCount = parseInt(matches[6], 10);
+    info.contributionType = 'synthesis_header_context';
     info.fileTypeGuess = FileType.SynthesisHeaderContext;
     return info;
   }
@@ -224,6 +225,7 @@ export function deconstructStoragePath(
     info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
     info.modelSlug = matches[5];
     info.attemptCount = parseInt(matches[6], 10);
+    info.contributionType = 'header_context';
     info.fileTypeGuess = FileType.HeaderContext;
     return info;
   }

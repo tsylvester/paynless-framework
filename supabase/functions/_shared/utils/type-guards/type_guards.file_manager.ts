@@ -6,6 +6,7 @@ import {
   UserFeedbackUploadContext,
   ResourceUploadContext,
   type ModelContributionFileTypes,
+  type DocumentKey,
 } from '../../types/file_manager.types.ts'
 import type { OutputType } from '../../../dialectic-service/dialectic.interface.ts'
 import { isRecord } from './type_guards.common.ts'
@@ -125,4 +126,31 @@ const OUTPUT_TYPES_MAP: { [K in OutputType]: true } = {
 
 export function isOutputType(value: ModelContributionFileTypes): value is OutputType {
     return Object.prototype.hasOwnProperty.call(OUTPUT_TYPES_MAP, value);
+}
+
+// Build a compile-time enforced map of document key file types (subset of FileType)
+const DOCUMENT_KEY_MAP: { [K in DocumentKey]: true } = {
+    [FileType.business_case]: true,
+    [FileType.feature_spec]: true,
+    [FileType.technical_approach]: true,
+    [FileType.success_metrics]: true,
+    [FileType.business_case_critique]: true,
+    [FileType.technical_feasibility_assessment]: true,
+    [FileType.risk_register]: true,
+    [FileType.non_functional_requirements]: true,
+    [FileType.dependency_map]: true,
+    [FileType.comparison_vector]: true,
+    [FileType.product_requirements]: true,
+    [FileType.system_architecture]: true,
+    [FileType.tech_stack]: true,
+    [FileType.technical_requirements]: true,
+    [FileType.master_plan]: true,
+    [FileType.milestone_schema]: true,
+    [FileType.updated_master_plan]: true,
+    [FileType.actionable_checklist]: true,
+    [FileType.advisor_recommendations]: true,
+};
+
+export function isDocumentKey(value: FileType): value is DocumentKey {
+    return Object.prototype.hasOwnProperty.call(DOCUMENT_KEY_MAP, value);
 }

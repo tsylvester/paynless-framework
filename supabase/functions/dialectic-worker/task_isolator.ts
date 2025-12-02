@@ -626,7 +626,7 @@ export async function planComplexStage(
                 target_contribution_id: null,
                 prerequisite_job_id: null,
                 payload: validatedPayload,
-                is_test_job: false,
+                is_test_job: parentJob.is_test_job ?? false,
                 job_type: jobType,
             });
         } catch (error) {

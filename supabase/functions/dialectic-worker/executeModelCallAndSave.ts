@@ -28,6 +28,7 @@ import { sanitizeJsonContent } from '../_shared/utils/jsonSanitizer.ts';
 import { isJsonSanitizationResult } from '../_shared/utils/type-guards/type_guards.jsonSanitizer.ts';
 import type { JsonSanitizationResult } from '../_shared/types/jsonSanitizer.interface.ts';
 import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
+import { isDocumentKey } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
 export async function executeModelCallAndSave(
     params: ExecuteModelCallAndSaveParams,
 ) {
@@ -1071,6 +1072,53 @@ export async function executeModelCallAndSave(
     if (!aiResponse.rawProviderResponse || !isJson(aiResponse.rawProviderResponse)) {
         throw new Error('Raw provider response is required');
     }
+
+    // Validate ALL required values for document file types BEFORE constructing pathContext
+    if (isDocumentKey(fileType)) {
+        const missingValues: string[] = [];
+        
+        if (!job.payload.projectId || typeof job.payload.projectId !== 'string' || job.payload.projectId.trim() === '') {
+            missingValues.push('job.payload.projectId (string, non-empty)');
+        }
+        if (!job.payload.sessionId || typeof job.payload.sessionId !== 'string' || job.payload.sessionId.trim() === '') {
+            missingValues.push('job.payload.sessionId (string, non-empty)');
+        }
+        if (job.payload.iterationNumber === undefined || typeof job.payload.iterationNumber !== 'number') {
+            missingValues.push('job.payload.iterationNumber (number)');
+        }
+        if (!job.payload.canonicalPathParams || !isRecord(job.payload.canonicalPathParams)) {
+            missingValues.push('job.payload.canonicalPathParams (object)');
+        } else if (!job.payload.canonicalPathParams.stageSlug || typeof job.payload.canonicalPathParams.stageSlug !== 'string' || job.payload.canonicalPathParams.stageSlug.trim() === '') {
+            missingValues.push('job.payload.canonicalPathParams.stageSlug (string, non-empty)');
+        }
+        if (job.attempt_count === undefined || typeof job.attempt_count !== 'number') {
+            missingValues.push('job.attempt_count (number)');
+        }
+        if (!providerDetails.api_identifier || typeof providerDetails.api_identifier !== 'string' || providerDetails.api_identifier.trim() === '') {
+            missingValues.push('providerDetails.api_identifier (string, non-empty)');
+        }
+        if (!job.payload.document_key || typeof job.payload.document_key !== 'string' || job.payload.document_key.trim() === '') {
+            missingValues.push('job.payload.document_key (string, non-empty)');
+        }
+        
+        if (missingValues.length > 0) {
+            throw new Error(
+                `executeModelCallAndSave requires all of the following values for document file type '${output_type}': job.payload.projectId (string, non-empty), job.payload.sessionId (string, non-empty), job.payload.iterationNumber (number), job.payload.canonicalPathParams.stageSlug (string, non-empty), job.attempt_count (number), providerDetails.api_identifier (string, non-empty), job.payload.document_key (string, non-empty). Missing or invalid: ${missingValues.join(', ')}`
+            );
+        }
+    }
+
+    // For document file types, document_key is guaranteed to be present after validation
+    // Store it with type narrowing for use in pathContext
+    let validatedDocumentKey: string | undefined = undefined;
+    if (isDocumentKey(fileType)) {
+        // After validation block, document_key is guaranteed to be present and non-empty
+        if (!job.payload.document_key || typeof job.payload.document_key !== 'string' || job.payload.document_key.trim() === '') {
+            throw new Error('document_key is required for document file type but validation failed');
+        }
+        validatedDocumentKey = job.payload.document_key;
+    }
+
     const uploadContext: ModelContributionUploadContext = {
         pathContext: {
             projectId: job.payload.projectId,
@@ -1080,6 +1128,7 @@ export async function executeModelCallAndSave(
             modelSlug: providerDetails.api_identifier,
             attemptCount: job.attempt_count,
             ...restOfCanonicalPathParams,
+            ...(validatedDocumentKey ? { documentKey: validatedDocumentKey } : {}),
             contributionType,
             isContinuation: isContinuationForStorage,
             turnIndex: isContinuationForStorage ? job.payload.continuation_count ?? 0 : undefined,
@@ -1190,13 +1239,16 @@ export async function executeModelCallAndSave(
     }
 
     // Emit chunk completion for continuation jobs immediately after save
-    if (projectOwnerUserId && isContinuationForStorage) {
+    if (projectOwnerUserId && isContinuationForStorage && isDocumentKey(fileType)) {
+        if (!job.payload.document_key || typeof job.payload.document_key !== 'string') {
+            throw new Error('document_key is required for document_chunk_completed notification but is missing or invalid');
+        }
         await deps.notificationService.sendDocumentCentricNotification({
             type: 'document_chunk_completed',
             sessionId: sessionId,
             stageSlug: stageSlug,
             job_id: jobId,
-            document_key: String(output_type),
+            document_key: job.payload.document_key,
             modelId: model_id,
             iterationNumber: iterationNumber,
         }, projectOwnerUserId);
@@ -1275,13 +1327,16 @@ export async function executeModelCallAndSave(
 
     if (isFinalChunk) {
         // Emit document_completed for final chunk
-        if (projectOwnerUserId) {
+        if (projectOwnerUserId && isDocumentKey(fileType)) {
+            if (!job.payload.document_key || typeof job.payload.document_key !== 'string') {
+                throw new Error('document_key is required for document_completed notification but is missing or invalid');
+            }
             await deps.notificationService.sendDocumentCentricNotification({
                 type: 'document_completed',
                 sessionId: sessionId,
                 stageSlug: stageSlug,
                 job_id: jobId,
-                document_key: String(output_type),
+                document_key: job.payload.document_key,
                 modelId: model_id,
                 iterationNumber: iterationNumber,
             }, projectOwnerUserId);
