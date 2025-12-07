@@ -17,6 +17,7 @@ import type {
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { planPerModel } from './planPerModel.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
+import { extractSourceDocumentIdentifier } from '../../../_shared/utils/source_document_identifier.ts';
 
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
@@ -674,4 +675,66 @@ Deno.test('planPerModel throws error for EXECUTE job when files_to_generate entr
 		'planPerModel requires',
 		'Should throw error when files_to_generate entry is missing template_filename',
 	);
+});
+
+Deno.test('planPerModel sets document_relationships.source_group to anchor document ID and removes synthesis_group in EXECUTE job payloads', () => {
+	const childPayloads = planPerModel(
+		MOCK_SOURCE_DOCS,
+		MOCK_PARENT_JOB,
+		MOCK_RECIPE_STEP,
+		'user-jwt-123'
+	);
+
+	assertEquals(childPayloads.length, 1, 'Should create exactly one child job');
+	const jobPayload = childPayloads[0];
+	assertExists(jobPayload, 'Child job payload should exist');
+
+	if (jobPayload.job_type === 'execute') {
+		const executePayload: DialecticExecuteJobPayload = jobPayload;
+		assertExists(executePayload.document_relationships, 'document_relationships should exist');
+		
+		// Assert source_group is set to anchor document's ID (first source document)
+		assertEquals(
+			executePayload.document_relationships.source_group,
+			MOCK_SOURCE_DOCS[0].id,
+			'document_relationships.source_group should be set to anchor document ID (first source document)'
+		);
+		
+		// Assert synthesis_group is NOT present (removed, not preserved)
+		assert(
+			!('synthesis_group' in executePayload.document_relationships),
+			'document_relationships.synthesis_group should NOT be present (removed, not preserved)'
+		);
+	} else {
+		throw new Error('Expected EXECUTE job');
+	}
+});
+
+Deno.test('extractSourceDocumentIdentifier can extract identifier from job payload created by planPerModel', () => {
+	const childPayloads = planPerModel(
+		MOCK_SOURCE_DOCS,
+		MOCK_PARENT_JOB,
+		MOCK_RECIPE_STEP,
+		'user-jwt-123'
+	);
+
+	assertEquals(childPayloads.length, 1, 'Should create exactly one child job');
+	const jobPayload = childPayloads[0];
+	assertExists(jobPayload, 'Child job payload should exist');
+
+	if (jobPayload.job_type === 'execute') {
+		const executePayload: DialecticExecuteJobPayload = jobPayload;
+		
+		// Extract identifier using extractSourceDocumentIdentifier
+		const extractedIdentifier = extractSourceDocumentIdentifier(executePayload);
+		
+		// Assert it returns the source_group value (anchor document's ID)
+		assertEquals(
+			extractedIdentifier,
+			MOCK_SOURCE_DOCS[0].id,
+			'extractSourceDocumentIdentifier should return the source_group value (anchor document ID)'
+		);
+	} else {
+		throw new Error('Expected EXECUTE job');
+	}
 });

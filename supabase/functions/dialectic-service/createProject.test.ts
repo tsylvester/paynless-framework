@@ -2,7 +2,7 @@ import { assertEquals, assertExists, assert, assertObjectMatch } from "jsr:@std/
 import { spy } from "jsr:@std/testing@0.225.1/mock";
 import { createProject, type CreateProjectOptions } from "./createProject.ts";
 import type { CreateProjectPayload, DialecticProject } from "./dialectic.interface.ts";
-import type { User, SupabaseClient } from "@supabase/supabase-js"; // Import User type
+import type { User, SupabaseClient, PostgrestError } from "@supabase/supabase-js"; // Import User type
 import type { FileOptions } from "npm:@supabase/storage-js@^2.5.5"; // Added this import
 import type { IMockStorageFileOptions } from "../_shared/supabase.mock.ts"; // Added this import
 import * as domainUtils from "../_shared/domain-utils.ts"; // To mock isValidDomain
@@ -134,7 +134,7 @@ Deno.test("createProject - successful project creation (no file)", async () => {
         })
       },
       'dialectic_project_resources': {
-        insert: async () => ({
+        upsert: async () => ({
           data: [{ id: mockProjectResourceId, storage_path: 'mock/path/to/file.md' }],
           error: null,
           count: 1,
@@ -703,7 +703,7 @@ Deno.test("createProject - successful with promptFile", async () => {
         })
       },
       'dialectic_project_resources': {
-        insert: async () => ({ data: [{ id: mockProjectResourceId, storage_path: 'mock/storage/path/prompt.txt' }], error: null })
+        upsert: async () => ({ data: [{ id: mockProjectResourceId, storage_path: 'mock/storage/path/prompt.txt' }], error: null })
       }
     },
     storageMock: {
@@ -854,7 +854,16 @@ Deno.test("createProject - promptFile dialectic_project_resources insert fails (
         delete: async () => ({ data: [], error: null })
       },
       'dialectic_project_resources': {
-        insert: async () => ({ data: null, error: new Error("Failed to record prompt file resource.") })
+        upsert: async () => ({ 
+          data: null, 
+          error: {
+            name: "PostgresError",
+            message: "Query returned no rows",
+            code: "PGRST116",
+            details: "Failed to record prompt file resource.",
+            hint: undefined
+          }
+        })
       }
     },
     storageMock: {
@@ -926,7 +935,7 @@ Deno.test("createProject - project update with resource_id fails (db error)", as
         update: async () => ({ data: null, error: { name: "PostgrestError", message: projectUpdateError, code: 'YYYYY' } })
       },
       'dialectic_project_resources': {
-        insert: async () => ({ data: [{ id: 'res-id', storage_path: 'mock/path/file.txt' }], error: null })
+        upsert: async () => ({ data: [{ id: 'res-id', storage_path: 'mock/path/file.txt' }], error: null })
       }
     },
     storageMock: {
@@ -1080,7 +1089,7 @@ Deno.test("createProject - successful project creation with domain and overlay",
         })
       },
       'dialectic_project_resources': {
-        insert: async () => ({
+        upsert: async () => ({
           data: [{ id: mockProjectResourceId, storage_path: 'mock/storage/path/overlay-prompt.md' }],
           error: null,
           count: 1,

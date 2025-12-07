@@ -66,6 +66,7 @@ export type PlanComplexStageFn = (
   deps: IDialecticJobDeps,
   recipeStep: DialecticRecipeStep,
   authToken: string,
+  completedSourceDocumentIds?: Set<string>,
 ) => Promise<DialecticJobRow[]>;
 
 export interface IJobProcessors {

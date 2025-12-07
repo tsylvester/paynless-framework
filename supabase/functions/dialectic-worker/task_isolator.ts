@@ -10,11 +10,11 @@ import {
     DialecticProjectResourceRow,
     DialecticFeedbackRow,
 } from '../dialectic-service/dialectic.interface.ts';
-import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
-import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload, isJson, isDocumentRelationships } from '../_shared/utils/type_guards.ts';
+import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload, isJson, isDocumentRelationships, isRecord } from '../_shared/utils/type_guards.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
 import type { DialecticStageRecipeStep, DialecticRecipeTemplateStep } from '../dialectic-service/dialectic.interface.ts';
 import { Database } from '../types_db.ts';
+import { extractSourceDocumentIdentifier } from '../_shared/utils/source_document_identifier.ts';
 
 function isPlannableStep(step: DialecticRecipeStep): step is (DialecticStageRecipeStep | DialecticRecipeTemplateStep) {
     if ('is_skipped' in step && step.is_skipped) {
@@ -37,14 +37,25 @@ function isFeedbackRow(record: unknown): record is DialecticFeedbackRow {
 }
 
 // Mapper functions to transform each row type into a valid SourceDocument.
-function mapContributionToSourceDocument(row: DialecticContributionRow, content: string): SourceDocument {
+// Note: content is set to empty string because planners only need metadata, not content. Content is fetched later in executeModelCallAndSave.gatherArtifacts() when constructing the API call.
+function mapContributionToSourceDocument(row: DialecticContributionRow): SourceDocument {
     const { document_relationships, ...rest } = row;
     const docRels = document_relationships && isDocumentRelationships(document_relationships) ? document_relationships : null;
     const deconstructedPath = deconstructStoragePath({ storageDir: row.storage_path!, fileName: row.file_name! });
-    return { ...rest, content, document_relationships: docRels, attempt_count: deconstructedPath.attemptCount ?? 1 };
+    return { ...rest, content: '', document_relationships: docRels, attempt_count: deconstructedPath.attemptCount ?? 1 };
 }
 
-function mapResourceToSourceDocument(row: DialecticProjectResourceRow, content: string): SourceDocument {
+// Note: content is set to empty string because planners only need metadata, not content. Content is fetched later in executeModelCallAndSave.gatherArtifacts() when constructing the API call.
+function mapResourceToSourceDocument(row: DialecticProjectResourceRow): SourceDocument {
+    let documentRelationships: SourceDocument['document_relationships'] = null;
+    
+    if (isRecord(row.resource_description) && 'document_relationships' in row.resource_description) {
+        const docRels = row.resource_description.document_relationships;
+        if (docRels !== undefined && docRels !== null && isDocumentRelationships(docRels)) {
+            documentRelationships = docRels;
+        }
+    }
+    
     return {
         id: row.id,
         session_id: row.session_id ?? '',
@@ -59,7 +70,7 @@ function mapResourceToSourceDocument(row: DialecticProjectResourceRow, content: 
         storage_path: row.storage_path,
         size_bytes: row.size_bytes,
         mime_type: row.mime_type,
-        content: content,
+        content: '',
         model_id: null,
         model_name: null,
         prompt_template_id_used: null,
@@ -74,13 +85,14 @@ function mapResourceToSourceDocument(row: DialecticProjectResourceRow, content: 
         processing_time_ms: null,
         error: null,
         citations: null,
-        document_relationships: null,
+        document_relationships: documentRelationships,
         is_header: false,
         source_prompt_resource_id: row.source_contribution_id,
     };
 }
 
-function mapFeedbackToSourceDocument(row: DialecticFeedbackRow, content: string): SourceDocument {
+// Note: content is set to empty string because planners only need metadata, not content. Content is fetched later in executeModelCallAndSave.gatherArtifacts() when constructing the API call.
+function mapFeedbackToSourceDocument(row: DialecticFeedbackRow): SourceDocument {
     return {
         id: row.id,
         session_id: row.session_id,
@@ -95,7 +107,7 @@ function mapFeedbackToSourceDocument(row: DialecticFeedbackRow, content: string)
         storage_path: row.storage_path,
         size_bytes: row.size_bytes,
         mime_type: row.mime_type,
-        content: content,
+        content: '',
         model_id: null,
         model_name: null,
         prompt_template_id_used: null,
@@ -242,7 +254,6 @@ export async function findSourceDocuments(
     dbClient: SupabaseClient<Database>,
     parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
     inputsRequired: DialecticRecipeStep['inputs_required'],
-    downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>,
 ): Promise<SourceDocument[]> {
     if (!inputsRequired || inputsRequired.length === 0) return [];
 
@@ -282,6 +293,7 @@ export async function findSourceDocuments(
                 break;
             }
             case 'document': {
+                // Query project_resources for finished rendered documents
                 let resourceQuery = dbClient.from('dialectic_project_resources')
                     .select('*')
                     .eq('project_id', projectId)
@@ -317,41 +329,23 @@ export async function findSourceDocuments(
                 const resourceRecords = sortRecordsByRecency(resourceRecordsRaw);
                 const filteredResources = filterRecordsByDocumentKey(resourceRecords, rule.document_key);
                 const hasDocumentKey = typeof rule.document_key === 'string' && rule.document_key.length > 0;
-                if (!(hasDocumentKey && filteredResources.length === 0)) {
-                    const resourceCandidates = filteredResources.length > 0 ? filteredResources : resourceRecords;
+                const resourceCandidates = hasDocumentKey && filteredResources.length > 0
+                    ? filteredResources
+                    : (hasDocumentKey && filteredResources.length === 0 ? [] : resourceRecords);
+
+                // Check if resources were found
+                if (resourceCandidates.length > 0) {
+                    // Resources found: use them exclusively, skip contributions query
+                    console.log(`[findSourceDocuments] Found ${resourceCandidates.length} rendered document(s) in dialectic_project_resources for document_key '${rule.document_key || 'unspecified'}' and stage '${stageSlugCandidate}'. Using resources exclusively.`);
                     const dedupedResources = dedupeByFileName(resourceCandidates);
-                    const selectedResources = selectRecordsForRule(dedupedResources, allowMultipleMatches, usedRecordKeys);
-                    if (selectedResources.length > 0) {
-                        sourceRecords = selectedResources;
-                        break;
-                    }
-                }
-
-                let contributionQuery = dbClient.from('dialectic_contributions')
-                    .select('*')
-                    .eq('session_id', sessionId)
-                    .eq('iteration_number', normalizedIterationNumber)
-                    .eq('is_latest_edit', true);
-
-                if (shouldFilterByStage) {
-                    contributionQuery = contributionQuery.eq('stage', stageSlugCandidate);
-                }
-
-                const { data: contributionData, error: contributionError } = await contributionQuery;
-                if (contributionError) {
+                    sourceRecords = selectRecordsForRule(dedupedResources, allowMultipleMatches, usedRecordKeys);
+                } else {
+                    // No resources found: throw error immediately (fail loud and hard - no fallbacks)
+                    console.log(`[findSourceDocuments] No rendered documents found in dialectic_project_resources for input rule type 'document' with stage '${stageSlugCandidate}' and document_key '${rule.document_key || 'unspecified'}'. This indicates the document was not rendered or the rendering step failed.`);
                     throw new Error(
-                        `Failed to fetch source documents for type '${rule.type}' from contributions: ${contributionError.message}`,
+                        `Required rendered document for input rule type 'document' with stage '${stageSlugCandidate}' and document_key '${rule.document_key || 'unspecified'}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`,
                     );
                 }
-                const contributionRecordsRaw = (contributionData ?? []);
-                ensureRecordsHaveStorage(contributionRecordsRaw);
-                const contributionRecords = sortRecordsByRecency(contributionRecordsRaw);
-                const filteredContributions = filterRecordsByDocumentKey(contributionRecords, rule.document_key);
-                const contributionCandidates = hasDocumentKey
-                    ? filteredContributions
-                    : (filteredContributions.length > 0 ? filteredContributions : contributionRecords);
-                const dedupedContributions = dedupeByFileName(contributionCandidates);
-                sourceRecords = selectRecordsForRule(dedupedContributions, allowMultipleMatches, usedRecordKeys);
                 break;
             }
             case 'header_context': {
@@ -456,29 +450,16 @@ export async function findSourceDocuments(
 
         ensureRecordsHaveStorage(sourceRecords);
 
-        const documents = await Promise.all(
-            sourceRecords.map(async (record: SourceRecord) => {
-                if (!record.file_name || !record.storage_bucket || !record.storage_path) {
-                    throw new Error(`Contribution ${record.id} is missing required storage information (file_name, storage_bucket, or storage_path).`);
-                }
-                const fullPath = `${record.storage_path}/${record.file_name}`;
-                const { data, error } = await downloadFromStorage(record.storage_bucket, fullPath);
-                if (error) {
-                    throw new Error(`Failed to download content for contribution ${record.id} from ${fullPath}: ${error.message}`);
-                }
-                
-                const content = new TextDecoder().decode(data ?? new ArrayBuffer(0));
-                
-                if (isFeedbackRow(record)) {
-                    return mapFeedbackToSourceDocument(record, content);
-                } else if (isProjectResourceRow(record)) {
-                    return mapResourceToSourceDocument(record, content);
-                } else if (isContributionRow(record)) {
-                    return mapContributionToSourceDocument(record, content);
-                }
-                return null;
-            })
-        );
+        const documents = sourceRecords.map((record: SourceRecord) => {
+            if (isFeedbackRow(record)) {
+                return mapFeedbackToSourceDocument(record);
+            } else if (isProjectResourceRow(record)) {
+                return mapResourceToSourceDocument(record);
+            } else if (isContributionRow(record)) {
+                return mapContributionToSourceDocument(record);
+            }
+            return null;
+        });
         
         const validDocuments = documents.filter((doc): doc is SourceDocument => doc !== null);
         for (const doc of validDocuments) {
@@ -499,6 +480,7 @@ export async function planComplexStage(
     deps: IDialecticJobDeps,
     recipeStep: DialecticRecipeStep,
     authToken: string,
+    completedSourceDocumentIds?: Set<string>,
 ): Promise<DialecticJobRow[]> {
     if (!isPlannableStep(recipeStep)) {
         throw new Error('planComplexStage cannot process this type of recipe step. This indicates an orchestration logic error.');
@@ -542,11 +524,10 @@ export async function planComplexStage(
 
     // 1. Fetch source documents required for this specific step.
     deps.logger.info(`[planComplexStage] Step '${recipeStep.step_slug}' (key: '${recipeStep.step_key}') inputs_required: ${JSON.stringify(recipeStep.inputs_required)}`);
-    const sourceDocuments = await findSourceDocuments(
+    let sourceDocuments = await findSourceDocuments(
         dbClient, 
         parentJob, 
         recipeStep.inputs_required,
-        deps.downloadFromStorage,
     );
     
     if (sourceDocuments.length === 0) {
@@ -554,7 +535,40 @@ export async function planComplexStage(
         return [];
     }
 
-    // 2. Unconditionally call the planner with all source documents.
+    // 2. Filter out completed source documents if completedSourceDocumentIds is provided.
+    if (completedSourceDocumentIds && completedSourceDocumentIds.size > 0) {
+        const sourceDocumentsBeforeFiltering = sourceDocuments.length;
+        const completedIdsCount = completedSourceDocumentIds.size;
+        const filteredOutIdentifiers: string[] = [];
+        
+        const filteredSourceDocuments: SourceDocument[] = [];
+        for (const doc of sourceDocuments) {
+            try {
+                const identifier = extractSourceDocumentIdentifier(doc);
+                if (identifier === null) {
+                    throw new Error('extractSourceDocumentIdentifier returned null for source document');
+                }
+                if (completedSourceDocumentIds.has(identifier)) {
+                    filteredOutIdentifiers.push(identifier);
+                } else {
+                    filteredSourceDocuments.push(doc);
+                }
+            } catch (error) {
+                // Re-throw original error to preserve exact error message and stack trace
+                // This ensures "fail loud and hard" behavior per step 45.i criterion 3
+                if (error instanceof Error) {
+                    throw error;
+                }
+                throw new Error(`Failed to extract source document identifier: ${String(error)}`);
+            }
+        }
+        
+        sourceDocuments = filteredSourceDocuments;
+        
+        deps.logger.info(`[planComplexStage] Filtered source documents: ${sourceDocumentsBeforeFiltering} before, ${completedIdsCount} completed IDs in filter Set, ${sourceDocuments.length} after filtering. Filtered out identifiers: [${filteredOutIdentifiers.join(', ')}]`);
+    }
+
+    // 3. Call the planner with filtered source documents.
     const planner = deps.getGranularityPlanner!(recipeStep.granularity_strategy);
     if (!planner) {
         throw new Error(`No planner found for granularity strategy: ${recipeStep.granularity_strategy}`);
@@ -568,7 +582,7 @@ export async function planComplexStage(
     
     //deps.logger.info(`[task_isolator] [planComplexStage] Planner returned ${childJobPayloads.length} payloads. Content: ${JSON.stringify(childJobPayloads, null, 2)}`);
 
-    // 3. Map to full job rows for DB insertion.
+    // 4. Map to full job rows for DB insertion.
     const childJobsToInsert: DialecticJobRow[] = [];
     for (const payload of childJobPayloads) {
         try {

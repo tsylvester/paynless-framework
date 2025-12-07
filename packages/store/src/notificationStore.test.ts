@@ -516,7 +516,7 @@ describe('notificationStore', () => {
                     ...mockNotification1,
                     id: 'wallet-noti-1',
                     type: 'WALLET_TRANSACTION',
-                    data: { walletId: 'wallet-xyz', newBalance: '1000' },
+                    data: { walletId: 'wallet-xyz', newBalance: 1000 }, // NUMBER - matching actual backend behavior
                     is_internal_event: false, // Wallet notifications are user-facing
                 };
 
@@ -524,8 +524,11 @@ describe('notificationStore', () => {
                     useNotificationStore.getState().handleIncomingNotification(walletNotification);
                 });
 
-                // Should call the special wallet handler
-                expect(mockHandleWalletUpdate).toHaveBeenCalledWith(walletNotification.data);
+                // Should call the special wallet handler with newBalance converted to string
+                expect(mockHandleWalletUpdate).toHaveBeenCalledWith({
+                    walletId: 'wallet-xyz',
+                    newBalance: '1000', // Converted from number to string
+                });
                 // Should ALSO still add it to the general notification list
                 expect(addNotificationSpy).toHaveBeenCalledWith(walletNotification);
                 // Should NOT be routed to the dialectic handler
@@ -1083,6 +1086,197 @@ describe('notificationStore', () => {
                         useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
                     });
 
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('accepts WALLET_TRANSACTION notification when newBalance is a NUMBER (backend sends number, validation now accepts it)', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const walletNotificationWithNumber: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-number-balance',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                            newBalance: 1000, // NUMBER - matching actual backend behavior from tokenWalletService.ts line 317
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(walletNotificationWithNumber);
+                    });
+
+                    // This test now PASSES because the validation accepts NUMBER (what backend sends).
+                    // The handler should be called with newBalance converted to string.
+                    expect(mockHandleWalletUpdate).toHaveBeenCalledWith({
+                        walletId: 'wallet-xyz',
+                        newBalance: '1000', // Converted from number to string
+                    });
+                    expect(addNotificationSpy).toHaveBeenCalledWith(walletNotificationWithNumber);
+                    expect(mockLogger.error).not.toHaveBeenCalled();
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('rejects WALLET_TRANSACTION notification when newBalance is null', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-null-balance',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                            newBalance: null,
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    // This test should pass initially and must continue to pass - null is invalid
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('rejects WALLET_TRANSACTION notification when newBalance is undefined', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-undefined-balance',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                            newBalance: undefined,
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    // This test should pass initially and must continue to pass - undefined is invalid
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('rejects WALLET_TRANSACTION notification when newBalance is a non-numeric value (object)', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-object-balance',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                            newBalance: { value: 1000 } as unknown as string,
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    // This test should pass initially and must continue to pass - object is invalid
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('rejects WALLET_TRANSACTION notification when newBalance is a non-numeric value (array)', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-array-balance',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                            newBalance: [1000] as unknown as string,
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    // This test should pass initially and must continue to pass - array is invalid
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('rejects WALLET_TRANSACTION notification when newBalance is a non-numeric value (boolean)', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-boolean-balance',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                            newBalance: true as unknown as string,
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    // This test should pass initially and must continue to pass - boolean is invalid
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('rejects WALLET_TRANSACTION notification when newBalance is a string (non-numeric string should be rejected after fix)', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-string-balance',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                            newBalance: 'not-a-number',
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    // This test should pass initially and must continue to pass - non-numeric string is invalid
+                    // After the fix, validation will accept number and convert to string, but non-numeric strings should still be rejected
                     expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
                     expect(addNotificationSpy).not.toHaveBeenCalled();
                     expect(mockLogger.error).toHaveBeenCalledWith(

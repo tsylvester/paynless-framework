@@ -39,21 +39,27 @@ Deno.test('resource documents are used for sizing but not included in ChatApiReq
       'ai_providers': {
           select: { data: [mockFullProviderData], error: null }
       },
-      'dialectic_contributions': {
-          select: { data: [
-            {
-              id: 'doc-xyz',
-              content: 'DOC: sizing only',
-              created_at: new Date().toISOString(),
-              stage: 'test-stage',
-              project_id: 'project-abc',
-              session_id: 'session-456',
-              iteration_number: 1,
-              // Path deconstructor expects directory in storage_path and full file name in file_name
-              storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
-              file_name: 'modelA_1_business_case.md'
-            }
-          ], error: null }
+      'dialectic_project_resources': {
+          select: () => {
+            return Promise.resolve({
+              data: [
+                {
+                  id: 'doc-xyz',
+                  content: 'DOC: sizing only',
+                  created_at: new Date().toISOString(),
+                  stage_slug: 'test-stage',
+                  project_id: 'project-abc',
+                  session_id: 'session-456',
+                  iteration_number: 1,
+                  resource_type: 'rendered_document',
+                  // Path deconstructor expects directory in storage_path and full file name in file_name
+                  storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+                  file_name: 'modelA_1_business_case.md'
+                }
+              ],
+              error: null
+            });
+          }
       }
   });
 

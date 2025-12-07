@@ -190,22 +190,18 @@ export const planPerModel: GranularityPlannerFn = (
 		if (typeof sourceContributionId !== 'string' || sourceContributionId.length === 0) {
 			sourceContributionId = null;
 		}
-		const canonicalPathParams = createCanonicalPathParams(
-			sourceDocs,
-			recipeStep.output_type,
-			anchorDoc,
-			stageSlug
-		);
+	const canonicalPathParams = createCanonicalPathParams(
+		sourceDocs,
+		recipeStep.output_type,
+		anchorDoc,
+		stageSlug
+	);
 
-		const synthesisDocIds = sourceDocs.map((d) => d.id);
+	const document_relationships: Record<string, string> = {
+		source_group: anchorDoc.id,
+	};
 
-		const document_relationships: Record<string, string> = {
-			synthesis_group: synthesisDocIds.join(','),
-		};
-
-		const inputs: Record<string, string> = {
-			synthesis_ids: synthesisDocIds.join(','),
-		};
+	const inputs: Record<string, string> = {};
 
 		// Extract and validate document_key from recipeStep.outputs_required.documents[0].document_key
 		// ONLY IF the step outputs documents (i.e., if outputs_required.documents exists and has at least one item)

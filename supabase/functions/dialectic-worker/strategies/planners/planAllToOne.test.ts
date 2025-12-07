@@ -11,6 +11,7 @@ import type {
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { planAllToOne } from './planAllToOne.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
+import { extractSourceDocumentIdentifier } from '../../../_shared/utils/source_document_identifier.ts';
 
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
@@ -738,6 +739,160 @@ Deno.test('planAllToOne throws error for EXECUTE job when files_to_generate entr
         'planAllToOne requires',
         'Should throw error when files_to_generate entry is missing template_filename',
     );
+});
+
+Deno.test('planAllToOne sets document_relationships.source_group in EXECUTE job payload for PLAN recipe steps', () => {
+    const planRecipeStep: DialecticRecipeTemplateStep = {
+        id: 'plan-step-id-source-group-test',
+        template_id: 'template-id-123',
+        step_number: 1,
+        step_key: 'thesis_build_stage_header',
+        step_slug: 'build-stage-header',
+        step_name: 'Build Stage Header',
+        step_description: 'Generate HeaderContext JSON',
+        prompt_template_id: 'template-planner-prompt-id',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        output_type: FileType.HeaderContext,
+        granularity_strategy: 'all_to_one',
+        inputs_required: [
+            {
+                type: 'seed_prompt',
+                slug: 'thesis',
+                required: true,
+            },
+        ],
+        inputs_relevance: [],
+        outputs_required: {
+            system_materials: {
+                executive_summary: '',
+                input_artifacts_summary: '',
+                stage_rationale: '',
+            },
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [
+                {
+                    document_key: FileType.business_case,
+                    content_to_include: {
+                        field1: '',
+                        field2: [],
+                    },
+                },
+            ],
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        parallel_group: null,
+        branch_key: null,
+    };
+
+    const anchorDocument = MOCK_SOURCE_DOCS[0];
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStep, 'user-jwt-123');
+    
+    assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    assertEquals(job.job_type, 'execute', 'PLAN recipe steps should create EXECUTE child jobs');
+    if (job.job_type === 'execute') {
+        const executePayload: DialecticExecuteJobPayload = job;
+        assertExists(executePayload.document_relationships, 'EXECUTE job payload should include document_relationships');
+        assertExists(executePayload.document_relationships?.source_group, 'document_relationships should include source_group');
+        assertEquals(
+            executePayload.document_relationships.source_group,
+            anchorDocument.id,
+            'source_group should be set to anchorDocument.id (first source document)',
+        );
+    } else {
+        throw new Error('Expected EXECUTE job');
+    }
+});
+
+Deno.test('planAllToOne sets document_relationships.source_group in EXECUTE job payload for EXECUTE recipe steps', () => {
+    const executeRecipeStep: DialecticStageRecipeStep = {
+        ...MOCK_RECIPE_STEP,
+        job_type: 'EXECUTE',
+        outputs_required: {
+            documents: [{
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                document_key: FileType.business_case,
+                template_filename: 'thesis_business_case.md',
+            }],
+            assembled_json: [],
+            files_to_generate: [
+                {
+                    from_document_key: FileType.business_case,
+                    template_filename: 'thesis_business_case.md',
+                },
+            ],
+        },
+    };
+
+    const anchorDocument = MOCK_SOURCE_DOCS[0];
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, 'user-jwt-123');
+    
+    assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    assertEquals(job.job_type, 'execute', 'Job type should be execute');
+    if (job.job_type === 'execute') {
+        const executePayload: DialecticExecuteJobPayload = job;
+        assertExists(executePayload.document_relationships, 'EXECUTE job payload should include document_relationships');
+        assertExists(executePayload.document_relationships?.source_group, 'document_relationships should include source_group');
+        assertEquals(
+            executePayload.document_relationships.source_group,
+            anchorDocument.id,
+            'source_group should be set to anchorDocument.id (first source document)',
+        );
+    } else {
+        throw new Error('Expected EXECUTE job');
+    }
+});
+
+Deno.test('extractSourceDocumentIdentifier can extract source_group from job payload created by planAllToOne', () => {
+    const executeRecipeStep: DialecticStageRecipeStep = {
+        ...MOCK_RECIPE_STEP,
+        job_type: 'EXECUTE',
+        outputs_required: {
+            documents: [{
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                document_key: FileType.business_case,
+                template_filename: 'thesis_business_case.md',
+            }],
+            assembled_json: [],
+            files_to_generate: [
+                {
+                    from_document_key: FileType.business_case,
+                    template_filename: 'thesis_business_case.md',
+                },
+            ],
+        },
+    };
+
+    const anchorDocument = MOCK_SOURCE_DOCS[0];
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, 'user-jwt-123');
+    
+    assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    if (job.job_type === 'execute') {
+        const executePayload: DialecticExecuteJobPayload = job;
+        const extractedIdentifier = extractSourceDocumentIdentifier(executePayload);
+        assertExists(extractedIdentifier, 'extractSourceDocumentIdentifier should return a non-null identifier');
+        assertEquals(
+            extractedIdentifier,
+            anchorDocument.id,
+            'extractSourceDocumentIdentifier should return the source_group value from the job payload',
+        );
+    } else {
+        throw new Error('Expected EXECUTE job');
+    }
 });
 
 

@@ -9,6 +9,8 @@ import type {
 } from "./document_renderer.interface.ts";
 import type { DownloadFromStorageFn } from "../supabase_storage_utils.ts";
 import type { DialecticContributionRow } from "../../dialectic-service/dialectic.interface.ts";
+import { renderPrompt } from "../prompt-renderer.ts";
+import { isRecord } from "../utils/type_guards.ts";
  
 
 function toStageKey(stageSlug: string): string {
@@ -26,7 +28,7 @@ async function downloadText(
   bucket: string,
   path: string,
 ): Promise<string> {
-  const { data, error } = await downloadFromStorage(supabase as unknown as SupabaseClient, bucket, path);
+  const { data, error } = await downloadFromStorage(supabase, bucket, path);
   if (error) throw error;
   if (!data) return "";
   return new TextDecoder().decode(data);
@@ -37,7 +39,7 @@ export async function renderDocument(
   deps: DocumentRendererDeps,
   params: RenderDocumentParams,
 ): Promise<RenderDocumentResult> {
-  const { sessionId, iterationNumber, stageSlug, documentIdentity, documentKey, projectId } = params;
+  const { sessionId, iterationNumber, stageSlug, documentIdentity, documentKey, projectId, sourceContributionId } = params;
 
   // 1) Load contribution rows for this document chain using DB-side filtering and ordering
   const stageKey = toStageKey(stageSlug);
@@ -59,9 +61,24 @@ export async function renderDocument(
     throw new Error("No contribution chunks found for requested document");
   }
 
-  // 2) Prefer latest user edits over model chunks when duplicates exist
+  // 2) Filter chunks to only those that match the document identity
+  // The DB query should have filtered, but we double-check here for safety
+  const matchingChunks = rows.filter(row => {
+    if (!isRecord(row.document_relationships)) {
+      return false;
+    }
+    const relationships = row.document_relationships;
+    const stageValue = relationships[stageKey];
+    return stageValue === documentIdentity;
+  });
+
+  if (matchingChunks.length === 0) {
+    throw new Error("No matching contribution chunks found for requested document");
+  }
+
+  // 3) Prefer latest user edits over model chunks when duplicates exist (by file_name)
   const dedupedByFile: Record<string, DialecticContributionRow> = {};
-  for (const row of rows) {
+  for (const row of matchingChunks) {
     if (typeof row.file_name !== "string") {
       throw new Error("Invalid file name type");
     }
@@ -73,13 +90,47 @@ export async function renderDocument(
       if (preferCurrent) dedupedByFile[row.file_name] = row;
     }
   }
-  const uniqueChunks = Object.values(dedupedByFile)
-    .sort((a, b) => {
-      if (a.edit_version !== b.edit_version) return a.edit_version - b.edit_version;
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    });
+  const dedupedChunks = Object.values(dedupedByFile);
 
-  // 3) Parse model slug and attempt from the first/base chunk
+  // 4) Find the root contribution (the one with documentIdentity and null target_contribution_id)
+  const rootChunk = dedupedChunks.find(chunk => {
+    if (!isRecord(chunk.document_relationships)) {
+      return false;
+    }
+    const relationships = chunk.document_relationships;
+    const stageValue = relationships[stageKey];
+    return stageValue === documentIdentity && chunk.target_contribution_id === null;
+  });
+
+  if (!rootChunk) {
+    throw new Error(`No root contribution found for document identity ${documentIdentity}`);
+  }
+
+  // 5) Build ordered chain by traversing target_contribution_id links starting from root
+  // This follows the same pattern as assembleAndSaveFinalDocument in file_manager.ts
+  const chunkMap = new Map(dedupedChunks.map(c => [c.id, c]));
+  const orderedChunks: DialecticContributionRow[] = [];
+  let currentId: string | null = rootChunk.id;
+
+  while (currentId) {
+    const currentChunk = chunkMap.get(currentId);
+    if (!currentChunk) {
+      // Chain is broken - this shouldn't happen if data is consistent
+      break;
+    }
+    orderedChunks.push(currentChunk);
+    // Find the next chunk in the chain (one that has target_contribution_id pointing to current)
+    const nextChunk = dedupedChunks.find(c => c.target_contribution_id === currentId);
+    currentId = nextChunk ? nextChunk.id : null;
+  }
+
+  if (orderedChunks.length === 0) {
+    throw new Error("No ordered chunks found for document chain");
+  }
+
+  const uniqueChunks = orderedChunks;
+
+  // 6) Parse model slug and attempt from the first/base chunk
   const base = uniqueChunks[0];
   if (typeof base.file_name !== "string") {
     throw new Error("Invalid file name type");
@@ -91,19 +142,39 @@ export async function renderDocument(
   const modelSlug = info.modelSlug;
   const attemptCount = info.attemptCount;
 
-  // 4) Load template by querying dialectic_document_templates (authoritative map)
+  // 7) Load template by querying dialectic_document_templates (authoritative map)
+  // Query by unique name field using convention: {stage_slug}_{document_key}
+  // Templates are uniquely identified by (name, domain_id) per the schema
   type DocumentTemplateRow = Database['public']['Tables']['dialectic_document_templates']['Row'];
   const stage = String(stageSlug).toLowerCase();
   const docKey = String(documentKey);
+  const templateName = `${stage}_${docKey}`;
+  
+  // Query project to get domain_id (required for template lookup)
+  const { data: projectData, error: projectError } = await dbClient
+    .from('dialectic_projects')
+    .select('selected_domain_id')
+    .eq('id', projectId)
+    .maybeSingle();
+  
+  if (projectError) {
+    throw new Error(`Failed to query project for domain_id: ${projectError.message}`);
+  }
+  
+  if (!projectData?.selected_domain_id) {
+    throw new Error(`Project '${projectId}' does not have a selected_domain_id. Template lookup requires domain_id.`);
+  }
+  
   const { data: templateRow, error: templateErr } = await dbClient
     .from('dialectic_document_templates')
     .select('*')
-    .eq('stage_slug', stage)
-    .eq('document_key', docKey)
+    .eq('name', templateName)
+    .eq('domain_id', projectData.selected_domain_id)
+    .eq('is_active', true)
     .maybeSingle<DocumentTemplateRow>();
 
   if (templateErr || !templateRow) {
-    throw new Error(`No template mapping found for stage='${stage}' document='${docKey}': ${templateErr ? (templateErr).message ?? 'unknown error' : 'not found'}`);
+    throw new Error(`No template mapping found for stage='${stage}' document='${docKey}' name='${templateName}' domain_id='${projectData.selected_domain_id}': ${templateErr ? (templateErr).message ?? 'unknown error' : 'not found'}`);
   }
 
   const templateBucket = templateRow.storage_bucket;
@@ -115,7 +186,7 @@ export async function renderDocument(
     throw new Error(`Invalid template row: ${JSON.stringify(templateRow)}`);
   }
   const { data: templateData, error: templateDownloadErr } = await deps.downloadFromStorage(
-    dbClient as unknown as SupabaseClient,
+    dbClient,
     templateBucket,
     fullTemplatePath,
   );
@@ -124,21 +195,121 @@ export async function renderDocument(
   }
   const template = new TextDecoder().decode(templateData);
 
-  const bodyParts: string[] = [];
+  // Collect structured data from all chunks
+  // The agent returns JSON where content field is a JSON string containing structured data
+  const mergedStructuredData: Record<string, unknown> = {};
   const contentBucket = base.storage_bucket;
+  
   for (const chunk of uniqueChunks) {
-    const path = `${chunk.storage_path}/${chunk.file_name}`;
-    const text = await downloadText(dbClient, deps.downloadFromStorage, contentBucket, path);
-    bodyParts.push(text);
+    const rawJsonPath = chunk.raw_response_storage_path;
+    if (!rawJsonPath || typeof rawJsonPath !== 'string') {
+      throw new Error(`Contribution ${chunk.id} is missing raw_response_storage_path`);
+    }
+    const text = await downloadText(dbClient, deps.downloadFromStorage, contentBucket, rawJsonPath);
+    const trimmedText = text.trim();
+    
+    if (trimmedText.startsWith('{') || trimmedText.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(text);
+        if (typeof parsed !== 'object' || parsed === null) {
+          throw new Error(`Parsed JSON is not an object for contribution ${chunk.id}`);
+        }
+        if (!('content' in parsed)) {
+          throw new Error(`JSON content field is missing for contribution ${chunk.id} (path: ${rawJsonPath})`);
+        }
+        const extractedContent = parsed.content;
+        if (typeof extractedContent !== 'string') {
+          throw new Error(`JSON content field is not a string for contribution ${chunk.id} (path: ${rawJsonPath}), received type: ${typeof extractedContent}`);
+        }
+        
+        // Parse the content JSON string to get structured data
+        try {
+          const structuredData = JSON.parse(extractedContent);
+          if (typeof structuredData === 'object' && structuredData !== null && !Array.isArray(structuredData)) {
+            // Merge structured data from this chunk into the merged data
+            // For string values, concatenate them to preserve order from multiple chunks
+            // For other types, later chunks override earlier chunks
+            for (const key in structuredData) {
+              if (Object.prototype.hasOwnProperty.call(structuredData, key)) {
+                const value = structuredData[key];
+                if (typeof value === 'string' && key in mergedStructuredData && typeof mergedStructuredData[key] === 'string') {
+                  // Concatenate string values to preserve order
+                  mergedStructuredData[key] = (mergedStructuredData[key]) + '\n\n' + value;
+                } else {
+                  // Override for non-strings or new keys
+                  mergedStructuredData[key] = value;
+                }
+              }
+            }
+            deps.logger?.info?.('[renderDocument] Parsed JSON and extracted structured data', { 
+              chunkId: chunk.id, 
+              rawJsonPath, 
+              dataKeys: Object.keys(structuredData),
+              extractedContentLength: extractedContent.length 
+            });
+          } else {
+            // If content is not a structured object, treat it as plain text
+            // Append to _extra_content section if it exists in template, otherwise store as _raw_content
+            const extraContentKey = '_extra_content';
+            if (!mergedStructuredData[extraContentKey]) {
+              mergedStructuredData[extraContentKey] = [];
+            }
+            const contentArray = Array.isArray(mergedStructuredData[extraContentKey]) ? mergedStructuredData[extraContentKey] : [];
+            contentArray.push(extractedContent.replace(/\\n/g, '\n'));
+            mergedStructuredData[extraContentKey] = contentArray;
+          }
+        } catch (parseError) {
+          // If content is not valid JSON, treat it as plain text
+          const extraContentKey = '_extra_content';
+          if (!mergedStructuredData[extraContentKey]) {
+            mergedStructuredData[extraContentKey] = [];
+          }
+          const contentArray = Array.isArray(mergedStructuredData[extraContentKey]) ? mergedStructuredData[extraContentKey] : [];
+          contentArray.push(extractedContent.replace(/\\n/g, '\n'));
+          mergedStructuredData[extraContentKey] = contentArray;
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message.includes('contribution')) {
+          throw e;
+        }
+        throw new Error(`Failed to parse JSON content from contribution ${chunk.id} (path: ${rawJsonPath}): ${e instanceof Error ? e.message : String(e)}`);
+      }
+    } else {
+      // Non-JSON content: treat as plain text
+      // Append to _extra_content section if it exists in template
+      const extraContentKey = '_extra_content';
+      if (!mergedStructuredData[extraContentKey]) {
+        mergedStructuredData[extraContentKey] = [];
+      }
+      const contentArray = Array.isArray(mergedStructuredData[extraContentKey]) ? mergedStructuredData[extraContentKey] : [];
+      contentArray.push(text);
+      mergedStructuredData[extraContentKey] = contentArray;
+    }
   }
 
-  const mergedBody = bodyParts.join("");
-  const rendered = template
-    .replace(/\{\{\s*title\s*\}\}/g, titleFromDocumentKey(String(documentKey)))
-    .replace(/\{\{\s*content\s*\}\}/g, mergedBody);
+  // Convert array values to strings for renderPrompt
+  // Arrays are joined with newlines for multi-chunk content
+  for (const key in mergedStructuredData) {
+    if (Object.prototype.hasOwnProperty.call(mergedStructuredData, key)) {
+      const value = mergedStructuredData[key];
+      if (Array.isArray(value)) {
+        mergedStructuredData[key] = value.join('\n\n');
+      }
+    }
+  }
+
+  // Use renderPrompt to merge structured data into the template
+  // Templates use section-based placeholders, not {{content}}
+  // Add title to the structured data for {{title}} replacement
+  const structuredDataForRender = {
+    title: titleFromDocumentKey(String(documentKey)),
+    ...mergedStructuredData
+  };
+  
+  const rendered = renderPrompt(template, structuredDataForRender);
   const renderedBytes = new TextEncoder().encode(rendered);
 
-  // 5) Compute final path context and write if a fileManager is available
+  // 6) Compute final path context and write if a fileManager is available
   const pathContext: PathContext = {
     projectId,
     fileType: FileType.RenderedDocument,
@@ -148,12 +319,12 @@ export async function renderDocument(
     documentKey: String(documentKey),
     modelSlug,
     attemptCount,
-    sourceContributionId: documentIdentity,
+    sourceContributionId: sourceContributionId,
   };
 
   if (deps.fileManager && typeof deps.fileManager.uploadAndRegisterFile === "function") {
     try {
-      await deps.fileManager.uploadAndRegisterFile({
+      const uploadResult = await deps.fileManager.uploadAndRegisterFile({
         pathContext: {
           projectId: pathContext.projectId,
           fileType: FileType.RenderedDocument,
@@ -171,12 +342,32 @@ export async function renderDocument(
         userId: base.user_id,
         description: `Rendered document for ${stageSlug}:${String(documentKey)}`,
       });
+      
+      // Check for error response (uploadAndRegisterFile returns { record, error } or { record: null, error })
+      if (uploadResult.error) {
+        // When upload succeeds but DB fails, file_manager.ts always returns ServiceError with:
+        // { message: "Database registration failed after successful upload.", code?: string, details?: string }
+        // ServiceError.details is already a plain string (not JSON) when present
+        const error = uploadResult.error;
+        let errorMessage = `Failed to save rendered document: ${error.message}`;
+        
+        if ('details' in error && typeof error.details === 'string') {
+          errorMessage += ` (${error.details})`;
+        }
+        
+        if ('code' in error && typeof error.code === 'string') {
+          errorMessage += `; code: ${error.code}`;
+        }
+        
+        throw new Error(errorMessage);
+      }
     } catch (e) {
       deps.logger?.error?.("Failed to upload rendered document", { error: e });
+      throw e;
     }
   }
 
-  // 6) Notification 
+  // 7) Notification 
   const targetUser = base.user_id;
   if (deps.notificationService && typeof deps.notificationService.sendDocumentCentricNotification === "function" && targetUser) {
     const renderJobId = `render-${documentIdentity}`;

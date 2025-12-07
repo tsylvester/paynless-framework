@@ -7,9 +7,12 @@ import {
   ResourceUploadContext,
   type ModelContributionFileTypes,
   type DocumentKey,
+  type FileManagerError,
 } from '../../types/file_manager.types.ts'
 import type { OutputType } from '../../../dialectic-service/dialectic.interface.ts'
-import { isRecord } from './type_guards.common.ts'
+import type { StorageError } from '../../../dialectic-service/dialectic.interface.ts'
+import type { ServiceError } from '../../types.ts'
+import { isRecord, isPostgrestError } from './type_guards.common.ts'
 
 export function isModelContributionContext(
   context: unknown,
@@ -153,4 +156,18 @@ const DOCUMENT_KEY_MAP: { [K in DocumentKey]: true } = {
 
 export function isDocumentKey(value: FileType): value is DocumentKey {
     return Object.prototype.hasOwnProperty.call(DOCUMENT_KEY_MAP, value);
+}
+
+export function isStorageError(error: FileManagerError): error is StorageError {
+  return isRecord(error) && 
+    'message' in error && 
+    !isPostgrestError(error) &&
+    ('error' in error || 'statusCode' in error);
+}
+
+export function isServiceError(error: FileManagerError): error is ServiceError {
+  return isRecord(error) && 
+    'message' in error && 
+    !isPostgrestError(error) && 
+    !isStorageError(error);
 }

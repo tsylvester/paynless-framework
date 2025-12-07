@@ -4,7 +4,7 @@ import {
   type ExecuteModelCallAndSaveParams,
   type SourceDocument,
 } from '../dialectic-service/dialectic.interface.ts';
-import { ModelContributionFileTypes, ModelContributionUploadContext } from '../_shared/types/file_manager.types.ts';
+import { FileType, ModelContributionFileTypes, ModelContributionUploadContext } from '../_shared/types/file_manager.types.ts';
 import { 
     isDialecticContribution, 
     isAiModelExtendedConfig, 
@@ -136,75 +136,53 @@ export async function executeModelCallAndSave(
 
             try {
                 if (rType === 'document') {
-                    // From dialectic_contributions (stage column normalized to stage_slug)
-                    {
-                        const { data, error } = await dbClient
-                            .from('dialectic_contributions')
-                            .select('*')
-                            .eq('project_id', projectId)
-                            .eq('session_id', sessionId)
-                            .eq('iteration_number', iterationNumber)
-                            .eq('stage', rStage);
-                        if (!error && Array.isArray(data) && data.length > 0) {
-                            const filtered = (data).filter((row) => {
-                                const fileName = isRecord(row) && typeof row['file_name'] === 'string' ? row['file_name'] : '';
-                                const storageDir = isRecord(row) && typeof row['storage_path'] === 'string' ? row['storage_path'] : '';
-                                const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
-                                const rowStage = (isRecord(row) && typeof row['stage'] === 'string') ? row['stage']
-                                    : (typeof parsed.stageSlug === 'string' ? parsed.stageSlug : undefined);
-                                const parsedKey = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
-                                return rowStage === rStage && parsedKey === rKey;
-                            });
-                            const latest = pickLatest(filtered);
-                            if (latest && isRecord(latest)) {
-                                const u: unknown = latest;
-                                const id = isRecord(u) && typeof u['id'] === 'string' ? u['id'] : undefined;
-                                const fileName = isRecord(u) && typeof u['file_name'] === 'string' ? u['file_name'] : '';
-                                const storageDir = isRecord(u) && typeof u['storage_path'] === 'string' ? u['storage_path'] : '';
-                                const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
-                                const stageSlugEff = isRecord(u) && typeof u['stage'] === 'string' ? u['stage'] : (parsed.stageSlug || undefined);
-                                const docKeyEff = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
-                                const content = isRecord(u) && typeof u['content'] === 'string' ? u['content'] : '';
-                                if (id && stageSlugEff && docKeyEff) {
-                                    gathered.push({ id, content, document_key: docKeyEff, stage_slug: stageSlugEff, type: 'document' });
-                                }
-                            }
-                        }
+                    // Query dialectic_project_resources for finished rendered documents (fail loud and hard if not found)
+                    deps.logger.info(`[gatherArtifacts] Querying dialectic_project_resources for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`);
+                    const { data, error } = await dbClient
+                        .from('dialectic_project_resources')
+                        .select('*')
+                        .eq('project_id', projectId)
+                        .eq('session_id', sessionId)
+                        .eq('iteration_number', iterationNumber)
+                        .eq('stage_slug', rStage)
+                        .eq('resource_type', 'rendered_document');
+                    if (error) {
+                        deps.logger.error(`[gatherArtifacts] Error querying dialectic_project_resources for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`, { error });
+                        throw new Error(`Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`);
                     }
-                    // From dialectic_project_resources (already stage_slug)
-                    {
-                        const { data, error } = await dbClient
-                            .from('dialectic_project_resources')
-                            .select('*')
-                            .eq('project_id', projectId)
-                            .eq('session_id', sessionId)
-                            .eq('iteration_number', iterationNumber)
-                            .eq('stage_slug', rStage);
-                        if (!error && Array.isArray(data) && data.length > 0) {
-                            const filtered = (data).filter((row) => {
-                                const fileName = isRecord(row) && typeof row['file_name'] === 'string' ? row['file_name'] : '';
-                                const storageDir = isRecord(row) && typeof row['storage_path'] === 'string' ? row['storage_path'] : '';
-                                const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
-                                const rowStage = (isRecord(row) && typeof row['stage_slug'] === 'string') ? row['stage_slug']
-                                    : (typeof parsed.stageSlug === 'string' ? parsed.stageSlug : undefined);
-                                const parsedKey = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
-                                return rowStage === rStage && parsedKey === rKey;
-                            });
-                            const latest = pickLatest(filtered);
-                            if (latest && isRecord(latest)) {
-                                const u: unknown = latest;
-                                const id = isRecord(u) && typeof u['id'] === 'string' ? u['id'] : undefined;
-                                const fileName = isRecord(u) && typeof u['file_name'] === 'string' ? u['file_name'] : '';
-                                const storageDir = isRecord(u) && typeof u['storage_path'] === 'string' ? u['storage_path'] : '';
-                                const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
-                                const stageSlugEff = isRecord(u) && typeof u['stage_slug'] === 'string' ? u['stage_slug'] : (parsed.stageSlug || undefined);
-                                const docKeyEff = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
-                                const content = isRecord(u) && typeof u['content'] === 'string' ? u['content'] : '';
-                                if (id && stageSlugEff && docKeyEff) {
-                                    gathered.push({ id, content, document_key: docKeyEff, stage_slug: stageSlugEff, type: 'document' });
-                                }
-                            }
+                    if (!Array.isArray(data) || data.length === 0) {
+                        deps.logger.warn(`[gatherArtifacts] No resources found in dialectic_project_resources for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`);
+                        throw new Error(`Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`);
+                    }
+                    const filtered = (data).filter((row) => {
+                        const fileName = isRecord(row) && typeof row['file_name'] === 'string' ? row['file_name'] : '';
+                        const storageDir = isRecord(row) && typeof row['storage_path'] === 'string' ? row['storage_path'] : '';
+                        const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
+                        const rowStage = (isRecord(row) && typeof row['stage_slug'] === 'string') ? row['stage_slug']
+                            : (typeof parsed.stageSlug === 'string' ? parsed.stageSlug : undefined);
+                        const parsedKey = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
+                        return rowStage === rStage && parsedKey === rKey;
+                    });
+                    const latest = pickLatest(filtered);
+                    if (latest && isRecord(latest)) {
+                        const u: unknown = latest;
+                        const id = isRecord(u) && typeof u['id'] === 'string' ? u['id'] : undefined;
+                        const fileName = isRecord(u) && typeof u['file_name'] === 'string' ? u['file_name'] : '';
+                        const storageDir = isRecord(u) && typeof u['storage_path'] === 'string' ? u['storage_path'] : '';
+                        const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
+                        const stageSlugEff = isRecord(u) && typeof u['stage_slug'] === 'string' ? u['stage_slug'] : (parsed.stageSlug || undefined);
+                        const docKeyEff = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
+                        const content = isRecord(u) && typeof u['content'] === 'string' ? u['content'] : '';
+                        if (id && stageSlugEff && docKeyEff) {
+                            deps.logger.info(`[gatherArtifacts] Found rendered document in dialectic_project_resources: id='${id}', stage='${stageSlugEff}', document_key='${docKeyEff}'`);
+                            gathered.push({ id, content, document_key: docKeyEff, stage_slug: stageSlugEff, type: 'document' });
+                        } else {
+                            deps.logger.warn(`[gatherArtifacts] Resource found but missing required fields: id='${id}', stageSlugEff='${stageSlugEff}', docKeyEff='${docKeyEff}'`);
+                            throw new Error(`Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`);
                         }
+                    } else {
+                        deps.logger.warn(`[gatherArtifacts] No matching resource found after filtering for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`);
+                        throw new Error(`Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`);
                     }
                 }
                 if (rType === 'feedback') {
@@ -241,10 +219,53 @@ export async function executeModelCallAndSave(
                         }
                     }
                 }
-            } catch { /* non-fatal */ }
+                // Handle intermediate artifacts (header_context, etc.) that are stored in contributions
+                if (rType === 'header_context' || (rType !== 'document' && rType !== 'feedback')) {
+                    deps.logger.info(`[gatherArtifacts] Querying dialectic_contributions for intermediate artifact: type='${rType}', stage='${rStage}', document_key='${rKey}'`);
+                    const { data, error } = await dbClient
+                        .from('dialectic_contributions')
+                        .select('*')
+                        .eq('project_id', projectId)
+                        .eq('session_id', sessionId)
+                        .eq('iteration_number', iterationNumber)
+                        .eq('stage', rStage);
+                    if (!error && Array.isArray(data) && data.length > 0) {
+                        const filtered = (data).filter((row) => {
+                            const fileName = isRecord(row) && typeof row['file_name'] === 'string' ? row['file_name'] : '';
+                            const storageDir = isRecord(row) && typeof row['storage_path'] === 'string' ? row['storage_path'] : '';
+                            const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
+                            const rowStage = (isRecord(row) && typeof row['stage'] === 'string') ? row['stage']
+                                : (typeof parsed.stageSlug === 'string' ? parsed.stageSlug : undefined);
+                            const parsedKey = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
+                            return rowStage === rStage && parsedKey === rKey;
+                        });
+                        const latest = pickLatest(filtered);
+                        if (latest && isRecord(latest)) {
+                            const u: unknown = latest;
+                            const id = isRecord(u) && typeof u['id'] === 'string' ? u['id'] : undefined;
+                            const fileName = isRecord(u) && typeof u['file_name'] === 'string' ? u['file_name'] : '';
+                            const storageDir = isRecord(u) && typeof u['storage_path'] === 'string' ? u['storage_path'] : '';
+                            const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
+                            const stageSlugEff = isRecord(u) && typeof u['stage'] === 'string' ? u['stage'] : (parsed.stageSlug || undefined);
+                            const docKeyEff = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
+                            const content = isRecord(u) && typeof u['content'] === 'string' ? u['content'] : '';
+                            if (id && stageSlugEff && docKeyEff) {
+                                deps.logger.info(`[gatherArtifacts] Found intermediate artifact in dialectic_contributions: id='${id}', stage='${stageSlugEff}', document_key='${docKeyEff}', type='${rType}'`);
+                                gathered.push({ id, content, document_key: docKeyEff, stage_slug: stageSlugEff, type: rType });
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                // For document-type inputs, errors indicate missing required rendered documents - re-throw to fail loud and hard
+                if (rType === 'document') {
+                    throw err;
+                }
+                // For other types (feedback, header_context, etc.), errors are non-fatal - continue processing other rules
+            }
         }
 
-        // Dedupe by id across sources
+        // Dedupe by id to handle multiple input rules returning the same document
         const unique = new Map<string, IdentityDoc>();
         for (const d of gathered) {
             const rec: unknown = d;
@@ -1119,10 +1140,16 @@ export async function executeModelCallAndSave(
         validatedDocumentKey = job.payload.document_key;
     }
 
+    // For document outputs, use FileType.ModelContributionRawJson to save to raw_responses/ folder
+    // For non-document outputs (e.g., header_context), use the original fileType
+    const storageFileType = isDocumentKey(fileType) 
+        ? FileType.ModelContributionRawJson 
+        : fileType;
+
     const uploadContext: ModelContributionUploadContext = {
         pathContext: {
             projectId: job.payload.projectId,
-            fileType: fileType,
+            fileType: storageFileType,
             sessionId,
             iteration: iterationNumber,
             modelSlug: providerDetails.api_identifier,
@@ -1134,7 +1161,7 @@ export async function executeModelCallAndSave(
             turnIndex: isContinuationForStorage ? job.payload.continuation_count ?? 0 : undefined,
         },
         fileContent: contentForStorage, 
-        mimeType: aiResponse.contentType || "text/markdown",
+        mimeType: "application/json",
         sizeBytes: contentForStorage.length, 
         userId: projectOwnerUserId,
         description,
@@ -1145,7 +1172,6 @@ export async function executeModelCallAndSave(
             stageSlug, 
             iterationNumber, 
             contributionType: contributionType,
-            rawJsonResponseContent: aiResponse.rawProviderResponse,
             tokensUsedInput: aiResponse.inputTokens, 
             tokensUsedOutput: aiResponse.outputTokens,
             processingTimeMs: aiResponse.processingTimeMs,
@@ -1155,6 +1181,12 @@ export async function executeModelCallAndSave(
             isIntermediate: 'isIntermediate' in job.payload && job.payload.isIntermediate,
         },
     };
+
+    deps.logger.info('[executeModelCallAndSave] Saving validated JSON to raw file', { 
+        jobId, 
+        documentKey: validatedDocumentKey, 
+        fileType: storageFileType 
+    });
 
     const savedResult = await deps.fileManager.uploadAndRegisterFile(uploadContext);
 

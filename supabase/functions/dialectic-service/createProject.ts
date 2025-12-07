@@ -7,6 +7,8 @@ import {
 import { FileManagerService } from "../_shared/services/file_manager.ts";
 import { constructStoragePath } from "../_shared/utils/path_constructor.ts";
 import { FileType } from "../_shared/types/file_manager.types.ts";
+import { isServiceError } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
+import { isPostgrestError } from "../_shared/utils/type-guards/type_guards.common.ts";
 
   console.log("createProject function started");
   
@@ -129,7 +131,14 @@ export async function createProject(
         await dbAdminClient.from('dialectic_projects').delete().eq('id', newProjectData.id);
         
         const baseMessage = uploadResult.error?.message || "Failed to upload and register initial prompt file.";
-        const errorDetails = uploadResult.error?.details;
+        let errorDetails: string | Record<string, unknown>[] | undefined;
+        if (uploadResult.error) {
+          if (isPostgrestError(uploadResult.error)) {
+            errorDetails = uploadResult.error.details;
+          } else if (isServiceError(uploadResult.error)) {
+            errorDetails = uploadResult.error.details;
+          }
+        }
         const fullMessage = errorDetails ? `${baseMessage}: ${errorDetails}` : baseMessage;
 
         return { 
@@ -169,7 +178,14 @@ export async function createProject(
         await dbAdminClient.from('dialectic_projects').delete().eq('id', newProjectData.id);
         
         const baseMessage = uploadResult.error?.message || "Failed to upload and register initial prompt text as file.";
-        const errorDetails = uploadResult.error?.details;
+        let errorDetails: string | Record<string, unknown>[] | undefined;
+        if (uploadResult.error) {
+          if (isPostgrestError(uploadResult.error)) {
+            errorDetails = uploadResult.error.details;
+          } else if (isServiceError(uploadResult.error)) {
+            errorDetails = uploadResult.error.details;
+          }
+        }
         const fullMessage = errorDetails ? `${baseMessage}: ${errorDetails}` : baseMessage;
 
         return { 

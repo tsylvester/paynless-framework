@@ -9,6 +9,7 @@ import { IFileManager } from "../types/file_manager.types.ts";
 import { DownloadStorageResult } from "../supabase_storage_utils.ts";
 import { GatherInputsForStageFn } from "./gatherInputsForStage.ts";
 import { Json } from "../../types_db.ts";
+import { InputRule } from "../../dialectic-service/dialectic.interface.ts";
 
 export type RenderFn = (
   renderPromptFn: RenderPromptFunctionType,
@@ -155,7 +156,7 @@ export type ContributionOverride = {
 // Define a granular document type
 export interface AssemblerSourceDocument {
 	id: string;
-	type: 'document' | 'feedback';
+	type: InputRule['type'];
 	content: string;
 	metadata: {
 		displayName: string;

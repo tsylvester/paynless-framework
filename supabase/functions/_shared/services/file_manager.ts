@@ -5,8 +5,7 @@ import type {
   Json,
 } from '../../types_db.ts'
 import { isPostgrestError, isRecord } from '../utils/type_guards.ts'
-import type { FileManagerResponse, UploadContext, PathContext } from '../types/file_manager.types.ts'
-import { FileType } from '../types/file_manager.types.ts'
+import type { FileManagerResponse, FileManagerError, UploadContext, PathContext } from '../types/file_manager.types.ts'
 import {
   isModelContributionContext,
   isUserFeedbackContext,
@@ -62,10 +61,31 @@ export class FileManagerService {
       }
     }
 
+    // --- FileContent Validation ---
+    if (isModelContributionContext(context)) {
+      if (!context.fileContent) {
+        return {
+          record: null,
+          error: { message: 'fileContent is required for model contributions' },
+        }
+      }
+      const isEmpty = typeof context.fileContent === 'string'
+        ? context.fileContent.length === 0
+        : context.fileContent instanceof ArrayBuffer
+        ? context.fileContent.byteLength === 0
+        : context.fileContent.length === 0
+      if (isEmpty) {
+        return {
+          record: null,
+          error: { message: 'fileContent is required for model contributions' },
+        }
+      }
+    }
+
     // --- Standard Upload Logic ---
     let finalMainContentFilePath = ''
     let finalFileName = ''
-    let mainUploadError: { message: string; status?: number } | Error | null = null
+    let mainUploadError: FileManagerError | null = null
     let currentAttemptCount = 0
 
     // This logic is restored from the original function to handle filename collisions for contributions
@@ -99,11 +119,13 @@ export class FileManagerService {
           break; 
         } else if (mainUploadError.message && 
                   (mainUploadError.message.includes('The resource already exists') || 
-                    ('status' in mainUploadError && mainUploadError.status === 409)
+                    ('statusCode' in mainUploadError && mainUploadError.statusCode === '409')
                   )
                   ) {
           if (currentAttemptCount === MAX_UPLOAD_ATTEMPTS - 1) {
-            mainUploadError = new Error(`Failed to upload file after ${MAX_UPLOAD_ATTEMPTS} attempts due to filename collisions.`);
+            mainUploadError = {
+              message: `Failed to upload file after ${MAX_UPLOAD_ATTEMPTS} attempts due to filename collisions.`,
+            };
             break;
           }
           continue; 
@@ -127,40 +149,35 @@ export class FileManagerService {
     }
 
     if (mainUploadError) {
+      // If it's already a FileManagerError, return it directly
+      if (isPostgrestError(mainUploadError)) {
+        return {
+          record: null,
+          error: mainUploadError,
+        };
+      }
+      // Check if it's a StorageError (has 'error' or 'statusCode' property)
+      if (isRecord(mainUploadError) && ('error' in mainUploadError || 'statusCode' in mainUploadError)) {
+        return {
+          record: null,
+          error: mainUploadError,
+        };
+      }
+      // If it's a ServiceError (record with message but not PostgrestError or StorageError), return it
+      if (isRecord(mainUploadError) && 'message' in mainUploadError && !(mainUploadError instanceof Error)) {
+        return {
+          record: null,
+          error: mainUploadError,
+        };
+      }
+      // If it's a plain Error, convert to ServiceError
       return {
         record: null,
-        error: { message: "Main content storage upload failed", details: mainUploadError.message || 'Unknown upload error' },
-      }
-    }
-    
-    let rawJsonResponseFullStoragePath: string | null = null // Stores full path for DB
-
-    if (isModelContributionContext(context) && context.contributionMetadata.rawJsonResponseContent) {
-      try {
-        const rawJsonPathContext: PathContext = {
-          ...pathContextForStorage,
-          fileType: FileType.ModelContributionRawJson,
-          attemptCount: currentAttemptCount,
-        };
-        const rawJsonPathParts = this.constructStoragePath(rawJsonPathContext);
-        const fullPathForRawJsonUpload = `${rawJsonPathParts.storagePath}/${rawJsonPathParts.fileName}`;
-        rawJsonResponseFullStoragePath = fullPathForRawJsonUpload; // Full path for DB
-
-        const { error: rawJsonUploadError } = await this.supabase.storage
-          .from(this.storageBucket)
-          .upload(fullPathForRawJsonUpload, JSON.stringify(context.contributionMetadata.rawJsonResponseContent), {
-            contentType: 'application/json',
-            upsert: true,
-          })
-
-        if (rawJsonUploadError) {
-          console.warn(`Raw JSON response upload failed for ${finalFileName}: ${rawJsonUploadError.message}.`);
-          rawJsonResponseFullStoragePath = null; 
-        }
-      } catch (e: unknown) {
-        console.warn(`Error processing raw JSON for ${finalFileName}: ${e instanceof Error ? e.message : 'Unknown error'}`);
-        rawJsonResponseFullStoragePath = null;
-      }
+        error: {
+          message: 'Main content storage upload failed',
+          details: mainUploadError.message,
+        },
+      };
     }
 
     try {
@@ -175,10 +192,10 @@ export class FileManagerService {
         const resourceType = context.resourceTypeForDb ?? pathContextForStorage.fileType
         const recordData: TablesInsert<'dialectic_project_resources'> = {
           project_id: pathContextForStorage.projectId,
-          session_id: pathContextForStorage.sessionId ?? null,
+          session_id: pathContextForStorage.sessionId,
           user_id: context.userId!,
-          stage_slug: pathContextForStorage.stageSlug ?? null,
-          iteration_number: pathContextForStorage.iteration ?? null,
+          stage_slug: pathContextForStorage.stageSlug,
+          iteration_number: pathContextForStorage.iteration,
           resource_type: typeof resourceType === 'string' ? resourceType : String(resourceType),
           file_name: finalFileName, 
           mime_type: context.mimeType,
@@ -211,9 +228,6 @@ export class FileManagerService {
           const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`
           if (!mainUploadError) {
             await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove])
-            if (rawJsonResponseFullStoragePath) {
-              await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath])
-            }
           }
           return { record: null, error: { message: 'Missing required metadata for contribution.' } }
         }
@@ -226,9 +240,6 @@ export class FileManagerService {
             const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`
             if (!mainUploadError) {
               await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove])
-              if (rawJsonResponseFullStoragePath) {
-                await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath])
-              }
             }
             return { record: null, error: { message: 'Missing target_contribution_id for continuation.' } }
           }
@@ -245,7 +256,7 @@ export class FileManagerService {
           mime_type: context.mimeType,
           size_bytes: context.sizeBytes,
           file_name: finalFileName,
-          raw_response_storage_path: rawJsonResponseFullStoragePath,
+          raw_response_storage_path: `${finalMainContentFilePath}/${finalFileName}`,
           tokens_used_input: meta.tokensUsedInput,
           tokens_used_output: meta.tokensUsedOutput,
           processing_time_ms: meta.processingTimeMs,
@@ -346,29 +357,62 @@ export class FileManagerService {
           await this.supabase.storage.from(this.storageBucket).remove(pathsToRemove);
         }
       }
-      let errorDetails: string | undefined = undefined;
+      // If upload succeeded but DB registration failed, wrap PostgrestError with descriptive message
+      // Otherwise return PostgrestError directly for other cases
       if (isPostgrestError(e)) {
-        errorDetails = JSON.stringify({ code: e.code, details: e.details, message: e.message });
-      } else if (isRecord(e)) {
+        if (!mainUploadError) {
+          // Upload succeeded but DB failed - construct ServiceError from PostgrestError
+          // Preserve error information: when e.details is empty, preserve e.message in details
+          let errorDetails: string;
+          if (e.details.length > 0) {
+            errorDetails = e.details;
+          } else {
+            errorDetails = e.message;
+          }
+          return {
+            record: null,
+            error: { 
+              message: "Database registration failed after successful upload.", 
+              code: e.code,
+              details: errorDetails,
+            },
+          };
+        }
+        // Upload failed or other case - return PostgrestError directly
+        return {
+          record: null,
+          error: e,
+        };
+      }
+      
+      // For other errors, construct a ServiceError with unified shape
+      if (isRecord(e)) {
         const code = 'code' in e && typeof e.code === 'string' ? e.code : undefined;
         const details = 'details' in e && typeof e.details === 'string' ? e.details : undefined;
-        const message = 'message' in e && typeof e.message === 'string'
-          ? e.message
-          : (e instanceof Error ? e.message : 'Unknown database error');
-        // If only a simple message exists (no code/details), return the raw message string
-        if (!code && !details && typeof message === 'string') {
-          errorDetails = message;
-        } else {
-          errorDetails = JSON.stringify({ code, details, message });
-        }
+        return {
+          record: null,
+          error: {
+            message: "Database registration failed after successful upload.",
+            code: code,
+            details: details,
+          },
+        };
       } else if (e instanceof Error) {
-        errorDetails = e.message;
+        return {
+          record: null,
+          error: {
+            message: "Database registration failed after successful upload.",
+            details: e.message,
+          },
+        };
       } else {
-        errorDetails = 'Unknown database error';
-      }
-      return {
-        record: null,
-        error: { message: "Database registration failed after successful upload.", details: errorDetails },
+        return {
+          record: null,
+          error: {
+            message: "Database registration failed after successful upload.",
+            details: 'Unknown database error',
+          },
+        };
       }
     }
   }

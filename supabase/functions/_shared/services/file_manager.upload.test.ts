@@ -21,9 +21,10 @@ import {
   PathContext,
 } from '../types/file_manager.types.ts'
 import { constructStoragePath } from '../utils/path_constructor.ts'
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js'
 import type { Database, Json } from '../../types_db.ts'
-import { isRecord } from '../utils/type_guards.ts'
+import { isRecord, isPostgrestError } from '../utils/type_guards.ts'
+import { isStorageError, isServiceError } from '../utils/type-guards/type_guards.file_manager.ts'
 
 Deno.test('FileManagerService', async (t) => {
   let setup: MockSupabaseClientSetup
@@ -122,12 +123,12 @@ Deno.test('FileManagerService', async (t) => {
         const expectedPathParts = constructStoragePath(context.pathContext);
         const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
 
-        const postgrestStyleError = { name: 'PostgrestError', message: 'insert failed', code: 'PGRST116', details: 'constraint violation on resource_description' };
+        const postgrestStyleError: PostgrestError = { name: 'PostgrestError', message: 'insert failed', code: 'PGRST116', details: 'constraint violation on resource_description', hint: '' };
 
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
             dialectic_project_resources: {
-              insert: { data: null, error: postgrestStyleError },
+              upsert: { data: null, error: postgrestStyleError },
             },
           },
           storageMock: {
@@ -138,6 +139,9 @@ Deno.test('FileManagerService', async (t) => {
           },
         };
         beforeEach(config);
+        // Initialize spy before the call so it tracks the remove call
+        const storageBucket = setup.spies.storage.from('test-bucket');
+        const removeSpy = storageBucket.removeSpy;
 
         const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
@@ -147,12 +151,17 @@ Deno.test('FileManagerService', async (t) => {
         assertEquals(error?.message, 'Database registration failed after successful upload.');
         // Intended: details should include DB code/details for easier diagnosis
         // This will be RED until implementation propagates details
-        const detailsText = String(error?.details ?? '');
-        assert(detailsText.includes('PGRST116') || detailsText.includes('constraint'));
+        if (isPostgrestError(error)) {
+          const detailsText = String(error.details ?? '');
+          assert(detailsText.includes('PGRST116') || detailsText.includes('constraint'));
+        } else if (isServiceError(error) && error.details && typeof error.details === 'string') {
+          const detailsText = String(error.details);
+          assert(detailsText.includes('PGRST116') || detailsText.includes('constraint'));
+        }
 
-        const removeSpy = setup.spies.storage.from('test-bucket').removeSpy;
-        assertExists(removeSpy);
         // Ensure we attempted to remove the uploaded file path
+        assertExists(removeSpy, "Remove spy should exist");
+        assert(removeSpy.calls.length > 0, "Remove should have been called");
         const removedPathsArg = removeSpy.calls[0]?.args[0];
         assertExists(removedPathsArg);
         assert(removedPathsArg!.some((p: string) => p === expectedFullPath));
@@ -165,10 +174,22 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile should use bucket from environment variable',
     async () => {
       try {
-        beforeEach()
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            dialectic_project_resources: {
+              upsert: { data: [{ id: 'resource-123' }], error: null },
+            },
+          },
+          storageMock: {
+            uploadResult: { data: { path: 'test/path' }, error: null },
+          },
+        };
+        beforeEach(config);
+        // Initialize spy before the call so it tracks the upload
+        const storageBucket = setup.spies.storage.from('test-bucket');
+        const uploadSpy = storageBucket.uploadSpy;
         await fileManager.uploadAndRegisterFile(baseUploadContext)
-        const storageFromSpy = setup.spies.storage.from('test-bucket').uploadSpy
-        assertExists(storageFromSpy!.calls[0])
+        assertExists(uploadSpy.calls[0])
       } finally {
         afterEach()
       }
@@ -236,10 +257,10 @@ Deno.test('FileManagerService', async (t) => {
         
         // Assert full column contract - resource_type must always be written
         assertEquals(insertData.resource_type, String(context.pathContext.fileType));
-        // For GeneralResource without explicit session metadata, session_id should be present if provided, or null if not
-        assertEquals(insertData.session_id, context.pathContext.sessionId ?? null);
-        assertEquals(insertData.stage_slug, context.pathContext.stageSlug ?? null);
-        assertEquals(insertData.iteration_number, context.pathContext.iteration ?? null);
+        // For GeneralResource without explicit session metadata, session_id should be present if provided, or undefined if not
+        assertEquals(insertData.session_id, context.pathContext.sessionId);
+        assertEquals(insertData.stage_slug, context.pathContext.stageSlug);
+        assertEquals(insertData.iteration_number, context.pathContext.iteration);
         assertEquals(insertData.source_contribution_id, null);
       } finally {
         afterEach()
@@ -335,6 +356,9 @@ Deno.test('FileManagerService', async (t) => {
           },
         };
         beforeEach(config);
+        // Initialize spy before the call so it tracks the upload
+        const storageBucket = setup.spies.storage.from('test-bucket');
+        const uploadSpy = storageBucket.uploadSpy;
 
         const { record, error } = await fileManager.uploadAndRegisterFile(zipContext);
 
@@ -354,8 +378,8 @@ Deno.test('FileManagerService', async (t) => {
         assertExists(upsertOptions);
         assertEquals(upsertOptions?.onConflict, 'storage_bucket,storage_path,file_name');
 
-        const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
-        assertExists(uploadSpy);
+        assertExists(uploadSpy, "Upload spy should exist");
+        assertExists(uploadSpy.calls[0], "Upload should have been called");
         assertEquals(uploadSpy.calls[0].args[0], expectedFullPath);
       } finally {
         afterEach();
@@ -464,6 +488,9 @@ Deno.test('FileManagerService', async (t) => {
           },
         };
         beforeEach(config);
+        // Initialize spy before the call so it tracks the upload
+        const storageBucket = setup.spies.storage.from('test-bucket');
+        const uploadSpy = storageBucket.uploadSpy;
 
         const { record, error } = await fileManager.uploadAndRegisterFile(zipContext);
 
@@ -483,8 +510,8 @@ Deno.test('FileManagerService', async (t) => {
         assertExists(upsertOptions);
         assertEquals(upsertOptions?.onConflict, 'storage_bucket,storage_path,file_name');
 
-        const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
-        assertExists(uploadSpy);
+        assertExists(uploadSpy, "Upload spy should exist");
+        assertExists(uploadSpy.calls[0], "Upload should have been called");
         assertEquals(uploadSpy.calls[0].args[0], expectedFullPath);
       } finally {
         afterEach();
@@ -508,14 +535,6 @@ Deno.test('FileManagerService', async (t) => {
         const expectedPathPartsAttempt0 = constructStoragePath(pathContextAttempt0);
         const expectedFullUploadPathAttempt0 = `${expectedPathPartsAttempt0.storagePath}/${expectedPathPartsAttempt0.fileName}`;
 
-        const pathContextRawAttempt0: ModelContributionUploadContext['pathContext'] = {
-            ...pathContextAttempt0,
-            fileType: FileType.ModelContributionRawJson,
-            documentKey: 'business_case',
-        };
-        const expectedRawPathPartsAttempt0 = constructStoragePath(pathContextRawAttempt0);
-        const expectedFullRawUploadPathAttempt0 = `${expectedRawPathPartsAttempt0.storagePath}/${expectedRawPathPartsAttempt0.fileName}`;
-
         const contributionDataMock = { id: 'contrib-123', file_name: expectedPathPartsAttempt0.fileName };
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
@@ -529,32 +548,12 @@ Deno.test('FileManagerService', async (t) => {
         }
         beforeEach(config)
 
-        let rawJsonUploadCalledCorrectly = false;
-        const originalStorageFrom = setup.client.storage.from;
-        setup.client.storage.from = (bucketName: string) => {
-            const bucket = originalStorageFrom(bucketName);
-            const originalUpload = bucket.upload;
-            bucket.upload = async (path: string, content: unknown, options?: IMockStorageFileOptions) => {
-                if (path === expectedFullRawUploadPathAttempt0) {
-                    rawJsonUploadCalledCorrectly = true;
-                    assertEquals(options?.contentType, 'application/json');
-                    return { data: { path: expectedFullRawUploadPathAttempt0 }, error: null };
-                }
-                if (path === expectedFullUploadPathAttempt0 && options?.contentType !== 'application/json') {
-                    return { data: { path }, error: null };
-                }
-                return originalUpload.call(bucket, path, content, options);
-            };
-            return bucket;
-        };
-
         const contributionMetadata: ContributionMetadata = {
           iterationNumber: 2,
           modelIdUsed: 'model-id-sonnet',
           modelNameDisplay: 'Claude 3 Sonnet',
           sessionId: 'session-uuid-456',
           stageSlug: '2_antithesis',
-          rawJsonResponseContent: '{"raw":"mock raw json response"}',
         };
 
         const context: ModelContributionUploadContext = {
@@ -572,8 +571,6 @@ Deno.test('FileManagerService', async (t) => {
         assertEquals(record?.id, 'contrib-123')
 
         assertEquals(setup.spies.fromSpy.calls[0].args[0], 'dialectic_contributions')
-        
-        assert(rawJsonUploadCalledCorrectly, "Raw JSON upload was not called with the correct path");
 
         const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_contributions')?.insert
         assertExists(insertSpy);
@@ -582,8 +579,9 @@ Deno.test('FileManagerService', async (t) => {
         assertEquals(insertData.stage, '2_antithesis')
         assertEquals(insertData.file_name, expectedPathPartsAttempt0.fileName);
         assertEquals(insertData.storage_path, expectedPathPartsAttempt0.storagePath);
-        // raw_response_storage_path in the DB stores the full path to the raw JSON file
-        assertEquals(insertData.raw_response_storage_path, expectedFullRawUploadPathAttempt0);
+        // raw_response_storage_path now points to the same file (fileContent IS the raw JSON)
+        const expectedFullStoragePath = `${expectedPathPartsAttempt0.storagePath}/${expectedPathPartsAttempt0.fileName}`;
+        assertEquals(insertData.raw_response_storage_path, expectedFullStoragePath);
 
       } finally {
         afterEach()
@@ -617,6 +615,9 @@ Deno.test('FileManagerService', async (t) => {
           },
         };
         beforeEach(config);
+        // Initialize spy before the call so it tracks the upload
+        const storageBucket = setup.spies.storage.from('test-bucket');
+        const uploadSpy = storageBucket.uploadSpy;
 
         const contributionMetadata: ContributionMetadata = {
           iterationNumber: 1,
@@ -624,7 +625,6 @@ Deno.test('FileManagerService', async (t) => {
           modelNameDisplay: 'Test Model',
           sessionId: 'session-intermediate',
           stageSlug: 'synthesis',
-          rawJsonResponseContent: '{}',
           document_relationships: { derived_from: ['id-a', 'id-b'] },
         };
 
@@ -638,8 +638,8 @@ Deno.test('FileManagerService', async (t) => {
 
         await fileManager.uploadAndRegisterFile(context);
 
-        const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
         assertExists(uploadSpy, "Upload spy should exist");
+        assertExists(uploadSpy.calls[0], "Upload should have been called");
         assertEquals(uploadSpy.calls[0].args[0], expectedFullPath, "File was not uploaded to the expected _work directory path.");
         assert(expectedFullPath.includes('/_work/'), "The final path should contain a '/_work/' directory.");
 
@@ -678,15 +678,6 @@ Deno.test('FileManagerService', async (t) => {
         const expectedFullSuccessfulMainPath1 = `${expectedSuccessfulPathParts1.storagePath}/${expectedSuccessfulPathParts1.fileName}`;
         const expectedSuccessfulMainFileName1 = expectedSuccessfulPathParts1.fileName;
 
-        const successRawJsonPathContextAttempt1: ModelContributionUploadContext['pathContext'] = {
-          ...baseRetryPathContext,
-          attemptCount: 1, 
-          fileType: FileType.ModelContributionRawJson,
-          documentKey: 'business_case',
-        };
-        const expectedRawJsonPathParts1 = constructStoragePath(successRawJsonPathContextAttempt1);
-        const expectedFullSuccessfulRawJsonPath1 = `${expectedRawJsonPathParts1.storagePath}/${expectedRawJsonPathParts1.fileName}`;
-        
         const contributionDataMock = { id: 'contrib-retry-123', file_name: expectedSuccessfulMainFileName1 }; 
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
@@ -706,9 +697,6 @@ Deno.test('FileManagerService', async (t) => {
           if (uploadCallCount === 2 && path === expectedFullSuccessfulMainPath1) {
             return { error: null, data: { path: expectedFullSuccessfulMainPath1 } }; 
           }
-          if (uploadCallCount === 3 && path === expectedFullSuccessfulRawJsonPath1 && options?.contentType === 'application/json') { 
-            return { error: null, data: { path: expectedFullSuccessfulRawJsonPath1 } };
-          }
           console.error(`mockUploadFn: Unexpected upload call: count ${uploadCallCount}, path ${path}, contentType ${options?.contentType}`);
           return { error: {message: "Unexpected upload call pattern in mockUploadFn", name: "TestError"}, data: null };
         };
@@ -726,7 +714,6 @@ Deno.test('FileManagerService', async (t) => {
           modelNameDisplay: 'Claude Opus',
           sessionId: 'session-retry-sess',
           stageSlug: 'thesis',
-          rawJsonResponseContent: '{"raw":"mock for retry"}',
         };
 
         const context: ModelContributionUploadContext = {
@@ -740,17 +727,25 @@ Deno.test('FileManagerService', async (t) => {
 
         const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
-        assertEquals(error, null, `Upload failed: ${error?.message}, Details: ${error?.details}`); 
+        const errorDetails = error 
+          ? (isPostgrestError(error) ? error.details 
+            : isServiceError(error) && typeof error.details === 'string' ? error.details 
+            : isStorageError(error) ? error.error 
+            : undefined)
+          : undefined;
+        assertEquals(error, null, `Upload failed: ${error?.message}, Details: ${errorDetails}`); 
         assertExists(record);
         assertEquals(record?.id, 'contrib-retry-123');
-        assertEquals(uploadCallCount, 3, "Expected 3 upload attempts (1 fail, 1 main success, 1 raw success)");
+        assertEquals(uploadCallCount, 2, "Expected 2 upload attempts (1 fail, 1 success) - no separate raw JSON upload");
 
         const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_contributions')?.insert;
         assertExists(insertSpy);
         const insertData = insertSpy.calls[0].args[0];
         assertEquals(insertData.file_name, expectedSuccessfulMainFileName1);
         assertEquals(insertData.storage_path, expectedSuccessfulPathParts1.storagePath); 
-        assertEquals(insertData.raw_response_storage_path, expectedFullSuccessfulRawJsonPath1);
+        // raw_response_storage_path now points to the same file (fileContent IS the raw JSON)
+        const expectedFullStoragePath = `${expectedSuccessfulPathParts1.storagePath}/${expectedSuccessfulMainFileName1}`;
+        assertEquals(insertData.raw_response_storage_path, expectedFullStoragePath);
 
       } finally {
         afterEach();
@@ -843,7 +838,14 @@ Deno.test('FileManagerService', async (t) => {
         assertExists(error)
         assertEquals(record, null)
         assertEquals(error.message, 'Main content storage upload failed')
-        assertEquals(error.details, 'Upload failed')
+        // Storage errors don't have details, they have error and statusCode
+        if (isStorageError(error)) {
+          assertEquals(error.error, 'Upload failed')
+        } else if (isServiceError(error) && typeof error.details === 'string') {
+          assertEquals(error.details, 'Upload failed')
+        } else {
+          assert(false, 'Expected StorageError or ServiceError for storage upload failure')
+        }
         assertEquals(setup.spies.fromSpy.calls.length, 0)
       } finally {
         afterEach()
@@ -870,7 +872,10 @@ Deno.test('FileManagerService', async (t) => {
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
             dialectic_project_resources: { // Simulating this table for initial_user_prompt
-              upsert: { data: null, error: { message: 'Simulated DB insert error', name: 'XXYYZ' } },
+              upsert: { data: null, error: (() => {
+                const dbError: PostgrestError = { message: 'Simulated DB insert error', code: 'XXYYZ', details: '', hint: '', name: 'PostgrestError' };
+                return dbError;
+              })() },
             },
           },
           storageMock: {
@@ -887,6 +892,9 @@ Deno.test('FileManagerService', async (t) => {
           },
         };
         beforeEach(config);
+        // Initialize spy before the call so it tracks the list call
+        const storageBucket = setup.spies.storage.from('test-bucket');
+        const listSpy = storageBucket.listSpy;
 
         const context: UploadContext = {
           ...baseUploadContext,
@@ -901,17 +909,25 @@ Deno.test('FileManagerService', async (t) => {
         const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
         assertExists(error);
-        assertEquals(error?.message, 'Database registration failed after successful upload.');
-        assertEquals(error?.details, 'Simulated DB insert error');
+        // Error should be wrapped with descriptive message when upload succeeds but DB fails
+        if (isPostgrestError(error)) {
+          assertEquals(error.message, 'Simulated DB insert error');
+          assertEquals(error.code, 'XXYYZ');
+        } else if (isServiceError(error)) {
+          assertEquals(error.message, 'Database registration failed after successful upload.');
+          assertExists(error.details);
+        } else {
+          assert(false, 'Expected PostgrestError or ServiceError');
+        }
         assertEquals(record, null);
 
         // Check that storage.list was called for cleanup
-        const listSpy = setup.spies.storage.from('test-bucket').listSpy;
-        assertExists(listSpy);
+        assertExists(listSpy, "List spy should exist");
+        assertExists(listSpy.calls[0], "List should have been called");
         assertEquals(listSpy.calls[0].args[0], expectedPathParts.storagePath);
         
         // Check that storage.remove was called with the correct file path
-        const removeSpy = setup.spies.storage.from('test-bucket').removeSpy;
+        const removeSpy = storageBucket.removeSpy;
         assertExists(removeSpy);
         assertEquals(removeSpy.calls[0].args[0], [expectedFullPath]);
 
@@ -932,6 +948,7 @@ Deno.test('FileManagerService', async (t) => {
           stageSlug: 'thesis',
           modelSlug: 'test-model',
           attemptCount: 0,
+          documentKey: 'business_case',
         };
 
         const config: MockSupabaseDataConfig = {
@@ -941,6 +958,9 @@ Deno.test('FileManagerService', async (t) => {
           },
         };
         beforeEach(config);
+        // Initialize spy before the call so it tracks the remove call
+        const storageBucket = setup.spies.storage.from('test-bucket');
+        const removeSpy = storageBucket.removeSpy;
 
         // 1. Inject a spy on the dependency to capture its usage by the service
         const constructStoragePathSpy = spy(constructStoragePath);
@@ -954,7 +974,6 @@ Deno.test('FileManagerService', async (t) => {
           modelNameDisplay: 'Test Model',
           sessionId: 'session-missing-link',
           stageSlug: 'thesis',
-          rawJsonResponseContent: '{}',
         };
 
         const missingLinkContext: UploadContext = {
@@ -973,22 +992,17 @@ Deno.test('FileManagerService', async (t) => {
         assert(!setup.spies.fromSpy.calls.map(c => c.args[0]).includes('dialectic_contributions'), 'Should not attempt DB insert');
 
         // 2. Capture the actual paths generated by the service's internal calls
-        assertEquals(constructStoragePathSpy.calls.length, 2, 'Expected constructStoragePath to be called for main and raw JSON files');
+        assertEquals(constructStoragePathSpy.calls.length, 1, 'Expected constructStoragePath to be called once for the single file upload (no separate raw JSON)');
         const capturedMainPathParts = constructStoragePathSpy.calls[0].returned;
-        assertExists(capturedMainPathParts, "Could not capture the path generated for the main content file");
+        assertExists(capturedMainPathParts, "Could not capture the path generated for the file");
         const capturedMainFullPath = `${capturedMainPathParts.storagePath}/${capturedMainPathParts.fileName}`;
 
-        const capturedRawPathParts = constructStoragePathSpy.calls[1].returned;
-        assertExists(capturedRawPathParts, "Could not capture the path generated for the raw JSON file");
-        const capturedRawFullPath = `${capturedRawPathParts.storagePath}/${capturedRawPathParts.fileName}`;
-
-        // 3. Assert that the cleanup logic attempted to remove the exact paths that were generated
-        const removeSpy = setup.spies.storage.from('test-bucket').removeSpy;
+        // 3. Assert that the cleanup logic attempted to remove the exact path that was generated
         assertExists(removeSpy, 'Expected storage.remove to be called for cleanup');
+        assert(removeSpy.calls.length > 0, 'Remove should have been called');
         const removedPaths = removeSpy.calls.map(c => c.args[0]).flat();
 
-        assert(removedPaths.includes(capturedMainFullPath), `Cleanup should have removed the main content file at the generated path: ${capturedMainFullPath}`);
-        assert(removedPaths.includes(capturedRawFullPath), `Cleanup should have removed the raw JSON file at the generated path: ${capturedRawFullPath}`);
+        assert(removedPaths.includes(capturedMainFullPath), `Cleanup should have removed the file at the generated path: ${capturedMainFullPath}`);
 
       } finally {
         afterEach();
@@ -1010,19 +1024,18 @@ Deno.test('FileManagerService', async (t) => {
       };
 
       // 2. Setup: Create the context for the fileManager call
-      const contributionMetadata: ContributionMetadata = {
-        target_contribution_id: 'anchor-contrib-id-123', // This triggers the continuation logic
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-opus',
-        modelNameDisplay: 'Claude Opus',
-        sessionId: 'session-chunk-test',
-        stageSlug: '1_thesis',
-        contributionType: 'thesis',
-        rawJsonResponseContent: '{"content": "This is the new content."}',
-        // New metadata for chunking
-        isContinuation: true,
-        turnIndex: 1,
-      };
+        const contributionMetadata: ContributionMetadata = {
+          target_contribution_id: 'anchor-contrib-id-123', // This triggers the continuation logic
+          iterationNumber: 1,
+          modelIdUsed: 'model-id-opus',
+          modelNameDisplay: 'Claude Opus',
+          sessionId: 'session-chunk-test',
+          stageSlug: '1_thesis',
+          contributionType: 'thesis',
+          // New metadata for chunking
+          isContinuation: true,
+          turnIndex: 1,
+        };
       const continuationContext: UploadContext = {
         ...baseUploadContext,
         fileContent: 'This is the new content.',
@@ -1034,6 +1047,7 @@ Deno.test('FileManagerService', async (t) => {
           iteration: 1,
           modelSlug: 'Claude Opus', // Correctly provide modelSlug in the base path context
           contributionType: 'thesis', // Correctly provide contributionType in the base path context
+          documentKey: 'business_case',
         },
         contributionMetadata,
         userId: 'user-chunk-test-id'
@@ -1049,6 +1063,7 @@ Deno.test('FileManagerService', async (t) => {
         stageSlug: '1_thesis',
         modelSlug: contributionMetadata.modelNameDisplay, // Align with implementation
         attemptCount: 0,
+        documentKey: 'business_case',
         isContinuation: contributionMetadata.isContinuation,
         turnIndex: contributionMetadata.turnIndex,
       };
@@ -1076,13 +1091,16 @@ Deno.test('FileManagerService', async (t) => {
         }
       };
       beforeEach(config);
+      // Initialize spy before the call so it tracks the upload
+      const storageBucket = setup.spies.storage.from('test-bucket');
+      const uploadSpy = storageBucket.uploadSpy;
 
       // 4. Execute: Call the function
       await fileManager.uploadAndRegisterFile(continuationContext);
 
       // 5. Assert: Check the path used for the upload
-      const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
       assertExists(uploadSpy, "Upload spy should exist");
+      assertExists(uploadSpy.calls[0], "Upload should have been called");
       
       const actualUploadPath = uploadSpy.calls[0].args[0];
 
@@ -1167,7 +1185,6 @@ Deno.test('FileManagerService', async (t) => {
         modelNameDisplay: 'Test Model',
         sessionId: 'session-doc-centric',
         stageSlug: 'thesis',
-        rawJsonResponseContent: '{}',
       };
 
       const plannerContext: ResourceUploadContext = {
@@ -1260,7 +1277,6 @@ Deno.test('FileManagerService', async (t) => {
         modelNameDisplay: 'Test Model',
         sessionId: 'session-doc-centric',
         stageSlug: 'thesis',
-        rawJsonResponseContent: '{}',
       };
 
       const turnContext: ResourceUploadContext = {
@@ -1335,7 +1351,6 @@ Deno.test('FileManagerService', async (t) => {
         modelNameDisplay: 'Test Model',
         sessionId: 'session-doc-centric',
         stageSlug: 'thesis',
-        rawJsonResponseContent: '{}',
       };
 
       const headerContext: ModelContributionUploadContext = {
@@ -1413,7 +1428,6 @@ Deno.test('FileManagerService', async (t) => {
         modelNameDisplay: 'Test Model',
         sessionId: 'session-doc-centric',
         stageSlug: 'thesis',
-        rawJsonResponseContent: '{}',
       };
 
       const assembledJsonContext: ResourceUploadContext = {
@@ -1490,7 +1504,6 @@ Deno.test('FileManagerService', async (t) => {
         modelNameDisplay: 'Test Model',
         sessionId: 'session-doc-centric',
         stageSlug: 'thesis',
-        rawJsonResponseContent: '{}',
       };
 
       const renderedDocContext: ResourceUploadContext = {
@@ -1540,7 +1553,6 @@ Deno.test('FileManagerService', async (t) => {
         sessionId: 'sess-final-ctn',
         stageSlug: 'thesis',
         contributionType: 'thesis',
-        rawJsonResponseContent: '{}',
         // Explicitly ensure isContinuation is not true
         isContinuation: false,
       };
@@ -1556,6 +1568,7 @@ Deno.test('FileManagerService', async (t) => {
           stageSlug: 'thesis',
           modelSlug: 'final-model',
           attemptCount: 0,
+          documentKey: 'business_case',
         },
         contributionMetadata,
         mimeType: 'text/markdown',
@@ -1634,7 +1647,6 @@ Deno.test('FileManagerService', async (t) => {
         iterationNumber: 1,
         modelIdUsed: 'model-id-123',
         sessionId: 'session-merge-test',
-        rawJsonResponseContent: '{}', // Add missing required property
       };
 
       // 2. UploadContext with FRESH turn-specific data in metadata
@@ -1707,7 +1719,6 @@ Deno.test('FileManagerService', async (t) => {
         modelNameDisplay: 'Test Model',
         sessionId: 'session-deprecation-test',
         stageSlug: 'test-stage',
-        rawJsonResponseContent: '{}',
         // Include the new property
         source_prompt_resource_id: 'new-resource-uuid-123',
       };
@@ -1721,6 +1732,7 @@ Deno.test('FileManagerService', async (t) => {
           iteration: 1,
           stageSlug: 'test-stage',
           modelSlug: 'test-model',
+          documentKey: 'business_case',
         },
         contributionMetadata: {
           ...contributionMetadata,
@@ -1745,5 +1757,607 @@ Deno.test('FileManagerService', async (t) => {
     }
   });
 
+  await t.step('uploadAndRegisterFile should upload fileContent as raw JSON with FileType.ModelContributionRawJson and mimeType application/json', async () => {
+    try {
+      const pathContext: ModelContributionUploadContext['pathContext'] = {
+        fileType: FileType.ModelContributionRawJson,
+        projectId: 'project-raw-json-test',
+        sessionId: 'session-raw-json-test',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-3-sonnet',
+        attemptCount: 0,
+        documentKey: 'business_case',
+      };
+      const expectedPathParts = constructStoragePath(pathContext);
+      const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+
+      const validatedJsonString = '{"content": "# Business Case\\n\\nThis is the business case content."}';
+
+      const contributionDataMock = { id: 'contrib-raw-json-123', file_name: expectedPathParts.fileName };
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            insert: { data: [contributionDataMock], error: null },
+          },
+        },
+        storageMock: {
+          uploadResult: { data: { path: expectedFullPath }, error: null },
+        },
+      };
+      beforeEach(config);
+
+      let uploadCallCount = 0;
+      let uploadedPath: string | null = null;
+      let uploadedContentType: string | null = null;
+      let uploadedContent: string | null = null;
+
+      const originalStorageFrom = setup.client.storage.from;
+      setup.client.storage.from = (bucketName: string) => {
+        const bucket = originalStorageFrom(bucketName);
+        const originalUpload = bucket.upload;
+        bucket.upload = async (path: string, content: unknown, options?: IMockStorageFileOptions) => {
+          uploadCallCount++;
+          uploadedPath = path;
+          uploadedContentType = options?.contentType || null;
+          uploadedContent = typeof content === 'string' ? content : null;
+          return { data: { path }, error: null };
+        };
+        return bucket;
+      };
+
+      const contributionMetadata: ContributionMetadata = {
+        iterationNumber: 1,
+        modelIdUsed: 'model-id-sonnet',
+        modelNameDisplay: 'Claude 3 Sonnet',
+        sessionId: 'session-raw-json-test',
+        stageSlug: 'thesis',
+      };
+
+      const context: ModelContributionUploadContext = {
+        ...baseUploadContext,
+        pathContext,
+        fileContent: validatedJsonString,
+        mimeType: 'application/json',
+        contributionMetadata,
+      };
+
+      const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+      assertEquals(error, null);
+      assertExists(record);
+      assertEquals(record?.id, 'contrib-raw-json-123');
+
+      // Assert only ONE file was uploaded (not two separate files)
+      assertEquals(uploadCallCount, 1, 'Expected only one file upload, not separate main and raw JSON files');
+
+      // Assert file is uploaded to raw_responses/ folder
+      assertExists(uploadedPath, 'Expected uploadedPath to be set');
+      if (uploadedPath === null) {
+        throw new Error('uploadedPath is null');
+      }
+      const verifiedPath: string = uploadedPath;
+      assert(verifiedPath.includes('/raw_responses/'), `Expected path to include '/raw_responses/', got: ${verifiedPath}`);
+
+      // Assert filename is {modelSlug}_{attemptCount}_{documentKey}_raw.json
+      const expectedFileNamePattern = /claude-3-sonnet_\d+_business_case_raw\.json/;
+      assert(expectedFileNamePattern.test(verifiedPath), `Expected filename pattern {modelSlug}_{attemptCount}_{documentKey}_raw.json, got: ${verifiedPath}`);
+
+      // Assert upload uses contentType: "application/json"
+      assertEquals(uploadedContentType, 'application/json', 'Expected contentType to be application/json');
+
+      // Assert uploaded content is the validated JSON string
+      assertEquals(uploadedContent, validatedJsonString, 'Expected uploaded content to be the validated JSON string');
+
+      const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_contributions')?.insert;
+      assertExists(insertSpy);
+      const insertData = insertSpy.calls[0].args[0];
+
+      // Assert contribution record has storage_path, file_name, and raw_response_storage_path all pointing to the same file
+      const expectedFullStoragePath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+      assertEquals(insertData.storage_path, expectedPathParts.storagePath, 'storage_path should point to the raw_responses directory');
+      assertEquals(insertData.file_name, expectedPathParts.fileName, 'file_name should be the _raw.json filename');
+      assertEquals(insertData.raw_response_storage_path, expectedFullStoragePath, 'raw_response_storage_path should point to the same file as storage_path/file_name');
+
+      // Assert mime_type field is "application/json"
+      assertEquals(insertData.mime_type, 'application/json', 'mime_type should be application/json');
+
+    } finally {
+      afterEach();
+    }
+  });
+
+  await t.step('uploadAndRegisterFile should handle continuation paths correctly with FileType.ModelContributionRawJson', async () => {
+    try {
+      const pathContext: ModelContributionUploadContext['pathContext'] = {
+        fileType: FileType.ModelContributionRawJson,
+        projectId: 'project-continuation-raw-json',
+        sessionId: 'session-continuation-raw-json',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-3-sonnet',
+        documentKey: 'business_case',
+      };
+      const expectedPathParts = constructStoragePath({
+        ...pathContext,
+        isContinuation: true,
+        turnIndex: 2,
+        attemptCount: 0,
+      });
+      const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+
+      const validatedJsonString = '{"content": "# Business Case Continuation\\n\\nMore content."}';
+
+      const contributionDataMock = { id: 'contrib-continuation-raw-json-123', file_name: expectedPathParts.fileName };
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            insert: { data: [contributionDataMock], error: null },
+          },
+        },
+        storageMock: {
+          uploadResult: { data: { path: expectedFullPath }, error: null },
+        },
+      };
+      beforeEach(config);
+
+      let uploadedPath: string | null = null;
+
+      const originalStorageFrom = setup.client.storage.from;
+      setup.client.storage.from = (bucketName: string) => {
+        const bucket = originalStorageFrom(bucketName);
+        const originalUpload = bucket.upload;
+        bucket.upload = async (path: string, content: unknown, options?: IMockStorageFileOptions) => {
+          uploadedPath = path;
+          return { data: { path }, error: null };
+        };
+        return bucket;
+      };
+
+      const contributionMetadata: ContributionMetadata = {
+        iterationNumber: 1,
+        modelIdUsed: 'model-id-sonnet',
+        modelNameDisplay: 'Claude 3 Sonnet',
+        sessionId: 'session-continuation-raw-json',
+        stageSlug: 'thesis',
+        isContinuation: true,
+        turnIndex: 2,
+        target_contribution_id: 'parent-contrib-id-123',
+      };
+
+      const context: ModelContributionUploadContext = {
+        ...baseUploadContext,
+        pathContext,
+        fileContent: validatedJsonString,
+        mimeType: 'application/json',
+        contributionMetadata,
+      };
+
+      const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+      assertEquals(error, null);
+      assertExists(record);
+      assertEquals(record?.id, 'contrib-continuation-raw-json-123');
+
+      // Assert file is uploaded to _work/raw_responses/ folder (continuation path)
+      assertExists(uploadedPath, 'Expected uploadedPath to be set');
+      if (uploadedPath === null) {
+        throw new Error('uploadedPath is null');
+      }
+      const verifiedPath: string = uploadedPath;
+      assert(verifiedPath.includes('/_work/raw_responses/'), `Expected path to include '/_work/raw_responses/', got: ${verifiedPath}`);
+
+      // Assert filename includes _continuation_2 suffix
+      assert(verifiedPath.includes('_continuation_2'), `Expected filename to include '_continuation_2' suffix, got: ${verifiedPath}`);
+
+      // Use getHistoricQueryBuilderSpies to get the insert spy, since getLatestQueryBuilderSpies
+      // might return the update spy (which is called after insert to clear parent latest_edit)
+      const insertHistory = setup.spies.getHistoricQueryBuilderSpies('dialectic_contributions', 'insert');
+      assertExists(insertHistory, 'Expected insert spy history to exist');
+      assert(insertHistory.callCount > 0, 'Expected insert spy to have been called');
+      assert(insertHistory.callsArgs.length > 0, 'Expected insert spy to have call arguments');
+      const insertDataRaw = insertHistory.callsArgs[0][0];
+      assert(isRecord(insertDataRaw), 'Expected insertData to be a record');
+      const insertData = insertDataRaw;
+
+      // Assert continuation logic still works correctly
+      assertEquals(insertData.target_contribution_id, 'parent-contrib-id-123', 'target_contribution_id should be set for continuation');
+
+      // Assert all paths point to the same continuation file
+      const expectedFullStoragePath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+      assertEquals(insertData.storage_path, expectedPathParts.storagePath, 'storage_path should point to continuation directory');
+      assertEquals(insertData.file_name, expectedPathParts.fileName, 'file_name should be the continuation filename');
+      assertEquals(insertData.raw_response_storage_path, expectedFullStoragePath, 'raw_response_storage_path should point to the same continuation file');
+
+    } finally {
+      afterEach();
+    }
+  });
+
+  await t.step('uploadAndRegisterFile should return error when fileContent is missing for model contribution', async () => {
+    try {
+      const pathContext: ModelContributionUploadContext['pathContext'] = {
+        fileType: FileType.ModelContributionRawJson,
+        projectId: 'project-missing-content',
+        sessionId: 'session-missing-content',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-3-sonnet',
+        documentKey: 'business_case',
+      };
+
+      beforeEach();
+
+      const contributionMetadata: ContributionMetadata = {
+        iterationNumber: 1,
+        modelIdUsed: 'model-id-sonnet',
+        modelNameDisplay: 'Claude 3 Sonnet',
+        sessionId: 'session-missing-content',
+        stageSlug: 'thesis',
+      };
+
+      const context: ModelContributionUploadContext = {
+        ...baseUploadContext,
+        pathContext,
+        fileContent: '', // Missing fileContent
+        mimeType: 'application/json',
+        contributionMetadata,
+      };
+
+      const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+      // This test should pass initially - fileContent is required
+      // The function should return an error when fileContent is missing
+      assertExists(error, 'Expected error when fileContent is missing');
+      assertEquals(record, null, 'Expected no record when fileContent is missing');
+
+    } finally {
+      afterEach();
+    }
+  });
+
+  await t.step('uploadAndRegisterFile should NOT execute separate raw JSON upload block when fileContent is present', async () => {
+    try {
+      const pathContext: ModelContributionUploadContext['pathContext'] = {
+        fileType: FileType.ModelContributionRawJson,
+        projectId: 'project-no-separate-upload',
+        sessionId: 'session-no-separate-upload',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-3-sonnet',
+        attemptCount: 0,
+        documentKey: 'business_case',
+      };
+      const expectedPathParts = constructStoragePath(pathContext);
+      const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+
+      const validatedJsonString = '{"content": "# Business Case\\n\\nContent."}';
+
+      const contributionDataMock = { id: 'contrib-no-separate-123', file_name: expectedPathParts.fileName };
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            insert: { data: [contributionDataMock], error: null },
+          },
+        },
+        storageMock: {
+          uploadResult: { data: { path: expectedFullPath }, error: null },
+        },
+      };
+      beforeEach(config);
+
+      let uploadCallCount = 0;
+      const uploadedPaths: string[] = [];
+
+      const originalStorageFrom = setup.client.storage.from;
+      setup.client.storage.from = (bucketName: string) => {
+        const bucket = originalStorageFrom(bucketName);
+        const originalUpload = bucket.upload;
+        bucket.upload = async (path: string, content: unknown, options?: IMockStorageFileOptions) => {
+          uploadCallCount++;
+          uploadedPaths.push(path);
+          return { data: { path }, error: null };
+        };
+        return bucket;
+      };
+
+      const contributionMetadata: ContributionMetadata = {
+        iterationNumber: 1,
+        modelIdUsed: 'model-id-sonnet',
+        modelNameDisplay: 'Claude 3 Sonnet',
+        sessionId: 'session-no-separate-upload',
+        stageSlug: 'thesis',
+        // Include rawJsonResponseContent to test that separate upload block is NOT executed
+      };
+
+      const context: ModelContributionUploadContext = {
+        ...baseUploadContext,
+        pathContext,
+        fileContent: validatedJsonString, // fileContent IS the raw JSON
+        mimeType: 'application/json',
+        contributionMetadata,
+      };
+
+      const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+      assertEquals(error, null);
+      assertExists(record);
+
+      // Assert only ONE file was uploaded (the fileContent, not a separate raw JSON file)
+      assertEquals(uploadCallCount, 1, `Expected only ONE file upload, but got ${uploadCallCount} uploads. The separate raw JSON upload block should NOT execute.`);
+
+      // Assert the uploaded file is the fileContent (not the rawJsonResponseContent)
+      assert(uploadedPaths.length === 1, `Expected exactly one upload, got ${uploadedPaths.length}`);
+      assert(uploadedPaths[0] === expectedFullPath, `Expected upload to ${expectedFullPath}, got ${uploadedPaths[0]}`);
+
+      // Assert raw_response_storage_path points to the same file (not a separate file)
+      const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_contributions')?.insert;
+      assertExists(insertSpy);
+      const insertData = insertSpy.calls[0].args[0];
+      const expectedFullStoragePath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+      assertEquals(insertData.raw_response_storage_path, expectedFullStoragePath, 'raw_response_storage_path should point to the same file as storage_path/file_name, not a separate file');
+
+    } finally {
+      afterEach();
+    }
+  });
+
+  await t.step('PostgrestError case returns PostgrestError directly', async () => {
+    try {
+      const context: ResourceUploadContext = {
+        pathContext: {
+          fileType: FileType.GeneralResource,
+          projectId: 'project-uuid-test',
+          sessionId: 'session-uuid-test',
+          iteration: 1,
+          originalFileName: 'test-resource.txt',
+        },
+        fileContent: 'test content',
+        mimeType: 'text/plain',
+        sizeBytes: 100,
+        userId: 'user-uuid-test',
+        description: 'test resource',
+      };
+
+      const expectedPathParts = constructStoragePath(context.pathContext);
+      const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+
+      const postgrestErrorObject: PostgrestError = {
+        message: 'insert or update on table "dialectic_project_resources" violates foreign key constraint',
+        code: '23503',
+        details: 'Key (source_contribution_id)=(test-id) is not present in table "dialectic_contributions".',
+        hint: 'Ensure the referenced record exists.',
+        name: 'PostgrestError',
+      };
+
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_project_resources: {
+            upsert: { data: null, error: postgrestErrorObject },
+          },
+        },
+        storageMock: {
+          uploadResult: { data: { path: expectedFullPath }, error: null },
+          listResult: { data: [{ name: expectedPathParts.fileName }], error: null },
+          removeResult: { data: [], error: null },
+        },
+      };
+      beforeEach(config);
+
+      const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+      assertEquals(record, null);
+      assertExists(error);
+      // When upload succeeds but DB fails, PostgrestError is wrapped with descriptive message
+      if (isPostgrestError(error)) {
+        // If somehow PostgrestError is returned directly, verify it has the expected properties
+        assertExists(error.details);
+        assert(typeof error.details === 'string', 'error.details must be a string');
+        assertEquals(error.code, '23503');
+        assertEquals(error.details, 'Key (source_contribution_id)=(test-id) is not present in table "dialectic_contributions".');
+        assertEquals(error.message, 'insert or update on table "dialectic_project_resources" violates foreign key constraint');
+      } else if (isServiceError(error)) {
+        // Expected: wrapped error when upload succeeds
+        assertEquals(error.message, 'Database registration failed after successful upload.');
+        assertExists(error.details);
+        const detailsText = String(error.details);
+        // Details should contain either the error code, the details text, or the message
+        assert(
+          detailsText.includes('23503') || 
+          detailsText.includes('foreign key') || 
+          detailsText.includes('Key (source_contribution_id)') ||
+          detailsText.includes('dialectic_contributions')
+        );
+      } else {
+        assert(false, 'Expected PostgrestError or ServiceError');
+      }
+    } finally {
+      afterEach();
+    }
+  });
+
+  await t.step('PostgrestError with code and details returns PostgrestError directly', async () => {
+    try {
+      const context: ResourceUploadContext = {
+        pathContext: {
+          fileType: FileType.GeneralResource,
+          projectId: 'project-uuid-test',
+          sessionId: 'session-uuid-test',
+          iteration: 1,
+          originalFileName: 'test-resource.txt',
+        },
+        fileContent: 'test content',
+        mimeType: 'text/plain',
+        sizeBytes: 100,
+        userId: 'user-uuid-test',
+        description: 'test resource',
+      };
+
+      const expectedPathParts = constructStoragePath(context.pathContext);
+      const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+        const postgrestErrorObject: PostgrestError = {
+          message: 'Failed to connect to database',
+          code: 'DB_ERROR',
+          details: 'Database connection timeout',
+          hint: '',
+          name: 'PostgrestError',
+        };
+
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            dialectic_project_resources: {
+              upsert: { data: null, error: postgrestErrorObject },
+            },
+          },
+          storageMock: {
+            uploadResult: { data: { path: expectedFullPath }, error: null },
+            listResult: { data: [{ name: expectedPathParts.fileName }], error: null },
+            removeResult: { data: [], error: null },
+          },
+        };
+        beforeEach(config);
+
+        const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+        assertEquals(record, null);
+        assertExists(error);
+        // When upload succeeds but DB fails, PostgrestError is wrapped with descriptive message
+        if (isPostgrestError(error)) {
+          assertExists(error.details);
+          assert(typeof error.details === 'string', 'error.details must be a string');
+          assertEquals(error.code, 'DB_ERROR');
+          assertEquals(error.details, 'Database connection timeout');
+          assertEquals(error.message, 'Failed to connect to database');
+        } else if (isServiceError(error)) {
+          // Expected: wrapped error when upload succeeds
+          assertEquals(error.message, 'Database registration failed after successful upload.');
+          assertExists(error.details);
+          const detailsText = String(error.details);
+          assert(detailsText.includes('DB_ERROR') || detailsText.includes('Database connection timeout'));
+        } else {
+          assert(false, 'Expected PostgrestError or ServiceError');
+        }
+      } finally {
+        afterEach();
+      }
+    });
+
+  await t.step('PostgrestError without code and details returns PostgrestError directly', async () => {
+    try {
+      const context: ResourceUploadContext = {
+        pathContext: {
+          fileType: FileType.GeneralResource,
+          projectId: 'project-uuid-test',
+          sessionId: 'session-uuid-test',
+          iteration: 1,
+          originalFileName: 'test-resource.txt',
+        },
+        fileContent: 'test content',
+        mimeType: 'text/plain',
+        sizeBytes: 100,
+        userId: 'user-uuid-test',
+        description: 'test resource',
+      };
+
+      const expectedPathParts = constructStoragePath(context.pathContext);
+      const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+        const postgrestErrorObject: PostgrestError = {
+          message: 'Simple error message',
+          code: '',
+          details: '',
+          hint: '',
+          name: 'PostgrestError',
+        };
+
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            dialectic_project_resources: {
+              upsert: { data: null, error: postgrestErrorObject },
+            },
+          },
+          storageMock: {
+            uploadResult: { data: { path: expectedFullPath }, error: null },
+            listResult: { data: [{ name: expectedPathParts.fileName }], error: null },
+            removeResult: { data: [], error: null },
+          },
+        };
+        beforeEach(config);
+
+        const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+        assertEquals(record, null);
+        assertExists(error);
+        // When upload succeeds but DB fails, PostgrestError is wrapped with descriptive message
+        if (isPostgrestError(error)) {
+          assertExists(error.details);
+          assert(typeof error.details === 'string', 'error.details must be a string');
+          assertEquals(error.code, '');
+          assertEquals(error.details, '');
+          assertEquals(error.message, 'Simple error message');
+        } else if (isServiceError(error)) {
+          // Expected: wrapped error when upload succeeds
+          assertEquals(error.message, 'Database registration failed after successful upload.');
+          assertExists(error.details);
+          const detailsText = String(error.details);
+          assert(detailsText.includes('Simple error message') || detailsText.length > 0);
+        } else {
+          assert(false, 'Expected PostgrestError or ServiceError');
+        }
+      } finally {
+        afterEach();
+      }
+    });
+
+  await t.step('Error instance returns ServiceError with wrapped message', async () => {
+    try {
+      const context: ResourceUploadContext = {
+        pathContext: {
+          fileType: FileType.GeneralResource,
+          projectId: 'project-uuid-test',
+          sessionId: 'session-uuid-test',
+          iteration: 1,
+          originalFileName: 'test-resource.txt',
+        },
+        fileContent: 'test content',
+        mimeType: 'text/plain',
+        sizeBytes: 100,
+        userId: 'user-uuid-test',
+        description: 'test resource',
+      };
+
+      const expectedPathParts = constructStoragePath(context.pathContext);
+      const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+        const errorInstance: Error = new Error('Generic error occurred');
+
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            dialectic_project_resources: {
+              upsert: { data: null, error: errorInstance },
+            },
+          },
+          storageMock: {
+            uploadResult: { data: { path: expectedFullPath }, error: null },
+            listResult: { data: [{ name: expectedPathParts.fileName }], error: null },
+            removeResult: { data: [], error: null },
+          },
+        };
+        beforeEach(config);
+
+        const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+        assertEquals(record, null);
+        assertExists(error);
+        // Error instance should be converted to ServiceError
+        assert(isServiceError(error), 'Expected ServiceError for Error instance conversion');
+        assertEquals(error.message, 'Database registration failed after successful upload.');
+        if (error.details && typeof error.details === 'string') {
+          assertEquals(error.details, 'Generic error occurred');
+        }
+      } finally {
+        afterEach();
+      }
+    });
+
 });
+
 

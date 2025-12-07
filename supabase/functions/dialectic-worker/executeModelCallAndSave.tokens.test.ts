@@ -678,22 +678,29 @@ Deno.test('should use source documents for token estimation before prompt assemb
         'ai_providers': {
             select: { data: [{ ...mockFullProviderData, config: limitedConfig }], error: null }
         },
-        // Executor now gathers its own documents; seed a large matching contribution
-        'dialectic_contributions': {
-            select: { data: [
-                {
-                    id: 'doc-oversize',
-                    content: 'X'.repeat(2000),
-                    stage: 'test-stage',
-                    document_key: FileType.business_case,
-                    created_at: new Date().toISOString(),
-                    // Use document-centric path so the parser can extract stage + documentKey
-                    storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
-                    file_name: 'modelA_1_business_case.md',
-                }
-            ], error: null }
+        // Executor now gathers its own documents; seed a large matching rendered document in resources
+        'dialectic_project_resources': {
+            select: () => {
+                return Promise.resolve({
+                    data: [
+                        {
+                            id: 'doc-oversize',
+                            content: 'X'.repeat(2000),
+                            stage_slug: 'test-stage',
+                            project_id: 'project-abc',
+                            session_id: 'session-456',
+                            iteration_number: 1,
+                            resource_type: 'rendered_document',
+                            created_at: new Date().toISOString(),
+                            // Use document-centric path so the parser can extract stage + documentKey
+                            storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+                            file_name: 'modelA_1_business_case.md',
+                        }
+                    ],
+                    error: null
+                });
+            }
         },
-        'dialectic_project_resources': { select: { data: [], error: null } },
         'dialectic_feedback': { select: { data: [], error: null } },
     });
 

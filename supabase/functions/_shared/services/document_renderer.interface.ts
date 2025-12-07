@@ -13,6 +13,7 @@ export type ContributionRowMinimal = {
     storage_bucket: string;
     storage_path: string;
     file_name: string;
+    raw_response_storage_path: string | null;
     mime_type: string;
     document_relationships: Record<string, string>;
     created_at: string;

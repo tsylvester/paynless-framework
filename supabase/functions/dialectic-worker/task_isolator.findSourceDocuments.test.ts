@@ -15,6 +15,7 @@ import {
     DialecticPlanJobPayload,
     DialecticContributionRow,
     DialecticProjectResourceRow,
+    DialecticFeedbackRow,
     InputRule,
 } from '../dialectic-service/dialectic.interface.ts';
 import { findSourceDocuments } from './task_isolator.ts';
@@ -189,7 +190,6 @@ describe('findSourceDocuments', () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
             rule,
-            mockDownloadFromStorage
         );
 
         assertEquals(documents.length, 1);
@@ -342,99 +342,53 @@ describe('findSourceDocuments', () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
             rule,
-            mockDownloadFromStorage
         );
 
         assertEquals(documents.length, 1);
         assertEquals(documents[0].id, 'header-context-contribution-id');
     });
 
-    it("successfully returns a document from contributions using the 'slug' property", async () => {
+    it("successfully returns a document from resources using the 'slug' property", async () => {
         const rule: InputRule[] = [{ type: 'document', slug: 'thesis' }];
-        const mockThesisDocument: DialecticContributionRow = {
+        const mockThesisResource: DialecticProjectResourceRow = {
             id: 'doc-1-thesis',
-            session_id: 'sess-1',
+            project_id: 'proj-1',
             user_id: 'user-123',
-            stage: 'thesis',
-            iteration_number: 1,
-            model_id: 'model-1',
-            model_name: 'Test Model',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            contribution_type: 'thesis',
             file_name: 'doc1.txt',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
-            size_bytes: 123,
+            storage_path: 'projects/proj-1/resources',
             mime_type: 'text/plain',
-            document_relationships: null,
-            is_header: false,
-            source_prompt_resource_id: null,
-        };
-
-        type SelectResult = {
-            data: object[] | null;
-            error: Error | null;
-            count: number | null;
-            status: number;
-            statusText: string;
-        };
-
-        const dialecticContributionsSelect = async (
-            state: MockQueryBuilderState,
-        ): Promise<SelectResult> => {
-            const hasStageFilter = state.filters.some(
-                (filter) =>
-                    filter.type === 'eq' &&
-                    filter.column === 'stage' &&
-                    filter.value === 'thesis',
-            );
-
-            if (!hasStageFilter) {
-                return {
-                    data: null,
-                    error: new Error('document test must filter by rule.slug'),
-                    count: 0,
-                    status: 500,
-                    statusText: 'Intentional Failure',
-                };
-            }
-
-            const resultData: object[] = [mockThesisDocument];
-            return {
-                data: resultData,
-                error: null,
-                count: 1,
-                status: 200,
-                statusText: 'OK',
-            };
+            size_bytes: 123,
+            resource_description: { type: 'document', document_key: 'thesis' },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'thesis',
         };
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
-                dialectic_contributions: {
-                    select: dialecticContributionsSelect,
-                },
                 dialectic_project_resources: {
                     select: () =>
                         Promise.resolve({
-                            data: [],
+                            data: [mockThesisResource],
                             error: null,
-                            count: 0,
+                            count: 1,
                             status: 200,
                             statusText: 'OK',
+                        }),
+                },
+                dialectic_contributions: {
+                    select: () =>
+                        Promise.resolve({
+                            data: null,
+                            error: new Error('contributions should not be queried when resources are found'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
                         }),
                 },
             },
@@ -444,111 +398,20 @@ describe('findSourceDocuments', () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
             rule,
-            mockDownloadFromStorage
         );
 
         assertEquals(documents.length, 1);
         assertEquals(documents[0].id, 'doc-1-thesis');
     });
-    it('falls back to contributions when resource document_key does not match', async () => {
+    it('throws error when resource document_key does not match and no matching resource exists', async () => {
         const rule: InputRule[] = [{
             type: 'document',
             slug: 'thesis',
             document_key: FileType.technical_approach,
         }];
 
-        const mockThesisDocument: DialecticContributionRow = {
-            id: 'doc-1-thesis',
-            session_id: 'sess-1',
-            user_id: 'user-123',
-            stage: 'thesis',
-            iteration_number: 1,
-            model_id: 'model-1',
-            model_name: 'Test Model',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            contribution_type: 'thesis',
-            file_name: 'sess-1_thesis_technical_approach_v1.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
-            size_bytes: 123,
-            mime_type: 'text/plain',
-            document_relationships: null,
-            is_header: false,
-            source_prompt_resource_id: null,
-        };
-
-        type SelectResult = {
-            data: object[] | null;
-            error: Error | null;
-            count: number | null;
-            status: number;
-            statusText: string;
-        };
-
-        const dialecticContributionsSelect = async (
-            state: MockQueryBuilderState,
-        ): Promise<SelectResult> => {
-            const hasWildcardIdComparison = state.filters.some(
-                (filter) =>
-                    filter.type === 'eq' &&
-                    filter.column === 'id' &&
-                    filter.value === FileType.technical_approach,
-            );
-
-            if (hasWildcardIdComparison) {
-                return {
-                    data: null,
-                    error: new Error('document queries must not compare id to FileType-based wildcard values'),
-                    count: 0,
-                    status: 500,
-                    statusText: 'Intentional Failure',
-                };
-            }
-
-            const hasStageFilter = state.filters.some(
-                (filter) =>
-                    filter.type === 'eq' &&
-                    filter.column === 'stage' &&
-                    filter.value === 'thesis',
-            );
-
-            if (!hasStageFilter) {
-                return {
-                    data: null,
-                    error: new Error('document queries must include the stage filter'),
-                    count: 0,
-                    status: 500,
-                    statusText: 'Intentional Failure',
-                };
-            }
-
-            return {
-                data: [mockThesisDocument],
-                error: null,
-                count: 1,
-                status: 200,
-                statusText: 'OK',
-            };
-        };
-
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
-                dialectic_contributions: {
-                    select: dialecticContributionsSelect,
-                },
                 dialectic_project_resources: {
                     select: () =>
                         Promise.resolve({
@@ -559,18 +422,31 @@ describe('findSourceDocuments', () => {
                             statusText: 'OK',
                         }),
                 },
+                dialectic_contributions: {
+                    select: () =>
+                        Promise.resolve({
+                            data: null,
+                            error: new Error('contributions should not be queried when resources are missing'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
+                        }),
+                },
             },
         });
 
-        const documents = await findSourceDocuments(
-            mockSupabase.client as unknown as SupabaseClient<Database>,
-            mockParentJob,
-            rule,
-            mockDownloadFromStorage,
+        await assertRejects(
+            async () => {
+                await findSourceDocuments(
+                    mockSupabase.client as unknown as SupabaseClient<Database>,
+                    mockParentJob,
+                    rule,
+                );
+            },
+            Error,
+            'Required rendered document',
+            'should throw error when no matching resource exists',
         );
-
-        assertEquals(documents.length, 1);
-        assertEquals(documents[0].id, 'doc-1-thesis');
     });
 
     it('returns a document when document_key is provided without comparing it to a FileType wildcard', async () => {
@@ -581,55 +457,22 @@ describe('findSourceDocuments', () => {
         }];
 
         const resourceRow: DialecticProjectResourceRow = {
-            id: 'resource-wrong-key',
+            id: 'resource-technical-approach',
             project_id: 'proj-1',
             user_id: 'user-123',
-            file_name: 'sess-1_thesis_business_case.md',
+            file_name: 'sess-1_thesis_technical_approach_v1.md',
             storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/resources',
             mime_type: 'text/markdown',
             size_bytes: 4096,
-            resource_description: { type: 'document', document_key: FileType.business_case },
+            resource_description: { type: 'document', document_key: FileType.technical_approach },
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            iteration_number: null,
-            resource_type: 'document',
+            iteration_number: 1,
+            resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
             stage_slug: 'thesis',
-        };
-
-        const contributionRow: DialecticContributionRow = {
-            id: 'doc-technical-approach',
-            session_id: 'sess-1',
-            user_id: 'user-123',
-            stage: 'thesis',
-            iteration_number: 1,
-            model_id: 'model-1',
-            model_name: 'Test Model',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            contribution_type: 'thesis',
-            file_name: 'sess-1_thesis_technical_approach_v1.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
-            size_bytes: 123,
-            mime_type: 'text/plain',
-            document_relationships: null,
-            is_header: false,
-            source_prompt_resource_id: null,
         };
 
         mockSupabase = createMockSupabaseClient(undefined, {
@@ -645,27 +488,14 @@ describe('findSourceDocuments', () => {
                         }),
                 },
                 dialectic_contributions: {
-                    select: (state: MockQueryBuilderState) => {
-                        const hasStage = state.filters.some(
-                            (filter) => filter.type === 'eq' && filter.column === 'stage' && filter.value === 'thesis',
-                        );
-                        if (!hasStage) {
-                            return Promise.resolve({
-                                data: null,
-                                error: new Error('stage filter is required'),
-                                count: 0,
-                                status: 500,
-                                statusText: 'Missing filter',
-                            });
-                        }
-                        return Promise.resolve({
-                            data: [contributionRow],
-                            error: null,
-                            count: 1,
-                            status: 200,
-                            statusText: 'OK',
-                        });
-                    },
+                    select: () =>
+                        Promise.resolve({
+                            data: null,
+                            error: new Error('contributions should not be queried when resources are found'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
+                        }),
                 },
             },
         });
@@ -674,25 +504,24 @@ describe('findSourceDocuments', () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
             rule,
-            mockDownloadFromStorage,
         );
 
         assertEquals(documents.length, 1);
-        assertEquals(documents[0].id, 'doc-technical-approach');
+        assertEquals(documents[0].id, 'resource-technical-approach');
     });
 
     // NOTE: These coverage tests reflect the temporary JSON-path filtering. See Contract_Column_Use.md for the column fix plan.
-    it('returns the newest contribution when the matching project resource was already used by an earlier rule', async () => {
+    it('returns the same resource when multiple rules require the same document_key', async () => {
         const rules: InputRule[] = [
             { type: 'document', slug: 'test-stage', document_key: FileType.success_metrics },
             { type: 'document', slug: 'test-stage', document_key: FileType.success_metrics },
         ];
 
-        const projectResource: DialecticProjectResourceRow = {
-            id: 'resource-success-metrics',
+        const projectResource1: DialecticProjectResourceRow = {
+            id: 'resource-success-metrics-1',
             project_id: 'proj-1',
             user_id: 'user-123',
-            file_name: 'sess-1_thesis_success_metrics.md',
+            file_name: 'sess-1_thesis_success_metrics_v1.md',
             storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/resources',
             mime_type: 'text/markdown',
@@ -700,44 +529,30 @@ describe('findSourceDocuments', () => {
             resource_description: { type: 'document', document_key: FileType.success_metrics },
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            iteration_number: null,
-            resource_type: 'document',
+            iteration_number: 1,
+            resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
             stage_slug: 'test-stage',
         };
 
-        const fallbackContribution: DialecticContributionRow = {
-            id: 'contribution-success-metrics',
-            session_id: 'sess-1',
+        const projectResource2: DialecticProjectResourceRow = {
+            id: 'resource-success-metrics-2',
+            project_id: 'proj-1',
             user_id: 'user-123',
-            stage: 'test-stage',
-            iteration_number: 1,
-            model_id: 'model-2',
-            model_name: 'Fallback Model',
-            prompt_template_id_used: 'prompt-2',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 123,
-            tokens_used_output: 321,
-            processing_time_ms: 250,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            contribution_type: 'thesis',
-            file_name: 'sess-1_thesis_success_metrics_from_contribution.md',
+            file_name: 'sess-1_thesis_success_metrics_v2.md',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
-            size_bytes: 2048,
+            storage_path: 'projects/proj-1/resources',
             mime_type: 'text/markdown',
-            document_relationships: null,
-            is_header: false,
-            source_prompt_resource_id: null,
+            size_bytes: 5121,
+            resource_description: { type: 'document', document_key: FileType.success_metrics },
+            created_at: new Date(Date.now() + 1000).toISOString(),
+            updated_at: new Date(Date.now() + 1000).toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
         };
 
         mockSupabase = createMockSupabaseClient(undefined, {
@@ -745,46 +560,22 @@ describe('findSourceDocuments', () => {
                 dialectic_project_resources: {
                     select: () =>
                         Promise.resolve({
-                            data: [projectResource],
+                            data: [projectResource1, projectResource2],
                             error: null,
-                            count: 1,
+                            count: 2,
                             status: 200,
                             statusText: 'OK',
                         }),
                 },
                 dialectic_contributions: {
-                    select: (state: MockQueryBuilderState) => {
-                        const hasSessionFilter = state.filters.some(
-                            (filter) => filter.type === 'eq' && filter.column === 'session_id' && filter.value === 'sess-1',
-                        );
-                        const hasIterationFilter = state.filters.some(
-                            (filter) => filter.type === 'eq' && filter.column === 'iteration_number' && filter.value === 1,
-                        );
-                        const hasLatestEditFilter = state.filters.some(
-                            (filter) => filter.type === 'eq' && filter.column === 'is_latest_edit' && filter.value === true,
-                        );
-                        const hasStageFilter = state.filters.some(
-                            (filter) => filter.type === 'eq' && filter.column === 'stage' && filter.value === 'test-stage',
-                        );
-
-                        if (!hasSessionFilter || !hasIterationFilter || !hasLatestEditFilter || !hasStageFilter) {
-                            return Promise.resolve({
-                                data: null,
-                                error: new Error('document fallback must filter by session, iteration, latest edit, and stage'),
-                                count: 0,
-                                status: 400,
-                                statusText: 'Missing filters',
-                            });
-                        }
-
-                        return Promise.resolve({
-                            data: [fallbackContribution],
-                            error: null,
-                            count: 1,
-                            status: 200,
-                            statusText: 'OK',
-                        });
-                    },
+                    select: () =>
+                        Promise.resolve({
+                            data: null,
+                            error: new Error('contributions should not be queried when resources are found'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
+                        }),
                 },
             },
         });
@@ -793,12 +584,11 @@ describe('findSourceDocuments', () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
             rules,
-            mockDownloadFromStorage,
         );
 
         assertEquals(documents.length, 2);
         const ids = documents.map((doc) => doc.id).sort();
-        assertEquals(ids, ['contribution-success-metrics', 'resource-success-metrics']);
+        assertEquals(ids, ['resource-success-metrics-1', 'resource-success-metrics-2']);
     });
 
     it('returns multiple header_context contributions when multiple rules require them', async () => {
@@ -917,7 +707,6 @@ describe('findSourceDocuments', () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
             rules,
-            mockDownloadFromStorage,
         );
 
         assertEquals(documents.length, 2);
@@ -1001,7 +790,6 @@ describe('findSourceDocuments', () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
             rule,
-            mockDownloadFromStorage,
         );
 
         assertEquals(documents.length, 1);
@@ -1124,7 +912,6 @@ describe('findSourceDocuments', () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
             rule,
-            mockDownloadFromStorage,
         );
 
         assertEquals(documents.length, 1);
@@ -1209,7 +996,6 @@ describe('findSourceDocuments', () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
             rule,
-            mockDownloadFromStorage,
         );
 
         assertEquals(documents.length, 1);
@@ -1329,7 +1115,6 @@ describe('findSourceDocuments', () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
             rules,
-            mockDownloadFromStorage,
         );
 
         assertEquals(documents.length, 1);
@@ -1382,7 +1167,6 @@ describe('findSourceDocuments', () => {
                     mockSupabase.client as unknown as SupabaseClient<Database>,
                     mockParentJob,
                     rules,
-                    mockDownloadFromStorage,
                 ),
             Error,
             "A required input of type 'project_resource' was not found for the current job.",
@@ -1499,7 +1283,6 @@ describe('findSourceDocuments', () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
             rules,
-            mockDownloadFromStorage,
         );
 
         assertEquals(documents.length, 1);
@@ -1645,7 +1428,6 @@ describe('findSourceDocuments', () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             iteration2ParentJob,
             rule,
-            mockDownloadFromStorage,
         );
 
         assertEquals(documents.length, 1);
@@ -1747,10 +1529,674 @@ describe('findSourceDocuments', () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
             rules,
-            mockDownloadFromStorage,
         );
 
         assertEquals(documents.length, 1);
         assertEquals(documents[0].id, projectResource.id);
+    });
+
+    it('does not call downloadFromStorage even when it would throw an error', async () => {
+        const rule: InputRule[] = [{ type: 'document', slug: 'test-stage' }];
+        const mockResource: DialecticProjectResourceRow = {
+            id: 'doc-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'doc1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: { type: 'document', document_key: 'business_case' },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        let downloadFromStorageCalled = false;
+        const failingDownloadFromStorage = () => {
+            downloadFromStorageCalled = true;
+            return Promise.resolve({
+                data: null,
+                error: new Error('This should never be called'),
+            });
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () =>
+                        Promise.resolve({
+                            data: [mockResource],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        }),
+                },
+                dialectic_contributions: {
+                    select: () =>
+                        Promise.resolve({
+                            data: null,
+                            error: new Error('contributions should not be queried when resources are found'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
+                        }),
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(downloadFromStorageCalled, false, 'downloadFromStorage should not be called');
+        assertEquals(documents.length, 1);
+        assertEquals(documents[0].id, 'doc-1');
+        assertEquals(documents[0].content, '', 'content should be empty string');
+    });
+
+    it('returns SourceDocument objects with all required metadata but empty content', async () => {
+        const rule: InputRule[] = [{ type: 'document', slug: 'test-stage', document_key: FileType.business_case }];
+        const mockResource: DialecticProjectResourceRow = {
+            id: 'doc-metadata-test',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'business_case.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: { type: 'document', document_key: FileType.business_case },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        let downloadFromStorageCallCount = 0;
+        const trackDownloadFromStorage = () => {
+            downloadFromStorageCallCount++;
+            return Promise.resolve({
+                data: new ArrayBuffer(0),
+                error: null,
+            });
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () =>
+                        Promise.resolve({
+                            data: [mockResource],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        }),
+                },
+                dialectic_contributions: {
+                    select: () =>
+                        Promise.resolve({
+                            data: null,
+                            error: new Error('contributions should not be queried when resources are found'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
+                        }),
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(downloadFromStorageCallCount, 0, 'No storage download operations should occur');
+        assertEquals(documents.length, 1);
+        assertEquals(documents[0].id, 'doc-metadata-test');
+        assertEquals(documents[0].content, '', 'content must be empty string');
+        assertEquals(documents[0].contribution_type, 'rendered_document');
+        assertEquals(documents[0].session_id, 'sess-1');
+        assertEquals(documents[0].stage, 'test-stage');
+        assertEquals(documents[0].iteration_number, 1);
+        assertEquals(documents[0].file_name, 'business_case.md');
+        assertEquals(documents[0].storage_bucket, 'test-bucket');
+        assertEquals(documents[0].storage_path, 'projects/proj-1/resources');
+    });
+
+    it('returns empty content for all input types (document, header_context, feedback)', async () => {
+        const rules: InputRule[] = [
+            { type: 'document', slug: 'test-stage', document_key: FileType.business_case },
+            { type: 'header_context', slug: 'test-stage' },
+            { type: 'feedback', slug: 'test-stage' },
+        ];
+
+        const mockDocumentResource: DialecticProjectResourceRow = {
+            id: 'doc-all-types',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'business_case.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: { type: 'document', document_key: FileType.business_case },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        const mockHeaderContext: DialecticContributionRow = {
+            id: 'header-all-types',
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            stage: 'test-stage',
+            iteration_number: 1,
+            model_id: 'model-1',
+            model_name: 'Test Model',
+            prompt_template_id_used: 'prompt-1',
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 10,
+            tokens_used_output: 20,
+            processing_time_ms: 100,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: 'header_context',
+            file_name: 'header_context.json',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            size_bytes: 80,
+            mime_type: 'application/json',
+            document_relationships: null,
+            is_header: true,
+            source_prompt_resource_id: null,
+        };
+
+        const mockFeedback: DialecticFeedbackRow = {
+            id: 'feedback-all-types',
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            stage_slug: 'test-stage',
+            iteration_number: 1,
+            file_name: 'feedback.json',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/feedback',
+            size_bytes: 100,
+            mime_type: 'application/json',
+            feedback_type: 'user_feedback',
+            target_contribution_id: 'doc-1',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            project_id: 'proj-1',
+            resource_description: null,
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasResourceTypeFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'resource_type' &&
+                                filter.value === 'rendered_document',
+                        );
+                        if (hasResourceTypeFilter) {
+                            return Promise.resolve({
+                                data: [mockDocumentResource],
+                                error: null,
+                                count: 1,
+                                status: 200,
+                                statusText: 'OK',
+                            });
+                        }
+                        return Promise.resolve({
+                            data: [],
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+                dialectic_contributions: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasContributionTypeFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'contribution_type' &&
+                                filter.value === 'header_context',
+                        );
+                        if (hasContributionTypeFilter) {
+                            return Promise.resolve({
+                                data: [mockHeaderContext],
+                                error: null,
+                                count: 1,
+                                status: 200,
+                                statusText: 'OK',
+                            });
+                        }
+                        return Promise.resolve({
+                            data: null,
+                            error: new Error('contributions should not be queried for document type when resources are found'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
+                        });
+                    },
+                },
+                dialectic_feedback: {
+                    select: () =>
+                        Promise.resolve({
+                            data: [mockFeedback],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        }),
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rules,
+        );
+
+        assertEquals(documents.length, 3, 'Should return documents for all three input types');
+        
+        const documentDoc = documents.find((doc) => doc.id === 'doc-all-types');
+        const headerDoc = documents.find((doc) => doc.id === 'header-all-types');
+        const feedbackDoc = documents.find((doc) => doc.id === 'feedback-all-types');
+
+        assertEquals(documentDoc !== undefined, true, 'document type should be found');
+        assertEquals(headerDoc !== undefined, true, 'header_context type should be found');
+        assertEquals(feedbackDoc !== undefined, true, 'feedback type should be found');
+
+        assertEquals(documentDoc!.content, '', 'document type should have empty content');
+        assertEquals(headerDoc!.content, '', 'header_context type should have empty content');
+        assertEquals(feedbackDoc!.content, '', 'feedback type should have empty content');
+    });
+
+    // Step 54.b.i: Test that when resources exist, contributions are NOT queried
+    it('queries resources first and does not query contributions when resources are found', async () => {
+        const rule: InputRule[] = [{
+            type: 'document',
+            slug: 'test-stage',
+            document_key: FileType.business_case,
+        }];
+
+        const mockResource: DialecticProjectResourceRow = {
+            id: 'resource-54b-i',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_business_case_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 4096,
+            resource_description: { type: 'document', document_key: FileType.business_case },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        let contributionsQueryCalled = false;
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasResourceTypeFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'resource_type' &&
+                                filter.value === 'rendered_document',
+                        );
+                        if (!hasResourceTypeFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('document queries must filter by resource_type = rendered_document'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing resource_type filter',
+                            });
+                        }
+
+                        const hasProjectFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'project_id' &&
+                                filter.value === 'proj-1',
+                        );
+                        if (!hasProjectFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('document queries must scope by project_id'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing project_id filter',
+                            });
+                        }
+
+                        return Promise.resolve({
+                            data: [mockResource],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+                dialectic_contributions: {
+                    select: () => {
+                        contributionsQueryCalled = true;
+                        return Promise.resolve({
+                            data: null,
+                            error: new Error('contributions should not be queried when resources are found'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(contributionsQueryCalled, false, 'contributions should NOT be queried when resources are found');
+        assertEquals(documents.length, 1, 'should return one document from resources');
+        assertEquals(documents[0].id, 'resource-54b-i', 'should return the resource document');
+        assertEquals(documents[0].contribution_type, 'rendered_document', 'should have correct contribution_type');
+    });
+
+    // Step 54.b.ii: Test that when both exist, only resources are returned
+    it('returns only resources when both resources and contributions exist for the same document_key', async () => {
+        const rule: InputRule[] = [{
+            type: 'document',
+            slug: 'test-stage',
+            document_key: FileType.business_case,
+        }];
+
+        const mockResource: DialecticProjectResourceRow = {
+            id: 'resource-54b-ii',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_business_case_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 4096,
+            resource_description: { type: 'document', document_key: FileType.business_case },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        const mockContribution: DialecticContributionRow = {
+            id: 'contribution-54b-ii',
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            stage: 'test-stage',
+            iteration_number: 1,
+            model_id: 'model-1',
+            model_name: 'Test Model',
+            prompt_template_id_used: 'prompt-1',
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 10,
+            tokens_used_output: 20,
+            processing_time_ms: 100,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: 'business_case',
+            file_name: 'sess-1_test-stage_business_case_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage',
+            size_bytes: 123,
+            mime_type: 'text/markdown',
+            document_relationships: null,
+            is_header: false,
+            source_prompt_resource_id: null,
+        };
+
+        let contributionsQueryCalled = false;
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => {
+                        return Promise.resolve({
+                            data: [mockResource],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+                dialectic_contributions: {
+                    select: () => {
+                        contributionsQueryCalled = true;
+                        return Promise.resolve({
+                            data: [mockContribution],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(contributionsQueryCalled, false, 'contributions should NOT be queried when resources are found');
+        assertEquals(documents.length, 1, 'should return only one document (from resources)');
+        assertEquals(documents[0].id, 'resource-54b-ii', 'should return the resource, NOT the contribution');
+        assertEquals(documents[0].id !== 'contribution-54b-ii', true, 'should NOT return the contribution');
+    });
+
+    // Step 54.b.iii: Test that when resources don't exist, error is thrown and contributions are NOT queried
+    it('throws error when resources are not found and does not query contributions', async () => {
+        const rule: InputRule[] = [{
+            type: 'document',
+            slug: 'test-stage',
+            document_key: FileType.business_case,
+        }];
+
+        let contributionsQueryCalled = false;
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => {
+                        return Promise.resolve({
+                            data: [],
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+                dialectic_contributions: {
+                    select: () => {
+                        contributionsQueryCalled = true;
+                        return Promise.resolve({
+                            data: null,
+                            error: new Error('contributions should not be queried when resources are missing'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
+                        });
+                    },
+                },
+            },
+        });
+
+        await assertRejects(
+            async () => {
+                await findSourceDocuments(
+                    mockSupabase.client as unknown as SupabaseClient<Database>,
+                    mockParentJob,
+                    rule,
+                );
+            },
+            Error,
+            'Required rendered document',
+            'should throw error indicating required rendered document was not found',
+        );
+
+        assertEquals(contributionsQueryCalled, false, 'contributions should NOT be queried when resources are missing');
+    });
+
+    // Step 54.b.iv: Test that header_context still queries contributions (should pass)
+    it('continues to query contributions for header_context type inputs', async () => {
+        const rule: InputRule[] = [{
+            type: 'header_context',
+            slug: 'test-stage',
+            document_key: FileType.HeaderContext,
+        }];
+
+        const mockHeaderContext: DialecticContributionRow = {
+            id: 'header-54b-iv',
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            stage: 'test-stage',
+            iteration_number: 1,
+            model_id: 'model-1',
+            model_name: 'Test Model',
+            prompt_template_id_used: 'prompt-1',
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 10,
+            tokens_used_output: 20,
+            processing_time_ms: 100,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: 'header_context',
+            file_name: 'header_context.json',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            size_bytes: 80,
+            mime_type: 'application/json',
+            document_relationships: null,
+            is_header: true,
+            source_prompt_resource_id: null,
+        };
+
+        let contributionsQueryCalled = false;
+        let resourcesQueryCalled = false;
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => {
+                        resourcesQueryCalled = true;
+                        return Promise.resolve({
+                            data: null,
+                            error: new Error('header_context should not query project_resources'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
+                        });
+                    },
+                },
+                dialectic_contributions: {
+                    select: (state: MockQueryBuilderState) => {
+                        contributionsQueryCalled = true;
+                        const hasContributionTypeFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'contribution_type' &&
+                                filter.value === 'header_context',
+                        );
+                        if (!hasContributionTypeFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('header_context queries must filter by contribution_type'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing contribution_type filter',
+                            });
+                        }
+                        return Promise.resolve({
+                            data: [mockHeaderContext],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(resourcesQueryCalled, false, 'resources should NOT be queried for header_context');
+        assertEquals(contributionsQueryCalled, true, 'contributions SHOULD be queried for header_context');
+        assertEquals(documents.length, 1, 'should return one header_context document');
+        assertEquals(documents[0].id, 'header-54b-iv', 'should return the header_context from contributions');
+        assertEquals(documents[0].contribution_type, 'header_context', 'should have correct contribution_type');
     });
 });

@@ -277,16 +277,23 @@ Deno.test('compression ordering and identity: removes lowest blended-score first
     'ai_providers': { select: { data: [smallWindowProviderData], error: null } },
     'dialectic_memory': { select: { data: [], error: null } },
     // Executor gathers from DB; provide two distinct identities to avoid latest-per-identity dedupe
-    'dialectic_contributions': { select: { data: [
-      {
-        id: 'doc-high', content: 'high relevance', stage: 'stage-a', document_key: FileType.product_requirements, type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_product_requirements.md'
-      },
-      {
-        id: 'doc-low', content: 'low relevance', stage: 'stage-a', document_key: FileType.business_case, type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_business_case.md'
-      },
-    ], error: null } },
+    'dialectic_project_resources': {
+      select: () => {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'doc-high', content: 'high relevance', stage_slug: 'stage-a', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_product_requirements.md'
+            },
+            {
+              id: 'doc-low', content: 'low relevance', stage_slug: 'stage-a', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_business_case.md'
+            },
+          ],
+          error: null
+        });
+      }
+    },
   });
 
   const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
@@ -429,16 +436,23 @@ Deno.test('inputsRelevance effects: higher relevance ranks later; stage_slug-spe
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [smallWindowProviderData], error: null } },
     'dialectic_memory': { select: { data: [], error: null } },
-    'dialectic_contributions': { select: { data: [
-      {
-        id: 'A', content: 'x', stage: 's1', document_key: FileType.success_metrics, type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/s1/documents', file_name: 'model-collect_1_success_metrics.md'
-      },
-      {
-        id: 'B', content: 'x', stage: 's2', document_key: FileType.business_case, type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/s2/documents', file_name: 'model-collect_1_business_case.md'
-      },
-    ], error: null } },
+    'dialectic_project_resources': {
+      select: () => {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'A', content: 'x', stage_slug: 's1', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/s1/documents', file_name: 'model-collect_1_success_metrics.md'
+            },
+            {
+              id: 'B', content: 'x', stage_slug: 's2', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/s2/documents', file_name: 'model-collect_1_business_case.md'
+            },
+          ],
+          error: null
+        });
+      }
+    },
   });
 
   const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
@@ -534,16 +548,23 @@ Deno.test('empty inputsRelevance: similarity-only behavior is deterministic', as
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [smallWindowProviderData], error: null } },
     'dialectic_memory': { select: { data: [], error: null } },
-    'dialectic_contributions': { select: { data: [
-      {
-        id: 'alpha', content: 'alpha', stage: 't', document_key: FileType.business_case, type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_business_case.md'
-      },
-      {
-        id: 'beta', content: 'beta', stage: 't', document_key: FileType.success_metrics, type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_success_metrics.md'
-      },
-    ], error: null } },
+    'dialectic_project_resources': {
+      select: () => {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'alpha', content: 'alpha', stage_slug: 't', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_business_case.md'
+            },
+            {
+              id: 'beta', content: 'beta', stage_slug: 't', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_success_metrics.md'
+            },
+          ],
+          error: null
+        });
+      }
+    },
   });
 
   const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
@@ -625,14 +646,23 @@ Deno.test('passes identity-rich candidates into compression even when prompt doc
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [smallWindowProviderData], error: null } },
     // Identity-rich rows in DB tables with document-centric file_name and directory-only storage_path
-    'dialectic_contributions': { select: { data: [ {
-      id: 'c1', content: 'C1', stage: 's1', document_key: 'k1', type: 'document', created_at: new Date().toISOString(),
-      storage_path: 'project-abc/session_session-456/iteration_1/s1/documents', file_name: 'modelM_1_business_case.md'
-    } ], error: null } },
-    'dialectic_project_resources': { select: { data: [ {
-      id: 'r1', content: 'R1', stage_slug: 's2', document_key: 'k2', type: 'document', created_at: new Date().toISOString(),
-      storage_path: 'project-abc/session_session-456/iteration_1/s2/documents', file_name: 'modelM_1_success_metrics.md'
-    } ], error: null } },
+    'dialectic_project_resources': {
+      select: () => {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'r1', content: 'R1', stage_slug: 's2', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/s2/documents', file_name: 'modelM_1_success_metrics.md'
+            },
+            {
+              id: 'r2', content: 'C1', stage_slug: 's1', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/s1/documents', file_name: 'modelM_1_business_case.md'
+            },
+          ],
+          error: null
+        });
+      }
+    },
     'dialectic_feedback': { select: { data: [ {
       id: 'f1', content: 'F1', stage_slug: 's3', document_key: 'k3', type: 'feedback', created_at: new Date().toISOString(),
       storage_path: 'project-abc/session_session-456/iteration_1/s3/documents', file_name: 'modelM_1_user_feedback.md'
@@ -764,16 +794,23 @@ Deno.test('ties without inputsRelevance: candidates are in non-decreasing effect
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [ { ...mockFullProviderData, config: cfg } ], error: null } },
     'dialectic_memory': { select: { data: [], error: null } },
-    'dialectic_contributions': { select: { data: [
-      {
-        id: 'A', content: 'x', stage: 's', document_key: FileType.business_case, type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_business_case.md'
-      },
-      {
-        id: 'B', content: 'x', stage: 's', document_key: FileType.success_metrics, type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_success_metrics.md'
-      },
-    ], error: null } },
+    'dialectic_project_resources': {
+      select: () => {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'A', content: 'x', stage_slug: 's', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_business_case.md'
+            },
+            {
+              id: 'B', content: 'x', stage_slug: 's', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_success_metrics.md'
+            },
+          ],
+          error: null
+        });
+      }
+    },
   });
 
   const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);

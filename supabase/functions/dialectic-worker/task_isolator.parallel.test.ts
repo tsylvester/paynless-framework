@@ -169,8 +169,25 @@ describe('planComplexStage', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             iteration_number: 1,
-            resource_type: 'document',
-            session_id: null,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'thesis',
+        }, {
+            id: 'resource-business-case-any',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_any_business_case.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/plain',
+            size_bytes: 456,
+            resource_description: { "description": "Business case document for any stage", "type": "document", "document_key": FileType.business_case },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
             source_contribution_id: null,
             stage_slug: null,
         }];
@@ -641,8 +658,27 @@ describe('planComplexStage', () => {
             // regardless of which stage they came from (e.g., all 'thesis' documents).
     
             // Arrange:
-            // 1. The beforeEach provides contributions of type 'thesis' and 'antithesis'.
-            // 2. The recipe will ask for only 'thesis' contributions.
+            // 1. Add a resource for 'thesis' stage with business_case document_key.
+            const thesisResource: DialecticProjectResourceRow = {
+                id: 'resource-thesis-business-case',
+                project_id: 'proj-1',
+                user_id: 'user-123',
+                file_name: 'sess-1_thesis_business_case.md',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/resources',
+                mime_type: 'text/plain',
+                size_bytes: 456,
+                resource_description: { "description": "Thesis business case document", "type": "document", "document_key": FileType.business_case },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                iteration_number: 1,
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                source_contribution_id: null,
+                stage_slug: 'thesis',
+            };
+            mockProjectResources = [thesisResource];
+            // 2. The recipe will ask for only 'thesis' documents.
             mockRecipeStep.inputs_required = [{ type: 'document', slug: 'thesis', document_key: FileType.business_case }];
             // 3. Set up a planner spy to capture the source documents.
             let receivedDocs: SourceDocument[] = [];
@@ -657,10 +693,10 @@ describe('planComplexStage', () => {
             await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
     
             // Assert:
-            // 1. The planner should receive only the single 'thesis' document.
+            // 1. The planner should receive only the single 'thesis' document from resources.
             assertEquals(receivedDocs.length, 1);
-            assertEquals(receivedDocs[0].contribution_type, 'thesis');
-            assertEquals(receivedDocs[0].id, 'doc-1-thesis');
+            assertEquals(receivedDocs[0].contribution_type, 'rendered_document');
+            assertEquals(receivedDocs[0].id, 'resource-thesis-business-case');
         });
     
         it('should fetch multiple, distinct documents for a join step', async () => {
@@ -734,11 +770,14 @@ describe('planComplexStage', () => {
                 ...mockProjectResources[0],
                 id: 'doc-join-existing',
                 file_name: 'test-stage_rendered_document_join.md',
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                stage_slug: null,
                 resource_description: { "description": "Existing join document", "type": "document", "document_key": FileType.RenderedDocument },
                 created_at: new Date(Date.now() + 40).toISOString(),
                 updated_at: new Date(Date.now() + 40).toISOString(),
             };
-            mockProjectResources.push(existingRenderedDoc);
+            mockProjectResources = [existingRenderedDoc];
             // 2. The recipe requires two documents, but only the first exists.
             mockRecipeStep.inputs_required = [
                 { type: 'document', document_key: FileType.RenderedDocument, slug: 'any' }, // This one exists
@@ -747,6 +786,8 @@ describe('planComplexStage', () => {
             
             // Act & Assert:
             // 1. The call must be rejected with an error indicating a required input was not found.
+            //    Note: The error comes from planComplexStage validation after findSourceDocuments,
+            //    not directly from findSourceDocuments itself.
             await assertRejects(
                 () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123'),
                 Error,

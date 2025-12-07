@@ -164,7 +164,12 @@ describe('planComplexStage', () => {
             storage_path: 'projects/proj-1/resources',
             mime_type: 'text/plain',
             size_bytes: 456,
-            resource_description: { "description": "A test resource file", type: 'document', document_key: FileType.business_case },
+            resource_description: { 
+                "description": "A test resource file", 
+                type: 'document', 
+                document_key: FileType.business_case,
+                document_relationships: { source_group: 'resource-1-identifier' }
+            },
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             iteration_number: 1,
@@ -417,7 +422,7 @@ describe('planComplexStage', () => {
             prompt_template_id: 'test-prompt-uuid',
             output_type: FileType.business_case,
             granularity_strategy: 'per_source_document',
-            inputs_required: [{ type: 'document', slug: 'any' }],
+            inputs_required: [{ type: 'document', slug: 'any', multiple: true }],
             inputs_relevance: [],
             outputs_required: { documents: [] },
             config_override: {},
@@ -621,22 +626,6 @@ describe('planComplexStage', () => {
             "Failed to fetch source documents for type 'document' from project_resources: DB Read Error",
         );
     });
-
-    it('should throw an error if downloading a document fails', async () => {
-        mockDeps.downloadFromStorage = () => Promise.resolve({
-            data: null,
-            error: new Error('Storage Download Error'),
-        });
-        
-        const plannerFn: GranularityPlannerFn = () => [];
-        mockDeps.getGranularityPlanner = () => plannerFn;
-
-        await assertRejects(
-            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123'),
-            Error,
-            'Failed to download content for contribution resource-1 from projects/proj-1/resources/sess-1_test-stage_business_case_v1.md: Storage Download Error',
-        );
-    });
     
     it('should throw when a contribution is missing a file_name', async () => {
         const localMockResources = [
@@ -675,7 +664,7 @@ describe('planComplexStage', () => {
         await assertRejects(
             () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123'),
             Error,
-            "A required input of type 'document' was not found for the current job."
+            "Required rendered document for input rule type 'document' with stage 'non_existent_type' and document_key 'unspecified' was not found in dialectic_project_resources"
         );
     });
 
@@ -833,6 +822,8 @@ describe('planComplexStage', () => {
     });
 
     it('should bypass RAG and pass all documents to the planner even when token count exceeds limit', async () => {
+        // Arrange: Clear contributions to test with only the default resource
+        mockContributions = [];
         // Arrange: Spy on the RAG service to ensure it's not called.
         const getContextForModelSpy = spy(mockDeps.ragService!, 'getContextForModel');
     
@@ -1534,6 +1525,443 @@ describe('planComplexStage', () => {
         assertEquals(payload.stageSlug, mockParentJob.payload.stageSlug);
         assertEquals(payload.user_jwt, mockParentJob.payload.user_jwt);
     });
+
+    it('should filter source documents to exclude completed ones when completedSourceDocumentIds is provided', async () => {
+        // Arrange: Create 3 source documents as resources with valid source_group in document_relationships
+        const doc1Resource: DialecticProjectResourceRow = {
+            id: 'resource-doc-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_doc1_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: {
+                type: 'document',
+                document_key: FileType.business_case,
+                document_relationships: { source_group: 'doc1-identifier' }
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        const doc2Resource: DialecticProjectResourceRow = {
+            id: 'resource-doc-2',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_doc2_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: {
+                type: 'document',
+                document_key: FileType.business_case,
+                document_relationships: { source_group: 'doc2-identifier' }
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        const doc3Resource: DialecticProjectResourceRow = {
+            id: 'resource-doc-3',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_doc3_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: {
+                type: 'document',
+                document_key: FileType.business_case,
+                document_relationships: { source_group: 'doc3-identifier' }
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        mockProjectResources = [doc1Resource, doc2Resource, doc3Resource];
+
+        const completedSourceDocumentIds = new Set<string>(['doc1-identifier', 'doc3-identifier']);
+
+        const plannerReceivedDocs: SourceDocument[] = [];
+        const plannerFn: GranularityPlannerFn = (docs: SourceDocument[]) => {
+            plannerReceivedDocs.length = 0;
+            plannerReceivedDocs.push(...docs);
+            return [];
+        };
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        await planComplexStage(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockDeps,
+            mockRecipeStep,
+            'user-jwt-123',
+            completedSourceDocumentIds,
+        );
+
+        assertEquals(plannerReceivedDocs.length, 1, 'Planner should receive exactly one document');
+        assertEquals(plannerReceivedDocs[0].id, 'resource-doc-2', 'Planner should receive doc2, not doc1 or doc3');
+    });
+
+    it('should pass all source documents when completedSourceDocumentIds Set is empty', async () => {
+        // Arrange: Create 2 source documents as resources with valid source_group
+        const doc1Resource: DialecticProjectResourceRow = {
+            id: 'resource-doc-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_doc1_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: {
+                type: 'document',
+                document_key: FileType.business_case,
+                document_relationships: { source_group: 'doc1-identifier' }
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+        const doc2Resource: DialecticProjectResourceRow = {
+            id: 'resource-doc-2',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_doc2_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: {
+                type: 'document',
+                document_key: FileType.business_case,
+                document_relationships: { source_group: 'doc2-identifier' }
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+        mockProjectResources = [doc1Resource, doc2Resource];
+
+        const completedSourceDocumentIds = new Set<string>();
+
+        const plannerReceivedDocs: SourceDocument[] = [];
+        const plannerFn: GranularityPlannerFn = (docs: SourceDocument[]) => {
+            plannerReceivedDocs.length = 0;
+            plannerReceivedDocs.push(...docs);
+            return [];
+        };
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        await planComplexStage(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockDeps,
+            mockRecipeStep,
+            'user-jwt-123',
+            completedSourceDocumentIds,
+        );
+
+        assertEquals(plannerReceivedDocs.length, 2, 'Planner should receive all documents when Set is empty');
+    });
+
+    it('should pass all source documents when completedSourceDocumentIds parameter is undefined', async () => {
+        // Arrange: Create 2 source documents as resources with valid source_group
+        const doc1Resource: DialecticProjectResourceRow = {
+            id: 'resource-doc-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_doc1_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: {
+                type: 'document',
+                document_key: FileType.business_case,
+                document_relationships: { source_group: 'doc1-identifier' }
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+        const doc2Resource: DialecticProjectResourceRow = {
+            id: 'resource-doc-2',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_doc2_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: {
+                type: 'document',
+                document_key: FileType.business_case,
+                document_relationships: { source_group: 'doc2-identifier' }
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+        mockProjectResources = [doc1Resource, doc2Resource];
+
+        const plannerReceivedDocs: SourceDocument[] = [];
+        const plannerFn: GranularityPlannerFn = (docs: SourceDocument[]) => {
+            plannerReceivedDocs.length = 0;
+            plannerReceivedDocs.push(...docs);
+            return [];
+        };
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        await planComplexStage(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockDeps,
+            mockRecipeStep,
+            'user-jwt-123',
+        );
+
+        assertEquals(plannerReceivedDocs.length, 2, 'Planner should receive all documents when parameter is undefined');
+    });
+
+    it('should throw error when source documents have missing, null, or empty source_group', async () => {
+        const doc1Resource: DialecticProjectResourceRow = {
+            id: 'resource-doc-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_doc1_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: {
+                type: 'document',
+                document_key: FileType.business_case,
+                document_relationships: { source_group: 'doc1-identifier' }
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+        const doc2Missing: DialecticProjectResourceRow = {
+            id: 'resource-doc-2',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_doc2_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: {
+                type: 'document',
+                document_key: FileType.business_case,
+                document_relationships: { source_group: undefined }
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+        const doc3Null: DialecticProjectResourceRow = {
+            id: 'resource-doc-3',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_doc3_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: {
+                type: 'document',
+                document_key: FileType.business_case,
+                document_relationships: { source_group: null }
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+        const doc4Empty: DialecticProjectResourceRow = {
+            id: 'resource-doc-4',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_doc4_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: {
+                type: 'document',
+                document_key: FileType.business_case,
+                document_relationships: { source_group: '' }
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+        const doc5NoRelationships: DialecticProjectResourceRow = {
+            id: 'resource-doc-5',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_doc5_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: {
+                type: 'document',
+                document_key: FileType.business_case,
+                document_relationships: null
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        mockProjectResources = [doc1Resource, doc2Missing, doc3Null, doc4Empty, doc5NoRelationships];
+
+        const completedSourceDocumentIds = new Set<string>(['doc1-identifier']);
+
+        const plannerFn: GranularityPlannerFn = () => [];
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        await assertRejects(
+            async () => {
+                await planComplexStage(
+                    mockSupabase.client as unknown as SupabaseClient<Database>,
+                    mockParentJob,
+                    mockDeps,
+                    mockRecipeStep,
+                    'user-jwt-123',
+                    completedSourceDocumentIds,
+                );
+            },
+            Error,
+            'source_group',
+            'planComplexStage should throw an error when source documents have invalid source_group',
+        );
+    });
+
+    it('should pass all source documents when completedSourceDocumentIds contains non-matching identifiers', async () => {
+        // Arrange: Create 2 source documents as resources with valid source_group
+        const doc1Resource: DialecticProjectResourceRow = {
+            id: 'resource-doc-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_doc1_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: {
+                type: 'document',
+                document_key: FileType.business_case,
+                document_relationships: { source_group: 'doc1-identifier' }
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+        const doc2Resource: DialecticProjectResourceRow = {
+            id: 'resource-doc-2',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_test-stage_doc2_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 123,
+            resource_description: {
+                type: 'document',
+                document_key: FileType.business_case,
+                document_relationships: { source_group: 'doc2-identifier' }
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+        mockProjectResources = [doc1Resource, doc2Resource];
+
+        const completedSourceDocumentIds = new Set<string>(['non-existent-1', 'non-existent-2']);
+
+        const plannerReceivedDocs: SourceDocument[] = [];
+        const plannerFn: GranularityPlannerFn = (docs: SourceDocument[]) => {
+            plannerReceivedDocs.length = 0;
+            plannerReceivedDocs.push(...docs);
+            return [];
+        };
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        await planComplexStage(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockDeps,
+            mockRecipeStep,
+            'user-jwt-123',
+            completedSourceDocumentIds,
+        );
+
+        assertEquals(plannerReceivedDocs.length, 2, 'Planner should receive all documents when Set contains non-matching identifiers');
+    });
 });
-
-

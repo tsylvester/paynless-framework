@@ -4,7 +4,8 @@ import type {
   Json
 } from '../../types_db.ts'
 import type { ServiceError } from '../types.ts';
-import type { ContributionType } from '../../dialectic-service/dialectic.interface.ts';
+import type { ContributionType, StorageError } from '../../dialectic-service/dialectic.interface.ts';
+import type { PostgrestError } from '@supabase/supabase-js';
 
 /**
  * A union of all possible file types the system can manage.
@@ -241,12 +242,6 @@ export interface ContributionMetadata {
   stageSlug: string;
   iterationNumber: number;
 
-  // For FileManagerService to upload the raw JSON response.
-  // The path for this will be derived by FileManagerService using path_constructor
-  // with fileType 'model_contribution_raw_json' and an originalFileName derived
-  // from the main contribution's originalFileName (e.g., if main is foo.md, raw is foo_raw.json).
-  rawJsonResponseContent: Json; // The actual JSON string content for the raw AI response.
-
   // ADDED: For continuation jobs, this signals to update an existing record.
   target_contribution_id?: string;
   document_relationships?: Json | null; // ADDED: For derivative jobs, flexible JSONB for relationships.
@@ -304,10 +299,17 @@ export type FileRecord =
   | Database['public']['Tables']['dialectic_project_resources']['Row']
   | Database['public']['Tables']['dialectic_contributions']['Row'] 
   | Database['public']['Tables']['dialectic_feedback']['Row'];
+
+/**
+ * Union type representing all possible error types that FileManager can return.
+ * This allows FileManager to return specific error shapes (PostgrestError, StorageError)
+ * without losing detail or requiring casts.
+ */
+export type FileManagerError = PostgrestError | StorageError | ServiceError;
   
 export type FileManagerResponse = 
   | { record: FileRecord; error: null }
-  | { record: null; error: ServiceError };
+  | { record: null; error: FileManagerError };
   
 export interface IFileManager {
   uploadAndRegisterFile(context: UploadContext): Promise<FileManagerResponse>;

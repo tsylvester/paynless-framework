@@ -1,6 +1,7 @@
 import {
   assertEquals,
   assertExists,
+  assert,
 } from 'https://deno.land/std@0.190.0/testing/asserts.ts'
 import { stub, type Stub } from 'https://deno.land/std@0.190.0/testing/mock.ts'
 import {
@@ -100,7 +101,7 @@ Deno.test('FileManagerService', async (t) => {
       const config: MockSupabaseDataConfig = {
          genericMockResults: {
           dialectic_project_resources: { 
-            select: { data: [{ storage_path: 'mock/path.to.file' }], error: null }, 
+            select: { data: [{ storage_path: 'mock/path.to.file' }], error: null },
           },
         },
         storageMock: {
@@ -139,6 +140,10 @@ Deno.test('FileManagerService', async (t) => {
         },
       }
       beforeEach(config)
+      // Initialize spy before the call so it tracks the createSignedUrl call
+      const storageBucket = setup.spies.storage.from('test-bucket');
+      const createSignedUrlSpy = storageBucket.createSignedUrlSpy;
+      
       const { signedUrl, error } = await fileManager.getFileSignedUrl(
         'feedback-file-id-456',
         'dialectic_feedback',
@@ -157,8 +162,9 @@ Deno.test('FileManagerService', async (t) => {
       assertEquals(eqSpy.calls[0].args[0], 'id');
       assertEquals(eqSpy.calls[0].args[1], 'feedback-file-id-456');
 
-      const createSignedUrlSpy = setup.spies.storage.from('test-bucket').createSignedUrlSpy;
+      // Verify the createSignedUrl call was made (spy was initialized before the call)
       assertExists(createSignedUrlSpy, "createSignedUrl spy should exist");
+      assert(createSignedUrlSpy.calls.length > 0, "createSignedUrl should have been called");
       assertEquals(createSignedUrlSpy.calls[0].args[0], 'mock/feedback/path.txt');
 
     } finally {

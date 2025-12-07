@@ -125,15 +125,14 @@ export async function processComplexJob(
     deps.logger.info(`[processComplexJob] Loaded ${steps.length} steps and ${edges.length} edges`);
     deps.logger.info(`[processComplexJob] Edges: ${JSON.stringify(edges.map(e => ({ from: e.from_step_id, to: e.to_step_id })))}`);
 
-    // 3. Determine readiness by looking at completed child jobs and the DAG
-    const { data: completedChildren, error: childrenError } = await dbClient
+    // 3. Determine readiness by looking at ALL child jobs (not just completed) and the DAG
+    const { data: allChildren, error: childrenError } = await dbClient
         .from('dialectic_generation_jobs')
-        .select('id, payload')
-        .eq('parent_job_id', parentJobId)
-        .eq('status', 'completed');
+        .select('id, payload, status')
+        .eq('parent_job_id', parentJobId);
 
     if (childrenError) {
-        throw new Error(`Failed to fetch completed child jobs for parent ${parentJobId}: ${childrenError.message}`);
+        throw new Error(`Failed to fetch child jobs for parent ${parentJobId}: ${childrenError.message}`);
     }
 
     // Build step ID to step slug mapping first (needed for tracking completed steps)
@@ -151,27 +150,104 @@ export async function processComplexJob(
         }
     }
 
+    // Helper function to extract source document identifier from child job payload
+    const extractSourceDocumentIdentifier = (payload: unknown): string | null => {
+        if (!isRecord(payload)) {
+            return null;
+        }
+        
+        // Prefer document_relationships?.source_group if available
+        if (isRecord(payload.document_relationships)) {
+            const sourceGroup = payload.document_relationships.source_group;
+            if (typeof sourceGroup === 'string' && sourceGroup.length > 0) {
+                return sourceGroup;
+            }
+        }
+        
+        // Fallback to constructing identifier from canonicalPathParams
+        if (isRecord(payload.canonicalPathParams)) {
+            const params = payload.canonicalPathParams;
+            const contributionType = typeof params.contributionType === 'string' ? params.contributionType : '';
+            const stageSlug = typeof params.stageSlug === 'string' ? params.stageSlug : '';
+            const sourceAttemptCount = typeof params.sourceAttemptCount === 'number' ? params.sourceAttemptCount : null;
+            
+            if (contributionType && stageSlug && sourceAttemptCount !== null) {
+                return `${contributionType}_${stageSlug}_${sourceAttemptCount}`;
+            }
+        }
+        
+        return null;
+    };
+
+    // Track steps with in-progress jobs (pending, processing, retrying)
+    const stepsWithInProgressJobs = new Set<string>();
+    
+    // Track steps with failed jobs (failed, retry_loop_failed) to distinguish mixed completed + failed from only completed
+    const stepsWithFailedJobs = new Set<string>();
+    
+    // Track completed source documents by step for selective re-planning
+    const completedSourceDocumentsByStep = new Map<string, Set<string>>();
+    
     // Track completed steps by looking up step_slug from planner_metadata.recipe_step_id
     const completedStepSlugs = new Set<string>();
-    for (const child of completedChildren) {
-        // Validate that completed child jobs have required planner_metadata
+    
+    // Process ALL child jobs to build tracking structures
+    for (const child of allChildren ?? []) {
+        // Validate that ALL child jobs have required planner_metadata (not just completed ones)
         if (!isRecord(child.payload)) {
-            throw new Error(`processComplexJob cannot track completion for child job ${child.id} because planner_metadata.recipe_step_id is missing or invalid. Completed child jobs MUST have planner_metadata with a non-empty recipe_step_id to enable step completion tracking.`);
+            throw new Error(`processComplexJob cannot track child job ${child.id} because planner_metadata.recipe_step_id is missing or invalid. All child jobs MUST have planner_metadata with a non-empty recipe_step_id to enable step completion tracking.`);
         }
         
         if (!isRecord(child.payload.planner_metadata)) {
-            throw new Error(`processComplexJob cannot track completion for child job ${child.id} because planner_metadata.recipe_step_id is missing or invalid. Completed child jobs MUST have planner_metadata with a non-empty recipe_step_id to enable step completion tracking.`);
+            throw new Error(`processComplexJob cannot track child job ${child.id} because planner_metadata.recipe_step_id is missing or invalid. All child jobs MUST have planner_metadata with a non-empty recipe_step_id to enable step completion tracking.`);
         }
         
         const recipeStepId = child.payload.planner_metadata.recipe_step_id;
         if (typeof recipeStepId !== 'string' || recipeStepId === '') {
-            throw new Error(`processComplexJob cannot track completion for child job ${child.id} because planner_metadata.recipe_step_id is missing or invalid. Completed child jobs MUST have planner_metadata with a non-empty recipe_step_id to enable step completion tracking.`);
+            throw new Error(`processComplexJob cannot track child job ${child.id} because planner_metadata.recipe_step_id is missing or invalid. All child jobs MUST have planner_metadata with a non-empty recipe_step_id to enable step completion tracking.`);
         }
         
         const stepSlug = stepSlugById.get(recipeStepId);
-        if (stepSlug) {
-            completedStepSlugs.add(stepSlug);
+        if (!stepSlug) {
+            continue;
         }
+        
+        const childStatus = child.status;
+        
+        // Track in-progress jobs
+        if (childStatus === 'pending' || childStatus === 'processing' || childStatus === 'retrying') {
+            stepsWithInProgressJobs.add(stepSlug);
+            deps.logger.info(`[processComplexJob] Step '${stepSlug}' has in-progress child job ${child.id} with status '${childStatus}'`);
+        }
+        
+        // Track failed jobs (terminal failure states)
+        if (childStatus === 'failed' || childStatus === 'retry_loop_failed') {
+            stepsWithFailedJobs.add(stepSlug);
+            deps.logger.info(`[processComplexJob] Step '${stepSlug}' has failed child job ${child.id} with status '${childStatus}'`);
+        }
+        
+        // Track completed source documents for selective re-planning
+        if (childStatus === 'completed') {
+            completedStepSlugs.add(stepSlug);
+            
+            const sourceDocId = extractSourceDocumentIdentifier(child.payload);
+            if (sourceDocId) {
+                const completedSet = completedSourceDocumentsByStep.get(stepSlug) ?? new Set<string>();
+                completedSet.add(sourceDocId);
+                completedSourceDocumentsByStep.set(stepSlug, completedSet);
+                deps.logger.info(`[processComplexJob] Step '${stepSlug}' has completed source document with identifier '${sourceDocId}'`);
+            }
+        }
+    }
+    
+    // Log in-progress job tracking
+    if (stepsWithInProgressJobs.size > 0) {
+        deps.logger.info(`[processComplexJob] Steps with in-progress jobs (excluded from re-planning): [${Array.from(stepsWithInProgressJobs).join(', ')}]`);
+    }
+    
+    // Log completed source documents per step
+    for (const [stepSlug, completedIds] of completedSourceDocumentsByStep.entries()) {
+        deps.logger.info(`[processComplexJob] Step '${stepSlug}' has ${completedIds.size} completed source document(s): [${Array.from(completedIds).join(', ')}]`);
     }
     // Build predecessor map from edges
     const predecessors = new Map<string, Set<string>>();
@@ -198,11 +274,15 @@ export async function processComplexJob(
     };
 
     // Determine which steps are ready: all predecessors completed (or skipped) and not already completed
+    // Steps with ONLY completed jobs are excluded, but steps with MIXED completed + failed jobs are included
     const readySteps: (DialecticRecipeTemplateStep | DialecticStageRecipeStep)[] = [];
     for (const [id, s] of stepIdToStep.entries()) {
         const slug = stepSlugById.get(id)!;
-        if (completedStepSlugs.has(slug)) continue;
+        // Exclude steps with ONLY completed jobs (no failed jobs), but include steps with MIXED completed + failed jobs
+        if (completedStepSlugs.has(slug) && !stepsWithFailedJobs.has(slug)) continue;
         if (isSkipped(s)) continue;
+        // Exclude steps with in-progress jobs to prevent re-planning loop
+        if (stepsWithInProgressJobs.has(slug)) continue;
         const preds = predecessors.get(id);
         if (!preds || preds.size === 0) {
             // No predecessors → initial step
@@ -213,8 +293,9 @@ export async function processComplexJob(
                 const predStep = stepIdToStep.get(predId);
                 const predSlug = stepSlugById.get(predId);
                 const predWasSkipped = predStep ? isSkipped(predStep) : false;
-                // A predecessor is satisfied if it was completed OR explicitly marked as skipped
-                if (!predWasSkipped && (!predSlug || !completedStepSlugs.has(predSlug))) {
+                // A predecessor is satisfied if it was completed AND has no in-progress jobs AND has no failed jobs, OR explicitly marked as skipped
+                // If a predecessor has in-progress jobs or failed jobs, it's not done yet, even if it has some completed jobs
+                if (!predWasSkipped && (!predSlug || !completedStepSlugs.has(predSlug) || stepsWithInProgressJobs.has(predSlug) || stepsWithFailedJobs.has(predSlug))) {
                     allPredsDone = false;
                     break;
                 }
@@ -225,8 +306,10 @@ export async function processComplexJob(
         }
     }
 
-    // Filter out already-completed steps from readySteps
-    const filteredReadySteps = readySteps.filter(step => !completedStepSlugs.has(step.step_slug));
+    // Filter out steps with in-progress jobs from readySteps
+    // Steps with ONLY completed jobs are already excluded in readySteps building
+    // Steps with MIXED completed + failed jobs are included (can re-plan for failed work)
+    const filteredReadySteps = readySteps.filter(step => !stepsWithInProgressJobs.has(step.step_slug));
 
     // If no ready steps remain, either we're waiting on siblings or all steps are complete
     if (filteredReadySteps.length === 0) {
@@ -258,6 +341,14 @@ export async function processComplexJob(
     deps.logger.info(`[processComplexJob] Total ready steps: ${filteredReadySteps.length}, step slugs: [${filteredReadySteps.map(s => s.step_slug).join(', ')}]`);
     for (const step of filteredReadySteps) {
         deps.logger.info(`[processComplexJob] Ready step '${step.step_slug}' inputs_required: ${JSON.stringify(step.inputs_required)}`);
+    }
+    
+    // Log which steps are excluded due to in-progress jobs
+    const excludedSteps = Array.from(stepsWithInProgressJobs).filter(slug => 
+        Array.from(stepIdToStep.values()).some(step => step.step_slug === slug)
+    );
+    if (excludedSteps.length > 0) {
+        deps.logger.info(`[processComplexJob] Steps excluded from planning due to in-progress jobs: [${excludedSteps.join(', ')}]`);
     }
 
     // CRITICAL VALIDATION: If multiple steps are ready initially (no completed steps yet), only the header_context generator should be ready.
@@ -292,12 +383,20 @@ export async function processComplexJob(
         const plannedChildrenArrays = await Promise.all(
             filteredReadySteps.map((recipeStep) => {
                 deps.logger.info(`[processComplexJob] Calling planComplexStage for step '${recipeStep.step_slug}' with inputs_required: ${JSON.stringify(recipeStep.inputs_required)}`);
+                
+                // Check if this step has completed source documents that should be excluded from re-planning
+                const completedSourceDocIds = completedSourceDocumentsByStep.get(recipeStep.step_slug);
+                if (completedSourceDocIds && completedSourceDocIds.size > 0) {
+                    deps.logger.info(`[processComplexJob] Step '${recipeStep.step_slug}' has ${completedSourceDocIds.size} completed source document(s) that should be excluded from re-planning: [${Array.from(completedSourceDocIds).join(', ')}]`);
+                }
+                
                 return deps.planComplexStage!(
                     dbClient,
                     job,
                     deps,
                     recipeStep,
                     authToken,
+                    completedSourceDocIds ?? undefined,
                 );
             })
         );

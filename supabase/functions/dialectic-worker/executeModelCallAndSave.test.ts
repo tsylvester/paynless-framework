@@ -638,25 +638,27 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
         'ai_providers': {
             select: { data: [mockLimitedProvider], error: null }
         },
-        // Provide a large matching document so executor gathers it (not assembler)
-        'dialectic_contributions': {
-            select: {
-                data: [
-                    {
-                        id: 'doc-oversize',
-                        content: 'X'.repeat(2000),
-                        stage: 'test-stage',
-                        project_id: 'project-abc',
-                        session_id: 'session-456',
-                        iteration_number: 1,
-                        type: 'document',
-                        created_at: new Date().toISOString(),
-                        // Provide separate directory path and file name so identity can be parsed
-                        storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
-                        file_name: 'modelA_1_rendered_document.md',
-                    }
-                ],
-                error: null,
+        // Provide a large matching rendered document so executor gathers it (not assembler)
+        'dialectic_project_resources': {
+            select: () => {
+                return Promise.resolve({
+                    data: [
+                        {
+                            id: 'doc-oversize',
+                            content: 'X'.repeat(2000),
+                            stage_slug: 'test-stage',
+                            project_id: 'project-abc',
+                            session_id: 'session-456',
+                            iteration_number: 1,
+                            resource_type: 'rendered_document',
+                            created_at: new Date().toISOString(),
+                            // Provide separate directory path and file name so identity can be parsed
+                            storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+                            file_name: 'modelA_1_rendered_document.md',
+                        }
+                    ],
+                    error: null,
+                });
             },
         },
     });
@@ -1117,23 +1119,25 @@ Deno.test('executeModelCallAndSave - sets and forwards max_tokens_to_generate us
 Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are forwarded unchanged (distinct from messages)', async () => {
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
-    'dialectic_contributions': {
-      select: {
-        data: [
-          {
-            id: 'doc-r1',
-            content: 'Doc X content',
-            stage: 'test-stage',
-            project_id: 'project-abc',
-            session_id: 'session-456',
-            iteration_number: 1,
-            type: 'document',
-            created_at: new Date().toISOString(),
-            storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
-            file_name: 'modelA_1_rendered_document.md',
-          },
-        ],
-        error: null,
+    'dialectic_project_resources': {
+      select: () => {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'doc-r1',
+              content: 'Doc X content',
+              stage_slug: 'test-stage',
+              project_id: 'project-abc',
+              session_id: 'session-456',
+              iteration_number: 1,
+              resource_type: 'rendered_document',
+              created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+              file_name: 'modelA_1_rendered_document.md',
+            },
+          ],
+          error: null,
+        });
       },
     },
   });
@@ -1254,23 +1258,25 @@ Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are f
 Deno.test('executeModelCallAndSave - builds full ChatApiRequest including resourceDocuments and walletId', async () => {
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
-    'dialectic_contributions': {
-      select: {
-        data: [
-          {
-            id: 'doc-xyz',
-            content: 'Doc content for sizing and send',
-            stage: 'test-stage',
-            project_id: 'project-abc',
-            session_id: 'session-456',
-            iteration_number: 1,
-            type: 'document',
-            created_at: new Date().toISOString(),
-            storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
-            file_name: 'modelB_1_rendered_document.md',
-          },
-        ],
-        error: null,
+    'dialectic_project_resources': {
+      select: () => {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'doc-xyz',
+              content: 'Doc content for sizing and send',
+              stage_slug: 'test-stage',
+              project_id: 'project-abc',
+              session_id: 'session-456',
+              iteration_number: 1,
+              resource_type: 'rendered_document',
+              created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+              file_name: 'modelB_1_rendered_document.md',
+            },
+          ],
+          error: null,
+        });
       },
     },
   });
@@ -1436,20 +1442,25 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
   };
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [limitedProvider], error: null } },
-    'dialectic_contributions': {
-      select: {
-        data: [
-          {
-            id: 'doc-for-compress',
-            content: 'Some longish content to be summarized',
-            stage: 'test-stage',
-            type: 'document',
-            created_at: new Date().toISOString(),
-            storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
-            file_name: 'modelC_1_business_case.md',
-          },
-        ],
-        error: null,
+    'dialectic_project_resources': {
+      select: () => {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'doc-for-compress',
+              content: 'Some longish content to be summarized',
+              stage_slug: 'test-stage',
+              project_id: 'project-abc',
+              session_id: 'session-456',
+              iteration_number: 1,
+              resource_type: 'rendered_document',
+              created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+              file_name: 'modelC_1_business_case.md',
+            },
+          ],
+          error: null,
+        });
       },
     },
   });
@@ -1779,12 +1790,12 @@ Deno.test('executeModelCallAndSave - gathers artifacts across contributions/reso
           project_id: 'project-abc',
           session_id: 'session-456',
           iteration_number: 1,
-          type: 'document',
+          resource_type: 'rendered_document',
           created_at: new Date().toISOString(),
           storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
           file_name: `model-collect_1_${key}.md`,
         });
-        const data = [mk('r1', 'R1', 'seed_prompt')];
+        const data = [mk('r1', 'R1', 'seed_prompt'), mk('r2', 'R2', 'business_case'), mk('r3', 'R3', 'feature_spec')];
         return { data, error: null };
       },
     },
@@ -1842,11 +1853,12 @@ Deno.test('executeModelCallAndSave - gathers artifacts across contributions/reso
   const sent = callUnifiedAISpy.calls[0].args[0];
   assert(isChatApiRequest(sent));
 
-  // Order preserved: C1, C2, R1, F1
+  // Order preserved: R2 (business_case from resources), R3 (feature_spec from resources), R1 (seed_prompt from resources), F1 (feedback)
+  // Note: C1 and C2 are NOT included because resources take precedence for document-type inputs
   const contents = Array.isArray(sent.resourceDocuments)
     ? sent.resourceDocuments.map(d => (isRecord(d) && typeof d['content'] === 'string') ? d['content'] : '')
     : [];
-  assertEquals(contents, ['C1', 'C2', 'R1', 'F1']);
+  assertEquals(contents, ['R2', 'R3', 'R1', 'F1']);
 
   // Ensure docs not merged into messages
   const msgContents = Array.isArray(sent.messages)
@@ -1886,7 +1898,20 @@ Deno.test('executeModelCallAndSave - scoped selection includes only artifacts ma
     },
     'dialectic_project_resources': {
       select: (_state: any) => {
-        return { data: [], error: null };
+        const mk = (id: string, content: string, key: string) => ({
+          id,
+          content,
+          stage_slug: 'test-stage',
+          project_id: 'project-abc',
+          session_id: 'session-456',
+          iteration_number: 1,
+          resource_type: 'rendered_document',
+          created_at: new Date().toISOString(),
+          storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+          file_name: `modelM_1_${key}.md`,
+        });
+        const data = [mk('r-match', 'RM', 'business_case')];
+        return { data, error: null };
       },
     },
     'dialectic_feedback': {
@@ -1946,8 +1971,10 @@ Deno.test('executeModelCallAndSave - scoped selection includes only artifacts ma
     ? sent.resourceDocuments.map(d => (isRecord(d) && typeof d['id'] === 'string') ? d['id'] : '')
     : [];
 
-  assert(ids.includes('c-match'), 'Expected c-match to be included');
+  // Resources take precedence over contributions for document-type inputs
+  assert(ids.includes('r-match'), 'Expected r-match (from resources) to be included');
   assert(ids.includes('f-match'), 'Expected f-match to be included');
+  assert(!ids.includes('c-match'), 'c-match (from contributions) should NOT be included when r-match (from resources) exists');
   assert(!ids.includes('c-skip') && !ids.includes('r-skip'), 'Non-matching artifacts must be excluded');
 });
 

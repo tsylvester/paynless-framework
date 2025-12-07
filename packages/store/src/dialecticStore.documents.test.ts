@@ -1462,3 +1462,390 @@ describe('handleDocumentCompletedLogic', () => {
 		expect(getProjectResourceContentSpy).not.toHaveBeenCalled();
 	});
 });
+
+describe('Step 51.b: document_started and document_completed tracking issues', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		resetApiMock();
+		useDialecticStore.setState(initialDialecticStateValues);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('51.b.i: document_started WITHOUT latestRenderedResourceId for rendering-required document should track document', () => {
+		const sessionId = 'session-doc-started-no-resource';
+		const stageSlug = 'thesis';
+		const iterationNumber = 1;
+		const jobId = 'job-execute-no-resource';
+		const modelId = 'model-execute';
+		const documentKey = 'business_case';
+		const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+		const mockRecipe: DialecticStageRecipe = {
+			stageSlug,
+			instanceId: 'instance-thesis',
+			steps: [
+				{
+					id: 'execute-step-id',
+					step_key: 'execute_step',
+					step_slug: 'execute-step',
+					step_name: 'Execute Step',
+					execution_order: 1,
+					job_type: 'EXECUTE',
+					prompt_type: 'Turn',
+					output_type: 'rendered_document',
+					granularity_strategy: 'per_source_document',
+					inputs_required: [],
+					outputs_required: [
+						{
+							document_key: 'business_case',
+							artifact_class: 'rendered_document',
+							file_type: 'markdown',
+						},
+					],
+				},
+			],
+		};
+
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = mockRecipe;
+			state.stageRunProgress[progressKey] = {
+				documents: {},
+				stepStatuses: {},
+			};
+		});
+
+		const documentStartedEvent: DocumentStartedPayload = {
+			type: 'document_started',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: jobId,
+			document_key: documentKey,
+			modelId,
+			step_key: 'execute_step',
+		};
+
+		useDialecticStore
+			.getState()
+			._handleDialecticLifecycleEvent?.(documentStartedEvent);
+
+		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(updatedProgress).toBeDefined();
+		const descriptor = updatedProgress?.documents[documentKey];
+		expect(descriptor).toBeDefined();
+		expect(isRenderedDescriptor(descriptor)).toBe(true);
+		if (isRenderedDescriptor(descriptor)) {
+			expect(descriptor.status).toBe('generating');
+			expect(descriptor.job_id).toBe(jobId);
+			expect(descriptor.modelId).toBe(modelId);
+		}
+		expect(updatedProgress?.stepStatuses['execute_step']).toBe('in_progress');
+	});
+
+	it('51.b.ii: document_started WITHOUT latestRenderedResourceId followed by render_completed WITH latestRenderedResourceId should update document', async () => {
+		const sessionId = 'session-doc-started-render-completed';
+		const stageSlug = 'thesis';
+		const iterationNumber = 1;
+		const jobId = 'job-execute-render';
+		const modelId = 'model-execute';
+		const documentKey = 'business_case';
+		const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+		const latestRenderedResourceId = 'resource-rendered';
+		const serializedKey = getStageDocumentKey({
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			modelId,
+			documentKey,
+		});
+
+		const mockRecipe: DialecticStageRecipe = {
+			stageSlug,
+			instanceId: 'instance-thesis',
+			steps: [
+				{
+					id: 'execute-step-id',
+					step_key: 'execute_step',
+					step_slug: 'execute-step',
+					step_name: 'Execute Step',
+					execution_order: 1,
+					job_type: 'EXECUTE',
+					prompt_type: 'Turn',
+					output_type: 'rendered_document',
+					granularity_strategy: 'per_source_document',
+					inputs_required: [],
+					outputs_required: [
+						{
+							document_key: 'business_case',
+							artifact_class: 'rendered_document',
+							file_type: 'markdown',
+						},
+					],
+				},
+				{
+					id: 'render-step-id',
+					step_key: 'render_step',
+					step_slug: 'render-step',
+					step_name: 'Render Step',
+					execution_order: 2,
+					job_type: 'RENDER',
+					prompt_type: 'Turn',
+					output_type: 'rendered_document',
+					granularity_strategy: 'per_source_document',
+					inputs_required: [],
+					outputs_required: [],
+				},
+			],
+		};
+
+		const getProjectResourceContentSpy = vi
+			.spyOn(mockDialecticClient, 'getProjectResourceContent')
+			.mockResolvedValue({
+				data: {
+					content: 'test content',
+					fileName: 'test.md',
+					mimeType: 'text/markdown',
+				},
+				status: 200,
+			});
+
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = mockRecipe;
+			state.stageRunProgress[progressKey] = {
+				documents: {},
+				stepStatuses: {},
+			};
+		});
+
+		const documentStartedEvent: DocumentStartedPayload = {
+			type: 'document_started',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: jobId,
+			document_key: documentKey,
+			modelId,
+			step_key: 'execute_step',
+		};
+
+		useDialecticStore
+			.getState()
+			._handleDialecticLifecycleEvent?.(documentStartedEvent);
+
+		const renderCompletedEvent: RenderCompletedPayload = {
+			type: 'render_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: 'job-render',
+			document_key: documentKey,
+			modelId,
+			latestRenderedResourceId,
+			step_key: 'render_step',
+		};
+
+		await useDialecticStore
+			.getState()
+			._handleDialecticLifecycleEvent?.(renderCompletedEvent);
+
+		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(updatedProgress).toBeDefined();
+		const descriptor = updatedProgress?.documents[documentKey];
+		expect(descriptor).toBeDefined();
+		expect(isRenderedDescriptor(descriptor)).toBe(true);
+		if (isRenderedDescriptor(descriptor)) {
+			expect(descriptor.status).toBe('completed');
+			expect(descriptor.latestRenderedResourceId).toBe(latestRenderedResourceId);
+			expect(descriptor.versionHash).toBeDefined();
+			expect(descriptor.lastRenderedResourceId).toBe(latestRenderedResourceId);
+		}
+
+		const versionInfo = useDialecticStore.getState().stageDocumentVersions[serializedKey];
+		expect(versionInfo).toBeDefined();
+		expect(versionInfo?.resourceId).toBe(latestRenderedResourceId);
+
+		expect(getProjectResourceContentSpy).toHaveBeenCalledWith({
+			resourceId: latestRenderedResourceId,
+		});
+	});
+
+	it('51.b.iii: document_started WITHOUT latestRenderedResourceId followed by document_completed should find and update document', () => {
+		const sessionId = 'session-doc-started-completed';
+		const stageSlug = 'thesis';
+		const iterationNumber = 1;
+		const jobId = 'job-execute-completed';
+		const modelId = 'model-execute';
+		const documentKey = 'business_case';
+		const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+		const mockRecipe: DialecticStageRecipe = {
+			stageSlug,
+			instanceId: 'instance-thesis',
+			steps: [
+				{
+					id: 'execute-step-id',
+					step_key: 'execute_step',
+					step_slug: 'execute-step',
+					step_name: 'Execute Step',
+					execution_order: 1,
+					job_type: 'EXECUTE',
+					prompt_type: 'Turn',
+					output_type: 'rendered_document',
+					granularity_strategy: 'per_source_document',
+					inputs_required: [],
+					outputs_required: [
+						{
+							document_key: 'business_case',
+							artifact_class: 'rendered_document',
+							file_type: 'markdown',
+						},
+					],
+				},
+			],
+		};
+
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = mockRecipe;
+			state.stageRunProgress[progressKey] = {
+				documents: {},
+				stepStatuses: {},
+			};
+		});
+
+		const documentStartedEvent: DocumentStartedPayload = {
+			type: 'document_started',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: jobId,
+			document_key: documentKey,
+			modelId,
+			step_key: 'execute_step',
+		};
+
+		useDialecticStore
+			.getState()
+			._handleDialecticLifecycleEvent?.(documentStartedEvent);
+
+		const documentCompletedEvent: DocumentCompletedPayload = {
+			type: 'document_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: jobId,
+			document_key: documentKey,
+			modelId,
+			step_key: 'execute_step',
+		};
+
+		useDialecticStore
+			.getState()
+			._handleDialecticLifecycleEvent?.(documentCompletedEvent);
+
+		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(updatedProgress).toBeDefined();
+		const descriptor = updatedProgress?.documents[documentKey];
+		expect(descriptor).toBeDefined();
+		expect(isRenderedDescriptor(descriptor)).toBe(true);
+		if (isRenderedDescriptor(descriptor)) {
+			expect(descriptor.status).toBe('completed');
+			expect(descriptor.job_id).toBe(jobId);
+			expect(descriptor.modelId).toBe(modelId);
+		}
+		expect(updatedProgress?.stepStatuses['execute_step']).toBe('completed');
+	});
+
+	it('51.b.iv: document_started WITH latestRenderedResourceId should use provided value', () => {
+		const sessionId = 'session-doc-started-with-resource';
+		const stageSlug = 'thesis';
+		const iterationNumber = 1;
+		const jobId = 'job-execute-with-resource';
+		const modelId = 'model-execute';
+		const documentKey = 'business_case';
+		const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+		const latestRenderedResourceId = 'resource-provided';
+		const serializedKey = getStageDocumentKey({
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			modelId,
+			documentKey,
+		});
+
+		const mockRecipe: DialecticStageRecipe = {
+			stageSlug,
+			instanceId: 'instance-thesis',
+			steps: [
+				{
+					id: 'execute-step-id',
+					step_key: 'execute_step',
+					step_slug: 'execute-step',
+					step_name: 'Execute Step',
+					execution_order: 1,
+					job_type: 'EXECUTE',
+					prompt_type: 'Turn',
+					output_type: 'rendered_document',
+					granularity_strategy: 'per_source_document',
+					inputs_required: [],
+					outputs_required: [
+						{
+							document_key: 'business_case',
+							artifact_class: 'rendered_document',
+							file_type: 'markdown',
+						},
+					],
+				},
+			],
+		};
+
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = mockRecipe;
+			state.stageRunProgress[progressKey] = {
+				documents: {},
+				stepStatuses: {},
+			};
+		});
+
+		const documentStartedEvent: DocumentStartedPayload = {
+			type: 'document_started',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: jobId,
+			document_key: documentKey,
+			modelId,
+			step_key: 'execute_step',
+			latestRenderedResourceId,
+		};
+
+		useDialecticStore
+			.getState()
+			._handleDialecticLifecycleEvent?.(documentStartedEvent);
+
+		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(updatedProgress).toBeDefined();
+		const descriptor = updatedProgress?.documents[documentKey];
+		expect(descriptor).toBeDefined();
+		expect(isRenderedDescriptor(descriptor)).toBe(true);
+		if (isRenderedDescriptor(descriptor)) {
+			expect(descriptor.status).toBe('generating');
+			expect(descriptor.job_id).toBe(jobId);
+			expect(descriptor.modelId).toBe(modelId);
+			expect(descriptor.latestRenderedResourceId).toBe(latestRenderedResourceId);
+			expect(descriptor.versionHash).toBeDefined();
+			expect(descriptor.lastRenderedResourceId).toBe(latestRenderedResourceId);
+		}
+
+		const versionInfo = useDialecticStore.getState().stageDocumentVersions[serializedKey];
+		expect(versionInfo).toBeDefined();
+		expect(versionInfo?.resourceId).toBe(latestRenderedResourceId);
+
+		const contentState = useDialecticStore.getState().stageDocumentContent[serializedKey];
+		expect(contentState).toBeDefined();
+		expect(contentState?.lastBaselineVersion).toBeDefined();
+		expect(contentState?.lastBaselineVersion?.resourceId).toBe(latestRenderedResourceId);
+	});
+});

@@ -31,7 +31,9 @@ export {
 } from "./type-guards/type_guards.dialectic.ts";
 export { 
     isCanonicalPathParams, 
-    isFileType 
+    isFileType,
+    isStorageError,
+    isServiceError,
 } from "./type-guards/type_guards.file_manager.ts";
 export { 
     isProjectContext, 

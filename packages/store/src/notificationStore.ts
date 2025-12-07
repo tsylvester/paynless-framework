@@ -501,11 +501,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
 
         if (notification.type === 'WALLET_TRANSACTION') {
             const { data } = notification;
-            if (data && typeof data === 'object' && 'walletId' in data && typeof data['walletId'] === 'string' && 'newBalance' in data && typeof data['newBalance'] === 'string') {
+            if (data && typeof data === 'object' && 'walletId' in data && typeof data['walletId'] === 'string' && 'newBalance' in data && typeof data['newBalance'] === 'number') {
                 logger.info('[NotificationStore] Handling wallet transaction event.', { data });
                 useWalletStore.getState()._handleWalletUpdateNotification({
                     walletId: data['walletId'],
-                    newBalance: data['newBalance'],
+                    newBalance: String(data['newBalance']),
                 });
                 get().addNotification(notification);
             } else {
