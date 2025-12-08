@@ -18,10 +18,11 @@ export function HomePage() {
   const hasSetDefaults = useRef(false)
 
   useEffect(() => {
+    if (!user) return; // Don't run if user is not authenticated
     loadAiConfig()
     startNewChat()
     hasSetDefaults.current = false
-  }, [loadAiConfig, startNewChat])
+  }, [loadAiConfig, startNewChat, user])
 
   useEffect(() => {
     if (!hasSetDefaults.current && availableProviders.length > 0) {

@@ -351,6 +351,19 @@ export const useAiStore = create<AiStore>()(
 				_updateChatContextInProfile({ newChatContext: contextId });
 			},
 			loadAiConfig: async () => {
+				const authState = useAuthStore.getState();
+				const user = authState?.user;
+				if (!user) {
+					logger.info("[aiStore] Cannot load AI config: User not authenticated");
+					set({
+						isConfigLoading: false,
+						availableProviders: [],
+						availablePrompts: [],
+						aiError: null,
+					});
+					return;
+				}
+
 				logger.info("Loading AI config...");
 				set({ isConfigLoading: true, aiError: null });
 				try {
@@ -1644,7 +1657,7 @@ export const useAiStore = create<AiStore>()(
 									if (onMessage) onMessage(event);
 									break;
 
-								case "chat_complete":
+								case "chat_complete": {
 									const finalAssistantMessage = data.assistantMessage;
 
 									// Update state with final message
@@ -1717,8 +1730,9 @@ export const useAiStore = create<AiStore>()(
 										});
 									}
 									break;
+								}
 
-								case "error":
+								case "error": {
 									const errorMessage =
 										data.message || "Streaming error occurred";
 									set((state) => {
@@ -1736,6 +1750,7 @@ export const useAiStore = create<AiStore>()(
 									});
 									if (onError) onError(errorMessage);
 									break;
+								}
 							}
 						} catch (parseError) {
 							logger.error("[Streaming] Error parsing message:", {
