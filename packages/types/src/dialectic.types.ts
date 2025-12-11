@@ -444,6 +444,7 @@ export interface StageDocumentContentState {
   lastBaselineVersion: StageDocumentVersionInfo | null;
   pendingDiff: string | null;
   lastAppliedVersionHash: string | null;
+  sourceContributionId: string | null;
 }
 
 export interface StageRunProgressSnapshot {
@@ -1060,6 +1061,7 @@ export interface GetProjectResourceContentResponse {
   fileName: string;
   mimeType: string;
   content: string;
+  sourceContributionId: string | null;
 }
 
 // Add new payload/response types if they are not already defined from the plan for submitStageResponses and saveContributionEdit

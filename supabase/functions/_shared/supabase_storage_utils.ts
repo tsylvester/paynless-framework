@@ -108,6 +108,9 @@ export const downloadFromStorage: DownloadFromStorageFn = async (
 
     if (error) {
       console.error("Error downloading from storage:", error);
+      if ('originalError' in error && error.originalError instanceof Response) {
+        await error.originalError.text();
+      }
       return { data: null, error };
     }
     if (!data) {

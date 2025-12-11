@@ -165,6 +165,7 @@ export const ensureStageDocumentContentLogic = (
     lastBaselineVersion: version,
     pendingDiff: null,
     lastAppliedVersionHash: version?.versionHash ?? null,
+    sourceContributionId: null,
   };
 
   state.stageDocumentContent[serializedKey] = entry;
@@ -201,6 +202,7 @@ export const reapplyDraftToNewBaselineLogic = (
 	key: StageDocumentCompositeKey,
   newBaseline: string,
   newVersion: StageDocumentVersionInfo,
+  sourceContributionId?: string | null,
 ): void => {
 	console.log(
 		'[reapplyDraftToNewBaselineLogic] ENTERING',
@@ -226,6 +228,7 @@ export const reapplyDraftToNewBaselineLogic = (
   entry.lastAppliedVersionHash = newVersion.versionHash;
   entry.isLoading = false;
   entry.error = null;
+  entry.sourceContributionId = sourceContributionId ?? null;
 
   const diff = entry.pendingDiff;
   if (diff && diff.length > 0) {
@@ -262,6 +265,7 @@ type ImmerHelpers = {
 		key: StageDocumentCompositeKey,
 		newBaseline: string,
 		newVersion: StageDocumentVersionInfo,
+		sourceContributionId?: string | null,
 	) => void;
 };
 
@@ -359,6 +363,7 @@ export const fetchStageDocumentContentLogic = async (
 				lastBaselineVersion: versionInfo,
 				pendingDiff: null,
 				lastAppliedVersionHash: versionInfo.versionHash,
+				sourceContributionId: null,
 			};
 		} else {
 			entry.isLoading = true;
@@ -404,12 +409,13 @@ export const fetchStageDocumentContentLogic = async (
 		}
 
 		const baselineMarkdown = response.data.content ?? '';
+		const sourceContributionId = response.data.sourceContributionId ?? null;
 		set((state) => {
 			console.log(
 				'[fetchStageDocumentContentLogic] Calling reapplyDraftToNewBaseline with:',
-				JSON.parse(JSON.stringify({ key, baselineMarkdown, versionInfo })),
+				JSON.parse(JSON.stringify({ key, baselineMarkdown, versionInfo, sourceContributionId })),
 			);
-			helpers.reapplyDraftToNewBaseline(state, key, baselineMarkdown, versionInfo);
+			helpers.reapplyDraftToNewBaseline(state, key, baselineMarkdown, versionInfo, sourceContributionId);
 		});
 	} catch (error: unknown) {
 		const networkError: ApiError = {

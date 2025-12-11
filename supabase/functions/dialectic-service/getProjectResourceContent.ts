@@ -24,7 +24,7 @@ export async function getProjectResourceContent(
     // 1. Fetch the resource record to get storage path and verify ownership
     const { data: resource, error: resourceError } = await dbClient
       .from('dialectic_project_resources')
-      .select('project_id, user_id, file_name, mime_type, storage_bucket, storage_path')
+      .select('project_id, user_id, file_name, mime_type, storage_bucket, storage_path, source_contribution_id')
       .eq('id', resourceId)
       .single();
 
@@ -90,9 +90,16 @@ export async function getProjectResourceContent(
       fileName: resource.file_name,
       mimeType: resource.mime_type,
       content: content,
+      sourceContributionId: resource.source_contribution_id,
     };
 
-    logger.info(`[getProjectResourceContent] Preparing to return response data.`, { responseData });
+    logger.info(`[getProjectResourceContent] Preparing to return response data.`, { 
+      responseData,
+      sourceContributionId: responseData.sourceContributionId,
+      sourceContributionIdType: typeof responseData.sourceContributionId,
+      fileName: responseData.fileName,
+      contentLength: responseData.content.length,
+    });
 
     return {
       data: responseData,
@@ -100,7 +107,17 @@ export async function getProjectResourceContent(
 
   } catch (e: unknown) {
     const error = e as Error;
-    logger.error('[getProjectResourceContent] Unexpected error:', { resourceId, error: error.message, stack: error.stack });
+    logger.error('[getProjectResourceContent] Unexpected error:', { 
+      resourceId, 
+      error: error.message, 
+      stack: error.stack,
+      errorName: error.name,
+      errorString: String(error),
+      errorJson: JSON.stringify(error, Object.getOwnPropertyNames(error)),
+    });
     return { error: { message: "An unexpected error occurred while fetching resource content.", status: 500, details: error.message, code: "UNEXPECTED_ERROR" } };
   }
 } 
+
+
+

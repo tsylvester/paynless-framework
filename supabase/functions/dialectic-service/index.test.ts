@@ -102,17 +102,17 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers> & { getStageReci
         listAvailableDomains: overrides?.listAvailableDomains || (() => Promise.resolve([])),
         updateProjectDomain: overrides?.updateProjectDomain || (() => Promise.resolve({ data: mockProject })),
         getProjectDetails: overrides?.getProjectDetails || (() => Promise.resolve({ data: mockProject })),
-        getSessionDetails: overrides?.getSessionDetails || (() => Promise.resolve({ data: { session: mockSession, currentStageDetails: null } })),
+        getSessionDetails: overrides?.getSessionDetails || (() => Promise.resolve({ data: { session: mockSession, currentStageDetails: null, activeSeedPrompt: null } })),
         getContributionContentHandler: overrides?.getContributionContentHandler || (() => Promise.resolve({ data: { content: 'mock content', mimeType: 'text/plain', fileName: 'mock.txt', sizeBytes: 123 }})),
-        startSession: overrides?.startSession || (() => Promise.resolve({ data: mockSession })),
+        startSession: overrides?.startSession || (() => Promise.resolve({ data: { ...mockSession, seedPrompt: { promptContent: '', source_prompt_resource_id: '' } } })),
         generateContributions: overrides?.generateContributions || (() => Promise.resolve({ success: false, error: { message: "Not implemented" } })),
         listProjects: overrides?.listProjects || (() => Promise.resolve({ data: [mockProject] })),
         listAvailableDomainOverlays: overrides?.listAvailableDomainOverlays || (() => Promise.resolve([])),
         deleteProject: overrides?.deleteProject || (() => Promise.resolve({ status: 200 })),
         cloneProject: overrides?.cloneProject || (() => Promise.resolve({ data: mockProject, error: null, status: 201 })),
         exportProject: overrides?.exportProject || (() => Promise.resolve({ data: { export_url: '' }})),
-        getProjectResourceContent: overrides?.getProjectResourceContent || (() => Promise.resolve({ data: { fileName: '', mimeType: '', content: '' }})),
-        saveContributionEdit: overrides?.saveContributionEdit || (() => Promise.resolve({ data: { storage_bucket: 'mock-bucket', storage_path: 'mock-path', id: 'mock-contribution-id', session_id: 'mock-session-id', user_id: 'mock-user-id', stage: 'mock-stage', content: 'mock-content', mime_type: 'text/plain', file_name: 'mock.txt', size_bytes: 123, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), iteration_number: 1, model_id: 'mock-model-id', model_name: 'mock-model-name', prompt_template_id_used: 'mock-prompt-template-id', seed_prompt_url: 'mock-seed-prompt-url', edit_version: 1, is_latest_edit: true, original_model_contribution_id: 'mock-original-model-contribution-id', raw_response_storage_path: 'mock-raw-response-storage-path', target_contribution_id: 'mock-target-contribution-id', tokens_used_input: 10, tokens_used_output: 20, processing_time_ms: 100, error: null, citations: [], contribution_type: 'thesis' }, status: 200 })),
+        getProjectResourceContent: overrides?.getProjectResourceContent || (() => Promise.resolve({ data: { fileName: '', mimeType: '', content: '', sourceContributionId: null }})),
+        saveContributionEdit: overrides?.saveContributionEdit || (() => Promise.resolve({ data: { resource: { id: 'mock-resource-id', resource_type: 'rendered_document', project_id: 'mock-project-id', session_id: 'mock-session-id', stage_slug: 'thesis', iteration_number: 1, document_key: null, source_contribution_id: 'mock-contribution-id', storage_bucket: 'mock-bucket', storage_path: 'mock-path', file_name: 'mock.txt', mime_type: 'text/plain', size_bytes: 123, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }, sourceContributionId: 'mock-contribution-id' }, status: 200 })),
         submitStageResponses: overrides?.submitStageResponses || (() => Promise.resolve({ data: { message: 'mock-message', updatedSession: mockSession, feedbackRecords: [] }, status: 200 })),
         listDomains: overrides?.listDomains || (() => Promise.resolve({ data: [] })),
         fetchProcessTemplate: overrides?.fetchProcessTemplate || (() => Promise.resolve({ data: { created_at: new Date().toISOString(), description: 'mock-description', id: 'mock-id', name: 'mock-name', starting_stage_id: 'mock-starting-stage-id' }, status: 200 })),
@@ -1165,7 +1165,7 @@ withSupabaseEnv("handleRequest - getProjectResourceContent", async (t) => {
     const payload = { projectId: 'proj-123', resourceId: 'res-456' };
 
     await t.step("should call getProjectResourceContent and return 200 on success", async () => {
-        const mockResponse: GetProjectResourceContentResponse = { fileName: 'test.txt', mimeType: 'text/plain', content: 'hello world' };
+        const mockResponse: GetProjectResourceContentResponse = { fileName: 'test.txt', mimeType: 'text/plain', content: 'hello world', sourceContributionId: null };
         const getSpy = spy(() => Promise.resolve({ data: mockResponse, status: 200 }));
         const mockHandlers = createMockHandlers({ getProjectResourceContent: getSpy });
 

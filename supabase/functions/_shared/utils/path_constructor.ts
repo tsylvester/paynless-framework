@@ -283,6 +283,12 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
 
       // Handle new document-centric raw JSONs first, as they have a simpler naming scheme.
       if (fileType === FileType.ModelContributionRawJson && documentKey) {
+        // Validate turnIndex for continuation chunks before constructing path
+        if (isContinuation === true) {
+          if (turnIndex === undefined || typeof turnIndex !== 'number' || turnIndex <= 0) {
+            throw new Error('turnIndex is required and must be a number > 0 for continuation chunks');
+          }
+        }
         const sanitizedDocumentKey = sanitizeForPath(documentKey);
         const continuationSuffix = isContinuation ? `_continuation_${turnIndex}` : '';
         const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizedDocumentKey}${continuationSuffix}_raw.json`;

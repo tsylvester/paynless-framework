@@ -882,6 +882,7 @@ export interface GetProjectResourceContentResponse {
   fileName: string;
   mimeType: string;
   content: string;
+  sourceContributionId: string | null;
 }
 
 // Added for 1.2.Y.2

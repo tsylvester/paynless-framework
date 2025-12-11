@@ -8,7 +8,6 @@ import { downloadFromStorage } from "../supabase_storage_utils.ts";
 import { renderPrompt } from "../prompt-renderer.ts";
 import { HeaderContext, OutputRule } from "../../dialectic-service/dialectic.interface.ts";
 import { isHeaderContext, isContentToInclude, isOutputRule } from "../utils/type-guards/type_guards.dialectic.ts";
-import { compareContentToIncludeStructure, getStructureKeys } from "../utils/content_to_include_structure.ts";
 import type { Database } from "../../types_db.ts";
 
 export async function assembleTurnPrompt(
@@ -221,8 +220,7 @@ export async function assembleTurnPrompt(
     );
   }
 
-  // Validate structure matching: Compare context_for_documents.content_to_include structure
-  // with recipe step's documents[].content_to_include structure for the same document_key
+  // Validate key existence: Verify all required keys from recipe step's content_to_include exist in header_context
   if (outputsRequired.documents && Array.isArray(outputsRequired.documents)) {
     const recipeDoc = outputsRequired.documents.find(
       (d) => d.document_key === documentKey && 'content_to_include' in d
@@ -232,12 +230,15 @@ export async function assembleTurnPrompt(
       const recipeContentToInclude = recipeDoc.content_to_include;
       const contextContentToInclude = contextForDoc.content_to_include;
       
-      // Compare structure (keys, nested structure, array positions)
-      if (!compareContentToIncludeStructure(recipeContentToInclude, contextContentToInclude)) {
+      // Check that all required keys from recipe step exist in header_context (without type checking)
+      const requiredKeys = Object.keys(recipeContentToInclude);
+      const actualKeys = Object.keys(contextContentToInclude);
+      const missingKeys = requiredKeys.filter(key => !actualKeys.includes(key));
+      
+      if (missingKeys.length > 0) {
         throw new Error(
-          `assembleTurnPrompt requires content_to_include structure for document_key '${documentKey}' to match the recipe step's expected structure. ` +
-          `Recipe step has structure: ${JSON.stringify(getStructureKeys(recipeContentToInclude))}, ` +
-          `but header_context has structure: ${JSON.stringify(getStructureKeys(contextContentToInclude))}.`
+          `content_to_include for document_key '${documentKey}' is missing required keys from recipe step: ${missingKeys.join(', ')}. ` +
+          `Required keys: ${requiredKeys.join(', ')}, but header_context has keys: ${actualKeys.join(', ')}.`
         );
       }
     }

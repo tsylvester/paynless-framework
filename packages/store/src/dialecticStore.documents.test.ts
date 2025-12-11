@@ -153,6 +153,7 @@ describe('Dialectic store document refresh behaviour', () => {
 					content: 'Test content',
 					fileName: 'test.md',
 					mimeType: 'text/markdown',
+					sourceContributionId: null,
 				},
 				status: 200,
 			});
@@ -317,6 +318,7 @@ describe('Dialectic store document refresh behaviour', () => {
 				},
 				pendingDiff: userEdits,
 				lastAppliedVersionHash: 'old-hash',
+				sourceContributionId: null,
 			};
 			state.stageRunProgress[progressKey] = {
 				documents: {},
@@ -329,6 +331,7 @@ describe('Dialectic store document refresh behaviour', () => {
 				content: newBaseline,
 				fileName: 'test.md',
 				mimeType: 'text/markdown',
+				sourceContributionId: null,
 			},
 			status: 200,
 		});
@@ -360,6 +363,7 @@ describe('Dialectic store document refresh behaviour', () => {
 			},
 			pendingDiff: 'User edits',
 			lastAppliedVersionHash: 'some-hash',
+			sourceContributionId: null,
 		};
 
 		const mockRecipe: DialecticStageRecipe = {
@@ -463,6 +467,7 @@ describe('Dialectic store document refresh behaviour', () => {
 					},
 					pendingDiff: 'Some edits for A',
 					lastAppliedVersionHash: 'a1',
+					sourceContributionId: null,
 				},
 				[secondSerialized]: {
 					baselineMarkdown: 'Doc B baseline',
@@ -477,6 +482,7 @@ describe('Dialectic store document refresh behaviour', () => {
 					},
 					pendingDiff: 'Some edits for B',
 					lastAppliedVersionHash: 'b1',
+					sourceContributionId: null,
 				},
 			},
 		});
@@ -646,6 +652,7 @@ describe('Dialectic store document clear focused stage document', () => {
 					},
 					pendingDiff: 'Some edits for A',
 					lastAppliedVersionHash: 'a1',
+					sourceContributionId: null,
 				},
 				[secondSerialized]: {
 					baselineMarkdown: 'Doc B baseline',
@@ -660,6 +667,7 @@ describe('Dialectic store document clear focused stage document', () => {
 					},
 					pendingDiff: 'Some edits for B',
 					lastAppliedVersionHash: 'b1',
+					sourceContributionId: null,
 				},
 			},
 			focusedStageDocument: {
@@ -1394,6 +1402,7 @@ describe('handleDocumentCompletedLogic', () => {
 					content: 'test content',
 					fileName: 'test.md',
 					mimeType: 'text/markdown',
+					sourceContributionId: null,
 				},
 				status: 200,
 			});
@@ -1608,6 +1617,7 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 					content: 'test content',
 					fileName: 'test.md',
 					mimeType: 'text/markdown',
+					sourceContributionId: null,
 				},
 				status: 200,
 			});
@@ -1847,5 +1857,85 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 		expect(contentState).toBeDefined();
 		expect(contentState?.lastBaselineVersion).toBeDefined();
 		expect(contentState?.lastBaselineVersion?.resourceId).toBe(latestRenderedResourceId);
+	});
+});
+
+describe('fetchStageDocumentContentLogic stores sourceContributionId', () => {
+	const compositeKey: StageDocumentCompositeKey = {
+		sessionId: 'session-source-contrib',
+		stageSlug: 'thesis',
+		iterationNumber: 1,
+		modelId: 'model-1',
+		documentKey: 'business_case',
+	};
+	const serializedKey = getStageDocumentKey(compositeKey);
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		resetApiMock();
+		useDialecticStore.setState(initialDialecticStateValues);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('9.c.i: stores sourceContributionId when API response includes sourceContributionId', async () => {
+		const resourceId = 'resource-with-contrib';
+		const testContent = 'Test document content';
+		const sourceContributionId = 'contrib-123';
+
+		const getProjectResourceContentSpy = vi.spyOn(
+			mockDialecticClient,
+			'getProjectResourceContent',
+		);
+
+		getProjectResourceContentSpy.mockResolvedValue({
+			data: {
+				content: testContent,
+				fileName: 'test.md',
+				mimeType: 'text/markdown',
+				sourceContributionId: sourceContributionId,
+			},
+			status: 200,
+		});
+
+		await useDialecticStore
+			.getState()
+			.fetchStageDocumentContent(compositeKey, resourceId);
+
+		const state = useDialecticStore.getState();
+		const content = state.stageDocumentContent[serializedKey];
+		expect(content).toBeDefined();
+		expect(content?.sourceContributionId).toBe(sourceContributionId);
+	});
+
+	it('9.c.ii: stores sourceContributionId as null when API response has null sourceContributionId', async () => {
+		const resourceId = 'resource-null-contrib';
+		const testContent = 'Test document content';
+
+		const getProjectResourceContentSpy = vi.spyOn(
+			mockDialecticClient,
+			'getProjectResourceContent',
+		);
+
+		getProjectResourceContentSpy.mockResolvedValue({
+			data: {
+				content: testContent,
+				fileName: 'test.md',
+				mimeType: 'text/markdown',
+				sourceContributionId: null,
+			},
+			status: 200,
+		});
+
+		await useDialecticStore
+			.getState()
+			.fetchStageDocumentContent(compositeKey, resourceId);
+
+		const state = useDialecticStore.getState();
+		const content = state.stageDocumentContent[serializedKey];
+		expect(content).toBeDefined();
+		expect(content?.sourceContributionId).toBe(null);
 	});
 });

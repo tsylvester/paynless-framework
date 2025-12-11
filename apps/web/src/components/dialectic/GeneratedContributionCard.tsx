@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useEffect } from "react";
 import {
 	useDialecticStore,
 	selectStageRunProgress,
@@ -80,6 +80,7 @@ export const GeneratedContributionCard: React.FC<
 		isSavingContributionEdit,
 		saveContributionEditError,
 		activeContextProjectId,
+		fetchStageDocumentContent,
 	} = useDialecticStore((state) => {
 		const sessionId = state.activeContextSessionId;
 		const stageSlug = state.activeStageSlug;
@@ -105,6 +106,7 @@ export const GeneratedContributionCard: React.FC<
 			isSavingContributionEdit: state.isSavingContributionEdit,
 			saveContributionEditError: state.saveContributionEditError,
 			activeContextProjectId: state.activeContextProjectId,
+			fetchStageDocumentContent: state.fetchStageDocumentContent,
 		};
 	});
 
@@ -196,6 +198,41 @@ export const GeneratedContributionCard: React.FC<
 			? stageRunProgress.documents?.[focusedDocument.documentKey]
 			: undefined;
 
+	const isRenderedDescriptor = (
+		descriptor: StageRunDocumentDescriptor | undefined,
+	): descriptor is Extract<StageRunDocumentDescriptor, { latestRenderedResourceId: string }> => {
+		return Boolean(
+			descriptor &&
+			'latestRenderedResourceId' in descriptor &&
+			typeof descriptor.latestRenderedResourceId === 'string' &&
+			descriptor.latestRenderedResourceId.length > 0
+		);
+	};
+
+	useEffect(() => {
+		if (
+			compositeKey &&
+			isRenderedDescriptor(documentDescriptor) &&
+			!documentResourceState?.isLoading &&
+			!documentResourceState?.baselineMarkdown &&
+			!documentResourceState?.error &&
+			fetchStageDocumentContent
+		) {
+			fetchStageDocumentContent(
+				compositeKey,
+				documentDescriptor.latestRenderedResourceId,
+			);
+		}
+	}, [
+		compositeKey,
+		focusedDocument,
+		documentDescriptor,
+		documentResourceState?.isLoading,
+		documentResourceState?.baselineMarkdown,
+		documentResourceState?.error,
+		fetchStageDocumentContent,
+	]);
+
 	const handleDocumentSelect = useCallback(
 		(payload: SetFocusedStageDocumentPayload) => {
 			setFocusedStageDocument(payload);
@@ -255,9 +292,9 @@ export const GeneratedContributionCard: React.FC<
 		}
 
 		// Derive original contribution ID from resource state
-		// For the first edit, lastBaselineVersion.resourceId points to the original contribution
-		// For subsequent edits, it points to the resource which has source_contribution_id
-		const originalContributionIdToEdit = documentResourceState?.lastBaselineVersion?.resourceId;
+		// The sourceContributionId field contains the contribution ID from dialectic_project_resources.source_contribution_id
+		// This is the actual contribution ID (not a resource ID) needed for editing
+		const originalContributionIdToEdit = documentResourceState?.sourceContributionId;
 
 		if (!originalContributionIdToEdit) {
 			toast.error("Could not find original contribution to edit.");
@@ -305,7 +342,7 @@ export const GeneratedContributionCard: React.FC<
 	const canSaveEdit =
 		Boolean(compositeKey) &&
 		Boolean(documentResourceState?.currentDraftMarkdown) &&
-		Boolean(documentResourceState?.lastBaselineVersion?.resourceId);
+		Boolean(documentResourceState?.sourceContributionId);
 
 	if (!hasStageContext) {
 		return (
@@ -385,6 +422,17 @@ export const GeneratedContributionCard: React.FC<
 								<AlertDescription>{draftError.message}</AlertDescription>
 							</Alert>
 						)}
+
+						{documentDescriptor &&
+							!isRenderedDescriptor(documentDescriptor) &&
+							!isDraftLoading && (
+								<Alert variant="default">
+									<AlertDescription>
+										RENDER job has not completed yet. Document content will be
+										available once rendering is finished.
+									</AlertDescription>
+								</Alert>
+							)}
 
 					<TextInputArea
 						label="Document Content"

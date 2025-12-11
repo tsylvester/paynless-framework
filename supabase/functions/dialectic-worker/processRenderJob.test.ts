@@ -27,6 +27,7 @@ const makeRenderJob = (payloadOverrides: Partial<DialecticRenderJobPayload> = {}
     job_type: "RENDER",
     model_id: "renderer",
     walletId: "wallet-123",
+    user_jwt: "test-jwt-token",
     sourceContributionId: "doc-root-1",
     projectId: "project_123",
     sessionId: "session_abc",
@@ -119,10 +120,30 @@ Deno.test("processRenderJob - calls renderer with job signature and marks job co
 });
 
 Deno.test("processRenderJob - passes originating contribution id to renderer payload", async () => {
+  // Test 6.b.iv: Verify that sourceContributionId is passed correctly to renderDocument regardless of whether it equals documentIdentity
   const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
-  const { renderer, calls } = createDocumentRendererMock();
-  const documentIdentity = "root-doc-456";
-  const job = makeRenderJob({ documentIdentity, sourceContributionId: documentIdentity });
+  const { renderer, calls } = createDocumentRendererMock({
+    handler: async (_dbc, _deps, params) => {
+      // Return pathContext with sourceContributionId from params (not documentIdentity)
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
+  });
+  const documentIdentity = "doc-identity-456";
+  const sourceContributionId = "contrib-id-789";
+  // Use different values to verify the function passes them correctly regardless of equality
+  const job = makeRenderJob({ documentIdentity, sourceContributionId });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
 
@@ -145,8 +166,14 @@ Deno.test("processRenderJob - passes originating contribution id to renderer pay
   assert(isRecord(params), "Renderer params must be a record");
   if (isRecord(params)) {
     assert("sourceContributionId" in params, "Expected renderer params to include sourceContributionId");
-    const sourceContributionId = params["sourceContributionId"];
-    assertEquals(sourceContributionId, documentIdentity);
+    assert("documentIdentity" in params, "Expected renderer params to include documentIdentity");
+    const receivedSourceContributionId = params["sourceContributionId"];
+    const receivedDocumentIdentity = params["documentIdentity"];
+    // Verify sourceContributionId is passed correctly (not enforcing equality with documentIdentity)
+    assertEquals(receivedSourceContributionId, sourceContributionId, "sourceContributionId should be passed correctly to renderDocument");
+    assertEquals(receivedDocumentIdentity, documentIdentity, "documentIdentity should be passed correctly to renderDocument");
+    // This test verifies the values are passed correctly regardless of their relationship
+    // (separate tests 6.b.i and 6.b.ii explicitly test root and continuation chunk scenarios)
   }
 
   clearAllStubs?.();
@@ -394,8 +421,26 @@ Deno.test("processRenderJob - success path performs a single deterministic job u
 
 Deno.test("processRenderJob - persists renderer pathContext into job results", async () => {
   const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
-  const { renderer } = createDocumentRendererMock();
-  const job = makeRenderJob();
+  const expectedSourceContributionId = "expected-source-contrib-id";
+  const { renderer } = createDocumentRendererMock({
+    handler: async (_dbc, _deps, params) => {
+      // Return pathContext with sourceContributionId from params (not documentIdentity)
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
+  });
+  const job = makeRenderJob({ sourceContributionId: expectedSourceContributionId });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
 
@@ -428,10 +473,13 @@ Deno.test("processRenderJob - persists renderer pathContext into job results", a
     "Expected pathContext to include sourceContributionId",
   );
   const payload = job.payload;
-  assert(isRecord(payload) && "documentIdentity" in payload, "Expected job payload to provide documentIdentity");
+  assert(isRecord(payload) && "sourceContributionId" in payload, "Expected job payload to provide sourceContributionId");
   assert(isRecord(pathContext));
+  // Verify that sourceContributionId is saved from render result, not from documentIdentity
+  // The render result's sourceContributionId should match the payload's sourceContributionId (not documentIdentity)
   if (isRecord(pathContext) && isRecord(payload)) {
-    assertEquals(pathContext["sourceContributionId"], payload["documentIdentity"]);
+    assertEquals(pathContext["sourceContributionId"], expectedSourceContributionId, "pathContext.sourceContributionId should equal the payload's sourceContributionId");
+    assertEquals(pathContext["sourceContributionId"], payload["sourceContributionId"], "pathContext.sourceContributionId should come from render result, matching payload's sourceContributionId");
   }
 
   clearAllStubs?.();
@@ -758,5 +806,301 @@ Deno.test("processRenderJob - fails when documentKey is not a FileType", async (
   const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
   assert(typeof err === "string" && err.includes("documentKey must be a valid FileType"));
 
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - accepts sourceContributionId that differs from documentIdentity when document_relationships contains semantic identifier", async () => {
+  // Arrange: Create a RENDER job where sourceContributionId is the actual contribution ID
+  // and documentIdentity is a semantic identifier from document_relationships (different values)
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const { renderer, calls } = createDocumentRendererMock();
+  
+  const actualContributionId = "contrib-123"; // Actual contribution ID (for foreign key constraint)
+  const semanticIdentifier = "semantic-doc-identity-999"; // Semantic identifier from document_relationships
+  
+  // sourceContributionId should be the actual contribution ID, not the semantic identifier
+  const job = makeRenderJob({ 
+    sourceContributionId: actualContributionId,
+    documentIdentity: semanticIdentifier 
+  });
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+
+  // Act: processRenderJob should accept this configuration without throwing
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    {
+      documentRenderer: renderer,
+      logger,
+      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
+      fileManager: new MockFileManagerService(),
+      notificationService: mockNotificationService,
+    },
+    "auth-token",
+  );
+
+  // Assert: The job should process successfully (not fail with "sourceContributionId must equal documentIdentity")
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates);
+  assertEquals(updates.callCount, 1);
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload);
+  assertEquals(updatePayload.status, "completed", "Job should complete successfully when sourceContributionId differs from documentIdentity");
+
+  // Assert: renderer should be called with the correct parameters
+  assertEquals(calls.length, 1, "Renderer should be called exactly once");
+  const renderParams = calls[0].params;
+  assert(isRecord(renderParams), "Renderer params must be a record");
+  assertEquals(renderParams.sourceContributionId, actualContributionId, "sourceContributionId should be the actual contribution ID");
+  assertEquals(renderParams.documentIdentity, semanticIdentifier, "documentIdentity should be the semantic identifier");
+  assert(renderParams.sourceContributionId !== renderParams.documentIdentity, "sourceContributionId and documentIdentity should be different when document_relationships contains a semantic identifier");
+
+  // Assert: No error should be logged about sourceContributionId not equaling documentIdentity
+  const errorDetails = isRecord(updatePayload) && "error_details" in updatePayload ? updatePayload.error_details : null;
+  assert(
+    !errorDetails || (typeof errorDetails === "string" && !errorDetails.includes("sourceContributionId must equal documentIdentity")),
+    "Should not fail with 'sourceContributionId must equal documentIdentity' error"
+  );
+
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - processes RENDER job successfully for root chunk where sourceContributionId equals documentIdentity", async () => {
+  // Test 6.b.i: Verify root chunks where sourceContributionId === documentIdentity
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const rootId = "root-contrib-6b-i";
+  
+  const { renderer, calls } = createDocumentRendererMock({
+    handler: async (_dbc, _deps, params) => {
+      // Return pathContext with sourceContributionId from params (not documentIdentity)
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
+  });
+  
+  // (1) Create a RENDER job with payload containing sourceContributionId: rootId and documentIdentity: rootId (both equal)
+  const job = makeRenderJob({
+    sourceContributionId: rootId,
+    documentIdentity: rootId,
+  });
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  
+  // (2) Call processRenderJob with the job
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    {
+      documentRenderer: renderer,
+      logger,
+      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
+      fileManager: new MockFileManagerService(),
+      notificationService: mockNotificationService,
+    },
+    "auth-token",
+  );
+  
+  // (3) Verify renderDocument is called with sourceContributionId: rootId and documentIdentity: rootId
+  assertEquals(calls.length, 1, "renderDocument should be called exactly once");
+  const renderParams = calls[0].params;
+  assert(isRecord(renderParams), "Renderer params must be a record");
+  assertEquals(renderParams.sourceContributionId, rootId, "sourceContributionId should equal rootId");
+  assertEquals(renderParams.documentIdentity, rootId, "documentIdentity should equal rootId");
+  
+  // (4) Verify the job is updated with status 'completed'
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates, "Job update should be called");
+  assertEquals(updates.callCount, 1, "Job should be updated exactly once");
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload, "Update payload should have status");
+  assertEquals(updatePayload.status, "completed", "Job status should be 'completed'");
+  
+  // (5) Verify results.pathContext.sourceContributionId is set to rootId
+  assert(isRecord(updatePayload) && "results" in updatePayload, "Update payload should have results");
+  const results = updatePayload["results"];
+  assert(isRecord(results) && "pathContext" in results, "Results should have pathContext");
+  const pathContext = results["pathContext"];
+  assert(isRecord(pathContext) && "sourceContributionId" in pathContext, "pathContext should have sourceContributionId");
+  assertEquals(pathContext["sourceContributionId"], rootId, "results.pathContext.sourceContributionId should equal rootId");
+  
+  // (6) Explicitly assert that sourceContributionId === documentIdentity for root chunks
+  assertEquals(renderParams.sourceContributionId, renderParams.documentIdentity, "For root chunks, sourceContributionId should equal documentIdentity");
+  
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - processes RENDER job successfully for continuation chunk where sourceContributionId differs from documentIdentity", async () => {
+  // Test 6.b.ii: Verify continuation chunks where sourceContributionId !== documentIdentity
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const rootId = "root-contrib-6b-ii";
+  const continuationId = "continuation-contrib-6b-ii";
+  
+  const { renderer, calls } = createDocumentRendererMock({
+    handler: async (_dbc, _deps, params) => {
+      // Return pathContext with sourceContributionId from params (not documentIdentity)
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
+  });
+  
+  // (1) Create a RENDER job with payload containing sourceContributionId: continuationId and documentIdentity: rootId (different values)
+  const job = makeRenderJob({
+    sourceContributionId: continuationId,
+    documentIdentity: rootId,
+  });
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  
+  // (2) Call processRenderJob with the job
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    {
+      documentRenderer: renderer,
+      logger,
+      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
+      fileManager: new MockFileManagerService(),
+      notificationService: mockNotificationService,
+    },
+    "auth-token",
+  );
+  
+  // (3) Verify renderDocument is called with sourceContributionId: continuationId and documentIdentity: rootId (different values)
+  assertEquals(calls.length, 1, "renderDocument should be called exactly once");
+  const renderParams = calls[0].params;
+  assert(isRecord(renderParams), "Renderer params must be a record");
+  assertEquals(renderParams.sourceContributionId, continuationId, "sourceContributionId should equal continuationId");
+  assertEquals(renderParams.documentIdentity, rootId, "documentIdentity should equal rootId");
+  assert(renderParams.sourceContributionId !== renderParams.documentIdentity, "sourceContributionId and documentIdentity should be different for continuation chunks");
+  
+  // (4) Verify the job is updated with status 'completed'
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates, "Job update should be called");
+  assertEquals(updates.callCount, 1, "Job should be updated exactly once");
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload, "Update payload should have status");
+  assertEquals(updatePayload.status, "completed", "Job status should be 'completed'");
+  
+  // (5) Verify results.pathContext.sourceContributionId is set to continuationId (the actual contribution.id, not the documentIdentity)
+  assert(isRecord(updatePayload) && "results" in updatePayload, "Update payload should have results");
+  const results = updatePayload["results"];
+  assert(isRecord(results) && "pathContext" in results, "Results should have pathContext");
+  const pathContext = results["pathContext"];
+  assert(isRecord(pathContext) && "sourceContributionId" in pathContext, "pathContext should have sourceContributionId");
+  assertEquals(pathContext["sourceContributionId"], continuationId, "results.pathContext.sourceContributionId should equal continuationId (not documentIdentity)");
+  assert(pathContext["sourceContributionId"] !== rootId, "results.pathContext.sourceContributionId should not equal documentIdentity for continuation chunks");
+  
+  // (6) Explicitly assert that sourceContributionId !== documentIdentity for continuation chunks
+  assert(renderParams.sourceContributionId !== renderParams.documentIdentity, "For continuation chunks, sourceContributionId should not equal documentIdentity");
+  
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - passes sourceContributionId and documentIdentity to renderDocument without enforcing equality", async () => {
+  // Test 6.b.iii: Verify the function does not enforce equality between sourceContributionId and documentIdentity
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const anyId = "any-contribution-id-6b-iii";
+  const differentId = "different-document-identity-6b-iii";
+  
+  const { renderer, calls } = createDocumentRendererMock({
+    handler: async (_dbc, _deps, params) => {
+      // Return pathContext with sourceContributionId from params (not documentIdentity)
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
+  });
+  
+  // (1) Create a RENDER job with payload containing sourceContributionId: anyId and documentIdentity: differentId (different values)
+  const job = makeRenderJob({
+    sourceContributionId: anyId,
+    documentIdentity: differentId,
+  });
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  
+  // (2) Call processRenderJob with the job
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    {
+      documentRenderer: renderer,
+      logger,
+      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
+      fileManager: new MockFileManagerService(),
+      notificationService: mockNotificationService,
+    },
+    "auth-token",
+  );
+  
+  // (3) Verify renderDocument is called with exactly the values from the payload (no coercion or equality checks)
+  assertEquals(calls.length, 1, "renderDocument should be called exactly once");
+  const renderParams = calls[0].params;
+  assert(isRecord(renderParams), "Renderer params must be a record");
+  assertEquals(renderParams.sourceContributionId, anyId, "sourceContributionId should equal the payload value (no coercion)");
+  assertEquals(renderParams.documentIdentity, differentId, "documentIdentity should equal the payload value (no coercion)");
+  assert(renderParams.sourceContributionId !== renderParams.documentIdentity, "sourceContributionId and documentIdentity should remain different");
+  
+  // (4) Verify the function does not throw errors about sourceContributionId not equaling documentIdentity
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates, "Job update should be called");
+  assertEquals(updates.callCount, 1, "Job should be updated exactly once");
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload, "Update payload should have status");
+  assertEquals(updatePayload.status, "completed", "Job should complete successfully without equality errors");
+  
+  // Check that no error_details contains equality-related error messages
+  if (isRecord(updatePayload) && "error_details" in updatePayload) {
+    const errorDetails = updatePayload["error_details"];
+    if (typeof errorDetails === "string") {
+      assert(
+        !errorDetails.includes("sourceContributionId must equal documentIdentity") &&
+        !errorDetails.includes("sourceContributionId must equal") &&
+        !errorDetails.includes("documentIdentity must equal"),
+        "Should not have error about sourceContributionId equaling documentIdentity"
+      );
+    }
+  }
+  
+  // (5) Verify the job completes successfully
+  assert(updatePayload.status === "completed", "Job should complete successfully when sourceContributionId differs from documentIdentity");
+  
   clearAllStubs?.();
 });

@@ -1,4 +1,5 @@
 import { SupabaseClient } from 'npm:@supabase/supabase-js@^2.43.4'
+import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts'
 import type {
   Database,
   TablesInsert,
@@ -6,11 +7,15 @@ import type {
 } from '../../types_db.ts'
 import { isPostgrestError, isRecord } from '../utils/type_guards.ts'
 import type { FileManagerResponse, FileManagerError, UploadContext, PathContext } from '../types/file_manager.types.ts'
+import { FileType } from '../types/file_manager.types.ts'
 import {
   isModelContributionContext,
   isUserFeedbackContext,
   isResourceContext,
 } from '../utils/type-guards/type_guards.file_manager.ts'
+import { deconstructStoragePath } from '../utils/path_deconstructor.ts'
+import { shouldEnqueueRenderJob } from '../utils/shouldEnqueueRenderJob.ts'
+import type { ShouldEnqueueRenderJobDeps, ShouldEnqueueRenderJobParams } from '../types/shouldEnqueueRenderJob.interface.ts'
 
 export interface FileManagerDependencies {
   constructStoragePath: (context: PathContext) => { storagePath: string; fileName: string; }
@@ -51,15 +56,8 @@ export class FileManagerService {
     context: UploadContext,
   ): Promise<FileManagerResponse> {
     // --- Path Construction ---
-    // The path context can be modified for special cases like continuations.
-    let pathContextForStorage: PathContext = context.pathContext
-    if (isModelContributionContext(context) && context.contributionMetadata.isContinuation) {
-      pathContextForStorage = {
-        ...context.pathContext,
-        isContinuation: true,
-        turnIndex: context.contributionMetadata.turnIndex,
-      }
-    }
+    // The path context is used directly (isContinuation and turnIndex are already set by callers in pathContext)
+    const pathContextForStorage: PathContext = context.pathContext
 
     // --- FileContent Validation ---
     if (isModelContributionContext(context)) {
@@ -92,6 +90,25 @@ export class FileManagerService {
     if (
       isModelContributionContext(context)
     ) {
+      // Helper function to extract content preview for logging
+      const getContentPreview = (content: Buffer | ArrayBuffer | string): { length: number; first50: string; last50: string } => {
+        let contentString: string;
+        if (typeof content === 'string') {
+          contentString = content;
+        } else if (content instanceof ArrayBuffer) {
+          contentString = new TextDecoder().decode(content);
+        } else if (content instanceof Buffer) {
+          contentString = content.toString('utf-8');
+        } else {
+          contentString = String(content);
+        }
+        return {
+          length: contentString.length,
+          first50: contentString.substring(0, 50),
+          last50: contentString.substring(Math.max(0, contentString.length - 50)),
+        };
+      };
+
       for (currentAttemptCount = 0; currentAttemptCount < MAX_UPLOAD_ATTEMPTS; currentAttemptCount++) {
         const attemptPathContext: PathContext = {
           ...pathContextForStorage,
@@ -99,6 +116,10 @@ export class FileManagerService {
         };
         const pathParts = this.constructStoragePath(attemptPathContext);
         const fullPathForUpload = `${pathParts.storagePath}/${pathParts.fileName}`;
+
+        // 14.b.i: Log before upload attempt
+        const contentPreview = getContentPreview(context.fileContent);
+        console.log(`[FileManagerService] UPLOAD_ATTEMPT [BEFORE] attemptCount=${currentAttemptCount}, isContinuation=${attemptPathContext.isContinuation ?? false}, turnIndex=${attemptPathContext.turnIndex ?? 'undefined'}, fullPathForUpload=${fullPathForUpload}, fileContentLength=${contentPreview.length}, fileContentFirst50=${JSON.stringify(contentPreview.first50)}, fileContentLast50=${JSON.stringify(contentPreview.last50)}`);
 
         const uploadResult = await this.supabase.storage
           .from(this.storageBucket)
@@ -108,6 +129,13 @@ export class FileManagerService {
           });
 
         mainUploadError = uploadResult.error;
+
+        // 14.b.ii: Log after upload attempt
+        const isCollisionError = mainUploadError && mainUploadError.message && 
+          (mainUploadError.message.includes('The resource already exists') || 
+            ('statusCode' in mainUploadError && mainUploadError.statusCode === '409'));
+        const uploadSucceeded = !mainUploadError;
+        console.log(`[FileManagerService] UPLOAD_ATTEMPT [AFTER] attemptCount=${currentAttemptCount}, fullPathForUpload=${fullPathForUpload}, uploadSucceeded=${uploadSucceeded}, isCollisionError=${isCollisionError}, errorMessage=${mainUploadError ? JSON.stringify(mainUploadError.message) : 'null'}`);
 
         if (mainUploadError) {
           console.error(`[FileManagerService] Storage upload failed for path ${fullPathForUpload}. Error:`, JSON.stringify(mainUploadError, null, 2));
@@ -133,6 +161,10 @@ export class FileManagerService {
           break;
         }
       }
+
+      // 14.b.iii: Log after loop completes
+      const rawResponseStoragePath = `${finalMainContentFilePath}/${finalFileName}`;
+      console.log(`[FileManagerService] UPLOAD_ATTEMPT [COMPLETE] finalMainContentFilePath=${finalMainContentFilePath}, finalFileName=${finalFileName}, raw_response_storage_path=${rawResponseStoragePath}`);
     } else {
       const pathParts = this.constructStoragePath(pathContextForStorage);
       const fullPathForUpload = `${pathParts.storagePath}/${pathParts.fileName}`;
@@ -234,7 +266,7 @@ export class FileManagerService {
         const meta = context.contributionMetadata
 
         // Enforce strict lineage: continuations must provide target_contribution_id
-        if (meta.isContinuation === true) {
+        if (pathContextForStorage.isContinuation === true) {
           const hasValidLink = typeof meta.target_contribution_id === 'string' && meta.target_contribution_id.length > 0
           if (!hasValidLink) {
             const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`
@@ -464,7 +496,7 @@ export class FileManagerService {
       // This is simpler than a complex recursive CTE query.
       const { data: rootContribution, error: rootError } = await this.supabase
         .from('dialectic_contributions')
-        .select('id, session_id, storage_path, file_name')
+        .select('id, session_id, storage_path, file_name, iteration_number, stage')
         .eq('id', rootContributionId)
         .single();
 
@@ -497,35 +529,141 @@ export class FileManagerService {
         currentId = nextChunk ? nextChunk.id : null;
       }
 
-      // 3. Download and concatenate content.
-      let finalContent = '';
+      // 3. Download and parse JSON content from storage_path/file_name (canonical access method).
+      const parsedChunks: Record<string, unknown>[] = [];
       for (const chunk of orderedChunks) {
+        // Validate storage_path and file_name exist (canonical access method)
+        if (!chunk.storage_path || typeof chunk.storage_path !== 'string') {
+          throw new Error(`Chunk ${chunk.id} is missing storage_path. Storage path is required for JSON assembly.`);
+        }
+        if (!chunk.file_name || typeof chunk.file_name !== 'string') {
+          throw new Error(`Chunk ${chunk.id} is missing file_name. File name is required for JSON assembly.`);
+        }
+
         const fullPath = `${chunk.storage_path}/${chunk.file_name}`;
         const { data, error } = await this.supabase.storage
           .from(this.storageBucket)
           .download(fullPath);
-        if (error) {
-          throw new Error(`Failed to download chunk ${chunk.id} from ${fullPath}: ${error.message}`);
+
+        if (error || !data) {
+          throw new Error(`Failed to download chunk ${chunk.id} from ${fullPath}: ${error?.message || 'No data returned'}`);
         }
-        finalContent += await data.text();
+
+        try {
+          const textContent = await data.text();
+          const parsedJson = JSON.parse(textContent);
+          // Validate that parsed JSON is a record (object, not array, not primitive)
+          if (!isRecord(parsedJson)) {
+            throw new Error(`Chunk ${chunk.id} contains invalid JSON: expected object, got ${Array.isArray(parsedJson) ? 'array' : typeof parsedJson}`);
+          }
+          parsedChunks.push(parsedJson);
+        } catch (parseError) {
+          throw new Error(`Failed to parse JSON from chunk ${chunk.id} at ${fullPath}: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`);
+        }
       }
 
-      // 4. Upload the final assembled document.
-      // The final path is simply the path of the root contribution.
-      const finalPath = `${rootContribution.storage_path}/${rootContribution.file_name}`;
+      // 4. Merge parsed chunks into a single ordered JSON object.
+      // Merging strategy:
+      // - Start with root chunk object
+      // - For each continuation chunk: merge properties
+      //   - For 'content' key: concatenate string values directly (continuation content already includes separators if needed)
+      //   - For object values: deep merge recursively
+      //   - For other values: use continuation's value (override or add)
+      if (parsedChunks.length === 0) {
+        throw new Error('No chunks to assemble');
+      }
 
+      const mergeObjects = (target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> => {
+        const merged: Record<string, unknown> = { ...target };
+        for (const key in source) {
+          if (Object.prototype.hasOwnProperty.call(source, key)) {
+            const sourceValue = source[key];
+            const targetValue = merged[key];
+
+            // Special handling for 'content' key: concatenate strings
+            if (key === 'content' && typeof targetValue === 'string' && typeof sourceValue === 'string') {
+              merged[key] = targetValue + sourceValue;
+            }
+            // Deep merge objects (but not arrays)
+            else if (
+              isRecord(targetValue) &&
+              isRecord(sourceValue)
+            ) {
+              merged[key] = mergeObjects(targetValue, sourceValue);
+            }
+            // For all other cases: use source value (override or add)
+            else {
+              merged[key] = sourceValue;
+            }
+          }
+        }
+        return merged;
+      };
+
+      let mergedObject = parsedChunks[0];
+      for (let i = 1; i < parsedChunks.length; i++) {
+        mergedObject = mergeObjects(mergedObject, parsedChunks[i]);
+      }
+
+      const finalContent = JSON.stringify(mergedObject);
+
+      if(!rootContribution.file_name) {
+        throw new Error(`Root contribution file name is missing. File name: ${rootContribution.file_name}`);
+      }
+      // 5. Extract path context from root contribution to construct AssembledDocumentJson path.
+      const pathInfo = deconstructStoragePath({
+        storageDir: rootContribution.storage_path,
+        fileName: rootContribution.file_name,
+      });
+
+      // 5.1. Validate that documentKey is not a rendered document type.
+      // assembleAndSaveFinalDocument should only be called for JSON-only artifacts (shouldRender === false),
+      // not for rendered documents. Rendered documents should use RENDER jobs via renderDocument instead.
+      if (pathInfo.documentKey && pathInfo.stageSlug) {
+        const deps: ShouldEnqueueRenderJobDeps = {
+          dbClient: this.supabase,
+        };
+        const params: ShouldEnqueueRenderJobParams = {
+          outputType: pathInfo.documentKey,
+          stageSlug: pathInfo.stageSlug,
+        };
+        const shouldRender = await shouldEnqueueRenderJob(deps, params);
+        if (shouldRender) {
+          throw new Error(`assembleAndSaveFinalDocument should only be called for JSON-only artifacts (shouldRender === false), not for rendered documents. Rendered documents should use RENDER jobs via renderDocument instead. DocumentKey: ${pathInfo.documentKey}, StageSlug: ${pathInfo.stageSlug}`);
+        }
+      }
+
+      if (!pathInfo.originalProjectId || !pathInfo.stageSlug || !pathInfo.modelSlug || pathInfo.attemptCount === undefined || !pathInfo.documentKey) {
+        throw new Error(`Cannot construct AssembledDocumentJson path: missing required path context. ProjectId: ${pathInfo.originalProjectId}, StageSlug: ${pathInfo.stageSlug}, ModelSlug: ${pathInfo.modelSlug}, AttemptCount: ${pathInfo.attemptCount}, DocumentKey: ${pathInfo.documentKey}`);
+      }
+
+      const pathContext: PathContext = {
+        projectId: pathInfo.originalProjectId,
+        fileType: FileType.AssembledDocumentJson,
+        sessionId: rootContribution.session_id,
+        iteration: pathInfo.iteration ?? rootContribution.iteration_number,
+        stageSlug: pathInfo.stageSlug,
+        modelSlug: pathInfo.modelSlug,
+        attemptCount: pathInfo.attemptCount,
+        documentKey: pathInfo.documentKey,
+      };
+
+      const constructedPath = this.constructStoragePath(pathContext);
+      const finalPath = `${constructedPath.storagePath}/${constructedPath.fileName}`;
+
+      // 6. Upload the assembled JSON to the AssembledDocumentJson path.
       const { error: uploadError } = await this.supabase.storage
         .from(this.storageBucket)
         .upload(finalPath, finalContent, {
-          contentType: 'text/markdown',
+          contentType: 'application/json',
           upsert: true, // Overwrite if it somehow exists
         });
 
       if (uploadError) {
-        throw new Error(`Failed to upload final document to ${finalPath}: ${uploadError.message}`);
+        throw new Error(`Failed to upload assembled JSON to ${finalPath}: ${uploadError.message}`);
       }
 
-      // 5. Update is_latest_edit flags:
+      // 7. Update is_latest_edit flags:
       //    - All continuation chunks in the chain should no longer be latest edits
       //    - The root contribution (final assembled document) should be the latest edit
       try {

@@ -471,13 +471,30 @@ export async function handleRequest(
         }
         case "getProjectResourceContent": {
           const payload: GetProjectResourceContentPayload = requestBody.payload;
+          logger.info('[getProjectResourceContent handler] Received request', { payload, userId: userForJson?.id });
           if (!payload || !payload.resourceId) {
+            logger.warn('[getProjectResourceContent handler] Missing resourceId', { payload });
             return createErrorResponse("resourceId is required.", 400, req, { message: "resourceId is required.", status: 400 });
           }
           const { data, error, status } = await handlers.getProjectResourceContent(payload, adminClient, userForJson!);
           if (error) {
+            logger.error('[getProjectResourceContent handler] Function returned error', { 
+              error, 
+              errorMessage: error.message, 
+              errorStatus: status || 500,
+              errorCode: error.code,
+              errorDetails: error.details,
+              errorString: JSON.stringify(error),
+            });
             return createErrorResponse(error.message, status || 500, req, error);
           }
+          logger.info('[getProjectResourceContent handler] Function returned success', { 
+            data,
+            hasData: !!data,
+            dataKeys: data ? Object.keys(data) : [],
+            sourceContributionId: data?.sourceContributionId,
+            sourceContributionIdType: data ? typeof data.sourceContributionId : 'undefined',
+          });
           return createSuccessResponse(data, 200, req);
         }
         case "saveContributionEdit": {

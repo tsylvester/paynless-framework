@@ -324,12 +324,18 @@ const failedDocumentKeys = useMemo(() => {
 }, [documentGroups, stageProgressSummary]);
 
 const hasGeneratingDocuments = useMemo(() => {
+  // Check documentGroups (derived from selectStageDocumentChecklist via documentsByModel) for any document with status 'generating'
+  // Defensive: This check explicitly looks for 'generating' status only, which inherently excludes 'completed' documents
+  // The status check ensures we only count documents that are actively generating, not those that are completed
   return documentGroups.some(([, documents]) =>
     documents.some((document) => document.status === 'generating')
   );
 }, [documentGroups]);
 
-const isGenerating = hasGeneratingDocuments && failedDocumentKeys.length === 0 && !generationError;
+const isGenerating = useMemo(() => {
+  // Banner is shown only when: documents are generating, no failed documents, and no generation errors
+  return hasGeneratingDocuments && failedDocumentKeys.length === 0 && !generationError;
+}, [hasGeneratingDocuments, failedDocumentKeys, generationError]);
 
   const hasDocuments = useMemo(
     () => filteredDocumentGroups.some(([, documents]) => documents.length > 0),

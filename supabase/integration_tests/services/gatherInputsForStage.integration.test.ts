@@ -244,7 +244,7 @@ describe("gatherInputsForStage Integration Tests", () => {
           modelNameDisplay: modelSlug,
           stageSlug: sourceStageSlug,
           iterationNumber: iterationNumber,
-          document_relationships: { [sourceStageSlug.toUpperCase()]: docIdentity },
+          document_relationships: { [sourceStageSlug]: docIdentity },
           editVersion: 1,
           isLatestEdit: true,
         },

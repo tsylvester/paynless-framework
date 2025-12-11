@@ -750,15 +750,65 @@ class MockQueryBuilder implements IMockQueryBuilder {
                     if (typeof firstRow === 'object' && firstRow !== null) {
                         const validColumns = new Set(Object.keys(firstRow));
                         // Validate that selected columns (if specified) exist in the data
-                        // If selectColumns is '*', we don't validate individual columns
-                        if (this._state.selectColumns && this._state.selectColumns !== '*') {
-                            const selectedColumns = this._state.selectColumns.split(',').map(col => col.trim());
+                        // If selectColumns is '*' or contains '*', we don't validate individual columns
+                        // (PostgREST allows '*', 'col1,col2', or '*,foreign_key:column' syntax)
+                        if (this._state.selectColumns && !this._state.selectColumns.includes('*')) {
+                            // Parse select columns, handling nested relationship syntax
+                            // e.g., "id, dialectic_sessions (project_id, dialectic_projects (user_id))"
+                            const parseSelectColumns = (selectStr: string): string[] => {
+                                const columns: string[] = [];
+                                let current = '';
+                                let depth = 0;
+                                
+                                for (let i = 0; i < selectStr.length; i++) {
+                                    const char = selectStr[i];
+                                    if (char === '(') {
+                                        depth++;
+                                        if (depth === 1) {
+                                            // Extract column name before opening parenthesis
+                                            const columnName = current.trim();
+                                            if (columnName) {
+                                                columns.push(columnName);
+                                            }
+                                            current = '';
+                                        }
+                                    } else if (char === ')') {
+                                        depth--;
+                                        if (depth === 0) {
+                                            // End of nested relationship, reset for next column
+                                            current = '';
+                                        }
+                                    } else if (char === ',' && depth === 0) {
+                                        // Top-level comma, end of current column
+                                        const columnName = current.trim();
+                                        if (columnName) {
+                                            columns.push(columnName);
+                                        }
+                                        current = '';
+                                    } else {
+                                        current += char;
+                                    }
+                                }
+                                
+                                // Add final column if any
+                                const columnName = current.trim();
+                                if (columnName) {
+                                    columns.push(columnName);
+                                }
+                                
+                                return columns;
+                            };
+                            
+                            const selectedColumns = parseSelectColumns(this._state.selectColumns);
                             for (const col of selectedColumns) {
-                                if (!validColumns.has(col)) {
+                                // Skip validation for foreign key syntax (e.g., "parent_contribution_id:target_contribution_id")
+                                // Extract the left side before the colon for validation
+                                const columnToValidate = col.includes(':') ? col.split(':')[0].trim() : col.trim();
+                                if (columnToValidate !== '*' && !validColumns.has(columnToValidate)) {
                                     const error = createPostgresError(
-                                        `column ${this._state.tableName}.${col} does not exist`,
+                                        `column ${this._state.tableName}.${columnToValidate} does not exist`,
                                         '42703',
-                                        `The column "${col}" does not exist in table "${this._state.tableName}"`,
+                                        `The column "${columnToValidate}" does not exist in table "${this._state.tableName}"`,
                                         `Check the Database type definition for valid columns in ${this._state.tableName}`
                                     );
                                     return {

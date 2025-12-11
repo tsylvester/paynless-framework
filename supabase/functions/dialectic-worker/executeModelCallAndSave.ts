@@ -1088,6 +1088,18 @@ export async function executeModelCallAndSave(
         if (!isDocumentRelationships(relsUnknown)) {
             throw new Error('Continuation save requires valid document_relationships');
         }
+        
+        // Validate continuation_count is required and > 0 for continuation chunks
+        const continuationCount = job.payload.continuation_count;
+        if (continuationCount === undefined || continuationCount === null) {
+            throw new Error('continuation_count is required and must be a number > 0 for continuation chunks');
+        }
+        if (typeof continuationCount !== 'number') {
+            throw new Error('continuation_count is required and must be a number > 0 for continuation chunks');
+        }
+        if (continuationCount <= 0) {
+            throw new Error('continuation_count is required and must be a number > 0 for continuation chunks');
+        }
     }
 
     if (!aiResponse.rawProviderResponse || !isJson(aiResponse.rawProviderResponse)) {
@@ -1158,7 +1170,7 @@ export async function executeModelCallAndSave(
             ...(validatedDocumentKey ? { documentKey: validatedDocumentKey } : {}),
             contributionType,
             isContinuation: isContinuationForStorage,
-            turnIndex: isContinuationForStorage ? job.payload.continuation_count ?? 0 : undefined,
+            turnIndex: isContinuationForStorage ? job.payload.continuation_count : undefined,
         },
         fileContent: contentForStorage, 
         mimeType: "application/json",
@@ -1197,8 +1209,9 @@ export async function executeModelCallAndSave(
     const contribution = savedResult.record;
 
     // Conditionally enqueue RENDER job for markdown document outputs on every chunk completion
+    let shouldRender = false; // Default to false (JSON-only artifact) if query fails
     try {
-        const shouldRender = await shouldEnqueueRenderJob({ dbClient }, { outputType: output_type, stageSlug });
+        shouldRender = await shouldEnqueueRenderJob({ dbClient }, { outputType: output_type, stageSlug });
         if (!shouldRender) {
             deps.logger.info('[executeModelCallAndSave] Skipping RENDER job for non-markdown output type', { output_type, stageSlug });
         } else {
@@ -1215,12 +1228,32 @@ export async function executeModelCallAndSave(
                 }
             }
 
+            // Validate required fields before creating RENDER job payload
+            if (!validatedDocumentKey || typeof validatedDocumentKey !== 'string' || validatedDocumentKey.trim() === '') {
+                deps.logger.error('[executeModelCallAndSave] Cannot enqueue RENDER job: validatedDocumentKey is missing or invalid', { 
+                    jobId, 
+                    fileType, 
+                    validatedDocumentKey 
+                });
+                throw new Error('validatedDocumentKey is required for RENDER job but is missing or invalid');
+            }
+
+            if (!documentIdentity || typeof documentIdentity !== 'string' || documentIdentity.trim() === '') {
+                deps.logger.error('[executeModelCallAndSave] Cannot enqueue RENDER job: documentIdentity is missing or invalid', { 
+                    jobId, 
+                    documentIdentity 
+                });
+                throw new Error('documentIdentity is required for RENDER job but is missing or invalid');
+            }
+
             const renderPayload = {
                 projectId,
                 sessionId,
                 iterationNumber,
                 stageSlug,
                 documentIdentity,
+                documentKey: validatedDocumentKey,
+                sourceContributionId: contribution.id,
             };
 
             const insertObj: TablesInsert<'dialectic_generation_jobs'> = {
@@ -1343,13 +1376,15 @@ export async function executeModelCallAndSave(
           deps.logger.error(`[dialectic-worker] [executeModelCallAndSave] Failed to enqueue continuation for job ${job.id}.`, { error: continueResult.error.message });
         }
         if (projectOwnerUserId) {
+            // Calculate continuation number for the newly enqueued job (matches continueJob.ts logic)
+            const continuationNumber = (job.payload.continuation_count ?? 0) + 1;
             await deps.notificationService.sendContributionGenerationContinuedEvent({
                 type: 'contribution_generation_continued',
                 sessionId: sessionId,
                 contribution: contribution,
                 projectId: projectId,
                 modelId: model_id,
-                continuationNumber: job.payload.continuation_count ?? 1,
+                continuationNumber: continuationNumber,
                 job_id: jobId,
             }, projectOwnerUserId);
         }
@@ -1382,7 +1417,11 @@ export async function executeModelCallAndSave(
                 rootIdFromSaved = candidateUnknown;
             }
         }
-        if (rootIdFromSaved) {
+        // Only call assembleAndSaveFinalDocument for JSON-only artifacts (shouldRender === false)
+        // Rendered documents (shouldRender === true) are handled by RENDER jobs via renderDocument
+        // Only assemble if rootIdFromSaved exists AND is different from current contribution ID
+        // (meaning there are multiple chunks; single-chunk artifacts don't need assembly)
+        if (rootIdFromSaved && rootIdFromSaved !== contribution.id && !shouldRender) {
             await deps.fileManager.assembleAndSaveFinalDocument(rootIdFromSaved);
         }
     }

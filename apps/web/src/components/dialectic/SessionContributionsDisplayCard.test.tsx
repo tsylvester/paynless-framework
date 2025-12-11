@@ -1948,5 +1948,193 @@ describe('SessionContributionsDisplayCard', () => {
       // regardless of highlighting status
     });
   });
+
+  describe('Step 3.b: Component correctly shows/hides "Generating documents" banner', () => {
+    it('does not show "Generating documents" banner when all documents have status completed', () => {
+      // 3.b.i: Verify when all documents have status 'completed', the component does NOT show the banner
+      const progress = buildStageRunProgress(
+        {
+          planner_header: 'completed',
+          draft_document: 'completed',
+          render_document: 'completed',
+        },
+        {
+          header_context: {
+            status: 'completed',
+            job_id: 'job-1',
+            latestRenderedResourceId: 'header.json',
+            modelId: 'model-a',
+            versionHash: 'hash-a',
+            lastRenderedResourceId: 'resource-a',
+            lastRenderAtIso: isoTimestamp,
+          },
+          draft_document_outline: buildStageDocumentDescriptor('model-a', {
+            status: 'completed',
+          }),
+          draft_document_markdown: buildStageDocumentDescriptor('model-a', {
+            status: 'completed',
+          }),
+        },
+      );
+
+      seedBaseStore(progress, {
+        generateContributionsError: null,
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      // Assert that the "Generating documents" banner is NOT displayed
+      expect(screen.queryByText('Generating documents')).not.toBeInTheDocument();
+    });
+
+    it('shows "Generating documents" banner when at least one document has status generating', () => {
+      // 3.b.ii: Verify when at least one document has status 'generating', the component shows the banner
+      const progress = buildStageRunProgress(
+        {
+          planner_header: 'completed',
+          draft_document: 'in_progress',
+          render_document: 'not_started',
+        },
+        {
+          header_context: {
+            status: 'completed',
+            job_id: 'job-1',
+            latestRenderedResourceId: 'header.json',
+            modelId: 'model-a',
+            versionHash: 'hash-a',
+            lastRenderedResourceId: 'resource-a',
+            lastRenderAtIso: isoTimestamp,
+          },
+          draft_document_outline: buildStageDocumentDescriptor('model-a', {
+            status: 'generating',
+          }),
+          draft_document_markdown: buildStageDocumentDescriptor('model-a', {
+            status: 'not_started',
+          }),
+        },
+      );
+
+      seedBaseStore(progress, {
+        generateContributionsError: null,
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      // Assert that the "Generating documents" banner IS displayed
+      expect(screen.getByText('Generating documents')).toBeInTheDocument();
+    });
+
+    it('does not show "Generating documents" banner when documents are completed but there are failed documents', () => {
+      // 3.b.iii: Verify when documents have status 'completed' but there are failed documents,
+      // the component does NOT show the banner
+      const progress = buildStageRunProgress(
+        {
+          planner_header: 'completed',
+          draft_document: 'completed',
+          render_document: 'failed',
+        },
+        {
+          header_context: {
+            status: 'completed',
+            job_id: 'job-1',
+            latestRenderedResourceId: 'header.json',
+            modelId: 'model-a',
+            versionHash: 'hash-a',
+            lastRenderedResourceId: 'resource-a',
+            lastRenderAtIso: isoTimestamp,
+          },
+          draft_document_outline: buildStageDocumentDescriptor('model-a', {
+            status: 'completed',
+          }),
+          draft_document_markdown: buildStageDocumentDescriptor('model-a', {
+            status: 'failed',
+          }),
+        },
+      );
+
+      seedBaseStore(progress, {
+        generateContributionsError: null,
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      // Assert that the "Generating documents" banner is NOT displayed
+      // (failed documents should prevent the banner from showing)
+      expect(screen.queryByText('Generating documents')).not.toBeInTheDocument();
+    });
+
+    it('updates banner visibility when document status changes from generating to completed', () => {
+      // 3.b.iv: Verify the component correctly updates the banner visibility when document status changes
+      const initialProgress = buildStageRunProgress(
+        {
+          planner_header: 'completed',
+          draft_document: 'in_progress',
+          render_document: 'not_started',
+        },
+        {
+          header_context: {
+            status: 'completed',
+            job_id: 'job-1',
+            latestRenderedResourceId: 'header.json',
+            modelId: 'model-a',
+            versionHash: 'hash-a',
+            lastRenderedResourceId: 'resource-a',
+            lastRenderAtIso: isoTimestamp,
+          },
+          draft_document_outline: buildStageDocumentDescriptor('model-a', {
+            status: 'generating',
+          }),
+          draft_document_markdown: buildStageDocumentDescriptor('model-a', {
+            status: 'not_started',
+          }),
+        },
+      );
+
+      seedBaseStore(initialProgress, {
+        generateContributionsError: null,
+      });
+
+      const { rerender } = renderSessionContributionsDisplayCard();
+
+      // Initially, banner should be displayed
+      expect(screen.getByText('Generating documents')).toBeInTheDocument();
+
+      // Update progress to reflect status change from 'generating' to 'completed'
+      const updatedProgress = buildStageRunProgress(
+        {
+          planner_header: 'completed',
+          draft_document: 'completed',
+          render_document: 'not_started',
+        },
+        {
+          header_context: {
+            status: 'completed',
+            job_id: 'job-1',
+            latestRenderedResourceId: 'header.json',
+            modelId: 'model-a',
+            versionHash: 'hash-a',
+            lastRenderedResourceId: 'resource-a',
+            lastRenderAtIso: isoTimestamp,
+          },
+          draft_document_outline: buildStageDocumentDescriptor('model-a', {
+            status: 'completed',
+          }),
+          draft_document_markdown: buildStageDocumentDescriptor('model-a', {
+            status: 'not_started',
+          }),
+        },
+      );
+
+      seedBaseStore(updatedProgress, {
+        generateContributionsError: null,
+      });
+
+      // Rerender with updated state
+      rerender(<SessionContributionsDisplayCard />);
+
+      // After status change, banner should NOT be displayed
+      expect(screen.queryByText('Generating documents')).not.toBeInTheDocument();
+    });
+  });
 });
 

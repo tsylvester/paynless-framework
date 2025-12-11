@@ -239,7 +239,7 @@ export async function saveContributionEdit(
 
     if (uploadResult.error || !uploadResult.record) {
         logger.error('[saveContributionEdit] FileManager uploadAndRegisterFile failed', { error: uploadResult.error });
-        return { error: { message: 'Failed to save contribution edit.', status: 500, code: 'DB_TRANSACTION_ERROR', details: uploadResult.error?.details }, status: 500 };
+        return { error: { message: 'Failed to save contribution edit.', status: 500, code: 'DB_TRANSACTION_ERROR', details: uploadResult.error?.message }, status: 500 };
     }
 
     const newResourceRow = uploadResult.record;

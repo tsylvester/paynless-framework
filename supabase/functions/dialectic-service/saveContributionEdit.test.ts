@@ -46,6 +46,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
         attemptCount,
         contributionType: 'thesis',
         originalFileName: `${modelName}_${attemptCount}_thesis.md`,
+        documentKey: 'business_case',
       });
 
       const shortSessionId = generateShortId(sessionId);
@@ -92,12 +93,23 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
         genericMockResults: {
           dialectic_contributions: {
             select: async (state) => {
-              // Fetch original by id
-              if (state.operation === 'select' && state.filters.some(f => f.column === 'id' && f.value === originalContributionId)) {
-                return { data: [{ ...originalRow, dialectic_sessions: { project_id: projectId, dialectic_projects: { user_id: testUserId }, current_stage_id: stage.id } }], error: null, count: 1, status: 200, statusText: 'OK' };
+              // Fetch original by id - handle both quick check and full select queries
+              if (state.filters.some(f => f.column === 'id' && f.value === originalContributionId)) {
+                // Ensure all required fields are present for the full select query
+                const contributionData = {
+                  ...originalRow,
+                  dialectic_sessions: {
+                    project_id: projectId,
+                    dialectic_projects: {
+                      user_id: testUserId
+                    },
+                    current_stage_id: stage.id
+                  }
+                };
+                return { data: [contributionData], error: null, count: 1, status: 200, statusText: 'OK' };
               }
               // Fetch newly created by id
-              if (state.operation === 'select' && state.filters.some(f => f.column === 'id' && f.value === newEditId)) {
+              if (state.filters.some(f => f.column === 'id' && f.value === newEditId)) {
                 // Simulate that the new edit row mirrors canonical path, version incremented
                 const seedPromptPath = constructStoragePath({ projectId, fileType: FileType.SeedPrompt, sessionId, iteration: iterationNumber, stageSlug: stage.slug });
                 const newRow = { ...originalRow, id: newEditId, user_id: testUserId, edit_version: 2, is_latest_edit: true, original_model_contribution_id: originalContributionId, target_contribution_id: originalContributionId, seed_prompt_url: `${seedPromptPath.storagePath}/${seedPromptPath.fileName}`, updated_at: new Date().toISOString() };
@@ -113,7 +125,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
           dialectic_sessions: {
             select: async (state) => {
               if (state.filters.some(f => f.column === 'id' && f.value === sessionId)) {
-                return { data: [{ id: sessionId, project_id: projectId, session_description: 'desc', iteration_count: 1, status: 'active', current_stage_id: stage.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), selected_model_ids: [modelId], user_input_reference_url: null, associated_chat_id: null }], error: null, count: 1, status: 200, statusText: 'OK' };
+                return { data: [{ id: sessionId, project_id: projectId, dialectic_projects: { id: projectId, user_id: testUserId, project_name: 'Test Project' } }], error: null, count: 1, status: 200, statusText: 'OK' };
               }
               return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
             },
@@ -285,8 +297,37 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
           dialectic_contributions: {
             select: async (state) => {
               if (state.filters.some(f => f.column === 'id' && f.value === originalContributionId)) {
-                // Include nested owner info in the contribution shape
-                return { data: [{ id: originalContributionId, session_id: sessionId, stage: stage.id, iteration_number: 1, model_id: 'm', model_name: 'model', edit_version: 1, is_latest_edit: true, original_model_contribution_id: null, target_contribution_id: null, storage_bucket: 'dialectic_contributions_content', storage_path: `${projectId}/session_${generateShortId(sessionId)}/iteration_1/1_thesis`, mime_type: 'text/markdown', size_bytes: 1, file_name: 'model_0_thesis.md', tokens_used_input: null, tokens_used_output: null, processing_time_ms: null, error: null, citations: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), user_id: null, raw_response_storage_path: null, seed_prompt_url: null, contribution_type: 'thesis', document_relationships: null, dialectic_sessions: { project_id: projectId, dialectic_projects: { user_id: 'different-owner' }, current_stage_id: stage.id } }], error: null, count: 1, status: 200, statusText: 'OK' };
+                // Include nested owner info in the contribution shape - must match the exact select columns
+                const contributionData = {
+                  id: originalContributionId,
+                  session_id: sessionId,
+                  stage: stage.id,
+                  iteration_number: 1,
+                  edit_version: 1,
+                  original_model_contribution_id: null,
+                  target_contribution_id: null,
+                  user_id: null,
+                  model_id: 'm',
+                  model_name: 'model',
+                  storage_path: `${projectId}/session_${generateShortId(sessionId)}/iteration_1/1_thesis`,
+                  file_name: 'model_0_thesis.md',
+                  dialectic_sessions: {
+                    project_id: projectId,
+                    dialectic_projects: {
+                      user_id: 'different-owner'
+                    },
+                    current_stage_id: stage.id
+                  }
+                };
+                return { data: [contributionData], error: null, count: 1, status: 200, statusText: 'OK' };
+              }
+              return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
+            },
+          },
+          dialectic_sessions: {
+            select: async (state) => {
+              if (state.filters.some(f => f.column === 'id' && f.value === sessionId)) {
+                return { data: [{ id: sessionId, project_id: projectId, dialectic_projects: { id: projectId, user_id: 'different-owner', project_name: 'Test Project' } }], error: null, count: 1, status: 200, statusText: 'OK' };
               }
               return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
             },
@@ -324,13 +365,40 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
           dialectic_contributions: {
             select: async (state) => {
               if (state.filters.some(f => f.column === 'id' && f.value === originalContributionId)) {
-                return { data: [{ id: originalContributionId, session_id: sessionId, stage: stage.id, iteration_number: 1, model_id: 'm', model_name: 'model', edit_version: 1, is_latest_edit: true, original_model_contribution_id: null, target_contribution_id: null, storage_bucket: 'dialectic_contributions_content', storage_path: `noncanonical/path`, mime_type: 'text/markdown', size_bytes: 1, file_name: 'file.md', tokens_used_input: null, tokens_used_output: null, processing_time_ms: null, error: null, citations: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), user_id: null, raw_response_storage_path: null, seed_prompt_url: null, contribution_type: 'thesis', document_relationships: null, dialectic_sessions: { project_id: projectId, dialectic_projects: { user_id: testUserIdLocal }, current_stage_id: stage.id } }], error: null, count: 1, status: 200, statusText: 'OK' };
+                // Must match the exact select columns from the code
+                const contributionData = {
+                  id: originalContributionId,
+                  session_id: sessionId,
+                  stage: stage.id,
+                  iteration_number: 1,
+                  edit_version: 1,
+                  original_model_contribution_id: null,
+                  target_contribution_id: null,
+                  user_id: null,
+                  model_id: 'm',
+                  model_name: 'model',
+                  storage_path: 'noncanonical/path',
+                  file_name: 'file.md',
+                  dialectic_sessions: {
+                    project_id: projectId,
+                    dialectic_projects: {
+                      user_id: testUserIdLocal
+                    },
+                    current_stage_id: stage.id
+                  }
+                };
+                return { data: [contributionData], error: null, count: 1, status: 200, statusText: 'OK' };
               }
               return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
             },
           },
           dialectic_sessions: {
-            select: async () => ({ data: [{ id: sessionId, project_id: projectId, session_description: null, iteration_count: 1, status: 'active', current_stage_id: stage.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), selected_model_ids: ['m'], user_input_reference_url: null, associated_chat_id: null }], error: null, count: 1, status: 200, statusText: 'OK' })
+            select: async (state) => {
+              if (state.filters.some(f => f.column === 'id' && f.value === sessionId)) {
+                return { data: [{ id: sessionId, project_id: projectId, dialectic_projects: { id: projectId, user_id: testUserIdLocal, project_name: 'Test Project' } }], error: null, count: 1, status: 200, statusText: 'OK' };
+              }
+              return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
+            },
           },
           dialectic_stages: { select: async () => ({ data: [stage], error: null, count: 1, status: 200, statusText: 'OK' }) },
         },
@@ -407,7 +475,14 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
             },
             update: async () => ({ data: [], error: null, count: 1, status: 200, statusText: 'OK' }),
           },
-          dialectic_sessions: { select: async () => ({ data: [{ id: sessionId, project_id: projectId, session_description: null, iteration_count: 1, status: 'active', current_stage_id: stage.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), selected_model_ids: ['mid'], user_input_reference_url: null, associated_chat_id: null }], error: null, count: 1, status: 200, statusText: 'OK' }) },
+          dialectic_sessions: {
+            select: async (state) => {
+              if (state.filters.some(f => f.column === 'id' && f.value === sessionId)) {
+                return { data: [{ id: sessionId, project_id: projectId, dialectic_projects: { id: projectId, user_id: testUserIdLocal, project_name: 'Test Project' } }], error: null, count: 1, status: 200, statusText: 'OK' };
+              }
+              return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
+            },
+          },
           dialectic_stages: { select: async () => ({ data: [stage], error: null, count: 1, status: 200, statusText: 'OK' }) },
         },
       });

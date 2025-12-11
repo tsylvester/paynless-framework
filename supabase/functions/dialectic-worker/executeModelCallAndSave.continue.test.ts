@@ -612,7 +612,7 @@ Deno.test('executeModelCallAndSave - forwards target_contribution_id and preserv
       dbClient: dbClient as unknown as SupabaseClient<Database>,
       deps,
       authToken: 'auth-token',
-      job: createMockJob({ ...testPayload, stageSlug, document_relationships: rel }, { target_contribution_id: rootId }),
+      job: createMockJob({ ...testPayload, stageSlug, document_relationships: rel, continuation_count: 1 }, { target_contribution_id: rootId }),
       projectOwnerUserId: 'user-789',
       providerDetails: mockProviderData,
       promptConstructionPayload: buildPromptPayload({ currentUserPrompt: 'Please continue.' }),
@@ -847,7 +847,7 @@ Deno.test('executeModelCallAndSave - continuation persists payload document_rela
       dbClient: dbClient as unknown as SupabaseClient<Database>,
       deps,
       authToken: 'auth-token',
-      job: createMockJob({ ...testPayload, stageSlug, document_relationships: relationships }, { target_contribution_id: parentId }),
+      job: createMockJob({ ...testPayload, stageSlug, document_relationships: relationships, continuation_count: 1 }, { target_contribution_id: parentId }),
       projectOwnerUserId: 'user-789',
       providerDetails: mockProviderData,
       promptConstructionPayload: buildPromptPayload({ currentUserPrompt: 'Please continue.' }),
@@ -916,7 +916,7 @@ Deno.test('executeModelCallAndSave - continuation uses gathered history and does
   const rootIdGH = 'root-123';
   const relGH: DocumentRelationships = { [stageSlugGH]: rootIdGH };
   const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
-    job: createMockJob({ ...testPayload, stageSlug: stageSlugGH, document_relationships: relGH }, { target_contribution_id: rootIdGH }),
+    job: createMockJob({ ...testPayload, stageSlug: stageSlugGH, document_relationships: relGH, continuation_count: 1 }, { target_contribution_id: rootIdGH }),
     promptConstructionPayload: buildPromptPayload({
       currentUserPrompt: 'Please continue.',
       conversationHistory: gatheredHistory,
@@ -1104,7 +1104,7 @@ Deno.test('executeModelCallAndSave - three-chunk finalization uses saved root id
     dbClient as unknown as SupabaseClient<Database>,
     deps,
     {
-      job: createMockJob({ ...testPayload, stageSlug, document_relationships: relationships }, { target_contribution_id: rootId }),
+      job: createMockJob({ ...testPayload, stageSlug, document_relationships: relationships, continuation_count: 1 }, { target_contribution_id: rootId }),
       promptConstructionPayload: buildPromptPayload({ currentUserPrompt: 'Please continue.' }),
     },
   ));
@@ -1123,7 +1123,7 @@ Deno.test('executeModelCallAndSave - three-chunk finalization uses saved root id
     dbClient as unknown as SupabaseClient<Database>,
     deps,
     {
-      job: createMockJob({ ...testPayload, stageSlug, document_relationships: relationships }, { target_contribution_id: cont1Id }),
+      job: createMockJob({ ...testPayload, stageSlug, document_relationships: relationships, continuation_count: 2 }, { target_contribution_id: cont1Id }),
       promptConstructionPayload: buildPromptPayload({ currentUserPrompt: 'Please continue.' }),
     },
   ));

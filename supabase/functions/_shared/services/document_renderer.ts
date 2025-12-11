@@ -12,11 +12,6 @@ import type { DialecticContributionRow } from "../../dialectic-service/dialectic
 import { renderPrompt } from "../prompt-renderer.ts";
 import { isRecord } from "../utils/type_guards.ts";
  
-
-function toStageKey(stageSlug: string): string {
-  return stageSlug.toUpperCase();
-}
-
 function titleFromDocumentKey(documentKey: string): string {
   const withSpaces = documentKey.replace(/_/g, " ");
   return withSpaces.charAt(0).toUpperCase() + withSpaces.slice(1);
@@ -42,13 +37,12 @@ export async function renderDocument(
   const { sessionId, iterationNumber, stageSlug, documentIdentity, documentKey, projectId, sourceContributionId } = params;
 
   // 1) Load contribution rows for this document chain using DB-side filtering and ordering
-  const stageKey = toStageKey(stageSlug);
   const { data: rows, error: selectError } = await dbClient
     .from("dialectic_contributions")
     .select("*")
     .eq("session_id", sessionId)
     .eq("iteration_number", iterationNumber)
-    .contains("document_relationships", { [stageKey]: documentIdentity })
+    .contains("document_relationships", { [stageSlug]: documentIdentity })
     .order("edit_version", { ascending: true })
     .order("created_at", { ascending: true })
     .returns<DialecticContributionRow[]>();
@@ -68,7 +62,7 @@ export async function renderDocument(
       return false;
     }
     const relationships = row.document_relationships;
-    const stageValue = relationships[stageKey];
+    const stageValue = relationships[stageSlug];
     return stageValue === documentIdentity;
   });
 
@@ -98,7 +92,7 @@ export async function renderDocument(
       return false;
     }
     const relationships = chunk.document_relationships;
-    const stageValue = relationships[stageKey];
+    const stageValue = relationships[stageSlug];
     return stageValue === documentIdentity && chunk.target_contribution_id === null;
   });
 
@@ -208,8 +202,25 @@ export async function renderDocument(
     const text = await downloadText(dbClient, deps.downloadFromStorage, contentBucket, rawJsonPath);
     const trimmedText = text.trim();
     
+    deps.logger?.info?.('[renderDocument] DEBUG: Raw text length', { 
+      chunkId: chunk.id, 
+      rawJsonPath, 
+      textLength: text.length,
+      trimmedTextLength: trimmedText.length,
+      textFirst100: text.substring(0, 100),
+      textLast100: text.substring(Math.max(0, text.length - 100)),
+      trimmedTextFirst100: trimmedText.substring(0, 100),
+      trimmedTextLast100: trimmedText.substring(Math.max(0, trimmedText.length - 100)),
+    });
+    
     if (trimmedText.startsWith('{') || trimmedText.startsWith('[')) {
       try {
+        deps.logger?.info?.('[renderDocument] DEBUG: Attempting JSON.parse', { 
+          chunkId: chunk.id, 
+          rawJsonPath,
+          usingTrimmed: false,
+          textLength: text.length,
+        });
         const parsed = JSON.parse(text);
         if (typeof parsed !== 'object' || parsed === null) {
           throw new Error(`Parsed JSON is not an object for contribution ${chunk.id}`);

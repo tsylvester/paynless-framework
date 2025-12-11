@@ -12,6 +12,8 @@ import {
   SaveContributionEditPayload,
   DialecticContribution,
   DialecticStageRecipe,
+  FocusedStageDocumentState,
+  DialecticStateValues,
 } from '@paynless/types';
 // --- MOCKS ---
 
@@ -103,9 +105,27 @@ vi.mock('@paynless/utils', async (importOriginal) => {
   const actualUtils = await importOriginal<typeof import('@paynless/utils')>();
   return {
     ...actualUtils,
-    isDocumentHighlighted: (...args) => {
-      const result = actualUtils.isDocumentHighlighted(...args);
-      mockIsDocumentHighlighted(...args);
+    isDocumentHighlighted: (
+      sessionId: string,
+      stageSlug: string,
+      modelId: string,
+      documentKey: string,
+      focusedStageDocumentMap?: Record<string, { modelId: string; documentKey: string } | null> | null,
+    ) => {
+      const result = actualUtils.isDocumentHighlighted(
+        sessionId,
+        stageSlug,
+        modelId,
+        documentKey,
+        focusedStageDocumentMap,
+      );
+      mockIsDocumentHighlighted(
+        sessionId,
+        stageSlug,
+        modelId,
+        documentKey,
+        focusedStageDocumentMap,
+      );
       return result;
     },
   };
@@ -233,30 +253,24 @@ const defaultTestRecipe: DialecticStageRecipe = {
   ],
 };
 
-const setupStore = ({
-  focusedDocument = null,
-  content = '',
-  feedback = '',
-  isLoading = false,
-  contribution = null,
-  sourceContributionId = null,
-  recipesByStageSlug = {},
-  focusedStageDocumentMap = undefined,
-}: {
-  focusedDocument?: { modelId: string; documentKey: string } | null;
+const setupStore = (overrides: Partial<DialecticStateValues> & {
+  focusedDocument?: FocusedStageDocumentState | null;
   content?: string;
   feedback?: string;
   isLoading?: boolean;
   contribution?: DialecticContribution | null;
   sourceContributionId?: string | null;
-  recipesByStageSlug?: Record<string, DialecticStageRecipe>;
-  focusedStageDocumentMap?: Record<string, { modelId: string; documentKey: string } | null> | null;
 }) => {
-  // Merge default recipe with provided recipes (provided recipes take precedence)
-  const mergedRecipesByStageSlug: Record<string, DialecticStageRecipe> = {
-    [mockStageSlug]: defaultTestRecipe,
-    ...recipesByStageSlug,
-  };
+  const {
+    focusedDocument = null,
+    content = '',
+    feedback = '',
+    isLoading = false,
+    contribution = null,
+    sourceContributionId = null,
+    ...stateOverrides
+  } = overrides;
+
   const documents = {
     [docA1Key]: docA1,
     [docA2Key]: docA2,
@@ -280,11 +294,16 @@ const setupStore = ({
       isDirty: feedback !== '',
       isLoading: isLoading,
       error: null,
-      lastBaselineVersion: sourceContributionId ? { resourceId: sourceContributionId, versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' } : null,
+      lastBaselineVersion: sourceContributionId ? { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' } : null,
       pendingDiff: null,
       lastAppliedVersionHash: 'hash-1',
+      sourceContributionId: sourceContributionId,
     }
   } : {};
+
+  const defaultRecipesByStageSlug: Record<string, DialecticStageRecipe> = {
+    [mockStageSlug]: defaultTestRecipe,
+  };
 
   initializeMockDialecticState({
     activeContextProjectId: mockProjectId,
@@ -314,15 +333,9 @@ const setupStore = ({
         documents: documents,
       },
     },
-    focusedStageDocument: focusedStageDocumentMap !== undefined
-      ? focusedStageDocumentMap
-      : focusedDocument
-        ? {
-            [buildFocusKey(focusedDocument.modelId)]: focusedDocument,
-          }
-        : {},
     stageDocumentContent: contentState,
-    recipesByStageSlug: mergedRecipesByStageSlug,
+    recipesByStageSlug: defaultRecipesByStageSlug,
+    ...stateOverrides,
   });
 };
 
@@ -340,6 +353,9 @@ describe('GeneratedContributionCard', () => {
     setupStore({
       focusedDocument: { modelId: modelA, documentKey: docA1Key },
       content: 'Document A1 baseline',
+      focusedStageDocument: {
+        [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+      },
     });
 
     render(<GeneratedContributionCard modelId={modelA} />);
@@ -364,6 +380,9 @@ describe('GeneratedContributionCard', () => {
   it('passes focus state to StageRunChecklist and forwards selections', () => {
     setupStore({
       focusedDocument: { modelId: modelA, documentKey: docA1Key },
+      focusedStageDocument: {
+        [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+      },
     });
     const { setFocusedStageDocument } = getDialecticStoreState();
 
@@ -409,6 +428,9 @@ describe('GeneratedContributionCard', () => {
       focusedDocument: { modelId: modelA, documentKey: docA1Key },
       content: 'Baseline content',
       feedback: 'Existing feedback',
+      focusedStageDocument: {
+        [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+      },
     });
 
     const { updateStageDocumentDraft } = getDialecticStoreState();
@@ -443,6 +465,9 @@ describe('GeneratedContributionCard', () => {
       focusedDocument: { modelId: modelA, documentKey: docA1Key },
       content: 'Content for A1',
       feedback: 'This is my feedback for A1.',
+      focusedStageDocument: {
+        [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+      },
     });
     const { submitStageDocumentFeedback, updateStageDocumentDraft } = getDialecticStoreState();
 
@@ -507,6 +532,9 @@ describe('GeneratedContributionCard', () => {
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
         content: 'Document content',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
       });
 
       const documentResourceState = {
@@ -518,6 +546,7 @@ describe('GeneratedContributionCard', () => {
         lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: null,
       };
 
       mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
@@ -538,6 +567,9 @@ describe('GeneratedContributionCard', () => {
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
         content: 'Document content from resource',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
       });
 
       const documentResourceState = {
@@ -549,6 +581,7 @@ describe('GeneratedContributionCard', () => {
         lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: null,
       };
 
       mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
@@ -558,7 +591,7 @@ describe('GeneratedContributionCard', () => {
       expect(await screen.findByDisplayValue('Document content from resource')).toBeInTheDocument();
     });
 
-    it('should call saveContributionEdit with originalContributionIdToEdit derived from resource state, not dialectic_contributions', async () => {
+    it('should call saveContributionEdit with originalContributionIdToEdit derived from sourceContributionId in document resource state, not from lastBaselineVersion.resourceId', async () => {
       const user = userEvent.setup();
       const originalContributionId = 'contrib-orig-123';
       
@@ -567,6 +600,9 @@ describe('GeneratedContributionCard', () => {
         content: 'Original document content',
         contribution: null,
         sourceContributionId: originalContributionId,
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
       });
 
       // Don't override the selector - let it read from the actual store state
@@ -630,6 +666,9 @@ describe('GeneratedContributionCard', () => {
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
         content: 'Document content',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
       });
 
       const documentResourceState = {
@@ -645,6 +684,7 @@ describe('GeneratedContributionCard', () => {
         },
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-456',
+        sourceContributionId: null,
       };
 
       mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
@@ -665,6 +705,9 @@ describe('GeneratedContributionCard', () => {
         content: 'Original content',
         contribution: null,
         sourceContributionId: originalContributionId,
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
       });
 
       // Don't override the selector - let it read from the actual store state
@@ -762,6 +805,9 @@ describe('GeneratedContributionCard', () => {
         content: 'Document content',
         contribution: null,
         sourceContributionId: 'contrib-123',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
       });
 
       const { updateStageDocumentDraft } = getDialecticStoreState();
@@ -874,6 +920,9 @@ describe('GeneratedContributionCard', () => {
         recipesByStageSlug: {
           [mockStageSlug]: recipeWithMixedOutputs,
         },
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: validMarkdownDocumentKey },
+        },
       });
 
       render(<GeneratedContributionCard modelId={modelA} />);
@@ -968,7 +1017,7 @@ describe('GeneratedContributionCard', () => {
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
         content: 'Document A1 baseline',
-        focusedStageDocumentMap: {},
+        focusedStageDocument: {},
       });
 
       render(<GeneratedContributionCard modelId={modelA} />);
@@ -986,7 +1035,7 @@ describe('GeneratedContributionCard', () => {
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
         content: 'Document A1 baseline',
-        focusedStageDocumentMap: {
+        focusedStageDocument: {
           [focusKey]: { modelId: modelA, documentKey: docA1Key },
         },
       });
@@ -1007,7 +1056,7 @@ describe('GeneratedContributionCard', () => {
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
         content: 'Document A1 baseline',
-        focusedStageDocumentMap: {
+        focusedStageDocument: {
           [focusKey]: { modelId: modelA, documentKey: docA2Key },
         },
       });
@@ -1027,7 +1076,7 @@ describe('GeneratedContributionCard', () => {
     it('does not render document content when focusedDocument is null', () => {
       setupStore({
         focusedDocument: null,
-        focusedStageDocumentMap: {},
+        focusedStageDocument: {},
       });
 
       render(<GeneratedContributionCard modelId={modelA} />);
@@ -1044,7 +1093,7 @@ describe('GeneratedContributionCard', () => {
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
         content: 'Document A1 baseline',
-        focusedStageDocumentMap: null,
+        focusedStageDocument: {},
       });
 
       render(<GeneratedContributionCard modelId={modelA} />);
@@ -1068,7 +1117,7 @@ describe('GeneratedContributionCard', () => {
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
         content: 'Document A1 baseline',
-        focusedStageDocumentMap,
+        focusedStageDocument: focusedStageDocumentMap,
       });
 
       render(<GeneratedContributionCard modelId={modelA} />);
@@ -1095,7 +1144,7 @@ describe('GeneratedContributionCard', () => {
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
         content: 'Document A1 baseline',
-        focusedStageDocumentMap,
+        focusedStageDocument: focusedStageDocumentMap,
       });
 
       render(<GeneratedContributionCard modelId={modelA} />);
@@ -1130,7 +1179,7 @@ describe('GeneratedContributionCard', () => {
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
         content: 'Document A1 baseline',
-        focusedStageDocumentMap,
+        focusedStageDocument: focusedStageDocumentMap,
       });
 
       render(<GeneratedContributionCard modelId={modelA} />);
@@ -1153,6 +1202,199 @@ describe('GeneratedContributionCard', () => {
       expect(checklistProps?.focusedStageDocumentMap).toBe(focusedStageDocumentMap);
 
       expect(await screen.findByText(/Document: doc-a1/i)).toBeInTheDocument();
+    });
+  });
+
+  describe('document content fetching and display', () => {
+    it('triggers content fetching when document is selected with latestRenderedResourceId', async () => {
+      const resourceId = 'resource-123';
+      const docWithResourceId: StageRunDocumentDescriptor = {
+        ...docA1,
+        latestRenderedResourceId: resourceId,
+      };
+
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: '',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      // Override the document descriptor to include latestRenderedResourceId
+      const { stageRunProgress } = getDialecticStoreState();
+      if (stageRunProgress?.[progressKey]) {
+        stageRunProgress[progressKey] = {
+          ...stageRunProgress[progressKey],
+          documents: {
+            ...stageRunProgress[progressKey].documents,
+            [docA1Key]: docWithResourceId,
+          },
+        };
+      }
+
+      const { fetchStageDocumentContent } = getDialecticStoreState();
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      await waitFor(() => {
+        expect(fetchStageDocumentContent).toHaveBeenCalledWith(
+          {
+            sessionId: mockSessionId,
+            stageSlug: mockStageSlug,
+            iterationNumber,
+            modelId: modelA,
+            documentKey: docA1Key,
+          },
+          resourceId,
+        );
+      });
+    });
+
+    it('displays loaded content in Document Content TextInputArea', async () => {
+      const loadedContent = 'Loaded document content from resource';
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: loadedContent,
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      const documentResourceState = {
+        baselineMarkdown: loadedContent,
+        currentDraftMarkdown: loadedContent,
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: null,
+      };
+
+      mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const contentTextarea = await screen.findByTestId('content-textarea');
+      expect(contentTextarea).toHaveValue(loadedContent);
+    });
+
+    it('shows loading state when content is loading', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: '',
+        isLoading: true,
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      const documentResourceState = {
+        baselineMarkdown: '',
+        currentDraftMarkdown: '',
+        isDirty: false,
+        isLoading: true,
+        error: null,
+        lastBaselineVersion: null,
+        pendingDiff: null,
+        lastAppliedVersionHash: null,
+        sourceContributionId: null,
+      };
+
+      mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      await waitFor(() => {
+        const loader = document.querySelector('.animate-spin');
+        expect(loader).toBeInTheDocument();
+        expect(loader).toHaveClass('h-4', 'w-4');
+      });
+    });
+
+    it('displays error message when content fetch fails', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: '',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      const errorMessage = 'Failed to fetch document content';
+      const documentResourceState = {
+        baselineMarkdown: '',
+        currentDraftMarkdown: '',
+        isDirty: false,
+        isLoading: false,
+        error: { message: errorMessage, code: 'FETCH_ERROR' },
+        lastBaselineVersion: null,
+        pendingDiff: null,
+        lastAppliedVersionHash: null,
+        sourceContributionId: null,
+      };
+
+      mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(errorMessage)).toBeInTheDocument();
+      });
+    });
+
+    it('handles missing latestRenderedResourceId gracefully by showing appropriate message', async () => {
+      const docWithoutResourceId: StageRunDocumentDescriptor = {
+        ...docA1,
+        latestRenderedResourceId: undefined,
+      } as unknown as StageRunDocumentDescriptor;
+
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: '',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      // Override the document descriptor to exclude latestRenderedResourceId
+      const { stageRunProgress } = getDialecticStoreState();
+      if (stageRunProgress?.[progressKey]) {
+        stageRunProgress[progressKey] = {
+          ...stageRunProgress[progressKey],
+          documents: {
+            ...stageRunProgress[progressKey].documents,
+            [docA1Key]: docWithoutResourceId,
+          },
+        };
+      }
+
+      const documentResourceState = {
+        baselineMarkdown: '',
+        currentDraftMarkdown: '',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: null,
+        pendingDiff: null,
+        lastAppliedVersionHash: null,
+        sourceContributionId: null,
+      };
+
+      mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      await waitFor(() => {
+        // Verify the component displays an appropriate message indicating the RENDER job has not completed
+        expect(screen.getByText(/RENDER job has not completed yet/i)).toBeInTheDocument();
+        expect(screen.getByText(/Document content will be available once rendering is finished/i)).toBeInTheDocument();
+        const contentTextarea = screen.getByTestId('content-textarea');
+        expect(contentTextarea).toHaveValue('');
+        expect(contentTextarea).toHaveAttribute('placeholder', 'No content available.');
+      });
     });
   });
 });

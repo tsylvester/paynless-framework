@@ -183,6 +183,14 @@ export type DocumentKey =
   | FileType.product_requirements
   | FileType.system_architecture
   | FileType.tech_stack
+  | FileType.synthesis_pairwise_business_case
+  | FileType.synthesis_pairwise_feature_spec
+  | FileType.synthesis_pairwise_technical_approach
+  | FileType.synthesis_pairwise_success_metrics
+  | FileType.synthesis_document_business_case
+  | FileType.synthesis_document_feature_spec
+  | FileType.synthesis_document_technical_approach
+  | FileType.synthesis_document_success_metrics
   | FileType.technical_requirements
   | FileType.master_plan
   | FileType.milestone_schema

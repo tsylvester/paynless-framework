@@ -299,10 +299,18 @@ export function deconstructStoragePath(
       info.modelSlug = matches[5];
       info.attemptCount = parseInt(matches[6], 10);
       const ambiguousPart = matches[7];
-      if (isContributionType(ambiguousPart)) {
+      // For doc-centric raw JSON files, check if ambiguousPart matches the stage slug from the path.
+      // If ambiguousPart equals the stage slug, it's a stage slug contribution type (set as contributionType).
+      // Otherwise, it's a document key or JSON artifact (set as documentKey).
+      // This approach respects the CoW DAG by using the actual stage slug from the path, not hard-coded values.
+      if (info.stageSlug && ambiguousPart === info.stageSlug) {
         info.contributionType = ambiguousPart;
       } else {
         info.documentKey = ambiguousPart;
+      }
+      // Validate that documentKey is set when ambiguousPart is not the stage slug
+      if (!info.documentKey && (!info.stageSlug || ambiguousPart !== info.stageSlug)) {
+        throw new Error(`Cannot extract documentKey from path. Path: ${fullPath}, ambiguousPart: ${ambiguousPart}, stageSlug: ${info.stageSlug}`);
       }
       if (matches[9]) {
           info.isContinuation = true;

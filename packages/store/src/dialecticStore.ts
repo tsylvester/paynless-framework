@@ -240,8 +240,9 @@ export const useDialecticStore = create<DialecticStore>()(
 			key: StageDocumentCompositeKey,
 			newBaseline: string,
 			newVersion: StageDocumentVersionInfo,
+			sourceContributionId?: string | null,
 		) => {
-			reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion);
+			reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion, sourceContributionId);
 		};
 
     return {

@@ -124,7 +124,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         file_name: "gpt-4o-mini_0_business_case.md",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
@@ -224,7 +224,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         file_name: "gpt-4o-mini_0_business_case.md",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
@@ -240,7 +240,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         file_name: "gpt-4o-mini_1_business_case.md",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_1_business_case_raw.json",
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
         target_contribution_id: rootId,
         edit_version: 2,
@@ -258,7 +258,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         file_name: "modelA_0_other_doc.md",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/modelA_0_other_doc_raw.json",
         mime_type: "text/markdown",
-        document_relationships: { THESIS: "another-root" },
+        document_relationships: { thesis: "another-root" },
         created_at: new Date(2025, 0, 1, 11, 59, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
@@ -351,7 +351,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         file_name: "gpt-4o-mini_0_business_case.md",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 2, 10, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
@@ -368,7 +368,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         file_name: "gpt-4o-mini_1_business_case.md",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_1_business_case_raw.json",
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 2, 10, 1, 0).toISOString(),
         target_contribution_id: rootId,
         edit_version: 2,
@@ -457,7 +457,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       file_name: "gpt-4o-mini_0_business_case.md",
       raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
       mime_type: "text/markdown",
-      document_relationships: { THESIS: rootId },
+      document_relationships: { thesis: rootId },
       created_at: new Date(2025, 4, 1, 10, 0, 0).toISOString(),
       target_contribution_id: null,
       edit_version: 1,
@@ -575,7 +575,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         file_name: "gpt-4o-mini_0_business_case.md",
         raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 4, 1, 11, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
@@ -663,7 +663,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       file_name: "gpt-4o-mini_0_business_case.md",
       raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
       mime_type: "text/markdown",
-      document_relationships: { THESIS: rootId },
+      document_relationships: { thesis: rootId },
       created_at: new Date(2025, 4, 1, 12, 0, 0).toISOString(),
       target_contribution_id: null,
       edit_version: 1,
@@ -680,7 +680,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       file_name: "gpt-4o-mini_1_business_case.md",
       raw_response_storage_path: `${root.storage_path}/gpt-4o-mini_1_business_case_raw.json`,
       mime_type: "text/markdown",
-      document_relationships: { THESIS: rootId },
+      document_relationships: { thesis: rootId },
       created_at: new Date(2025, 4, 1, 12, 1, 0).toISOString(),
       target_contribution_id: rootId,
       edit_version: 2,
@@ -787,7 +787,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       file_name: "gpt-4o-mini_0_business_case.md",
       raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
       mime_type: "text/markdown",
-      document_relationships: { THESIS: rootId },
+      document_relationships: { thesis: rootId },
       created_at: new Date(2025, 5, 1, 10, 0, 0).toISOString(),
       target_contribution_id: null,
       edit_version: 1,
@@ -859,7 +859,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       file_name: "gpt-4o-mini_0_business_case.md",
       raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
       mime_type: "text/markdown",
-      document_relationships: { THESIS: rootId },
+      document_relationships: { thesis: rootId },
       created_at: new Date(2025, 6, 1, 10, 0, 0).toISOString(),
       target_contribution_id: null,
       edit_version: 1,
@@ -933,7 +933,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         file_name: "gpt-4o-mini_0_business_case.md",
         raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 7, 1, 10, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
@@ -951,7 +951,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         file_name: "gpt-4o-mini_0_other_doc.md",
         raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_other_doc_raw.json",
         mime_type: "text/markdown",
-        document_relationships: { THESIS: "another-root" },
+        document_relationships: { thesis: "another-root" },
         created_at: new Date(2025, 7, 1, 9, 59, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
@@ -1023,7 +1023,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
 
     // Expect JSON containment on document_relationships for stage key
     assert(containsCalls && containsCalls.callCount >= 1, "expected contains() on document_relationships");
-    const stageKey = stageSlug.toUpperCase();
+    const stageKey = stageSlug;
     const hasContains = (containsCalls?.callsArgs || []).some((args) => {
       if (!Array.isArray(args)) return false;
       const [col, val] = args;
@@ -1064,7 +1064,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         file_name: "gpt-4o-mini_0_business_case.md",
         raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 4, 2, 10, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
@@ -1178,7 +1178,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         file_name: "gpt-4o-mini_0_business_case.md",
         raw_response_storage_path: rawJsonPath,
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
@@ -1300,7 +1300,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         file_name: "gpt-4o-mini_0_business_case.md",
         raw_response_storage_path: rawJsonPath,
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
@@ -1410,7 +1410,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         file_name: "gpt-4o-mini_0_business_case.md",
         raw_response_storage_path: rawMarkdownPath,
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
@@ -1533,7 +1533,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         file_name: "gpt-4o-mini_0_business_case.md",
         raw_response_storage_path: rawJsonPath1,
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
@@ -1550,7 +1550,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         file_name: "gpt-4o-mini_1_business_case.md",
         raw_response_storage_path: markdownPath2,
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
         target_contribution_id: rootId,
         edit_version: 2,
@@ -1665,7 +1665,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         file_name: "gpt-4o-mini_0_business_case.md",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
@@ -1789,7 +1789,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         file_name: "gpt-4o-mini_0_business_case.md",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
@@ -1920,7 +1920,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         file_name: "gpt-4o-mini_0_business_case.md",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
-        document_relationships: { THESIS: rootId },
+        document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
@@ -2042,7 +2042,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
       file_name: "gpt-4o-mini_0_business_case.md",
       raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
       mime_type: "text/markdown",
-      document_relationships: { THESIS: rootId },
+      document_relationships: { thesis: rootId },
       created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
       target_contribution_id: null,
       edit_version: 1,
@@ -2128,6 +2128,597 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     // Assert the rendered output matches what renderPrompt would produce
     const expectedRendered = renderPrompt(REAL_THESIS_BUSINESS_CASE_TEMPLATE, structuredData);
     assertEquals(rendered, expectedRendered, "rendered document should match renderPrompt output");
+
+    clearAllStubs?.();
+  });
+
+  await t.step("successfully parses JSON content when file has trailing whitespace or newlines", async () => {
+    // This test proves the flaw: renderDocument should parse trimmedText, not text
+    // When a file has trailing whitespace, JSON.parse(text) fails but JSON.parse(trimmedText) succeeds
+    const rootId = "root-json-trailing-whitespace";
+    const sessionId = "session_json_trailing";
+    const stageSlug = "thesis";
+    const rawJsonPath = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
+    const structuredData = { executive_summary: "Content with trailing whitespace test", market_opportunity: "Market opportunity content" };
+    const jsonContent = JSON.stringify({ content: JSON.stringify(structuredData) });
+    // Add trailing whitespace and newlines to simulate real-world file storage behavior
+    const jsonContentWithTrailingWhitespace = jsonContent + "\n\n  \t  \n";
+
+    const contributions: ContributionRowMinimal[] = [
+      {
+        id: rootId,
+        session_id: sessionId,
+        stage: "THESIS",
+        iteration_number: 1,
+        storage_bucket: "content",
+        storage_path: "proj_x/session_s/iteration_1/thesis/documents",
+        file_name: "gpt-4o-mini_0_business_case.md",
+        raw_response_storage_path: rawJsonPath,
+        mime_type: "text/markdown",
+        document_relationships: { thesis: rootId },
+        created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        target_contribution_id: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        user_id: "user_123",
+      },
+    ];
+
+    const mockDownloadFromStorage = async (
+      _supabase: SupabaseClient,
+      _bucket: string,
+      path: string,
+    ) => {
+      if (path === rawJsonPath) {
+        // Return the JSON content with trailing whitespace
+        const blob = new Blob([jsonContentWithTrailingWhitespace], { type: "application/json" });
+        return { data: await blob.arrayBuffer(), error: null };
+      }
+      const blob = new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" });
+      return { data: await blob.arrayBuffer(), error: null };
+    };
+
+    const { dbClient, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: {
+          select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_projects: {
+          select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_document_templates: {
+          select: {
+            data: [
+              {
+                id: "template-1",
+                created_at: "2025-01-01T00:00:00Z",
+                description: null,
+                domain_id: "domain-1",
+                file_name: "thesis_business_case.md",
+                is_active: true,
+                name: "thesis_business_case",
+                storage_bucket: "prompt-templates",
+                storage_path: "templates/thesis",
+                updated_at: "2025-01-01T00:00:00Z",
+              },
+            ],
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId,
+      iterationNumber: 1,
+      stageSlug,
+      documentIdentity: rootId,
+      documentKey: FileType.business_case,
+      sourceContributionId: rootId,
+    };
+
+    // Assert the desired behavior: renderDocument should successfully parse JSON with trailing whitespace
+    // This test will FAIL with the current bug (JSON.parse(text) fails on trailing whitespace)
+    // This test will PASS after the fix (JSON.parse(trimmedText) succeeds)
+    const result: RenderDocumentResult = await renderDocument(
+      dbClient,
+      {
+        downloadFromStorage: mockDownloadFromStorage,
+        fileManager: (() => {
+          const fm = new MockFileManagerService();
+          fm.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+          return fm;
+        })(),
+        notificationService: mockNotificationService,
+        notifyUserId: "user_123",
+        logger: logger,
+      },
+      params,
+    );
+
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+
+    // Verify the document was successfully rendered despite trailing whitespace in the source file
+    assert(rendered.includes("# Executive Summary"), "rendered document should contain Executive Summary section");
+    assert(rendered.includes("Content with trailing whitespace test"), "rendered document should contain extracted executive summary content");
+    assert(rendered.includes("# Market Opportunity"), "rendered document should contain Market Opportunity section");
+    assert(rendered.includes("Market opportunity content"), "rendered document should contain market opportunity content");
+    assert(!rendered.includes('{"content":'), "rendered document should NOT contain raw JSON string");
+
+    clearAllStubs?.();
+  });
+});
+
+Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) => {
+  const setup = (config: MockSupabaseDataConfig = {}) => {
+    const { client, spies, clearAllStubs } = createMockSupabaseClient(undefined, config);
+    return { dbClient: client as unknown as SupabaseClient<Database>, spies, clearAllStubs };
+  };
+
+  await t.step("renders document correctly when called with root chunk parameters", async () => {
+    // Test 5.b.i: Verify root chunks where sourceContributionId === documentIdentity
+    const rootContributionId = "root-chunk-5b-i";
+    const sessionId = "session_5b_i";
+    const stageSlug = "thesis";
+    const stageKey = stageSlug;
+
+    const rootChunk: ContributionRowMinimal = {
+      id: rootContributionId,
+      session_id: sessionId,
+      stage: stageKey,
+      iteration_number: 1,
+      storage_bucket: "content",
+      storage_path: "project_123/session_5b_i/iteration_1/thesis/documents",
+      file_name: "gpt-4o-mini_0_business_case.md",
+      raw_response_storage_path: "project_123/session_5b_i/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
+      mime_type: "text/markdown",
+      document_relationships: { [stageSlug]: rootContributionId },
+      created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+      target_contribution_id: null,
+      edit_version: 1,
+      is_latest_edit: true,
+      user_id: "user_123",
+    };
+
+    const structuredData = {
+      executive_summary: "Root chunk executive summary content",
+      market_opportunity: "Root chunk market opportunity content",
+    };
+    const agentResponse = { content: JSON.stringify(structuredData) };
+
+    const { dbClient, spies, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: {
+          select: { data: [rootChunk], error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_projects: {
+          select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_document_templates: {
+          select: {
+            data: [
+              {
+                id: "template-1",
+                created_at: "2025-01-01T00:00:00Z",
+                description: null,
+                domain_id: "domain-1",
+                file_name: "thesis_business_case.md",
+                is_active: true,
+                name: "thesis_business_case",
+                storage_bucket: "prompt-templates",
+                storage_path: "templates/thesis",
+                updated_at: "2025-01-01T00:00:00Z",
+              },
+            ],
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+      },
+      storageMock: {
+        downloadResult: async (_bucketId: string, path: string) => {
+          if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
+            return { data: new Blob([JSON.stringify(agentResponse)], { type: "application/json" }), error: null };
+          }
+          return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
+        },
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId,
+      iterationNumber: 1,
+      stageSlug,
+      documentIdentity: rootContributionId,
+      documentKey: FileType.business_case,
+      sourceContributionId: rootContributionId,
+    };
+
+    const mockFileManager = new MockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+    const result: RenderDocumentResult = await renderDocument(
+      dbClient,
+      {
+        downloadFromStorage,
+        fileManager: mockFileManager,
+        notificationService: mockNotificationService,
+        notifyUserId: "user_123",
+        logger: logger,
+      },
+      params,
+    );
+
+    // Verify the function successfully queries contributions using documentIdentity
+    const containsCalls = spies.getHistoricQueryBuilderSpies("dialectic_contributions", "contains");
+    assert(containsCalls && containsCalls.callCount >= 1, "expected contains() on document_relationships");
+    const hasContains = (containsCalls?.callsArgs || []).some((args) => {
+      if (!Array.isArray(args)) return false;
+      const [col, val] = args;
+      if (col !== "document_relationships") return false;
+      if (typeof val !== "object" || val === null) return false;
+      try {
+        const s = JSON.stringify(val);
+        return s.includes(`"${stageSlug}":"${rootContributionId}"`);
+      } catch {
+        return false;
+      }
+    });
+    assert(hasContains, "expected contains('document_relationships', { [stageSlug]: documentIdentity })");
+
+    // Verify the function finds the root chunk correctly
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+    assert(rendered.includes("Root chunk executive summary content"), "rendered document should contain root chunk content");
+
+    // Verify the function renders the document and returns pathContext with sourceContributionId set to the root's contribution.id
+    assert(result.pathContext, "result should have pathContext");
+    assertEquals(result.pathContext.sourceContributionId, rootContributionId, "pathContext.sourceContributionId should equal root's contribution.id");
+
+    // Assert that sourceContributionId === documentIdentity for root chunks
+    assertEquals(params.sourceContributionId, params.documentIdentity, "sourceContributionId should equal documentIdentity for root chunks");
+    assertEquals(result.pathContext.sourceContributionId, params.documentIdentity, "pathContext.sourceContributionId should equal documentIdentity for root chunks");
+
+    clearAllStubs?.();
+  });
+
+  await t.step("renders document correctly when called with continuation chunk parameters where sourceContributionId differs from documentIdentity", async () => {
+    // Test 5.b.ii: Verify continuation chunks where sourceContributionId !== documentIdentity
+    const rootContributionId = "root-chunk-5b-ii";
+    const continuationContributionId = "continuation-chunk-5b-ii";
+    const sessionId = "session_5b_ii";
+    const stageSlug = "thesis";
+    const stageKey = stageSlug;
+
+    const rootChunk: ContributionRowMinimal = {
+      id: rootContributionId,
+      session_id: sessionId,
+      stage: stageKey,
+      iteration_number: 1,
+      storage_bucket: "content",
+      storage_path: "project_123/session_5b_ii/iteration_1/thesis/documents",
+      file_name: "gpt-4o-mini_0_business_case.md",
+      raw_response_storage_path: "project_123/session_5b_ii/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
+      mime_type: "text/markdown",
+      document_relationships: { [stageSlug]: rootContributionId },
+      created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+      target_contribution_id: null,
+      edit_version: 1,
+      is_latest_edit: true,
+      user_id: "user_123",
+    };
+
+    const continuationChunk: ContributionRowMinimal = {
+      id: continuationContributionId,
+      session_id: sessionId,
+      stage: stageKey,
+      iteration_number: 1,
+      storage_bucket: "content",
+      storage_path: "project_123/session_5b_ii/iteration_1/thesis/documents",
+      file_name: "gpt-4o-mini_1_business_case.md",
+      raw_response_storage_path: "project_123/session_5b_ii/iteration_1/thesis/documents/gpt-4o-mini_1_business_case_raw.json",
+      mime_type: "text/markdown",
+      document_relationships: { [stageSlug]: rootContributionId },
+      created_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
+      target_contribution_id: rootContributionId,
+      edit_version: 2,
+      is_latest_edit: true,
+      user_id: "user_123",
+    };
+
+    const { dbClient, spies, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: {
+          select: { data: [rootChunk, continuationChunk], error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_projects: {
+          select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_document_templates: {
+          select: {
+            data: [
+              {
+                id: "template-1",
+                created_at: "2025-01-01T00:00:00Z",
+                description: null,
+                domain_id: "domain-1",
+                file_name: "thesis_business_case.md",
+                is_active: true,
+                name: "thesis_business_case",
+                storage_bucket: "prompt-templates",
+                storage_path: "templates/thesis",
+                updated_at: "2025-01-01T00:00:00Z",
+              },
+            ],
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+      },
+      storageMock: {
+        downloadResult: async (_bucketId: string, path: string) => {
+          if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
+            const structuredData1 = { executive_summary: "Root chunk content", market_opportunity: "Root market opportunity" };
+            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData1) })], { type: "application/json" }), error: null };
+          }
+          if (path.endsWith("gpt-4o-mini_1_business_case_raw.json")) {
+            const structuredData2 = { executive_summary: "Continuation chunk content", market_opportunity: "Continuation market opportunity" };
+            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData2) })], { type: "application/json" }), error: null };
+          }
+          return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
+        },
+      },
+    });
+
+    // Call renderDocument with documentIdentity: rootContributionId and sourceContributionId: continuationContributionId (different values)
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId,
+      iterationNumber: 1,
+      stageSlug,
+      documentIdentity: rootContributionId,
+      documentKey: FileType.business_case,
+      sourceContributionId: continuationContributionId,
+    };
+
+    const mockFileManager = new MockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+    const result: RenderDocumentResult = await renderDocument(
+      dbClient,
+      {
+        downloadFromStorage,
+        fileManager: mockFileManager,
+        notificationService: mockNotificationService,
+        notifyUserId: "user_123",
+        logger: logger,
+      },
+      params,
+    );
+
+    // Verify the function successfully queries contributions using documentIdentity (finds both root and continuation chunks)
+    const containsCalls = spies.getHistoricQueryBuilderSpies("dialectic_contributions", "contains");
+    assert(containsCalls && containsCalls.callCount >= 1, "expected contains() on document_relationships");
+    const hasContains = (containsCalls?.callsArgs || []).some((args) => {
+      if (!Array.isArray(args)) return false;
+      const [col, val] = args;
+      if (col !== "document_relationships") return false;
+      if (typeof val !== "object" || val === null) return false;
+      try {
+        const s = JSON.stringify(val);
+        return s.includes(`"${stageSlug}":"${rootContributionId}"`);
+      } catch {
+        return false;
+      }
+    });
+    assert(hasContains, "expected contains('document_relationships', { [stageSlug]: documentIdentity })");
+
+    // Verify the function finds the root chunk correctly (where target_contribution_id is null)
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+    assert(rendered.includes("Root chunk content"), "rendered document should contain root chunk content");
+
+    // Verify the function builds the ordered chain correctly (root first, then continuation)
+    const rootIdx = rendered.indexOf("Root chunk content");
+    const contIdx = rendered.indexOf("Continuation chunk content");
+    assert(rootIdx !== -1 && contIdx !== -1 && rootIdx < contIdx, "content should be in correct order (root first, then continuation)");
+
+    // Verify the function renders the combined document content from both chunks
+    assert(rendered.includes("Continuation chunk content"), "rendered document should contain continuation chunk content");
+
+    // Verify the function returns pathContext with sourceContributionId set to continuationContributionId (the actual contribution.id passed in, not the documentIdentity)
+    assert(result.pathContext, "result should have pathContext");
+    assertEquals(result.pathContext.sourceContributionId, continuationContributionId, "pathContext.sourceContributionId should equal continuation chunk's contribution.id, not documentIdentity");
+    assert(result.pathContext.sourceContributionId !== params.documentIdentity, "pathContext.sourceContributionId should not equal documentIdentity for continuation chunks");
+
+    // Explicitly assert that sourceContributionId !== documentIdentity for continuation chunks
+    assert(params.sourceContributionId !== params.documentIdentity, "sourceContributionId should not equal documentIdentity for continuation chunks");
+    assertEquals(result.pathContext.sourceContributionId, params.sourceContributionId, "pathContext.sourceContributionId should equal the sourceContributionId param for continuation chunks");
+
+    clearAllStubs?.();
+  });
+
+  await t.step("uses documentIdentity to query all related chunks regardless of which chunk triggered the render", async () => {
+    // Test 5.b.iii: Verify that documentIdentity is used for querying even when a continuation chunk triggers the render
+    const rootId = "root-chunk-5b-iii";
+    const cont1Id = "continuation-1-5b-iii";
+    const cont2Id = "continuation-2-5b-iii";
+    const sessionId = "session_5b_iii";
+    const stageSlug = "thesis";
+    const stageKey = stageSlug;
+
+    const rootChunk: ContributionRowMinimal = {
+      id: rootId,
+      session_id: sessionId,
+      stage: stageKey,
+      iteration_number: 1,
+      storage_bucket: "content",
+      storage_path: "project_123/session_5b_iii/iteration_1/thesis/documents",
+      file_name: "gpt-4o-mini_0_business_case.md",
+      raw_response_storage_path: "project_123/session_5b_iii/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
+      mime_type: "text/markdown",
+      document_relationships: { [stageSlug]: rootId },
+      created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+      target_contribution_id: null,
+      edit_version: 1,
+      is_latest_edit: true,
+      user_id: "user_123",
+    };
+
+    const cont1Chunk: ContributionRowMinimal = {
+      id: cont1Id,
+      session_id: sessionId,
+      stage: stageKey,
+      iteration_number: 1,
+      storage_bucket: "content",
+      storage_path: "project_123/session_5b_iii/iteration_1/thesis/documents",
+      file_name: "gpt-4o-mini_1_business_case.md",
+      raw_response_storage_path: "project_123/session_5b_iii/iteration_1/thesis/documents/gpt-4o-mini_1_business_case_raw.json",
+      mime_type: "text/markdown",
+      document_relationships: { [stageSlug]: rootId },
+      created_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
+      target_contribution_id: rootId,
+      edit_version: 2,
+      is_latest_edit: true,
+      user_id: "user_123",
+    };
+
+    const cont2Chunk: ContributionRowMinimal = {
+      id: cont2Id,
+      session_id: sessionId,
+      stage: stageKey,
+      iteration_number: 1,
+      storage_bucket: "content",
+      storage_path: "project_123/session_5b_iii/iteration_1/thesis/documents",
+      file_name: "gpt-4o-mini_2_business_case.md",
+      raw_response_storage_path: "project_123/session_5b_iii/iteration_1/thesis/documents/gpt-4o-mini_2_business_case_raw.json",
+      mime_type: "text/markdown",
+      document_relationships: { [stageSlug]: rootId },
+      created_at: new Date(2025, 0, 1, 12, 2, 0).toISOString(),
+      target_contribution_id: cont1Id,
+      edit_version: 3,
+      is_latest_edit: true,
+      user_id: "user_123",
+    };
+
+    const { dbClient, spies, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: {
+          select: { data: [rootChunk, cont1Chunk, cont2Chunk], error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_projects: {
+          select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_document_templates: {
+          select: {
+            data: [
+              {
+                id: "template-1",
+                created_at: "2025-01-01T00:00:00Z",
+                description: null,
+                domain_id: "domain-1",
+                file_name: "thesis_business_case.md",
+                is_active: true,
+                name: "thesis_business_case",
+                storage_bucket: "prompt-templates",
+                storage_path: "templates/thesis",
+                updated_at: "2025-01-01T00:00:00Z",
+              },
+            ],
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+      },
+      storageMock: {
+        downloadResult: async (_bucketId: string, path: string) => {
+          if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
+            const structuredData1 = { executive_summary: "Root content", market_opportunity: "Root market" };
+            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData1) })], { type: "application/json" }), error: null };
+          }
+          if (path.endsWith("gpt-4o-mini_1_business_case_raw.json")) {
+            const structuredData2 = { executive_summary: "Cont1 content", market_opportunity: "Cont1 market" };
+            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData2) })], { type: "application/json" }), error: null };
+          }
+          if (path.endsWith("gpt-4o-mini_2_business_case_raw.json")) {
+            const structuredData3 = { executive_summary: "Cont2 content", market_opportunity: "Cont2 market" };
+            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData3) })], { type: "application/json" }), error: null };
+          }
+          return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
+        },
+      },
+    });
+
+    // Call renderDocument with documentIdentity: rootId and sourceContributionId: cont2Id (simulating a render job triggered by the second continuation chunk)
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId,
+      iterationNumber: 1,
+      stageSlug,
+      documentIdentity: rootId,
+      documentKey: FileType.business_case,
+      sourceContributionId: cont2Id,
+    };
+
+    const mockFileManager = new MockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+    const result: RenderDocumentResult = await renderDocument(
+      dbClient,
+      {
+        downloadFromStorage,
+        fileManager: mockFileManager,
+        notificationService: mockNotificationService,
+        notifyUserId: "user_123",
+        logger: logger,
+      },
+      params,
+    );
+
+    // Verify the function queries contributions using documentIdentity: rootId and finds all three chunks (root, cont1, cont2)
+    const containsCalls = spies.getHistoricQueryBuilderSpies("dialectic_contributions", "contains");
+    assert(containsCalls && containsCalls.callCount >= 1, "expected contains() on document_relationships");
+    const hasContains = (containsCalls?.callsArgs || []).some((args) => {
+      if (!Array.isArray(args)) return false;
+      const [col, val] = args;
+      if (col !== "document_relationships") return false;
+      if (typeof val !== "object" || val === null) return false;
+      try {
+        const s = JSON.stringify(val);
+        return s.includes(`"${stageSlug}":"${rootId}"`);
+      } catch {
+        return false;
+      }
+    });
+    assert(hasContains, "expected contains('document_relationships', { [stageSlug]: documentIdentity })");
+
+    // Verify the function assembles all three chunks in correct order (root → cont1 → cont2)
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+    const rootIdx = rendered.indexOf("Root content");
+    const cont1Idx = rendered.indexOf("Cont1 content");
+    const cont2Idx = rendered.indexOf("Cont2 content");
+    assert(rootIdx !== -1 && cont1Idx !== -1 && cont2Idx !== -1, "rendered document should contain content from all three chunks");
+    assert(rootIdx < cont1Idx && cont1Idx < cont2Idx, "content should be in correct order (root → cont1 → cont2)");
+
+    // Verify the rendered document contains content from all three chunks
+    assert(rendered.includes("Root content"), "rendered document should contain root chunk content");
+    assert(rendered.includes("Cont1 content"), "rendered document should contain first continuation chunk content");
+    assert(rendered.includes("Cont2 content"), "rendered document should contain second continuation chunk content");
+
+    // Verify pathContext.sourceContributionId is set to cont2Id (the chunk that triggered the render)
+    assert(result.pathContext, "result should have pathContext");
+    assertEquals(result.pathContext.sourceContributionId, cont2Id, "pathContext.sourceContributionId should equal cont2Id (the chunk that triggered the render)");
+    assertEquals(result.pathContext.sourceContributionId, params.sourceContributionId, "pathContext.sourceContributionId should equal the sourceContributionId param");
+    assert(result.pathContext.sourceContributionId !== params.documentIdentity, "pathContext.sourceContributionId should not equal documentIdentity when continuation chunk triggers render");
 
     clearAllStubs?.();
   });

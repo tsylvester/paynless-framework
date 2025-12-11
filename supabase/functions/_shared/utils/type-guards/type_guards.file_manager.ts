@@ -152,6 +152,14 @@ const DOCUMENT_KEY_MAP: { [K in DocumentKey]: true } = {
     [FileType.updated_master_plan]: true,
     [FileType.actionable_checklist]: true,
     [FileType.advisor_recommendations]: true,
+    [FileType.synthesis_pairwise_business_case]: true,
+    [FileType.synthesis_pairwise_feature_spec]: true,
+    [FileType.synthesis_pairwise_technical_approach]: true,
+    [FileType.synthesis_pairwise_success_metrics]: true,
+    [FileType.synthesis_document_business_case]: true,
+    [FileType.synthesis_document_feature_spec]: true,
+    [FileType.synthesis_document_technical_approach]: true,
+    [FileType.synthesis_document_success_metrics]: true,
 };
 
 export function isDocumentKey(value: FileType): value is DocumentKey {

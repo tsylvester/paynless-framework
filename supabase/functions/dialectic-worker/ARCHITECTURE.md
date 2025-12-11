@@ -476,7 +476,12 @@ The following functions are referenced in the Abstract Data Flow Model graph abo
   - `projectId`, `sessionId`, `stageSlug`, `documentIdentity`, `sourceContributionId` must be strings
   - `iterationNumber` must be a number
   - `documentKey` must be a valid `FileType`
-  - `sourceContributionId` must equal `documentIdentity` (enforces that source contribution is the root document identity)
+  - `sourceContributionId` is the actual `contribution.id` of the contribution being rendered (used for foreign key constraints)
+  - `documentIdentity` is the semantic identifier from `document_relationships[stageSlug]` used to group all chunks in a document chain
+  - Relationship between `sourceContributionId` and `documentIdentity`:
+    - For root chunks (first chunk, no continuation): `documentIdentity` is extracted from `document_relationships[stageSlug]` which was set to `contribution.id` during initialization (see executeModelCallAndSave.ts line 1327), so `sourceContributionId === documentIdentity` (both are the root's contribution.id)
+    - For continuation chunks: `documentIdentity` is extracted from `document_relationships[stageSlug]` which contains the root's contribution.id (inherited from job payload), while `sourceContributionId` is this chunk's contribution.id, so `sourceContributionId !== documentIdentity` (sourceContributionId is this chunk's ID, documentIdentity is the root's ID)
+  - `sourceContributionId` must always be a valid contribution.id for foreign key constraints, never use the semantic identifier from document_relationships when it differs from contribution.id
 - Constructs `RenderDocumentParams` from validated payload parameters
 - Constructs `DocumentRendererDeps` from `IRenderJobDeps` (maps `downloadFromStorage`, `fileManager`, `notificationService`, `logger`, and sets `notifyUserId` to `projectOwnerUserId`)
 - Calls `documentRenderer.renderDocument()` with database client, renderer dependencies, and render parameters
@@ -492,9 +497,19 @@ The following functions are referenced in the Abstract Data Flow Model graph abo
   - `sessionId: string` - Session ID
   - `iterationNumber: number` - Iteration number
   - `stageSlug: string` - Stage slug (e.g., "thesis", "antithesis")
-  - `documentIdentity: string` - True-root ID for the document chain (used in `document_relationships`)
+  - `documentIdentity: string` - Semantic identifier for grouping document chains (extracted from `document_relationships[stageSlug]`)
+    - For root chunks: equals the root's `contribution.id` (because `document_relationships[stageSlug]` is initialized to `contribution.id` at line 1327 of executeModelCallAndSave.ts)
+    - For continuation chunks: equals the root's `contribution.id` (inherited from job payload's `document_relationships[stageSlug]`)
+    - Used by `renderDocument` to query for all contributions in the document chain via `.contains("document_relationships", { [stageKey]: documentIdentity })` (see document_renderer.ts line 51)
+    - Used to find the root contribution of the chain (see document_renderer.ts line 102)
   - `documentKey: FileType` - Document key (e.g., `FileType.business_case`)
-  - `sourceContributionId: string` - Source contribution ID (must equal `documentIdentity`)
+  - `sourceContributionId: string` - Source contribution ID (the actual `contribution.id` of the contribution being rendered)
+    - Always set to `contribution.id` (the actual contribution ID, not the semantic identifier from document_relationships)
+    - Used for foreign key constraints (e.g., `dialectic_project_resources.source_contribution_id`)
+    - Relationship with `documentIdentity`:
+      - For root chunks: `sourceContributionId === documentIdentity` (both are the root's contribution.id)
+      - For continuation chunks: `sourceContributionId !== documentIdentity` (sourceContributionId is this chunk's contribution.id, documentIdentity is the root's contribution.id from document_relationships)
+    - Must never be set to the semantic identifier from `document_relationships` when it differs from `contribution.id`
 - `projectOwnerUserId: string` - User ID of the project owner (for notifications)
 - `deps: IRenderJobDeps` - Dependencies containing:
   - `documentRenderer: IDocumentRenderer` - Document renderer service with `renderDocument` method

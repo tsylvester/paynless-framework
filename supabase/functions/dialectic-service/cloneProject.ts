@@ -15,6 +15,7 @@ import { downloadFromStorage } from "../_shared/supabase_storage_utils.ts";
 import { deconstructStoragePath } from "../_shared/utils/path_deconstructor.ts";
 import type { DialecticProjectRow, DialecticProjectInsert, DialecticSessionInsert, DialecticContributionRow, DialecticProjectResourceRow, DialecticFeedbackRow } from "../dialectic-service/dialectic.interface.ts";
 import { isContributionType, isFileType } from "../_shared/utils/type_guards.ts";
+import { isDocumentKey } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
 
 function isModelContributionFileType(fileType: FileType): fileType is ModelContributionFileTypes {
     // This is a simplified check. A more robust implementation might involve
@@ -50,7 +51,6 @@ function buildUploadContextForAsset(
     fileContent: Buffer,
     originalAsset: ProjectAsset,
     cloningUserId: string,
-    rawJsonResponseContent: string | null
 ): UploadContext {
     const commonContext = {
         fileContent,
@@ -73,7 +73,6 @@ function buildUploadContextForAsset(
                 modelNameDisplay: originalAsset.model_name!,
                 stageSlug: pathContext.stageSlug || originalAsset.stage,
                 iterationNumber: pathContext.iteration!,
-                rawJsonResponseContent: rawJsonResponseContent || '',
                 tokensUsedInput: originalAsset.tokens_used_input ?? undefined,
                 tokensUsedOutput: originalAsset.tokens_used_output ?? undefined,
                 processingTimeMs: originalAsset.processing_time_ms ?? undefined,
@@ -267,13 +266,6 @@ export async function cloneProject(
                 throw new Error(`Failed to download asset ${asset.id} from ${asset.storage_path}/${asset.file_name}.`);
             }
             const fileContentBuffer = Buffer.from(fileArrayBuffer);
-            
-            let rawJsonResponseContent: string | null = null;
-            if (asset.sourceTable === 'dialectic_contributions' && asset.raw_response_storage_path) {
-                const { data: rawData, error: rawError } = await downloadFromStorage(supabaseClient, asset.storage_bucket, asset.raw_response_storage_path);
-                if (rawData) rawJsonResponseContent = new TextDecoder().decode(rawData);
-                else console.warn(`Could not download raw JSON for asset ${asset.id} from ${asset.raw_response_storage_path}`, rawError);
-            }
 
             const deconstructed = deconstructStoragePath({ storageDir: asset.storage_path, fileName: asset.file_name });
             if (deconstructed.error) throw new Error(`Failed to deconstruct path for asset ${asset.id}: ${deconstructed.error}`);
@@ -300,6 +292,19 @@ export async function cloneProject(
             if (asset.session_id && !newSessionId) throw new Error(`Could not find new session ID for asset ${asset.id}`);
 
             if (!fileType) throw new Error(`Could not determine fileType for asset ${asset.id}`);
+            
+            // For document file types, ensure documentKey is set. Derive from contributionType or fileType if missing.
+            let documentKey = deconstructed.documentKey;
+            if (isDocumentKey(fileType) && !documentKey) {
+                // Try to derive from contributionType first (more specific)
+                if (typeof deconstructed.contributionType === 'string' && isContributionType(deconstructed.contributionType)) {
+                    documentKey = deconstructed.contributionType;
+                } else {
+                    // Fall back to fileType value itself
+                    documentKey = fileType;
+                }
+            }
+            
             const pathContext: PathContext = {
                 projectId: actualClonedProjectId,
                 fileType: fileType,
@@ -310,7 +315,7 @@ export async function cloneProject(
                 modelSlug: deconstructed.modelSlug,
                 attemptCount: deconstructed.attemptCount,
                 contributionType: (typeof deconstructed.contributionType === 'string' && isContributionType(deconstructed.contributionType)) ? deconstructed.contributionType : undefined,
-                documentKey: deconstructed.documentKey,
+                documentKey: documentKey,
                 stepName: deconstructed.stepName,
                 sourceModelSlugs: deconstructed.sourceModelSlug ? [deconstructed.sourceModelSlug] : deconstructed.sourceModelSlugs,
                 sourceAnchorType: deconstructed.sourceAnchorType || deconstructed.sourceContributionType,
@@ -322,7 +327,7 @@ export async function cloneProject(
                 ...(asset.sourceTable === 'dialectic_project_resources' && { sourceContributionId: asset.source_contribution_id }),
             };
 
-            const uploadContext = buildUploadContextForAsset(pathContext, fileContentBuffer, asset, cloningUserId, rawJsonResponseContent);
+            const uploadContext = buildUploadContextForAsset(pathContext, fileContentBuffer, asset, cloningUserId);
             const { record: newAssetRecord, error: fmError } = await fileManager.uploadAndRegisterFile(uploadContext);
 
             if (fmError || !newAssetRecord) throw new Error(`FileManager failed for asset ${asset.id}: ${fmError?.message}`);

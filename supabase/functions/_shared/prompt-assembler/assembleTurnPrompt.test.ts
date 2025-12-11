@@ -3173,8 +3173,8 @@ Deno.test("assembleTurnPrompt", async (t) => {
     }
   });
 
-  await t.step("should throw error when content_to_include structure doesn't match recipe step's expected structure", async () => {
-    const headerContextWithMismatchedStructure = {
+  await t.step("should throw error when content_to_include is missing required keys from recipe step", async () => {
+    const headerContextWithMissingKeys = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
         executive_summary: "This is the executive summary.",
@@ -3198,7 +3198,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
       ]
     };
 
-    const recipeStepWithMismatchedStructure = buildRecipeStep({
+    const recipeStepWithRequiredKeys = buildRecipeStep({
       outputs_required: {
         files_to_generate: [
           {
@@ -3224,7 +3224,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
 
     const stageWithRecipeStep: StageContext = {
       ...defaultStage,
-      recipe_step: recipeStepWithMismatchedStructure
+      recipe_step: recipeStepWithRequiredKeys
     };
 
     const config: MockSupabaseDataConfig = {
@@ -3242,7 +3242,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
         downloadResult: (bucket, path) => {
           const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
           if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
-            return Promise.resolve({ data: new Blob([JSON.stringify(headerContextWithMismatchedStructure)]), error: null });
+            return Promise.resolve({ data: new Blob([JSON.stringify(headerContextWithMissingKeys)]), error: null });
           }
           return Promise.resolve({ data: null, error: new Error("File not found in mock") });
         },
@@ -3281,8 +3281,408 @@ Deno.test("assembleTurnPrompt", async (t) => {
           await assembleTurnPrompt(deps);
         },
         Error,
-        "content_to_include structure for document_key"
+        "missing required keys" // Updated error message expectation to focus on missing keys
       );
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should accept content_to_include with compatible types when all required keys exist", async () => {
+    const headerContextWithCompatibleTypes = {
+      system_materials: {
+        stage_rationale: "This is the stage rationale.",
+        executive_summary: "This is the executive summary.",
+        input_artifacts_summary: "This is the input artifacts summary."
+      },
+      header_context_artifact: {
+        type: 'header_context',
+        document_key: 'header_context',
+        artifact_class: 'header_context',
+        file_type: 'json'
+      },
+      context_for_documents: [
+        {
+          document_key: BUSINESS_CASE_DOCUMENT_KEY,
+          content_to_include: {
+            field1: { nested: "object", value: "test" }, // object instead of string
+            field2: ["array", "of", "strings"], // array instead of string
+            field3: "string value" // string as expected
+          }
+        }
+      ]
+    };
+
+    const recipeStepWithStringTypes = buildRecipeStep({
+      outputs_required: {
+        files_to_generate: [
+          {
+            from_document_key: BUSINESS_CASE_DOCUMENT_KEY,
+            template_filename: "thesis_business_case.md"
+          }
+        ],
+        documents: [
+          {
+            artifact_class: "rendered_document",
+            file_type: "markdown",
+            document_key: BUSINESS_CASE_DOCUMENT_KEY,
+            template_filename: "thesis_business_case.md",
+            content_to_include: {
+              field1: "", // recipe expects string
+              field2: "", // recipe expects string
+              field3: ""  // recipe expects string
+            }
+          }
+        ]
+      }
+    });
+
+    const stageWithRecipeStep: StageContext = {
+      ...defaultStage,
+      recipe_step: recipeStepWithStringTypes
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
+      },
+      storageMock: {
+        downloadResult: (bucket, path) => {
+          const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+          if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
+            return Promise.resolve({ data: new Blob([JSON.stringify(headerContextWithCompatibleTypes)]), error: null });
+          }
+          const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+          if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
+            return Promise.resolve({ data: new Blob(["Template content"]), error: null });
+          }
+          return Promise.resolve({ data: null, error: new Error("File not found in mock") });
+        },
+      }
+    };
+
+    const { client } = setup(config);
+    mockFileManager.setUploadAndRegisterFileResponse({
+      id: "mock-turn-resource-id",
+      project_id: defaultProject.id,
+      file_name: "turn_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/turn_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock turn prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "turn_prompt",
+      source_contribution_id: null,
+      feedback_type: "test",
+      target_contribution_id: null,
+    }, null);
+
+    if (!isRecord(mockTurnJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
+    const jobWithBusinessCase: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        inputs: {
+          header_context_id: HEADER_CONTEXT_CONTRIBUTION_ID,
+        },
+        document_key: BUSINESS_CASE_DOCUMENT_KEY,
+      },
+    };
+
+    try {
+      const deps: AssembleTurnPromptDeps = {
+        dbClient: client,
+        job: jobWithBusinessCase,
+        project: defaultProject,
+        session: defaultSession,
+        stage: stageWithRecipeStep,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+      };
+      const result = await assembleTurnPrompt(deps);
+      assert(result, "assembleTurnPrompt should succeed with compatible types");
+      assert(result.promptContent, "assembleTurnPrompt should return prompt content");
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should accept content_to_include where recipe expects string but receives object", async () => {
+    const headerContextWithObject = {
+      system_materials: {
+        stage_rationale: "This is the stage rationale.",
+        executive_summary: "This is the executive summary.",
+        input_artifacts_summary: "This is the input artifacts summary."
+      },
+      header_context_artifact: {
+        type: 'header_context',
+        document_key: 'header_context',
+        artifact_class: 'header_context',
+        file_type: 'json'
+      },
+      context_for_documents: [
+        {
+          document_key: BUSINESS_CASE_DOCUMENT_KEY,
+          content_to_include: {
+            summary: { title: "Title", body: "Body" } // object instead of string
+          }
+        }
+      ]
+    };
+
+    const recipeStepWithStringType = buildRecipeStep({
+      outputs_required: {
+        files_to_generate: [
+          {
+            from_document_key: BUSINESS_CASE_DOCUMENT_KEY,
+            template_filename: "thesis_business_case.md"
+          }
+        ],
+        documents: [
+          {
+            artifact_class: "rendered_document",
+            file_type: "markdown",
+            document_key: BUSINESS_CASE_DOCUMENT_KEY,
+            template_filename: "thesis_business_case.md",
+            content_to_include: {
+              summary: "" // recipe expects string
+            }
+          }
+        ]
+      }
+    });
+
+    const stageWithRecipeStep: StageContext = {
+      ...defaultStage,
+      recipe_step: recipeStepWithStringType
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
+      },
+      storageMock: {
+        downloadResult: (bucket, path) => {
+          const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+          if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
+            return Promise.resolve({ data: new Blob([JSON.stringify(headerContextWithObject)]), error: null });
+          }
+          const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+          if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
+            return Promise.resolve({ data: new Blob(["Template content"]), error: null });
+          }
+          return Promise.resolve({ data: null, error: new Error("File not found in mock") });
+        },
+      }
+    };
+
+    const { client } = setup(config);
+    mockFileManager.setUploadAndRegisterFileResponse({
+      id: "mock-turn-resource-id",
+      project_id: defaultProject.id,
+      file_name: "turn_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/turn_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock turn prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "turn_prompt",
+      source_contribution_id: null,
+      feedback_type: "test",
+      target_contribution_id: null,
+    }, null);
+
+    if (!isRecord(mockTurnJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
+    const jobWithBusinessCase: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        inputs: {
+          header_context_id: HEADER_CONTEXT_CONTRIBUTION_ID,
+        },
+        document_key: BUSINESS_CASE_DOCUMENT_KEY,
+      },
+    };
+
+    try {
+      const deps: AssembleTurnPromptDeps = {
+        dbClient: client,
+        job: jobWithBusinessCase,
+        project: defaultProject,
+        session: defaultSession,
+        stage: stageWithRecipeStep,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+      };
+      const result = await assembleTurnPrompt(deps);
+      assert(result, "assembleTurnPrompt should succeed when object is provided instead of string");
+      assert(result.promptContent, "assembleTurnPrompt should return prompt content");
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should accept content_to_include where recipe expects string but receives array", async () => {
+    const headerContextWithArray = {
+      system_materials: {
+        stage_rationale: "This is the stage rationale.",
+        executive_summary: "This is the executive summary.",
+        input_artifacts_summary: "This is the input artifacts summary."
+      },
+      header_context_artifact: {
+        type: 'header_context',
+        document_key: 'header_context',
+        artifact_class: 'header_context',
+        file_type: 'json'
+      },
+      context_for_documents: [
+        {
+          document_key: BUSINESS_CASE_DOCUMENT_KEY,
+          content_to_include: {
+            items: ["item1", "item2"] // array instead of string
+          }
+        }
+      ]
+    };
+
+    const recipeStepWithStringType = buildRecipeStep({
+      outputs_required: {
+        files_to_generate: [
+          {
+            from_document_key: BUSINESS_CASE_DOCUMENT_KEY,
+            template_filename: "thesis_business_case.md"
+          }
+        ],
+        documents: [
+          {
+            artifact_class: "rendered_document",
+            file_type: "markdown",
+            document_key: BUSINESS_CASE_DOCUMENT_KEY,
+            template_filename: "thesis_business_case.md",
+            content_to_include: {
+              items: "" // recipe expects string
+            }
+          }
+        ]
+      }
+    });
+
+    const stageWithRecipeStep: StageContext = {
+      ...defaultStage,
+      recipe_step: recipeStepWithStringType
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
+      },
+      storageMock: {
+        downloadResult: (bucket, path) => {
+          const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+          if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
+            return Promise.resolve({ data: new Blob([JSON.stringify(headerContextWithArray)]), error: null });
+          }
+          const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+          if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
+            return Promise.resolve({ data: new Blob(["Template content"]), error: null });
+          }
+          return Promise.resolve({ data: null, error: new Error("File not found in mock") });
+        },
+      }
+    };
+
+    const { client } = setup(config);
+    mockFileManager.setUploadAndRegisterFileResponse({
+      id: "mock-turn-resource-id",
+      project_id: defaultProject.id,
+      file_name: "turn_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/turn_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock turn prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "turn_prompt",
+      source_contribution_id: null,
+      feedback_type: "test",
+      target_contribution_id: null,
+    }, null);
+
+    if (!isRecord(mockTurnJob.payload)) {
+      throw new Error("Job payload is not valid JSON");
+    }
+    const jobWithBusinessCase: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        inputs: {
+          header_context_id: HEADER_CONTEXT_CONTRIBUTION_ID,
+        },
+        document_key: BUSINESS_CASE_DOCUMENT_KEY,
+      },
+    };
+
+    try {
+      const deps: AssembleTurnPromptDeps = {
+        dbClient: client,
+        job: jobWithBusinessCase,
+        project: defaultProject,
+        session: defaultSession,
+        stage: stageWithRecipeStep,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+      };
+      const result = await assembleTurnPrompt(deps);
+      assert(result, "assembleTurnPrompt should succeed when array is provided instead of string");
+      assert(result.promptContent, "assembleTurnPrompt should return prompt content");
     } finally {
       teardown();
     }

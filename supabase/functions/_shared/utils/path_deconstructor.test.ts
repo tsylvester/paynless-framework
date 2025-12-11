@@ -519,13 +519,13 @@ const constructDeconstructTestCases: Array<{
   },
   {
     name: 'synthesis_pairwise_business_case',
-    context: { projectId: 'yy-spbc', fileType: FileType.synthesis_pairwise_business_case, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
+    context: { projectId: 'yy-spbc', fileType: FileType.synthesis_pairwise_business_case, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0, documentKey: 'synthesis_pairwise_business_case' },
     checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
     expectedFixedFileNameInPath: 'm_0_synthesis_pairwise_business_case.json',
   },
   {
     name: 'synthesis_document_business_case',
-    context: { projectId: 'yy-sdbc', fileType: FileType.synthesis_document_business_case, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0 },
+    context: { projectId: 'yy-sdbc', fileType: FileType.synthesis_document_business_case, sessionId: 's', iteration: 1, stageSlug: 'synthesis', modelSlug: 'm', attemptCount: 0, documentKey: 'synthesis_document_business_case' },
     checkFields: ['shortSessionId', 'iteration', 'stageSlug', 'modelSlug', 'attemptCount'],
     expectedFixedFileNameInPath: 'm_0_synthesis_document_business_case.json',
   },
@@ -953,6 +953,91 @@ Deno.test("[path_deconstructor] failing cases - bugs discovered from inverse tes
     assertEquals(info.sourceContributionType, 'thesis');
     assertEquals(info.sourceAttemptCount, 1);
   });
+});
+
+Deno.test('[path_deconstructor] extracts documentKey for header_context JSON-only artifact', () => {
+  const projectId = 'proj-header-ctx';
+  const sessionId = 'sess-header-ctx-uuid';
+  const shortSessionId = generateShortId(sessionId);
+  const iteration = 1;
+  const stageSlug = 'thesis';
+  const mappedStageDir = mapStageSlugToDirName(stageSlug);
+  const modelSlug = 'mock-model';
+  const attemptCount = 0;
+  const modelSlugSanitized = sanitizeForPath(modelSlug);
+
+  const storageDir = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/raw_responses`;
+  const fileName = `${modelSlugSanitized}_${attemptCount}_header_context_raw.json`;
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir, fileName });
+
+  assertEquals(info.documentKey, 'header_context');
+  assertEquals(info.modelSlug, modelSlugSanitized);
+  assertEquals(info.attemptCount, attemptCount);
+  assertEquals(info.stageSlug, stageSlug);
+  assertEquals(info.originalProjectId, projectId);
+  assertEquals(info.shortSessionId, shortSessionId);
+  assertEquals(info.iteration, iteration);
+  assertEquals(info.stageDirName, mappedStageDir);
+  assertEquals(info.error, undefined);
+});
+
+Deno.test('[path_deconstructor] extracts documentKey for synthesis_header_context JSON-only artifact', () => {
+  const projectId = 'proj-synth-header-ctx';
+  const sessionId = 'sess-synth-header-ctx-uuid';
+  const shortSessionId = generateShortId(sessionId);
+  const iteration = 1;
+  const stageSlug = 'synthesis';
+  const mappedStageDir = mapStageSlugToDirName(stageSlug);
+  const modelSlug = 'mock-model';
+  const attemptCount = 0;
+  const modelSlugSanitized = sanitizeForPath(modelSlug);
+
+  const storageDir = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/raw_responses`;
+  const fileName = `${modelSlugSanitized}_${attemptCount}_synthesis_header_context_raw.json`;
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir, fileName });
+
+  assertEquals(info.documentKey, 'synthesis_header_context');
+  assertEquals(info.modelSlug, modelSlugSanitized);
+  assertEquals(info.attemptCount, attemptCount);
+  assertEquals(info.stageSlug, stageSlug);
+  assertEquals(info.originalProjectId, projectId);
+  assertEquals(info.shortSessionId, shortSessionId);
+  assertEquals(info.iteration, iteration);
+  assertEquals(info.stageDirName, mappedStageDir);
+  assertEquals(info.error, undefined);
+});
+
+Deno.test('[path_deconstructor] extracts documentKey for other JSON-only artifacts with underscores', () => {
+  const projectId = 'proj-json-artifacts';
+  const sessionId = 'sess-json-artifacts-uuid';
+  const shortSessionId = generateShortId(sessionId);
+  const iteration = 1;
+  const stageSlug = 'thesis';
+  const mappedStageDir = mapStageSlugToDirName(stageSlug);
+  const modelSlug = 'mock-model';
+  const attemptCount = 0;
+  const modelSlugSanitized = sanitizeForPath(modelSlug);
+
+  const testCases = [
+    { documentKey: 'custom_json_artifact', description: 'custom_json_artifact' },
+    { documentKey: 'another_json_type', description: 'another_json_type' },
+  ];
+
+  for (const testCase of testCases) {
+    const storageDir = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/raw_responses`;
+    const fileName = `${modelSlugSanitized}_${attemptCount}_${testCase.documentKey}_raw.json`;
+    const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir, fileName });
+
+    assertEquals(info.documentKey, testCase.documentKey, `documentKey mismatch for ${testCase.description}`);
+    assertEquals(info.modelSlug, modelSlugSanitized, `modelSlug mismatch for ${testCase.description}`);
+    assertEquals(info.attemptCount, attemptCount, `attemptCount mismatch for ${testCase.description}`);
+    assertEquals(info.stageSlug, stageSlug, `stageSlug mismatch for ${testCase.description}`);
+    assertEquals(info.originalProjectId, projectId, `originalProjectId mismatch for ${testCase.description}`);
+    assertEquals(info.shortSessionId, shortSessionId, `shortSessionId mismatch for ${testCase.description}`);
+    assertEquals(info.iteration, iteration, `iteration mismatch for ${testCase.description}`);
+    assertEquals(info.stageDirName, mappedStageDir, `stageDirName mismatch for ${testCase.description}`);
+    assertEquals(info.error, undefined, `error should be undefined for ${testCase.description}`);
+  }
 });
 
 

@@ -606,7 +606,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'synthesis',
         fileType: FileType.synthesis_pairwise_business_case,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'synthesis_pairwise_business_case',
       };
       const { storagePath, fileName } = constructStoragePath(pairwiseBusinessCaseContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
@@ -621,7 +622,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'synthesis',
         fileType: FileType.synthesis_document_business_case,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'synthesis_document_business_case',
       };
       const { storagePath, fileName } = constructStoragePath(documentBusinessCaseContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
@@ -1626,6 +1628,151 @@ Deno.test('constructStoragePath', async (t) => {
       const { storagePath: nonDocPath, fileName: nonDocFileName } = constructStoragePath(nonDocumentContext);
       assert(nonDocPath.includes('_work/context'), 'Non-document file type should work without documentKey');
       assert(nonDocFileName.includes('header_context'), 'Non-document file type should work without documentKey');
+    });
+  });
+
+  await t.step('step 11.b: path construction prevents collisions between root and continuation chunks', async (t) => {
+    const documentKey = 'business_case';
+    const stageSlug = 'thesis';
+    const mappedStageDir = mapStageSlugToDirName(stageSlug);
+    const baseContext: PathContext = {
+      projectId,
+      sessionId,
+      iteration,
+      stageSlug,
+      modelSlug,
+      attemptCount,
+      documentKey,
+      fileType: FileType.ModelContributionRawJson,
+    };
+
+    await t.step('11.b.i: root chunk (isContinuation: false, turnIndex: undefined) does NOT include continuation suffix and uses raw_responses/', () => {
+      const context: PathContext = {
+        ...baseContext,
+        isContinuation: false,
+        turnIndex: undefined,
+      };
+      const { storagePath, fileName } = constructStoragePath(context);
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/raw_responses`;
+      const expectedFileName = `${modelSlug}_${attemptCount}_${documentKey}_raw.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+      assert(!fileName.includes('_continuation_'), 'Root chunk filename should not include continuation suffix');
+    });
+
+    await t.step('11.b.ii: continuation chunk (isContinuation: true, turnIndex: 1) includes _continuation_1 suffix and uses _work/raw_responses/', () => {
+      const context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: 1,
+      };
+      const { storagePath, fileName } = constructStoragePath(context);
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/_work/raw_responses`;
+      const expectedFileName = `${modelSlug}_${attemptCount}_${documentKey}_continuation_1_raw.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+      assert(fileName.includes('_continuation_1'), 'Continuation chunk filename should include _continuation_1 suffix');
+    });
+
+    await t.step('11.b.iii: continuation chunk (isContinuation: true, turnIndex: 2) includes _continuation_2 suffix and uses _work/raw_responses/', () => {
+      const context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: 2,
+      };
+      const { storagePath, fileName } = constructStoragePath(context);
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/_work/raw_responses`;
+      const expectedFileName = `${modelSlug}_${attemptCount}_${documentKey}_continuation_2_raw.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+      assert(fileName.includes('_continuation_2'), 'Continuation chunk filename should include _continuation_2 suffix');
+    });
+
+    await t.step('11.b.iv: continuation chunk (isContinuation: true, turnIndex: undefined) throws error indicating turnIndex is required and must be > 0', () => {
+      const context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: undefined,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'turnIndex is required and must be a number > 0 for continuation chunks',
+      );
+    });
+
+    await t.step('11.b.v: continuation chunk (isContinuation: true, turnIndex: 0) throws error indicating turnIndex must be > 0', () => {
+      const context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: 0,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'turnIndex is required and must be a number > 0 for continuation chunks',
+      );
+    });
+
+    await t.step('11.b.vi: continuation chunk (isContinuation: true, turnIndex: -1) throws error indicating turnIndex must be > 0', () => {
+      const context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: -1,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'turnIndex is required and must be a number > 0 for continuation chunks',
+      );
+    });
+
+    await t.step('11.b.vii: root chunk path and continuation chunk path (with turnIndex: 1) are different, proving no collision is possible', () => {
+      const rootContext: PathContext = {
+        ...baseContext,
+        isContinuation: false,
+        turnIndex: undefined,
+      };
+      const continuationContext: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: 1,
+      };
+      const rootPath = constructStoragePath(rootContext);
+      const continuationPath = constructStoragePath(continuationContext);
+      const rootFullPath = `${rootPath.storagePath}/${rootPath.fileName}`;
+      const continuationFullPath = `${continuationPath.storagePath}/${continuationPath.fileName}`;
+      assert(rootFullPath !== continuationFullPath, `Root chunk path (${rootFullPath}) and continuation chunk path (${continuationFullPath}) must be different to prevent collisions`);
+      assert(rootPath.storagePath !== continuationPath.storagePath, 'Root chunks and continuation chunks must use different storage directories');
+    });
+
+    await t.step('11.b.viii: multiple continuation chunks with different turnIndex values (1, 2, 3) have unique paths, proving no collision between continuation chunks', () => {
+      const continuation1Context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: 1,
+      };
+      const continuation2Context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: 2,
+      };
+      const continuation3Context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: 3,
+      };
+      const path1 = constructStoragePath(continuation1Context);
+      const path2 = constructStoragePath(continuation2Context);
+      const path3 = constructStoragePath(continuation3Context);
+      const fullPath1 = `${path1.storagePath}/${path1.fileName}`;
+      const fullPath2 = `${path2.storagePath}/${path2.fileName}`;
+      const fullPath3 = `${path3.storagePath}/${path3.fileName}`;
+      const uniquePaths = new Set([fullPath1, fullPath2, fullPath3]);
+      assertEquals(uniquePaths.size, 3, `All continuation chunk paths must be unique. Got: ${Array.from(uniquePaths).join(', ')}`);
+      assert(path1.fileName.includes('_continuation_1'), 'First continuation chunk should have _continuation_1 in filename');
+      assert(path2.fileName.includes('_continuation_2'), 'Second continuation chunk should have _continuation_2 in filename');
+      assert(path3.fileName.includes('_continuation_3'), 'Third continuation chunk should have _continuation_3 in filename');
     });
   });
 });

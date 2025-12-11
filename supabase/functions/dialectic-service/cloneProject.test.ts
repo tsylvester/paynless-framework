@@ -75,7 +75,7 @@ describe("cloneProject", () => {
                         edit_version: meta.editVersion ?? 1,
                         is_latest_edit: meta.isLatestEdit ?? true,
                         original_model_contribution_id: meta.originalModelContributionId ?? null,
-                        raw_response_storage_path: meta.rawJsonResponseContent ? `${newPath.storagePath}/${(newPath.fileName || '').replace(/\.(md|json)$/i, '')}_raw.json` : null,
+                        raw_response_storage_path: `${newPath.storagePath}/${newPath.fileName}`,
                         target_contribution_id: meta.target_contribution_id ?? null,
                         tokens_used_input: meta.tokensUsedInput ?? null,
                         tokens_used_output: meta.tokensUsedOutput ?? null,
@@ -553,7 +553,6 @@ describe("cloneProject", () => {
             assertEquals(contrib1MainCallArgs.contributionMetadata.modelIdUsed, originalContributionsData[0].model_id);
             assertEquals(contrib1MainCallArgs.contributionMetadata.stageSlug, "thesis");
             assertEquals(contrib1MainCallArgs.contributionMetadata.iterationNumber, originalContributionsData[0].iteration_number);
-            assertEquals(contrib1MainCallArgs.contributionMetadata.rawJsonResponseContent, "{\"raw\": \"json contrib1\"}", "Raw JSON content for contrib1 should be passed");
             assertEquals(contrib1MainCallArgs.contributionMetadata.source_prompt_resource_id, "prompt-resource-id-1", "source_prompt_resource_id should be copied directly");
         } else {
             assert(false, "contributionMetadata was expected for contrib1 but not found.");
@@ -582,7 +581,6 @@ describe("cloneProject", () => {
             assertEquals(contrib2MainCallArgs.contributionMetadata.modelIdUsed, originalContributionsData[1].model_id);
             assertEquals(contrib2MainCallArgs.contributionMetadata.stageSlug, "antithesis");
             assertEquals(contrib2MainCallArgs.contributionMetadata.iterationNumber, originalContributionsData[1].iteration_number);
-            assertEquals(contrib2MainCallArgs.contributionMetadata.rawJsonResponseContent, "", "Raw JSON content for contrib2 should be empty string");
             assertEquals(contrib2MainCallArgs.contributionMetadata.source_prompt_resource_id, "prompt-resource-id-2", "source_prompt_resource_id should be copied directly for contrib2");
         } else {
             assert(false, "contributionMetadata was expected for contrib2 but not found.");

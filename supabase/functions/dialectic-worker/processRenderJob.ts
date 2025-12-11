@@ -52,9 +52,6 @@ export async function processRenderJob(
     if(!isString(sourceContributionId)) {
       throw new Error('sourceContributionId must be a string');
     }
-    if (sourceContributionId !== documentIdentity) {
-      throw new Error('sourceContributionId must equal documentIdentity');
-    }
     const params: RenderDocumentParams = {
       projectId,
       sessionId,
@@ -73,7 +70,34 @@ export async function processRenderJob(
       logger: deps.logger,
     };
 
-    const renderResult = await deps.documentRenderer.renderDocument(dbClient, rendererDeps, params);
+    deps.logger?.info?.('[processRenderJob] DEBUG: About to call renderDocument', { 
+      jobId, 
+      params: {
+        projectId: params.projectId,
+        sessionId: params.sessionId,
+        iterationNumber: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentIdentity: params.documentIdentity,
+        documentKey: params.documentKey,
+        sourceContributionId: params.sourceContributionId,
+      }
+    });
+    
+    let renderResult;
+    try {
+      renderResult = await deps.documentRenderer.renderDocument(dbClient, rendererDeps, params);
+      deps.logger?.info?.('[processRenderJob] DEBUG: renderDocument succeeded', { 
+        jobId,
+        sourceContributionId: renderResult.pathContext.sourceContributionId,
+      });
+    } catch (renderError) {
+      deps.logger?.error?.('[processRenderJob] DEBUG: renderDocument threw error', { 
+        jobId,
+        error: renderError instanceof Error ? renderError.message : String(renderError),
+        stack: renderError instanceof Error ? renderError.stack : undefined,
+      });
+      throw renderError;
+    }
 
     const pathContextJson = {
       projectId: renderResult.pathContext.projectId,
@@ -96,7 +120,13 @@ export async function processRenderJob(
       .eq('id', jobId);
   } catch (e) {
     const err = e instanceof Error ? e : new Error(String(e));
-    deps.logger.error('[processRenderJob] failed to render document', { jobId, error: err.message });
+    deps.logger?.error?.('[processRenderJob] DEBUG: Caught error in processRenderJob', { 
+      jobId, 
+      error: err.message,
+      stack: err.stack,
+      errorName: err.name,
+      fullError: String(e),
+    });
 
     await dbClient
       .from('dialectic_generation_jobs')

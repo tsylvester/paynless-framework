@@ -15,6 +15,7 @@ import {
   SaveContributionEditSuccessResponse,
   EditedDocumentResource,
   DialecticContribution,
+  StageDocumentCompositeKey,
 } from '@paynless/types';
 import { selectIsStageReadyForSessionIteration, selectStageDocumentResource } from './dialecticStore.selectors';
 
@@ -134,7 +135,7 @@ describe('DialecticStore (integration) - readiness notifications', () => {
     execution_order: 1,
     job_type: 'PLAN',
     prompt_type: 'Planner',
-    output_type: 'HeaderContext',
+    output_type: 'header_context',
     granularity_strategy: 'all_to_one',
     inputs_required: [],
     outputs_required: [
@@ -154,7 +155,7 @@ describe('DialecticStore (integration) - readiness notifications', () => {
     execution_order: 2,
     job_type: 'EXECUTE',
     prompt_type: 'Turn',
-    output_type: 'AssembledDocumentJson',
+    output_type: 'assembled_document_json',
     granularity_strategy: 'per_source_document',
     inputs_required: [
       {
@@ -606,6 +607,163 @@ describe('DialecticStore (integration) - saveContributionEdit', () => {
 
     expect(finalState.isSavingContributionEdit).toBe(false);
     expect(finalState.saveContributionEditError).toBeNull();
+  });
+});
+
+describe('DialecticStore (integration) - fetchStageDocumentContent stores sourceContributionId', () => {
+  const projectId = 'project-source-contrib-integration';
+  const sessionId = 'session-source-contrib-integration';
+  const stageSlug = 'thesis';
+  const iterationNumber = 1;
+  const modelId = 'model-source-contrib-integration';
+  const documentKey = 'business_case';
+  const resourceId = 'resource-with-source-contrib';
+  const sourceContributionId = 'contrib-source-123';
+  const testContent = 'Test document content for integration test';
+  const now = new Date().toISOString();
+
+  const compositeKey: StageDocumentCompositeKey = {
+    sessionId,
+    stageSlug,
+    iterationNumber,
+    modelId,
+    documentKey,
+  };
+
+  const createSession = (): DialecticSession => ({
+    id: sessionId,
+    project_id: projectId,
+    status: 'active',
+    iteration_count: iterationNumber,
+    created_at: now,
+    updated_at: now,
+    current_stage_id: 'stage-1',
+    selected_model_ids: [modelId],
+    dialectic_contributions: [],
+    session_description: null,
+    user_input_reference_url: null,
+    associated_chat_id: null,
+  });
+
+  const createProject = (): DialecticProject => ({
+    id: projectId,
+    user_id: 'user-1',
+    project_name: 'Source Contrib Integration Project',
+    selected_domain_id: 'domain-1',
+    dialectic_domains: { name: 'Test Domain' },
+    status: 'active',
+    created_at: now,
+    updated_at: now,
+    dialectic_sessions: [createSession()],
+    resources: [],
+    dialectic_process_templates: {
+      id: 'template-1',
+      name: 'Test Template',
+      description: '',
+      starting_stage_id: 'stage-1',
+      created_at: now,
+      stages: [{
+        id: 'stage-1',
+        slug: stageSlug,
+        display_name: 'Thesis',
+        description: '',
+        default_system_prompt_id: null,
+        recipe_template_id: null,
+        expected_output_template_ids: [],
+        created_at: now,
+        active_recipe_instance_id: null,
+      }],
+      transitions: [],
+    },
+    process_template_id: 'template-1',
+    isLoadingProcessTemplate: false,
+    processTemplateError: null,
+    contributionGenerationStatus: 'idle',
+    generateContributionsError: null,
+    isSubmittingStageResponses: false,
+    submitStageResponsesError: null,
+    isSavingContributionEdit: false,
+    saveContributionEditError: null,
+    initial_user_prompt: 'Initial prompt',
+    initial_prompt_resource_id: null,
+    selected_domain_overlay_id: null,
+    repo_url: null,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _resetApiClient();
+    initializeApiClient({ supabaseUrl: MOCK_SUPABASE_URL, supabaseAnonKey: MOCK_ANON_KEY });
+
+    const mockSupabaseClient = vi.mocked(createClient).mock.results[0].value;
+    vi.mocked(mockSupabaseClient.auth.getSession).mockResolvedValue({
+      data: { session: { access_token: MOCK_ACCESS_TOKEN } },
+      error: null,
+    });
+
+    useDialecticStore.getState()._resetForTesting?.();
+    const projectInstance = createProject();
+    useDialecticStore.setState((state) => {
+      state.currentProjectDetail = projectInstance;
+      state.stageDocumentContent = {};
+    });
+  });
+
+  afterEach(() => {
+    useDialecticStore.getState()._resetForTesting?.();
+    _resetApiClient();
+    server.resetHandlers();
+  });
+
+  it('9.f.i: stores sourceContributionId when getProjectResourceContent returns it, and selectStageDocumentResource provides it', async () => {
+    // (1) Set up MSW to mock getProjectResourceContent API response with sourceContributionId
+    server.use(
+      http.post(`${MOCK_FUNCTIONS_URL}/dialectic-service`, async ({ request }) => {
+        const body = await request.json();
+        expect(body).toEqual({
+          action: 'getProjectResourceContent',
+          payload: { resourceId },
+        });
+        return HttpResponse.json(
+          {
+            fileName: 'test.md',
+            mimeType: 'text/markdown',
+            content: testContent,
+            sourceContributionId: sourceContributionId,
+          },
+          { status: 200 }
+        );
+      })
+    );
+
+    // (2) Call fetchStageDocumentContentLogic via the store action
+    const store = useDialecticStore.getState();
+    const serializedKey = `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
+    expect(store.stageDocumentContent[serializedKey]).toBeUndefined();
+
+    await store.fetchStageDocumentContent(compositeKey, resourceId);
+
+    // (3) Verify sourceContributionId is stored in the state
+    const finalState = useDialecticStore.getState();
+    const documentEntry = finalState.stageDocumentContent[serializedKey];
+    expect(documentEntry).toBeDefined();
+    expect(documentEntry?.sourceContributionId).toBe(sourceContributionId);
+    expect(documentEntry?.baselineMarkdown).toBe(testContent);
+    expect(documentEntry?.isLoading).toBe(false);
+    expect(documentEntry?.error).toBeNull();
+
+    // (4) Verify selectStageDocumentResource returns sourceContributionId
+    const documentFromSelector = selectStageDocumentResource(
+      finalState,
+      sessionId,
+      stageSlug,
+      iterationNumber,
+      modelId,
+      documentKey
+    );
+    expect(documentFromSelector).toBeDefined();
+    expect(documentFromSelector?.sourceContributionId).toBe(sourceContributionId);
+    expect(documentFromSelector?.baselineMarkdown).toBe(testContent);
   });
 });
 
