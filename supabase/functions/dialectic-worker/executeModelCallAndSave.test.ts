@@ -4,11 +4,11 @@ import {
     assert,
   } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
   import { spy, stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
-  import type { Database, Tables } from '../types_db.ts';
+  import { Database, Tables } from '../types_db.ts';
   import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
   import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
   import { logger } from '../_shared/logger.ts';
-  import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+  import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
   import {
     isJson,
     isRecord,
@@ -17,7 +17,7 @@ import {
 } from '../_shared/utils/type_guards.ts';
 import { isModelContributionContext } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
   import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
-  import type { 
+  import { 
     DialecticJobRow, 
     DialecticSession, 
     DialecticContributionRow, 
@@ -28,15 +28,15 @@ import { isModelContributionContext } from '../_shared/utils/type-guards/type_gu
     IDialecticJobDeps,
     PromptConstructionPayload,
     SourceDocument
-} from '../dialectic-service/dialectic.interface.ts';
-import { FileType, UploadContext } from '../_shared/types/file_manager.types.ts';
-import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
-import type { LogMetadata, Messages } from '../_shared/types.ts';
+  } from '../dialectic-service/dialectic.interface.ts';
+import { FileType, UploadContext, DocumentRelationships, DialecticStageSlug } from '../_shared/types/file_manager.types.ts';
+import { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
+import { LogMetadata, Messages } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
-import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
+import { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 
 // Local helpers for arranging tests
@@ -1009,13 +1009,18 @@ Deno.test('executeModelCallAndSave - emits document_chunk_completed for continua
 
   // Continuation job payload with required document_relationships
   // Use a document file type with document_key for document_chunk_completed event
+  // Use valid DialecticStageSlug enum value for document_relationships key
+  const documentRelationships: DocumentRelationships = {
+    [DialecticStageSlug.Thesis]: 'root-123',
+  };
   const continuationPayload: DialecticExecuteJobPayload = {
     ...testPayload,
     output_type: FileType.business_case,
     document_key: 'business_case',
     target_contribution_id: 'root-123',
     continuation_count: 2,
-    document_relationships: { thesis: 'root-123' },
+    stageSlug: DialecticStageSlug.Thesis,
+    document_relationships: documentRelationships,
   };
 
   // Stub model to return a non-final finish_reason (requires continuation), but we only assert chunk event
@@ -1982,7 +1987,7 @@ Deno.test('executeModelCallAndSave - scoped selection includes only artifacts ma
 Deno.test('executeModelCallAndSave - schedules RENDER job after success with renderer identity payload', async () => {
   const mockStage = {
     id: 'stage-1',
-    slug: 'test-stage',
+    slug: DialecticStageSlug.Thesis,
     display_name: 'Test Stage',
     description: null,
     default_system_prompt_id: null,
@@ -2040,7 +2045,10 @@ Deno.test('executeModelCallAndSave - schedules RENDER job after success with ren
 
   // Ensure saved contribution carries a true-root identity
   const fileManager = new MockFileManagerService();
-  const savedWithIdentity = { ...mockContribution, document_relationships: { thesis: 'doc-root-abc' } };
+  const documentRelationships: DocumentRelationships = {
+    [DialecticStageSlug.Thesis]: 'doc-root-abc',
+  };
+  const savedWithIdentity = { ...mockContribution, document_relationships: documentRelationships };
   fileManager.setUploadAndRegisterFileResponse(savedWithIdentity, null);
 
   const deps = getMockDeps();
@@ -2051,6 +2059,7 @@ Deno.test('executeModelCallAndSave - schedules RENDER job after success with ren
     ...testPayload,
     output_type: FileType.business_case,
     document_key: 'business_case',
+    stageSlug: DialecticStageSlug.Thesis,
   };
 
   const job = createMockJob(renderPayload);

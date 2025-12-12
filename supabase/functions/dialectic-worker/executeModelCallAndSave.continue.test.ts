@@ -41,7 +41,7 @@ import {
     buildExecuteParams,
 } from './executeModelCallAndSave.test.ts';
 
-import { FileType, DocumentRelationships, ModelContributionFileTypes } from '../_shared/types/file_manager.types.ts';
+import { FileType, DocumentRelationships, DialecticStageSlug, ModelContributionFileTypes } from '../_shared/types/file_manager.types.ts';
 import type { Messages } from '../_shared/types.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { withMockEnv, getStorageSpies } from '../_shared/supabase.mock.ts';
@@ -1169,7 +1169,10 @@ Deno.test('executeModelCallAndSave - continuation jobs should populate pathConte
   const { client: dbClient } = setupMockClient({
       'ai_providers': {
           select: { data: [mockFullProviderData], error: null }
-      }
+      },
+      'dialectic_contributions': {
+          update: { data: [], error: null } // Allow document_relationships update to succeed
+      },
   });
 
   const fileManager = new MockFileManagerService();
@@ -1177,10 +1180,14 @@ Deno.test('executeModelCallAndSave - continuation jobs should populate pathConte
   const deps = getMockDeps();
   deps.fileManager = fileManager;
 
+  const continuationDocumentRelationships: DocumentRelationships = {
+      [DialecticStageSlug.Thesis]: 'contrib-123',
+  };
   const continuationPayload: DialecticExecuteJobPayload = {
       ...testPayload,
       continuation_count: 2,
-      document_relationships: { 'thesis': 'contrib-123' },
+      stageSlug: DialecticStageSlug.Thesis,
+      document_relationships: continuationDocumentRelationships,
   };
 
   const continuationJob = createMockJob(
