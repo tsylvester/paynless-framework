@@ -2878,6 +2878,80 @@ Deno.test('FileManagerService', async (t) => {
     }
   });
 
+  await t.step('should correctly upload and register a ResourceUploadContext file', async () => {
+    beforeEach({
+      genericMockResults: {
+        dialectic_project_resources: {
+          upsert: {
+            data: [{
+              id: 'resource-uuid-123',
+              project_id: 'project-uuid-123',
+              session_id: 'session-uuid-456',
+              user_id: 'user-uuid-789',
+              stage_slug: 'test-stage',
+              iteration_number: 1,
+              resource_type: 'rendered_document',
+              file_name: 'test-file.md',
+              mime_type: 'text/markdown',
+              size_bytes: 12,
+              storage_bucket: 'test-bucket',
+              storage_path: 'project-uuid-123/session-uuid-456/iteration_1/test-stage/documents',
+              resource_description: {},
+              source_contribution_id: null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }], error: null, count: 1, status: 201, statusText: 'Created'
+          }
+        }
+      }
+    });
+
+    try {
+
+      const pathContext: ResourceUploadContext['pathContext'] = {
+        fileType: FileType.RenderedDocument,
+        projectId: 'project-uuid-123',
+        sessionId: 'session-uuid-456',
+        iteration: 1,
+        stageSlug: 'test-stage',
+        documentKey: 'test-doc',
+        modelSlug: 'test-model',
+        attemptCount: 0,
+      };
+      const resourceContext: ResourceUploadContext = {
+        pathContext: pathContext,
+        fileContent: 'test content',
+        mimeType: 'text/markdown',
+        sizeBytes: 12,
+        userId: 'user-uuid-789',
+        description: 'A rendered document',
+        resourceTypeForDb: FileType.RenderedDocument,
+      };
+
+      const expectedPathParts = constructStoragePath(resourceContext.pathContext);
+
+      const result = await fileManager.uploadAndRegisterFile(resourceContext);
+
+      assertEquals(result.error, null);
+      assertExists(result.record);
+
+      const upsertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.upsert;
+      assertExists(upsertSpy, "Upsert spy for 'dialectic_project_resources' should exist");
+      assertEquals(upsertSpy.calls.length, 1, "Upsert should have been called once");
+      
+      const upsertArg = upsertSpy.calls[0].args[0];
+      assert(isRecord(upsertArg), "Upsert argument should be a record object");
+
+      assert('file_name' in upsertArg, "Upsert argument must have a file_name property");
+      assert('storage_path' in upsertArg, "Upsert argument must have a storage_path property");
+
+      assertEquals(upsertArg.file_name, expectedPathParts.fileName, "file_name in upsert data is incorrect");
+      assertEquals(upsertArg.storage_path, expectedPathParts.storagePath, "storage_path in upsert data is incorrect");
+
+    } finally {
+      afterEach();
+    }
+  });
 });
 
 

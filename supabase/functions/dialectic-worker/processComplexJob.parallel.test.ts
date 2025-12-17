@@ -289,7 +289,6 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
         mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
 
         const mockPayload: DialecticPlanJobPayload = {
-            job_type: 'PLAN',
             sessionId: 'session-id-cloned',
             projectId: 'project-id-cloned',
             stageSlug: 'antithesis',
@@ -383,7 +382,6 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             throw new Error(`Test setup failed: firstClonedStep.output_type '${firstClonedStep.output_type}' is not a valid ModelContributionFileTypes`);
         }
         const completedChildJobForStep1Payload: DialecticExecuteJobPayload = {
-            job_type: 'execute',
             prompt_template_id: firstClonedStep.prompt_template_id!,
             inputs: {},
             output_type: firstClonedStep.output_type,
@@ -451,7 +449,6 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
                 throw new Error(`Test setup failed: step.output_type '${step.output_type}' is not a valid ModelContributionFileTypes`);
             }
             const completedPayload: DialecticExecuteJobPayload = {
-                job_type: 'execute',
                 prompt_template_id: step.prompt_template_id!,
                 inputs: {},
                 output_type: step.output_type,
@@ -600,7 +597,6 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             throw new Error(`Test setup failed: step1.output_type '${step1.output_type}' is not a valid ModelContributionFileTypes`);
         }
         const completedChildJobForStep1Payload: DialecticExecuteJobPayload = {
-            job_type: 'execute',
             prompt_template_id: step1.prompt_template_id!,
             inputs: {},
             output_type: step1.output_type,
@@ -701,7 +697,6 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
         mockFileManager = new MockFileManagerService();
 
         const mockPayload: DialecticPlanJobPayload = {
-            job_type: 'PLAN',
             sessionId: 'session-id-parallel',
             projectId: 'project-id-parallel',
             stageSlug: 'antithesis',
@@ -786,7 +781,6 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             throw new Error(`Test setup failed: step1.output_type '${step1.output_type}' is not a valid ModelContributionFileTypes`);
         }
         const completedChildJobForStep1Payload: DialecticExecuteJobPayload = {
-            job_type: 'execute',
             prompt_template_id: step1.prompt_template_id!,
             inputs: {},
             output_type: step1.output_type,
@@ -846,7 +840,6 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
                 throw new Error(`Test setup failed: step.output_type '${step.output_type}' is not a valid ModelContributionFileTypes`);
             }
             return {
-                job_type: 'execute',
                 prompt_template_id: step.prompt_template_id!,
                 inputs: {},
                 output_type: step.output_type,
@@ -922,7 +915,6 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
                 throw new Error(`Test setup failed: step.output_type '${step.output_type}' is not a valid ModelContributionFileTypes`);
             }
             return {
-                job_type: 'execute',
                 prompt_template_id: step.prompt_template_id!,
                 inputs: {},
                 output_type: step.output_type,
@@ -1183,7 +1175,6 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
         mockFileManager = new MockFileManagerService();
 
         const mockPayload: DialecticPlanJobPayload = {
-            job_type: 'PLAN',
             sessionId: 'session-id-cloned-parallel',
             projectId: 'project-id-cloned-parallel',
             stageSlug: 'antithesis',
@@ -1267,7 +1258,6 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             throw new Error(`Test setup failed: step1.output_type '${step1.output_type}' is not a valid ModelContributionFileTypes`);
         }
         const completedChildJobForStep1Payload: DialecticExecuteJobPayload = {
-            job_type: 'execute',
             prompt_template_id: step1.prompt_template_id!,
             inputs: {},
             output_type: step1.output_type,
@@ -1323,7 +1313,6 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
                 throw new Error(`Test setup failed: step.output_type '${step.output_type}' is not a valid ModelContributionFileTypes`);
             }
             return {
-                job_type: 'execute',
                 prompt_template_id: step.prompt_template_id!,
                 inputs: {},
                 output_type: step.output_type,
@@ -1395,28 +1384,32 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             if (!isModelContributionFileType(step.output_type)) {
                 throw new Error(`Test setup failed: step.output_type '${step.output_type}' is not a valid ModelContributionFileTypes`);
             }
-            return {
-                job_type: 'execute',
-                prompt_template_id: step.prompt_template_id!,
-                inputs: {},
-                output_type: step.output_type,
-                projectId: 'project-id-cloned-parallel',
-                sessionId: 'session-id-cloned-parallel',
+
+        const payload: DialecticExecuteJobPayload = {
+            prompt_template_id: step.prompt_template_id!,
+            inputs: {},
+            output_type: step.output_type,
+            projectId: 'project-id-cloned-parallel',
+            sessionId: 'session-id-cloned-parallel',
+            stageSlug: 'antithesis',
+            model_id: 'model-id-cloned-parallel',
+            iterationNumber: 1,
+            continueUntilComplete: false,
+            walletId: 'wallet-id-cloned-parallel',
+            user_jwt: 'user-jwt-cloned-parallel',
+            canonicalPathParams: {
+                contributionType: 'thesis',
                 stageSlug: 'antithesis',
-                model_id: 'model-id-cloned-parallel',
-                iterationNumber: 1,
-                continueUntilComplete: false,
-                walletId: 'wallet-id-cloned-parallel',
-                user_jwt: 'user-jwt-cloned-parallel',
-                canonicalPathParams: {
-                    contributionType: 'thesis',
-                    stageSlug: 'antithesis',
-                },
-                planner_metadata: {
-                    recipe_step_id: step.id,
-                    recipe_template_id: undefined,
-                },
-            };
+            },
+            planner_metadata: {
+                recipe_step_id: step.id,
+                recipe_template_id: undefined,
+            },
+        };
+        if (!isJson(payload)) {
+            throw new Error('Test setup failed: payload is not valid JSON');
+        }
+        return payload;
         };
 
         const payload1 = createPayload(step1);

@@ -270,7 +270,6 @@ describe("path_constructor Integration Tests", () => {
 
     // (1) Call executeModelCallAndSave to create a root chunk
     const rootExecuteJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: FileType.business_case,
@@ -479,7 +478,6 @@ describe("path_constructor Integration Tests", () => {
       },
     };
     const continuationExecuteJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: FileType.business_case,

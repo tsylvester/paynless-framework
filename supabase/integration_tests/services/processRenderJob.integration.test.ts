@@ -259,7 +259,6 @@ describe("processRenderJob Integration Tests", () => {
 
     // Create an EXECUTE job that will produce a root chunk (no document_relationships)
     const executeJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -568,7 +567,6 @@ describe("processRenderJob Integration Tests", () => {
 
     // Create an EXECUTE job that will produce a continuation chunk (with document_relationships)
     const executeJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -926,7 +924,6 @@ describe("processRenderJob Integration Tests", () => {
 
     // Create an EXECUTE job with user_jwt in payload and resolvedFinish: 'stop' to make it final
     const executeJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -1416,7 +1413,6 @@ describe("processRenderJob Integration Tests", () => {
 
     // (1) Create a root chunk via executeModelCallAndSave
     const executeJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -1751,7 +1747,6 @@ describe("processRenderJob Integration Tests", () => {
     // (1) Create a root chunk and a continuation chunk via executeModelCallAndSave
     // First, create the root chunk
     const rootExecuteJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -1932,7 +1927,6 @@ describe("processRenderJob Integration Tests", () => {
 
     // Now create the continuation chunk
     const continuationExecuteJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,

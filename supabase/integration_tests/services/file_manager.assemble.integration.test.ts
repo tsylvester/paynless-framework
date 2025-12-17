@@ -290,7 +290,6 @@ describe("FileManagerService.assembleAndSaveFinalDocument Integration Tests", ()
       const rootDeps = createExecuteDeps(rootJsonContent);
 
       const rootExecuteJobPayload: DialecticExecuteJobPayload = {
-        job_type: "execute",
         prompt_template_id: "__none__",
         inputs: {},
         output_type: documentKey,
@@ -437,7 +436,6 @@ describe("FileManagerService.assembleAndSaveFinalDocument Integration Tests", ()
     const continuationDeps = createExecuteDeps(continuationJsonContent);
 
     const continuationExecuteJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -695,7 +693,6 @@ describe("FileManagerService.assembleAndSaveFinalDocument Integration Tests", ()
       const rootDeps = createExecuteDeps(rootJsonContent);
 
       const rootExecuteJobPayload: DialecticExecuteJobPayload = {
-        job_type: "execute",
         prompt_template_id: "__none__",
         inputs: {},
         output_type: documentKey,
@@ -909,7 +906,6 @@ describe("FileManagerService.assembleAndSaveFinalDocument Integration Tests", ()
       const rootDeps = createExecuteDeps(rootJsonContent);
 
       const rootExecuteJobPayload: DialecticExecuteJobPayload = {
-        job_type: "execute",
         prompt_template_id: "__none__",
         inputs: {},
         output_type: documentKey,
@@ -1054,7 +1050,6 @@ describe("FileManagerService.assembleAndSaveFinalDocument Integration Tests", ()
     const continuationDeps = createExecuteDeps(continuationJsonContent);
 
     const continuationExecuteJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -1593,7 +1588,6 @@ describe("FileManagerService.assembleAndSaveFinalDocument Integration Tests", ()
       const rootDeps = createExecuteDeps(rootJsonContent);
 
       const rootExecuteJobPayload: DialecticExecuteJobPayload = {
-        job_type: "execute",
         prompt_template_id: "__none__",
         inputs: {},
         output_type: documentKey,
@@ -1853,7 +1847,6 @@ describe("FileManagerService.assembleAndSaveFinalDocument Integration Tests", ()
       const rootDeps = createExecuteDeps(rootJsonContent);
 
       const rootExecuteJobPayload: DialecticExecuteJobPayload = {
-        job_type: "execute",
         prompt_template_id: "__none__",
         inputs: {},
         output_type: documentKey,
@@ -1998,7 +1991,6 @@ describe("FileManagerService.assembleAndSaveFinalDocument Integration Tests", ()
       const continuationDeps = createExecuteDeps(continuationJsonContent);
 
       const continuationExecuteJobPayload: DialecticExecuteJobPayload = {
-        job_type: "execute",
         prompt_template_id: "__none__",
         inputs: {},
         output_type: documentKey,

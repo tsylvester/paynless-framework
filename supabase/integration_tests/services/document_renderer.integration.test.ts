@@ -243,7 +243,6 @@ describe("document_renderer Integration Tests", () => {
 
     // 2) Create a RENDER job with payload containing sourceContributionId: rootContributionId and documentIdentity: rootContributionId (both equal)
     const renderJobPayload: DialecticRenderJobPayload = {
-      job_type: "RENDER",
       projectId: testProject.id,
       sessionId: testSession.id,
       iterationNumber: iterationNumber,
@@ -468,7 +467,6 @@ describe("document_renderer Integration Tests", () => {
 
     // 2) Create a RENDER job with payload containing sourceContributionId: continuationContributionId and documentIdentity: rootContributionId (different values)
     const renderJobPayload: DialecticRenderJobPayload = {
-      job_type: "RENDER",
       projectId: testProject.id,
       sessionId: testSession.id,
       iterationNumber: iterationNumber,

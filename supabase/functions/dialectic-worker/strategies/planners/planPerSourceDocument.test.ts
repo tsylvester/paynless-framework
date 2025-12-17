@@ -19,7 +19,7 @@ import { planPerSourceDocument } from './planPerSourceDocument.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
 import { ContributionType } from '../../../dialectic-service/dialectic.interface.ts';
 import { isJson } from '../../../_shared/utils/type-guards/type_guards.common.ts';
-
+import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
 	{
@@ -174,12 +174,12 @@ Deno.test('planPerSourceDocument should create one child job for each source doc
 		'Should create 2 child jobs, one for each source doc'
 	);
 
-	const job1Payload = childPayloads.find((p) => p.job_type === 'execute' && p.inputs?.thesis_id === 'doc-1');
+	const job1Payload = childPayloads.find((p) => isDialecticExecuteJobPayload(p) && p.inputs?.thesis_id === 'doc-1');
 	assertExists(job1Payload, 'Payload for doc-1 should exist');
-	if (job1Payload.job_type !== 'execute') {
+	if (!isDialecticExecuteJobPayload(job1Payload)) {
 		throw new Error('Expected EXECUTE job');
 	}
-	assertEquals(job1Payload.job_type, 'execute');
+	assertEquals(MOCK_RECIPE_STEP.job_type, 'EXECUTE');
 	assertEquals(
 		job1Payload.prompt_template_id,
 		'antithesis_step1_critique'
@@ -197,9 +197,9 @@ Deno.test('planPerSourceDocument should create one child job for each source doc
 	assertEquals(job1Payload.canonicalPathParams.sourceModelSlugs, ['M1']);
 	assert(!('originalFileName' in job1Payload));
 
-	const job2Payload = childPayloads.find((p) => p.job_type === 'execute' && p.inputs?.thesis_id === 'doc-2');
+	const job2Payload = childPayloads.find((p) => isDialecticExecuteJobPayload(p) && p.inputs?.thesis_id === 'doc-2');
 	assertExists(job2Payload, 'Payload for doc-2 should exist');
-	if (job2Payload.job_type !== 'execute') {
+	if (!isDialecticExecuteJobPayload(job2Payload)) {
 		throw new Error('Expected EXECUTE job');
 	}
 	assertExists(job2Payload.canonicalPathParams);
@@ -211,7 +211,7 @@ Deno.test('planPerSourceDocument should create one child job for each source doc
 Deno.test('planPerSourceDocument should throw an error for empty source documents', () => {
 	assertThrows(
 		() => {
-			planPerSourceDocument([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
+			planPerSourceDocument([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'Invalid inputs for planPerSourceDocument: At least one source document is required.'
@@ -220,12 +220,12 @@ Deno.test('planPerSourceDocument should throw an error for empty source document
 
 Deno.test('planPerSourceDocument should correctly handle a single source document', () => {
 	const singleDoc = [MOCK_SOURCE_DOCS[0]];
-	const childPayloads = planPerSourceDocument(singleDoc, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
+	const childPayloads = planPerSourceDocument(singleDoc, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, MOCK_PARENT_JOB.payload.user_jwt);
 
 	assertEquals(childPayloads.length, 1, "Should create exactly one child job");
 	const payload = childPayloads[0];
 	assertExists(payload, "The single payload should exist");
-	if (payload.job_type !== 'execute') {
+	if (!isDialecticExecuteJobPayload(payload)) {
 		throw new Error('Expected EXECUTE job');
 	}
 
@@ -305,17 +305,17 @@ Deno.test('should correctly plan jobs for antithesis stage', () => {
 		},
 	];
 
-	const childPayloads = planPerSourceDocument(thesisContributions, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
+	const childPayloads = planPerSourceDocument(thesisContributions, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, MOCK_PARENT_JOB.payload.user_jwt);
 
 	assertEquals(childPayloads.length, 2, "Should create a child job for each thesis contribution");
 
 	// Check payload for the first thesis doc
-	const job1Payload = childPayloads.find(p => p.job_type === 'execute' && p.inputs?.thesis_id === 'thesis-doc-1');
+	const job1Payload = childPayloads.find(p => isDialecticExecuteJobPayload(p) && p.inputs?.thesis_id === 'thesis-doc-1');
 	assertExists(job1Payload, "Payload for thesis-doc-1 should exist");
-	if (job1Payload.job_type !== 'execute') {
+	if (!isDialecticExecuteJobPayload(job1Payload)) {
 		throw new Error('Expected EXECUTE job');
 	}
-	assertEquals(job1Payload.job_type, 'execute');
+	assertEquals(MOCK_RECIPE_STEP.job_type, 'EXECUTE');
 	assertEquals(job1Payload.output_type, FileType.business_case_critique);
 	assertEquals(job1Payload.document_relationships, {
 		source_group: 'thesis-doc-1',
@@ -325,12 +325,12 @@ Deno.test('should correctly plan jobs for antithesis stage', () => {
 	assertEquals(job1Payload.canonicalPathParams.sourceAnchorModelSlug, 'GPT-4 Turbo');
 
 	// Check payload for the second thesis doc
-	const job2Payload = childPayloads.find(p => p.job_type === 'execute' && p.inputs?.thesis_id === 'thesis-doc-2');
+	const job2Payload = childPayloads.find(p => isDialecticExecuteJobPayload(p) && p.inputs?.thesis_id === 'thesis-doc-2');
 	assertExists(job2Payload, "Payload for thesis-doc-2 should exist");
-	if (job2Payload.job_type !== 'execute') {
+	if (!isDialecticExecuteJobPayload(job2Payload)) {
 		throw new Error('Expected EXECUTE job');
 	}
-	assertEquals(job2Payload.job_type, 'execute');
+	assertEquals(MOCK_RECIPE_STEP.job_type, 'EXECUTE');
 	assertEquals(job2Payload.output_type, FileType.business_case_critique);
 	assertEquals(job2Payload.document_relationships, {
 		source_group: 'thesis-doc-2',
@@ -574,10 +574,10 @@ Deno.test('planPerSourceDocument threads sourceContributionId for known source d
 	);
 
 	const contributionPayload = payloads.find(
-		(payload) => payload.job_type === 'execute' && payload.inputs?.thesis_id === knownContributionId
+		(payload) => isDialecticExecuteJobPayload(payload) && payload.inputs?.thesis_id === knownContributionId
 	);
 	assertExists(contributionPayload, 'Expected payload for contribution-backed document');
-	if (contributionPayload.job_type !== 'execute') {
+	if (!isDialecticExecuteJobPayload(contributionPayload)) {
 		throw new Error('Expected EXECUTE job');
 	}
 	assertEquals(
@@ -587,10 +587,10 @@ Deno.test('planPerSourceDocument threads sourceContributionId for known source d
 	);
 
 	const netNewPayload = payloads.find(
-		(payload) => payload.job_type === 'execute' && payload.inputs?.thesis_id === brandNewDocId
+		(payload) => isDialecticExecuteJobPayload(payload) && payload.inputs?.thesis_id === brandNewDocId
 	);
 	assertExists(netNewPayload, 'Expected payload for net-new document');
-	if (netNewPayload.job_type !== 'execute') {
+	if (!isDialecticExecuteJobPayload(netNewPayload)) {
 		throw new Error('Expected EXECUTE job');
 	}
 	assertEquals(
@@ -617,7 +617,7 @@ Deno.test('planPerSourceDocument includes planner_metadata with recipe_step_id i
 	
 	for (const job of childJobs) {
 		assertExists(job, 'Child job should exist');
-		if (job.job_type !== 'execute') {
+		if (!isDialecticExecuteJobPayload(job)) {
 			throw new Error('Expected EXECUTE job');
 		}
 		assertExists(job.planner_metadata, 'Child job should include planner_metadata');
@@ -660,7 +660,7 @@ Deno.test('planPerSourceDocument sets document_key in payload when recipeStep.ou
 
 	assertEquals(childPayloads.length, 2, 'Should create 2 child jobs, one for each source doc');
 	for (const payload of childPayloads) {
-		if (payload.job_type !== 'execute') {
+		if (!isDialecticExecuteJobPayload(payload)) {
 			throw new Error('Expected EXECUTE job');
 		}
 		assertEquals(
@@ -767,12 +767,12 @@ Deno.test('planPerSourceDocument includes context_for_documents in payload for P
 		template_id: 'template-id-123',
 	};
 
-	const childJobs: (DialecticPlanJobPayload | DialecticExecuteJobPayload)[] = planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStep, 'user-jwt-123');
+	const childJobs: (DialecticPlanJobPayload | DialecticExecuteJobPayload)[] = planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStep, MOCK_PARENT_JOB.payload.user_jwt);
 	
 	assertEquals(childJobs.length, 1, 'PLAN jobs should create a single PLAN payload, not per-source-document');
 	const job: DialecticPlanJobPayload | DialecticExecuteJobPayload = childJobs[0];
 	assertExists(job, 'Child job should exist');
-	if (job.job_type === 'PLAN') {
+	if (isDialecticPlanJobPayload(job)) {
 		assertExists(job.context_for_documents, 'PLAN job payload should include context_for_documents');
 		assertEquals(job.context_for_documents.length, 1, 'context_for_documents should have one entry');
 		assertEquals(job.context_for_documents[0].document_key, FileType.business_case, 'document_key should match');
@@ -880,13 +880,13 @@ Deno.test('planPerSourceDocument successfully creates payload for EXECUTE job wi
 		},
 	};
 
-	const childJobs: (DialecticPlanJobPayload | DialecticExecuteJobPayload)[] = planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, 'user-jwt-123');
+	const childJobs: (DialecticPlanJobPayload | DialecticExecuteJobPayload)[] = planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, MOCK_PARENT_JOB.payload.user_jwt);
 	
 	assertEquals(childJobs.length, MOCK_SOURCE_DOCS.length, 'Should create one child job per source document');
 	const job: DialecticPlanJobPayload | DialecticExecuteJobPayload = childJobs[0];
 	assertExists(job, 'Child job should exist');
-	if (job.job_type === 'execute') {
-		assertEquals(job.job_type, 'execute', 'Job type should be execute');
+	if (isDialecticExecuteJobPayload(job)) {
+		assertEquals(MOCK_RECIPE_STEP.job_type, 'EXECUTE', 'Job type should be execute');
 	} else {
 		throw new Error('Expected EXECUTE job');
 	}
@@ -909,7 +909,7 @@ Deno.test('planPerSourceDocument throws error for EXECUTE job when files_to_gene
 
 	await assertRejects(
 		async () => {
-			planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStepWithoutFiles, 'user-jwt-123');
+			planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStepWithoutFiles, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'planPerSourceDocument requires',
@@ -939,7 +939,7 @@ Deno.test('planPerSourceDocument throws error for EXECUTE job when files_to_gene
 
 	await assertRejects(
 		async () => {
-			planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStepWithoutFromDocumentKey, 'user-jwt-123');
+			planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStepWithoutFromDocumentKey, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'planPerSourceDocument requires',
@@ -969,7 +969,7 @@ Deno.test('planPerSourceDocument throws error for EXECUTE job when files_to_gene
 
 	await assertRejects(
 		async () => {
-			planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStepWithoutTemplateFilename, 'user-jwt-123');
+			planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStepWithoutTemplateFilename, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'planPerSourceDocument requires',
@@ -978,12 +978,12 @@ Deno.test('planPerSourceDocument throws error for EXECUTE job when files_to_gene
 });
 
 Deno.test('planPerSourceDocument omits target_contribution_id from child payload when parent has null or undefined', () => {
-	const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
+	const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, MOCK_PARENT_JOB.payload.user_jwt);
 
 	assertEquals(childPayloads.length, 2, 'Should create 2 child jobs');
 	
 	for (const payload of childPayloads) {
-		if (payload.job_type !== 'execute') {
+		if (!isDialecticExecuteJobPayload(payload)) {
 			throw new Error('Expected EXECUTE job');
 		}
 		// Assert that target_contribution_id is either omitted or is a valid string (never null or undefined)

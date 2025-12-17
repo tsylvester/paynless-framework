@@ -36,7 +36,6 @@ const mockModelContributionContext: ModelContributionUploadContext = {
     modelNameDisplay: 'Test Model',
     sessionId: 'session-123',
     stageSlug: 'test-stage',
-    rawJsonResponseContent: '{}',
   },
   fileContent: Buffer.from('test'),
   mimeType: 'text/plain',
@@ -171,7 +170,6 @@ Deno.test('Type Guard: isUserFeedbackContext', async (t) => {
   await t.step('should return false for a ModelContributionUploadContext', () => {
     assert(!isUserFeedbackContext(mockModelContributionContext))
   })
-
   await t.step('should return false for an object without feedbackTypeForDb', () => {
     const { feedbackTypeForDb, ...rest } = mockUserFeedbackContext
     assert(!isUserFeedbackContext(rest))
@@ -190,6 +188,41 @@ Deno.test('Type Guard: isResourceContext', async (t) => {
   await t.step('should return false for a UserFeedbackUploadContext', () => {
     assert(!isResourceContext(mockUserFeedbackContext))
   })
+
+  await t.step('should return false for an object missing pathContext', () => {
+    const { pathContext, ...rest } = mockResourceContext;
+    assert(!isResourceContext(rest), "A context without pathContext is not a valid ResourceUploadContext");
+  });
+
+  await t.step('should return false for an object with pathContext but missing fileType', () => {
+    const invalidContext = {
+      ...mockResourceContext,
+      pathContext: {
+        projectId: 'project-123',
+      },
+    };
+    assert(!isResourceContext(invalidContext), "A context without fileType in pathContext is not valid");
+  });
+
+  await t.step('should return false for an object with a fileType that is not a ResourceFileType', () => {
+    const invalidContext = {
+        ...mockResourceContext,
+        pathContext: {
+            ...mockResourceContext.pathContext,
+            fileType: FileType.business_case, // This is a ModelContributionFileType
+        },
+    };
+    assert(!isResourceContext(invalidContext), "A context with a non-resource fileType is not valid");
+  });
+
+  // Test for required properties from UploadContextBase
+  const requiredBaseKeys: (keyof typeof mockResourceContext)[] = ['fileContent', 'mimeType', 'sizeBytes', 'userId', 'description'];
+  for (const key of requiredBaseKeys) {
+    await t.step(`should return false if required property '${key}' is missing`, () => {
+        const { [key]: _, ...invalidContext } = mockResourceContext;
+        assert(!isResourceContext(invalidContext), `Context missing '${key}' should be invalid`);
+    });
+  }
 })
 
 Deno.test('Type Guard: isModelContributionFileType', async (t) => {
@@ -271,6 +304,14 @@ Deno.test('Type Guard: isDocumentKey', async (t) => {
     assert(isDocumentKey(FileType.updated_master_plan))
     assert(isDocumentKey(FileType.actionable_checklist))
     assert(isDocumentKey(FileType.advisor_recommendations))
+    assert(isDocumentKey(FileType.synthesis_pairwise_business_case))
+    assert(isDocumentKey(FileType.synthesis_pairwise_feature_spec))
+    assert(isDocumentKey(FileType.synthesis_pairwise_technical_approach))
+    assert(isDocumentKey(FileType.synthesis_pairwise_success_metrics))
+    assert(isDocumentKey(FileType.synthesis_document_business_case))
+    assert(isDocumentKey(FileType.synthesis_document_feature_spec))
+    assert(isDocumentKey(FileType.synthesis_document_technical_approach))
+    assert(isDocumentKey(FileType.synthesis_document_success_metrics))
   })
 
   await t.step('40.c.ii: returns false for non-DocumentKey file types', () => {
@@ -281,14 +322,6 @@ Deno.test('Type Guard: isDocumentKey', async (t) => {
     assert(!isDocumentKey(FileType.Synthesis))
     assert(!isDocumentKey(FileType.header_context_pairwise))
     assert(!isDocumentKey(FileType.SynthesisHeaderContext))
-    assert(!isDocumentKey(FileType.synthesis_pairwise_business_case))
-    assert(!isDocumentKey(FileType.synthesis_pairwise_feature_spec))
-    assert(!isDocumentKey(FileType.synthesis_pairwise_technical_approach))
-    assert(!isDocumentKey(FileType.synthesis_pairwise_success_metrics))
-    assert(!isDocumentKey(FileType.synthesis_document_business_case))
-    assert(!isDocumentKey(FileType.synthesis_document_feature_spec))
-    assert(!isDocumentKey(FileType.synthesis_document_technical_approach))
-    assert(!isDocumentKey(FileType.synthesis_document_success_metrics))
     assert(!isDocumentKey(FileType.ProjectReadme))
     assert(!isDocumentKey(FileType.SeedPrompt))
     assert(!isDocumentKey(FileType.PlannerPrompt))

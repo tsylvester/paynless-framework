@@ -131,18 +131,17 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 			stageSlug: parentJob.payload.stageSlug,
 			iterationNumber: parentJob.payload.iterationNumber,
 			model_id: parentJob.payload.model_id,
-			model_slug: parentJob.payload.model_slug,
 			user_jwt: parentJwt,
 			walletId: parentJob.payload.walletId,
-			continueUntilComplete: parentJob.payload.continueUntilComplete,
-			maxRetries: parentJob.payload.maxRetries,
-			continuation_count: parentJob.payload.continuation_count,
-			// Conditionally include target_contribution_id only if parent has a valid string value
+			// Optional fields - include only if present in parent
+			...(parentJob.payload.model_slug ? { model_slug: parentJob.payload.model_slug } : {}),
+			...(parentJob.payload.continueUntilComplete !== undefined ? { continueUntilComplete: parentJob.payload.continueUntilComplete } : {}),
+			...(parentJob.payload.maxRetries !== undefined ? { maxRetries: parentJob.payload.maxRetries } : {}),
+			...(parentJob.payload.continuation_count !== undefined ? { continuation_count: parentJob.payload.continuation_count } : {}),
 			...(typeof parentJob.payload.target_contribution_id === 'string' && parentJob.payload.target_contribution_id.length > 0
 				? { target_contribution_id: parentJob.payload.target_contribution_id }
 				: {}),
-			is_test_job: parentJob.payload.is_test_job,
-			job_type: 'PLAN',
+			...(parentJob.payload.is_test_job !== undefined ? { is_test_job: parentJob.payload.is_test_job } : {}),
 			context_for_documents: validatedContextForDocuments,
 		};
 		
@@ -268,19 +267,18 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 				stageSlug: parentJob.payload.stageSlug,
 				iterationNumber: parentJob.payload.iterationNumber,
 				model_id: parentJob.payload.model_id,
-				model_slug: parentJob.payload.model_slug,
 				user_jwt: parentJwt, // Use the validated parentJwt
 				walletId: parentJob.payload.walletId,
-				continueUntilComplete: parentJob.payload.continueUntilComplete,
-				maxRetries: parentJob.payload.maxRetries,
-				continuation_count: parentJob.payload.continuation_count,
-				// Conditionally include target_contribution_id only if parent has a valid string value
+				// Optional fields - include only if present in parent
+				...(parentJob.payload.model_slug ? { model_slug: parentJob.payload.model_slug } : {}),
+				...(parentJob.payload.continueUntilComplete !== undefined ? { continueUntilComplete: parentJob.payload.continueUntilComplete } : {}),
+				...(parentJob.payload.maxRetries !== undefined ? { maxRetries: parentJob.payload.maxRetries } : {}),
+				...(parentJob.payload.continuation_count !== undefined ? { continuation_count: parentJob.payload.continuation_count } : {}),
 				...(typeof parentJob.payload.target_contribution_id === 'string' && parentJob.payload.target_contribution_id.length > 0
 					? { target_contribution_id: parentJob.payload.target_contribution_id }
 					: {}),
-				is_test_job: parentJob.payload.is_test_job,
+				...(parentJob.payload.is_test_job !== undefined ? { is_test_job: parentJob.payload.is_test_job } : {}),
 				// Override job-specific properties
-				job_type: 'execute',
 				prompt_template_id: recipeStep.prompt_template_id,
 				output_type: recipeStep.output_type,
 				canonicalPathParams, // Use the new contract

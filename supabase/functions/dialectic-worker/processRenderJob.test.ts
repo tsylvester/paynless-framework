@@ -24,7 +24,6 @@ type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
 const makeRenderJob = (payloadOverrides: Partial<DialecticRenderJobPayload> = {}): MockJob => {
   const payload: DialecticRenderJobPayload = {
-    job_type: "RENDER",
     model_id: "renderer",
     walletId: "wallet-123",
     user_jwt: "test-jwt-token",

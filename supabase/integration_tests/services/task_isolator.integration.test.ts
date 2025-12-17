@@ -301,7 +301,6 @@ describe("task_isolator.findSourceDocuments Integration Tests", () => {
 
     // 5) Create a mock parent job with DialecticPlanJobPayload for findSourceDocuments
     const parentJobPayload: DialecticPlanJobPayload = {
-      job_type: "PLAN",
       projectId: testProject.id,
       sessionId: testSession.id,
       stageSlug: targetStageSlug,

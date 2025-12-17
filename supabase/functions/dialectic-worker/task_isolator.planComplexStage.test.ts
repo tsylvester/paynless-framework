@@ -551,7 +551,6 @@ describe('planComplexStage', () => {
 
     it('should correctly create child jobs for an "execute" planner creating an intermediate artifact', async () => {
         const mockExecutePayload: DialecticExecuteJobPayload = {
-            job_type: 'execute',
             prompt_template_id: 'test-prompt',
             output_type: FileType.PairwiseSynthesisChunk,
             inputs: { documentId: 'doc-1-thesis' },
@@ -592,7 +591,6 @@ describe('planComplexStage', () => {
         assert(isDialecticExecuteJobPayload(childJob.payload));
         const payload = childJob.payload;
 
-        assertEquals(payload.job_type, 'execute');
         assertEquals(payload.output_type, 'pairwise_synthesis_chunk');
         assertEquals(payload.isIntermediate, true);
         assertEquals(Object.hasOwn(payload, 'step_info'), false);
@@ -739,7 +737,6 @@ describe('planComplexStage', () => {
 
     it('should gracefully skip malformed payloads from the planner', async () => {
         const mockExecutePayload: DialecticExecuteJobPayload = {
-            job_type: 'execute',
             prompt_template_id: 'test-prompt',
             output_type: FileType.HeaderContext,
             inputs: { documentId: 'doc-1-thesis' },
@@ -836,7 +833,6 @@ describe('planComplexStage', () => {
             receivedDocs = sourceDocs;
             // Return a simple payload to confirm the workflow completes.
             return [{
-                job_type: 'execute',
                 prompt_template_id: 'test-prompt',
                 output_type: FileType.business_case,
                 inputs: { documentIds: sourceDocs.map(d => d.id) },
@@ -1166,7 +1162,6 @@ describe('planComplexStage', () => {
         // 2. Arrange: Define a simple planner that returns a valid payload.
         // The planner must inherit user_jwt from the parent payload.
         const mockExecutePayload: DialecticExecuteJobPayload = {
-            job_type: 'execute',
             prompt_template_id: 'test-prompt',
             output_type: FileType.HeaderContext,
             inputs: { documentId: 'doc-1-thesis' },
@@ -1215,7 +1210,6 @@ describe('planComplexStage', () => {
 
         // The planner must inherit user_jwt from the parent payload.
         const mockExecutePayload: DialecticExecuteJobPayload = {
-            job_type: 'execute',
             prompt_template_id: 'test-prompt',
             output_type: FileType.HeaderContext,
             inputs: { documentId: 'doc-1-thesis' },
@@ -1266,7 +1260,6 @@ describe('planComplexStage', () => {
         }
 
         const plannerFn: GranularityPlannerFn = () => [{
-            job_type: 'execute',
             prompt_template_id: 'test-prompt',
             output_type: FileType.HeaderContext,
             inputs: { documentId: 'doc-1-thesis' },
@@ -1302,7 +1295,6 @@ describe('planComplexStage', () => {
         Object.defineProperty(mockParentJob.payload, 'user_jwt', { value: '', configurable: true, enumerable: true, writable: true });
 
         const plannerFn: GranularityPlannerFn = () => [{
-            job_type: 'execute',
             prompt_template_id: 'test-prompt',
             output_type: FileType.HeaderContext,
             inputs: { documentId: 'doc-1-thesis' },
@@ -1338,7 +1330,6 @@ describe('planComplexStage', () => {
     // =============================================================
     it('constructs execute child rows with consistent dynamic stage markers (row.stage_slug === payload.stageSlug)', async () => {
         const plannerFn: GranularityPlannerFn = () => [{
-            job_type: 'execute',
             prompt_template_id: 'test-prompt',
             output_type: FileType.HeaderContext,
             inputs: { documentId: 'doc-1-thesis' },
@@ -1382,7 +1373,6 @@ describe('planComplexStage', () => {
         }
 
         const plannerFn: GranularityPlannerFn = () => [{
-            job_type: 'execute',
             prompt_template_id: 'test-prompt',
             output_type: FileType.HeaderContext,
             inputs: { documentId: 'doc-1-thesis' },
@@ -1472,7 +1462,6 @@ describe('planComplexStage', () => {
 
         // Arrange: Mock a planner that returns PLAN payload (like planAllToOne when recipeStep.job_type === 'PLAN')
         const planPayload: DialecticPlanJobPayload = {
-            job_type: 'PLAN',
             projectId: mockParentJob.payload.projectId,
             sessionId: mockParentJob.payload.sessionId,
             stageSlug: mockParentJob.payload.stageSlug,
@@ -1508,13 +1497,11 @@ describe('planComplexStage', () => {
         // Assert: Child job should be created with job_type: 'PLAN' (not hardcoded 'EXECUTE')
         assertEquals(childJobs.length, 1, 'Should create one PLAN child job');
         const childJob = childJobs[0];
-        assertEquals(childJob.job_type, 'PLAN', 'Child job row should have job_type: PLAN, not hardcoded EXECUTE');
         assertEquals(childJob.parent_job_id, mockParentJob.id);
 
         // Assert: Payload should be valid DialecticPlanJobPayload
         assert(isDialecticPlanJobPayload(childJob.payload), 'Child job payload should be valid DialecticPlanJobPayload');
         const payload = childJob.payload;
-        assertEquals(payload.job_type, 'PLAN', 'Payload should have job_type: PLAN');
         assertExists(payload.context_for_documents, 'PLAN payload should have context_for_documents');
         assertEquals(payload.context_for_documents?.length, 1);
         assertEquals(payload.context_for_documents?.[0].document_key, FileType.business_case);

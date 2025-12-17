@@ -70,7 +70,6 @@ Deno.test('continueJob', async (t) => {
     let deps: IContinueJobDeps;
 
     const basePayload: DialecticJobPayload = { 
-    job_type: 'execute',
     sessionId: 'session-1',
     projectId: 'project-1',
     model_id: 'model-1',
@@ -445,7 +444,6 @@ const baseSavedContribution: DialecticContributionRow = {
             },
         });
         const testPayload: DialecticJobPayload = { 
-            job_type: 'execute',
             sessionId: 'session-1',
             projectId: 'project-1',
             model_id: 'model-1',
@@ -494,7 +492,6 @@ const baseSavedContribution: DialecticContributionRow = {
             },
         });
         const testPayload: DialecticJobPayload = { 
-            job_type: 'execute',
             sessionId: 'session-1',
             projectId: 'project-1',
             model_id: 'model-1',
@@ -541,7 +538,6 @@ const baseSavedContribution: DialecticContributionRow = {
         });
 
         const testPayload: DialecticJobPayload = {
-            job_type: 'execute',
             sessionId: 'session-1',
             projectId: 'project-1',
             model_id: 'model-1',
@@ -599,7 +595,6 @@ const baseSavedContribution: DialecticContributionRow = {
         });
 
         const testPayload: DialecticJobPayload = {
-            job_type: 'execute',
             sessionId: 'session-1',
             projectId: 'project-1',
             model_id: 'model-1',
@@ -1104,7 +1099,6 @@ const baseSavedContribution: DialecticContributionRow = {
 Deno.test("continueJob enqueues with full original payload preserved and overlays only required fields", async () => {
     // Arrange: build an original execute payload containing many fields that must be preserved
     const originalPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       sessionId: "sess-1",
       projectId: "proj-1",
       model_id: "model-1",
@@ -1248,7 +1242,6 @@ Deno.test("continueJob enqueues with full original payload preserved and overlay
     const payload: DialecticExecuteJobPayload = inserted.payload;
   
     // Overlays expected
-    assertEquals(payload.job_type, "execute");
     assertEquals(payload.target_contribution_id, savedContribution.id);
     assertEquals(payload.continuation_count, (originalPayload.continuation_count ?? 0) + 1);
     assertExists(payload.canonicalPathParams, "canonicalPathParams must exist");
@@ -1276,7 +1269,6 @@ Deno.test("continueJob enqueues with full original payload preserved and overlay
 
 Deno.test('continueJob enforces user_jwt presence: missing user_jwt fails and does not insert', async () => {
     const payload = { 
-        job_type: 'execute',
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
@@ -1323,7 +1315,6 @@ Deno.test('continueJob enforces user_jwt presence: missing user_jwt fails and do
 
 Deno.test('continueJob enforces user_jwt presence: empty user_jwt fails and does not insert', async () => {
     const payload = { 
-        job_type: 'execute',
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
@@ -1371,7 +1362,6 @@ Deno.test('continueJob enforces user_jwt presence: empty user_jwt fails and does
 // Explicit preservation test per checklist: payload with user_jwt should enqueue and keep user_jwt unchanged
 Deno.test('JWT_PRESERVATION: when payload.user_jwt is present, continueJob enqueues and preserves it unchanged', async () => {
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
@@ -1452,7 +1442,6 @@ Deno.test('is_test_job propagation', async (t) => {
     };
 
     const basePayload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
@@ -1523,7 +1512,6 @@ Deno.test('CONTINUATION_CONTEXT: enqueues on continuable finish_reason', async (
     });
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
@@ -1572,7 +1560,6 @@ Deno.test('JSON_MALFORMED: malformed JSON content enqueues continuation (overrid
     });
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
@@ -1621,7 +1608,6 @@ Deno.test('NO_STEP_INFO: continuation payload must not contain deprecated "step_
     });
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
     const job = createMockJob({
-        job_type: 'execute',
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
@@ -1672,7 +1658,6 @@ Deno.test('STEP_IDENTITY: preserves planner_metadata.recipe_step_id and core ide
     });
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
     const original: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
@@ -1735,7 +1720,6 @@ Deno.test('NO_INPUT_RULES: continuation payload omits inputs_required and inputs
     });
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
     const job = createMockJob({
-        job_type: 'execute',
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',

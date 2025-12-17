@@ -5,13 +5,14 @@ import {
   ModelContributionUploadContext,
   UserFeedbackUploadContext,
   ResourceUploadContext,
-  type ModelContributionFileTypes,
-  type DocumentKey,
-  type FileManagerError,
+  ModelContributionFileTypes,
+  ResourceFileTypes,
+  DocumentKey,
+  FileManagerError,
 } from '../../types/file_manager.types.ts'
-import type { OutputType } from '../../../dialectic-service/dialectic.interface.ts'
-import type { StorageError } from '../../../dialectic-service/dialectic.interface.ts'
-import type { ServiceError } from '../../types.ts'
+import { OutputType } from '../../../dialectic-service/dialectic.interface.ts'
+import { StorageError } from '../../../dialectic-service/dialectic.interface.ts'
+import { ServiceError } from '../../types.ts'
 import { isRecord, isPostgrestError } from './type_guards.common.ts'
 
 export function isModelContributionContext(
@@ -29,11 +30,54 @@ export function isUserFeedbackContext(
 export function isResourceContext(
   context: unknown,
 ): context is ResourceUploadContext {
-  return (
-    isRecord(context) &&
-    !('contributionMetadata' in context) &&
-    !('feedbackTypeForDb' in context)
-  )
+  if (!isRecord(context) || 'contributionMetadata' in context || 'feedbackTypeForDb' in context) {
+    return false;
+  }
+
+  const requiredKeys: (keyof Omit<ResourceUploadContext, 'resourceTypeForDb' | 'resourceDescriptionForDb' | 'branchKey' | 'parallelGroup'>)[] = [
+    'pathContext',
+    'fileContent',
+    'mimeType',
+    'sizeBytes',
+    'userId',
+    'description',
+  ];
+
+  for (const key of requiredKeys) {
+    if (!(key in context)) {
+      return false;
+    }
+  }
+  
+  if (!isRecord(context.pathContext) || typeof context.pathContext.fileType !== 'string') {
+    return false;
+  }
+
+  return isResourceFileType(context.pathContext.fileType);
+}
+
+const RESOURCE_FILE_TYPES_MAP: { [K in ResourceFileTypes]: true } = {
+    [FileType.ProjectReadme]: true,
+    [FileType.PendingFile]: true,
+    [FileType.CurrentFile]: true,
+    [FileType.CompleteFile]: true,
+    [FileType.InitialUserPrompt]: true,
+    [FileType.ProjectSettingsFile]: true,
+    [FileType.GeneralResource]: true,
+    [FileType.SeedPrompt]: true,
+    [FileType.ProjectExportZip]: true,
+    [FileType.PlannerPrompt]: true,
+    [FileType.TurnPrompt]: true,
+    [FileType.AssembledDocumentJson]: true,
+    [FileType.RenderedDocument]: true,
+    [FileType.RagContextSummary]: true,
+};
+
+export function isResourceFileType(value: unknown): value is ResourceFileTypes {
+    if (typeof value !== 'string') {
+        return false;
+    }
+    return Object.prototype.hasOwnProperty.call(RESOURCE_FILE_TYPES_MAP, value);
 }
 
 export function isCanonicalPathParams(obj: unknown): obj is CanonicalPathParams {

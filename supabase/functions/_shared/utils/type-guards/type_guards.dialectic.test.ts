@@ -17,6 +17,7 @@ import {
     validatePayload,
     isDialecticPlanJobPayload,
     isDialecticExecuteJobPayload,
+    isDialecticRenderJobPayload,
     isContinuablePayload,
     isContributionType,
     isDialecticChunkMetadata,
@@ -75,6 +76,7 @@ import {
     AssembledJsonArtifact,
     EditedDocumentResource,
     DialecticPlanJobPayload,
+    DialecticRenderJobPayload,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 import { ContinueReason, FinishReason } from '../../types.ts';
@@ -516,7 +518,6 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
         walletId: 'wallet-abc',
         stageSlug: 'thesis',
         iterationNumber: 1,
-        job_type: 'execute',
         output_type: FileType.business_case,
         canonicalPathParams: {
             contributionType: 'thesis',
@@ -630,10 +631,6 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
     });
 
     // Test required properties of DialecticExecuteJobPayload
-    await t.step('should throw if job_type is not "execute"', () => {
-        const p = { ...basePayload, job_type: 'plan' };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, "Invalid job_type: expected 'execute'");
-    });
     await t.step('should throw if output_type is missing or invalid', () => {
         const p = { ...basePayload, output_type: 'invalid-type' as any };
         assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid output_type.');
@@ -1188,7 +1185,6 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
 Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
     await t.step('should return true for a valid plan job payload', () => {
         const payload: DialecticPlanJobPayload = {
-            job_type: 'PLAN',
             user_jwt: 'test-jwt',
             model_id: 'model-123',
             sessionId: 'test-session',
@@ -1207,7 +1203,6 @@ Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
     });
     await t.step('should return true for a valid plan job payload with base payload fields including model_slug', () => {
         const payload: DialecticPlanJobPayload = {
-            job_type: 'PLAN',
             sessionId: 'test-session',
             projectId: 'test-project',
             model_id: 'model-123',
@@ -1226,27 +1221,6 @@ Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
         assert(isDialecticPlanJobPayload(payload));
     });
 
-    await t.step('should return false if job_type is the wrong case', () => {
-        const payload = {
-            job_type: 'plan',
-        };
-        assert(!isDialecticPlanJobPayload(payload));
-    });
-
-    await t.step('should return false if job_type is not PLAN', () => {
-        const payload = {
-            job_type: 'EXECUTE',
-        };
-        assert(!isDialecticPlanJobPayload(payload));
-    });
-    
-    await t.step('should return false if job_type is missing', () => {
-        const payload = {
-            some_other_prop: 'value'
-        };
-        assert(!isDialecticPlanJobPayload(payload));
-    });
-
     await t.step('should return false for non-object payloads', () => {
         assert(!isDialecticPlanJobPayload(null));
         assert(!isDialecticPlanJobPayload("a string"));
@@ -1255,7 +1229,6 @@ Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
 
     await t.step('should return false when user_jwt is missing from plan job payload', () => {
         const payload = {
-            job_type: 'PLAN',
             sessionId: 'test-session',
             projectId: 'test-project',
             model_id: 'model-123',
@@ -1268,7 +1241,6 @@ Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
 
     await t.step('should return false when user_jwt is empty string in plan job payload', () => {
         const payload = {
-            job_type: 'PLAN',
             sessionId: 'test-session',
             projectId: 'test-project',
             model_id: 'model-123',
@@ -1765,8 +1737,11 @@ Deno.test('Type Guard: isPlanJobInsert', async (t) => {
             stage_slug: 'thesis',
             iteration_number: 1,
             payload: {
-                job_type: 'PLAN',
+                sessionId: 's1',
+                projectId: 'p1',
                 model_id: 'm1',
+                walletId: 'w1',
+                user_jwt: 'jwt',
             },
             job_type: 'PLAN',
             is_test_job: false,
@@ -1781,8 +1756,11 @@ Deno.test('Type Guard: isPlanJobInsert', async (t) => {
             stage_slug: 'thesis',
             iteration_number: 1,
             payload: {
-                job_type: 'PLAN',
+                sessionId: 's1',
+                projectId: 'p1',
                 model_id: 'm1',
+                walletId: 'w1',
+                user_jwt: 'jwt',
             },
             job_type: 'PLAN',
             is_test_job: undefined,
@@ -1790,31 +1768,19 @@ Deno.test('Type Guard: isPlanJobInsert', async (t) => {
         assert(isPlanJobInsert(insert));
     });
 
-    await t.step('should return false if payload is missing job_type', () => {
+    await t.step('should return false if payload has extraneous job_type property', () => {
         const insert = {
             session_id: 's1',
             user_id: 'u1',
             stage_slug: 'thesis',
             iteration_number: 1,
             payload: {
-                // job_type: 'plan', // This is missing
+                sessionId: 's1',
+                projectId: 'p1',
                 model_id: 'm1',
-            },
-            job_type: 'PLAN',
-            is_test_job: false,
-        };
-        assert(!isPlanJobInsert(insert));
-    });
-
-    await t.step('should return false if payload job_type is not PLAN', () => {
-        const insert = {
-            session_id: 's1',
-            user_id: 'u1',
-            stage_slug: 'thesis',
-            iteration_number: 1,
-            payload: {
-                job_type: 'plan', // lowercase, should fail
-                model_id: 'm1',
+                walletId: 'w1',
+                user_jwt: 'jwt',
+                job_type: 'PLAN', // Extraneous
             },
             job_type: 'PLAN',
             is_test_job: false,
@@ -1829,8 +1795,11 @@ Deno.test('Type Guard: isPlanJobInsert', async (t) => {
             stage_slug: 'thesis',
             iteration_number: 1,
             payload: {
-                job_type: 'PLAN',
+                sessionId: 's1',
+                projectId: 'p1',
                 model_id: 'm1',
+                walletId: 'w1',
+                user_jwt: 'jwt',
             },
             job_type: 'EXECUTE', // Incorrect top-level type
             is_test_job: false,
@@ -3325,4 +3294,194 @@ Deno.test('Type Guard: isContentToInclude', async (t) => {
         assert(!isContentToInclude(invalid));
     });
 });
+
+Deno.test('Type Guard: isDialecticRenderJobPayload', async (t) => {
+    const basePayload: DialecticRenderJobPayload = {
+        sessionId: 'test-session',
+        projectId: 'test-project',
+        model_id: 'model-123',
+        walletId: 'wallet-abc',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        user_jwt: 'test-jwt-token',
+        documentIdentity: 'document-identity-123',
+        documentKey: FileType.business_case,
+        sourceContributionId: 'source-contribution-123',
+    };
+
+    await t.step('should return true for a valid render job payload with all required fields', () => {
+        assert(isDialecticRenderJobPayload(basePayload));
+    });
+
+    await t.step('should return true for a valid render job payload with optional base payload fields', () => {
+        const p: DialecticRenderJobPayload = {
+            ...basePayload,
+            continueUntilComplete: true,
+            maxRetries: 3,
+            continuation_count: 1,
+            target_contribution_id: 'target-id',
+            model_slug: 'test-model-slug',
+            is_test_job: false,
+        };
+        assert(isDialecticRenderJobPayload(p));
+    });
+
+    await t.step('should return true when sourceContributionId is provided (required in RenderJobPayload)', () => {
+        const p: DialecticRenderJobPayload = {
+            ...basePayload,
+            sourceContributionId: 'required-contribution-id',
+        };
+        assert(isDialecticRenderJobPayload(p));
+    });
+
+    await t.step('should throw error when sessionId is missing', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).sessionId;
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid sessionId.');
+    });
+
+    await t.step('should throw error when sessionId is not a string', () => {
+        const p = { ...basePayload, sessionId: 123 as any };
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid sessionId.');
+    });
+
+    await t.step('should throw error when projectId is missing', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).projectId;
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid projectId.');
+    });
+
+    await t.step('should throw error when projectId is not a string', () => {
+        const p = { ...basePayload, projectId: 123 as any };
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid projectId.');
+    });
+
+    await t.step('should throw error when model_id is missing', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).model_id;
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid model_id.');
+    });
+
+    await t.step('should throw error when model_id is not a string', () => {
+        const p = { ...basePayload, model_id: 123 as any };
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid model_id.');
+    });
+
+    await t.step('should throw error when walletId is missing', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).walletId;
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid walletId.');
+    });
+
+    await t.step('should throw error when walletId is not a string', () => {
+        const p = { ...basePayload, walletId: 123 as any };
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid walletId.');
+    });
+
+    await t.step('should throw error when user_jwt is missing', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).user_jwt;
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid user_jwt.');
+    });
+
+    await t.step('should throw error when user_jwt is empty string', () => {
+        const p = { ...basePayload, user_jwt: '' };
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid user_jwt.');
+    });
+
+    await t.step('should throw error when user_jwt is not a string', () => {
+        const p = { ...basePayload, user_jwt: 123 as any };
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid user_jwt.');
+    });
+
+    await t.step('should throw error when documentIdentity is missing', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).documentIdentity;
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid documentIdentity.');
+    });
+
+    await t.step('should throw error when documentIdentity is not a string', () => {
+        const p = { ...basePayload, documentIdentity: 123 as any };
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid documentIdentity.');
+    });
+
+    await t.step('should throw error when documentIdentity is empty string', () => {
+        const p = { ...basePayload, documentIdentity: '' };
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid documentIdentity.');
+    });
+
+    await t.step('should throw error when documentKey is missing', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).documentKey;
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid documentKey.');
+    });
+
+    await t.step('should throw error when documentKey is not a valid FileType', () => {
+        const p = { ...basePayload, documentKey: 'invalid-file-type' as any };
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid documentKey.');
+    });
+
+    await t.step('should throw error when sourceContributionId is missing', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).sourceContributionId;
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid sourceContributionId.');
+    });
+
+    await t.step('should throw error when sourceContributionId is not a string', () => {
+        const p = { ...basePayload, sourceContributionId: 123 as any };
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid sourceContributionId.');
+    });
+
+    await t.step('should throw error when sourceContributionId is empty string', () => {
+        const p = { ...basePayload, sourceContributionId: '' };
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid sourceContributionId.');
+    });
+
+    await t.step('should pass when stageSlug is provided (optional)', () => {
+        const p: DialecticRenderJobPayload = {
+            ...basePayload,
+            stageSlug: 'thesis',
+        };
+        assert(isDialecticRenderJobPayload(p));
+    });
+
+    await t.step('should pass when stageSlug is missing (optional)', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).stageSlug;
+        assert(isDialecticRenderJobPayload(p));
+    });
+
+    await t.step('should throw error when stageSlug is not a string (if provided)', () => {
+        const p = { ...basePayload, stageSlug: 123 as any };
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Invalid stageSlug.');
+    });
+
+    await t.step('should pass when iterationNumber is provided (optional)', () => {
+        const p: DialecticRenderJobPayload = {
+            ...basePayload,
+            iterationNumber: 2,
+        };
+        assert(isDialecticRenderJobPayload(p));
+    });
+
+    await t.step('should pass when iterationNumber is missing (optional)', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).iterationNumber;
+        assert(isDialecticRenderJobPayload(p));
+    });
+
+    await t.step('should throw error when iterationNumber is not a number (if provided)', () => {
+        const p = { ...basePayload, iterationNumber: '1' as any };
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Invalid iterationNumber.');
+    });
+
+    await t.step('should throw error for non-object payloads', () => {
+        assertThrows(() => isDialecticRenderJobPayload(null), Error, 'Payload must be a non-null object.');
+        assertThrows(() => isDialecticRenderJobPayload('string' as any), Error, 'Payload must be a non-null object.');
+        assertThrows(() => isDialecticRenderJobPayload(123 as any), Error, 'Payload must be a non-null object.');
+        assertThrows(() => isDialecticRenderJobPayload([] as any), Error, 'Payload must be a non-null object.');
+    });
+
+    await t.step('should throw error when payload contains unknown properties', () => {
+        const pollutedPayload = { ...basePayload, unknown_property: 'some-value' };
+        assertThrows(
+            () => isDialecticRenderJobPayload(pollutedPayload),
+            Error,
+            'Payload contains unknown properties: unknown_property'
+        );
+    });
+});
+
+
+
 

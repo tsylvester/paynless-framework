@@ -681,7 +681,6 @@ export interface DialecticSimpleJobPayload extends DialecticBaseJobPayload {
  * The payload for a parent job that plans steps based on a recipe.
  */
 export interface DialecticPlanJobPayload extends DialecticBaseJobPayload {
-    job_type: JobType;
     context_for_documents?: ContextForDocument[];
 }
 
@@ -703,7 +702,6 @@ export type DocumentRelationships = {
  * The payload for a child job that executes a single model call.
  */
 export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
-    job_type: 'execute';
     prompt_template_id: string;
     output_type: ModelContributionFileTypes; // The type of artifact this job will produce
     canonicalPathParams: CanonicalPathParams; // The new formal contract for path context
@@ -721,7 +719,6 @@ export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
 }
 
 export interface DialecticRenderJobPayload extends DialecticBaseJobPayload {
-    job_type: 'RENDER';
     documentIdentity: string;
     documentKey: FileType;
     sourceContributionId: string;

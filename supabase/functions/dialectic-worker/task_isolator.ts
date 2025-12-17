@@ -590,17 +590,27 @@ export async function planComplexStage(
             let jobType: 'PLAN' | 'EXECUTE';
             let validatedPayload: DialecticExecuteJobPayload | DialecticPlanJobPayload;
 
-            if (isDialecticPlanJobPayload(payload)) {
-                jobType = 'PLAN';
-                validatedPayload = payload;
-            } else if (isDialecticExecuteJobPayload(payload)) {
+            let isExecutePayload = false;
+            try {
+                // Guard throws on failure; if it returns true, it matches.
+                if (isDialecticExecuteJobPayload(payload)) {
+                    isExecutePayload = true;
+                }
+            } catch {
+                // Ignored: not an execute payload (or malformed), proceed to check PLAN
+                isExecutePayload = false;
+            }
+
+            if (isExecutePayload) {
                 jobType = 'EXECUTE';
+                validatedPayload = payload as DialecticExecuteJobPayload;
+            } else if (isDialecticPlanJobPayload(payload)) {
+                jobType = 'PLAN';
                 validatedPayload = payload;
             } else {
                 deps.logger.warn(`[task_isolator] Skipping malformed payload from planner due to invalid shape: ${JSON.stringify(payload)}`);
                 continue;
             }
-
             // 2. Context Check: Ensure planner's payload matches the authoritative parent context.
             const parentPayload = parentJob.payload;
             const contextMismatches: string[] = [];

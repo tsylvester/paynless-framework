@@ -9,6 +9,7 @@ import {
     ModelProcessingResult,
     DialecticPlanJobPayload,
     DialecticExecuteJobPayload,
+    DialecticRenderJobPayload,
     ContributionType,
     DocumentRelationships,
     JobInsert,
@@ -880,7 +881,6 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
     if (!('user_jwt' in payload) || typeof payload.user_jwt !== 'string' || payload.user_jwt.length === 0) throw new Error('Missing or invalid user_jwt.');
 
     // Required ExecuteJobPayload properties
-    if (payload.job_type !== 'execute') throw new Error("Invalid job_type: expected 'execute'");
     if (!('prompt_template_id' in payload) || typeof payload.prompt_template_id !== 'string' || payload.prompt_template_id.length === 0) throw new Error('Missing or invalid prompt_template_id.');
     if (!('output_type' in payload) || !isFileType(payload.output_type)) throw new Error('Missing or invalid output_type.');
     if (!('canonicalPathParams' in payload) || !isRecord(payload.canonicalPathParams) || !('contributionType' in payload.canonicalPathParams)) throw new Error('Missing or invalid canonicalPathParams.');
@@ -905,7 +905,7 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
     // Final check for extraneous properties to enforce a strict shape.
     const allowedKeys = new Set<string>([
         'sessionId', 'projectId', 'model_id', 'walletId', 'stageSlug', 'iterationNumber',
-        'job_type', 'output_type', 'canonicalPathParams', 'inputs', 'prompt_template_id',
+        'output_type', 'canonicalPathParams', 'inputs', 'prompt_template_id',
         'prompt_template_name', 'sourceContributionId', 'document_key', 'branch_key', 'parallel_group', 'planner_metadata',
         'document_relationships', 'isIntermediate', 'user_jwt', 'target_contribution_id', 'context_for_documents',
         // Base job payload fields that may be present on execute jobs
@@ -961,7 +961,7 @@ export function isDialecticJobPayload(payload: unknown): payload is DialecticJob
     const allowedKeys: (keyof DialecticJobPayload)[] = [
         'sessionId', 'projectId', 'model_id', 'stageSlug', 
         'iterationNumber', 'walletId', 'continueUntilComplete', 'maxRetries', 
-        'continuation_count', 'target_contribution_id', 'job_type', 'model_slug'
+        'continuation_count', 'target_contribution_id', 'model_slug'
     ];
 
     for (const key in payload) {
@@ -1037,10 +1037,70 @@ export function isDialecticJobRowArray(arr: unknown): arr is DialecticJobRow[] {
 
 export function isDialecticPlanJobPayload(payload: unknown): payload is DialecticPlanJobPayload {
     if (!isRecord(payload)) return false;
-    if (payload.job_type !== 'PLAN') return false;
-    if (!('user_jwt' in payload)) return false;
-    if (typeof payload.user_jwt !== 'string') return false;
-    if (payload.user_jwt.length === 0) return false;
+
+    // Validate required fields
+    if (!('sessionId' in payload) || typeof payload.sessionId !== 'string') return false;
+    if (!('projectId' in payload) || typeof payload.projectId !== 'string') return false;
+    if (!('model_id' in payload) || typeof payload.model_id !== 'string') return false;
+    if (!('walletId' in payload) || typeof payload.walletId !== 'string') return false;
+    if (!('user_jwt' in payload) || typeof payload.user_jwt !== 'string' || payload.user_jwt.length === 0) return false;
+
+    // Validate optional fields
+    if ('stageSlug' in payload && typeof payload.stageSlug !== 'string') return false;
+    if ('iterationNumber' in payload && typeof payload.iterationNumber !== 'number') return false;
+    if ('continueUntilComplete' in payload && typeof payload.continueUntilComplete !== 'boolean') return false;
+    if ('maxRetries' in payload && typeof payload.maxRetries !== 'number') return false;
+    if ('continuation_count' in payload && typeof payload.continuation_count !== 'number') return false;
+    if ('target_contribution_id' in payload && typeof payload.target_contribution_id !== 'string') return false;
+    if ('model_slug' in payload && typeof payload.model_slug !== 'string') return false;
+    if ('is_test_job' in payload && typeof payload.is_test_job !== 'boolean') return false;
+    if ('sourceContributionId' in payload && payload.sourceContributionId !== null && typeof payload.sourceContributionId !== 'string') return false;
+    if ('context_for_documents' in payload && payload.context_for_documents !== undefined && !isContextForDocumentArray(payload.context_for_documents)) return false;
+
+    return true;
+}
+
+export function isDialecticRenderJobPayload(payload: unknown): payload is DialecticRenderJobPayload {
+    if (!isRecord(payload)) {
+        throw new Error('Payload must be a non-null object.');
+    }
+
+    // Base Payload Checks
+    if (!('sessionId' in payload) || typeof payload.sessionId !== 'string') throw new Error('Missing or invalid sessionId.');
+    if (!('projectId' in payload) || typeof payload.projectId !== 'string') throw new Error('Missing or invalid projectId.');
+    if (!('model_id' in payload) || typeof payload.model_id !== 'string') throw new Error('Missing or invalid model_id.');
+    if (!('walletId' in payload) || typeof payload.walletId !== 'string') throw new Error('Missing or invalid walletId.');
+    if (!('user_jwt' in payload) || typeof payload.user_jwt !== 'string' || payload.user_jwt.length === 0) throw new Error('Missing or invalid user_jwt.');
+
+    // Required RenderJobPayload properties
+    if (!('documentIdentity' in payload) || typeof payload.documentIdentity !== 'string' || payload.documentIdentity.trim() === '') throw new Error('Missing or invalid documentIdentity.');
+    if (!('documentKey' in payload) || !isFileType(payload.documentKey)) throw new Error('Missing or invalid documentKey.');
+    if (!('sourceContributionId' in payload) || typeof payload.sourceContributionId !== 'string' || payload.sourceContributionId.trim() === '') throw new Error('Missing or invalid sourceContributionId.');
+
+    // Optional/Nullable properties from DialecticBaseJobPayload
+    if (('stageSlug' in payload) && typeof payload.stageSlug !== 'string') throw new Error('Invalid stageSlug.');
+    if (('iterationNumber' in payload) && typeof payload.iterationNumber !== 'number') throw new Error('Invalid iterationNumber.');
+    if (('continueUntilComplete' in payload) && typeof payload.continueUntilComplete !== 'boolean') throw new Error('Invalid continueUntilComplete.');
+    if (('maxRetries' in payload) && typeof payload.maxRetries !== 'number') throw new Error('Invalid maxRetries.');
+    if (('continuation_count' in payload) && typeof payload.continuation_count !== 'number') throw new Error('Invalid continuation_count.');
+    if (('target_contribution_id' in payload) && typeof payload.target_contribution_id !== 'string') throw new Error('Invalid target_contribution_id.');
+    if (('model_slug' in payload) && typeof payload.model_slug !== 'string') throw new Error('Invalid model_slug.');
+    if (('is_test_job' in payload) && typeof payload.is_test_job !== 'boolean') throw new Error('Invalid is_test_job.');
+
+    // Final check for extraneous properties to enforce a strict shape.
+    const allowedKeys = new Set<string>([
+        'sessionId', 'projectId', 'model_id', 'walletId', 'stageSlug', 'iterationNumber',
+        'documentIdentity', 'documentKey', 'sourceContributionId', 'user_jwt',
+        // Base job payload fields that may be present on render jobs
+        'continueUntilComplete', 'maxRetries', 'continuation_count', 'target_contribution_id', 'is_test_job', 'model_slug'
+    ]);
+
+    const unknownKeys = Object.keys(payload).filter(key => !allowedKeys.has(key));
+
+    if (unknownKeys.length > 0) {
+        throw new Error(`Payload contains unknown properties: ${unknownKeys.join(', ')}`);
+    }
+
     return true;
 }
 
@@ -1182,7 +1242,26 @@ export function isPlanJobInsert(item: unknown): item is PlanJobInsert {
 
     if (typeof payload !== 'object' || payload === null) return false;
 
-    if (!('job_type' in payload) || payload.job_type !== 'PLAN') return false;
+    // Validate required fields
+    if (!('sessionId' in payload) || typeof payload.sessionId !== 'string') return false;
+    if (!('projectId' in payload) || typeof payload.projectId !== 'string') return false;
+    if (!('model_id' in payload) || typeof payload.model_id !== 'string') return false;
+    if (!('walletId' in payload) || typeof payload.walletId !== 'string') return false;
+    if (!('user_jwt' in payload) || typeof payload.user_jwt !== 'string' || payload.user_jwt.length === 0) return false;
+
+    // Validate optional fields
+    if ('stageSlug' in payload && typeof payload.stageSlug !== 'string') return false;
+    if ('iterationNumber' in payload && typeof payload.iterationNumber !== 'number') return false;
+    if ('continueUntilComplete' in payload && typeof payload.continueUntilComplete !== 'boolean') return false;
+    if ('maxRetries' in payload && typeof payload.maxRetries !== 'number') return false;
+    if ('continuation_count' in payload && typeof payload.continuation_count !== 'number') return false;
+    if ('target_contribution_id' in payload && typeof payload.target_contribution_id !== 'string') return false;
+    if ('model_slug' in payload && typeof payload.model_slug !== 'string') return false;
+    if ('is_test_job' in payload && typeof payload.is_test_job !== 'boolean') return false;
+    if ('sourceContributionId' in payload && payload.sourceContributionId !== null && typeof payload.sourceContributionId !== 'string') return false;
+    if ('context_for_documents' in payload && payload.context_for_documents !== undefined && !isContextForDocumentArray(payload.context_for_documents)) return false;
+
+    if ('job_type' in payload) return false;
 
     return true;
 }

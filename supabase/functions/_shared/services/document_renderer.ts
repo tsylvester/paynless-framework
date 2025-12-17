@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { Buffer } from "https://deno.land/std@0.177.0/node/buffer.ts";
 import type { Database } from "../../types_db.ts";
 import { FileType, type PathContext } from "../types/file_manager.types.ts";
 import { deconstructStoragePath } from "../utils/path_deconstructor.ts";
@@ -7,6 +8,7 @@ import type {
   RenderDocumentResult,
   DocumentRendererDeps,
 } from "./document_renderer.interface.ts";
+import type { ResourceUploadContext } from "../types/file_manager.types.ts";
 import type { DownloadFromStorageFn } from "../supabase_storage_utils.ts";
 import type { DialecticContributionRow } from "../../dialectic-service/dialectic.interface.ts";
 import { renderPrompt } from "../prompt-renderer.ts";
@@ -335,7 +337,7 @@ export async function renderDocument(
 
   if (deps.fileManager && typeof deps.fileManager.uploadAndRegisterFile === "function") {
     try {
-      const uploadResult = await deps.fileManager.uploadAndRegisterFile({
+      const uploadContext: ResourceUploadContext = {
         pathContext: {
           projectId: pathContext.projectId,
           fileType: FileType.RenderedDocument,
@@ -347,12 +349,15 @@ export async function renderDocument(
           attemptCount: pathContext.attemptCount,
           sourceContributionId: pathContext.sourceContributionId ?? null,
         },
-        fileContent: rendered,
+        fileContent: Buffer.from(renderedBytes),
         mimeType: "text/markdown",
         sizeBytes: renderedBytes.length,
         userId: base.user_id,
         description: `Rendered document for ${stageSlug}:${String(documentKey)}`,
-      });
+        resourceTypeForDb: FileType.RenderedDocument,
+      };
+
+      const uploadResult = await deps.fileManager.uploadAndRegisterFile(uploadContext);
       
       // Check for error response (uploadAndRegisterFile returns { record, error } or { record: null, error })
       if (uploadResult.error) {

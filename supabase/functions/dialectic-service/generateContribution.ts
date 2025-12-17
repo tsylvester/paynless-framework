@@ -151,7 +151,6 @@ export async function generateContributions(
                 model_id: modelId,
                 model_slug: modelData.name,
                 user_jwt: authToken,
-                job_type: jobType,
             };
 
 

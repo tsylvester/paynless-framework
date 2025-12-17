@@ -17,6 +17,7 @@ import type {
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { planPairwiseByOrigin } from './planPairwiseByOrigin.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
+import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
@@ -284,7 +285,7 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 	// --- Check Job 1 (thesis-1 vs antithesis-1a) ---
 	const job1Payload = childPayloads.find(
 		(p) => {
-			if (p.job_type === 'execute') {
+			if (isDialecticExecuteJobPayload(p)) {
 				return p.inputs?.antithesis_id === 'antithesis-1a';
 			}
 			return false;
@@ -292,11 +293,11 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 	);
 	assertExists(job1Payload, 'Payload for antithesis-1a should exist');
 
-	if (job1Payload.job_type !== 'execute') {
+	if (!isDialecticExecuteJobPayload(job1Payload)) {
 		throw new Error('Expected EXECUTE job');
 	}
 
-	assertEquals(job1Payload.job_type, 'execute');
+	assertEquals(MOCK_RECIPE_STEP.job_type, 'EXECUTE');
 	assertEquals(job1Payload.prompt_template_id, 'synthesis_step1_pairwise');
 	assertEquals(job1Payload.output_type, FileType.PairwiseSynthesisChunk);
 	assertEquals(job1Payload.isIntermediate, true);
@@ -328,7 +329,7 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 	// --- Check Job 2 (thesis-1 vs antithesis-1b) ---
 	const job2Payload = childPayloads.find(
 		(p) => {
-			if (p.job_type === 'execute') {
+			if (isDialecticExecuteJobPayload(p)) {
 				return p.inputs?.antithesis_id === 'antithesis-1b';
 			}
 			return false;
@@ -336,7 +337,7 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 	);
 	assertExists(job2Payload, 'Payload for antithesis-1b should exist');
 	
-	if (job2Payload.job_type !== 'execute') {
+	if (!isDialecticExecuteJobPayload(job2Payload)) {
 		throw new Error('Expected EXECUTE job');
 	}
 	
@@ -355,7 +356,7 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 	// --- Check Job 3 (thesis-2 vs antithesis-2a) ---
 	const job3Payload = childPayloads.find(
 		(p) => {
-			if (p.job_type === 'execute') {
+			if (isDialecticExecuteJobPayload(p)) {
 				return p.inputs?.antithesis_id === 'antithesis-2a';
 			}
 			return false;
@@ -363,7 +364,7 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 	);
 	assertExists(job3Payload, 'Payload for antithesis-2a should exist');
 	
-	if (job3Payload.job_type !== 'execute') {
+	if (!isDialecticExecuteJobPayload(job3Payload)) {
 		throw new Error('Expected EXECUTE job');
 	}
 	
@@ -427,7 +428,7 @@ Deno.test('planPairwiseByOrigin constructs child payloads with dynamic stage con
 	assertEquals(childPayloads.length, 3);
 	for (const child of childPayloads) {
 		assertEquals(child.stageSlug, expectedStage);
-		if (child.job_type === 'execute') {
+		if (isDialecticExecuteJobPayload(child)) {
 			assertEquals(child.sourceContributionId, child.inputs?.antithesis_id);
 			assertEquals(child.document_key, FileType.PairwiseSynthesisChunk, 'document_key should be set from outputs_required.documents[0].document_key');
 		} else {
@@ -522,7 +523,7 @@ Deno.test('planPairwiseByOrigin Test Case A: The Failing Case (Proves the bug ex
 	try {
 		childPayloads.forEach(child => {
 			assertEquals(child.model_id, failingParentJob.payload.model_id, "Child job model_id must match the parent job's model_id");
-			if (child.job_type === 'execute') {
+			if (isDialecticExecuteJobPayload(child)) {
 				assertEquals(child.sourceContributionId, child.inputs?.antithesis_id);
 			}
 		});
@@ -572,7 +573,7 @@ Deno.test('planPairwiseByOrigin Test Case B: The Passing Case (Describes the cor
 	// After the fix, it will PASS.
 	childPayloads.forEach(child => {
 		assertEquals(child.model_id, passingParentJob.payload.model_id, "Child job model_id must match the parent job's model_id");
-		if (child.job_type === 'execute') {
+		if (isDialecticExecuteJobPayload(child)) {
 			assertEquals(child.sourceContributionId, child.inputs?.antithesis_id);
 		}
 	});
@@ -584,14 +585,14 @@ Deno.test('planPairwiseByOrigin includes planner_metadata with recipe_step_id in
 		id: 'recipe-step-pairwise-456',
 	};
 
-	const childJobs = planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, mockRecipeStepWithId, 'user-jwt-123');
+	const childJobs = planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, mockRecipeStepWithId, MOCK_PARENT_JOB.payload.user_jwt);
 	
 	assertEquals(childJobs.length, 3, 'Should create 3 child jobs for the 3 pairs');
 	
 	// Assert that every job in the returned payload array includes planner_metadata with recipe_step_id
 	childJobs.forEach(job => {
 		assertExists(job, 'Child job should exist');
-		if (job.job_type === 'execute') {
+		if (isDialecticExecuteJobPayload(job)) {
 			assertExists(job.planner_metadata, 'Child job should include planner_metadata');
 			assertEquals(
 				job.planner_metadata?.recipe_step_id,
@@ -660,7 +661,7 @@ Deno.test('planPairwiseByOrigin should inherit all fields from parent job payloa
 			'parent-jwt-token',
 			`Child job ${index} should inherit user_jwt from parent job`
 		);
-		if (job.job_type === 'execute') {
+		if (isDialecticExecuteJobPayload(job)) {
 			assertEquals(job.document_key, FileType.PairwiseSynthesisChunk, `Child job ${index} should have document_key set from outputs_required.documents[0].document_key`);
 		}
 	});
@@ -690,7 +691,7 @@ Deno.test('planPairwiseByOrigin should set document_key in payload when outputs_
 		MOCK_SOURCE_DOCS,
 		MOCK_PARENT_JOB,
 		mockRecipeStepWithDocumentKey,
-		'user-jwt-123'
+		MOCK_PARENT_JOB.payload.user_jwt
 	);
 
 	assertEquals(childPayloads.length, 3, 'Should create 3 child jobs for the 3 pairs');
@@ -701,7 +702,7 @@ Deno.test('planPairwiseByOrigin should set document_key in payload when outputs_
 			payload,
 			`Child payload ${index} should exist`
 		);
-		if (payload.job_type === 'execute') {
+		if (isDialecticExecuteJobPayload(payload)) {
 			assertEquals(
 				payload.document_key,
 				FileType.PairwiseSynthesisChunk,
@@ -734,7 +735,7 @@ Deno.test('planPairwiseByOrigin throws error when outputs_required.documents arr
 				MOCK_SOURCE_DOCS,
 				MOCK_PARENT_JOB,
 				mockRecipeStepWithEmptyDocuments,
-				'user-jwt-123'
+				MOCK_PARENT_JOB.payload.user_jwt
 			);
 		},
 		Error,
@@ -762,7 +763,7 @@ Deno.test('planPairwiseByOrigin throws error when outputs_required is missing do
 				MOCK_SOURCE_DOCS,
 				MOCK_PARENT_JOB,
 				mockRecipeStepWithoutDocumentsProperty,
-				'user-jwt-123'
+				MOCK_PARENT_JOB.payload.user_jwt
 			);
 		},
 		Error,
@@ -833,7 +834,7 @@ Deno.test('planPairwiseByOrigin includes context_for_documents in payload for PL
 	
 	assertEquals(childJobs.length, 3, 'Should create 3 child jobs for the 3 pairs');
 	const jobCandidate = childJobs[0];
-	if (jobCandidate.job_type !== 'PLAN') {
+	if (!isDialecticPlanJobPayload(jobCandidate)) {
 		throw new Error('Expected PLAN job');
 	}
 	const job: DialecticPlanJobPayload = jobCandidate;
@@ -857,7 +858,7 @@ Deno.test('planPairwiseByOrigin throws error for PLAN job when context_for_docum
 
 	await assertRejects(
 		async () => {
-			planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStepWithoutContext, 'user-jwt-123');
+			planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStepWithoutContext, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'planPairwiseByOrigin requires',
@@ -886,7 +887,7 @@ Deno.test('planPairwiseByOrigin throws error for PLAN job when context_for_docum
 
 	await assertRejects(
 		async () => {
-			planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStepWithoutDocumentKey, 'user-jwt-123');
+			planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStepWithoutDocumentKey, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'planPairwiseByOrigin requires',
@@ -913,7 +914,7 @@ Deno.test('planPairwiseByOrigin throws error for PLAN job when context_for_docum
 
 	await assertRejects(
 		async () => {
-			planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStepWithoutContentToInclude, 'user-jwt-123');
+			planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStepWithoutContentToInclude, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'planPairwiseByOrigin requires',
@@ -942,16 +943,16 @@ Deno.test('planPairwiseByOrigin successfully creates payload for EXECUTE job wit
 		},
 	};
 
-	const childJobs = planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, 'user-jwt-123');
+	const childJobs = planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, MOCK_PARENT_JOB.payload.user_jwt);
 	
 	assertEquals(childJobs.length, 3, 'Should create 3 child jobs for the 3 pairs');
 	const jobCandidate = childJobs[0];
-	if (jobCandidate.job_type !== 'execute') {
+	if (!isDialecticExecuteJobPayload(jobCandidate)) {
 		throw new Error('Expected EXECUTE job');
 	}
 	const job: DialecticExecuteJobPayload = jobCandidate;
 	assertExists(job, 'Child job should exist');
-	assertEquals(job.job_type, 'execute', 'Job type should be execute');
+	assertEquals(isDialecticExecuteJobPayload(job), true, 'Job type should be execute');
 });
 
 Deno.test('planPairwiseByOrigin throws error for EXECUTE job when files_to_generate is missing', async () => {
@@ -971,7 +972,7 @@ Deno.test('planPairwiseByOrigin throws error for EXECUTE job when files_to_gener
 
 	await assertRejects(
 		async () => {
-			planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStepWithoutFiles, 'user-jwt-123');
+			planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStepWithoutFiles, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'planPairwiseByOrigin requires',
@@ -1001,7 +1002,7 @@ Deno.test('planPairwiseByOrigin throws error for EXECUTE job when files_to_gener
 
 	await assertRejects(
 		async () => {
-			planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStepWithoutFromDocumentKey, 'user-jwt-123');
+			planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStepWithoutFromDocumentKey, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'planPairwiseByOrigin requires',
@@ -1031,7 +1032,7 @@ Deno.test('planPairwiseByOrigin throws error for EXECUTE job when files_to_gener
 
 	await assertRejects(
 		async () => {
-			planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStepWithoutTemplateFilename, 'user-jwt-123');
+			planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStepWithoutTemplateFilename, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'planPairwiseByOrigin requires',

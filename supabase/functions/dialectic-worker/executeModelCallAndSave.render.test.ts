@@ -646,7 +646,6 @@ Deno.test('executeModelCallAndSave - RENDER job payload includes documentKey wit
     const sourceContributionId: string = sourceContributionIdUnknown;
 
     const pl: DialecticRenderJobPayload = {
-        job_type: 'RENDER',
         model_id: modelId,
         projectId: projectId,
         sessionId: sessionId,
@@ -826,7 +825,6 @@ Deno.test('executeModelCallAndSave - RENDER job payload contains all required fi
     const sourceContributionId: string = sourceContributionIdUnknown;
 
     const pl: DialecticRenderJobPayload = {
-        job_type: 'RENDER',
         model_id: modelId,
         projectId: projectId,
         sessionId: sessionId,
@@ -1041,7 +1039,6 @@ Deno.test('executeModelCallAndSave - RENDER job payload sourceContributionId mus
     const sourceContributionId: string = sourceContributionIdUnknown;
 
     const pl: DialecticRenderJobPayload = {
-        job_type: 'RENDER',
         model_id: modelId,
         projectId: projectId,
         sessionId: sessionId,
@@ -1501,7 +1498,6 @@ Deno.test('executeModelCallAndSave - enqueues RENDER job with ALL required paylo
     const sourceContributionId: string = sourceContributionIdUnknown;
 
     const pl: DialecticRenderJobPayload = {
-        job_type: 'RENDER',
         model_id: modelId,
         projectId: projectId,
         sessionId: sessionId,
@@ -1845,7 +1841,6 @@ Deno.test('executeModelCallAndSave - RENDER job payload user_jwt matches parent 
     const sourceContributionId: string = sourceContributionIdUnknown;
 
     const pl: DialecticRenderJobPayload = {
-        job_type: 'RENDER',
         model_id: modelId,
         projectId: projectId,
         sessionId: sessionId,

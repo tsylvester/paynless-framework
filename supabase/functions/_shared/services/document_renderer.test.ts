@@ -10,6 +10,7 @@ import { MockFileManagerService } from "./file_manager.mock.ts";
 import { mockNotificationService, resetMockNotificationService } from "../utils/notification.service.mock.ts";
 import { logger } from "../logger.ts";
 import { renderPrompt } from "../prompt-renderer.ts";
+import { isResourceContext } from "../utils/type-guards/type_guards.file_manager.ts";
 
 // Real template structure from docs/templates/thesis/thesis_business_case.md
 const REAL_THESIS_BUSINESS_CASE_TEMPLATE = `{{#section:executive_summary}}
@@ -2722,6 +2723,110 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
 
     clearAllStubs?.();
   });
+});
+
+Deno.test("DocumentRenderer - correctly calls FileManagerService to save the rendered document", async (t) => {
+    const setup = (config: MockSupabaseDataConfig = {}) => {
+        const { client, spies, clearAllStubs } = createMockSupabaseClient(undefined, config);
+        return { dbClient: client as unknown as SupabaseClient<Database>, spies, clearAllStubs };
+    };
+    
+    await t.step("ensures uploadAndRegisterFile is called with correct data", async () => {
+        const rootId = "root-save-correctly-1";
+        const sessionId = "session_save_correctly";
+        const stageSlug = "thesis";
+        const documentKey = FileType.business_case;
+
+        const contributions: ContributionRowMinimal[] = [
+            {
+                id: rootId,
+                session_id: sessionId,
+                stage: "THESIS",
+                iteration_number: 1,
+                storage_bucket: "content",
+                storage_path: "project_123/session_s/iteration_1/thesis/documents",
+                file_name: "gpt-4o-mini_0_business_case.md",
+                raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
+                mime_type: "text/markdown",
+                document_relationships: { thesis: rootId },
+                created_at: new Date(2025, 8, 1, 10, 0, 0).toISOString(),
+                target_contribution_id: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                user_id: "user_123",
+            },
+        ];
+
+        const structuredData = { executive_summary: "Test save content" };
+        const agentResponse = { content: JSON.stringify(structuredData) };
+
+        const { dbClient, clearAllStubs } = setup({
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_projects: {
+                    select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_document_templates: {
+                    select: { data: [{ id: "template-1", created_at: "2025-01-01T00:00:00Z", description: null, domain_id: "domain-1", file_name: "thesis_business_case.md", is_active: true, name: "thesis_business_case", storage_bucket: "prompt-templates", storage_path: "templates/thesis", updated_at: "2025-01-01T00:00:00Z" }], error: null, count: null, status: 200, statusText: "OK" },
+                },
+            },
+            storageMock: {
+                downloadResult: async (_bucketId: string, path: string) => {
+                    if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
+                        return { data: new Blob([JSON.stringify(agentResponse)], { type: "application/json" }), error: null };
+                    }
+                    return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
+                },
+            },
+        });
+
+        const mockFileManager = new MockFileManagerService();
+        mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+        const params: RenderDocumentParams = {
+            projectId: "project_123",
+            sessionId,
+            iterationNumber: 1,
+            stageSlug,
+            documentIdentity: rootId,
+            documentKey,
+            sourceContributionId: rootId,
+        };
+
+        await renderDocument(
+            dbClient,
+            {
+                downloadFromStorage,
+                fileManager: mockFileManager,
+                notificationService: mockNotificationService,
+                notifyUserId: "user_123",
+                logger: logger,
+            },
+            params,
+        );
+
+        assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "uploadAndRegisterFile should be called exactly once");
+        
+        const uploadArgs = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
+        // Assert that the context object passed to the file manager is a valid ResourceUploadContext
+        assert(isResourceContext(uploadArgs), `uploadAndRegisterFile context is not a valid ResourceUploadContext. Got ${JSON.stringify(uploadArgs, null, 2)}`);
+        
+        // Now that the type is confirmed, we can safely access its properties
+        assertEquals(uploadArgs.pathContext.sourceContributionId, rootId, "sourceContributionId should be the root contribution ID");
+        assertEquals(uploadArgs.resourceTypeForDb, FileType.RenderedDocument, "resourceTypeForDb should be FileType.RenderedDocument");
+
+        if (uploadArgs.fileContent instanceof Uint8Array) {
+            const bodyText = new TextDecoder().decode(uploadArgs.fileContent);
+            assert(bodyText.includes("Test save content"), "The rendered content was not present in the uploaded file");
+        } else {
+            const actualType = uploadArgs.fileContent?.constructor?.name || typeof uploadArgs.fileContent;
+            assert(false, `fileContent was not a Uint8Array, but ${actualType}. Cannot verify content.`);
+        }
+
+        clearAllStubs?.();
+    });
 });
 
 

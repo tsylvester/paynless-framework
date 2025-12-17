@@ -3,7 +3,7 @@ import { assertEquals, assertExists, assert, assertThrows, assertRejects } from 
 import type { DialecticJobRow, DialecticRecipeStep, SourceDocument, DialecticPlanJobPayload, DialecticExecuteJobPayload, DocumentRelationships, RenderedDocumentArtifact, ContextForDocument } from '../../../dialectic-service/dialectic.interface.ts';
 import { planPerSourceGroup } from './planPerSourceGroup.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
-
+import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
     // The original thesis documents, which act as anchors
@@ -121,14 +121,14 @@ Deno.test('planPerSourceGroup should create one child job for each group of rela
 
     // Check Group 1 job
     const job1 = childJobs.find(j => {
-        if (j.job_type === 'execute') {
+        if (isDialecticExecuteJobPayload(j)) {
             return j.document_relationships?.source_group === 'thesis-1';
         }
         return false;
     });
     assertExists(job1, "Job for group 'thesis-1' should exist");
-    assertEquals(job1.job_type, 'execute');
-    if (job1.job_type === 'execute') {
+    assertEquals(isDialecticExecuteJobPayload(job1), true);
+    if (isDialecticExecuteJobPayload(job1)) {
         const executeJob1: DialecticExecuteJobPayload = job1;
         assertEquals(executeJob1.sourceContributionId, 'thesis-1');
         
@@ -147,13 +147,13 @@ Deno.test('planPerSourceGroup should create one child job for each group of rela
 
     // Check Group 2 job
     const job2 = childJobs.find(j => {
-        if (j.job_type === 'execute') {
+        if (isDialecticExecuteJobPayload(j)) {
             return j.document_relationships?.source_group === 'thesis-2';
         }
         return false;
     });
     assertExists(job2, "Job for group 'thesis-2' should exist");
-    if (job2.job_type === 'execute') {
+    if (isDialecticExecuteJobPayload(job2)) {
         const executeJob2: DialecticExecuteJobPayload = job2;
         const job2Inputs = executeJob2.inputs?.document_ids;
         assert(Array.isArray(job2Inputs), "job2Inputs should be an array");
@@ -189,7 +189,7 @@ Deno.test('planPerSourceGroup constructs child payloads with dynamic stage consi
 	assertEquals(childJobs.length > 0, true, 'Planner should produce one job per group');
 	for (const child of childJobs) {
 		assertEquals(child.stageSlug, expectedStage, 'Child payload.stageSlug must equal parent.payload.stageSlug');
-        if (child.job_type === 'execute') {
+        if (isDialecticExecuteJobPayload(child)) {
             const executeChild: DialecticExecuteJobPayload = child;
             assertEquals(
                 executeChild.sourceContributionId,
@@ -220,7 +220,7 @@ Deno.test('planPerSourceGroup should include planner_metadata.recipe_step_id in 
 
     assertEquals(childJobs.length > 0, true, 'Planner should produce at least one job');
     for (const job of childJobs) {
-        if (job.job_type === 'execute') {
+        if (isDialecticExecuteJobPayload(job)) {
             const executeJob: DialecticExecuteJobPayload = job;
             assertExists(executeJob.planner_metadata, 'planner_metadata should exist on child job payload');
             assertEquals(executeJob.planner_metadata?.recipe_step_id, 'recipe-step-group-123', 'planner_metadata.recipe_step_id should match recipe step id');
@@ -299,7 +299,7 @@ Deno.test('planPerSourceGroup sets document_key in payload when recipeStep.outpu
     assertEquals(childJobs.length > 0, true, 'Should create at least one child job');
     for (const job of childJobs) {
         assertExists(job, 'Child job should exist');
-        if (job.job_type === 'execute') {
+        if (isDialecticExecuteJobPayload(job)) {
             const executeJob: DialecticExecuteJobPayload = job;
             assertEquals(
                 executeJob.document_key,
@@ -484,7 +484,7 @@ Deno.test('planPerSourceGroup includes context_for_documents in payload for PLAN
     assertEquals(childJobs.length, 1, 'Should create exactly one child job');
     const job = childJobs[0];
     assertExists(job, 'Child job should exist');
-    if (job.job_type === 'PLAN') {
+    if (isDialecticPlanJobPayload(job)) {
         const planPayload = job;
         assertExists(planPayload.context_for_documents, 'PLAN job payload should include context_for_documents');
         assertEquals(planPayload.context_for_documents.length, 1, 'context_for_documents should have one entry');
@@ -598,7 +598,7 @@ Deno.test('planPerSourceGroup successfully creates payload for EXECUTE job with 
     assertEquals(childJobs.length > 0, true, 'Should create at least one child job');
     const job = childJobs[0];
     assertExists(job, 'Child job should exist');
-    assertEquals(job.job_type, 'execute', 'Job type should be execute');
+    assertEquals(isDialecticExecuteJobPayload(job), true, 'Job type should be execute');
 });
 
 Deno.test('planPerSourceGroup throws error for EXECUTE job when files_to_generate is missing', async () => {

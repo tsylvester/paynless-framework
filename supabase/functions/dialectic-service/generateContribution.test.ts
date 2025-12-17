@@ -1,4 +1,4 @@
-import { assertEquals, assertExists, assertObjectMatch, fail } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertExists, assertObjectMatch, fail, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy } from "jsr:@std/testing@0.225.1/mock";
 import { generateContributions } from "./generateContribution.ts";
 import {
@@ -9,7 +9,7 @@ import {
 } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
-import { isPlanJobInsert, isDatabaseRecipeSteps } from "../_shared/utils/type-guards/type_guards.dialectic.ts";
+import { isPlanJobInsert, isDatabaseRecipeSteps, isDialecticPlanJobPayload } from "../_shared/utils/type-guards/type_guards.dialectic.ts";
 import { createMockSupabaseClient, type MockQueryBuilderState } from "../_shared/supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { FileType } from "../_shared/types/file_manager.types.ts";
@@ -179,7 +179,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
             const firstInsertPayload = firstInsertCallArgs.payload;
             assertEquals(firstInsertCallArgs.is_test_job, undefined);
             assertEquals(firstInsertPayload.model_id, mockModelIds[0]);
-            assertEquals(firstInsertPayload.job_type, 'PLAN');
+            assert(isDialecticPlanJobPayload(firstInsertPayload), 'The first insert payload should be a valid DialecticPlanJobPayload object');
         } else {
             fail(`First insert call did not have the expected payload shape. Got: ${JSON.stringify(firstInsertCallArgs)}`);
         }
@@ -188,7 +188,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
         const secondInsertCallArgs = insertSpy.callsArgs[1][0];
         if (isPlanJobInsert(secondInsertCallArgs)) {
             assertEquals(secondInsertCallArgs.is_test_job, undefined);
-            assertEquals(secondInsertCallArgs.job_type, 'PLAN');
+            assert(isDialecticPlanJobPayload(secondInsertCallArgs.payload), 'The second insert payload should be a valid DialecticPlanJobPayload object');
             const secondInsertPayload = secondInsertCallArgs.payload;
             assertEquals(secondInsertPayload.model_id, mockModelIds[1]);
         } else {
@@ -294,10 +294,9 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
                 user_id: mockUserId,
                 stage_slug: 'thesis',
                 status: 'pending',
-                job_type: 'PLAN',
             });
             assertEquals(insertArgs.payload.model_id, mockModelId);
-            assertEquals(insertArgs.payload.job_type, 'PLAN');
+            assert(isDialecticPlanJobPayload(insertArgs.payload), 'The insert payload should be a valid DialecticPlanJobPayload object');
         } else {
             fail(`insert was not called with an object of the expected shape. Got: ${JSON.stringify(insertArgs)}`);
         }
@@ -997,8 +996,7 @@ Deno.test("generateContributions - plan jobs carry payload.user_jwt equal to pro
         const jwtVal = jwtDesc ? jwtDesc.value : undefined;
         assertEquals(typeof jwtVal === 'string' && jwtVal.length > 0, true);
         assertEquals(jwtVal, providedJwt);
-        assertEquals(payload.job_type, 'PLAN');
-        assertEquals(insertArg.job_type, 'PLAN');
+        assert(isDialecticPlanJobPayload(payload), 'The insert payload should be a valid DialecticPlanJobPayload object');
     }
 });
 
@@ -1089,8 +1087,7 @@ Deno.test("generateContributions - plan jobs include model_slug from ai_provider
     assertEquals(payload.model_slug, mockModelName, "Job payload must include model_slug from ai_providers query");
     assertEquals(payload.user_jwt, providedJwt, "Job payload must include user_jwt");
     assertEquals(payload.model_id, mockModelId, "Job payload must include model_id");
-    assertEquals(payload.job_type, 'PLAN');
-    assertEquals(insertArg.job_type, 'PLAN');
+    assert(isDialecticPlanJobPayload(payload), 'The insert payload should be a valid DialecticPlanJobPayload object');
 
     // Verify ai_providers query was made
     const aiProvidersSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('ai_providers', 'select');
@@ -1185,13 +1182,14 @@ Deno.test("should create jobs with a top-level 'is_test_job' flag when specified
         if (isPlanJobInsert(insertArgs)) {
             // Assert the top-level property
             assertEquals(insertArgs.is_test_job, true, "The top-level is_test_job flag should be true");
-            assertEquals(insertArgs.job_type, 'PLAN');
+            assert(isDialecticPlanJobPayload(insertArgs.payload), 'The insert payload should be a valid DialecticPlanJobPayload object');
             
             // Assert the payload property is gone
             const payload = insertArgs.payload;
             assertEquals(Object.prototype.hasOwnProperty.call(payload, 'is_test_job'), false, "The job payload should NOT contain an is_test_job property");
-            assertEquals(payload.job_type, 'PLAN');
+            assert(isDialecticPlanJobPayload(payload), 'The insert payload should be a valid DialecticPlanJobPayload object');
 
+            assert(isDialecticPlanJobPayload(insertArgs.payload), 'The insert payload should be a valid DialecticPlanJobPayload object');
         } else {
             fail(`insert was not called with an object of the expected shape. Got: ${JSON.stringify(insertArgs)}`);
         }

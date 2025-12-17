@@ -1072,7 +1072,6 @@ Deno.test('processSimpleJob - continuations push sourceContributionId into FileM
     walletId: 'wallet-ghi',
     user_jwt: 'jwt.token.here',
     planner_metadata: { recipe_step_id: 'step-1', recipe_template_id: 'template-123' },
-    job_type: 'execute',
     prompt_template_id: 'prompt-123',
     output_type: FileType.business_case,
     canonicalPathParams: {
@@ -1156,7 +1155,6 @@ Deno.test('processSimpleJob - continuations push sourceContributionId into FileM
         stageSlug: payload.stageSlug,
         iterationNumber: payload.iterationNumber,
         contributionType: continuationPayload.canonicalPathParams.contributionType,
-        rawJsonResponseContent: { prompt: promptContent },
         tokensUsedInput: promptContent.length,
         tokensUsedOutput: 0,
         processingTimeMs: 0,
@@ -1347,7 +1345,7 @@ Deno.test('processSimpleJob - missing user_jwt fails early and does not call exe
     iterationNumber: 1,
     continueUntilComplete: false,
     walletId: 'wallet-ghi',
-  };
+  } as DialecticJobPayload;
   if (!isJson(planPayloadNoJwt) || !isDialecticJobPayload(planPayloadNoJwt)) {
     throw new Error('Test setup failed: planPayloadNoJwt invalid');
   }

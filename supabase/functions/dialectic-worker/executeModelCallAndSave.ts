@@ -17,6 +17,7 @@ import {
     isFinishReason, 
     isDocumentRelationships,
     isJson,
+    isDialecticRenderJobPayload,
 } from "../_shared/utils/type_guards.ts";
 import { AiModelExtendedConfig, ChatApiRequest, Messages, FinishReason } from '../_shared/types.ts';
 import { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
@@ -1374,7 +1375,7 @@ export async function executeModelCallAndSave(
             }
             const sourceContributionIdStrict: string = contribution.id;
 
-            const renderPayload: Omit<DialecticRenderJobPayload, 'job_type'> = {
+            const renderPayload: DialecticRenderJobPayload = {
                 projectId,
                 sessionId,
                 iterationNumber,
@@ -1386,6 +1387,13 @@ export async function executeModelCallAndSave(
                 model_id,
                 walletId,
             };
+
+            if (!isDialecticRenderJobPayload(renderPayload)) {
+                throw new Error('renderPayload is not a valid DialecticRenderJobPayload');
+            }
+            if(!isJson(renderPayload)) {
+                throw new Error('renderPayload is not a valid JSON object');
+            }
 
             const insertObj: TablesInsert<'dialectic_generation_jobs'> = {
                 job_type: 'RENDER',

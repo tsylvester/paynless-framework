@@ -805,7 +805,6 @@ describe('planComplexStage', () => {
             // 1. The planner returns a minimal payload with the CORRECT context. 
             //    The planner is responsible for including user_jwt from the parent payload.
             const minimalPayload: DialecticExecuteJobPayload = {
-                job_type: 'execute',
                 prompt_template_id: 'p1',
                 output_type: FileType.business_case,
                 inputs: {},

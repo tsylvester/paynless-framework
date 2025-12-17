@@ -128,16 +128,18 @@ export const planAllToOne: GranularityPlannerFn = (
             stageSlug: parentJob.payload.stageSlug,
             iterationNumber: parentJob.payload.iterationNumber,
             model_id: parentJob.payload.model_id,
-            model_slug: parentJob.payload.model_slug,
             user_jwt: parentJob.payload.user_jwt,
             walletId: parentJob.payload.walletId,
-            continueUntilComplete: parentJob.payload.continueUntilComplete,
-            maxRetries: parentJob.payload.maxRetries,
-            continuation_count: parentJob.payload.continuation_count,
-            is_test_job: parentJob.payload.is_test_job,
+
+            // Optional fields - include only if present in parent
+            ...(parentJob.payload.model_slug ? { model_slug: parentJob.payload.model_slug } : {}),
+            ...(parentJob.payload.continueUntilComplete !== undefined ? { continueUntilComplete: parentJob.payload.continueUntilComplete } : {}),
+            ...(parentJob.payload.maxRetries !== undefined ? { maxRetries: parentJob.payload.maxRetries } : {}),
+            ...(parentJob.payload.continuation_count !== undefined ? { continuation_count: parentJob.payload.continuation_count } : {}),
+            ...(parentJob.payload.is_test_job !== undefined ? { is_test_job: parentJob.payload.is_test_job } : {}),
+
             sourceContributionId: anchorDocument.id,
             // Override job-specific properties
-            job_type: 'execute',
             prompt_template_id: recipeStep.prompt_template_id,
             output_type: recipeStep.output_type,
             canonicalPathParams: createCanonicalPathParams(sourceDocs, recipeStep.output_type, anchorDocument, stageSlug),
@@ -255,16 +257,18 @@ export const planAllToOne: GranularityPlannerFn = (
             stageSlug: parentJob.payload.stageSlug,
             iterationNumber: parentJob.payload.iterationNumber,
             model_id: parentJob.payload.model_id,
-            model_slug: parentJob.payload.model_slug,
             user_jwt: parentJob.payload.user_jwt,
             walletId: parentJob.payload.walletId,
-            continueUntilComplete: parentJob.payload.continueUntilComplete,
-            maxRetries: parentJob.payload.maxRetries,
-            continuation_count: parentJob.payload.continuation_count,
-            is_test_job: parentJob.payload.is_test_job,
+
+            // Optional fields - include only if present in parent
+            ...(parentJob.payload.model_slug ? { model_slug: parentJob.payload.model_slug } : {}),
+            ...(parentJob.payload.continueUntilComplete !== undefined ? { continueUntilComplete: parentJob.payload.continueUntilComplete } : {}),
+            ...(parentJob.payload.maxRetries !== undefined ? { maxRetries: parentJob.payload.maxRetries } : {}),
+            ...(parentJob.payload.continuation_count !== undefined ? { continuation_count: parentJob.payload.continuation_count } : {}),
+            ...(parentJob.payload.is_test_job !== undefined ? { is_test_job: parentJob.payload.is_test_job } : {}),
+
             sourceContributionId: anchorDocument.id,
             // Override job-specific properties
-            job_type: 'execute',
             prompt_template_id: recipeStep.prompt_template_id,
             output_type: recipeStep.output_type,
             canonicalPathParams: createCanonicalPathParams(sourceDocs, recipeStep.output_type, anchorDocument, stageSlug),

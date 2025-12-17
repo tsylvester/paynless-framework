@@ -32,7 +32,7 @@ export async function processJob(
 ) {
   const { id: jobId } = job;
 
-  deps.logger.info(`[dialectic-worker] [processJob] Starting for job ID: ${jobId}, Type: ${job.payload.job_type || 'simple'}`);
+  deps.logger.info(`[dialectic-worker] [processJob] Starting for job ID: ${jobId}, Type: ${job.job_type}`);
 
   // Route strictly by the job row's job_type; do not query stages or sniff payload shape
   switch (job.job_type) {

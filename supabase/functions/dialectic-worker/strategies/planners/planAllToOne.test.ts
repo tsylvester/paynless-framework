@@ -12,7 +12,8 @@ import type {
 import { planAllToOne } from './planAllToOne.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
 import { extractSourceDocumentIdentifier } from '../../../_shared/utils/source_document_identifier.ts';
-
+import { isJson } from '../../../_shared/utils/type-guards/type_guards.common.ts';
+import { isDialecticExecuteJobPayload } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
     { id: 'doc-1', content: '', citations: [], error: null, mime_type: 'text/plain', original_model_contribution_id: null, raw_response_storage_path: null, tokens_used_input: 0, tokens_used_output: 0, processing_time_ms: 0, contribution_type: 'reduced_synthesis', size_bytes: 0, target_contribution_id: 't', seed_prompt_url: null, is_header: false, source_prompt_resource_id: null },
@@ -20,23 +21,40 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
     { id: 'doc-3', content: '', citations: [], error: null, mime_type: 'text/plain', original_model_contribution_id: null, raw_response_storage_path: null, tokens_used_input: 0, tokens_used_output: 0, processing_time_ms: 0, contribution_type: 'reduced_synthesis', size_bytes: 0, target_contribution_id: 't', seed_prompt_url: null, is_header: false, source_prompt_resource_id: null },
 ].map(d => ({ ...d, document_relationships: null, attempt_count: 0, contribution_type: 'reduced_synthesis', session_id: 's1', user_id: 'u1', stage: 'synthesis', iteration_number: 1, edit_version: 1, is_latest_edit: true, created_at: 't', updated_at: 't', file_name: 'f', storage_bucket: 'b', storage_path: 'p', model_id: 'm', model_name: 'M', prompt_template_id_used: 'p', target_contribution_id: 't', is_header: false, source_prompt_resource_id: null }));
 
+const MOCK_PAYLOAD: DialecticPlanJobPayload = {
+    projectId: 'project-xyz',
+    sessionId: 'session-abc',
+    stageSlug: 'synthesis',
+    iterationNumber: 1,
+    model_id: 'model-ghi',
+    walletId: 'wallet-default',
+    user_jwt: 'user-jwt-123',
+};
+
+if(!isJson(MOCK_PAYLOAD)) {
+    throw new Error('Mock payload is not a valid JSON');
+}   
+
 const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
     id: 'parent-job-123',
     session_id: 'session-abc',
     user_id: 'user-def',
     stage_slug: 'synthesis',
     iteration_number: 1,
-    payload: {
-        job_type: 'PLAN',
-        projectId: 'project-xyz',
-        sessionId: 'session-abc',
-        stageSlug: 'synthesis',
-        iterationNumber: 1,
-        model_id: 'model-ghi',
-        walletId: 'wallet-default',
-        user_jwt: 'user-jwt-123',
-    },
-    attempt_count: 0, completed_at: null, created_at: '', error_details: null, max_retries: 3, parent_job_id: null, prerequisite_job_id: null, results: null, started_at: null, status: 'pending', target_contribution_id: null, is_test_job: false, job_type: 'PLAN'
+    payload: MOCK_PAYLOAD,
+    attempt_count: 0, 
+    completed_at: null, 
+    created_at: '', 
+    error_details: null, 
+    max_retries: 3, 
+    parent_job_id: null, 
+    prerequisite_job_id: null, 
+    results: null, 
+    started_at: null, 
+    status: 'pending', 
+    target_contribution_id: null, 
+    is_test_job: false, 
+    job_type: 'PLAN'
 };
 
 const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
@@ -79,16 +97,20 @@ const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
 };
 
 Deno.test('planAllToOne should create exactly one child job', () => {
-    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, MOCK_PARENT_JOB.payload.user_jwt);
     assertEquals(childJobs.length, 1, "Should create exactly one child job");
 });
 
 Deno.test('planAllToOne returns a payload with prompt_template_id and correct output_type, and omits prompt_template_name', () => {
-    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, MOCK_PARENT_JOB.payload.user_jwt);
     const job1 = childJobs[0] as DialecticExecuteJobPayload & { prompt_template_name?: string }; // Cast for testing absence
 
     assertExists(job1);
-    assertEquals(job1.job_type, 'execute');
+    if (isDialecticExecuteJobPayload(job1)) {
+        assertEquals(MOCK_RECIPE_STEP.job_type, 'EXECUTE');
+    } else {
+        throw new Error('Expected EXECUTE job');
+    }
     assertEquals(job1.output_type, FileType.business_case, 'Output type should be correctly assigned from the recipe step');
     
     // Assert that the new id property is used and the old name property is absent
@@ -109,7 +131,7 @@ Deno.test('should create one child job when given a single source document', () 
     assertEquals(childJobs.length, 1, "Should still create one child job");
     const job = childJobs[0];
     assertExists(job);
-    if (job.job_type === 'execute') {
+    if (isDialecticExecuteJobPayload(job)) {
         const docIds = job.inputs.document_ids;
         assertEquals(docIds?.length, 1, "Inputs should contain one document ID");
         assertEquals(docIds?.[0], 'doc-1');
@@ -214,14 +236,14 @@ Deno.test('planAllToOne accepts DialecticRecipeTemplateStep (not just DialecticS
         branch_key: null,
     };
 
-    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_TEMPLATE_RECIPE_STEP, 'user-jwt-123');
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_TEMPLATE_RECIPE_STEP, MOCK_PARENT_JOB.payload.user_jwt);
     
     assertEquals(childJobs.length, 1, 'Should create exactly one child job for template step');
     const job1 = childJobs[0];
     assertExists(job1);
-    assertEquals(job1.job_type, 'execute', 'PLAN recipe steps should create EXECUTE child jobs, not PLAN child jobs');
-    if (job1.job_type === 'execute') {
-        const executePayload = job1 as DialecticExecuteJobPayload;
+    assertEquals(isDialecticExecuteJobPayload(job1), true, 'PLAN recipe steps should create EXECUTE child jobs, not PLAN child jobs');
+    if (isDialecticExecuteJobPayload(job1)) {
+        const executePayload: DialecticExecuteJobPayload = job1;
         assertEquals(executePayload.output_type, FileType.HeaderContext, 'EXECUTE job should have HeaderContext output_type');
         assertEquals(executePayload.prompt_template_id, 'template-planner-prompt-id', 'EXECUTE job should inherit prompt_template_id from recipe step');
         assertEquals(executePayload.document_key, FileType.HeaderContext, 'EXECUTE job should have document_key from outputs_required.header_context_artifact.document_key');
@@ -248,7 +270,7 @@ Deno.test('planAllToOne includes planner_metadata with recipe_step_id in child p
     assertEquals(childJobs.length, 1, 'Should create exactly one child job');
     const job = childJobs[0];
     assertExists(job, 'Child job should exist');
-    if (job.job_type === 'execute') {
+    if (isDialecticExecuteJobPayload(job)) {
         assertExists(job.planner_metadata, 'Child job should include planner_metadata');
         assertEquals(
             job.planner_metadata?.recipe_step_id,
@@ -315,7 +337,7 @@ Deno.test('planAllToOne sets document_key in payload when recipeStep.outputs_req
     assertEquals(childJobs.length, 1, 'Should create exactly one child job');
     const job = childJobs[0];
     assertExists(job, 'Child job should exist');
-    if (job.job_type === 'execute') {
+    if (isDialecticExecuteJobPayload(job)) {
         assertEquals(
             job.document_key,
             FileType.business_case,
@@ -531,9 +553,8 @@ Deno.test('planAllToOne creates EXECUTE child job for PLAN recipe steps with val
     assertEquals(childJobs.length, 1, 'Should create exactly one child job');
     const job = childJobs[0];
     assertExists(job, 'Child job should exist');
-    assertEquals(job.job_type, 'execute', 'PLAN recipe steps should create EXECUTE child jobs, not PLAN child jobs');
-    if (job.job_type === 'execute') {
-        const executePayload = job as DialecticExecuteJobPayload;
+    if (isDialecticExecuteJobPayload(job)) {
+        const executePayload: DialecticExecuteJobPayload = job;
         assertEquals(executePayload.output_type, FileType.HeaderContext, 'EXECUTE job should have HeaderContext output_type');
         assertEquals(executePayload.prompt_template_id, 'template-planner-prompt-id-789', 'EXECUTE job should inherit prompt_template_id from recipe step');
         assertEquals(executePayload.document_key, FileType.HeaderContext, 'EXECUTE job should have document_key from outputs_required.header_context_artifact.document_key');
@@ -648,12 +669,16 @@ Deno.test('planAllToOne successfully creates payload for EXECUTE job with valid 
         },
     };
 
-    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, 'user-jwt-123');
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, MOCK_PARENT_JOB.payload.user_jwt);
     
     assertEquals(childJobs.length, 1, 'Should create exactly one child job');
     const job = childJobs[0];
     assertExists(job, 'Child job should exist');
-    assertEquals(job.job_type, 'execute', 'Job type should be execute');
+    if (isDialecticExecuteJobPayload(job)) {
+        assertEquals(executeRecipeStep.job_type, 'EXECUTE', 'Job type should be execute');
+    } else {
+        throw new Error('Expected EXECUTE job');
+    }
 });
 
 Deno.test('planAllToOne throws error for EXECUTE job when files_to_generate is missing', async () => {
@@ -792,13 +817,13 @@ Deno.test('planAllToOne sets document_relationships.source_group in EXECUTE job 
     };
 
     const anchorDocument = MOCK_SOURCE_DOCS[0];
-    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStep, 'user-jwt-123');
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStep, MOCK_PARENT_JOB.payload.user_jwt);
     
     assertEquals(childJobs.length, 1, 'Should create exactly one child job');
     const job = childJobs[0];
     assertExists(job, 'Child job should exist');
-    assertEquals(job.job_type, 'execute', 'PLAN recipe steps should create EXECUTE child jobs');
-    if (job.job_type === 'execute') {
+    assertEquals(isDialecticExecuteJobPayload(job), true, 'PLAN recipe steps should create EXECUTE child jobs');
+    if (isDialecticExecuteJobPayload(job)) {
         const executePayload: DialecticExecuteJobPayload = job;
         assertExists(executePayload.document_relationships, 'EXECUTE job payload should include document_relationships');
         assertExists(executePayload.document_relationships?.source_group, 'document_relationships should include source_group');
@@ -834,13 +859,13 @@ Deno.test('planAllToOne sets document_relationships.source_group in EXECUTE job 
     };
 
     const anchorDocument = MOCK_SOURCE_DOCS[0];
-    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, 'user-jwt-123');
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, MOCK_PARENT_JOB.payload.user_jwt);
     
     assertEquals(childJobs.length, 1, 'Should create exactly one child job');
     const job = childJobs[0];
     assertExists(job, 'Child job should exist');
-    assertEquals(job.job_type, 'execute', 'Job type should be execute');
-    if (job.job_type === 'execute') {
+    assertEquals(isDialecticExecuteJobPayload(job), true, 'Job type should be execute');
+    if (isDialecticExecuteJobPayload(job)) {
         const executePayload: DialecticExecuteJobPayload = job;
         assertExists(executePayload.document_relationships, 'EXECUTE job payload should include document_relationships');
         assertExists(executePayload.document_relationships?.source_group, 'document_relationships should include source_group');
@@ -876,12 +901,12 @@ Deno.test('extractSourceDocumentIdentifier can extract source_group from job pay
     };
 
     const anchorDocument = MOCK_SOURCE_DOCS[0];
-    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, 'user-jwt-123');
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, MOCK_PARENT_JOB.payload.user_jwt);
     
     assertEquals(childJobs.length, 1, 'Should create exactly one child job');
     const job = childJobs[0];
     assertExists(job, 'Child job should exist');
-    if (job.job_type === 'execute') {
+    if (isDialecticExecuteJobPayload(job)) {
         const executePayload: DialecticExecuteJobPayload = job;
         const extractedIdentifier = extractSourceDocumentIdentifier(executePayload);
         assertExists(extractedIdentifier, 'extractSourceDocumentIdentifier should return a non-null identifier');

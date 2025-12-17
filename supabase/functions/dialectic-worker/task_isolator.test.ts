@@ -70,7 +70,6 @@ describe('planComplexStage - Source Document Filtering', () => {
             job_type: 'PLAN',
             stage_slug: 'test-stage',
             payload: {
-                job_type: 'PLAN',
                 projectId: 'proj-1',
                 sessionId: 'sess-1',
                 stageSlug: 'test-stage',
@@ -110,7 +109,6 @@ describe('planComplexStage - Source Document Filtering', () => {
 
         const mockPlanner: GranularityPlannerFn = (sourceDocs: SourceDocument[]) => {
             return sourceDocs.map((doc): DialecticExecuteJobPayload => ({
-                job_type: 'execute',
                 projectId: 'proj-1',
                 sessionId: 'sess-1',
                 stageSlug: 'test-stage',

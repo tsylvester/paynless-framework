@@ -18,7 +18,8 @@ import type {
 import { planPerModel } from './planPerModel.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
 import { extractSourceDocumentIdentifier } from '../../../_shared/utils/source_document_identifier.ts';
-
+import { isJson } from '../../../_shared/utils/type-guards/type_guards.common.ts';
+import { isDialecticExecuteJobPayload } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
 	{
@@ -64,22 +65,27 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
 	source_prompt_resource_id: null,
 }));
 
+const MOCK_PAYLOAD: DialecticPlanJobPayload = {
+	projectId: 'project-xyz',
+	sessionId: 'session-abc',
+	stageSlug: 'parenthesis',
+	iterationNumber: 1,
+	model_id: 'model-parent',
+	walletId: 'wallet-default',
+	user_jwt: 'user-jwt-123',
+};
+
+if(!isJson(MOCK_PAYLOAD)) {
+	throw new Error('Mock payload is not a valid JSON');
+}
+
 const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
 	id: 'parent-job-123',
 	session_id: 'session-abc',
 	user_id: 'user-def',
 	stage_slug: 'parenthesis',
 	iteration_number: 1,
-	payload: {
-		job_type: 'PLAN',
-		projectId: 'project-xyz',
-		sessionId: 'session-abc',
-		stageSlug: 'parenthesis',
-		iterationNumber: 1,
-		model_id: 'model-parent',
-		walletId: 'wallet-default',
-		user_jwt: 'user-jwt-123',
-	},
+	payload: MOCK_PAYLOAD,
 	attempt_count: 0,
 	completed_at: null,
 	created_at: new Date().toISOString(),
@@ -139,7 +145,7 @@ Deno.test('planPerModel should create a single job with correct properties', () 
 		MOCK_SOURCE_DOCS,
 		MOCK_PARENT_JOB,
 		MOCK_RECIPE_STEP,
-		'user-jwt-123'
+		MOCK_PARENT_JOB.payload.user_jwt
 	);
 
 	assertEquals(childPayloads.length, 1, 'Should create exactly one child job');
@@ -147,8 +153,7 @@ Deno.test('planPerModel should create a single job with correct properties', () 
 	const jobPayload = childPayloads[0];
 	assertExists(jobPayload);
 
-	assertEquals(jobPayload.job_type, 'execute');
-	if (jobPayload.job_type === 'execute') {
+	if (isDialecticExecuteJobPayload(jobPayload)) {
 		assertEquals(jobPayload.prompt_template_id, MOCK_RECIPE_STEP.prompt_template_id);
 		assert(!('prompt_template_name' in jobPayload), 'The deprecated prompt_template_name property should not be present');
 		assertEquals(jobPayload.output_type, MOCK_RECIPE_STEP.output_type);
@@ -166,7 +171,7 @@ Deno.test('planPerModel should create a single job with correct properties', () 
 Deno.test('planPerModel should throw an error if sourceDocs are empty', () => {
 	assertThrows(
 		() => {
-			planPerModel([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
+			planPerModel([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'Invalid inputs for planPerModel: At least one source document is required.'
@@ -183,7 +188,7 @@ Deno.test('planPerModel should throw an error if parent job has no model_id', ()
 				MOCK_SOURCE_DOCS,
 				parentJobWithoutModel,
 				MOCK_RECIPE_STEP,
-				'user-jwt-123'
+				MOCK_PARENT_JOB.payload.user_jwt
 			);
 		},
 		TypeError,
@@ -210,7 +215,7 @@ Deno.test(
 			sourceDocsMissingAnchorId,
 			MOCK_PARENT_JOB,
 			MOCK_RECIPE_STEP,
-			'user-jwt-123'
+			MOCK_PARENT_JOB.payload.user_jwt
 		);
 
 		assertEquals(childPayloads.length, 1);
@@ -228,12 +233,12 @@ Deno.test('planPerModel includes planner_metadata with recipe_step_id in child p
 		id: 'recipe-step-model-789',
 	};
 
-	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, mockRecipeStepWithId, 'user-jwt-123');
+	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, mockRecipeStepWithId, MOCK_PARENT_JOB.payload.user_jwt);
 
 	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
 	const job = childJobs[0];
 	assertExists(job, 'Child job should exist');
-	if (job.job_type === 'execute') {
+	if (isDialecticExecuteJobPayload(job)) {
 		assertExists(job.planner_metadata, 'Child job should include planner_metadata');
 		assertEquals(
 			job.planner_metadata?.recipe_step_id,
@@ -260,7 +265,7 @@ Deno.test('planPerModel inherits all fields from parent job payload including mo
 		writable: true,
 	});
 
-	const childJobs = planPerModel(MOCK_SOURCE_DOCS, parentWithAllFields, MOCK_RECIPE_STEP, 'ignored-param-jwt');
+	const childJobs = planPerModel(MOCK_SOURCE_DOCS, parentWithAllFields, MOCK_RECIPE_STEP, MOCK_PARENT_JOB.payload.user_jwt);
 
 	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
 	const job = childJobs[0];
@@ -295,12 +300,12 @@ Deno.test('planPerModel sets document_key in payload when recipeStep.outputs_req
 		},
 	};
 
-	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithDocumentKey, 'user-jwt-123');
+	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithDocumentKey, MOCK_PARENT_JOB.payload.user_jwt);
 	
 	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
 	const job = childJobs[0];
 	assertExists(job, 'Child job should exist');
-	if (job.job_type === 'execute') {
+	if (isDialecticExecuteJobPayload(job)) {
 		assertEquals(
 			job.document_key,
 			'synthesis',
@@ -326,7 +331,7 @@ Deno.test('planPerModel throws error when outputs_required.documents array is em
 
 	await assertRejects(
 		async () => {
-			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithEmptyDocuments, 'user-jwt-123');
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithEmptyDocuments, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'planPerModel requires recipeStep.outputs_required.documents to have at least one entry for EXECUTE jobs',
@@ -353,7 +358,7 @@ Deno.test('planPerModel throws error when outputs_required.documents[0] is missi
 
 	await assertRejects(
 		async () => {
-			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithoutDocumentKey, 'user-jwt-123');
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithoutDocumentKey, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'planPerModel requires recipeStep.outputs_required.documents[0].document_key but it is missing',
@@ -381,7 +386,7 @@ Deno.test('planPerModel throws error when outputs_required.documents[0].document
 
 	await assertRejects(
 		async () => {
-			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithNullDocumentKey, 'user-jwt-123');
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithNullDocumentKey, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'planPerModel requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string',
@@ -409,7 +414,7 @@ Deno.test('planPerModel throws error when outputs_required.documents[0].document
 
 	await assertRejects(
 		async () => {
-			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithEmptyDocumentKey, 'user-jwt-123');
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithEmptyDocumentKey, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'planPerModel requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string',
@@ -437,7 +442,7 @@ Deno.test('planPerModel throws error when outputs_required is missing documents 
 
 	await assertRejects(
 		async () => {
-			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithoutDocumentsProperty, 'user-jwt-123');
+			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithoutDocumentsProperty, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
 		'planPerModel requires recipeStep.outputs_required.documents for EXECUTE jobs, but documents is missing',
@@ -468,7 +473,7 @@ Deno.test('planPerModel includes context_for_documents in payload for PLAN jobs 
 		template_id: 'template-id-123',
 	};
 
-	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStep, 'user-jwt-123');
+	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStep, MOCK_PARENT_JOB.payload.user_jwt);
 	
 	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
 	const job = childJobs[0];
@@ -584,12 +589,16 @@ Deno.test('planPerModel successfully creates payload for EXECUTE job with valid 
 		},
 	};
 
-	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, 'user-jwt-123');
+	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, MOCK_PARENT_JOB.payload.user_jwt);
 	
 	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
 	const job = childJobs[0];
 	assertExists(job, 'Child job should exist');
-	assertEquals(job.job_type, 'execute', 'Job type should be execute');
+	if (isDialecticExecuteJobPayload(job)) {
+		assertEquals(executeRecipeStep.job_type, 'EXECUTE', 'Job type should be execute');
+	} else {
+		throw new Error('Expected EXECUTE job');
+	}
 });
 
 Deno.test('planPerModel throws error for EXECUTE job when files_to_generate is missing', async () => {
@@ -689,7 +698,7 @@ Deno.test('planPerModel sets document_relationships.source_group to anchor docum
 	const jobPayload = childPayloads[0];
 	assertExists(jobPayload, 'Child job payload should exist');
 
-	if (jobPayload.job_type === 'execute') {
+	if (isDialecticExecuteJobPayload(jobPayload)) {
 		const executePayload: DialecticExecuteJobPayload = jobPayload;
 		assertExists(executePayload.document_relationships, 'document_relationships should exist');
 		
@@ -715,18 +724,16 @@ Deno.test('extractSourceDocumentIdentifier can extract identifier from job paylo
 		MOCK_SOURCE_DOCS,
 		MOCK_PARENT_JOB,
 		MOCK_RECIPE_STEP,
-		'user-jwt-123'
+		MOCK_PARENT_JOB.payload.user_jwt
 	);
 
 	assertEquals(childPayloads.length, 1, 'Should create exactly one child job');
 	const jobPayload = childPayloads[0];
 	assertExists(jobPayload, 'Child job payload should exist');
 
-	if (jobPayload.job_type === 'execute') {
-		const executePayload: DialecticExecuteJobPayload = jobPayload;
-		
+	if (isDialecticExecuteJobPayload(jobPayload)) {
 		// Extract identifier using extractSourceDocumentIdentifier
-		const extractedIdentifier = extractSourceDocumentIdentifier(executePayload);
+		const extractedIdentifier = extractSourceDocumentIdentifier(jobPayload);
 		
 		// Assert it returns the source_group value (anchor document's ID)
 		assertEquals(

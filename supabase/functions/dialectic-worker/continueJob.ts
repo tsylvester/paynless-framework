@@ -115,7 +115,6 @@ export async function continueJob(
   }
 
   // Ensure required structural fields exist and are correct
-  basePayload.job_type = 'execute';
   basePayload.target_contribution_id = savedContribution.id;
   basePayload.continuation_count = newContinuationCount;
   basePayload.output_type = job.payload.output_type;

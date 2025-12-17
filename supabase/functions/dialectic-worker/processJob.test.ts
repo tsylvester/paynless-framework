@@ -61,7 +61,6 @@ Deno.test('processJob - dispatches by job.job_type: PLAN routes to processComple
 
     // Payload intentionally shaped like EXECUTE while row says PLAN to prove payload is ignored
     const executeShapedPayload: DialecticJobPayload = {
-        job_type: 'EXECUTE',
         sessionId: 'session-id-plan-dispatch',
         projectId: 'project-id-plan-dispatch',
         stageSlug: 'thesis',
@@ -120,7 +119,6 @@ Deno.test('processJob - dispatches by job.job_type: EXECUTE routes to processSim
 
     // Payload intentionally shaped like PLAN while row says EXECUTE to prove payload is ignored
     const planShapedPayload: DialecticPlanJobPayload = {
-        job_type: 'PLAN',
         sessionId: 'session-id-exec-dispatch',
         projectId: 'project-id-exec-dispatch',
         stageSlug: 'antithesis',
@@ -183,7 +181,6 @@ Deno.test('processJob - ignores processing_strategy; PLAN always routes to proce
     const { processors, spies } = createMockJobProcessors();
 
     const planPayload: DialecticPlanJobPayload = {
-        job_type: 'PLAN',
         sessionId: 'session-id-ignore-strategy',
         projectId: 'project-id-ignore-strategy',
         stageSlug: 'thesis',
@@ -248,7 +245,6 @@ Deno.test('processJob - PLAN passes job unchanged and propagates args', async ()
     const { processors, spies } = createMockJobProcessors();
 
     const planPayload: DialecticPlanJobPayload = {
-        job_type: 'PLAN',
         sessionId: 'session-id-propagation-plan',
         projectId: 'project-id-propagation-plan',
         stageSlug: 'thesis',
@@ -312,7 +308,6 @@ Deno.test('processJob - EXECUTE passes job unchanged and propagates args', async
 
     // PLAN-shaped payload even though row is EXECUTE, to prove payload is ignored
     const planShaped: DialecticPlanJobPayload = {
-        job_type: 'PLAN',
         sessionId: 'session-id-propagation-exec',
         projectId: 'project-id-propagation-exec',
         stageSlug: 'antithesis',
@@ -375,7 +370,6 @@ Deno.test('processJob - PLAN does not query dialectic_stages in router', async (
     const { processors, spies } = createMockJobProcessors();
 
     const payload: DialecticPlanJobPayload = {
-        job_type: 'PLAN',
         sessionId: 'session-id-no-stage-plan',
         projectId: 'project-id-no-stage-plan',
         stageSlug: 'thesis',
@@ -434,7 +428,6 @@ Deno.test('processJob - EXECUTE does not query dialectic_stages in router', asyn
     const { processors, spies } = createMockJobProcessors();
 
     const payload: DialecticPlanJobPayload = {
-        job_type: 'PLAN',
         sessionId: 'session-id-no-stage-exec',
         projectId: 'project-id-no-stage-exec',
         stageSlug: 'antithesis',
@@ -493,7 +486,6 @@ Deno.test('processJob - null job_type should throw and not dispatch', async () =
     const { processors, spies } = createMockJobProcessors();
 
     const payload: DialecticJobPayload = {
-        job_type: 'PLAN',
         sessionId: 'session-id-null-type',
         projectId: 'project-id-null-type',
         stageSlug: 'thesis',
@@ -555,7 +547,6 @@ Deno.test('processJob - bubbles errors from downstream processor', async () => {
 
     // Force EXECUTE path
     const payload: DialecticPlanJobPayload = {
-        job_type: 'PLAN',
         sessionId: 'session-id-bubble',
         projectId: 'project-id-bubble',
         stageSlug: 'thesis',
@@ -624,7 +615,6 @@ Deno.test('processJob - dispatches by job.job_type: RENDER routes to processRend
 
     // Payload intentionally shaped like PLAN to prove payload is ignored
     const planShapedPayload: DialecticPlanJobPayload = {
-        job_type: 'PLAN',
         sessionId: 'session-id-render-dispatch',
         projectId: 'project-id-render-dispatch',
         stageSlug: 'synthesis',
@@ -684,7 +674,6 @@ Deno.test('processJob - RENDER passes job unchanged and propagates args', async 
     const { processors, spies } = createMockJobProcessors();
 
     const planShapedPayload: DialecticPlanJobPayload = {
-        job_type: 'PLAN',
         sessionId: 'session-id-render-propagation',
         projectId: 'project-id-render-propagation',
         stageSlug: 'parenthesis',
@@ -748,7 +737,6 @@ Deno.test('processJob - RENDER does not query dialectic_stages in router', async
     const { processors, spies } = createMockJobProcessors();
 
     const planShapedPayload: DialecticPlanJobPayload = {
-        job_type: 'PLAN',
         sessionId: 'session-id-no-stage-render',
         projectId: 'project-id-no-stage-render',
         stageSlug: 'paralysis',

@@ -142,7 +142,6 @@ describe('processComplexJob', () => {
         mockProcessorSpies = spies;
 
         const mockPayload: DialecticPlanJobPayload = {
-            job_type: 'PLAN',
             sessionId: 'session-id-complex',
             projectId: 'project-id-complex',
             stageSlug: 'antithesis',

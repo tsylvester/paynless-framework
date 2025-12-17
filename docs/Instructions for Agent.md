@@ -197,3 +197,70 @@
 * Do not ignore these instructions then, after repeated corrections, obey them, and say "I should have followed the instructions the first time". Instead, follow the instructions the first time, and every time. Do not antagonize the user. Do not waste time, tokens, and effort. Obey these instructions exactly, the first time, and every time. 
 * If you fail to obey these instructions exactly and completely, you will get stuck in a cycle of having to redo the work over and over and over and over until you exactly obey these instructions. Avoid that cycle by following these instructions exactly and completely the first time, and every time. 
 * Do not be lazy, do not be hasty, do not rush, do not be expedient: Take the time to do the work correctly and completely the first time. Be thorough, correct, and professional. Laziness, hastiness, rushing, and expediency are wasteful, frustrating, and violate your Instructions for Agent block and System Instructions. 
+
+## Checklist-Specific Editing Rules
+
+*   THE AGENT NEVER TOUCHES THE CHECKLIST UNLESS THEY ARE EXPLICITLY INSTRUCTED TO! 
+*   When editing checklists, each numbered step (1, 2, 3, etc.) represents editing ONE FILE with a complete TDD cycle.
+*   Sub-steps within each numbered step use legal-style numbering (1.a, 1.b, 1.a.i, 1.a.ii, etc.) for the complete TDD cycle for that file.
+*   All changes to a single file are described and performed within that file's numbered step.
+*   Types files (interfaces, enums) are exempt from RED/GREEN testing requirements.
+*   Each file edit includes: RED test → implementation → GREEN test → optional refactor.
+*   Steps are ordered by dependency (lowest dependencies first).
+*   Preserve all existing detail and work while adding new requirements.
+*   Use proper legal-style nesting for sub-steps within each file edit.
+*   NEVER create multiple top-level steps for the same file edit operation.
+*   Adding console logs is not required to be detailed in checklist work. 
+
+## Example Checklist
+
+*   `[ ]`   1. **Title** Objective
+    *   `[ ]`   1.a. [DEPS] A list explaining dependencies of the function, its signature, and its return shape
+        *   `[ ]` 1.a.i. eg. `function(something)` in `file.ts` provides this or that
+    *   `[ ]`   1.b. [TYPES] A list strictly typing all the objects used in the function
+    *   `[ ]`   1.c. [TEST-UNIT] A list explaining the test cases
+        *   `[ ]` 1.c.i. Assert `function(something)` in `file.ts` acts a certain way 
+    *   `[ ]`   1.d. [{$WORK_AREA}] A list explaining the implementation requirements
+        *   `[ ]` 1.d.i. Implement `function(something)` in `file.ts` acts a certain way 
+    *   `[ ]`   1.e. [TEST-UNIT] Rerun and expand test proving the function
+        *   `[ ]` 1.e.i. Implement `function(something)` in `file.ts` acts a certain way 
+    *   `[ ]`   1.f. [TEST-INT] If there is a chain of functions that work together, prove it
+        *   `[ ]` 1.f.i. For every cross-function interaction, assert `thisFunction(something)` in `this_file.ts` acts a certain way towards `thatFunction(other)` in `that_file.ts`
+    *   `[ ]`   1.g. [CRITERIA] A list explaining the acceptence criteria to consider the work complete and correct. 
+    *   `[ ]`   1.h. [COMMIT] A commit that explains the function and its proofs
+
+*   `[ ]`   2. **Title** Objective
+    *   `[ ]`   2.a. [DEPS] Low level providers are always build before high level consumers (DI/DIP)
+    *   `[ ]`   2.b. [TYPES] DI/DIP and strict typing ensures unit tests can always run 
+    *   `[ ]`   2.c. [TEST-UNIT] All functions matching defined external objects and acting as asserted helps ensure integration tests pass
+
+## Legend - You must use this EXACT format. Do not modify it, adapt it, or "improve" it. The bullets, square braces, ticks, nesting, and numbering are ABSOLUTELY MANDATORY and UNALTERABLE. 
+
+*   `[ ]` 1. Unstarted work step. Each work step will be uniquely named for easy reference. We begin with 1.
+    *   `[ ]` 1.a. Work steps will be nested as shown. Substeps use characters, as is typical with legal documents.
+        *   `[ ]` 1. a. i. Nesting can be as deep as logically required, using roman numerals, according to standard legal document numbering processes.
+*   `[✅]` Represents a completed step or nested set.
+*   `[🚧]` Represents an incomplete or partially completed step or nested set.
+*   `[⏸️]` Represents a paused step where a discovery has been made that requires backtracking or further clarification.
+*   `[❓]` Represents an uncertainty that must be resolved before continuing.
+*   `[🚫]` Represents a blocked, halted, or stopped step or has an unresolved problem or prior dependency to resolve before continuing.
+
+## Component Types and Labels
+
+*   `[DB]` Database Schema Change (Migration)
+*   `[RLS]` Row-Level Security Policy
+*   `[BE]` Backend Logic (Edge Function / RLS / Helpers / Seed Data)
+*   `[API]` API Client Library (`@paynless/api` - includes interface definition in `interface.ts`, implementation in `adapter.ts`, and mocks in `mocks.ts`)
+*   `[STORE]` State Management (`@paynless/store` - includes interface definition, actions, reducers/slices, selectors, and mocks)
+*   `[UI]` Frontend Component (e.g., in `apps/web`, following component structure rules)
+*   `[CLI]` Command Line Interface component/feature
+*   `[IDE]` IDE Plugin component/feature
+*   `[TEST-UNIT]` Unit Test Implementation/Update
+*   `[TEST-INT]` Integration Test Implementation/Update (API-Backend, Store-Component, RLS)
+*   `[TEST-E2E]` End-to-End Test Implementation/Update
+*   `[DOCS]` Documentation Update (READMEs, API docs, user guides)
+*   `[REFACTOR]` Code Refactoring Step
+*   `[PROMPT]` System Prompt Engineering/Management
+*   `[CONFIG]` Configuration changes (e.g., environment variables, service configurations)
+*   `[COMMIT]` Checkpoint for Git Commit (aligns with "feat:", "test:", "fix:", "docs:", "refactor:" conventions)
+*   `[DEPLOY]` Checkpoint for Deployment consideration after a major phase or feature set is complete and tested.

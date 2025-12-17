@@ -209,6 +209,7 @@ export type ResourceFileTypes =
   | FileType.ProjectSettingsFile
   | FileType.GeneralResource
   | FileType.SeedPrompt
+  | FileType.RagContextSummary
   | FileType.ProjectExportZip
   | FileType.PlannerPrompt
   | FileType.TurnPrompt
