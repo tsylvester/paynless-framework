@@ -1217,12 +1217,8 @@ export async function executeModelCallAndSave(
     // For document file types, document_key is guaranteed to be present after validation
     // Store it with type narrowing for use in pathContext
     let validatedDocumentKey: string | undefined = undefined;
-    if (isDocumentKey(fileType)) {
-        // After validation block, document_key is guaranteed to be present and non-empty
-        if (!job.payload.document_key || typeof job.payload.document_key !== 'string' || job.payload.document_key.trim() === '') {
-            throw new Error('document_key is required for document file type but validation failed');
-        }
-        validatedDocumentKey = job.payload.document_key;
+    if (isDocumentKey(job.payload.output_type)) {
+        validatedDocumentKey = job.payload.output_type;
     }
 
     // For document outputs, use FileType.ModelContributionRawJson to save to raw_responses/ folder

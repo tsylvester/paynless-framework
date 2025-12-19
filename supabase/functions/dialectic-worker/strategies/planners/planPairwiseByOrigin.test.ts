@@ -202,6 +202,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
 		iterationNumber: 1,
 		model_id: 'model-ghi',
 		walletId: 'wallet-default',
+		target_contribution_id: 'test-target-id',
 		user_jwt: 'user-jwt-123',
 	},
 	attempt_count: 0,
@@ -312,6 +313,7 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 		thesis: 'thesis-1',
 		antithesis: 'antithesis-1a',
 		source_group: 'thesis-1',
+		synthesis: 'thesis-1',
 	});
 
 	// Check canonical params
@@ -431,6 +433,18 @@ Deno.test('planPairwiseByOrigin constructs child payloads with dynamic stage con
 		if (isDialecticExecuteJobPayload(child)) {
 			assertEquals(child.sourceContributionId, child.inputs?.antithesis_id);
 			assertEquals(child.document_key, FileType.PairwiseSynthesisChunk, 'document_key should be set from outputs_required.documents[0].document_key');
+            
+            // Step 41.b: Assert stageSlug key exists in document_relationships
+            assertExists(
+                child.document_relationships?.[expectedStage],
+                `document_relationships should contain dynamic stage key '${expectedStage}'`
+            );
+            // The value should match the source_group (which is the anchorDoc.id)
+            assertEquals(
+                child.document_relationships?.[expectedStage],
+                child.document_relationships?.source_group,
+                `Value for key '${expectedStage}' must match source_group`
+            );
 		} else {
 			throw new Error('Expected EXECUTE job');
 		}
@@ -830,7 +844,19 @@ Deno.test('planPairwiseByOrigin includes context_for_documents in payload for PL
 		},
 	};
 
-	const childJobs = planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, planRecipeStep, 'user-jwt-123');
+	const validParentJob = {
+		...MOCK_PARENT_JOB,
+		payload: Object.assign({}, MOCK_PARENT_JOB.payload, {
+			target_contribution_id: 'test-target-id',
+			model_slug: 'test-model-slug',
+			continueUntilComplete: false,
+			maxRetries: 3,
+			continuation_count: 0,
+			is_test_job: false,
+		}),
+	};
+
+	const childJobs = planPairwiseByOrigin(MOCK_SOURCE_DOCS, validParentJob, planRecipeStep, 'user-jwt-123');
 	
 	assertEquals(childJobs.length, 3, 'Should create 3 child jobs for the 3 pairs');
 	const jobCandidate = childJobs[0];

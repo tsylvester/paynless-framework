@@ -36,8 +36,7 @@ export async function listStageDocuments(
     .eq('session_id', sessionId)
     .eq('payload->>stageSlug', stageSlug)
     .eq('payload->>iterationNumber', String(iterationNumber))
-    .eq('user_id', userId)
-    .eq('project_id', projectId);
+    .eq('user_id', userId);
 
   if (jobsError) {
     return {

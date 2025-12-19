@@ -353,7 +353,6 @@ describe("Planner Output Type Integration Tests", () => {
       modelNameDisplay: model.api_identifier,
       stageSlug: stageSlug,
       iterationNumber: 1,
-      rawJsonResponseContent: { content: content },
       contributionType: contributionType,
       editVersion: 1,
       isLatestEdit: true,
@@ -413,7 +412,6 @@ describe("Planner Output Type Integration Tests", () => {
   ): DialecticJobRow & { payload: DialecticPlanJobPayload } {
     const jobId: string = crypto.randomUUID();
     const payload: DialecticPlanJobPayload = {
-      job_type: "PLAN",
       projectId: testProject.id,
       sessionId: testSession.id,
       stageSlug: stageSlug,
@@ -1327,7 +1325,6 @@ This is a test template for product requirements document generation.`;
 
       // 6. Create EXECUTE job payload with document_key matching files_to_generate[].from_document_key
       const executePayload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         projectId: testProject.id,
         sessionId: testSession.id,
         stageSlug: "synthesis",
@@ -1794,7 +1791,6 @@ This is a test template for product requirements document generation.`;
 
       // Create EXECUTE job payload
       const executePayload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         projectId: testProject.id,
         sessionId: testSession.id,
         stageSlug: "synthesis",
@@ -2179,7 +2175,6 @@ This is a test template for product requirements document generation.`;
 
       // Create EXECUTE job
       const executePayload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         projectId: testProject.id,
         sessionId: testSession.id,
         stageSlug: "synthesis",

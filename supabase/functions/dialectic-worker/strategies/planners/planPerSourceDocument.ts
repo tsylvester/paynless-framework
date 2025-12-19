@@ -282,7 +282,7 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 				prompt_template_id: recipeStep.prompt_template_id,
 				output_type: recipeStep.output_type,
 				canonicalPathParams, // Use the new contract
-				document_relationships: { source_group: doc.id },
+				document_relationships: { source_group: doc.id, [stageSlug]: doc.id },
 				inputs,
 				planner_metadata: { recipe_step_id: recipeStep.id },
 				document_key: documentKey,

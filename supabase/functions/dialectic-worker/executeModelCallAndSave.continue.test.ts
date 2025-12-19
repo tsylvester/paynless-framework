@@ -427,7 +427,6 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
         model_id: 'model-def',
         walletId: 'wallet-ghi',
         user_jwt: 'jwt.token.here',
-        job_type: 'execute',
         prompt_template_id: 'test-prompt',
         output_type: FileType.HeaderContext,
         inputs: {},

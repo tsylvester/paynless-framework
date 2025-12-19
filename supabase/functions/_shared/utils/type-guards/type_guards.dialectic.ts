@@ -115,7 +115,8 @@ export function isHeaderContextArtifact(value: unknown): value is HeaderContextA
 
     return (
         'type' in value && value.type === 'header_context' &&
-        'document_key' in value && value.document_key === 'header_context' &&
+        'document_key' in value && 
+        (value.document_key === 'header_context' || value.document_key === 'header_context_pairwise' || value.document_key === 'synthesis_header_context') &&
         'artifact_class' in value && value.artifact_class === 'header_context' &&
         'file_type' in value && value.file_type === 'json'
     );

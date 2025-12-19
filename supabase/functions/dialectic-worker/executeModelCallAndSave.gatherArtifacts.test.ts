@@ -58,7 +58,6 @@ function createMockJob(payload: DialecticExecuteJobPayload, overrides: Partial<D
 }
 
 const testPayload: DialecticExecuteJobPayload = {
-    job_type: 'execute',
     prompt_template_id: 'test-prompt',
     inputs: {},
     output_type: FileType.business_case,

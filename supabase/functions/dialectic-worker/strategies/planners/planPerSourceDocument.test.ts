@@ -19,7 +19,7 @@ import { planPerSourceDocument } from './planPerSourceDocument.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
 import { ContributionType } from '../../../dialectic-service/dialectic.interface.ts';
 import { isJson } from '../../../_shared/utils/type-guards/type_guards.common.ts';
-import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
+import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload, isContributionType } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
 	{
@@ -189,7 +189,7 @@ Deno.test('planPerSourceDocument should create one child job for each source doc
 		'The deprecated prompt_template_name property should not be present'
 	);
 	assertEquals(job1Payload.output_type, FileType.business_case_critique);
-	assertEquals(job1Payload.document_relationships, { source_group: 'doc-1' });
+	assertEquals(job1Payload.document_relationships, { source_group: 'doc-1', antithesis: 'doc-1' });
 
 	assertExists(job1Payload.canonicalPathParams);
 	assertEquals(job1Payload.canonicalPathParams.sourceAnchorType, 'thesis');
@@ -319,6 +319,7 @@ Deno.test('should correctly plan jobs for antithesis stage', () => {
 	assertEquals(job1Payload.output_type, FileType.business_case_critique);
 	assertEquals(job1Payload.document_relationships, {
 		source_group: 'thesis-doc-1',
+		antithesis: 'thesis-doc-1',
 	});
 	assertExists(job1Payload.canonicalPathParams);
 	assertEquals(job1Payload.canonicalPathParams.sourceAnchorType, 'thesis');
@@ -334,6 +335,7 @@ Deno.test('should correctly plan jobs for antithesis stage', () => {
 	assertEquals(job2Payload.output_type, FileType.business_case_critique);
 	assertEquals(job2Payload.document_relationships, {
 		source_group: 'thesis-doc-2',
+		antithesis: 'thesis-doc-2',
 	});
 	assertExists(job2Payload.canonicalPathParams);
 	assertEquals(job2Payload.canonicalPathParams.sourceAnchorType, 'thesis');
@@ -995,6 +997,61 @@ Deno.test('planPerSourceDocument omits target_contribution_id from child payload
 				throw new Error('target_contribution_id must be a non-empty string if present');
 			}
 		}
+	}
+});
+
+Deno.test('planPerSourceDocument includes stageSlug in document_relationships map to support RENDER job validation', () => {
+	const parentJob = MOCK_PARENT_JOB;
+	const recipeStep = MOCK_RECIPE_STEP;
+	const sourceDocs = MOCK_SOURCE_DOCS;
+	const expectedStageSlug = parentJob.payload.stageSlug;
+
+	if (!expectedStageSlug || !isContributionType(expectedStageSlug)) {
+		throw new Error('Test setup error: MOCK_PARENT_JOB must have a valid ContributionType stageSlug in its payload');
+	}
+
+	// This planner creates one job per source document
+	const childPayloads = planPerSourceDocument(
+		sourceDocs,
+		parentJob,
+		recipeStep,
+		parentJob.payload.user_jwt,
+	);
+
+	assertEquals(childPayloads.length, sourceDocs.length);
+
+	for (let i = 0; i < childPayloads.length; i++) {
+		const payload = childPayloads[i];
+		const sourceDoc = sourceDocs[i];
+
+		if (!isDialecticExecuteJobPayload(payload)) {
+			throw new Error('Expected EXECUTE job payload');
+		}
+
+		assertExists(
+			payload.document_relationships,
+			`document_relationships should exist for doc ${sourceDoc.id}`,
+		);
+
+		// Assert that the stageSlug from the parent job is used as a key
+		assert(
+			Object.prototype.hasOwnProperty.call(payload.document_relationships, expectedStageSlug),
+			`document_relationships should contain the stageSlug key '${expectedStageSlug}' for doc ${sourceDoc.id}`,
+		);
+
+		// Assert that the value of the stageSlug key is the source document's ID
+		assertEquals(
+			(payload.document_relationships)[expectedStageSlug],
+			sourceDoc.id,
+			`The value for the stageSlug key '${expectedStageSlug}' should be the source document id '${sourceDoc.id}'`,
+		);
+
+		// Also assert the original source_group relationship is maintained
+		assertEquals(
+			payload.document_relationships.source_group,
+			sourceDoc.id,
+			`The source_group relationship should be maintained for doc ${sourceDoc.id}`,
+		);
 	}
 });
  

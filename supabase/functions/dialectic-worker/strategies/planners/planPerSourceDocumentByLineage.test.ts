@@ -1564,3 +1564,60 @@ Deno.test('planPerSourceDocumentByLineage throws error for EXECUTE job when file
         'Should throw error when files_to_generate entry is missing template_filename',
     );
 });
+
+Deno.test('planPerSourceDocumentByLineage includes stageSlug in document_relationships map to support RENDER job validation', () => {
+	const sourceDocs = [getMockSourceDoc('model-a-id', 'doc-a-id', 'group-a')];
+	const mockParentJob = getMockParentJob();
+	const parentPayload = mockParentJob.payload;
+	if (!parentPayload) {
+		throw new Error('Test setup error: MOCK_PARENT_JOB.payload cannot be null');
+	}
+
+	const parentJobWithStageSlug: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		...mockParentJob,
+		payload: {
+			projectId: parentPayload.projectId,
+			sessionId: parentPayload.sessionId,
+			stageSlug: 'thesis', // This is the override for the test
+			iterationNumber: parentPayload.iterationNumber,
+			model_id: parentPayload.model_id,
+			walletId: parentPayload.walletId,
+			user_jwt: parentPayload.user_jwt,
+		},
+	};
+
+	const recipeStepThatOutputsRenderedDoc: DialecticStageRecipeStep = {
+		...getMockRecipeStep(),
+		outputs_required: {
+			...getMockRecipeStep().outputs_required,
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.business_case,
+				template_filename: 'business_case.md',
+			}],
+		},
+	};
+
+	const childPayloads = planPerSourceDocumentByLineage(
+		sourceDocs,
+		parentJobWithStageSlug,
+		recipeStepThatOutputsRenderedDoc,
+		'user-jwt-123'
+	);
+
+	assertEquals(childPayloads.length, 1);
+	const payload = childPayloads[0];
+
+	if (isDialecticExecuteJobPayload(payload)) {
+		assertExists(payload.document_relationships);
+		assert(
+			'thesis' in payload.document_relationships,
+			"document_relationships should contain a key matching the stageSlug ('thesis')"
+		);
+		assertEquals(typeof payload.document_relationships['thesis'], 'string');
+		assertEquals(payload.document_relationships['thesis'], 'group-a');
+	} else {
+		throw new Error('Expected EXECUTE job payload');
+	}
+});

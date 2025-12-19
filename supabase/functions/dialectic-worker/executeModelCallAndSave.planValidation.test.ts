@@ -93,7 +93,6 @@ function createMockHeaderContextResponse(headerContext: HeaderContext): UnifiedA
 // with context_for_documents (not files_to_generate) when processing such EXECUTE jobs.
 function createMockHeaderContextJobPayload(overrides: Partial<DialecticExecuteJobPayload> = {}): DialecticExecuteJobPayload {
     return {
-        job_type: 'execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.HeaderContext,

@@ -293,6 +293,7 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 				}
 				// Ensure source_group is correctly populated
 				document_relationships.source_group = anchorDoc.id;
+				document_relationships[stageSlug] = anchorDoc.id;
 
 				const newPayload: DialecticExecuteJobPayload = {
 					// Inherit ALL fields from parent payload first (defensive programming)

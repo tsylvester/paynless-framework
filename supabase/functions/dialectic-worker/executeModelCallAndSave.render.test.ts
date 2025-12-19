@@ -17,7 +17,8 @@ import {
 import { 
     FileType, 
     DocumentRelationships, 
-    DialecticStageSlug 
+    DialecticStageSlug,
+    ModelContributionFileTypes
 } from '../_shared/types/file_manager.types.ts';
 import { isRecord, isFileType } from '../_shared/utils/type_guards.ts';
 
@@ -2458,5 +2459,111 @@ Deno.test('throws error when document_relationships is null after persistence', 
 
     clearAllStubs?.();
 });
+
+Deno.test('validatedDocumentKey is undefined for document outputs, preventing RENDER job creation', async () => {
+    // Arrange: 37.c.i, 37.c.ii - EXECUTE job for a markdown document ('business_case') with a STRING literal output_type
+    const mockStage: Tables<'dialectic_stages'> = {
+        id: 'stage-1',
+        slug: DialecticStageSlug.Thesis,
+        display_name: 'Test Stage',
+        description: null,
+        default_system_prompt_id: null,
+        recipe_template_id: 'template-1',
+        active_recipe_instance_id: 'instance-1',
+        expected_output_template_ids: [],
+        created_at: new Date().toISOString(),
+    };
+
+    const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
+        id: 'instance-1',
+        stage_id: 'stage-1',
+        template_id: 'template-1',
+        is_cloned: false,
+        cloned_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    const mockStep: Tables<'dialectic_recipe_template_steps'> = {
+        id: 'step-1',
+        template_id: 'template-1',
+        step_number: 1,
+        step_key: 'execute_business_case',
+        step_slug: 'execute-business-case',
+        step_name: 'Execute Business Case',
+        step_description: null,
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        prompt_template_id: null,
+        output_type: 'business_case',
+        granularity_strategy: 'per_source_document',
+        inputs_required: [],
+        inputs_relevance: [],
+        outputs_required: {
+            documents: [
+                {
+                    document_key: 'business_case',
+                    file_type: 'markdown',
+                },
+            ],
+        },
+        parallel_group: null,
+        branch_key: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+        'dialectic_stages': { select: { data: [mockStage], error: null } },
+        'dialectic_stage_recipe_instances': { select: { data: [mockInstance], error: null } },
+        'dialectic_recipe_template_steps': { select: { data: [mockStep], error: null } },
+    });
+
+    const fileManager = new MockFileManagerService();
+    const savedContribution = { 
+        ...mockContribution, 
+        document_relationships: { [DialecticStageSlug.Thesis]: mockContribution.id } 
+    };
+    fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
+
+    const deps = getMockDeps();
+    deps.fileManager = fileManager;
+
+    stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
+        createMockUnifiedAIResponse({
+            content: '{"content": "AI response"}',
+            rawProviderResponse: { finish_reason: 'stop' },
+        })
+    ));
+
+    // CRITICAL: Replicate integration test failure by using a string literal for output_type
+    const businessCasePayload: DialecticExecuteJobPayload = {
+        ...testPayload,
+        output_type: 'business_case' as ModelContributionFileTypes,
+        document_key: 'business_case',
+        stageSlug: DialecticStageSlug.Thesis,
+    };
+
+    const job = createMockJob(businessCasePayload);
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+    // Act
+    await executeModelCallAndSave(params);
+
+    // Assert: 37.c.iv, 37.c.vi - A RENDER job must be created
+    const insertCalls = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertExists(insertCalls, 'Expected spy on dialectic_generation_jobs insert');
+
+    const renderInserts = insertCalls.callsArgs.filter((callArg) => {
+        const inserted = Array.isArray(callArg[0]) ? callArg[0][0] : callArg[0];
+        return isRecord(inserted) && inserted['job_type'] === 'RENDER';
+    });
+
+    assertEquals(renderInserts.length, 1, 'A RENDER job should have been enqueued because the output is a markdown document, but it was silently skipped due to the bug.');
+
+    clearAllStubs?.();
+});
+
 
 

@@ -40,7 +40,6 @@ Deno.test('executeModelCallAndSave - pathContext validation - 41.b.i: ALL requir
     deps.fileManager = fileManager;
 
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -123,7 +122,6 @@ Deno.test('executeModelCallAndSave - notification document_key - 41.b.ii: docume
     }));
 
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.feature_spec,
@@ -180,7 +178,6 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.a: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -234,7 +231,6 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.b: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -288,7 +284,6 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.c: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -344,7 +339,6 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.d: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -400,7 +394,6 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.e: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -454,7 +447,6 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.f: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -510,7 +502,6 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.g: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -568,7 +559,6 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.h: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -622,7 +612,6 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.i: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -685,7 +674,6 @@ Deno.test('executeModelCallAndSave - non-document file types - 41.b.iv: does NOT
     }));
 
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.HeaderContext, // non-document file type

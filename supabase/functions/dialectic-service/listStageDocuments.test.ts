@@ -122,7 +122,14 @@ Deno.test('listStageDocuments - Happy Path: returns normalized document descript
   assertEquals(jobsSpies.eq.calls[1].args, ['payload->>stageSlug', 'synthesis']);
   assertEquals(jobsSpies.eq.calls[2].args, ['payload->>iterationNumber', '1']);
   assertEquals(jobsSpies.eq.calls[3].args, ['user_id', USER_ID]);
-  assertEquals(jobsSpies.eq.calls[4].args, ['project_id', PROJECT_ID]);
+  // Assert exactly 4 eq calls (not 5) - the project_id filter should not exist
+  assertEquals(jobsSpies.eq.calls.length, 4);
+  // Assert none of the calls are for project_id
+  for (const call of jobsSpies.eq.calls) {
+    if (call.args[0] === 'project_id') {
+      throw new Error('Unexpected project_id filter found in query - this column does not exist in dialectic_generation_jobs table');
+    }
+  }
 
   // Assert that the resources query uses column-based filters instead of JSON path queries
   const resourcesSpies = mockSupabase.spies.getLatestQueryBuilderSpies(

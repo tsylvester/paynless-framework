@@ -264,6 +264,7 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
                 },
                 document_relationships: {
                     source_group: groupId,
+                    [stageSlug]: groupId,
                 },
                 planner_metadata: { recipe_step_id: recipeStep.id },
                 sourceContributionId: derivedSourceContributionId,

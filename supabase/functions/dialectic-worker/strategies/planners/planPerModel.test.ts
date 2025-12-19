@@ -18,7 +18,7 @@ import type {
 import { planPerModel } from './planPerModel.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
 import { extractSourceDocumentIdentifier } from '../../../_shared/utils/source_document_identifier.ts';
-import { isJson } from '../../../_shared/utils/type-guards/type_guards.common.ts';
+import { isJson, isRecord } from '../../../_shared/utils/type-guards/type_guards.common.ts';
 import { isDialecticExecuteJobPayload } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
@@ -743,5 +743,62 @@ Deno.test('extractSourceDocumentIdentifier can extract identifier from job paylo
 		);
 	} else {
 		throw new Error('Expected EXECUTE job');
+	}
+});
+
+Deno.test('planPerModel includes stageSlug in document_relationships map to support RENDER job validation', () => {
+
+	const parentPayload = MOCK_PARENT_JOB.payload;
+	if (!parentPayload) {
+		throw new Error('Test setup error: MOCK_PARENT_JOB.payload cannot be null');
+	}
+
+	const parentJobWithStageSlug: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		...MOCK_PARENT_JOB,
+		payload: {
+			projectId: parentPayload.projectId,
+			sessionId: parentPayload.sessionId,
+			stageSlug: 'thesis', // This is the override for the test
+			iterationNumber: parentPayload.iterationNumber,
+			model_id: parentPayload.model_id,
+			walletId: parentPayload.walletId,
+			user_jwt: parentPayload.user_jwt,
+			sourceContributionId: parentPayload.sourceContributionId,
+		},
+	};
+
+	const recipeStepThatOutputsRenderedDoc: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		outputs_required: {
+			...MOCK_RECIPE_STEP.outputs_required,
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.business_case,
+				template_filename: 'business_case.md',
+			}],
+		},
+	};
+
+	const childPayloads = planPerModel(
+		MOCK_SOURCE_DOCS,
+		parentJobWithStageSlug,
+		recipeStepThatOutputsRenderedDoc,
+		'user-jwt-123'
+	);
+
+	assertEquals(childPayloads.length, 1);
+	const payload = childPayloads[0];
+
+	if (isDialecticExecuteJobPayload(payload)) {
+		assertExists(payload.document_relationships);
+		assert(
+			'thesis' in payload.document_relationships,
+			"document_relationships should contain a key matching the stageSlug ('thesis')"
+		);
+		assertEquals(typeof payload.document_relationships['thesis'], 'string');
+		assertEquals(payload.document_relationships['thesis'], MOCK_SOURCE_DOCS[0].id);
+	} else {
+		throw new Error('Expected EXECUTE job payload');
 	}
 });

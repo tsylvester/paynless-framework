@@ -1190,7 +1190,7 @@ export interface RelevanceRule {
 
 export interface HeaderContextArtifact {
     type: 'header_context';
-    document_key: 'header_context';
+    document_key: 'header_context' | 'header_context_pairwise' | 'synthesis_header_context';
     artifact_class: 'header_context';
     file_type: 'json';
 }

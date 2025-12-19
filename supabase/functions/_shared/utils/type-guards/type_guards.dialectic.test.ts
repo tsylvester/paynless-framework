@@ -2769,20 +2769,74 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
 });
 
 Deno.test('Type Guard: isHeaderContextArtifact', async (t) => {
-    const validArtifact: HeaderContextArtifact = {
-        type: 'header_context',
-        document_key: FileType.HeaderContext,
-        artifact_class: 'header_context',
-        file_type: 'json',
-    };
-
-    await t.step('should return true for a valid HeaderContextArtifact object', () => {
+    await t.step('should return true for a valid HeaderContextArtifact object with FileType enum', () => {
+        const validArtifact: HeaderContextArtifact = {
+            type: 'header_context',
+            document_key: FileType.HeaderContext,
+            artifact_class: 'header_context',
+            file_type: 'json',
+        };
         assert(isHeaderContextArtifact(validArtifact));
     });
 
+    await t.step('should return true for a valid HeaderContextArtifact with document_key: header_context_pairwise', () => {
+        const validArtifact: HeaderContextArtifact = {
+            type: 'header_context',
+            document_key: 'header_context_pairwise',
+            artifact_class: 'header_context',
+            file_type: 'json',
+        };
+        assert(isHeaderContextArtifact(validArtifact));
+    });
+
+    await t.step('should return true for a valid HeaderContextArtifact with document_key: synthesis_header_context', () => {
+        const validArtifact: HeaderContextArtifact = {
+            type: 'header_context',
+            document_key: 'synthesis_header_context',
+            artifact_class: 'header_context',
+            file_type: 'json',
+        };
+        assert(isHeaderContextArtifact(validArtifact));
+    });
+
+    await t.step('should return false for an invalid document_key', () => {
+        const invalidArtifact = {
+            type: 'header_context',
+            document_key: 'invalid_document_key',
+            artifact_class: 'header_context',
+            file_type: 'json',
+        };
+        assert(!isHeaderContextArtifact(invalidArtifact));
+    });
+
     await t.step('should return false if type is not "header_context"', () => {
-        const invalid = { ...validArtifact, type: 'wrong_type' };
-        assert(!isHeaderContextArtifact(invalid));
+        const invalidArtifact = {
+            type: 'wrong_type',
+            document_key: FileType.HeaderContext,
+            artifact_class: 'header_context',
+            file_type: 'json',
+        };
+        assert(!isHeaderContextArtifact(invalidArtifact));
+    });
+
+    await t.step('should return false if artifact_class is not "header_context"', () => {
+        const invalidArtifact = {
+            type: 'header_context',
+            document_key: FileType.HeaderContext,
+            artifact_class: 'wrong_class',
+            file_type: 'json',
+        };
+        assert(!isHeaderContextArtifact(invalidArtifact));
+    });
+
+    await t.step('should return false if file_type is not "json"', () => {
+        const invalidArtifact = {
+            type: 'header_context',
+            document_key: FileType.HeaderContext,
+            artifact_class: 'header_context',
+            file_type: 'txt',
+        };
+        assert(!isHeaderContextArtifact(invalidArtifact));
     });
 });
 

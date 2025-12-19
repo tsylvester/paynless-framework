@@ -3,8 +3,7 @@ import type {
     DialecticExecuteJobPayload, 
     DialecticPlanJobPayload, 
     GranularityPlannerFn, 
-    SourceDocument, 
-    ContextForDocument 
+    SourceDocument
 } from "../../../dialectic-service/dialectic.interface.ts";
 
 import { createCanonicalPathParams } from "../canonical_context_builder.ts";
@@ -242,7 +241,10 @@ export const planPerSourceGroup: GranularityPlannerFn = (
             prompt_template_id: recipeStep.prompt_template_id,
             output_type: recipeStep.output_type,
             canonicalPathParams: createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorDoc, stageSlug),
-            document_relationships: { source_group: groupId },
+            document_relationships: {
+                source_group: groupId,
+                [stageSlug]: groupId 
+            },
             inputs: {
                 document_ids: documentIds,
             },
