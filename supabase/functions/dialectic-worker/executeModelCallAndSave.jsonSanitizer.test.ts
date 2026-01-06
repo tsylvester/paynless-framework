@@ -36,6 +36,7 @@ import {
     buildPromptPayload,
 } from './executeModelCallAndSave.test.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
+import type { IExecuteJobContext } from './JobContext.interface.ts';
 
 /**
  * Creates a typed mock UnifiedAIResponse object.
@@ -59,11 +60,10 @@ Deno.test('when the model produces malformed JSON, it should trigger a retry, no
         }
     });
     
-    const fileManager = new MockFileManagerService();
+    const deps: IExecuteJobContext = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
     
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -106,11 +106,10 @@ Deno.test('when the model produces JSON wrapped in common patterns, it should sa
         }
     });
     
-    const fileManager = new MockFileManagerService();
+    const deps: IExecuteJobContext = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
     
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -148,11 +147,10 @@ Deno.test('when the model produces JSON wrapped in triple backticks, it should s
         }
     });
     
-    const fileManager = new MockFileManagerService();
+    const deps: IExecuteJobContext = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
     
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -191,11 +189,10 @@ Deno.test('executeModelCallAndSave saves sanitized content for all content types
         'ai_providers': { select: { data: [mockFullProviderData], error: null } },
     });
 
-    const fileManager = new MockFileManagerService();
+    const deps: IExecuteJobContext = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
 
     // Mock AI response with markdown fences (the actual problem scenario)
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(

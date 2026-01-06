@@ -8,6 +8,7 @@ import type { Database } from '../types_db.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import { mockContribution } from './executeModelCallAndSave.test.ts';
+import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import {
     isRecord,
 } from '../_shared/utils/type_guards.ts';
@@ -16,8 +17,10 @@ import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
 import type { 
     SelectedAiProvider, 
     DialecticExecuteJobPayload,
+    UnifiedAIResponse,
 } from '../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
+import type { IExecuteJobContext } from './JobContext.interface.ts';
 
 // Import shared test helpers from main test file
 import {
@@ -34,10 +37,10 @@ Deno.test('executeModelCallAndSave - pathContext validation - 41.b.i: ALL requir
         'ai_providers': { select: { data: [mockFullProviderData], error: null } },
     });
 
-    const fileManager = new MockFileManagerService();
+    const deps: IExecuteJobContext = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
 
     const payload: DialecticExecuteJobPayload = {
         prompt_template_id: 'test-prompt',
@@ -70,15 +73,19 @@ Deno.test('executeModelCallAndSave - pathContext validation - 41.b.i: ALL requir
         api_identifier: 'claude-opus',
     };
 
-    const callUnifiedAISpy = stub(deps, 'callUnifiedAIModel', async () => ({
-        content: '{"content": "AI response content"}',
-        contentType: 'application/json',
-        inputTokens: 10,
-        outputTokens: 20,
-        processingTimeMs: 100,
-        finish_reason: 'stop',
-        rawProviderResponse: { mock: 'response' },
-    }));
+    const callUnifiedAISpy = stub(
+        deps,
+        'callUnifiedAIModel',
+        async (): Promise<UnifiedAIResponse> => ({
+            content: '{"content": "AI response content"}',
+            contentType: 'application/json',
+            inputTokens: 10,
+            outputTokens: 20,
+            processingTimeMs: 100,
+            finish_reason: 'stop',
+            rawProviderResponse: { mock: 'response' },
+        }),
+    );
 
     const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
         job,
@@ -108,18 +115,23 @@ Deno.test('executeModelCallAndSave - notification document_key - 41.b.ii: docume
         'ai_providers': { select: { data: [mockFullProviderData], error: null } },
     });
 
+    resetMockNotificationService();
     const deps = getMockDeps();
-    const sendDocEventSpy = spy(deps.notificationService, 'sendDocumentCentricNotification');
+    assert(deps.notificationService === mockNotificationService, 'Expected deps.notificationService to be mockNotificationService');
 
-    const callUnifiedAISpy = stub(deps, 'callUnifiedAIModel', async () => ({
-        content: '{"content": "AI response content"}',
-        contentType: 'application/json',
-        inputTokens: 10,
-        outputTokens: 20,
-        processingTimeMs: 100,
-        finish_reason: 'stop',
-        rawProviderResponse: { finish_reason: 'stop' },
-    }));
+    const callUnifiedAISpy = stub(
+        deps,
+        'callUnifiedAIModel',
+        async (): Promise<UnifiedAIResponse> => ({
+            content: '{"content": "AI response content"}',
+            contentType: 'application/json',
+            inputTokens: 10,
+            outputTokens: 20,
+            processingTimeMs: 100,
+            finish_reason: 'stop',
+            rawProviderResponse: { finish_reason: 'stop' },
+        }),
+    );
 
     const payload: DialecticExecuteJobPayload = {
         prompt_template_id: 'test-prompt',
@@ -159,14 +171,13 @@ Deno.test('executeModelCallAndSave - notification document_key - 41.b.ii: docume
 
     await executeModelCallAndSave(params);
 
-    assertEquals(sendDocEventSpy.calls.length, 1, 'Expected a document_completed event emission');
-    const [payloadArg] = sendDocEventSpy.calls[0].args;
+    assertEquals(mockNotificationService.sendDocumentCentricNotification.calls.length, 1, 'Expected a document_completed event emission');
+    const [payloadArg] = mockNotificationService.sendDocumentCentricNotification.calls[0].args;
     assert(isRecord(payloadArg), 'notification payload should be a record');
     assertEquals(payloadArg.type, 'document_completed', 'notification type should be document_completed');
     assertEquals(payloadArg.document_key, 'feature_spec', 'notification.document_key should be "feature_spec" (from payload), not String(output_type)');
 
     callUnifiedAISpy.restore();
-    sendDocEventSpy.restore();
     clearAllStubs?.();
 });
 
@@ -663,15 +674,19 @@ Deno.test('executeModelCallAndSave - non-document file types - 41.b.iv: does NOT
     });
 
     const deps = getMockDeps();
-    const callUnifiedAISpy = stub(deps, 'callUnifiedAIModel', async () => ({
-        content: '{"content": "AI response content"}',
-        contentType: 'application/json',
-        inputTokens: 10,
-        outputTokens: 20,
-        processingTimeMs: 100,
-        finish_reason: 'stop',
-        rawProviderResponse: { mock: 'response' },
-    }));
+    const callUnifiedAISpy = stub(
+        deps,
+        'callUnifiedAIModel',
+        async (): Promise<UnifiedAIResponse> => ({
+            content: '{"content": "AI response content"}',
+            contentType: 'application/json',
+            inputTokens: 10,
+            outputTokens: 20,
+            processingTimeMs: 100,
+            finish_reason: 'stop',
+            rawProviderResponse: { mock: 'response' },
+        }),
+    );
 
     const payload: DialecticExecuteJobPayload = {
         prompt_template_id: 'test-prompt',

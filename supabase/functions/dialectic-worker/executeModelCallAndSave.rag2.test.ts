@@ -22,6 +22,9 @@ import { createMockTokenWalletService } from '../_shared/services/tokenWalletSer
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { ICompressionStrategy, getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
+import type { CountTokensFn } from '../_shared/types/tokenizer.types.ts';
+import type { IRagService } from '../_shared/services/rag_service.interface.ts';
+import type { IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
 import { 
     createMockJob, 
     testPayload, 
@@ -55,20 +58,21 @@ Deno.test('passes inputsRelevance to rag_service.getContextForModel and compress
     }
   });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
+  let countIdx = 0;
+  const deterministicCountTokens: CountTokensFn = () => (++countIdx === 1 ? 500 : 90);
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
 
   // Capture inputsRelevance seen by rag_service
   let seenRagInputsRelevance: unknown = undefined;
-  deps.ragService = {
+  const ragService: IRagService = {
     async getContextForModel(_sourceDocuments, _modelConfig, _sessionId, _stageSlug, inputsRelevanceParam) {
       seenRagInputsRelevance = inputsRelevanceParam;
       return { context: 'summary', tokensUsedForIndexing: 0 };
-    }
+    },
   };
 
-  // Force oversized first, then fit after one compression
-  let countIdx = 0;
-  deps.countTokens = () => (++countIdx === 1 ? 500 : 90);
+  const deps = getMockDeps({ tokenWalletService, ragService, countTokens: deterministicCountTokens });
 
   // Capture the inputsRelevance received by the compression strategy
   let seenInputsRelevance: unknown = undefined;
@@ -170,20 +174,21 @@ Deno.test('passes empty inputsRelevance as [] to rag_service and compressionStra
     }
   });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
+  let countIdx = 0;
+  const deterministicCountTokens: CountTokensFn = () => (++countIdx === 1 ? 1000 : 90);
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
 
   // Capture inputsRelevance seen by rag_service
   let seenRagInputsRelevance: unknown = undefined;
-  deps.ragService = {
+  const ragService: IRagService = {
     async getContextForModel(_sourceDocuments, _modelConfig, _sessionId, _stageSlug, inputsRelevanceParam) {
       seenRagInputsRelevance = inputsRelevanceParam;
       return { context: 'summary', tokensUsedForIndexing: 0 };
-    }
+    },
   };
 
-  // Force oversized → compression then fit on second sizing
-  let countIdx = 0;
-  deps.countTokens = () => (++countIdx === 1 ? 1000 : 90);
+  const deps = getMockDeps({ tokenWalletService, ragService, countTokens: deterministicCountTokens });
 
   let seenInputsRelevance: unknown = undefined;
   const capturingCompressionStrategy: ICompressionStrategy = async (_dbc, _deps, docs, _history, _currentUserPrompt, inputsRelevance) => {
@@ -296,30 +301,36 @@ Deno.test('compression ordering and identity: removes lowest blended-score first
     },
   });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
+  const ragVictims: string[] = [];
+  let countIdx = 0;
+  const deterministicCountTokens: CountTokensFn = () => (++countIdx === 1 ? 500 : (countIdx === 2 ? 300 : 90));
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
 
   // Embedding client: keep equal similarities (< 1) so weights determine ordering
-  deps.embeddingClient = {
+  const embeddingClient: IEmbeddingClient = {
     async getEmbedding(text: string) {
       // Prompt gets a canonical vector; docs get a slightly different vector
       if (text === 'CURR') return { embedding: [1, 1, 1], usage: { prompt_tokens: 1, total_tokens: 1 } };
       return { embedding: [1, 1, 0.99], usage: { prompt_tokens: 1, total_tokens: 1 } };
-    }
+    },
   };
 
   // Capture RAG call victim order and provide a recognizable summary
-  const ragVictims: string[] = [];
-  deps.ragService = {
-    async getContextForModel(sourceDocuments) {
+  const ragService: IRagService = {
+    async getContextForModel(sourceDocuments, _modelConfig, _sessionId, _stageSlug, _inputsRelevance) {
       const id = sourceDocuments[0]?.id || '';
       ragVictims.push(id);
       return { context: `summary:${id}`, tokensUsedForIndexing: 1 };
-    }
+    },
   };
 
-  // Force oversized then fit after two compressions
-  let countIdx = 0;
-  deps.countTokens = () => (++countIdx === 1 ? 500 : (countIdx === 2 ? 300 : 90));
+  const deps = getMockDeps({
+    tokenWalletService,
+    embeddingClient,
+    ragService,
+    countTokens: deterministicCountTokens,
+  });
 
   // Use the real matrix strategy to order candidates; ties will be broken by inputsRelevance
   const compressionStrategy = getSortedCompressionCandidates;
@@ -455,27 +466,34 @@ Deno.test('inputsRelevance effects: higher relevance ranks later; stage_slug-spe
     },
   });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
+  const ragVictims: string[] = [];
+  let idx = 0;
+  const deterministicCountTokens: CountTokensFn = () => (++idx === 1 ? 600 : (idx === 2 ? 400 : 90));
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
+
   // Equal (but <1) similarities so matrix relevance differentiates ordering
-  deps.embeddingClient = { 
+  const embeddingClient: IEmbeddingClient = { 
     async getEmbedding(text: string) { 
       if (text === 'CURR') return { embedding: [1, 1, 1], usage: { prompt_tokens: 1, total_tokens: 1 } };
       return { embedding: [1, 1, 0.99], usage: { prompt_tokens: 1, total_tokens: 1 } };
-    } 
+    },
   };
 
   // Capture RAG order
-  const ragVictims: string[] = [];
-  deps.ragService = {
-    async getContextForModel(sourceDocuments) {
+  const ragService: IRagService = {
+    async getContextForModel(sourceDocuments, _modelConfig, _sessionId, _stageSlug, _inputsRelevance) {
       ragVictims.push(sourceDocuments[0]?.id || '');
       return { context: 's', tokensUsedForIndexing: 1 };
-    }
+    },
   };
 
-  // Oversized then fit after two compressions
-  let idx = 0;
-  deps.countTokens = () => (++idx === 1 ? 600 : (idx === 2 ? 400 : 90));
+  const deps = getMockDeps({
+    tokenWalletService,
+    embeddingClient,
+    ragService,
+    countTokens: deterministicCountTokens,
+  });
 
   // Use real strategy
   const compressionStrategy = getSortedCompressionCandidates;
@@ -567,29 +585,35 @@ Deno.test('empty inputsRelevance: similarity-only behavior is deterministic', as
     },
   });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
+  const ragVictims: string[] = [];
+  let idx = 0;
+  const deterministicCountTokens: CountTokensFn = () => (++idx === 1 ? 400 : 80);
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
 
   // Embedding client to create different similarities to the prompt
-  deps.embeddingClient = {
+  const embeddingClient: IEmbeddingClient = {
     async getEmbedding(text: string) {
       // Map content string to slightly different embeddings
       if (text.includes('alpha')) return { embedding: [1, 1, 1], usage: { prompt_tokens: 1, total_tokens: 1 } };
       if (text.includes('beta')) return { embedding: [1, 1, 0.9], usage: { prompt_tokens: 1, total_tokens: 1 } };
       return { embedding: [1, 1, 0.8], usage: { prompt_tokens: 1, total_tokens: 1 } };
-    }
+    },
   };
 
-  const ragVictims: string[] = [];
-  deps.ragService = {
-    async getContextForModel(sourceDocuments) {
+  const ragService: IRagService = {
+    async getContextForModel(sourceDocuments, _modelConfig, _sessionId, _stageSlug, _inputsRelevance) {
       ragVictims.push(sourceDocuments[0]?.id || '');
       return { context: 's', tokensUsedForIndexing: 1 };
-    }
+    },
   };
 
-  // Oversized then fit
-  let idx = 0;
-  deps.countTokens = () => (++idx === 1 ? 400 : 80);
+  const deps = getMockDeps({
+    tokenWalletService,
+    embeddingClient,
+    ragService,
+    countTokens: deterministicCountTokens,
+  });
 
   const compressionStrategy = getSortedCompressionCandidates;
 
@@ -669,11 +693,11 @@ Deno.test('passes identity-rich candidates into compression even when prompt doc
     } ], error: null } },
   });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
-
-  // Force oversized then fit
   let countIdx = 0;
-  deps.countTokens = () => (++countIdx === 1 ? 500 : 90);
+  const deterministicCountTokens: CountTokensFn = () => (++countIdx === 1 ? 500 : 90);
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
+  const deps = getMockDeps({ tokenWalletService, countTokens: deterministicCountTokens });
 
   // Capture docs seen by compression
   let seenDocs: unknown[] | null = null;
@@ -746,9 +770,12 @@ Deno.test('throws when identity-less documents would be passed to compression', 
   const cfg = { ...mockFullProviderData.config, context_window_tokens: 100, provider_max_input_tokens: 256 };
   const { client: dbClient } = setupMockClient({ 'ai_providers': { select: { data: [ { ...mockFullProviderData, config: cfg } ], error: null } } });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
   // Oversized then fit if it ever reached compression
-  let idx = 0; deps.countTokens = () => (++idx === 1 ? 500 : 90);
+  let idx = 0;
+  const deterministicCountTokens: CountTokensFn = () => (++idx === 1 ? 500 : 90);
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
+  const deps = getMockDeps({ tokenWalletService, countTokens: deterministicCountTokens });
 
   // Compression strategy should not be called if executor validates identity first
   const compressionSpy: { called: boolean } = { called: false };
@@ -813,12 +840,19 @@ Deno.test('ties without inputsRelevance: candidates are in non-decreasing effect
     },
   });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
-  // Identical embeddings to create ties
-  deps.embeddingClient = { async getEmbedding() { return { embedding: [1, 1, 1], usage: { prompt_tokens: 1, total_tokens: 1 } }; } };
-
   // Oversized once, then fit
-  let idx = 0; deps.countTokens = () => (++idx === 1 ? 500 : 90);
+  let idx = 0;
+  const deterministicCountTokens: CountTokensFn = () => (++idx === 1 ? 500 : 90);
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
+  // Identical embeddings to create ties
+  const embeddingClient: IEmbeddingClient = { 
+    async getEmbedding(_text: string) { 
+      return { embedding: [1, 1, 1], usage: { prompt_tokens: 1, total_tokens: 1 } };
+    } 
+  };
+
+  const deps = getMockDeps({ tokenWalletService, embeddingClient, countTokens: deterministicCountTokens });
 
   // Capture candidates returned by real strategy via wrapper
   let returnedCandidates: { effectiveScore?: number }[] | null = null;

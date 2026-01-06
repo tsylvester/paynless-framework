@@ -6,26 +6,22 @@ import {
 } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import type { Database } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
-import { logger } from '../_shared/logger.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
 import type {
     DialecticJobRow,
     DialecticExecuteJobPayload,
     ExecuteModelCallAndSaveParams,
-    IDialecticJobDeps,
     PromptConstructionPayload,
     DialecticContributionRow,
 } from '../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
-import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
-import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
-import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import { isJson } from '../_shared/utils/type_guards.ts';
-import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
-import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
+import type { CountTokensFn } from '../_shared/types/tokenizer.types.ts';
+import type { IExecuteJobContext } from './JobContext.interface.ts';
+import { getMockDeps } from './executeModelCallAndSave.test.ts';
 
 // Helper to create a mock job
 function createMockJob(payload: DialecticExecuteJobPayload, overrides: Partial<DialecticJobRow> = {}): DialecticJobRow {
@@ -135,36 +131,7 @@ const mockContribution: DialecticContributionRow = {
     source_prompt_resource_id: null,
 };
 
-function getMockDeps(): IDialecticJobDeps {
-    const fileManager = new MockFileManagerService();
-    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-    return {
-        logger,
-        fileManager,
-        notificationService: mockNotificationService,
-        tokenWalletService: createMockTokenWalletService({ getBalance: () => Promise.resolve('1000000') }).instance,
-        countTokens,
-        callUnifiedAIModel: async () => ({
-            content: '{"test": "response"}',
-            inputTokens: 10,
-            outputTokens: 20,
-            processingTimeMs: 100,
-            finish_reason: 'stop',
-            rawProviderResponse: {},
-        }),
-        retryJob: async () => ({}),
-        continueJob: async () => ({ enqueued: false }),
-        ragService: new MockRagService(),
-        getExtensionFromMimeType: () => '.txt',
-        getSeedPromptForStage: async () => ({ content: 'Seed prompt content', fullPath: 'test/path/seed.txt', bucket: 'test-bucket', path: 'test/path', fileName: 'seed.txt' }),
-        downloadFromStorage: async () => ({ data: new ArrayBuffer(100), error: null }),
-        randomUUID: () => '123',
-        deleteFromStorage: async () => ({ error: null }),
-        executeModelCallAndSave: async () => {},
-        embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) },
-        documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
-    };
-}
+const countTokensTen: CountTokensFn = (_deps, _payload, _modelConfig) => 10;
 
 Deno.test('gatherArtifacts - queries resources first and finds rendered document, does not query contributions', async () => {
     const { client: dbClient, spies } = createMockSupabaseClient(undefined, {
@@ -200,8 +167,9 @@ Deno.test('gatherArtifacts - queries resources first and finds rendered document
         },
     });
 
-    const deps = getMockDeps();
-    deps.countTokens = () => 10;
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    const deps: IExecuteJobContext = getMockDeps({ fileManager, countTokens: countTokensTen });
 
     const params: ExecuteModelCallAndSaveParams = {
         dbClient: dbClient as unknown as SupabaseClient<Database>,
@@ -304,8 +272,9 @@ Deno.test('gatherArtifacts - prefers resources over contributions when both exis
         },
     });
 
-    const deps = getMockDeps();
-    deps.countTokens = () => 10;
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    const deps: IExecuteJobContext = getMockDeps({ fileManager, countTokens: countTokensTen });
 
     const params: ExecuteModelCallAndSaveParams = {
         dbClient: dbClient as unknown as SupabaseClient<Database>,
@@ -381,8 +350,9 @@ Deno.test('gatherArtifacts - throws error when required rendered document not fo
         },
     });
 
-    const deps = getMockDeps();
-    deps.countTokens = () => 10;
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    const deps: IExecuteJobContext = getMockDeps({ fileManager, countTokens: countTokensTen });
 
     const params: ExecuteModelCallAndSaveParams = {
         dbClient: dbClient as unknown as SupabaseClient<Database>,
@@ -483,8 +453,9 @@ Deno.test('gatherArtifacts - continues to query contributions for intermediate a
         },
     });
 
-    const deps = getMockDeps();
-    deps.countTokens = () => 10;
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    const deps: IExecuteJobContext = getMockDeps({ fileManager, countTokens: countTokensTen });
 
     const params: ExecuteModelCallAndSaveParams = {
         dbClient: dbClient as unknown as SupabaseClient<Database>,

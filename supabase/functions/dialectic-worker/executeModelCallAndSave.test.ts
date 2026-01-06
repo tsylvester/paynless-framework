@@ -25,20 +25,26 @@ import { isModelContributionContext } from '../_shared/utils/type-guards/type_gu
     ExecuteModelCallAndSaveParams, 
     DialecticJobPayload,
     DialecticExecuteJobPayload,
-    IDialecticJobDeps,
     PromptConstructionPayload,
     SourceDocument
   } from '../dialectic-service/dialectic.interface.ts';
 import { FileType, UploadContext, DocumentRelationships, DialecticStageSlug } from '../_shared/types/file_manager.types.ts';
 import { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
-import { LogMetadata, Messages } from '../_shared/types.ts';
+import { LogMetadata, Messages, AiModelExtendedConfig } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
+import { CountTokensFn, CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
 import { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
+import { RenderCheckReason, ShouldEnqueueRenderJobResult } from '../_shared/types/shouldEnqueueRenderJob.interface.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
-
+import { IExecuteJobContext } from './JobContext.interface.ts';
+import { createJobContext, createExecuteJobContext } from './createJobContext.ts';
+import { createMockJobContextParams } from './JobContext.mock.ts';
+import { IRagService } from '../_shared/services/rag_service.interface.ts';
+import { IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
+import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 // Local helpers for arranging tests
 export const buildPromptPayload = (overrides: Partial<PromptConstructionPayload> = {}): PromptConstructionPayload => ({
   systemInstruction: undefined,
@@ -48,7 +54,7 @@ export const buildPromptPayload = (overrides: Partial<PromptConstructionPayload>
   ...overrides,
 });
 
-export const buildExecuteParams = (dbClient: SupabaseClient<Database>, deps: IDialecticJobDeps, overrides: Partial<ExecuteModelCallAndSaveParams> = {}): ExecuteModelCallAndSaveParams => ({
+export const buildExecuteParams = (dbClient: SupabaseClient<Database>, deps: IExecuteJobContext, overrides: Partial<ExecuteModelCallAndSaveParams> = {}): ExecuteModelCallAndSaveParams => ({
   dbClient,
   deps,
   authToken: 'auth-token',
@@ -62,7 +68,7 @@ export const buildExecuteParams = (dbClient: SupabaseClient<Database>, deps: IDi
   ...overrides,
 });
 
-export const spyCallModel = (deps: IDialecticJobDeps) => spy(deps, 'callUnifiedAIModel');
+export const spyCallModel = (deps: IExecuteJobContext) => spy(deps, 'callUnifiedAIModel');
 
 // Helper function to create a valid DialecticJobRow for testing
 export function createMockJob(payload: DialecticJobPayload, overrides: Partial<DialecticJobRow> = {}): DialecticJobRow {
@@ -186,19 +192,7 @@ export const mockContribution: DialecticContributionRow = {
       is_header: false,
       source_prompt_resource_id: null,
   };
-  
-export  const mockNotificationService: NotificationServiceType = {
-      sendContributionStartedEvent: async () => {},
-      sendDialecticContributionStartedEvent: async () => {},
-      sendContributionRetryingEvent: async () => {},
-      sendContributionReceivedEvent: async () => {},
-      sendContributionGenerationContinuedEvent: async () => {},
-      sendContributionGenerationCompleteEvent: async () => {},
-      sendDialecticProgressUpdateEvent: async () => {},
-      sendContributionFailedNotification: async () => {},
-      sendContributionGenerationFailedEvent: async () => {},
-      sendDocumentCentricNotification: async () => {},
-    };
+
   
 export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
       return createMockSupabaseClient('user-789', {
@@ -208,40 +202,43 @@ export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
       });
   };
   
-  // This is a partial mock, only includes deps needed by executeModelCallAndSave
+  // Helper function to create IExecuteJobContext using factory/slicer pattern
+  // Accepts override parameters for commonly-overridden fields in tests
 export const getMockDeps = (
-    tokenWalletServiceOverride?: ITokenWalletService,
-): IDialecticJobDeps => {
-      const fileManager = new MockFileManagerService();
-      fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    overrides?: {
+        tokenWalletService?: ITokenWalletService;
+        fileManager?: MockFileManagerService;
+        countTokens?: CountTokensFn;
+        ragService?: IRagService;
+        embeddingClient?: IEmbeddingClient;
+    },
+): IExecuteJobContext => {
+      // Create base mock params using the shared helper
+      const baseParams = createMockJobContextParams();
       
-      return {
-        callUnifiedAIModel: async () => ({
-          content: '{"content": "AI response content"}',
-          contentType: 'application/json',
-          inputTokens: 10,
-          outputTokens: 20,
-          processingTimeMs: 100,
-          rawProviderResponse: { mock: 'response' },
-        }),
-        getExtensionFromMimeType: () => '.txt',
-        logger: logger,
-        fileManager: fileManager,
-        continueJob: async () => ({ enqueued: false }),
-        notificationService: mockNotificationService,
-        getSeedPromptForStage: async () => ({ content: 'Seed prompt content', fullPath: 'test/path/seed.txt', bucket: 'test-bucket', path: 'test/path', fileName: 'seed.txt' }),
-        retryJob: async () => ({}),
-        downloadFromStorage: async () => ({ data: new ArrayBuffer(100), error: null }),
-        randomUUID: () => '123',
-        deleteFromStorage: async () => ({ error: null }),
-        executeModelCallAndSave: async () => {},
-        // ADDED: Provide default mocks for services needed by compression logic
-        ragService: new MockRagService(),
-        tokenWalletService: tokenWalletServiceOverride || createMockTokenWalletService({ getBalance: () => Promise.resolve('1000000') }).instance,
-        embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) },
-        countTokens: () => 0, // Default to 0, tests that need it will stub this.
-        documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
+      // Set up fileManager with upload response (preserving existing test behavior)
+      const fileManager = overrides?.fileManager || new MockFileManagerService();
+      // IMPORTANT: if the caller provides a fileManager, assume they will configure its responses.
+      // Only apply our default response for the harness-owned instance.
+      if (!overrides?.fileManager) {
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
       }
+      
+      // Construct params with overrides
+      const mockParams = {
+          ...baseParams,
+          fileManager: fileManager,
+          ...(overrides?.tokenWalletService ? { tokenWalletService: overrides.tokenWalletService } : {}),
+          ...(overrides?.countTokens ? { countTokens: overrides.countTokens } : {}),
+          ...(overrides?.ragService ? { ragService: overrides.ragService } : {}),
+          ...(overrides?.embeddingClient ? { embeddingClient: overrides.embeddingClient } : {}),
+      };
+      
+      // Create root context using factory
+      const rootCtx = createJobContext(mockParams);
+      
+      // Slice to execute context
+      return createExecuteJobContext(rootCtx);
   };
   
 Deno.test('executeModelCallAndSave - Happy Path', async (t) => {
@@ -254,30 +251,7 @@ Deno.test('executeModelCallAndSave - Happy Path', async (t) => {
     const fileManager = new MockFileManagerService();
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
-    const deps: IDialecticJobDeps = {
-      callUnifiedAIModel: async () => ({
-        content: '{"content": "AI response content"}',
-        contentType: 'application/json',
-        inputTokens: 10,
-        outputTokens: 20,
-        processingTimeMs: 100,
-        rawProviderResponse: { mock: 'response' },
-      }),
-      getExtensionFromMimeType: () => '.txt',
-      logger: logger,
-      fileManager: fileManager,
-      continueJob: async () => ({ enqueued: false }),
-      notificationService: mockNotificationService,
-      getSeedPromptForStage: async () => ({ content: 'Seed prompt content', fullPath: 'test/path/seed.txt', bucket: 'test-bucket', path: 'test/path', fileName: 'seed.txt' }),
-      retryJob: async () => ({}),
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(100), error: null }),
-      randomUUID: () => '123',
-      deleteFromStorage: async () => ({ error: null }),
-      executeModelCallAndSave: async () => {},
-      tokenWalletService: createMockTokenWalletService({ getBalance: () => Promise.resolve('1000000') }).instance,
-      countTokens: () => 0, // Default to 0, tests that need specific counts will stub this.
-      documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
-    };
+    const deps = getMockDeps({ fileManager });
     
     await t.step('should run to completion successfully', async () => {
         const params: ExecuteModelCallAndSaveParams = {
@@ -360,30 +334,7 @@ Deno.test('executeModelCallAndSave - Intermediate Flag', async (t) => {
     const fileManager = new MockFileManagerService();
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
-    const deps: IDialecticJobDeps = {
-      callUnifiedAIModel: async () => ({
-        content: '{"content": "AI response content"}',
-        contentType: 'application/json',
-        inputTokens: 10,
-        outputTokens: 20,
-        processingTimeMs: 100,
-        rawProviderResponse: { mock: 'response' },
-      }),
-      getExtensionFromMimeType: () => '.txt',
-      logger: logger,
-      fileManager: fileManager,
-      continueJob: async () => ({ enqueued: false }),
-      notificationService: mockNotificationService,
-      getSeedPromptForStage: async () => ({ content: 'Seed prompt content', fullPath: 'test/path/seed.txt', bucket: 'test-bucket', path: 'test/path', fileName: 'seed.txt' }),
-      retryJob: async () => ({}),
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(100), error: null }),
-      randomUUID: () => '123',
-      deleteFromStorage: async () => ({ error: null }),
-      executeModelCallAndSave: async () => {},
-      tokenWalletService: createMockTokenWalletService({ getBalance: () => Promise.resolve('1000000') }).instance,
-      countTokens: () => 0, // Default to 0, tests that need specific counts will stub this.
-      documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
-    };
+    const deps = getMockDeps({ fileManager });
 
     await t.step('should pass isIntermediate flag to fileManager', async () => {
         const intermediatePayload: DialecticExecuteJobPayload = { ...testPayload, isIntermediate: true };
@@ -428,30 +379,7 @@ Deno.test('executeModelCallAndSave - Final Artifact Flag', async (t) => {
     const fileManager = new MockFileManagerService();
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
-    const deps: IDialecticJobDeps = {
-      callUnifiedAIModel: async () => ({
-        content: '{"content": "AI response content"}',
-        contentType: 'application/json',
-        inputTokens: 10,
-        outputTokens: 20,
-        processingTimeMs: 100,
-        rawProviderResponse: { mock: 'response' },
-      }),
-      getExtensionFromMimeType: () => '.txt',
-      logger: logger,
-      fileManager: fileManager,
-      continueJob: async () => ({ enqueued: false }),
-      notificationService: mockNotificationService,
-      getSeedPromptForStage: async () => ({ content: 'Seed prompt content', fullPath: 'test/path/seed.txt', bucket: 'test-bucket', path: 'test/path', fileName: 'seed.txt' }),
-      retryJob: async () => ({}),
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(100), error: null }),
-      randomUUID: () => '123',
-      deleteFromStorage: async () => ({ error: null }),
-      executeModelCallAndSave: async () => {},
-      tokenWalletService: createMockTokenWalletService().instance,
-      countTokens: () => 0, // Default to 0, tests that need specific counts will stub this.
-      documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
-    };
+    const deps = getMockDeps({ fileManager });
   
     await t.step('should pass isIntermediate: false to fileManager when explicitly set', async () => {
         const finalPayload: DialecticExecuteJobPayload = { ...testPayload, isIntermediate: false };
@@ -522,7 +450,7 @@ Deno.test('executeModelCallAndSave - Throws on AI Error', async (t) => {
             select: { data: [mockFullProviderData], error: null }
         }
     });
-    const deps: IDialecticJobDeps = getMockDeps();
+    const deps = getMockDeps();
 
     const callUnifiedAIModelStub = stub(deps, 'callUnifiedAIModel', async () => ({
         content: null,
@@ -567,7 +495,7 @@ Deno.test('executeModelCallAndSave - Database Error on Update', async (t) => {
                 select: { data: [mockFullProviderData], error: null }
             }
         });
-        const deps: IDialecticJobDeps = getMockDeps();
+        const deps: IExecuteJobContext = getMockDeps();
         
         // Ensure the mock response is valid JSON to prevent premature exit
         stub(deps, 'callUnifiedAIModel', () => Promise.resolve({
@@ -661,7 +589,7 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
             },
         },
     });
-    const deps: IDialecticJobDeps = getMockDeps();
+    const deps: IExecuteJobContext = getMockDeps();
 
     await t.step('should throw ContextWindowError if prompt exceeds token limit and cannot be compressed', async () => {
         let errorThrown = false;
@@ -705,14 +633,15 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
                 currentUserPrompt: "This is a test prompt.",
             };
 
-            const testDeps = getMockDeps();
             const mockRagService = new MockRagService();
             mockRagService.setConfig({
                 // This content is long enough to ensure the token count remains > 10 after compression
                 mockContextResult: 'This is the compressed but still oversized content that will not fit.',
             });
-            testDeps.ragService = mockRagService;
-            testDeps.countTokens = countTokens; // FIX: Use the real token counter
+            const testDeps: IExecuteJobContext = getMockDeps({ 
+                ragService: mockRagService,
+                countTokens: countTokens, // Use the real token counter
+            });
             
             const params: ExecuteModelCallAndSaveParams = {
                 dbClient: dbClient as unknown as SupabaseClient<Database>,
@@ -753,8 +682,7 @@ Deno.test('executeModelCallAndSave - Document Relationships - should pass docume
 
     const fileManager = new MockFileManagerService();
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    const deps: IExecuteJobContext = getMockDeps({ fileManager });
 
     const relationshipsPayload: DialecticExecuteJobPayload = {
         ...testPayload,
@@ -806,8 +734,7 @@ Deno.test('executeModelCallAndSave - Document Relationships - should default doc
 
     const fileManager = new MockFileManagerService();
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    const deps: IExecuteJobContext = getMockDeps({ fileManager });
 
     const params: ExecuteModelCallAndSaveParams = {
         dbClient: dbClient as unknown as SupabaseClient<Database>,
@@ -947,7 +874,6 @@ Deno.test('executeModelCallAndSave - emits document_completed when finish_reason
   });
 
   const deps = getMockDeps();
-  const sendDocEventSpy = spy(deps.notificationService, 'sendDocumentCentricNotification');
 
   // Stub call to return finish_reason: stop
   const callUnifiedAISpy = stub(deps, 'callUnifiedAIModel', async () => ({
@@ -978,11 +904,10 @@ Deno.test('executeModelCallAndSave - emits document_completed when finish_reason
     compressionStrategy: getSortedCompressionCandidates,
     inputsRelevance: [],
   };
-
   await executeModelCallAndSave(params);
 
-  assertEquals(sendDocEventSpy.calls.length, 1, 'Expected a document_completed event emission');
-  const [payloadArg, targetUserId] = sendDocEventSpy.calls[0].args;
+  assertEquals(mockNotificationService.sendDocumentCentricNotification.calls.length, 1, 'Expected a document_completed event emission');
+  const [payloadArg, targetUserId] = mockNotificationService.sendDocumentCentricNotification.calls[0].args;
   assert(isRecord(payloadArg));
   assertEquals(payloadArg.type, 'document_completed');
   assertEquals(payloadArg.sessionId, documentPayload.sessionId);
@@ -994,17 +919,17 @@ Deno.test('executeModelCallAndSave - emits document_completed when finish_reason
   assertEquals(targetUserId, 'user-789');
 
   callUnifiedAISpy.restore();
-  sendDocEventSpy.restore();
   clearAllStubs?.();
 });
 
 Deno.test('executeModelCallAndSave - emits document_chunk_completed for continuation chunks', async () => {
+  resetMockNotificationService();
+  
   const { client: dbClient, clearAllStubs } = setupMockClient({
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
   });
 
   const deps = getMockDeps();
-  const sendDocEventSpy = spy(deps.notificationService, 'sendDocumentCentricNotification');
 
   // Continuation job payload with required document_relationships
   // Use a document file type with document_key for document_chunk_completed event
@@ -1048,8 +973,8 @@ Deno.test('executeModelCallAndSave - emits document_chunk_completed for continua
   await executeModelCallAndSave(params);
 
   // One call expected: document_chunk_completed (no document_completed because finish_reason != stop)
-  assertEquals(sendDocEventSpy.calls.length, 1, 'Expected a document_chunk_completed event emission');
-  const [payloadArg, targetUserId] = sendDocEventSpy.calls[0].args;
+  assertEquals(mockNotificationService.sendDocumentCentricNotification.calls.length, 1, 'Expected a document_chunk_completed event emission');
+  const [payloadArg, targetUserId] = mockNotificationService.sendDocumentCentricNotification.calls[0].args;
   assert(isRecord(payloadArg));
   assertEquals(payloadArg.type, 'document_chunk_completed');
   assertEquals(payloadArg.sessionId, continuationPayload.sessionId);
@@ -1061,7 +986,6 @@ Deno.test('executeModelCallAndSave - emits document_chunk_completed for continua
   assertEquals(targetUserId, 'user-789');
 
   callUnifiedAISpy.restore();
-  sendDocEventSpy.restore();
   clearAllStubs?.();
 });
 
@@ -1087,10 +1011,11 @@ Deno.test('executeModelCallAndSave - sets and forwards max_tokens_to_generate us
     getBalance: () => Promise.resolve('1000'),
   });
 
-  const deps = getMockDeps(mockTokenWalletService);
+  const deps: IExecuteJobContext = getMockDeps({ 
+    tokenWalletService: mockTokenWalletService,
+    countTokens: () => 100, // Non-oversized path: fixed token count
+  });
   const callUnifiedAISpy = spy(deps, 'callUnifiedAIModel');
-  // Non-oversized path: fixed token count
-  deps.countTokens = () => 100;
 
   const params: ExecuteModelCallAndSaveParams = {
     dbClient: dbClient as unknown as SupabaseClient<Database>,
@@ -1360,9 +1285,6 @@ Deno.test('executeModelCallAndSave - identity: sized payload equals sent request
     }
   });
 
-  const deps = getMockDeps();
-  const callUnifiedAISpy = spyCallModel(deps);
-
   const mockResourceDocument: SourceDocument = {
     id: 'doc-ident-1',
     content: 'Doc for identity test',
@@ -1405,10 +1327,13 @@ Deno.test('executeModelCallAndSave - identity: sized payload equals sent request
   });
 
   const sizedPayloads: unknown[] = [];
-  deps.countTokens = ((depsArg, payloadArg) => {
-    sizedPayloads.push(payloadArg);
-    return 5;
+  const deps: IExecuteJobContext = getMockDeps({ 
+    countTokens: (depsArg: CountTokensDeps, payloadArg: CountableChatPayload) => {
+      sizedPayloads.push(payloadArg);
+      return 5;
+    },
   });
+  const callUnifiedAISpy = spyCallModel(deps);
 
   const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { promptConstructionPayload });
   await executeModelCallAndSave(params);
@@ -1469,13 +1394,14 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
     },
   });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('10') }).instance);
-  const callUnifiedAISpy = spyCallModel(deps);
-
   // Ensure RAG returns something so the loop can iterate
   const mockRag = new MockRagService();
   mockRag.setConfig({ mockContextResult: 'compressed summary' });
-  deps.ragService = mockRag;
+  const deps: IExecuteJobContext = getMockDeps({ 
+    tokenWalletService: createMockTokenWalletService({ getBalance: () => Promise.resolve('10') }).instance,
+    ragService: mockRag,
+  });
+  const callUnifiedAISpy = spyCallModel(deps);
 
   // Craft payload with enough content/history to produce at least one candidate
   const promptConstructionPayload: PromptConstructionPayload = buildPromptPayload({
@@ -1526,23 +1452,28 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
   // Statefully force first count oversized, second count fits
   const sizedPayloads: unknown[] = [];
   let callIdx = 0;
-  deps.countTokens = ((depsArg, payloadArg) => {
-    sizedPayloads.push(payloadArg);
-    callIdx += 1;
-    return callIdx === 1 ? 100 : 40; // first pass oversized, then fits
+  const depsWithCount: IExecuteJobContext = getMockDeps({ 
+    tokenWalletService: createMockTokenWalletService({ getBalance: () => Promise.resolve('10') }).instance,
+    ragService: mockRag,
+    countTokens: (depsArg: CountTokensDeps, payloadArg: CountableChatPayload) => {
+      sizedPayloads.push(payloadArg);
+      callIdx += 1;
+      return callIdx === 1 ? 100 : 40; // first pass oversized, then fits
+    },
   });
 
-  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, depsWithCount, {
     promptConstructionPayload,
     // Ensure executor gathers this doc and compression can operate
     inputsRequired: [ { type: 'document', document_key: FileType.business_case, required: true, slug: 'test-stage' } ],
     // Provide a simple compression strategy that yields a candidate so loop runs
     compressionStrategy: async () => [ { id: 'doc-for-compress', sourceType: 'resource', content: 'Some longish content to be summarized', score: 1 } as unknown as any ],
   });
+  const callUnifiedAISpyWithCount = spyCallModel(depsWithCount);
   await executeModelCallAndSave(params);
 
-  assertEquals(callUnifiedAISpy.calls.length, 1, 'callUnifiedAIModel should be called once');
-  const sent = callUnifiedAISpy.calls[0].args[0];
+  assertEquals(callUnifiedAISpyWithCount.calls.length, 1, 'callUnifiedAIModel should be called once');
+  const sent = callUnifiedAISpyWithCount.calls[0].args[0];
   assert(isChatApiRequest(sent), 'Adapter should receive a ChatApiRequest');
 
   // Capture the last payload used for counting (post-compression)
@@ -1570,8 +1501,7 @@ Deno.test('executeModelCallAndSave - should correctly pass source_prompt_resourc
 
     const fileManager = new MockFileManagerService();
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    const deps: IExecuteJobContext = getMockDeps({ fileManager });
 
     const sourcePromptResourceId = 'resource-id-for-prompt-123';
 
@@ -1619,8 +1549,7 @@ Deno.test('executeModelCallAndSave - updates source_contribution_id on originati
     const fileManager = new MockFileManagerService();
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    const deps: IExecuteJobContext = getMockDeps({ fileManager });
 
     const params = buildExecuteParams(
         dbClient as unknown as SupabaseClient<Database>,
@@ -1727,8 +1656,7 @@ Deno.test('when the model produces malformed JSON, it should trigger a retry, no
     const fileManager = new MockFileManagerService();
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    const deps: IExecuteJobContext = getMockDeps({ fileManager });
     
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve({
         content: '{"key": "value", "incomplete', // Malformed JSON
@@ -1823,8 +1751,7 @@ Deno.test('executeModelCallAndSave - gathers artifacts across contributions/reso
     },
   });
 
-  const deps = getMockDeps();
-  deps.countTokens = () => 10; // non-oversized
+  const deps: IExecuteJobContext = getMockDeps({ countTokens: () => 10 }); // non-oversized
   const callUnifiedAISpy = spy(deps, 'callUnifiedAIModel');
 
   const params: ExecuteModelCallAndSaveParams = {
@@ -1939,8 +1866,7 @@ Deno.test('executeModelCallAndSave - scoped selection includes only artifacts ma
     },
   });
 
-  const deps = getMockDeps();
-  deps.countTokens = () => 10;
+  const deps: IExecuteJobContext = getMockDeps({ countTokens: () => 10 });
   const callUnifiedAISpy = spy(deps, 'callUnifiedAIModel');
 
   const params: ExecuteModelCallAndSaveParams = {
@@ -2035,23 +1961,67 @@ Deno.test('executeModelCallAndSave - schedules RENDER job after success with ren
     updated_at: new Date().toISOString(),
   };
 
-  const { client: dbClient, spies } = setupMockClient({
+  const { client: dbClient, spies, clearAllStubs } = setupMockClient({
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
     'dialectic_stages': { select: { data: [mockStage], error: null } },
     'dialectic_stage_recipe_instances': { select: { data: [mockInstance], error: null } },
     'dialectic_recipe_template_steps': { select: { data: [mockStep], error: null } },
+    'dialectic_generation_jobs': { 
+        insert: { 
+            data: [{ 
+                id: 'render-job-456', 
+                job_type: 'RENDER', 
+                status: 'pending',
+                session_id: 'session-456',
+                stage_slug: DialecticStageSlug.Thesis,
+                iteration_number: 1,
+                parent_job_id: 'job-id-123',
+                payload: {},
+                is_test_job: false,
+                user_id: 'user-789',
+                created_at: new Date().toISOString(),
+                started_at: null,
+                completed_at: null,
+                results: null,
+                attempt_count: 0,
+                max_retries: 3,
+                prerequisite_job_id: null,
+                target_contribution_id: null,
+                terminal_state_notification_sent: false,
+                error_details: null,
+            }], 
+            error: null 
+        } 
+    },
   });
 
+  const deps: IExecuteJobContext = getMockDeps();
+  assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+  const fileManager: MockFileManagerService = deps.fileManager;
   // Ensure saved contribution carries a true-root identity
-  const fileManager = new MockFileManagerService();
   const documentRelationships: DocumentRelationships = {
     [DialecticStageSlug.Thesis]: 'doc-root-abc',
   };
-  const savedWithIdentity = { ...mockContribution, document_relationships: documentRelationships };
+  const savedWithIdentity: DialecticContributionRow = { ...mockContribution, document_relationships: documentRelationships };
   fileManager.setUploadAndRegisterFileResponse(savedWithIdentity, null);
 
-  const deps = getMockDeps();
-  deps.fileManager = fileManager;
+  // This test asserts the RENDER job enqueue path. The production decision is delegated to
+  // deps.shouldEnqueueRenderJob, so we must stub it to the markdown-rendering path here.
+  const renderDecisionReason: RenderCheckReason = 'is_markdown';
+  const renderDecision: ShouldEnqueueRenderJobResult = {
+    shouldRender: true,
+    reason: renderDecisionReason,
+  };
+  stub(deps, 'shouldEnqueueRenderJob', () => Promise.resolve(renderDecision));
+
+  stub(deps, 'callUnifiedAIModel', () => Promise.resolve({
+    content: '{"content": "AI response"}',
+    contentType: 'application/json',
+    inputTokens: 10,
+    outputTokens: 5,
+    processingTimeMs: 50,
+    rawProviderResponse: { finish_reason: 'stop' },
+  }));
 
   // Use a markdown output type so RENDER job is enqueued
   const renderPayload: DialecticExecuteJobPayload = {
@@ -2100,9 +2070,6 @@ Deno.test('executeModelCallAndSave - schedules RENDER job after success with ren
   assertEquals(pl['stageSlug'], renderPayload.stageSlug);
   assertEquals(pl['documentIdentity'], 'doc-root-abc');
   assert(!('step_info' in pl), 'Payload must not include deprecated step_info');
+
+  clearAllStubs?.();
 });
-
-
-
-
-

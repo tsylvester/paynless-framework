@@ -21,7 +21,7 @@ import {
 } from "../_shared/utils/type_guards.ts";
 import { AiModelExtendedConfig, ChatApiRequest, Messages, FinishReason } from '../_shared/types.ts';
 import { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
-import { ContextWindowError } from '../_shared/utils/errors.ts';
+import { ContextWindowError, RenderJobValidationError, RenderJobEnqueueError } from '../_shared/utils/errors.ts';
 import { ResourceDocuments } from "../_shared/types.ts";
 import { getMaxOutputTokens } from '../_shared/utils/affordability_utils.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
@@ -29,7 +29,6 @@ import { TablesInsert } from '../types_db.ts';
 import { sanitizeJsonContent } from '../_shared/utils/jsonSanitizer.ts';
 import { isJsonSanitizationResult } from '../_shared/utils/type-guards/type_guards.jsonSanitizer.ts';
 import { JsonSanitizationResult } from '../_shared/types/jsonSanitizer.interface.ts';
-import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
 import { isDocumentKey, isFileType } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
 export async function executeModelCallAndSave(
     params: ExecuteModelCallAndSaveParams,
@@ -1215,10 +1214,13 @@ export async function executeModelCallAndSave(
     }
 
     // For document file types, document_key is guaranteed to be present after validation
-    // Store it with type narrowing for use in pathContext
+    // Store it for use in pathContext and RENDER job payload
     let validatedDocumentKey: string | undefined = undefined;
-    if (isDocumentKey(job.payload.output_type)) {
-        validatedDocumentKey = job.payload.output_type;
+    if (isDocumentKey(fileType)) {
+        const dk = job.payload.document_key;
+        if (typeof dk === 'string' && dk.trim() !== '') {
+            validatedDocumentKey = dk;
+        }
     }
 
     // For document outputs, use FileType.ModelContributionRawJson to save to raw_responses/ folder
@@ -1286,7 +1288,9 @@ export async function executeModelCallAndSave(
             .eq('id', contribution.id);
 
         if (relUpdateError) {
-            throw new Error(`Failed to persist continuation document_relationships for contribution ${contribution.id}: ${relUpdateError.message}`);
+            throw new RenderJobValidationError(
+                `document_relationships[${stageSlug}] is required and must be persisted before RENDER job creation. Contribution ID: ${contribution.id}`
+            );
         }
 
         // Validate stageSlug value exists and is valid - isDocumentRelationships already validated it's a record
@@ -1300,124 +1304,206 @@ export async function executeModelCallAndSave(
     }
 
     // Initialize root-only relationships IMMEDIATELY after save (before RENDER job creation)
-    if (!contribution.document_relationships && !isContinuationForStorage) {
-        const dynamicRelationships: Record<string, string> = {};
-        dynamicRelationships[stageSlug] = contribution.id;
+    if (!isContinuationForStorage && isDocumentKey(fileType)) {
+        const existing = contribution.document_relationships;
+        const existingStageValue = isRecord(existing) ? existing[stageSlug] : undefined;
 
-        const { error: updateError } = await dbClient
-            .from('dialectic_contributions')
-            .update({ document_relationships: dynamicRelationships })
-            .eq('id', contribution.id);
+        const needsInit =
+            !isRecord(existing) ||
+            typeof existingStageValue !== 'string' ||
+            existingStageValue.trim() === '';
 
-        if (updateError) {
-            throw new Error(`Failed to initialize document_relationships for contribution ${contribution.id}: ${updateError.message}`);
+        if (needsInit) {
+            const merged: Record<string, string> = {};
+            if (isRecord(existing)) {
+                for (const [k, v] of Object.entries(existing)) {
+                    if (typeof v === 'string') {
+                        merged[k] = v;
+                    }
+                }
+            }
+            merged[stageSlug] = contribution.id;
+
+            const { error: updateError } = await dbClient
+                .from('dialectic_contributions')
+                .update({ document_relationships: merged })
+                .eq('id', contribution.id);
+
+            if (updateError) {
+                throw new RenderJobValidationError(
+                    `document_relationships[${stageSlug}] is required and must be persisted before RENDER job creation. Contribution ID: ${contribution.id}`
+                );
+            }
+
+            // Validate initialization succeeded
+            if (
+                typeof merged[stageSlug] !== 'string' ||
+                merged[stageSlug].trim() === '' ||
+                merged[stageSlug] !== contribution.id
+            ) {
+                throw new RenderJobValidationError(
+                    `document_relationships[${stageSlug}] is required and must be persisted before RENDER job creation. Contribution ID: ${contribution.id}`
+                );
+            }
+
+            contribution.document_relationships = merged;
         }
+    }
 
-        // Validate initialization succeeded
-        if (!dynamicRelationships[stageSlug] || dynamicRelationships[stageSlug] !== contribution.id) {
-            throw new Error(`document_relationships[${stageSlug}] must equal contribution.id (${contribution.id}) after initialization for root chunks`);
-        }
+    // Validate document_relationships presence for document outputs before render decision
+    const stageRelationshipForStage = isRecord(contribution.document_relationships)
+        ? contribution.document_relationships[stageSlug]
+        : undefined;
 
-        contribution.document_relationships = dynamicRelationships;
+    if (
+        isDocumentKey(fileType) &&
+        (
+            typeof stageRelationshipForStage !== 'string' ||
+            stageRelationshipForStage.trim() === ''
+        )
+    ) {
+        throw new RenderJobValidationError(
+            `document_relationships[${stageSlug}] is required and must be persisted before RENDER job creation. Contribution ID: ${contribution.id}`
+        );
     }
 
     // Conditionally enqueue RENDER job for markdown document outputs on every chunk completion
-    let shouldRender = false; // Default to false (JSON-only artifact) if query fails
-    try {
-        shouldRender = await shouldEnqueueRenderJob({ dbClient }, { outputType: output_type, stageSlug });
-        if (!shouldRender) {
-            deps.logger.info('[executeModelCallAndSave] Skipping RENDER job for non-markdown output type', { output_type, stageSlug });
-        } else {
-            // Extract documentIdentity from document_relationships[stageSlug] specifically (must be persisted by now)
-            if (!isRecord(contribution.document_relationships)) {
-                throw new Error(`document_relationships is required and must be persisted before RENDER job creation. Contribution ID: ${contribution.id}`);
-            }
+    const { shouldRender, reason, details } = await deps.shouldEnqueueRenderJob(
+        { dbClient, logger: deps.logger },
+        { outputType: output_type, stageSlug }
+    );
 
-            // Use Object.entries().find() to access the specific key value type-safely
-            const stageSlugEntry = Object.entries(contribution.document_relationships).find(([key]) => key === stageSlug);
-            if (!stageSlugEntry || typeof stageSlugEntry[1] !== 'string' || stageSlugEntry[1].trim() === '') {
-                throw new Error(`document_relationships[${stageSlug}] is required and must be a non-empty string before RENDER job creation. Contribution ID: ${contribution.id}`);
-            }
-            const stageSlugValue = stageSlugEntry[1];
+    // Handle error reasons: fail the EXECUTE job for transient/config errors
+    if (!shouldRender && ['stage_not_found', 'instance_not_found', 'steps_not_found', 'parse_error', 'query_error', 'no_active_recipe'].includes(reason)) {
+        deps.logger.error('[executeModelCallAndSave] Failed to determine if RENDER job required due to query/config error', { reason, details, outputType: output_type, stageSlug });
+        throw new Error(`Cannot determine render requirement: ${reason}${details ? ` - ${details}` : ''}`);
+    }
 
-            const documentIdentity: string = stageSlugValue;
+    // Log successful skip for JSON outputs (normal flow, not an error)
+    if (!shouldRender && reason === 'is_json') {
+        deps.logger.info('[executeModelCallAndSave] Skipping RENDER job for JSON output', { outputType: output_type });
+    }
 
-            // Validate required fields before creating RENDER job payload
-            if (!validatedDocumentKey || typeof validatedDocumentKey !== 'string' || validatedDocumentKey.trim() === '') {
-                deps.logger.error('[executeModelCallAndSave] Cannot enqueue RENDER job: validatedDocumentKey is missing or invalid', { 
-                    jobId, 
-                    fileType, 
-                    validatedDocumentKey 
-                });
-                throw new Error('validatedDocumentKey is required for RENDER job but is missing or invalid');
-            }
-            const validatedDocumentKeyStrict: string = validatedDocumentKey;
-            if (!isFileType(validatedDocumentKeyStrict)) {
-                throw new Error('validatedDocumentKey is not a valid FileType');
-            }
-            const validatedDocumentKeyAsFileType: FileType = validatedDocumentKeyStrict;
-
-            if (!documentIdentity || typeof documentIdentity !== 'string' || documentIdentity.trim() === '') {
-                deps.logger.error('[executeModelCallAndSave] Cannot enqueue RENDER job: documentIdentity is missing or invalid', { 
-                    jobId, 
-                    documentIdentity 
-                });
-                throw new Error('documentIdentity is required for RENDER job but is missing or invalid');
-            }
-            const documentIdentityStrict: string = documentIdentity;
-
-            if (!contribution.id || typeof contribution.id !== 'string' || contribution.id.trim() === '') {
-                throw new Error('contribution.id is required for RENDER job but is missing or invalid');
-            }
-            const sourceContributionIdStrict: string = contribution.id;
-
-            const renderPayload: DialecticRenderJobPayload = {
-                projectId,
-                sessionId,
-                iterationNumber,
-                stageSlug,
-                documentIdentity: documentIdentityStrict,
-                documentKey: validatedDocumentKeyAsFileType,
-                sourceContributionId: sourceContributionIdStrict,
-                user_jwt: userAuthTokenStrict,
-                model_id,
-                walletId,
-            };
-
-            if (!isDialecticRenderJobPayload(renderPayload)) {
-                throw new Error('renderPayload is not a valid DialecticRenderJobPayload');
-            }
-            if(!isJson(renderPayload)) {
-                throw new Error('renderPayload is not a valid JSON object');
-            }
-
-            const insertObj: TablesInsert<'dialectic_generation_jobs'> = {
-                job_type: 'RENDER',
-                session_id: job.session_id,
-                stage_slug: stageSlug,
-                iteration_number: iterationNumber,
-                parent_job_id: jobId,
-                payload: renderPayload,
-                is_test_job: job.is_test_job ?? false,
-                status: 'pending',
-                user_id: projectOwnerUserId,
-            };
-
-            const { data: renderInsertData, error: renderInsertError } = await dbClient
-                .from('dialectic_generation_jobs')
-                .insert(insertObj)
-                .select('*')
-                .single();
-
-            if (renderInsertError) {
-                deps.logger.error('[executeModelCallAndSave] Failed to enqueue RENDER job', { renderInsertError, insertObj });
-            } else {
-                const newId = isRecord(renderInsertData) && typeof renderInsertData['id'] === 'string' ? renderInsertData['id'] : undefined;
-                deps.logger.info('[executeModelCallAndSave] Enqueued RENDER job', { parent_job_id: jobId, render_job_id: newId });
-            }
+    // Proceed with RENDER job creation only for markdown documents
+    if (shouldRender && reason === 'is_markdown') {
+        deps.logger.info('[executeModelCallAndSave] Preparing to enqueue RENDER job', {
+            jobId,
+            output_type,
+            fileType,
+            storageFileType,
+            validatedDocumentKey,
+        });
+        // Extract documentIdentity from document_relationships[stageSlug] specifically (must be persisted by now)
+        const documentIdentityValue = stageRelationshipForStage;
+        if (typeof documentIdentityValue !== 'string' || documentIdentityValue.trim() === '') {
+            throw new RenderJobValidationError(`document_relationships[${stageSlug}] is required and must be a non-empty string before RENDER job creation. Contribution ID: ${contribution.id}`);
         }
-    } catch (e) {
-        deps.logger.error('[executeModelCallAndSave] CRITICAL: Exception while scheduling RENDER job', { error: e instanceof Error ? e.message : String(e) });
+        const documentIdentity: string = documentIdentityValue;
+
+        // Validate required fields before creating RENDER job payload
+        if (!validatedDocumentKey || typeof validatedDocumentKey !== 'string' || validatedDocumentKey.trim() === '') {
+            deps.logger.error('[executeModelCallAndSave] Cannot enqueue RENDER job: validatedDocumentKey is missing or invalid', {
+                jobId,
+                fileType,
+                validatedDocumentKey
+            });
+            throw new RenderJobValidationError('validatedDocumentKey is required for RENDER job but is missing or invalid');
+        }
+        const validatedDocumentKeyStrict: string = validatedDocumentKey;
+        if (!isFileType(validatedDocumentKeyStrict)) {
+            throw new RenderJobValidationError('validatedDocumentKey is not a valid FileType');
+        }
+        const validatedDocumentKeyAsFileType: FileType = validatedDocumentKeyStrict;
+
+        if (!documentIdentity || typeof documentIdentity !== 'string' || documentIdentity.trim() === '') {
+            deps.logger.error('[executeModelCallAndSave] Cannot enqueue RENDER job: documentIdentity is missing or invalid', {
+                jobId,
+                documentIdentity
+            });
+            throw new RenderJobValidationError('documentIdentity is required for RENDER job but is missing or invalid');
+        }
+        const documentIdentityStrict: string = documentIdentity;
+
+        if (!contribution.id || typeof contribution.id !== 'string' || contribution.id.trim() === '') {
+            throw new RenderJobValidationError('contribution.id is required for RENDER job but is missing or invalid');
+        }
+        const sourceContributionIdStrict: string = contribution.id;
+
+        const renderPayload: DialecticRenderJobPayload = {
+            projectId,
+            sessionId,
+            iterationNumber,
+            stageSlug,
+            documentIdentity: documentIdentityStrict,
+            documentKey: validatedDocumentKeyAsFileType,
+            sourceContributionId: sourceContributionIdStrict,
+            user_jwt: userAuthTokenStrict,
+            model_id,
+            walletId,
+        };
+
+        if (!isDialecticRenderJobPayload(renderPayload)) {
+            throw new RenderJobValidationError('renderPayload is not a valid DialecticRenderJobPayload');
+        }
+        if(!isJson(renderPayload)) {
+            throw new RenderJobValidationError('renderPayload is not a valid JSON object');
+        }
+
+        const insertObj: TablesInsert<'dialectic_generation_jobs'> = {
+            job_type: 'RENDER',
+            session_id: job.session_id,
+            stage_slug: stageSlug,
+            iteration_number: iterationNumber,
+            parent_job_id: jobId,
+            payload: renderPayload,
+            is_test_job: job.is_test_job ?? false,
+            status: 'pending',
+            user_id: projectOwnerUserId,
+        };
+
+        const { data: renderInsertData, error: renderInsertError } = await dbClient
+            .from('dialectic_generation_jobs')
+            .insert(insertObj)
+            .select('*')
+            .single();
+
+        if (renderInsertError) {
+            const errorMessage = renderInsertError.message || '';
+            const errorCode = renderInsertError.code || '';
+
+            // Categorize programmer errors (FK violations, constraint violations, RLS)
+            const isProgrammerError =
+                errorMessage.includes('foreign key constraint') ||
+                errorMessage.includes('unique constraint') ||
+                errorMessage.includes('violates') ||
+                errorCode === '42501' || // RLS policy violation
+                errorCode === '23503' || // FK constraint violation
+                errorCode === '23505';   // Unique constraint violation
+
+            if (isProgrammerError) {
+                deps.logger.error('[executeModelCallAndSave] Programmer error during RENDER job insert', {
+                    renderInsertError,
+                    insertObj,
+                    errorMessage,
+                    errorCode
+                });
+                throw new RenderJobEnqueueError(
+                    `Failed to insert RENDER job due to database constraint violation: ${errorMessage} (code: ${errorCode})`
+                );
+            }
+
+            // Transient errors - throw to trigger job-level retry
+            deps.logger.error('[executeModelCallAndSave] Transient error during RENDER job insert - will retry', {
+                renderInsertError,
+                insertObj
+            });
+            throw new RenderJobEnqueueError(
+                `Failed to insert RENDER job due to transient error: ${errorMessage}`
+            );
+        } else {
+            const newId = isRecord(renderInsertData) && typeof renderInsertData['id'] === 'string' ? renderInsertData['id'] : undefined;
+            deps.logger.info('[executeModelCallAndSave] Enqueued RENDER job', { parent_job_id: jobId, render_job_id: newId });
+        }
     }
 
     if (typeof promptConstructionPayload.source_prompt_resource_id === 'string' && promptConstructionPayload.source_prompt_resource_id.trim().length > 0) {

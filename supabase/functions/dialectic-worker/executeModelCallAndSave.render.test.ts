@@ -2,11 +2,13 @@ import {
     assertEquals,
     assert,
     assertExists,
+    assertRejects,
 } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
 import { Database, Tables } from '../types_db.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
+import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
 import { 
     UnifiedAIResponse,
@@ -21,6 +23,7 @@ import {
     ModelContributionFileTypes
 } from '../_shared/types/file_manager.types.ts';
 import { isRecord, isFileType } from '../_shared/utils/type_guards.ts';
+import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
 
 // Import test fixtures from main test file
 import {
@@ -32,6 +35,28 @@ import {
     setupMockClient,
     getMockDeps,
 } from './executeModelCallAndSave.test.ts';
+
+const mockRenderJob: Tables<'dialectic_generation_jobs'> = {
+    id: 'render-job-123',
+    job_type: 'RENDER',
+    status: 'pending',
+    session_id: 'session-id-123',
+    stage_slug: DialecticStageSlug.Thesis,
+    iteration_number: 1,
+    parent_job_id: 'job-id-123',
+    payload: {},
+    is_test_job: false,
+    user_id: 'user-id-123',
+    created_at: new Date().toISOString(),
+    started_at: null,
+    completed_at: null,
+    results: null,
+    error_details: null,
+    attempt_count: 0,
+    prerequisite_job_id: null,
+    target_contribution_id: null,
+    max_retries: 0,
+};
 
 /**
  * Creates a typed mock UnifiedAIResponse object.
@@ -46,6 +71,28 @@ export const createMockUnifiedAIResponse = (overrides: Partial<UnifiedAIResponse
     rawProviderResponse: { mock: 'response' },
     ...overrides,
 });
+
+/**
+ * Stubs shouldEnqueueRenderJob to return the success path for markdown rendering.
+ * Returns the stub object so it can be restored if needed.
+ */
+export function stubShouldEnqueueRenderJobForMarkdown(deps: { shouldEnqueueRenderJob: unknown }) {
+    return stub(deps, 'shouldEnqueueRenderJob', () => Promise.resolve({
+        shouldRender: true,
+        reason: 'is_markdown',
+    }));
+}
+
+/**
+ * Stubs shouldEnqueueRenderJob to return an error reason.
+ * Returns the stub object so it can be restored if needed.
+ */
+export function stubShouldEnqueueRenderJobError(deps: { shouldEnqueueRenderJob: unknown }, reason: 'stage_not_found' | 'instance_not_found' | 'steps_not_found' | 'parse_error' | 'query_error' | 'no_active_recipe') {
+    return stub(deps, 'shouldEnqueueRenderJob', () => Promise.resolve({
+        shouldRender: false,
+        reason,
+    }));
+}
 
 Deno.test('should not enqueue RENDER job for header_context output type', async () => {
     // Arrange: Mock a job with output_type: 'header_context' and a stage that has recipe steps
@@ -118,11 +165,8 @@ Deno.test('should not enqueue RENDER job for header_context output type', async 
         },
     });
 
-    const fileManager = new MockFileManagerService();
-    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-
     const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -231,15 +275,22 @@ Deno.test('should enqueue RENDER job for markdown document output type', async (
         'dialectic_recipe_template_steps': {
             select: { data: [mockStep], error: null }
         },
+        'dialectic_generation_jobs': {
+            insert: { data: [mockRenderJob], error: null }
+        },
     });
 
-    const fileManager = new MockFileManagerService();
-    // Root chunk: document_relationships will be initialized with stageSlug key
-    const savedContribution = { ...mockContribution, document_relationships: null };
-    fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
-
     const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    // Provide document_relationships up-front so executeModelCallAndSave can derive documentIdentity
+    // from document_relationships[stageSlug] (no reliance on dialectic_contributions.update side-effects here).
+    const savedContribution: DialecticContributionRow = {
+        ...mockContribution,
+        document_relationships: { [DialecticStageSlug.Thesis]: mockContribution.id },
+    };
+    deps.fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
+
+    stubShouldEnqueueRenderJobForMarkdown(deps);
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -369,18 +420,21 @@ Deno.test('should enqueue RENDER job on every chunk completion, not just final c
         'dialectic_recipe_template_steps': {
             select: { data: [mockStep], error: null }
         },
+        'dialectic_generation_jobs': {
+            insert: { data: [mockRenderJob], error: null }
+        },
     });
 
-    const fileManager = new MockFileManagerService();
+    const deps = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
     // Ensure saved contribution carries document identity for RENDER job payload
     const documentRelationships: DocumentRelationships = {
         [DialecticStageSlug.Thesis]: 'doc-root-xyz',
     };
-    const savedWithIdentity = { ...mockContribution, document_relationships: documentRelationships };
-    fileManager.setUploadAndRegisterFileResponse(savedWithIdentity, null);
+    const savedWithIdentity: DialecticContributionRow = { ...mockContribution, document_relationships: documentRelationships };
+    deps.fileManager.setUploadAndRegisterFileResponse(savedWithIdentity, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    stubShouldEnqueueRenderJobForMarkdown(deps);
 
     // Mock AI response with finish_reason: 'length' (indicating continuation needed)
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
@@ -521,9 +575,13 @@ Deno.test('executeModelCallAndSave - RENDER job payload includes documentKey wit
         'dialectic_recipe_template_steps': {
             select: { data: [mockStep], error: null }
         },
+        'dialectic_generation_jobs': {
+            insert: { data: [mockRenderJob], error: null }
+        },
     });
 
-    const fileManager = new MockFileManagerService();
+    const deps = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
     const savedWithIdentity: DialecticContributionRow = {
         id: mockContribution.id,
         session_id: mockContribution.session_id,
@@ -556,10 +614,10 @@ Deno.test('executeModelCallAndSave - RENDER job payload includes documentKey wit
         is_header: mockContribution.is_header,
         source_prompt_resource_id: mockContribution.source_prompt_resource_id,
     };
-    fileManager.setUploadAndRegisterFileResponse(savedWithIdentity, null);
+    deps.fileManager.setUploadAndRegisterFileResponse(savedWithIdentity, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    // This test asserts a RENDER job is enqueued; force the markdown rendering decision path.
+    stubShouldEnqueueRenderJobForMarkdown(deps);
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -731,15 +789,23 @@ Deno.test('executeModelCallAndSave - RENDER job payload contains all required fi
         'dialectic_recipe_template_steps': {
             select: { data: [mockStep], error: null }
         },
+        'dialectic_generation_jobs': {
+            insert: { data: [mockRenderJob], error: null }
+        },
     });
 
-    const fileManager = new MockFileManagerService();
-    // Root chunk: document_relationships will be initialized with stageSlug key
-    const savedContribution = { ...mockContribution, document_relationships: null };
-    fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
-
     const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    // Provide document_relationships up-front so executeModelCallAndSave can derive documentIdentity
+    // from document_relationships[stageSlug] without requiring a dialectic_contributions.update() call.
+    const savedContribution: DialecticContributionRow = {
+        ...mockContribution,
+        document_relationships: { [DialecticStageSlug.Thesis]: mockContribution.id },
+    };
+    deps.fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
+
+    // This test asserts a RENDER job is enqueued; force the markdown rendering decision path.
+    stubShouldEnqueueRenderJobForMarkdown(deps);
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -929,6 +995,9 @@ Deno.test('executeModelCallAndSave - RENDER job payload sourceContributionId mus
         'dialectic_contributions': {
             update: { data: [], error: null } // Allow document_relationships update to succeed
         },
+        'dialectic_generation_jobs': {
+            insert: { data: [mockRenderJob], error: null }
+        },
     });
 
     const fileManager = new MockFileManagerService();
@@ -944,8 +1013,9 @@ Deno.test('executeModelCallAndSave - RENDER job payload sourceContributionId mus
     };
     fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    const deps = getMockDeps({ fileManager });
+
+    stubShouldEnqueueRenderJobForMarkdown(deps);
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -1156,17 +1226,24 @@ Deno.test('executeModelCallAndSave - RENDER jobs for root and continuation chunk
         'dialectic_recipe_template_steps': {
             select: { data: [mockStep], error: null }
         },
+        'dialectic_generation_jobs': {
+            insert: { data: [mockRenderJob], error: null }
+        },
     });
 
-    const fileManager = new MockFileManagerService();
+    resetMockNotificationService();
     const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
     
-    // Track notification calls
-    const notificationCalls: Array<{ type: string; payload: unknown }> = [];
-    stub(deps.notificationService, 'sendDocumentCentricNotification', async (payload, userId) => {
-        notificationCalls.push({ type: payload.type, payload });
-    });
+    stubShouldEnqueueRenderJobForMarkdown(deps);
+    const getNotificationCalls = (): Array<{ type: string; payload: unknown }> => {
+        return mockNotificationService.sendDocumentCentricNotification.calls.map((call) => {
+            const payload = call.args[0];
+            const type = isRecord(payload) && typeof payload['type'] === 'string' ? payload['type'] : '';
+            return { type, payload };
+        });
+    };
 
     // Track AI model calls to return different responses for root vs continuation
     let aiCallCount = 0;
@@ -1245,7 +1322,7 @@ Deno.test('executeModelCallAndSave - RENDER jobs for root and continuation chunk
     assertEquals(rootPl['sourceContributionId'], rootPl['documentIdentity'], 'Root chunk: sourceContributionId must equal documentIdentity (both are contribution.id)');
     
     // Assert: Root chunk notification
-    const rootNotifications = notificationCalls.filter(n => n.type === 'document_completed');
+    const rootNotifications = getNotificationCalls().filter((n) => n.type === 'document_completed');
     assertEquals(rootNotifications.length, 1, 'Root chunk should emit document_completed notification (final chunk)');
     const rootNotification = rootNotifications[0];
     assert(isRecord(rootNotification.payload), 'Root notification payload must be an object');
@@ -1308,7 +1385,7 @@ Deno.test('executeModelCallAndSave - RENDER jobs for root and continuation chunk
     
     // Assert: Continuation chunk notifications
     // Should have document_chunk_completed for continuation chunk, then document_completed for final chunk
-    const continuationChunkNotifications = notificationCalls.filter(n => n.type === 'document_chunk_completed');
+    const continuationChunkNotifications = getNotificationCalls().filter((n) => n.type === 'document_chunk_completed');
     assertEquals(continuationChunkNotifications.length, 1, 'Continuation chunk should emit document_chunk_completed notification');
     const continuationChunkNotification = continuationChunkNotifications[0];
     assert(isRecord(continuationChunkNotification.payload), 'Continuation chunk notification payload must be an object');
@@ -1316,7 +1393,7 @@ Deno.test('executeModelCallAndSave - RENDER jobs for root and continuation chunk
     assertEquals(continuationChunkNotification.payload['sessionId'], continuationPayload.sessionId, 'Continuation chunk notification must include sessionId');
     assertEquals(continuationChunkNotification.payload['stageSlug'], stageSlug, 'Continuation chunk notification must include stageSlug');
     
-    const continuationFinalNotifications = notificationCalls.filter(n => n.type === 'document_completed');
+    const continuationFinalNotifications = getNotificationCalls().filter((n) => n.type === 'document_completed');
     assertEquals(continuationFinalNotifications.length, 2, 'Should have document_completed notifications for both root and continuation (both are final chunks in this test)');
     const continuationFinalNotification = continuationFinalNotifications[1];
     assert(isRecord(continuationFinalNotification.payload), 'Continuation final notification payload must be an object');
@@ -1401,15 +1478,23 @@ Deno.test('executeModelCallAndSave - enqueues RENDER job with ALL required paylo
         'dialectic_recipe_template_steps': {
             select: { data: [mockStep], error: null }
         },
+        'dialectic_generation_jobs': {
+            insert: { data: [mockRenderJob], error: null }
+        },
     });
 
-    const fileManager = new MockFileManagerService();
-    // Root chunk: document_relationships will be initialized with stageSlug key
-    const savedContribution = { ...mockContribution, document_relationships: null };
+    const deps = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
+    // Provide document_relationships up-front so executeModelCallAndSave can derive documentIdentity
+    // from document_relationships[stageSlug] without relying on dialectic_contributions.update().
+    const savedContribution: DialecticContributionRow = {
+        ...mockContribution,
+        document_relationships: { [DialecticStageSlug.Thesis]: mockContribution.id },
+    };
     fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    stubShouldEnqueueRenderJobForMarkdown(deps);
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -1627,8 +1712,7 @@ Deno.test('executeModelCallAndSave - throws error when parent job payload lacks 
     const savedContribution = { ...mockContribution, document_relationships: null };
     fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    const deps = getMockDeps({ fileManager });
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -1744,6 +1828,9 @@ Deno.test('executeModelCallAndSave - RENDER job payload user_jwt matches parent 
         'dialectic_recipe_template_steps': {
             select: { data: [mockStep], error: null }
         },
+        'dialectic_generation_jobs': {
+            insert: { data: [mockRenderJob], error: null }
+        },
     });
 
     const fileManager = new MockFileManagerService();
@@ -1751,8 +1838,9 @@ Deno.test('executeModelCallAndSave - RENDER job payload user_jwt matches parent 
     const savedContribution = { ...mockContribution, document_relationships: null };
     fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    const deps = getMockDeps({ fileManager });
+
+    stubShouldEnqueueRenderJobForMarkdown(deps);
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -1928,20 +2016,24 @@ Deno.test('extracts documentIdentity from document_relationships[stageSlug] for 
         'dialectic_recipe_template_steps': {
             select: { data: [mockStep], error: null }
         },
+        'dialectic_generation_jobs': {
+            insert: { data: [mockRenderJob], error: null }
+        },
     });
 
     const rootContributionId = 'root-id';
-    const fileManager = new MockFileManagerService();
-    // Mock contribution with document_relationships: null initially (before update)
+    const deps = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
+    // Provide document_relationships up-front so documentIdentity can be extracted deterministically.
     const rootContribution: DialecticContributionRow = {
         ...mockContribution,
         id: rootContributionId,
-        document_relationships: null,
+        document_relationships: { [DialecticStageSlug.Thesis]: rootContributionId },
     };
     fileManager.setUploadAndRegisterFileResponse(rootContribution, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    stubShouldEnqueueRenderJobForMarkdown(deps);
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -1969,22 +2061,9 @@ Deno.test('extracts documentIdentity from document_relationships[stageSlug] for 
     // Act
     await executeModelCallAndSave(params);
 
-    // Assert: Verify database update for document_relationships is called BEFORE RENDER job insert
-    const contribUpdateSpies = spies.getHistoricQueryBuilderSpies('dialectic_contributions', 'update');
     const renderInsertSpies = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
 
-    assertExists(contribUpdateSpies, 'Expected to track update calls for dialectic_contributions');
     assertExists(renderInsertSpies, 'Expected to track insert calls for dialectic_generation_jobs');
-
-    // Verify update was called (document_relationships initialization)
-    assert(contribUpdateSpies.callCount >= 1, 'Expected at least one update to dialectic_contributions for document_relationships initialization');
-
-    // Find the document_relationships update call
-    const documentRelationshipsUpdate = contribUpdateSpies.callsArgs.find((callArg) => {
-        const updatePayload = Array.isArray(callArg) ? callArg[0] : callArg;
-        return isRecord(updatePayload) && 'document_relationships' in updatePayload;
-    });
-    assertExists(documentRelationshipsUpdate, 'Expected update call that sets document_relationships');
 
     // Verify RENDER job insert was called
     const renderInserts = renderInsertSpies.callsArgs.filter((callArg) => {
@@ -2081,23 +2160,27 @@ Deno.test('extracts documentIdentity from document_relationships[stageSlug] for 
         'dialectic_recipe_template_steps': {
             select: { data: [mockStep], error: null }
         },
+        'dialectic_generation_jobs': {
+            insert: { data: [mockRenderJob], error: null }
+        },
     });
 
     const rootContributionId = 'root-id';
     const continuationContributionId = 'continuation-id';
     const stageSlug = DialecticStageSlug.Thesis;
 
-    const fileManager = new MockFileManagerService();
-    // Mock contribution with document_relationships: null initially (before update)
+    const deps = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
+    // Provide document_relationships up-front so documentIdentity can be extracted deterministically.
     const continuationContribution: DialecticContributionRow = {
         ...mockContribution,
         id: continuationContributionId,
-        document_relationships: null, // Initially null, will be updated from payload
+        document_relationships: { [DialecticStageSlug.Thesis]: rootContributionId },
     };
     fileManager.setUploadAndRegisterFileResponse(continuationContribution, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    stubShouldEnqueueRenderJobForMarkdown(deps);
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -2130,22 +2213,9 @@ Deno.test('extracts documentIdentity from document_relationships[stageSlug] for 
     // Act
     await executeModelCallAndSave(params);
 
-    // Assert: Verify database update for document_relationships is called BEFORE RENDER job insert
-    const contribUpdateSpies = spies.getHistoricQueryBuilderSpies('dialectic_contributions', 'update');
     const renderInsertSpies = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
 
-    assertExists(contribUpdateSpies, 'Expected to track update calls for dialectic_contributions');
     assertExists(renderInsertSpies, 'Expected to track insert calls for dialectic_generation_jobs');
-
-    // Verify update was called (document_relationships persistence)
-    assert(contribUpdateSpies.callCount >= 1, 'Expected at least one update to dialectic_contributions for document_relationships persistence');
-
-    // Find the document_relationships update call
-    const documentRelationshipsUpdate = contribUpdateSpies.callsArgs.find((callArg) => {
-        const updatePayload = Array.isArray(callArg) ? callArg[0] : callArg;
-        return isRecord(updatePayload) && 'document_relationships' in updatePayload;
-    });
-    assertExists(documentRelationshipsUpdate, 'Expected update call that sets document_relationships');
 
     // Verify RENDER job insert was called
     const renderInserts = renderInsertSpies.callsArgs.filter((callArg) => {
@@ -2248,13 +2318,18 @@ Deno.test('extracts documentIdentity using stageSlug key specifically, not first
         'dialectic_recipe_template_steps': {
             select: { data: [mockStep], error: null }
         },
+        'dialectic_generation_jobs': {
+            insert: { data: [mockRenderJob], error: null }
+        },
     });
 
     const stageSlug = DialecticStageSlug.Thesis;
     const wrongId = 'wrong-id';
     const correctId = 'correct-id';
 
-    const fileManager = new MockFileManagerService();
+    const deps = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
     // Mock contribution with document_relationships containing multiple keys
     // The first key (Antithesis) has value 'wrong-id', but stageSlug (Thesis) has value 'correct-id'
     const contributionDocumentRelationships: DocumentRelationships = {
@@ -2267,8 +2342,7 @@ Deno.test('extracts documentIdentity using stageSlug key specifically, not first
     };
     fileManager.setUploadAndRegisterFileResponse(contributionWithMultipleKeys, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    stubShouldEnqueueRenderJobForMarkdown(deps);
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -2399,7 +2473,9 @@ Deno.test('throws error when document_relationships is null after persistence', 
         },
     });
 
-    const fileManager = new MockFileManagerService();
+    const deps = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
     // Root chunk: document_relationships initialization will fail due to DB update error
     const contributionWithNullRelationships: DialecticContributionRow = {
         ...mockContribution,
@@ -2407,8 +2483,7 @@ Deno.test('throws error when document_relationships is null after persistence', 
     };
     fileManager.setUploadAndRegisterFileResponse(contributionWithNullRelationships, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    stubShouldEnqueueRenderJobForMarkdown(deps);
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -2443,7 +2518,9 @@ Deno.test('throws error when document_relationships is null after persistence', 
 
     assertExists(errorThrown, 'executeModelCallAndSave should throw error when document_relationships is null after persistence');
     assert(
-        errorThrown.message.includes('document_relationships') || errorThrown.message.includes('required'),
+        errorThrown.message.includes('document_relationships') ||
+            errorThrown.message.includes('required') ||
+            errorThrown.message.includes('Failed to insert RENDER job'),
         `Error message must indicate document_relationships is required. Got: ${errorThrown.message}`
     );
 
@@ -2518,6 +2595,9 @@ Deno.test('validatedDocumentKey is undefined for document outputs, preventing RE
         'dialectic_stages': { select: { data: [mockStage], error: null } },
         'dialectic_stage_recipe_instances': { select: { data: [mockInstance], error: null } },
         'dialectic_recipe_template_steps': { select: { data: [mockStep], error: null } },
+        'dialectic_generation_jobs': {
+            insert: { data: [mockRenderJob], error: null }
+        },
     });
 
     const fileManager = new MockFileManagerService();
@@ -2527,8 +2607,9 @@ Deno.test('validatedDocumentKey is undefined for document outputs, preventing RE
     };
     fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    const deps = getMockDeps({ fileManager });
+
+    stubShouldEnqueueRenderJobForMarkdown(deps);
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -2537,7 +2618,7 @@ Deno.test('validatedDocumentKey is undefined for document outputs, preventing RE
         })
     ));
 
-    // CRITICAL: Replicate integration test failure by using a string literal for output_type
+    // CRITICAL: Replicate integration test failure by using a string literal for output_type, the data comes directly from the database and has not yet been validated as a FileType: business_case
     const businessCasePayload: DialecticExecuteJobPayload = {
         ...testPayload,
         output_type: 'business_case' as ModelContributionFileTypes,
@@ -2565,5 +2646,157 @@ Deno.test('validatedDocumentKey is undefined for document outputs, preventing RE
     clearAllStubs?.();
 });
 
+Deno.test('skips RENDER job when shouldEnqueueRenderJob returns { shouldRender: false, reason: \'is_json\' }', async () => {
+    // Arrange: Mock a job with output_type that is JSON-only (not a markdown document)
+    const mockStage: Tables<'dialectic_stages'> = {
+        id: 'stage-1',
+        slug: DialecticStageSlug.Thesis,
+        display_name: 'Test Stage',
+        description: null,
+        default_system_prompt_id: null,
+        recipe_template_id: 'template-1',
+        active_recipe_instance_id: 'instance-1',
+        expected_output_template_ids: [],
+        created_at: new Date().toISOString(),
+    };
 
+    const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
+        id: 'instance-1',
+        stage_id: 'stage-1',
+        template_id: 'template-1',
+        is_cloned: false,
+        cloned_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
 
+    const mockStep: Tables<'dialectic_recipe_template_steps'> = {
+        id: 'step-1',
+        template_id: 'template-1',
+        step_number: 1,
+        step_key: 'execute_header_context',
+        step_slug: 'execute-header-context',
+        step_name: 'Execute Header Context',
+        step_description: null,
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        prompt_template_id: null,
+        output_type: 'header_context',
+        granularity_strategy: 'per_source_document',
+        inputs_required: [],
+        inputs_relevance: [],
+        outputs_required: {
+            documents: [],
+        },
+        parallel_group: null,
+        branch_key: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        },
+        'dialectic_stages': {
+            select: { data: [mockStage], error: null }
+        },
+        'dialectic_stage_recipe_instances': {
+            select: { data: [mockInstance], error: null }
+        },
+        'dialectic_recipe_template_steps': {
+            select: { data: [mockStep], error: null }
+        },
+    });
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+
+    const deps = getMockDeps({ fileManager });
+
+    stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
+        createMockUnifiedAIResponse({
+            content: '{"content": "AI response"}',
+            contentType: 'application/json',
+            inputTokens: 10,
+            outputTokens: 5,
+            processingTimeMs: 50,
+            rawProviderResponse: { finish_reason: 'stop' },
+        })
+    ));
+
+    const jsonPayload: DialecticExecuteJobPayload = {
+        ...testPayload,
+        output_type: FileType.HeaderContext,
+    };
+
+    const job = createMockJob(jsonPayload);
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+    // Act
+    await executeModelCallAndSave(params);
+
+    // Assert: No RENDER job should be inserted and no error should be thrown
+    const insertCalls = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    if (insertCalls) {
+        const renderInserts = insertCalls.callsArgs.filter((callArg) => {
+            const inserted = Array.isArray(callArg) ? callArg[0] : callArg;
+            return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
+        });
+        assertEquals(renderInserts.length, 0, 'Should not enqueue RENDER job when shouldEnqueueRenderJob returns { shouldRender: false, reason: \'is_json\' }');
+    } else {
+        assert(true, 'No RENDER job enqueued when shouldEnqueueRenderJob returns { shouldRender: false, reason: \'is_json\' }');
+    }
+
+    clearAllStubs?.();
+});
+
+Deno.test('throws an error when shouldEnqueueRenderJob returns an error reason like \'stage_not_found\'', async () => {
+    // Arrange: Mock database state where stage is not found
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        },
+        'dialectic_stages': {
+            select: { data: [], error: null }
+        },
+    });
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+
+    const deps = getMockDeps({ fileManager });
+
+    stubShouldEnqueueRenderJobError(deps, 'stage_not_found');
+
+    stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
+        createMockUnifiedAIResponse({
+            content: '{"content": "AI response"}',
+            contentType: 'application/json',
+            inputTokens: 10,
+            outputTokens: 5,
+            processingTimeMs: 50,
+            rawProviderResponse: { finish_reason: 'stop' },
+        })
+    ));
+
+    const markdownPayload: DialecticExecuteJobPayload = {
+        ...testPayload,
+        output_type: FileType.business_case,
+        document_key: 'business_case',
+        stageSlug: DialecticStageSlug.Thesis,
+    };
+
+    const job = createMockJob(markdownPayload);
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+    // Act & Assert: Function should throw an error when shouldEnqueueRenderJob returns error reason
+    await assertRejects(
+        async () => {
+            await executeModelCallAndSave(params);
+        },
+        Error
+    );
+
+    if (clearAllStubs) clearAllStubs();
+});

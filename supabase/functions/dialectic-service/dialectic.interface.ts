@@ -1,36 +1,56 @@
-import { type ChatMessage, type ILogger } from '../_shared/types.ts';
-import type { Database, Json, Tables } from '../types_db.ts';
+import { ChatMessage, ILogger } from '../_shared/types.ts';
+import { Database, Json, Tables } from '../types_db.ts';
 import {
   downloadFromStorage,
 } from '../_shared/supabase_storage_utils.ts';
-import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
-import type { Logger } from '../_shared/logger.ts';
-import type { 
+import { 
+  SupabaseClient, 
+  User 
+} from 'npm:@supabase/supabase-js@^2';
+import { Logger } from '../_shared/logger.ts';
+import { 
   IFileManager, 
   CanonicalPathParams, 
-  ModelContributionFileTypes,
-  FileType
+  ModelContributionFileTypes, 
+  FileType 
 } from '../_shared/types/file_manager.types.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
-import type { DeleteStorageResult, DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
-import type {
+import { 
+  DeleteStorageResult, 
+  DownloadStorageResult 
+} from '../_shared/supabase_storage_utils.ts';
+import {
   FinishReason,
   FactoryDependencies,
   AiProviderAdapterInstance,
   AiProviderAdapter
 } from '../_shared/types.ts';
-import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
-import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
-import type { IRagService } from '../_shared/services/rag_service.interface.ts';
-import type { Messages, AiModelExtendedConfig, ChatApiRequest } from '../_shared/types.ts';
-import type { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
-import type { IPromptAssembler, AssembledPrompt } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
-import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
-import type { debitTokens } from '../chat/debitTokens.ts';
+import { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
+import { 
+  IIndexingService, 
+  IEmbeddingClient 
+} from '../_shared/services/indexing_service.interface.ts';
+import { IRagService } from '../_shared/services/rag_service.interface.ts';
+import { 
+  Messages, 
+  AiModelExtendedConfig, 
+  ChatApiRequest 
+} from '../_shared/types.ts';
+import { 
+  CountTokensDeps, 
+  CountableChatPayload 
+} from '../_shared/types/tokenizer.types.ts';
+import { 
+  IPromptAssembler, 
+  AssembledPrompt 
+} from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
+import { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
+import { debitTokens } from '../chat/debitTokens.ts';
 import { ICompressionStrategy } from '../_shared/utils/vector_utils.ts';
-import type { ServiceError } from "../_shared/types.ts";
-import type { IDocumentRenderer } from '../_shared/services/document_renderer.interface.ts';
-import type { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
+import { ServiceError } from "../_shared/types.ts";
+import { IDocumentRenderer } from '../_shared/services/document_renderer.interface.ts';
+import { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
+import { IExecuteJobContext } from '../dialectic-worker/JobContext.interface.ts';
 
 export type DialecticStageRecipeEdge = Database['public']['Tables']['dialectic_stage_recipe_edges']['Row'];
 export type DialecticStageRecipeInstance = Database['public']['Tables']['dialectic_stage_recipe_instances']['Row'];
@@ -69,6 +89,26 @@ export type PlanComplexStageFn = (
   completedSourceDocumentIds?: Set<string>,
 ) => Promise<DialecticJobRow[]>;
 
+export type CallUnifiedAIModelFn = (
+  chatApiRequest: ChatApiRequest,
+  authToken: string,
+  dependencies?: CallModelDependencies,
+) => Promise<UnifiedAIResponse>;
+
+export type GetAiProviderConfigFn = (
+  dbClient: SupabaseClient<Database>,
+  modelId: string
+) => Promise<AiModelExtendedConfig>;
+
+export type GetSeedPromptForStageFn = (
+  dbClient: SupabaseClient<Database>,
+  projectId: string,
+  sessionId: string,
+  stageSlug: string,
+  iterationNumber: number,
+  downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>
+) => Promise<SeedPromptData>;
+
 export interface IJobProcessors {
   processSimpleJob: ProcessSimpleJobFn;
   processComplexJob: ProcessComplexJobFn;
@@ -88,6 +128,8 @@ export type JobType = 'PLAN' | 'EXECUTE' | 'RENDER';
 export const JobTypes: readonly JobType[] = ['PLAN', 'EXECUTE', 'RENDER'];
 export type PromptType = 'Seed' | 'Planner' | 'Turn' | 'Continuation';
 export const PromptTypes: readonly PromptType[] = ['Seed', 'Planner', 'Turn', 'Continuation'];
+
+export type GetGranularityPlannerFn = (strategyId: string | null | undefined) => GranularityPlannerFn;
 
 export type GranularityStrategy =
   | 'per_source_document'
@@ -1079,7 +1121,7 @@ export type SourceFeedback = Omit<DialecticFeedback, 'resource_description'> & {
 
 export interface ExecuteModelCallAndSaveParams {
   dbClient: SupabaseClient<Database>;
-  deps: IDialecticJobDeps;
+  deps: IExecuteJobContext;
   authToken: string;
   job: DialecticJobRow;
   projectOwnerUserId: string;

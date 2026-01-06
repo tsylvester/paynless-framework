@@ -38,6 +38,7 @@ import {
 
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts';
+import type { IExecuteJobContext } from './JobContext.interface.ts';
 
 // Helper to create a valid HeaderContext structure
 function createValidHeaderContext(): HeaderContext {
@@ -120,17 +121,17 @@ Deno.test('executeModelCallAndSave - header_context response saves with context_
         'ai_providers': { select: { data: [mockFullProviderData], error: null } },
     });
 
-    const fileManager = new MockFileManagerService();
     const savedContribution = {
         ...mockContribution,
         contribution_type: 'header_context',
         file_name: 'header_context.json',
         mime_type: 'application/json',
     };
-    fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    const deps: IExecuteJobContext = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
+    fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockHeaderContextResponse(validHeaderContext)
@@ -186,11 +187,10 @@ Deno.test('executeModelCallAndSave - header_context response with files_to_gener
         'ai_providers': { select: { data: [mockFullProviderData], error: null } },
     });
 
-    const fileManager = new MockFileManagerService();
+    const deps: IExecuteJobContext = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockHeaderContextResponse(invalidHeaderContext)
@@ -263,11 +263,10 @@ Deno.test('executeModelCallAndSave - header_context response with missing contex
         'ai_providers': { select: { data: [mockFullProviderData], error: null } },
     });
 
-    const fileManager = new MockFileManagerService();
+    const deps: IExecuteJobContext = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockHeaderContextResponse(invalidHeaderContext)
@@ -322,17 +321,17 @@ Deno.test('executeModelCallAndSave - header_context output saves contribution wi
         'ai_providers': { select: { data: [mockFullProviderData], error: null } },
     });
 
-    const fileManager = new MockFileManagerService();
     const savedContribution = {
         ...mockContribution,
         contribution_type: 'header_context',
         file_name: 'header_context.json',
         mime_type: 'application/json',
     };
-    fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    const deps: IExecuteJobContext = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
+    fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockHeaderContextResponse(validHeaderContext)

@@ -3,10 +3,10 @@ import {
     assertExists,
     assert,
 } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
+import { stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
 import type { Database } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
-import { logger } from '../_shared/logger.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import {
     isRecord,
@@ -23,18 +23,16 @@ import type {
     ExecuteModelCallAndSaveParams, 
     DialecticJobPayload,
     DialecticExecuteJobPayload,
-    IDialecticJobDeps,
     PromptConstructionPayload,
+    UnifiedAIResponse,
 } from '../dialectic-service/dialectic.interface.ts';
 import { FileType, UploadContext } from '../_shared/types/file_manager.types.ts';
-import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
-import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { isDialecticContribution } from '../_shared/utils/type_guards.ts';
-import { MockRagService } from '../_shared/services/rag_service.mock.ts';
-import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
 import type { Tables } from '../types_db.ts';
+import type { IExecuteJobContext } from './JobContext.interface.ts';
+import { getMockDeps as getExecuteMockDeps } from './executeModelCallAndSave.test.ts';
 
 // Reuse helpers from main test file
 export const buildPromptPayload = (overrides: Partial<PromptConstructionPayload> = {}): PromptConstructionPayload => ({
@@ -45,7 +43,7 @@ export const buildPromptPayload = (overrides: Partial<PromptConstructionPayload>
     ...overrides,
 });
 
-export const buildExecuteParams = (dbClient: SupabaseClient<Database>, deps: IDialecticJobDeps, overrides: Partial<ExecuteModelCallAndSaveParams> = {}): ExecuteModelCallAndSaveParams => ({
+export const buildExecuteParams = (dbClient: SupabaseClient<Database>, deps: IExecuteJobContext, overrides: Partial<ExecuteModelCallAndSaveParams> = {}): ExecuteModelCallAndSaveParams => ({
     dbClient,
     deps,
     authToken: 'auth-token',
@@ -158,40 +156,6 @@ export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
     });
 };
 
-export const getMockDeps = (
-    tokenWalletServiceOverride?: ITokenWalletService,
-): IDialecticJobDeps => {
-    const fileManager = new MockFileManagerService();
-    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-    
-    return {
-        callUnifiedAIModel: async () => ({
-            content: '{"content": "AI response content"}',
-            contentType: 'application/json',
-            inputTokens: 10,
-            outputTokens: 20,
-            processingTimeMs: 100,
-            rawProviderResponse: { mock: 'response' },
-        }),
-        getExtensionFromMimeType: () => '.txt',
-        logger: logger,
-        fileManager: fileManager,
-        continueJob: async () => ({ enqueued: false }),
-        notificationService: mockNotificationService,
-        getSeedPromptForStage: async () => ({ content: 'Seed prompt content', fullPath: 'test/path/seed.txt', bucket: 'test-bucket', path: 'test/path', fileName: 'seed.txt' }),
-        retryJob: async () => ({}),
-        downloadFromStorage: async () => ({ data: new ArrayBuffer(100), error: null }),
-        randomUUID: () => '123',
-        deleteFromStorage: async () => ({ error: null }),
-        executeModelCallAndSave: async () => {},
-        ragService: new MockRagService(),
-        tokenWalletService: tokenWalletServiceOverride || createMockTokenWalletService({ getBalance: () => Promise.resolve('1000000') }).instance,
-        embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) },
-        countTokens: () => 0,
-        documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
-    };
-};
-
 export const mockContribution: DialecticContributionRow = {
     id: 'contrib-123',
     session_id: 'session-456',
@@ -225,19 +189,6 @@ export const mockContribution: DialecticContributionRow = {
     source_prompt_resource_id: null,
 };
 
-export const mockNotificationService: NotificationServiceType = {
-    sendContributionStartedEvent: async () => {},
-    sendDialecticContributionStartedEvent: async () => {},
-    sendContributionRetryingEvent: async () => {},
-    sendContributionReceivedEvent: async () => {},
-    sendContributionGenerationContinuedEvent: async () => {},
-    sendContributionGenerationCompleteEvent: async () => {},
-    sendDialecticProgressUpdateEvent: async () => {},
-    sendContributionFailedNotification: async () => {},
-    sendContributionGenerationFailedEvent: async () => {},
-    sendDocumentCentricNotification: async () => {},
-};
-
 Deno.test('49.b.i: executeModelCallAndSave passes FileType.ModelContributionRawJson to file manager (not document key fileType)', async () => {
     const { client: dbClient } = setupMockClient({
         'ai_providers': {
@@ -249,25 +200,24 @@ Deno.test('49.b.i: executeModelCallAndSave passes FileType.ModelContributionRawJ
     const sanitizedJson = '{"content": "# Business Case\\n\\n## Market Opportunity\\n..."}';
     
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-
-    const deps: IDialecticJobDeps = {
-        ...getMockDeps(),
-        callUnifiedAIModel: async () => ({
-            content: sanitizedJson,
-            contentType: 'application/json',
-            inputTokens: 10,
-            outputTokens: 20,
-            processingTimeMs: 100,
-            rawProviderResponse: { content: sanitizedJson },
-            finish_reason: 'stop',
-        }),
-        fileManager,
-        countTokens,
-    };
+    const deps: IExecuteJobContext = getExecuteMockDeps({ fileManager, countTokens });
+    const callStub = stub(deps, 'callUnifiedAIModel', async (): Promise<UnifiedAIResponse> => ({
+        content: sanitizedJson,
+        contentType: 'application/json',
+        inputTokens: 10,
+        outputTokens: 20,
+        processingTimeMs: 100,
+        rawProviderResponse: { content: sanitizedJson },
+        finish_reason: 'stop',
+    }));
 
     const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps);
     
-    await executeModelCallAndSave(params);
+    try {
+        await executeModelCallAndSave(params);
+    } finally {
+        callStub.restore();
+    }
 
     // Verify fileManager.uploadAndRegisterFile was called
     assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
@@ -298,25 +248,24 @@ Deno.test('49.b.ii: executeModelCallAndSave passes mimeType "application/json" t
     const sanitizedJson = '{"content": "# Business Case\\n\\n## Market Opportunity\\n..."}';
     
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-
-    const deps: IDialecticJobDeps = {
-        ...getMockDeps(),
-        callUnifiedAIModel: async () => ({
-            content: sanitizedJson,
-            contentType: 'text/markdown', // AI response has text/markdown contentType
-            inputTokens: 10,
-            outputTokens: 20,
-            processingTimeMs: 100,
-            rawProviderResponse: { content: sanitizedJson },
-            finish_reason: 'stop',
-        }),
-        fileManager,
-        countTokens,
-    };
+    const deps: IExecuteJobContext = getExecuteMockDeps({ fileManager, countTokens });
+    const callStub = stub(deps, 'callUnifiedAIModel', async (): Promise<UnifiedAIResponse> => ({
+        content: sanitizedJson,
+        contentType: 'text/markdown', // AI response has text/markdown contentType
+        inputTokens: 10,
+        outputTokens: 20,
+        processingTimeMs: 100,
+        rawProviderResponse: { content: sanitizedJson },
+        finish_reason: 'stop',
+    }));
 
     const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps);
     
-    await executeModelCallAndSave(params);
+    try {
+        await executeModelCallAndSave(params);
+    } finally {
+        callStub.restore();
+    }
 
     // Verify fileManager.uploadAndRegisterFile was called
     assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
@@ -347,25 +296,24 @@ Deno.test('49.b.iii: executeModelCallAndSave passes sanitized JSON string as fil
     const sanitizedJson = '{"content": "# Business Case\\n\\n## Market Opportunity\\n..."}';
     
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-
-    const deps: IDialecticJobDeps = {
-        ...getMockDeps(),
-        callUnifiedAIModel: async () => ({
-            content: sanitizedJson,
-            contentType: 'application/json',
-            inputTokens: 10,
-            outputTokens: 20,
-            processingTimeMs: 100,
-            rawProviderResponse: { mock: 'response', content: sanitizedJson },
-            finish_reason: 'stop',
-        }),
-        fileManager,
-        countTokens,
-    };
+    const deps: IExecuteJobContext = getExecuteMockDeps({ fileManager, countTokens });
+    const callStub = stub(deps, 'callUnifiedAIModel', async (): Promise<UnifiedAIResponse> => ({
+        content: sanitizedJson,
+        contentType: 'application/json',
+        inputTokens: 10,
+        outputTokens: 20,
+        processingTimeMs: 100,
+        rawProviderResponse: { mock: 'response', content: sanitizedJson },
+        finish_reason: 'stop',
+    }));
 
     const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps);
     
-    await executeModelCallAndSave(params);
+    try {
+        await executeModelCallAndSave(params);
+    } finally {
+        callStub.restore();
+    }
 
     // Verify fileManager.uploadAndRegisterFile was called
     assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
@@ -403,25 +351,24 @@ Deno.test('49.b.iv: executeModelCallAndSave does NOT include rawJsonResponseCont
     const rawProviderResponse = { mock: 'response', content: sanitizedJson };
     
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
-
-    const deps: IDialecticJobDeps = {
-        ...getMockDeps(),
-        callUnifiedAIModel: async () => ({
-            content: sanitizedJson,
-            contentType: 'application/json',
-            inputTokens: 10,
-            outputTokens: 20,
-            processingTimeMs: 100,
-            rawProviderResponse,
-            finish_reason: 'stop',
-        }),
-        fileManager,
-        countTokens,
-    };
+    const deps: IExecuteJobContext = getExecuteMockDeps({ fileManager, countTokens });
+    const callStub = stub(deps, 'callUnifiedAIModel', async (): Promise<UnifiedAIResponse> => ({
+        content: sanitizedJson,
+        contentType: 'application/json',
+        inputTokens: 10,
+        outputTokens: 20,
+        processingTimeMs: 100,
+        rawProviderResponse,
+        finish_reason: 'stop',
+    }));
 
     const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps);
     
-    await executeModelCallAndSave(params);
+    try {
+        await executeModelCallAndSave(params);
+    } finally {
+        callStub.restore();
+    }
 
     // Verify fileManager.uploadAndRegisterFile was called
     assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
@@ -472,25 +419,24 @@ Deno.test('49.b.v: executeModelCallAndSave creates contribution record with corr
     };
     
     fileManager.setUploadAndRegisterFileResponse(expectedContribution, null);
-
-    const deps: IDialecticJobDeps = {
-        ...getMockDeps(),
-        callUnifiedAIModel: async () => ({
-            content: sanitizedJson,
-            contentType: 'application/json',
-            inputTokens: 10,
-            outputTokens: 20,
-            processingTimeMs: 100,
-            rawProviderResponse: { content: sanitizedJson },
-            finish_reason: 'stop',
-        }),
-        fileManager,
-        countTokens,
-    };
+    const deps: IExecuteJobContext = getExecuteMockDeps({ fileManager, countTokens });
+    const callStub = stub(deps, 'callUnifiedAIModel', async (): Promise<UnifiedAIResponse> => ({
+        content: sanitizedJson,
+        contentType: 'application/json',
+        inputTokens: 10,
+        outputTokens: 20,
+        processingTimeMs: 100,
+        rawProviderResponse: { content: sanitizedJson },
+        finish_reason: 'stop',
+    }));
 
     const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps);
     
-    await executeModelCallAndSave(params);
+    try {
+        await executeModelCallAndSave(params);
+    } finally {
+        callStub.restore();
+    }
 
     // Verify fileManager.uploadAndRegisterFile was called
     assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');

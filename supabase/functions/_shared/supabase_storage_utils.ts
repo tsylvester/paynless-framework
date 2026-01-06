@@ -38,6 +38,12 @@ export interface DeleteStorageResult {
     error: Error | null;
 }
 
+export type DeleteFromStorageFn = (
+  supabase: SupabaseClient,
+  bucket: string,
+  paths: string[]
+) => Promise<DeleteStorageResult>;
+
 // Supabase official client supports: File | Blob | ArrayBuffer | FormData | ReadableStream | string
 // Let's stick to common ones that are easy to work with in Deno/Node and browser contexts.
 // FormData can be useful for multipart uploads but might be more complex than needed here.
@@ -127,11 +133,11 @@ export const downloadFromStorage: DownloadFromStorageFn = async (
   }
 }
 
-export async function deleteFromStorage(
+export const deleteFromStorage: DeleteFromStorageFn = async (
   supabase: SupabaseClient,
   bucket: string,
   paths: string[]
-): Promise<{ error: Error | null }> {
+): Promise<DeleteStorageResult> => {
   try {
     const { data, error } = await supabase.storage.from(bucket).remove(paths);
 

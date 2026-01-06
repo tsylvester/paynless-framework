@@ -22,6 +22,7 @@ import { createMockTokenWalletService } from '../_shared/services/tokenWalletSer
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { ICompressionStrategy, getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
+import type { CountTokensFn } from '../_shared/types/tokenizer.types.ts';
 import { 
     createMockJob, 
     testPayload, 
@@ -251,14 +252,16 @@ Deno.test('should only pass un-indexed documents to the RAG service', async () =
         }
     });
 
-    const deps = getMockDeps(mockTokenWalletService);
-    deps.ragService = mockRagService;
-    // Deterministic token counter: first call oversized, second call fits
     let countCallIdx = 0;
-    deps.countTokens = (..._args: unknown[]) => {
+    const deterministicCountTokens: CountTokensFn = () => {
         countCallIdx++;
         return countCallIdx === 1 ? 213 : 90;
     };
+    const deps = getMockDeps({
+        tokenWalletService: mockTokenWalletService,
+        ragService: mockRagService,
+        countTokens: deterministicCountTokens,
+    });
 
     // NEW: Configure the RAG service mock to return a short summary.
     mockRagService.setConfig({
@@ -442,8 +445,11 @@ Deno.test('should iteratively compress the lowest-value candidate until the prom
         getBalance: () => Promise.resolve('1000000'), // Huge balance
     });
     
-    const deps = getMockDeps(mockTokenWalletService);
-    deps.ragService = mockRagService;
+    const deps = getMockDeps({
+        tokenWalletService: mockTokenWalletService,
+        ragService: mockRagService,
+        countTokens,
+    });
     
     // CORRECTED: Create a mock compression strategy to control the exact return value.
     const mockCompressionStrategy: ICompressionStrategy = async () => {
@@ -473,9 +479,6 @@ Deno.test('should iteratively compress the lowest-value candidate until the prom
         'ai_providers': { select: { data: [{ ...mockFullProviderData, config: limitedConfig }], error: null } },
         'dialectic_memory': { select: { data: [{ source_contribution_id: 'history-msg-3' }], error: null } },
     });
-
-    // Assemble dependencies
-    deps.countTokens = countTokens; // Use real token counter
 
     const params: ExecuteModelCallAndSaveParams = {
         dbClient: dbClient as unknown as SupabaseClient<Database>,
@@ -543,9 +546,7 @@ Deno.test('should throw ContextWindowError if compression fails to reduce size s
         }
     });
 
-    const deps = getMockDeps();
-    deps.ragService = mockRagService;
-    deps.countTokens = countTokens; // Use the real token counter
+    const deps = getMockDeps({ ragService: mockRagService, countTokens });
 
     // Provide a payload that will definitely be oversized
     const oversizedPayload: PromptConstructionPayload = {
@@ -621,11 +622,10 @@ Deno.test('does not call provider if final input exceeds allowed headroom after 
     getBalance: () => Promise.resolve('1000000'),
   });
 
-  const deps = getMockDeps(mockTokenWalletService);
-  const modelSpy = spy(deps, 'callUnifiedAIModel');
   const mockRag = new MockRagService();
   mockRag.setConfig({ mockContextResult: 'summary', mockTokensUsed: 10 });
-  deps.ragService = mockRag;
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService, ragService: mockRag });
+  const modelSpy = spy(deps, 'callUnifiedAIModel');
 
   // Token counter: first call oversized (200), second call fits maxTokens (50) but violates allowed headroom
   let callIdx = 0;
@@ -707,7 +707,7 @@ Deno.test('proceeds when final input equals allowed headroom (boundary success)'
     getBalance: () => Promise.resolve('1000000'),
   });
 
-  const deps = getMockDeps(mockTokenWalletService);
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService });
   const modelSpy = spy(deps, 'callUnifiedAIModel');
 
   // allowedInput = provider_max_input_tokens - (provider_max_output_tokens + 32)
@@ -769,7 +769,7 @@ Deno.test('fails when final input exceeds allowed headroom by 1 token (boundary 
     getBalance: () => Promise.resolve('1000000'),
   });
 
-  const deps = getMockDeps(mockTokenWalletService);
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService });
   const modelSpy = spy(deps, 'callUnifiedAIModel');
 
   const safetyBuffer = 32;
@@ -1043,16 +1043,17 @@ Deno.test('RAG debits use stable idempotency keys tied to job and candidate', as
   mockRag.setConfig({ mockContextResult: 'summary', mockTokensUsed: 7 });
 
   // Dependencies
-  const deps = getMockDeps(mockTokenWalletService);
-  deps.ragService = mockRag;
-
-  // Count tokens sequence: initial oversized (300), after first compression (150), after second compression fits (80)
   const counts = [300, 150, 80];
-  deps.countTokens = (..._args: unknown[]) => {
+  const deterministicCountTokens: CountTokensFn = () => {
     const next = counts.shift();
     if (typeof next !== 'number') return 80; // fallback safe fit
     return next;
   };
+  const deps = getMockDeps({
+    tokenWalletService: mockTokenWalletService,
+    ragService: mockRag,
+    countTokens: deterministicCountTokens,
+  });
 
   // Two candidates processed in order
   const mockCompressionStrategy: ICompressionStrategy = async () => ([
@@ -1124,17 +1125,14 @@ Deno.test('recomputes SSOT output after RAG debit reduces balance', async () => 
   // Start balance 200; initial SSOT_output ~ floor(0.8*200 / 1) = 160
   const { instance: mockTokenWalletService, stubs } = createMockTokenWalletService({ getBalance: () => Promise.resolve('700') });
 
-  const deps = getMockDeps(mockTokenWalletService);
+  const mockRag = new MockRagService();
+  mockRag.setConfig({ mockContextResult: 'short', mockTokensUsed: 50 });
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService, ragService: mockRag });
   const modelSpy = spy(deps, 'callUnifiedAIModel');
 
   // Count tokens path: initial tokenCount oversized (300), after first compression (150), after second (80) fits
   let idx = 0;
   const countStub = stub(deps, 'countTokens', () => (++idx === 1 ? 300 : (idx === 2 ? 150 : 80)));
-
-  // RAG mock returns tokensUsed=50 each iteration, debit reduces balance -> new SSOT smaller
-  const mockRag = new MockRagService();
-  mockRag.setConfig({ mockContextResult: 'short', mockTokensUsed: 50 });
-  deps.ragService = mockRag;
 
   const mockCompressionStrategy: ICompressionStrategy = async () => ([
     { id: 'cand-1', content: 'long-1', sourceType: 'document', originalIndex: 1, valueScore: 0.1, effectiveScore: 0.1 },
@@ -1187,7 +1185,7 @@ Deno.test('final ChatApiRequest.max_tokens_to_generate equals SSOT(final input)'
   // Balance chosen so SSOT_output = floor(0.8*balance / output_rate)
   // balance=1000 => floor(800/2)=400
   const { instance: mockTokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('1000') });
-  const deps = getMockDeps(mockTokenWalletService);
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService });
   const modelSpy = spy(deps, 'callUnifiedAIModel');
 
   // Token counter: initial count fits window (50) so we use non-oversized path, but we still want to validate cap equals SSOT
@@ -1236,7 +1234,7 @@ Deno.test('threads SSOT cap unchanged to callUnifiedAIModel in compression path'
 
   // Wallet balance => SSOT_output = floor(0.8 * balance / output_rate) = floor(800 / 2) = 400
   const { instance: mockTokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('1000') });
-  const deps = getMockDeps(mockTokenWalletService);
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService });
   const modelSpy = spy(deps, 'callUnifiedAIModel');
 
   // Token counter: start oversized, compress to fit
@@ -1299,7 +1297,7 @@ Deno.test('uses SSOT-based output headroom (budget) to compute allowed input dur
   // Wallet balance => SSOT_output = floor(0.8 * balance / output_rate) = 80
   const { instance: mockTokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100') });
 
-  const deps = getMockDeps(mockTokenWalletService);
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService });
   const modelSpy = spy(deps, 'callUnifiedAIModel');
 
   // Token counter sequence: initial oversized (120), first compression (89) still violates headroom, second (88) fits
@@ -1471,12 +1469,9 @@ Deno.test('preflight rejects when total planned spend (compression + embeddings 
     getBalance: () => Promise.resolve('450'),
   });
 
-  const deps = getMockDeps(mockTokenWalletService);
-
-  // Use a RAG mock that would incur non-zero embedding cost if we accounted for it
   const mockRag = new MockRagService();
   mockRag.setConfig({ mockContextResult: 'short summary', mockTokensUsed: 10 });
-  deps.ragService = mockRag;
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService, ragService: mockRag });
 
   // Token counter: first call oversized (300), after one compression fits exactly cw (200)
   let idx = 0;

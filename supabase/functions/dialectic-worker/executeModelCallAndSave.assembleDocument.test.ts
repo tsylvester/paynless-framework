@@ -3,7 +3,7 @@ import {
     assert,
 } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
-import type { Database } from '../types_db.ts';
+import type { Database, Tables } from '../types_db.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
@@ -14,6 +14,7 @@ import type {
     DocumentRelationships,
 } from '../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
+import type { RenderCheckReason, ShouldEnqueueRenderJobResult } from '../_shared/types/shouldEnqueueRenderJob.interface.ts';
 
 // Import test fixtures from main test file
 import {
@@ -25,6 +26,28 @@ import {
     setupMockClient,
     getMockDeps,
 } from './executeModelCallAndSave.test.ts';
+
+const mockRenderJob: Tables<'dialectic_generation_jobs'> = {
+    id: 'render-job-123',
+    job_type: 'RENDER',
+    status: 'pending',
+    session_id: 'session-id-123',
+    stage_slug: 'test-stage',
+    iteration_number: 1,
+    parent_job_id: 'job-id-123',
+    payload: {},
+    is_test_job: false,
+    user_id: 'user-789',
+    created_at: new Date().toISOString(),
+    started_at: null,
+    completed_at: null,
+    results: null,
+    error_details: null,
+    attempt_count: 0,
+    prerequisite_job_id: null,
+    target_contribution_id: null,
+    max_retries: 0,
+};
 
 /**
  * Creates a typed mock UnifiedAIResponse object.
@@ -46,6 +69,9 @@ Deno.test('executeModelCallAndSave - should NOT call assembleAndSaveFinalDocumen
     const { client: dbClient, clearAllStubs } = setupMockClient({
         'ai_providers': {
             select: { data: [mockFullProviderData], error: null }
+        },
+        'dialectic_generation_jobs': {
+            insert: { data: [mockRenderJob], error: null }
         },
         'dialectic_stages': {
             select: {
@@ -100,7 +126,9 @@ Deno.test('executeModelCallAndSave - should NOT call assembleAndSaveFinalDocumen
         }
     });
 
-    const fileManager = new MockFileManagerService();
+    const deps = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
     // Create a contribution with document_relationships containing root ID
     const rootContributionId = 'root-contrib-123';
     const savedContribution: DialecticContributionRow = {
@@ -109,8 +137,13 @@ Deno.test('executeModelCallAndSave - should NOT call assembleAndSaveFinalDocumen
     };
     fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
 
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
+    // Force the markdown-rendering decision path so shouldRender is deterministically true for this test.
+    const renderDecisionReason: RenderCheckReason = 'is_markdown';
+    const renderDecision: ShouldEnqueueRenderJobResult = {
+        shouldRender: true,
+        reason: renderDecisionReason,
+    };
+    stub(deps, 'shouldEnqueueRenderJob', () => Promise.resolve(renderDecision));
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -161,7 +194,9 @@ Deno.test('executeModelCallAndSave - should call assembleAndSaveFinalDocument fo
         }
     });
 
-    const fileManager = new MockFileManagerService();
+    const deps = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
     // Create a contribution with document_relationships containing root ID
     const rootContributionId = 'root-contrib-456';
     const savedContribution: DialecticContributionRow = {
@@ -169,9 +204,6 @@ Deno.test('executeModelCallAndSave - should call assembleAndSaveFinalDocument fo
         document_relationships: { 'test-stage': rootContributionId } as DocumentRelationships,
     };
     fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
-
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -226,7 +258,9 @@ Deno.test('executeModelCallAndSave - should NOT call assembleAndSaveFinalDocumen
         }
     });
 
-    const fileManager = new MockFileManagerService();
+    const deps = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
     // Create a continuation chunk with document_relationships containing root ID
     const rootContributionId = 'root-contrib-789';
     const savedContribution: DialecticContributionRow = {
@@ -234,9 +268,6 @@ Deno.test('executeModelCallAndSave - should NOT call assembleAndSaveFinalDocumen
         document_relationships: { 'test-stage': rootContributionId } as DocumentRelationships,
     };
     fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
-
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
@@ -289,16 +320,15 @@ Deno.test('executeModelCallAndSave - should NOT call assembleAndSaveFinalDocumen
         }
     });
 
-    const fileManager = new MockFileManagerService();
+    const deps = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
     // Create a contribution with document_relationships set to null (no root ID)
     const savedContribution: DialecticContributionRow = {
         ...mockContribution,
         document_relationships: null,
     };
     fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
-
-    const deps = getMockDeps();
-    deps.fileManager = fileManager;
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({

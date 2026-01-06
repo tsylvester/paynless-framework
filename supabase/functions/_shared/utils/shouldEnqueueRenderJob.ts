@@ -1,4 +1,4 @@
-import type { ShouldEnqueueRenderJobDeps, ShouldEnqueueRenderJobParams } from '../types/shouldEnqueueRenderJob.interface.ts';
+import type { ShouldEnqueueRenderJobDeps, ShouldEnqueueRenderJobParams, ShouldEnqueueRenderJobResult, ShouldEnqueueRenderJobFn } from '../types/shouldEnqueueRenderJob.interface.ts';
 import { isRecord } from './type-guards/type_guards.common.ts';
 
 /**
@@ -99,11 +99,11 @@ function extractMarkdownDocumentKeysFromRule(
  * Determines if a render job should be enqueued for a given output type
  * by querying recipe steps and checking if the output type corresponds to a markdown document.
  */
-export async function shouldEnqueueRenderJob(
+export const shouldEnqueueRenderJob: ShouldEnqueueRenderJobFn = async (
     deps: ShouldEnqueueRenderJobDeps,
     params: ShouldEnqueueRenderJobParams
-): Promise<boolean> {
-    const { dbClient } = deps;
+): Promise<ShouldEnqueueRenderJobResult> => {
+    const { dbClient, logger } = deps;
     const { outputType, stageSlug } = params;
 
     // 1. Query dialectic_stages to get active_recipe_instance_id for the stageSlug
@@ -113,8 +113,13 @@ export async function shouldEnqueueRenderJob(
         .eq('slug', stageSlug)
         .single();
 
-    if (stageError || !stageData || !stageData.active_recipe_instance_id) {
-        return false;
+    if (stageError || !stageData) {
+        logger.warn('[shouldEnqueueRenderJob] Stage query failed or returned empty', { stageSlug, error: stageError });
+        return { shouldRender: false, reason: 'stage_not_found', details: stageError?.message };
+    }
+    if (!stageData.active_recipe_instance_id) {
+        logger.warn('[shouldEnqueueRenderJob] Stage has no active recipe', { stageSlug });
+        return { shouldRender: false, reason: 'no_active_recipe' };
     }
 
     // 2. Query dialectic_stage_recipe_instances to check if is_cloned
@@ -125,11 +130,14 @@ export async function shouldEnqueueRenderJob(
         .single();
 
     if (instanceError || !instance) {
-        return false;
+        logger.warn('[shouldEnqueueRenderJob] Instance query failed or returned empty', { instanceId: stageData.active_recipe_instance_id, error: instanceError });
+        return { shouldRender: false, reason: 'instance_not_found', details: instanceError?.message };
     }
 
     // 3. Query recipe steps based on whether instance is cloned
     let steps: unknown[] = [];
+    let parseErrorDetails: string | undefined;
+
 
     if (instance.is_cloned === true) {
         // If cloned, query dialectic_stage_recipe_steps where instance_id = active_recipe_instance_id
@@ -139,7 +147,8 @@ export async function shouldEnqueueRenderJob(
             .eq('instance_id', instance.id);
 
         if (stepErr || !stepRows || stepRows.length === 0) {
-            return false;
+            logger.warn('[shouldEnqueueRenderJob] Cloned steps query failed or returned empty', { instanceId: instance.id, error: stepErr });
+            return { shouldRender: false, reason: 'steps_not_found', details: stepErr?.message };
         }
 
         steps = stepRows;
@@ -151,7 +160,8 @@ export async function shouldEnqueueRenderJob(
             .eq('template_id', instance.template_id);
 
         if (stepErr || !stepRows || stepRows.length === 0) {
-            return false;
+            logger.warn('[shouldEnqueueRenderJob] Template steps query failed or returned empty', { templateId: instance.template_id, error: stepErr });
+            return { shouldRender: false, reason: 'steps_not_found', details: stepErr?.message };
         }
 
         steps = stepRows;
@@ -172,8 +182,11 @@ export async function shouldEnqueueRenderJob(
         if (typeof outputsRequired === 'string') {
             try {
                 outputsRequired = JSON.parse(outputsRequired);
-            } catch {
-                // If parsing fails, skip this step
+            } catch (e) {
+                // If parsing fails, skip this step but log the error
+                const errorMsg = e instanceof Error ? e.message : String(e);
+                logger.warn('[shouldEnqueueRenderJob] Failed to parse outputs_required', { stepId: step.id, outputsRequired: step.outputs_required, error: errorMsg });
+                parseErrorDetails = `Failed to parse outputs_required for step ${step.id}: ${errorMsg}`;
                 continue;
             }
         }
@@ -185,6 +198,14 @@ export async function shouldEnqueueRenderJob(
         });
     }
 
+    if (markdownDocumentKeys.size === 0 && parseErrorDetails) {
+        return { shouldRender: false, reason: 'parse_error', details: parseErrorDetails };
+    }
+
     // 5. Return true if outputType matches any extracted document_key, false otherwise
-    return markdownDocumentKeys.has(outputType);
+    if (markdownDocumentKeys.has(outputType)) {
+        return { shouldRender: true, reason: 'is_markdown' };
+    } else {
+        return { shouldRender: false, reason: 'is_json' };
+    }
 }

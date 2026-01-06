@@ -43,10 +43,10 @@ Deno.test('executeModelCallAndSave - Step 12.b: requires continuation_count for 
             }
         });
 
-        const fileManager = new MockFileManagerService();
-        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
         const deps = getMockDeps();
-        deps.fileManager = fileManager;
+        assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+        const fileManager: MockFileManagerService = deps.fileManager;
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
         const rootPayload: DialecticExecuteJobPayload = {
             ...testPayload,
@@ -101,10 +101,10 @@ Deno.test('executeModelCallAndSave - Step 12.b: requires continuation_count for 
             }
         });
 
-        const fileManager = new MockFileManagerService();
-        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
         const deps = getMockDeps();
-        deps.fileManager = fileManager;
+        assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+        const fileManager: MockFileManagerService = deps.fileManager;
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
         const continuationPayload: DialecticExecuteJobPayload = {
             ...testPayload,
@@ -160,10 +160,10 @@ Deno.test('executeModelCallAndSave - Step 12.b: requires continuation_count for 
             }
         });
 
-        const fileManager = new MockFileManagerService();
-        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
         const deps = getMockDeps();
-        deps.fileManager = fileManager;
+        assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+        const fileManager: MockFileManagerService = deps.fileManager;
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
         const continuationPayload: DialecticExecuteJobPayload = {
             ...testPayload,
@@ -219,10 +219,10 @@ Deno.test('executeModelCallAndSave - Step 12.b: requires continuation_count for 
             }
         });
 
-        const fileManager = new MockFileManagerService();
-        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
         const deps = getMockDeps();
-        deps.fileManager = fileManager;
+        assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+        const fileManager: MockFileManagerService = deps.fileManager;
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
         const continuationPayload: DialecticExecuteJobPayload = {
             ...testPayload,
@@ -272,10 +272,10 @@ Deno.test('executeModelCallAndSave - Step 12.b: requires continuation_count for 
             }
         });
 
-        const fileManager = new MockFileManagerService();
-        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
         const deps = getMockDeps();
-        deps.fileManager = fileManager;
+        assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+        const fileManager: MockFileManagerService = deps.fileManager;
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
         const continuationPayload: DialecticExecuteJobPayload = {
             ...testPayload,
@@ -325,10 +325,10 @@ Deno.test('executeModelCallAndSave - Step 12.b: requires continuation_count for 
             }
         });
 
-        const fileManager = new MockFileManagerService();
-        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
         const deps = getMockDeps();
-        deps.fileManager = fileManager;
+        assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+        const fileManager: MockFileManagerService = deps.fileManager;
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
         const continuationPayload: DialecticExecuteJobPayload = {
             ...testPayload,
@@ -378,10 +378,10 @@ Deno.test('executeModelCallAndSave - Step 12.b: requires continuation_count for 
             }
         });
 
-        const fileManager = new MockFileManagerService();
-        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
         const deps = getMockDeps();
-        deps.fileManager = fileManager;
+        assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+        const fileManager: MockFileManagerService = deps.fileManager;
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
         const continuationPayload: DialecticExecuteJobPayload = {
             ...testPayload,
