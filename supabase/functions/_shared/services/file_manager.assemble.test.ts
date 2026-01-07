@@ -3,28 +3,97 @@ import {
   assertExists,
   assert,
 } from 'https://deno.land/std@0.190.0/testing/asserts.ts'
-import { stub, type Stub } from 'https://deno.land/std@0.190.0/testing/mock.ts'
+import { stub } from 'https://deno.land/std@0.190.0/testing/mock.ts'
 import {
   createMockSupabaseClient,
-  type MockSupabaseClientSetup,
-  type MockSupabaseDataConfig,
-  type MockQueryBuilderState,
-  type IMockStorageFileOptions,
+  MockSupabaseClientSetup,
+  MockSupabaseDataConfig,
+  MockQueryBuilderState,
+  IMockStorageFileOptions,
 } from '../supabase.mock.ts'
 import { FileManagerService } from './file_manager.ts'
-import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '../../types_db.ts'
-import { DialecticContributionRow, DocumentRelationships } from '../../dialectic-service/dialectic.interface.ts'
-import { constructStoragePath, generateShortId } from '../utils/path_constructor.ts'
+import { SupabaseClient } from '@supabase/supabase-js'
+import { Database } from '../../types_db.ts'
+import { 
+  DialecticContributionRow, 
+  DocumentRelationships 
+} from '../../dialectic-service/dialectic.interface.ts'
+import { 
+  constructStoragePath, 
+  generateShortId 
+} from '../utils/path_constructor.ts'
 import { FileType } from '../types/file_manager.types.ts'
+import { MockLogger } from '../logger.mock.ts'
 
 Deno.test('FileManagerService', async (t) => {
   let setup: MockSupabaseClientSetup
   let fileManager: FileManagerService
   let envStub: any
   let originalEnvGet: typeof Deno.env.get
+  let logger: MockLogger
 
   const beforeEach = (config: MockSupabaseDataConfig = {}) => {
+    const jsonOnlyRecipeInstanceId = 'recipe-instance-json-only';
+    const jsonOnlyTemplateId = 'template-json-only';
+
+    const defaultRenderDecisionConfig: MockSupabaseDataConfig = {
+      genericMockResults: {
+        dialectic_stages: {
+          select: (state: MockQueryBuilderState) => {
+            if (state.filters.some((f) => f.column === 'slug')) {
+              return Promise.resolve({
+                data: [{ active_recipe_instance_id: jsonOnlyRecipeInstanceId }],
+                error: null,
+              });
+            }
+            return Promise.resolve({ data: [], error: new Error('Unexpected select query in defaultRenderDecisionConfig') });
+          },
+        },
+        dialectic_stage_recipe_instances: {
+          select: (state: MockQueryBuilderState) => {
+            if (state.filters.some((f) => f.column === 'id' && f.value === jsonOnlyRecipeInstanceId)) {
+              return Promise.resolve({
+                data: [{
+                  id: jsonOnlyRecipeInstanceId,
+                  is_cloned: false,
+                  template_id: jsonOnlyTemplateId,
+                }],
+                error: null,
+              });
+            }
+            return Promise.resolve({ data: [], error: new Error('Unexpected select query in defaultRenderDecisionConfig') });
+          },
+        },
+        dialectic_recipe_template_steps: {
+          select: (state: MockQueryBuilderState) => {
+            if (state.filters.some((f) => f.column === 'template_id' && f.value === jsonOnlyTemplateId)) {
+              return Promise.resolve({
+                data: [{
+                  id: 'step-json-only',
+                  outputs_required: {
+                    documents: [{
+                      document_key: 'some_other_markdown_document_key',
+                      file_type: 'markdown',
+                    }],
+                  },
+                }],
+                error: null,
+              });
+            }
+            return Promise.resolve({ data: [], error: new Error('Unexpected select query in defaultRenderDecisionConfig') });
+          },
+        },
+      },
+    };
+
+    const mergedConfig: MockSupabaseDataConfig = {
+      ...config,
+      genericMockResults: {
+        ...(defaultRenderDecisionConfig.genericMockResults ?? {}),
+        ...(config.genericMockResults ?? {}),
+      },
+    };
+
     originalEnvGet = Deno.env.get.bind(Deno.env);
     envStub = stub(Deno.env, 'get', (key: string): string | undefined => {
       if (key === 'SB_CONTENT_STORAGE_BUCKET') {
@@ -33,8 +102,9 @@ Deno.test('FileManagerService', async (t) => {
       return originalEnvGet(key)
     })
 
-    setup = createMockSupabaseClient('test-user-id', config)
-    fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath })
+    setup = createMockSupabaseClient('test-user-id', mergedConfig)
+    logger = new MockLogger()
+    fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath, logger })
   }
 
   const afterEach = () => {
@@ -2066,6 +2136,293 @@ Deno.test('FileManagerService', async (t) => {
 
         afterEach();
       }
+    } finally {
+      afterEach();
+    }
+  });
+
+  await t.step('assembleAndSaveFinalDocument proceeds when shouldEnqueueRenderJob returns { shouldRender: false, reason: is_json }', async () => {
+    try {
+      const rootContributionId = 'root-json-only-1';
+      const stageSlug = 'thesis';
+      const projectId = 'proj-json-only-2';
+      const sessionId = 'session-json-only-2';
+      const shortSessionId = generateShortId(sessionId);
+
+      const rootChunk: DialecticContributionRow = {
+        id: rootContributionId,
+        storage_bucket: 'test-bucket',
+        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/1_${stageSlug}/raw_responses`,
+        file_name: 'model_0_header_context_raw.json',
+        document_relationships: { [stageSlug]: rootContributionId },
+        created_at: '2025-01-01T12:00:00Z',
+        citations: [],
+        contribution_type: stageSlug,
+        edit_version: 1,
+        error: null,
+        user_id: 'user-id-123',
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'application/json',
+        model_id: 'model-id-1',
+        model_name: 'Model',
+        session_id: sessionId,
+        tokens_used_input: 1,
+        tokens_used_output: 1,
+        processing_time_ms: 1,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 1,
+        stage: stageSlug,
+        target_contribution_id: null,
+        updated_at: '2025-01-01T12:00:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
+      };
+
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            select: (state: MockQueryBuilderState) => {
+              if (state.filters.some((f) => f.column === 'id' && f.value === rootContributionId)) {
+                return Promise.resolve({ data: [rootChunk], error: null });
+              }
+              if (state.filters.some((f) => f.column === 'session_id' && f.value === sessionId)) {
+                return Promise.resolve({ data: [rootChunk], error: null });
+              }
+              return Promise.resolve({ data: [], error: new Error('Unexpected select query in test') });
+            },
+          },
+        },
+      };
+      beforeEach(config);
+
+      const rootCanonicalPath = `${rootChunk.storage_path}/${rootChunk.file_name}`;
+      const originalStorageFrom = setup.client.storage.from;
+      setup.client.storage.from = (bucketName: string) => {
+        const bucket = originalStorageFrom(bucketName);
+        const originalDownload = bucket.download;
+        bucket.download = async (path: string) => {
+          if (path === rootCanonicalPath) {
+            return { data: new Blob(['{"header":"Header","context":{"k":"v"}}']), error: null };
+          }
+          return originalDownload.call(bucket, path);
+        };
+        return bucket;
+      };
+
+      const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
+      const result = await fileManager.assembleAndSaveFinalDocument(rootContributionId);
+
+      assert(result.error === null);
+      assertExists(uploadSpy);
+      assertEquals(uploadSpy.calls.length, 1);
+    } finally {
+      afterEach();
+    }
+  });
+
+  await t.step('assembleAndSaveFinalDocument rejects when shouldEnqueueRenderJob returns { shouldRender: true, reason: is_markdown }', async () => {
+    try {
+      const rootContributionId = 'root-renderable-1';
+      const stageSlug = 'thesis';
+      const projectId = 'proj-renderable-1';
+      const sessionId = 'session-renderable-1';
+      const shortSessionId = generateShortId(sessionId);
+
+      const rootChunk: DialecticContributionRow = {
+        id: rootContributionId,
+        storage_bucket: 'test-bucket',
+        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/1_${stageSlug}/raw_responses`,
+        file_name: 'model_0_business_case_raw.json',
+        document_relationships: { [stageSlug]: rootContributionId },
+        created_at: '2025-01-01T12:00:00Z',
+        citations: [],
+        contribution_type: stageSlug,
+        edit_version: 1,
+        error: null,
+        user_id: 'user-id-123',
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'application/json',
+        model_id: 'model-id-1',
+        model_name: 'Model',
+        session_id: sessionId,
+        tokens_used_input: 1,
+        tokens_used_output: 1,
+        processing_time_ms: 1,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 1,
+        stage: stageSlug,
+        target_contribution_id: null,
+        updated_at: '2025-01-01T12:00:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
+      };
+
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            select: (state: MockQueryBuilderState) => {
+              if (state.filters.some((f) => f.column === 'id' && f.value === rootContributionId)) {
+                return Promise.resolve({ data: [rootChunk], error: null });
+              }
+              if (state.filters.some((f) => f.column === 'session_id' && f.value === sessionId)) {
+                return Promise.resolve({ data: [rootChunk], error: null });
+              }
+              return Promise.resolve({ data: [], error: new Error('Unexpected select query in test') });
+            },
+          },
+          dialectic_stages: {
+            select: (state: MockQueryBuilderState) => {
+              if (state.filters.some((f) => f.column === 'slug' && typeof f.value === 'string')) {
+                return Promise.resolve({
+                  data: [{ active_recipe_instance_id: 'recipe-instance-renderable' }],
+                  error: null,
+                });
+              }
+              return Promise.resolve({ data: [], error: new Error('Unexpected select query in test') });
+            },
+          },
+          dialectic_stage_recipe_instances: {
+            select: (state: MockQueryBuilderState) => {
+              if (state.filters.some((f) => f.column === 'id' && f.value === 'recipe-instance-renderable')) {
+                return Promise.resolve({
+                  data: [{
+                    id: 'recipe-instance-renderable',
+                    is_cloned: false,
+                    template_id: 'template-renderable',
+                  }],
+                  error: null,
+                });
+              }
+              return Promise.resolve({ data: [], error: new Error('Unexpected select query in test') });
+            },
+          },
+          dialectic_recipe_template_steps: {
+            select: (state: MockQueryBuilderState) => {
+              if (state.filters.some((f) => f.column === 'template_id' && f.value === 'template-renderable')) {
+                return Promise.resolve({
+                  data: [{
+                    id: 'step-renderable',
+                    outputs_required: {
+                      documents: [{
+                        document_key: 'business_case',
+                        file_type: 'markdown',
+                      }],
+                    },
+                  }],
+                  error: null,
+                });
+              }
+              return Promise.resolve({ data: [], error: new Error('Unexpected select query in test') });
+            },
+          },
+        },
+      };
+      beforeEach(config);
+
+      const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
+      const result = await fileManager.assembleAndSaveFinalDocument(rootContributionId);
+
+      assert(result.error !== null);
+      assertExists(uploadSpy);
+      assertEquals(uploadSpy.calls.length, 0);
+    } finally {
+      afterEach();
+    }
+  });
+
+  await t.step('assembleAndSaveFinalDocument rejects when shouldEnqueueRenderJob cannot determine render requirement (stage_not_found etc)', async () => {
+    try {
+      const rootContributionId = 'root-config-error-1';
+      const stageSlug = 'thesis';
+      const projectId = 'proj-config-error-1';
+      const sessionId = 'session-config-error-1';
+      const shortSessionId = generateShortId(sessionId);
+
+      const rootChunk: DialecticContributionRow = {
+        id: rootContributionId,
+        storage_bucket: 'test-bucket',
+        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/1_${stageSlug}/raw_responses`,
+        file_name: 'model_0_header_context_raw.json',
+        document_relationships: { [stageSlug]: rootContributionId },
+        created_at: '2025-01-01T12:00:00Z',
+        citations: [],
+        contribution_type: stageSlug,
+        edit_version: 1,
+        error: null,
+        user_id: 'user-id-123',
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'application/json',
+        model_id: 'model-id-1',
+        model_name: 'Model',
+        session_id: sessionId,
+        tokens_used_input: 1,
+        tokens_used_output: 1,
+        processing_time_ms: 1,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 1,
+        stage: stageSlug,
+        target_contribution_id: null,
+        updated_at: '2025-01-01T12:00:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
+      };
+
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            select: (state: MockQueryBuilderState) => {
+              if (state.filters.some((f) => f.column === 'id' && f.value === rootContributionId)) {
+                return Promise.resolve({ data: [rootChunk], error: null });
+              }
+              if (state.filters.some((f) => f.column === 'session_id' && f.value === sessionId)) {
+                return Promise.resolve({ data: [rootChunk], error: null });
+              }
+              return Promise.resolve({ data: [], error: new Error('Unexpected select query in test') });
+            },
+          },
+          dialectic_stages: {
+            select: () => {
+              return Promise.resolve({ data: [], error: { name: 'PostgresError', message: 'Query returned no rows', code: 'PGRST116' } });
+            },
+          },
+        },
+      };
+      beforeEach(config);
+
+      const rootCanonicalPath = `${rootChunk.storage_path}/${rootChunk.file_name}`;
+      const originalStorageFrom = setup.client.storage.from;
+      setup.client.storage.from = (bucketName: string) => {
+        const bucket = originalStorageFrom(bucketName);
+        const originalDownload = bucket.download;
+        bucket.download = async (path: string) => {
+          if (path === rootCanonicalPath) {
+            return { data: new Blob(['{"header":"Header","context":{"k":"v"}}']), error: null };
+          }
+          return originalDownload.call(bucket, path);
+        };
+        return bucket;
+      };
+
+      const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
+      const result = await fileManager.assembleAndSaveFinalDocument(rootContributionId);
+
+      assert(result.error !== null);
+      assertExists(uploadSpy);
+      assertEquals(uploadSpy.calls.length, 0);
+      assert(result.error instanceof Error);
+      assert(result.error.message.includes('could not determine render requirement'));
     } finally {
       afterEach();
     }

@@ -4,13 +4,13 @@ import {
   assertRejects,
   assert,
 } from 'https://deno.land/std@0.190.0/testing/asserts.ts'
-import { stub, type Stub, spy } from 'https://deno.land/std@0.190.0/testing/mock.ts'
+import { stub, Stub, spy } from 'https://deno.land/std@0.190.0/testing/mock.ts'
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts'
 import {
   createMockSupabaseClient,
-  type MockSupabaseClientSetup,
-  type MockSupabaseDataConfig,
-  type IMockStorageFileOptions,
+  MockSupabaseClientSetup,
+  MockSupabaseDataConfig,
+  IMockStorageFileOptions,
 } from '../supabase.mock.ts'
 import { FileManagerService } from './file_manager.ts'
 import {
@@ -22,16 +22,27 @@ import {
   PathContext,
 } from '../types/file_manager.types.ts'
 import { constructStoragePath } from '../utils/path_constructor.ts'
-import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js'
-import type { Database, Json } from '../../types_db.ts'
+import { 
+  SupabaseClient, 
+  PostgrestError 
+} from '@supabase/supabase-js'
+import { 
+  Database, 
+  Json 
+} from '../../types_db.ts'
 import { isRecord, isPostgrestError } from '../utils/type_guards.ts'
-import { isStorageError, isServiceError } from '../utils/type-guards/type_guards.file_manager.ts'
+import { 
+  isStorageError, 
+  isServiceError 
+} from '../utils/type-guards/type_guards.file_manager.ts'
+import { MockLogger } from '../logger.mock.ts'
 
 Deno.test('FileManagerService', async (t) => {
   let setup: MockSupabaseClientSetup
   let fileManager: FileManagerService
   let envStub: any
   let originalEnvGet: typeof Deno.env.get
+  let logger: MockLogger
 
   const beforeEach = (config: MockSupabaseDataConfig = {}) => {
     originalEnvGet = Deno.env.get.bind(Deno.env);
@@ -43,7 +54,8 @@ Deno.test('FileManagerService', async (t) => {
     })
 
     setup = createMockSupabaseClient('test-user-id', config)
-    fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath })
+    logger = new MockLogger()
+    fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath, logger })
   }
 
   const afterEach = () => {
@@ -88,7 +100,7 @@ Deno.test('FileManagerService', async (t) => {
         });
 
         assertRejects(
-          async () => new FileManagerService(mockSupabase.client as unknown as SupabaseClient<Database>, { constructStoragePath }),
+          async () => new FileManagerService(mockSupabase.client as unknown as SupabaseClient<Database>, { constructStoragePath, logger }),
           Error,
           'SB_CONTENT_STORAGE_BUCKET environment variable is not set.',
         );
@@ -968,7 +980,7 @@ Deno.test('FileManagerService', async (t) => {
         const removeSpy = storageBucket.removeSpy;
 
         const constructStoragePathSpy = spy(constructStoragePath);
-        fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath: constructStoragePathSpy });
+        fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath: constructStoragePathSpy, logger });
 
         const contributionMetadata: ContributionMetadata = {
           iterationNumber: 1,
@@ -1097,7 +1109,7 @@ Deno.test('FileManagerService', async (t) => {
         }
       };
       beforeEach(config);
-      fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath: mockConstructStoragePath });
+      fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath: mockConstructStoragePath, logger });
       
       const storageBucket = setup.spies.storage.from('test-bucket');
       const uploadSpy = storageBucket.uploadSpy;
@@ -1182,6 +1194,7 @@ Deno.test('FileManagerService', async (t) => {
       setup = createMockSupabaseClient('test-user-id', config);
       fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, {
         constructStoragePath: mockConstructStoragePath,
+        logger,
       });
 
       const contributionMetadata: ContributionMetadata = {
@@ -1274,6 +1287,7 @@ Deno.test('FileManagerService', async (t) => {
       setup = createMockSupabaseClient('test-user-id', config);
       fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, {
         constructStoragePath: mockConstructStoragePath,
+        logger,
       });
 
       const contributionMetadata: ContributionMetadata = {
@@ -1348,7 +1362,8 @@ Deno.test('FileManagerService', async (t) => {
       setup = createMockSupabaseClient('test-user-id', config);
       fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, {
         constructStoragePath: mockConstructStoragePath,
-      });
+        logger,
+        });
   
       const contributionMetadata: ContributionMetadata = {
         iterationNumber: 1,
@@ -1425,6 +1440,7 @@ Deno.test('FileManagerService', async (t) => {
       setup = createMockSupabaseClient('test-user-id', config);
       fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, {
         constructStoragePath: mockConstructStoragePath,
+        logger,
       });
   
       const contributionMetadata: ContributionMetadata = {
@@ -1501,6 +1517,7 @@ Deno.test('FileManagerService', async (t) => {
       setup = createMockSupabaseClient('test-user-id', config);
       fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, {
         constructStoragePath: mockConstructStoragePath,
+        logger,
       });
   
       const contributionMetadata: ContributionMetadata = {
@@ -1625,7 +1642,7 @@ Deno.test('FileManagerService', async (t) => {
       });
       setup = createMockSupabaseClient('test-user-id', config);
       // Inject the manual mock function
-      fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath: mockConstructStoragePath });
+      fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath: mockConstructStoragePath, logger });
 
       // 1. Base context with FRESH turn-specific data in pathContext
       const basePathContext: ModelContributionUploadContext['pathContext'] = {

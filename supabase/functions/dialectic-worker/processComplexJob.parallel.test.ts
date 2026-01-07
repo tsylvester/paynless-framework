@@ -12,7 +12,6 @@ import {
     GranularityPlannerFn, 
     DialecticPlanJobPayload, 
     DialecticExecuteJobPayload,
-    IDialecticJobDeps, 
     UnifiedAIResponse, 
     DialecticRecipeTemplateStep,
     DialecticStageRecipeEdge,
@@ -30,6 +29,9 @@ import { mockNotificationService } from '../_shared/utils/notification.service.m
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { isModelContributionFileType } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
 import { DialecticStageRecipeStep, IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
+import { IPlanJobContext } from './JobContext.interface.ts';
+import { createPlanJobContext, createJobContext } from './createJobContext.ts';
+import { createMockJobContextParams } from './JobContext.mock.ts';
 
 const mockClonedRecipeSteps: DialecticStageRecipeStep[] = [
     {
@@ -252,7 +254,7 @@ const mockInstanceRow_Cloned = {
 
 describe('processComplexJob with Cloned Recipe Instance', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
-    let mockDeps: IDialecticJobDeps;
+    let planCtx: IPlanJobContext;
     let mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
     let mockJobProcessors: IJobProcessors;
     let mockProcessorSpies: MockJobProcessorsSpies;
@@ -322,52 +324,17 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             job_type: 'PLAN',
         };
 
-        const mockUnifiedAIResponse: UnifiedAIResponse = { content: 'mock', finish_reason: 'stop' };
-        mockDeps = {
-            logger,
+        const mockParams = {
+            ...createMockJobContextParams(),
             planComplexStage: mockProcessorSpies.planComplexStage,
-            downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({
-                data: await new Blob(['Mock content']).arrayBuffer(),
-                error: null
-            })),
-            getGranularityPlanner: spy((_strategyId: string): GranularityPlannerFn | undefined => undefined),
-            ragService: new MockRagService(),
-            fileManager: new MockFileManagerService(),
-            countTokens: spy(() => 0),
-            getAiProviderConfig: spy(async () => Promise.resolve({
-                api_identifier: 'mock-api',
-                input_token_cost_rate: 0,
-                output_token_cost_rate: 0,
-                provider_max_input_tokens: 8192,
-                tokenization_strategy: {
-                    type: 'tiktoken',
-                    tiktoken_encoding_name: 'cl100k_base',
-                    tiktoken_model_name_for_rules_fallback: 'gpt-4o',
-                    is_chatml_model: false,
-                    api_identifier_for_tokenization: 'mock-api'
-                },
-            })),
-            callUnifiedAIModel: spy(async () => mockUnifiedAIResponse),
-            getSeedPromptForStage: spy(async () => ({
-                content: 'mock',
-                fullPath: 'mock',
-                bucket: 'mock',
-                path: 'mock',
-                fileName: 'mock'
-            })),
-            continueJob: spy(async () => ({ enqueued: true })),
-            retryJob: spy(async () => ({})),
             notificationService: mockNotificationService,
-            executeModelCallAndSave: spy(async () => {}),
-            getExtensionFromMimeType: spy(() => '.txt'),
-            randomUUID: spy(() => 'mock-uuid'),
-            deleteFromStorage: spy(async () => ({ data: [], error: null })),
-            documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
         };
+        const rootCtx = createJobContext(mockParams);
+        planCtx = createPlanJobContext(rootCtx);
     });
 
     it('should fetch the CLONED recipe and plan the first step', async () => {
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
         
         const firstClonedStep = mockClonedRecipeSteps[0];
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1);
@@ -436,7 +403,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             }
         });
         
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1);
         const secondClonedStep = mockClonedRecipeSteps[1];
@@ -503,7 +470,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             }
         });
 
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         const updateSpy = customSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
         assertExists(updateSpy);
@@ -531,7 +498,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
         });
     
         // Act
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
         
         // Assert: The step passed to the planner contains the override.
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1, "Planner was not called");
@@ -651,7 +618,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
         });
         
         // Act
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
     
         // Assert: The orchestrator should have skipped step 2 and planned step 3.
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1);
@@ -661,7 +628,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
 
 describe('processComplexJob with Parallel Recipe Graph', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
-    let mockDeps: IDialecticJobDeps;
+    let planCtx: IPlanJobContext;
     let mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
     let mockJobProcessors: IJobProcessors;
     let mockProcessorSpies: MockJobProcessorsSpies;
@@ -730,48 +697,14 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             job_type: 'PLAN',
         };
 
-        const mockUnifiedAIResponse: UnifiedAIResponse = { content: 'mock', finish_reason: 'stop' };
-        mockDeps = {
-            logger,
+        const mockParams = {
+            ...createMockJobContextParams(),
             planComplexStage: mockProcessorSpies.planComplexStage,
-            downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({
-                data: await new Blob(['Mock content']).arrayBuffer(),
-                error: null
-            })),
-            getGranularityPlanner: spy((_strategyId: string): GranularityPlannerFn | undefined => undefined),
-            ragService: new MockRagService(),
-            fileManager: mockFileManager,
-            countTokens: spy(() => 0),
-            getAiProviderConfig: spy(async () => Promise.resolve({
-                api_identifier: 'mock-api',
-                input_token_cost_rate: 0,
-                output_token_cost_rate: 0,
-                provider_max_input_tokens: 8192,
-                tokenization_strategy: {
-                    type: 'tiktoken',
-                    tiktoken_encoding_name: 'cl100k_base',
-                    tiktoken_model_name_for_rules_fallback: 'gpt-4o',
-                    is_chatml_model: false,
-                    api_identifier_for_tokenization: 'mock-api'
-                },
-            })),
-            callUnifiedAIModel: spy(async () => mockUnifiedAIResponse),
-            getSeedPromptForStage: spy(async () => ({
-                content: 'mock',
-                fullPath: 'mock',
-                bucket: 'mock',
-                path: 'mock',
-                fileName: 'mock'
-            })),
-            continueJob: spy(async () => ({ enqueued: true })),
-            retryJob: spy(async () => ({})),
             notificationService: mockNotificationService,
-            executeModelCallAndSave: spy(async () => {}),
-            getExtensionFromMimeType: spy(() => '.txt'),
-            randomUUID: spy(() => 'mock-uuid'),
-            deleteFromStorage: spy(async () => ({ data: [], error: null })),
-            documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
+            fileManager: mockFileManager,
         };
+        const rootCtx = createJobContext(mockParams);
+        planCtx = createPlanJobContext(rootCtx);
     });
 
     it('should enqueue all parallel steps when their single dependency is met (fork)', async () => {
@@ -821,7 +754,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
 
         // Act
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert: planner called for both parallel successors (2a, 2b). Do not assert docs; only step identity.
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 2, "Expected planning for two parallel steps");
@@ -894,7 +827,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
 
         // Act
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert: The remaining parallel step (2b) should be planned, but not the join (step-three).
         const calls = mockProcessorSpies.planComplexStage.calls;
@@ -978,7 +911,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
 
         // Act
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert: Step 3 should be planned.
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1, "Expected planning for one join step");
@@ -1127,7 +1060,7 @@ const mockParallelClonedRecipeEdges: DialecticStageRecipeEdge[] = [
 
 describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
-    let mockDeps: IDialecticJobDeps;
+    let planCtx: IPlanJobContext;
     let mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
     let mockJobProcessors: IJobProcessors;
     let mockProcessorSpies: MockJobProcessorsSpies;
@@ -1208,48 +1141,14 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             job_type: 'PLAN',
         };
 
-        const mockUnifiedAIResponse: UnifiedAIResponse = { content: 'mock', finish_reason: 'stop' };
-        mockDeps = {
-            logger,
+        const mockParams = {
+            ...createMockJobContextParams(),
             planComplexStage: mockProcessorSpies.planComplexStage,
-            downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({
-                data: await new Blob(['Mock content']).arrayBuffer(),
-                error: null
-            })),
-            getGranularityPlanner: spy((_strategyId: string): GranularityPlannerFn | undefined => undefined),
-            ragService: new MockRagService(),
-            fileManager: mockFileManager,
-            countTokens: spy(() => 0),
-            getAiProviderConfig: spy(async () => Promise.resolve({
-                api_identifier: 'mock-api',
-                input_token_cost_rate: 0,
-                output_token_cost_rate: 0,
-                provider_max_input_tokens: 8192,
-                tokenization_strategy: {
-                    type: 'tiktoken',
-                    tiktoken_encoding_name: 'cl100k_base',
-                    tiktoken_model_name_for_rules_fallback: 'gpt-4o',
-                    is_chatml_model: false,
-                    api_identifier_for_tokenization: 'mock-api'
-                },
-            })),
-            callUnifiedAIModel: spy(async () => mockUnifiedAIResponse),
-            getSeedPromptForStage: spy(async () => ({
-                content: 'mock',
-                fullPath: 'mock',
-                bucket: 'mock',
-                path: 'mock',
-                fileName: 'mock'
-            })),
-            continueJob: spy(async () => ({ enqueued: true })),
-            retryJob: spy(async () => ({})),
             notificationService: mockNotificationService,
-            executeModelCallAndSave: spy(async () => {}),
-            getExtensionFromMimeType: spy(() => '.txt'),
-            randomUUID: spy(() => 'mock-uuid'),
-            deleteFromStorage: spy(async () => ({ data: [], error: null })),
-            documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
+            fileManager: mockFileManager,
         };
+        const rootCtx = createJobContext(mockParams);
+        planCtx = createPlanJobContext(rootCtx);
     });
 
     it('should enqueue all parallel steps when their single dependency is met (fork)', async () => {
@@ -1296,7 +1195,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
         };
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
 
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 2, "Expected planning for two parallel steps");
         const plannedStepSlugs = mockProcessorSpies.planComplexStage.calls.map(call => call.args[3].step_slug);
@@ -1366,7 +1265,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
         };
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
 
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         const clonedCalls = mockProcessorSpies.planComplexStage.calls;
         assertEquals(clonedCalls.length, 1, "Expected planning only the remaining parallel step");
@@ -1452,7 +1351,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
         };
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
 
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1, "Expected planning for one join step");
         assertEquals(mockProcessorSpies.planComplexStage.calls[0].args[3].step_slug, 'step-three');

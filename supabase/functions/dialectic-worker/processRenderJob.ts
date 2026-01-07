@@ -1,8 +1,8 @@
-import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database } from '../types_db.ts';
+import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { Database } from '../types_db.ts';
 import { isRecord } from '../_shared/utils/type_guards.ts';
-import type { IRenderJobDeps } from '../dialectic-service/dialectic.interface.ts';
-import type { RenderDocumentParams, DocumentRendererDeps } from '../_shared/services/document_renderer.interface.ts';
+import { IRenderJobContext } from './JobContext.interface.ts';
+import { RenderDocumentParams, DocumentRendererDeps } from '../_shared/services/document_renderer.interface.ts';
 import { isFileType } from '../_shared/utils/type_guards.ts';
 import { isString, isNumber } from "node:util";
 
@@ -10,7 +10,7 @@ export async function processRenderJob(
   dbClient: SupabaseClient<Database>,
   job: Database['public']['Tables']['dialectic_generation_jobs']['Row'],
   projectOwnerUserId: string,
-  deps: IRenderJobDeps,
+  ctx: IRenderJobContext,
   _authToken: string,
 ): Promise<void> {
   const { id: jobId } = job;
@@ -63,14 +63,14 @@ export async function processRenderJob(
     };
 
     const rendererDeps: DocumentRendererDeps = {
-      downloadFromStorage: deps.downloadFromStorage,
-      fileManager: deps.fileManager,
-      notificationService: deps.notificationService,
+      downloadFromStorage: ctx.downloadFromStorage,
+      fileManager: ctx.fileManager,
+      notificationService: ctx.notificationService,
       notifyUserId: projectOwnerUserId,
-      logger: deps.logger,
+      logger: ctx.logger,
     };
 
-    deps.logger?.info?.('[processRenderJob] DEBUG: About to call renderDocument', { 
+    ctx.logger.info('[processRenderJob] DEBUG: About to call renderDocument', { 
       jobId, 
       params: {
         projectId: params.projectId,
@@ -85,13 +85,13 @@ export async function processRenderJob(
     
     let renderResult;
     try {
-      renderResult = await deps.documentRenderer.renderDocument(dbClient, rendererDeps, params);
-      deps.logger?.info?.('[processRenderJob] DEBUG: renderDocument succeeded', { 
+      renderResult = await ctx.documentRenderer.renderDocument(dbClient, rendererDeps, params);
+      ctx.logger.info('[processRenderJob] DEBUG: renderDocument succeeded', { 
         jobId,
         sourceContributionId: renderResult.pathContext.sourceContributionId,
       });
     } catch (renderError) {
-      deps.logger?.error?.('[processRenderJob] DEBUG: renderDocument threw error', { 
+      ctx.logger.error('[processRenderJob] DEBUG: renderDocument threw error', { 
         jobId,
         error: renderError instanceof Error ? renderError.message : String(renderError),
         stack: renderError instanceof Error ? renderError.stack : undefined,
@@ -120,7 +120,7 @@ export async function processRenderJob(
       .eq('id', jobId);
   } catch (e) {
     const err = e instanceof Error ? e : new Error(String(e));
-    deps.logger?.error?.('[processRenderJob] DEBUG: Caught error in processRenderJob', { 
+    ctx.logger.error('[processRenderJob] DEBUG: Caught error in processRenderJob', { 
       jobId, 
       error: err.message,
       stack: err.stack,
@@ -148,8 +148,8 @@ export async function processRenderJob(
       const documentKeyVal = payloadUnknown && payloadUnknown['documentKey'];
       const documentKey = typeof documentKeyVal === 'string' ? documentKeyVal : String(documentKeyVal ?? 'unknown');
 
-      if (deps.notificationService && typeof deps.notificationService.sendDocumentCentricNotification === 'function' && projectOwnerUserId) {
-        await deps.notificationService.sendDocumentCentricNotification({
+      if (typeof ctx.notificationService.sendDocumentCentricNotification === 'function' && projectOwnerUserId) {
+        await ctx.notificationService.sendDocumentCentricNotification({
           type: 'job_failed',
           sessionId: String(sessionId),
           stageSlug: String(stageSlug),

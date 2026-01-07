@@ -1,20 +1,39 @@
-import { assertEquals, assertExists, assert, assertStrictEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
+import { 
+    assertEquals, 
+    assertExists, 
+    assert, 
+    assertStrictEquals 
+} from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { spy, stub } from 'jsr:@std/testing@0.225.1/mock';
-import type { Database, Json } from '../types_db.ts';
+import { 
+    Database, 
+    Json 
+} from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
-import { handleJob, createDialecticWorkerDeps } from './index.ts';
+import { 
+    handleJob, 
+    createDialecticWorkerDeps 
+} from './index.ts';
 import { MockLogger } from '../_shared/logger.mock.ts';
-import type { IDialecticJobDeps, SeedPromptData, IContinueJobResult } from '../dialectic-service/dialectic.interface.ts';
+import { 
+    SeedPromptData, 
+    IContinueJobResult 
+} from '../dialectic-service/dialectic.interface.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
-import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
-import type { UnifiedAIResponse } from '../dialectic-service/dialectic.interface.ts';
+import { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
+import { UnifiedAIResponse } from '../dialectic-service/dialectic.interface.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { createMockJobProcessors, createMockProcessJob,  } from '../_shared/dialectic.mock.ts';
+import { 
+    createMockJobProcessors, 
+    createMockProcessJob
+} from '../_shared/dialectic.mock.ts';
 import { getMockAiProviderAdapter } from '../_shared/ai_service/ai_provider.mock.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
 import { renderDocument } from '../_shared/services/document_renderer.ts';
+import { createMockJobContextParams } from './JobContext.mock.ts';
+import { createJobContext } from './createJobContext.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -127,15 +146,15 @@ const mockSupabaseClientInvalidPayload = createMockSupabaseClient(undefined, {
     },
 });
 
-const mockDeps: IDialecticJobDeps = {
+const mockDeps = createJobContext(createMockJobContextParams({
     logger: mockLogger,
+    fileManager: new MockFileManagerService(),
     callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => ({
         content: 'Mock content',
         error: null,
         finish_reason: 'stop',
     })),
     downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ data: new ArrayBuffer(0), error: null })),
-    fileManager: new MockFileManagerService(),
     getExtensionFromMimeType: spy(() => '.md'),
     randomUUID: spy(() => 'mock-uuid'),
     deleteFromStorage: spy(async () => await Promise.resolve({ error: null })),
@@ -163,13 +182,15 @@ const mockDeps: IDialecticJobDeps = {
     getGranularityPlanner: spy(() => () => []),
     planComplexStage: spy(async () => await Promise.resolve([])),
     documentRenderer: { renderDocument },
-};
+}));
 
 // Global test deps for invalid payload test
-const testDepsInvalidPayload = {
-    ...mockDeps,
+const testDepsInvalidPayload = createJobContext(createMockJobContextParams({
+    ...createMockJobContextParams(),
+    logger: mockLogger,
+    fileManager: new MockFileManagerService(),
     notificationService: new NotificationService(mockSupabaseClientInvalidPayload.client as unknown as SupabaseClient<Database>),
-};
+}));
 
 // Global mock job for valid job test
 const mockJobValid: MockJob = {
@@ -252,10 +273,12 @@ const mockSupabaseClientValid = createMockSupabaseClient(undefined, {
     });
 
 // Global test deps for valid job test
-const testDepsValid = {
-        ...mockDeps,
+const testDepsValid = createJobContext(createMockJobContextParams({
+    ...createMockJobContextParams(),
+    logger: mockLogger,
+    fileManager: new MockFileManagerService(),
     notificationService: new NotificationService(mockSupabaseClientValid.client as unknown as SupabaseClient<Database>),
-};
+}));
 
 // Global mock job for payload validation test
 const mockJobPayloadValidation: MockJob = {
@@ -360,10 +383,12 @@ const mockSupabaseClientException = createMockSupabaseClient(undefined, {
     });
 
 // Global test deps for exception test
-const testDepsException = {
-        ...mockDeps,
+const testDepsException = createJobContext(createMockJobContextParams({
+    ...createMockJobContextParams(),
+    logger: mockLogger,
+    fileManager: new MockFileManagerService(),
     notificationService: new NotificationService(mockSupabaseClientException.client as unknown as SupabaseClient<Database>),
-};
+}));
 
 // Global test error for exception test
 const testError = new Error('Simulated processJob error');
@@ -858,6 +883,30 @@ Deno.test('handleJob - RENDER routes via provided processors and propagates args
     assertStrictEquals(call.args[0], dbClient, 'dbClient forwarded unchanged');
     assertEquals(call.args[1], renderJob, 'job forwarded unchanged');
     assertEquals(call.args[2], 'user-render', 'projectOwnerUserId forwarded unchanged');
-    assertEquals(call.args[3], deps, 'deps forwarded unchanged');
     assertEquals(call.args[4], authToken, 'authToken forwarded unchanged');
+
+    // RENDER processors must receive a sliced IRenderJobContext, not the full root context object
+    const renderCtx = call.args[3];
+    assert(typeof renderCtx === 'object' && renderCtx !== null, 'renderCtx should be an object');
+    assertStrictEquals(renderCtx === deps, false, 'renderCtx should not be the same object as root deps');
+
+    // Required render-context fields exist (shape proof, no casts)
+    assert(Object.prototype.hasOwnProperty.call(renderCtx, 'logger'));
+    assert(Object.prototype.hasOwnProperty.call(renderCtx, 'fileManager'));
+    assert(Object.prototype.hasOwnProperty.call(renderCtx, 'downloadFromStorage'));
+    assert(Object.prototype.hasOwnProperty.call(renderCtx, 'deleteFromStorage'));
+    assert(Object.prototype.hasOwnProperty.call(renderCtx, 'notificationService'));
+    assert(Object.prototype.hasOwnProperty.call(renderCtx, 'documentRenderer'));
+
+    assertEquals(typeof Reflect.get(renderCtx, 'downloadFromStorage'), 'function');
+    assertEquals(typeof Reflect.get(renderCtx, 'deleteFromStorage'), 'function');
+
+    // Execute/plan-only fields should not be present on the sliced render context
+    assertEquals('executeModelCallAndSave' in renderCtx, false);
+    assertEquals('planComplexStage' in renderCtx, false);
+});
+
+Deno.test('createDialecticWorkerDeps: returns IJobContext including findSourceDocuments', async () => {
+    const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
+    assertEquals(typeof Reflect.get(deps, 'findSourceDocuments'), 'function');
 });

@@ -5,9 +5,18 @@ import type {
   TablesInsert,
   Json,
 } from '../../types_db.ts'
-import { isPostgrestError, isRecord } from '../utils/type_guards.ts'
-import type { FileManagerResponse, FileManagerError, UploadContext, PathContext } from '../types/file_manager.types.ts'
-import { FileType } from '../types/file_manager.types.ts'
+import { 
+  isPostgrestError, 
+  isRecord 
+} from '../utils/type_guards.ts'
+import { 
+  FileManagerDependencies,
+  FileManagerResponse, 
+  FileManagerError, 
+  UploadContext, 
+  PathContext, 
+  FileType 
+} from '../types/file_manager.types.ts'
 import {
   isModelContributionContext,
   isUserFeedbackContext,
@@ -15,11 +24,12 @@ import {
 } from '../utils/type-guards/type_guards.file_manager.ts'
 import { deconstructStoragePath } from '../utils/path_deconstructor.ts'
 import { shouldEnqueueRenderJob } from '../utils/shouldEnqueueRenderJob.ts'
-import type { ShouldEnqueueRenderJobDeps, ShouldEnqueueRenderJobParams } from '../types/shouldEnqueueRenderJob.interface.ts'
+import { 
+  ShouldEnqueueRenderJobDeps, 
+  ShouldEnqueueRenderJobParams 
+} from '../types/shouldEnqueueRenderJob.interface.ts'
+import { ILogger } from '../types.ts'
 
-export interface FileManagerDependencies {
-  constructStoragePath: (context: PathContext) => { storagePath: string; fileName: string; }
-}
 
 const MAX_UPLOAD_ATTEMPTS = 5; // Max attempts for filename collision resolution
 
@@ -31,6 +41,7 @@ export class FileManagerService {
   private supabase: SupabaseClient<Database>
   private storageBucket: string
   private constructStoragePath: (context: PathContext) => { storagePath: string; fileName: string; }
+  private logger: ILogger
 
   constructor(
     supabaseClient: SupabaseClient<Database>,
@@ -38,6 +49,7 @@ export class FileManagerService {
   ) {
     this.supabase = supabaseClient
     this.constructStoragePath = dependencies.constructStoragePath
+    this.logger = dependencies.logger
     const bucket = Deno.env.get('SB_CONTENT_STORAGE_BUCKET')
     if (!bucket) {
       throw new Error('SB_CONTENT_STORAGE_BUCKET environment variable is not set.')
@@ -622,14 +634,18 @@ export class FileManagerService {
       if (pathInfo.documentKey && pathInfo.stageSlug) {
         const deps: ShouldEnqueueRenderJobDeps = {
           dbClient: this.supabase,
+          logger: this.logger,
         };
         const params: ShouldEnqueueRenderJobParams = {
           outputType: pathInfo.documentKey,
           stageSlug: pathInfo.stageSlug,
         };
-        const shouldRender = await shouldEnqueueRenderJob(deps, params);
-        if (shouldRender) {
+        const renderDecision = await shouldEnqueueRenderJob(deps, params);
+        if (renderDecision.shouldRender && renderDecision.reason === 'is_markdown') {
           throw new Error(`assembleAndSaveFinalDocument should only be called for JSON-only artifacts (shouldRender === false), not for rendered documents. Rendered documents should use RENDER jobs via renderDocument instead. DocumentKey: ${pathInfo.documentKey}, StageSlug: ${pathInfo.stageSlug}`);
+        }
+        if (!renderDecision.shouldRender && renderDecision.reason !== 'is_json') {
+          throw new Error(`assembleAndSaveFinalDocument could not determine render requirement due to configuration/query error. reason=${renderDecision.reason} details=${renderDecision.details ?? ''}`);
         }
       }
 

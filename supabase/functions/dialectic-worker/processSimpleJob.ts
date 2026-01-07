@@ -1,21 +1,22 @@
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../types_db.ts';
 import {
-  type DialecticJobPayload,
-  type SelectedAiProvider,
-  type FailedAttemptError,
-  type IDialecticJobDeps,
-  type ModelProcessingResult,
-  type Job,
-  type PromptConstructionPayload,
-  type SourceDocument,
+  DialecticJobPayload,
+  SelectedAiProvider,
+  FailedAttemptError,
+  ModelProcessingResult,
+  Job,
+  PromptConstructionPayload,
+  SourceDocument,
 } from '../dialectic-service/dialectic.interface.ts';
+import { IJobContext } from './JobContext.interface.ts';
+import { createExecuteJobContext } from './createJobContext.ts';
 import { isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
 import { isRecord } from "../_shared/utils/type_guards.ts";
 import { ContextWindowError } from '../_shared/utils/errors.ts';
-import { type Messages } from '../_shared/types.ts';
-import { type StageContext, type AssemblePromptOptions } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
-import { type DialecticRecipeStep } from '../dialectic-service/dialectic.interface.ts';
+import { Messages } from '../_shared/types.ts';
+import { StageContext, type AssemblePromptOptions } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
+import { DialecticRecipeStep } from '../dialectic-service/dialectic.interface.ts';
 import { isDialecticRecipeTemplateStep, isDialecticStageRecipeStep } from '../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
@@ -24,7 +25,7 @@ export async function processSimpleJob(
     dbClient: SupabaseClient<Database>,
     job: Job & { payload: DialecticJobPayload },
     projectOwnerUserId: string,
-    deps: IDialecticJobDeps,
+    ctx: IJobContext,
     authToken: string,
 ) {
     const { id: jobId, attempt_count: currentAttempt, max_retries } = job;
@@ -35,7 +36,7 @@ export async function processSimpleJob(
         sessionId,
     } = job.payload;
     
-    deps.logger.info(`[dialectic-worker] [processSimpleJob] Starting attempt ${currentAttempt + 1}/${max_retries + 1} for job ID: ${jobId}`);
+    ctx.logger.info(`[dialectic-worker] [processSimpleJob] Starting attempt ${currentAttempt + 1}/${max_retries + 1} for job ID: ${jobId}`);
     let providerDetails: SelectedAiProvider | undefined;
 
     // Track document key for notifications where possible
@@ -56,7 +57,7 @@ export async function processSimpleJob(
         providerDetails = providerData;
 
         if (currentAttempt === 0 && projectOwnerUserId) {
-            await deps.notificationService.sendDialecticContributionStartedEvent({
+            await ctx.notificationService.sendDialecticContributionStartedEvent({
                 sessionId,
                 modelId: providerDetails.id,
                 iterationNumber: sessionData.iteration_count,
@@ -87,7 +88,7 @@ export async function processSimpleJob(
             throw new Error(`System prompt not found for stage: ${stageData.id}`);
         }
 
-        if (!deps.promptAssembler) {
+        if (!ctx.promptAssembler) {
             throw new Error('PromptAssembler dependency is missing.');
         }
 
@@ -96,7 +97,7 @@ export async function processSimpleJob(
             throw new Error('payload.user_jwt required');
         }
         const payloadHasJwt = typeof payloadUserJwt === 'string' && payloadUserJwt.length > 0;
-        deps.logger.info('[processSimpleJob] DIAGNOSTIC: payload jwt presence', {
+        ctx.logger.info('[processSimpleJob] DIAGNOSTIC: payload jwt presence', {
             jobId,
             hasJwtKey: payloadHasJwt,
             jwtLen: payloadUserJwt.length,
@@ -206,7 +207,7 @@ export async function processSimpleJob(
 
         // Emit document_started at EXECUTE job start
         if (currentAttempt === 0 && projectOwnerUserId) {
-            await deps.notificationService.sendDocumentCentricNotification({
+            await ctx.notificationService.sendDocumentCentricNotification({
                 type: 'document_started',
                 sessionId,
                 stageSlug,
@@ -228,8 +229,8 @@ export async function processSimpleJob(
         const initialPromptResult = await getInitialPromptContent(
             dbClient,
             project,
-            deps.logger,
-            (_client, bucket, path) => deps.downloadFromStorage(bucket, path)
+            ctx.logger,
+            (_client, bucket, path) => ctx.downloadFromStorage(_client, bucket, path)
         );
         let resolvedProjectInitialUserPrompt: string | undefined;
         if (typeof project.initial_user_prompt === 'string' && project.initial_user_prompt.length > 0) {
@@ -275,7 +276,7 @@ export async function processSimpleJob(
         if (sourceContributionId) {
             assembleOptions.sourceContributionId = sourceContributionId;
         }
-        const assembled = await deps.promptAssembler.assemble(assembleOptions);
+        const assembled = await ctx.promptAssembler.assemble(assembleOptions);
         
         const promptConstructionPayload: PromptConstructionPayload = {
             conversationHistory,
@@ -285,9 +286,10 @@ export async function processSimpleJob(
         };
         promptConstructionPayload.sourceContributionId = sourceContributionId;
 
-        await deps.executeModelCallAndSave({
+        const executeCtx = createExecuteJobContext(ctx);
+        await ctx.executeModelCallAndSave({
             dbClient,
-            deps,
+            deps: executeCtx,
             authToken,
             job,
             projectOwnerUserId,
@@ -303,7 +305,7 @@ export async function processSimpleJob(
         const error = e instanceof Error ? e : new Error(String(e));
         
         if (e instanceof ContextWindowError) {
-            deps.logger.error(`[dialectic-worker] [processSimpleJob] ContextWindowError for job ${jobId}: ${error.message}`);
+            ctx.logger.error(`[dialectic-worker] [processSimpleJob] ContextWindowError for job ${jobId}: ${error.message}`);
             await dbClient.from('dialectic_generation_jobs').update({
                 status: 'failed',
                 completed_at: new Date().toISOString(),
@@ -311,7 +313,7 @@ export async function processSimpleJob(
             }).eq('id', jobId);
             // Emit internal failure event for UI state routing
             if (projectOwnerUserId) {
-                await deps.notificationService.sendContributionGenerationFailedEvent({
+                await ctx.notificationService.sendContributionGenerationFailedEvent({
                     type: 'other_generation_failed',
                     sessionId: sessionId,
                     job_id: jobId,
@@ -322,7 +324,7 @@ export async function processSimpleJob(
                 }, projectOwnerUserId);
 
                 // User-facing historical notification
-                await deps.notificationService.sendContributionFailedNotification({
+                await ctx.notificationService.sendContributionFailedNotification({
                     type: 'contribution_generation_failed',
                     sessionId: job.payload.sessionId ?? sessionId,
                     stageSlug: job.payload.stageSlug ?? 'unknown',
@@ -336,7 +338,7 @@ export async function processSimpleJob(
 
                 // Document-centric failure event
                 if (notificationDocumentKey) {
-                    await deps.notificationService.sendDocumentCentricNotification({
+                    await ctx.notificationService.sendDocumentCentricNotification({
                         type: 'job_failed',
                         sessionId: String(sessionId),
                         stageSlug: String(stageSlug),
@@ -364,7 +366,7 @@ export async function processSimpleJob(
 
             if (projectOwnerUserId) {
                 // Internal event (UI state routing)
-                await deps.notificationService.sendContributionGenerationFailedEvent({
+                await ctx.notificationService.sendContributionGenerationFailedEvent({
                     type: 'other_generation_failed',
                     sessionId: sessionId,
                     job_id: jobId,
@@ -372,7 +374,7 @@ export async function processSimpleJob(
                 }, projectOwnerUserId);
 
                 // User-facing historical notification
-                await deps.notificationService.sendContributionFailedNotification({
+                await ctx.notificationService.sendContributionFailedNotification({
                     type: 'contribution_generation_failed',
                     sessionId: job.payload.sessionId ?? 'unknown',
                     stageSlug: job.payload.stageSlug ?? 'unknown',
@@ -383,7 +385,7 @@ export async function processSimpleJob(
 
                 // Document-centric failure event
                 if (notificationDocumentKey) {
-                    await deps.notificationService.sendDocumentCentricNotification({
+                    await ctx.notificationService.sendDocumentCentricNotification({
                         type: 'job_failed',
                         sessionId: String(sessionId),
                         stageSlug: String(stageSlug),
@@ -490,14 +492,14 @@ export async function processSimpleJob(
             api_identifier: providerDetails?.api_identifier || 'unknown',
             error: error.message,
         };
-        deps.logger.warn(`[dialectic-worker] [processSimpleJob] Attempt ${currentAttempt + 1} failed for model ${model_id}: ${failedAttempt.error}`);
+        ctx.logger.warn(`[dialectic-worker] [processSimpleJob] Attempt ${currentAttempt + 1} failed for model ${model_id}: ${failedAttempt.error}`);
         
         if (currentAttempt < max_retries) {
-            await deps.retryJob({ logger: deps.logger, notificationService: deps.notificationService }, dbClient, job, currentAttempt + 1, [failedAttempt], projectOwnerUserId);
+            await ctx.retryJob({ logger: ctx.logger, notificationService: ctx.notificationService }, dbClient, job, currentAttempt + 1, [failedAttempt], projectOwnerUserId);
             return;
         }
 
-        deps.logger.error(`[dialectic-worker] [processSimpleJob] Final attempt failed for job ${jobId}. Exhausted all ${max_retries + 1} retries.`);
+        ctx.logger.error(`[dialectic-worker] [processSimpleJob] Final attempt failed for job ${jobId}. Exhausted all ${max_retries + 1} retries.`);
         const modelProcessingResult: ModelProcessingResult = { modelId: model_id, status: 'failed', attempts: currentAttempt + 1, error: failedAttempt.error };
         
         const { error: finalUpdateError } = await dbClient
@@ -511,12 +513,12 @@ export async function processSimpleJob(
             .eq('id', jobId);
         
         if (finalUpdateError) {
-            deps.logger.error(`[dialectic-worker] [processSimpleJob] CRITICAL: Failed to mark job as 'retry_loop_failed'.`, { finalUpdateError });
+            ctx.logger.error(`[dialectic-worker] [processSimpleJob] CRITICAL: Failed to mark job as 'retry_loop_failed'.`, { finalUpdateError });
         }
         
         if (projectOwnerUserId) {
             // User-facing notification (preserve existing behavior)
-            await deps.notificationService.sendContributionFailedNotification({
+            await ctx.notificationService.sendContributionFailedNotification({
                 type: 'contribution_generation_failed',
                 sessionId: job.payload.sessionId ?? 'unknown',
                 stageSlug: job.payload.stageSlug ?? 'unknown',
@@ -529,7 +531,7 @@ export async function processSimpleJob(
             }, projectOwnerUserId);
 
             // Internal event for UI placeholder transition to failed
-            await deps.notificationService.sendContributionGenerationFailedEvent({
+            await ctx.notificationService.sendContributionGenerationFailedEvent({
                 type: 'other_generation_failed',
                 sessionId: sessionId,
                 job_id: jobId,
@@ -541,7 +543,7 @@ export async function processSimpleJob(
 
             // Document-centric failure event on terminal failure
             if (notificationDocumentKey) {
-                await deps.notificationService.sendDocumentCentricNotification({
+                await ctx.notificationService.sendDocumentCentricNotification({
                     type: 'job_failed',
                     sessionId: String(sessionId),
                     stageSlug: String(stageSlug),

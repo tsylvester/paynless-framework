@@ -20,7 +20,11 @@ import {
     IContinueJobResult,
     FailedAttemptError,
     UnifiedAIResponse,
-    DialecticContributionRow
+    DialecticContributionRow,
+    DialecticJobRow,
+    DialecticPlanJobPayload,
+    DialecticRecipeStep,
+    SourceDocument,
 } from '../dialectic-service/dialectic.interface.ts';
 import { IPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
 import { GetExtensionFromMimeTypeFn } from '../_shared/path_utils.ts';
@@ -64,6 +68,16 @@ export type RetryJobFn = (
 export type ExecuteModelCallAndSaveFn = (
     params: ExecuteModelCallAndSaveParams
 ) => Promise<void>;
+
+/**
+ * Function type for findSourceDocuments.
+ * Retrieves source documents required for a PLAN step to build child job payloads.
+ */
+export type FindSourceDocumentsFn = (
+    dbClient: SupabaseClient<Database>,
+    parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
+    inputsRequired: DialecticRecipeStep['inputs_required'],
+) => Promise<SourceDocument[]>;
 
 /**
  * Base context providing logging capabilities.
@@ -147,11 +161,14 @@ export interface IExecuteJobContext extends
 /**
  * Context for PLAN job processing.
  * Provides dependencies needed by processComplexJob and planComplexStage.
- * Minimal context with only logging and planning utilities.
+ * Minimal context with logging, planning utilities, and notification service.
  */
-export interface IPlanJobContext extends ILoggerContext {
+export interface IPlanJobContext extends
+    ILoggerContext,
+    INotificationContext {
     readonly getGranularityPlanner: GetGranularityPlannerFn;
     readonly planComplexStage: PlanComplexStageFn;
+    readonly findSourceDocuments: FindSourceDocumentsFn;
 }
 
 /**
@@ -207,6 +224,7 @@ export interface JobContextParams {
     readonly shouldEnqueueRenderJob: ShouldEnqueueRenderJobFn;
     readonly getGranularityPlanner: GetGranularityPlannerFn;
     readonly planComplexStage: PlanComplexStageFn;
+    readonly findSourceDocuments: FindSourceDocumentsFn;
     readonly documentRenderer: IDocumentRenderer;
     readonly continueJob: ContinueJobFn;
     readonly retryJob: RetryJobFn;

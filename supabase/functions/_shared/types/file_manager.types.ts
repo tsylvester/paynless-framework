@@ -3,9 +3,20 @@ import type {
   Database,
   Json
 } from '../../types_db.ts'
-import type { ServiceError } from '../types.ts';
-import type { ContributionType, StorageError } from '../../dialectic-service/dialectic.interface.ts';
-import type { PostgrestError } from '@supabase/supabase-js';
+import { 
+  ServiceError,
+  ILogger
+} from '../types.ts';
+import { 
+  ContributionType, 
+  StorageError 
+} from '../../dialectic-service/dialectic.interface.ts';
+import { PostgrestError } from '@supabase/supabase-js';
+
+export interface FileManagerDependencies {
+  constructStoragePath: (context: PathContext) => { storagePath: string; fileName: string; }
+  logger: ILogger
+}
 
 /**
  * A union of all possible file types the system can manage.

@@ -18,14 +18,15 @@ import {
     DialecticContributionRow,
     DialecticExecuteJobPayload,
     GranularityPlannerFn,
-    IDialecticJobDeps,
     SourceDocument,
     DialecticProjectResourceRow,
     InputRule,
     DocumentRelationships,
 } from '../dialectic-service/dialectic.interface.ts';
+import type { IPlanJobContext } from './JobContext.interface.ts';
 import { ILogger } from '../_shared/types.ts';
-import { planComplexStage, findSourceDocuments } from './task_isolator.ts';
+import { planComplexStage } from './task_isolator.ts';
+import { findSourceDocuments } from './findSourceDocuments.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
@@ -36,7 +37,7 @@ import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts
 describe('planComplexStage - Source Document Filtering', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
     let mockLogger: ILogger;
-    let mockDeps: IDialecticJobDeps;
+    let mockCtx: IPlanJobContext;
     let mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
     let mockRecipeStep: DialecticRecipeStep;
 
@@ -127,45 +128,12 @@ describe('planComplexStage - Source Document Filtering', () => {
             }));
         };
 
-        mockDeps = {
+        mockCtx = {
             logger: mockLogger,
-            planComplexStage: () => Promise.resolve([]),
-            downloadFromStorage: (): Promise<DownloadStorageResult> => {
-                const encoded = new TextEncoder().encode('test content');
-                const buffer = encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength);
-                const arrayBuffer: ArrayBuffer = buffer instanceof ArrayBuffer ? buffer : new ArrayBuffer(0);
-                return Promise.resolve({
-                    data: arrayBuffer,
-                    error: null,
-                });
-            },
-            getGranularityPlanner: () => mockPlanner,
-            ragService: undefined,
-            fileManager: new MockFileManagerService(),
-            countTokens: () => 0,
-            getAiProviderConfig: () => Promise.resolve({
-                api_identifier: 'mock-api-identifier',
-                input_token_cost_rate: 0,
-                output_token_cost_rate: 0,
-                provider_max_input_tokens: 8192,
-                tokenization_strategy: {
-                    type: 'tiktoken',
-                    tiktoken_encoding_name: 'cl100k_base',
-                    tiktoken_model_name_for_rules_fallback: 'gpt-4o',
-                    is_chatml_model: false,
-                    api_identifier_for_tokenization: 'mock-api-identifier',
-                },
-            }),
-            getSeedPromptForStage: () => Promise.resolve({ content: '', fullPath: '', bucket: '', path: '', fileName: '' }),
-            continueJob: () => Promise.resolve({ enqueued: false }),
-            retryJob: () => Promise.resolve({ error: undefined }),
             notificationService: mockNotificationService,
-            executeModelCallAndSave: () => Promise.resolve(),
-            callUnifiedAIModel: () => Promise.resolve({ content: '', finish_reason: 'stop' }),
-            getExtensionFromMimeType: () => '.txt',
-            randomUUID: () => 'random-uuid',
-            deleteFromStorage: () => Promise.resolve({ data: null, error: null }),
-            documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
+            getGranularityPlanner: () => mockPlanner,
+            planComplexStage: async () => [],
+            findSourceDocuments: findSourceDocuments,
         };
     });
 
@@ -253,7 +221,7 @@ describe('planComplexStage - Source Document Filtering', () => {
         const result = await planComplexStage(
             mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
             mockParentJob,
-            mockDeps,
+            mockCtx,
             mockRecipeStep,
             'user-jwt-123',
             completedSourceDocumentIds,
@@ -330,7 +298,7 @@ describe('planComplexStage - Source Document Filtering', () => {
         const result = await planComplexStage(
             mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
             mockParentJob,
-            mockDeps,
+            mockCtx,
             mockRecipeStep,
             'user-jwt-123',
             completedSourceDocumentIds,
@@ -399,7 +367,7 @@ describe('planComplexStage - Source Document Filtering', () => {
         const result = await planComplexStage(
             mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
             mockParentJob,
-            mockDeps,
+            mockCtx,
             mockRecipeStep,
             'user-jwt-123',
         );
@@ -448,7 +416,7 @@ describe('planComplexStage - Source Document Filtering', () => {
             () => planComplexStage(
                 mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
                 mockParentJob,
-                mockDeps,
+                mockCtx,
                 mockRecipeStep,
                 'user-jwt-123',
                 completedSourceDocumentIds,
@@ -520,7 +488,7 @@ describe('planComplexStage - Source Document Filtering', () => {
         const result = await planComplexStage(
             mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
             mockParentJob,
-            mockDeps,
+            mockCtx,
             mockRecipeStep,
             'user-jwt-123',
             completedSourceDocumentIds,
@@ -591,7 +559,7 @@ describe('planComplexStage - Source Document Filtering', () => {
         const result = await planComplexStage(
             mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
             mockParentJob,
-            mockDeps,
+            mockCtx,
             mockRecipeStep,
             'user-jwt-123',
             completedSourceDocumentIds,
@@ -795,7 +763,7 @@ describe('planComplexStage - Source Document Filtering', () => {
         const result = await planComplexStage(
             mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
             mockParentJob,
-            mockDeps,
+            mockCtx,
             mockRecipeStep,
             'user-jwt-123',
             completedSourceDocumentIds,

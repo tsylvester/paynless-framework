@@ -9,7 +9,7 @@ import {
     assertRejects,
 } from 'jsr:@std/assert@0.225.3';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database, Tables } from '../types_db.ts';
+import type { Database } from '../types_db.ts';
 import {
     DialecticJobRow,
     DialecticPlanJobPayload,
@@ -18,8 +18,11 @@ import {
     DialecticFeedbackRow,
     InputRule,
 } from '../dialectic-service/dialectic.interface.ts';
-import { findSourceDocuments } from './task_isolator.ts';
-import { createMockSupabaseClient, MockQueryBuilderState } from '../_shared/supabase.mock.ts';
+import { findSourceDocuments } from './findSourceDocuments.ts';
+import { 
+    createMockSupabaseClient, 
+    MockQueryBuilderState 
+} from '../_shared/supabase.mock.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 
 describe('findSourceDocuments', () => {

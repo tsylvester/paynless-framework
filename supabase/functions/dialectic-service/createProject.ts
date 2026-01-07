@@ -9,8 +9,9 @@ import { constructStoragePath } from "../_shared/utils/path_constructor.ts";
 import { FileType } from "../_shared/types/file_manager.types.ts";
 import { isServiceError } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
 import { isPostgrestError } from "../_shared/utils/type-guards/type_guards.common.ts";
+import { logger } from "../_shared/logger.ts";
 
-  console.log("createProject function started");
+  logger.info("createProject function started");
   
   // Define a type for the function signature of createSupabaseClient
   type CreateSupabaseClientFn = (req: Request) => SupabaseClient;
@@ -104,7 +105,7 @@ export async function createProject(
     }
 
     // Always create a file resource for the initial prompt, whether from string or file input
-    const fileManager = new FileManagerService(dbAdminClient, { constructStoragePath });
+    const fileManager = new FileManagerService(dbAdminClient, { constructStoragePath, logger });
     let promptResourceId: string;
 
     if (isFile) {

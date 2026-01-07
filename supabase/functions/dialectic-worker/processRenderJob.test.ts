@@ -5,19 +5,19 @@
 // and no reliance on deprecated fields.
 
 import { assert, assertEquals, assertExists } from "https://deno.land/std@0.170.0/testing/asserts.ts";
-import { spy, stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Database } from "../types_db.ts";
+import { stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
+import { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { Database } from "../types_db.ts";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
-import { logger } from "../_shared/logger.ts";
 import { FileType } from "../_shared/types/file_manager.types.ts";
-import { createDocumentRendererMock } from "../_shared/services/document_renderer.mock.ts";
 import { isRecord } from "../_shared/utils/type_guards.ts";
 import { processRenderJob } from "./processRenderJob.ts";
-import { MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import { mockNotificationService, resetMockNotificationService } from "../_shared/utils/notification.service.mock.ts";
-import type { DialecticRenderJobPayload } from "../dialectic-service/dialectic.interface.ts";
+import { DialecticRenderJobPayload } from "../dialectic-service/dialectic.interface.ts";
 import { isJson } from "../_shared/utils/type-guards/type_guards.common.ts";
+import { IRenderJobContext } from "./JobContext.interface.ts";
+import { createRenderJobContext } from "./createJobContext.ts";
+import { createMockRootContext } from "./JobContext.mock.ts";
 
 // Helpers
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
@@ -70,26 +70,37 @@ Deno.test("processRenderJob - calls renderer with job signature and marks job co
   // - Build a mock Dialectic job row (job_type: 'RENDER') whose payload contains:
   //   { projectId, sessionId, iterationNumber, stageSlug, documentIdentity, documentKey }
   // - Create a mock Supabase client (spies should capture an update to dialectic_generation_jobs)
-  // - Create a documentRenderer mock that captures calls and returns { pathContext, renderedBytes }
-  // - Provide minimal deps object containing the documentRenderer
+  // - Use JobContext.mock to inject all deps, then stub only documentRenderer.renderDocument
   const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
-  const { renderer, calls } = createDocumentRendererMock();
   const job = makeRenderJob();
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
 
   // Act
   await processRenderJob(
     dbClient as unknown as SupabaseClient<Database>,
     job,
     ownerId,
-    { 
-        documentRenderer: renderer, 
-        logger, 
-        downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-         fileManager: new MockFileManagerService(), 
-         notificationService: mockNotificationService 
-    },
+    renderCtx,
     "auth-token",
   );
 
@@ -97,14 +108,15 @@ Deno.test("processRenderJob - calls renderer with job signature and marks job co
   // - renderer.renderDocument was called exactly once
   // - Params equal the payload: { projectId, sessionId, iterationNumber, stageSlug, documentIdentity, documentKey }
   // - Job row was updated once with { status: 'completed', results: ... }
-  assertEquals(calls.length, 1);
-  const call = calls[0];
-  assertEquals(call.params.projectId, "project_123");
-  assertEquals(call.params.sessionId, "session_abc");
-  assertEquals(call.params.iterationNumber, 1);
-  assertEquals(call.params.stageSlug, "thesis");
-  assertEquals(call.params.documentIdentity, "doc-root-1");
-  assertEquals(String(call.params.documentKey), String(FileType.business_case));
+  assertEquals(renderDocumentStub.calls.length, 1);
+  const call = renderDocumentStub.calls[0];
+  const params = call.args[2];
+  assertEquals(params.projectId, "project_123");
+  assertEquals(params.sessionId, "session_abc");
+  assertEquals(params.iterationNumber, 1);
+  assertEquals(params.stageSlug, "thesis");
+  assertEquals(params.documentIdentity, "doc-root-1");
+  assertEquals(String(params.documentKey), String(FileType.business_case));
 
   const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
   assertExists(updates);
@@ -115,66 +127,53 @@ Deno.test("processRenderJob - calls renderer with job signature and marks job co
   assert(updatePayload && typeof updatePayload === "object" && "status" in updatePayload);
   assertEquals(updatePayload.status, "completed");
 
+  renderDocumentStub.restore();
   clearAllStubs?.();
 });
 
 Deno.test("processRenderJob - passes originating contribution id to renderer payload", async () => {
   // Test 6.b.iv: Verify that sourceContributionId is passed correctly to renderDocument regardless of whether it equals documentIdentity
   const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
-  const { renderer, calls } = createDocumentRendererMock({
-    handler: async (_dbc, _deps, params) => {
-      // Return pathContext with sourceContributionId from params (not documentIdentity)
-      return {
-        pathContext: {
-          projectId: params.projectId,
-          fileType: FileType.RenderedDocument,
-          sessionId: params.sessionId,
-          iteration: params.iterationNumber,
-          stageSlug: params.stageSlug,
-          documentKey: params.documentKey,
-          modelSlug: "mock-model",
-          sourceContributionId: params.sourceContributionId,
-        },
-        renderedBytes: new Uint8Array(),
-      };
-    },
-  });
   const documentIdentity = "doc-identity-456";
   const sourceContributionId = "contrib-id-789";
   // Use different values to verify the function passes them correctly regardless of equality
   const job = makeRenderJob({ documentIdentity, sourceContributionId });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
 
   await processRenderJob(
     dbClient as unknown as SupabaseClient<Database>,
     job,
     ownerId,
-    {
-      documentRenderer: renderer,
-      logger,
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-      fileManager: new MockFileManagerService(),
-      notificationService: mockNotificationService,
-    },
+    renderCtx,
     "auth-token",
   );
 
-  assertEquals(calls.length, 1);
-  const params = calls[0].params;
-  assert(isRecord(params), "Renderer params must be a record");
-  if (isRecord(params)) {
-    assert("sourceContributionId" in params, "Expected renderer params to include sourceContributionId");
-    assert("documentIdentity" in params, "Expected renderer params to include documentIdentity");
-    const receivedSourceContributionId = params["sourceContributionId"];
-    const receivedDocumentIdentity = params["documentIdentity"];
-    // Verify sourceContributionId is passed correctly (not enforcing equality with documentIdentity)
-    assertEquals(receivedSourceContributionId, sourceContributionId, "sourceContributionId should be passed correctly to renderDocument");
-    assertEquals(receivedDocumentIdentity, documentIdentity, "documentIdentity should be passed correctly to renderDocument");
-    // This test verifies the values are passed correctly regardless of their relationship
-    // (separate tests 6.b.i and 6.b.ii explicitly test root and continuation chunk scenarios)
-  }
+  assertEquals(renderDocumentStub.calls.length, 1);
+  const params = renderDocumentStub.calls[0].args[2];
+  assertEquals(params.sourceContributionId, sourceContributionId, "sourceContributionId should be passed correctly to renderDocument");
+  assertEquals(params.documentIdentity, documentIdentity, "documentIdentity should be passed correctly to renderDocument");
 
+  renderDocumentStub.restore();
   clearAllStubs?.();
 });
 
@@ -183,14 +182,14 @@ Deno.test("processRenderJob - records failure with error_details when renderer t
   // - Same as prior test but make renderer.renderDocument throw an Error("render failed")
   const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
   const error = new Error("render failed");
-  const { renderer } = createDocumentRendererMock({
-    handler: async () => {
-      throw error;
-    },
-  });
   const job = makeRenderJob();
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(rootCtx.documentRenderer, "renderDocument", async () => {
+    throw error;
+  });
 
   // Act
   try {
@@ -198,13 +197,7 @@ Deno.test("processRenderJob - records failure with error_details when renderer t
       dbClient as unknown as SupabaseClient<Database>,
       job,
       ownerId,
-      { 
-        documentRenderer: renderer, 
-        logger, 
-        downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }), 
-        fileManager: new MockFileManagerService(), 
-        notificationService: mockNotificationService,
-    },
+      renderCtx,
       "auth-token",
     );
   } catch (_e) {
@@ -224,31 +217,29 @@ Deno.test("processRenderJob - records failure with error_details when renderer t
   const errorDetails = updatePayload.error_details;
   assert(typeof errorDetails === "string" && errorDetails.includes("render failed"));
 
+  renderDocumentStub.restore();
   clearAllStubs?.();
 });
 
 Deno.test("processRenderJob - emits job_failed document-centric notification on renderer failure", async () => {
   const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
   const err = new Error("render crashed hard");
-  const { renderer } = createDocumentRendererMock({ handler: async () => { throw err; } });
   const job = makeRenderJob();
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-
   resetMockNotificationService();
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(rootCtx.documentRenderer, "renderDocument", async () => {
+    throw err;
+  });
 
   try {
     await processRenderJob(
       dbClient as unknown as SupabaseClient<Database>,
       job,
       ownerId,
-      {
-        documentRenderer: renderer,
-        logger,
-        downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-        fileManager: new MockFileManagerService(),
-        notificationService: mockNotificationService,
-      },
+      renderCtx,
       'auth-token',
     );
   } catch (_e) {
@@ -267,6 +258,7 @@ Deno.test("processRenderJob - emits job_failed document-centric notification on 
   assertEquals(payloadArg.iterationNumber, 1);
   assertEquals(targetUserId, job.user_id);
 
+  renderDocumentStub.restore();
   clearAllStubs?.();
 });
 
@@ -282,8 +274,12 @@ Deno.test("processRenderJob - forwards dbClient and args unchanged; does not mut
 
   let receivedDbClient: unknown;
   let receivedParams: unknown;
-  const { renderer } = createDocumentRendererMock({
-    handler: async (dbc, _deps, params) => {
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (dbc, _deps, params) => {
       receivedDbClient = dbc;
       receivedParams = params;
       return {
@@ -295,24 +291,19 @@ Deno.test("processRenderJob - forwards dbClient and args unchanged; does not mut
           stageSlug: params.stageSlug,
           documentKey: params.documentKey,
           modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
         },
         renderedBytes: new Uint8Array(),
       };
     },
-  });
+  );
 
   // Act
   await processRenderJob(
     dbClient as unknown as SupabaseClient<Database>,
     job,
     ownerId,
-    { 
-        documentRenderer: renderer, 
-        logger, 
-        downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }), 
-        fileManager: new MockFileManagerService(), 
-        notificationService: mockNotificationService,
-    },
+    renderCtx,
     "auth-token",
   );
 
@@ -322,6 +313,7 @@ Deno.test("processRenderJob - forwards dbClient and args unchanged; does not mut
   // Ensure payload remains frozen and unchanged in shape
   assert(Object.isFrozen(job.payload));
 
+  renderDocumentStub.restore();
   clearAllStubs?.();
 });
 
@@ -329,14 +321,22 @@ Deno.test("processRenderJob - ignores deprecated step_info and relies only on re
   // Arrange
   // - Add a bogus step_info field to the payload to ensure it is ignored
   const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
-  const job: MockJob = makeRenderJob(
-    { step_info: { legacy: true } } as unknown as DialecticRenderJobPayload);
+  const job = makeRenderJob();
+  if (isRecord(job.payload)) {
+    job.payload["step_info"] = { legacy: true };
+  }
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
   let usedParams: { [k: string]: unknown } | null = null;
-  const { renderer } = createDocumentRendererMock({
-    handler: async (_dbc, _deps, params) => {
-      usedParams = params;
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => {
+      if (isRecord(params)) {
+        usedParams = params;
+      }
       return {
         pathContext: {
           projectId: params.projectId,
@@ -346,24 +346,19 @@ Deno.test("processRenderJob - ignores deprecated step_info and relies only on re
           stageSlug: params.stageSlug,
           documentKey: params.documentKey,
           modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
         },
         renderedBytes: new Uint8Array(),
       };
     },
-  });
+  );
 
   // Act
   await processRenderJob(
     dbClient as unknown as SupabaseClient<Database>,
     job,
     ownerId,
-    { 
-        documentRenderer: renderer, 
-        logger, 
-        downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }), 
-        fileManager: new MockFileManagerService(), 
-        notificationService: mockNotificationService,
-    },
+    renderCtx,
     "auth-token",
   );
 
@@ -372,6 +367,7 @@ Deno.test("processRenderJob - ignores deprecated step_info and relies only on re
   // - renderer params are derived exclusively from { projectId, sessionId, iterationNumber, stageSlug, documentIdentity, documentKey }
   assertEquals(Object.prototype.hasOwnProperty.call(usedParams, "step_info"), false);
 
+  renderDocumentStub.restore();
   clearAllStubs?.();
 });
 
@@ -379,23 +375,35 @@ Deno.test("processRenderJob - success path performs a single deterministic job u
   // Arrange
   // - Set up spies on dialectic_generation_jobs update
   const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
-  const { renderer } = createDocumentRendererMock();
   const job = makeRenderJob();
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
 
   // Act
   await processRenderJob(
     dbClient as unknown as SupabaseClient<Database>,
     job,
     ownerId,
-    { 
-        documentRenderer: renderer, 
-        logger, 
-        downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }), 
-        fileManager: new MockFileManagerService(), 
-        notificationService: mockNotificationService,
-    },
+    renderCtx,
     "auth-token",
   );
 
@@ -415,45 +423,41 @@ Deno.test("processRenderJob - success path performs a single deterministic job u
   const stageSelects = (spies.getHistoricQueryBuilderSpies("dialectic_stages", "select") || { callCount: 0 }).callCount;
   assertEquals(stageSelects, 0);
 
+  renderDocumentStub.restore();
   clearAllStubs?.();
 });
 
 Deno.test("processRenderJob - persists renderer pathContext into job results", async () => {
   const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
   const expectedSourceContributionId = "expected-source-contrib-id";
-  const { renderer } = createDocumentRendererMock({
-    handler: async (_dbc, _deps, params) => {
-      // Return pathContext with sourceContributionId from params (not documentIdentity)
-      return {
-        pathContext: {
-          projectId: params.projectId,
-          fileType: FileType.RenderedDocument,
-          sessionId: params.sessionId,
-          iteration: params.iterationNumber,
-          stageSlug: params.stageSlug,
-          documentKey: params.documentKey,
-          modelSlug: "mock-model",
-          sourceContributionId: params.sourceContributionId,
-        },
-        renderedBytes: new Uint8Array(),
-      };
-    },
-  });
   const job = makeRenderJob({ sourceContributionId: expectedSourceContributionId });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
 
   await processRenderJob(
     dbClient as unknown as SupabaseClient<Database>,
     job,
     ownerId,
-    {
-      documentRenderer: renderer,
-      logger,
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-      fileManager: new MockFileManagerService(),
-      notificationService: mockNotificationService,
-    },
+    renderCtx,
     "auth-token",
   );
 
@@ -481,6 +485,7 @@ Deno.test("processRenderJob - persists renderer pathContext into job results", a
     assertEquals(pathContext["sourceContributionId"], payload["sourceContributionId"], "pathContext.sourceContributionId should come from render result, matching payload's sourceContributionId");
   }
 
+  renderDocumentStub.restore();
   clearAllStubs?.();
 });
 
@@ -492,388 +497,14 @@ Deno.test("processRenderJob - forwards notifyUserId to renderer deps", async () 
 
   let receivedNotifyUserId: unknown;
   let receivedNotificationService: unknown;
-  const { renderer } = createDocumentRendererMock({
-    handler: async (_dbc, deps, params) => {
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, deps, params) => {
       receivedNotifyUserId = deps.notifyUserId;
       receivedNotificationService = deps.notificationService;
-      return {
-        pathContext: {
-          projectId: params.projectId,
-          fileType: FileType.RenderedDocument,
-          sessionId: params.sessionId,
-          iteration: params.iterationNumber,
-          stageSlug: params.stageSlug,
-          documentKey: params.documentKey,
-          modelSlug: "mock-model",
-        },
-        renderedBytes: new Uint8Array(),
-      };
-    },
-  });
-
-  await processRenderJob(
-    dbClient as unknown as SupabaseClient<Database>,
-    job,
-    ownerId,
-    {
-      documentRenderer: renderer,
-      logger,
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-      fileManager: new MockFileManagerService(),
-      notificationService: mockNotificationService,
-    },
-    "auth-token",
-  );
-
-  assertEquals(receivedNotifyUserId, job.user_id);
-  assert(receivedNotificationService === mockNotificationService);
-
-  clearAllStubs?.();
-});
-
-Deno.test("processRenderJob - converts string iterationNumber to number", async () => {
-  const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
-  let receivedIteration: number | null = null;
-  const { renderer } = createDocumentRendererMock({
-    handler: async (_dbc, _deps, params) => {
-      receivedIteration = params.iterationNumber;
-      return {
-        pathContext: {
-          projectId: params.projectId,
-          fileType: FileType.RenderedDocument,
-          sessionId: params.sessionId,
-          iteration: params.iterationNumber,
-          stageSlug: params.stageSlug,
-          documentKey: params.documentKey,
-          modelSlug: "mock-model",
-        },
-        renderedBytes: new Uint8Array(),
-      };
-    },
-  });
-  const job: MockJob = makeRenderJob({ iterationNumber: 1 } as unknown as DialecticRenderJobPayload);
-  const ownerId = job.user_id;
-  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-
-  await processRenderJob(
-    dbClient as unknown as SupabaseClient<Database>,
-    job,
-    ownerId,
-    {
-      documentRenderer: renderer,
-      logger,
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-      fileManager: new MockFileManagerService(),
-      notificationService: mockNotificationService,
-    },
-    "auth-token",
-  );
-
-  assertEquals(receivedIteration, 1);
-
-  clearAllStubs?.();
-});
-
-Deno.test("processRenderJob - fails and does not call renderer when projectId missing", async () => {
-  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
-  const { renderer, calls } = createDocumentRendererMock();
-  const job = makeRenderJob({ projectId: undefined });
-  const ownerId = job.user_id;
-  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-
-  await processRenderJob(
-    dbClient as unknown as SupabaseClient<Database>,
-    job,
-    ownerId,
-    {
-      documentRenderer: renderer,
-      logger,
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-      fileManager: new MockFileManagerService(),
-      notificationService: mockNotificationService,
-    },
-    "auth-token",
-  );
-
-  assertEquals(calls.length, 0);
-  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
-  assertExists(updates);
-  assertEquals(updates.callCount, 1);
-  const [updatePayload] = updates.callsArgs[0];
-  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
-  assertEquals(updatePayload.status, "failed");
-  const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
-  assert(typeof err === "string" && err.includes("Missing required render parameters"));
-
-  clearAllStubs?.();
-});
-
-Deno.test("processRenderJob - fails when sessionId missing", async () => {
-  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
-  const { renderer, calls } = createDocumentRendererMock();
-  const job = makeRenderJob({ sessionId: undefined });
-  const ownerId = job.user_id;
-  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-
-  await processRenderJob(
-    dbClient as unknown as SupabaseClient<Database>,
-    job,
-    ownerId,
-    {
-      documentRenderer: renderer,
-      logger,
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-      fileManager: new MockFileManagerService(),
-      notificationService: mockNotificationService,
-    },
-    "auth-token",
-  );
-
-  assertEquals(calls.length, 0);
-  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
-  assertExists(updates);
-  const [updatePayload] = updates.callsArgs[0];
-  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
-  assertEquals(updatePayload.status, "failed");
-  const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
-  assert(typeof err === "string" && err.includes("Missing required render parameters"));
-
-  clearAllStubs?.();
-});
-
-Deno.test("processRenderJob - fails when stageSlug missing", async () => {
-  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
-  const { renderer, calls } = createDocumentRendererMock();
-  const job = makeRenderJob({ stageSlug: undefined });
-  const ownerId = job.user_id;
-  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-
-  await processRenderJob(
-    dbClient as unknown as SupabaseClient<Database>,
-    job,
-    ownerId,
-    {
-      documentRenderer: renderer,
-      logger,
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-      fileManager: new MockFileManagerService(),
-      notificationService: mockNotificationService,
-    },
-    "auth-token",
-  );
-
-  assertEquals(calls.length, 0);
-  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
-  assertExists(updates);
-  const [updatePayload] = updates.callsArgs[0];
-  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
-  assertEquals(updatePayload.status, "failed");
-  const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
-  assert(typeof err === "string" && err.includes("Missing required render parameters"));
-
-  clearAllStubs?.();
-});
-
-Deno.test("processRenderJob - fails when documentIdentity missing", async () => {
-  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
-  const { renderer, calls } = createDocumentRendererMock();
-  const job = makeRenderJob({ documentIdentity: undefined });
-  const ownerId = job.user_id;
-  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-
-  await processRenderJob(
-    dbClient as unknown as SupabaseClient<Database>,
-    job,
-    ownerId,
-    {
-      documentRenderer: renderer,
-      logger,
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-      fileManager: new MockFileManagerService(),
-      notificationService: mockNotificationService,
-    },
-    "auth-token",
-  );
-
-  assertEquals(calls.length, 0);
-  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
-  assertExists(updates);
-  const [updatePayload] = updates.callsArgs[0];
-  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
-  assertEquals(updatePayload.status, "failed");
-  const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
-  assert(typeof err === "string" && err.includes("Missing required render parameters"));
-
-  clearAllStubs?.();
-});
-
-Deno.test("processRenderJob - fails when iterationNumber missing or invalid", async () => {
-  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
-  const { renderer, calls } = createDocumentRendererMock();
-  const job = makeRenderJob({ iterationNumber: undefined });
-  const ownerId = job.user_id;
-  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-
-  await processRenderJob(
-    dbClient as unknown as SupabaseClient<Database>,
-    job,
-    ownerId,
-    {
-      documentRenderer: renderer,
-      logger,
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-      fileManager: new MockFileManagerService(),
-      notificationService: mockNotificationService,
-    },
-    "auth-token",
-  );
-
-  assertEquals(calls.length, 0);
-  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
-  assertExists(updates);
-  const [updatePayload] = updates.callsArgs[0];
-  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
-  assertEquals(updatePayload.status, "failed");
-  const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
-  assert(typeof err === "string" && err.includes("iterationNumber is required"));
-
-  clearAllStubs?.();
-});
-
-Deno.test("processRenderJob - fails when iterationNumber is non-numeric string", async () => {
-  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
-  const { renderer, calls } = createDocumentRendererMock();
-  const job: MockJob = makeRenderJob(
-    { iterationNumber: "bogus" as unknown as number });
-  const ownerId = job.user_id;
-  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-
-  await processRenderJob(
-    dbClient as unknown as SupabaseClient<Database>,
-    job,
-    ownerId,
-    {
-      documentRenderer: renderer,
-      logger,
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-      fileManager: new MockFileManagerService(),
-      notificationService: mockNotificationService,
-    },
-    "auth-token",
-  );
-
-  assertEquals(calls.length, 0);
-  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
-  assertExists(updates);
-  const [updatePayload] = updates.callsArgs[0];
-  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
-  assertEquals(updatePayload.status, "failed");
-  const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
-  assert(typeof err === "string" && err.includes("iterationNumber is required"));
-
-  clearAllStubs?.();
-});
-
-Deno.test("processRenderJob - fails when documentKey is not a FileType", async () => {
-  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
-  const { renderer, calls } = createDocumentRendererMock();
-  const job: MockJob = makeRenderJob(
-    { documentKey: "not_a_file_type" as unknown as FileType });
-  const ownerId = job.user_id;
-  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-
-  await processRenderJob(
-    dbClient as unknown as SupabaseClient<Database>,
-    job,
-    ownerId,
-    {
-      documentRenderer: renderer,
-      logger,
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-      fileManager: new MockFileManagerService(),
-      notificationService: mockNotificationService,
-    },
-    "auth-token",
-  );
-
-  assertEquals(calls.length, 0);
-  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
-  assertExists(updates);
-  const [updatePayload] = updates.callsArgs[0];
-  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
-  assertEquals(updatePayload.status, "failed");
-  const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
-  assert(typeof err === "string" && err.includes("documentKey must be a valid FileType"));
-
-  clearAllStubs?.();
-});
-
-Deno.test("processRenderJob - accepts sourceContributionId that differs from documentIdentity when document_relationships contains semantic identifier", async () => {
-  // Arrange: Create a RENDER job where sourceContributionId is the actual contribution ID
-  // and documentIdentity is a semantic identifier from document_relationships (different values)
-  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
-  const { renderer, calls } = createDocumentRendererMock();
-  
-  const actualContributionId = "contrib-123"; // Actual contribution ID (for foreign key constraint)
-  const semanticIdentifier = "semantic-doc-identity-999"; // Semantic identifier from document_relationships
-  
-  // sourceContributionId should be the actual contribution ID, not the semantic identifier
-  const job = makeRenderJob({ 
-    sourceContributionId: actualContributionId,
-    documentIdentity: semanticIdentifier 
-  });
-  const ownerId = job.user_id;
-  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-
-  // Act: processRenderJob should accept this configuration without throwing
-  await processRenderJob(
-    dbClient as unknown as SupabaseClient<Database>,
-    job,
-    ownerId,
-    {
-      documentRenderer: renderer,
-      logger,
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-      fileManager: new MockFileManagerService(),
-      notificationService: mockNotificationService,
-    },
-    "auth-token",
-  );
-
-  // Assert: The job should process successfully (not fail with "sourceContributionId must equal documentIdentity")
-  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
-  assertExists(updates);
-  assertEquals(updates.callCount, 1);
-  const [updatePayload] = updates.callsArgs[0];
-  assert(isRecord(updatePayload) && "status" in updatePayload);
-  assertEquals(updatePayload.status, "completed", "Job should complete successfully when sourceContributionId differs from documentIdentity");
-
-  // Assert: renderer should be called with the correct parameters
-  assertEquals(calls.length, 1, "Renderer should be called exactly once");
-  const renderParams = calls[0].params;
-  assert(isRecord(renderParams), "Renderer params must be a record");
-  assertEquals(renderParams.sourceContributionId, actualContributionId, "sourceContributionId should be the actual contribution ID");
-  assertEquals(renderParams.documentIdentity, semanticIdentifier, "documentIdentity should be the semantic identifier");
-  assert(renderParams.sourceContributionId !== renderParams.documentIdentity, "sourceContributionId and documentIdentity should be different when document_relationships contains a semantic identifier");
-
-  // Assert: No error should be logged about sourceContributionId not equaling documentIdentity
-  const errorDetails = isRecord(updatePayload) && "error_details" in updatePayload ? updatePayload.error_details : null;
-  assert(
-    !errorDetails || (typeof errorDetails === "string" && !errorDetails.includes("sourceContributionId must equal documentIdentity")),
-    "Should not fail with 'sourceContributionId must equal documentIdentity' error"
-  );
-
-  clearAllStubs?.();
-});
-
-Deno.test("processRenderJob - processes RENDER job successfully for root chunk where sourceContributionId equals documentIdentity", async () => {
-  // Test 6.b.i: Verify root chunks where sourceContributionId === documentIdentity
-  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
-  const rootId = "root-contrib-6b-i";
-  
-  const { renderer, calls } = createDocumentRendererMock({
-    handler: async (_dbc, _deps, params) => {
-      // Return pathContext with sourceContributionId from params (not documentIdentity)
       return {
         pathContext: {
           projectId: params.projectId,
@@ -888,7 +519,468 @@ Deno.test("processRenderJob - processes RENDER job successfully for root chunk w
         renderedBytes: new Uint8Array(),
       };
     },
+  );
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  assertEquals(receivedNotifyUserId, job.user_id);
+  assert(receivedNotificationService === mockNotificationService);
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - converts string iterationNumber to number", async () => {
+  const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
+  let receivedIteration: number | null = null;
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => {
+      receivedIteration = params.iterationNumber;
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
+  );
+  const job = makeRenderJob({ iterationNumber: 1 });
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  assertEquals(receivedIteration, 1);
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - fails and does not call renderer when projectId missing", async () => {
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const job = makeRenderJob({ projectId: undefined });
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  assertEquals(renderDocumentStub.calls.length, 0);
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates);
+  assertEquals(updates.callCount, 1);
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
+  assertEquals(updatePayload.status, "failed");
+  const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
+  assert(typeof err === "string" && err.includes("Missing required render parameters"));
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - fails when sessionId missing", async () => {
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const job = makeRenderJob({ sessionId: undefined });
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  assertEquals(renderDocumentStub.calls.length, 0);
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates);
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
+  assertEquals(updatePayload.status, "failed");
+  const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
+  assert(typeof err === "string" && err.includes("Missing required render parameters"));
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - fails when stageSlug missing", async () => {
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const job = makeRenderJob({ stageSlug: undefined });
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  assertEquals(renderDocumentStub.calls.length, 0);
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates);
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
+  assertEquals(updatePayload.status, "failed");
+  const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
+  assert(typeof err === "string" && err.includes("Missing required render parameters"));
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - fails when documentIdentity missing", async () => {
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const job = makeRenderJob({ documentIdentity: undefined });
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  assertEquals(renderDocumentStub.calls.length, 0);
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates);
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
+  assertEquals(updatePayload.status, "failed");
+  const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
+  assert(typeof err === "string" && err.includes("Missing required render parameters"));
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - fails when iterationNumber missing or invalid", async () => {
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const job = makeRenderJob({ iterationNumber: undefined });
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  assertEquals(renderDocumentStub.calls.length, 0);
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates);
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
+  assertEquals(updatePayload.status, "failed");
+  const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
+  assert(typeof err === "string" && err.includes("iterationNumber is required"));
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - fails when iterationNumber is non-numeric string", async () => {
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const job = makeRenderJob();
+  if (isRecord(job.payload)) {
+    job.payload["iterationNumber"] = "bogus";
+  }
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  assertEquals(renderDocumentStub.calls.length, 0);
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates);
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
+  assertEquals(updatePayload.status, "failed");
+  const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
+  assert(typeof err === "string" && err.includes("iterationNumber is required"));
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - fails when documentKey is not a FileType", async () => {
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const job = makeRenderJob();
+  if (isRecord(job.payload)) {
+    job.payload["documentKey"] = "not_a_file_type";
+  }
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  assertEquals(renderDocumentStub.calls.length, 0);
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates);
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
+  assertEquals(updatePayload.status, "failed");
+  const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
+  assert(typeof err === "string" && err.includes("documentKey must be a valid FileType"));
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - accepts sourceContributionId that differs from documentIdentity when document_relationships contains semantic identifier", async () => {
+  // Arrange: Create a RENDER job where sourceContributionId is the actual contribution ID
+  // and documentIdentity is a semantic identifier from document_relationships (different values)
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const actualContributionId = "contrib-123"; // Actual contribution ID (for foreign key constraint)
+  const semanticIdentifier = "semantic-doc-identity-999"; // Semantic identifier from document_relationships
+  
+  // sourceContributionId should be the actual contribution ID, not the semantic identifier
+  const job = makeRenderJob({ 
+    sourceContributionId: actualContributionId,
+    documentIdentity: semanticIdentifier 
   });
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
+
+  // Act: processRenderJob should accept this configuration without throwing
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  // Assert: The job should process successfully (not fail with "sourceContributionId must equal documentIdentity")
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates);
+  assertEquals(updates.callCount, 1);
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload);
+  assertEquals(updatePayload.status, "completed", "Job should complete successfully when sourceContributionId differs from documentIdentity");
+
+  // Assert: renderer should be called with the correct parameters
+  assertEquals(renderDocumentStub.calls.length, 1, "Renderer should be called exactly once");
+  const renderParams = renderDocumentStub.calls[0].args[2];
+  assertEquals(renderParams.sourceContributionId, actualContributionId, "sourceContributionId should be the actual contribution ID");
+  assertEquals(renderParams.documentIdentity, semanticIdentifier, "documentIdentity should be the semantic identifier");
+  assert(renderParams.sourceContributionId !== renderParams.documentIdentity, "sourceContributionId and documentIdentity should be different when document_relationships contains a semantic identifier");
+
+  // Assert: No error should be logged about sourceContributionId not equaling documentIdentity
+  const errorDetails = isRecord(updatePayload) && "error_details" in updatePayload ? updatePayload.error_details : null;
+  assert(
+    !errorDetails || (typeof errorDetails === "string" && !errorDetails.includes("sourceContributionId must equal documentIdentity")),
+    "Should not fail with 'sourceContributionId must equal documentIdentity' error"
+  );
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - processes RENDER job successfully for root chunk where sourceContributionId equals documentIdentity", async () => {
+  // Test 6.b.i: Verify root chunks where sourceContributionId === documentIdentity
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const rootId = "root-contrib-6b-i";
   
   // (1) Create a RENDER job with payload containing sourceContributionId: rootId and documentIdentity: rootId (both equal)
   const job = makeRenderJob({
@@ -897,26 +989,38 @@ Deno.test("processRenderJob - processes RENDER job successfully for root chunk w
   });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
   
   // (2) Call processRenderJob with the job
   await processRenderJob(
     dbClient as unknown as SupabaseClient<Database>,
     job,
     ownerId,
-    {
-      documentRenderer: renderer,
-      logger,
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-      fileManager: new MockFileManagerService(),
-      notificationService: mockNotificationService,
-    },
+    renderCtx,
     "auth-token",
   );
   
   // (3) Verify renderDocument is called with sourceContributionId: rootId and documentIdentity: rootId
-  assertEquals(calls.length, 1, "renderDocument should be called exactly once");
-  const renderParams = calls[0].params;
-  assert(isRecord(renderParams), "Renderer params must be a record");
+  assertEquals(renderDocumentStub.calls.length, 1, "renderDocument should be called exactly once");
+  const renderParams = renderDocumentStub.calls[0].args[2];
   assertEquals(renderParams.sourceContributionId, rootId, "sourceContributionId should equal rootId");
   assertEquals(renderParams.documentIdentity, rootId, "documentIdentity should equal rootId");
   
@@ -939,6 +1043,7 @@ Deno.test("processRenderJob - processes RENDER job successfully for root chunk w
   // (6) Explicitly assert that sourceContributionId === documentIdentity for root chunks
   assertEquals(renderParams.sourceContributionId, renderParams.documentIdentity, "For root chunks, sourceContributionId should equal documentIdentity");
   
+  renderDocumentStub.restore();
   clearAllStubs?.();
 });
 
@@ -948,25 +1053,6 @@ Deno.test("processRenderJob - processes RENDER job successfully for continuation
   const rootId = "root-contrib-6b-ii";
   const continuationId = "continuation-contrib-6b-ii";
   
-  const { renderer, calls } = createDocumentRendererMock({
-    handler: async (_dbc, _deps, params) => {
-      // Return pathContext with sourceContributionId from params (not documentIdentity)
-      return {
-        pathContext: {
-          projectId: params.projectId,
-          fileType: FileType.RenderedDocument,
-          sessionId: params.sessionId,
-          iteration: params.iterationNumber,
-          stageSlug: params.stageSlug,
-          documentKey: params.documentKey,
-          modelSlug: "mock-model",
-          sourceContributionId: params.sourceContributionId,
-        },
-        renderedBytes: new Uint8Array(),
-      };
-    },
-  });
-  
   // (1) Create a RENDER job with payload containing sourceContributionId: continuationId and documentIdentity: rootId (different values)
   const job = makeRenderJob({
     sourceContributionId: continuationId,
@@ -974,26 +1060,38 @@ Deno.test("processRenderJob - processes RENDER job successfully for continuation
   });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
   
   // (2) Call processRenderJob with the job
   await processRenderJob(
     dbClient as unknown as SupabaseClient<Database>,
     job,
     ownerId,
-    {
-      documentRenderer: renderer,
-      logger,
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-      fileManager: new MockFileManagerService(),
-      notificationService: mockNotificationService,
-    },
+    renderCtx,
     "auth-token",
   );
   
   // (3) Verify renderDocument is called with sourceContributionId: continuationId and documentIdentity: rootId (different values)
-  assertEquals(calls.length, 1, "renderDocument should be called exactly once");
-  const renderParams = calls[0].params;
-  assert(isRecord(renderParams), "Renderer params must be a record");
+  assertEquals(renderDocumentStub.calls.length, 1, "renderDocument should be called exactly once");
+  const renderParams = renderDocumentStub.calls[0].args[2];
   assertEquals(renderParams.sourceContributionId, continuationId, "sourceContributionId should equal continuationId");
   assertEquals(renderParams.documentIdentity, rootId, "documentIdentity should equal rootId");
   assert(renderParams.sourceContributionId !== renderParams.documentIdentity, "sourceContributionId and documentIdentity should be different for continuation chunks");
@@ -1018,6 +1116,7 @@ Deno.test("processRenderJob - processes RENDER job successfully for continuation
   // (6) Explicitly assert that sourceContributionId !== documentIdentity for continuation chunks
   assert(renderParams.sourceContributionId !== renderParams.documentIdentity, "For continuation chunks, sourceContributionId should not equal documentIdentity");
   
+  renderDocumentStub.restore();
   clearAllStubs?.();
 });
 
@@ -1027,25 +1126,6 @@ Deno.test("processRenderJob - passes sourceContributionId and documentIdentity t
   const anyId = "any-contribution-id-6b-iii";
   const differentId = "different-document-identity-6b-iii";
   
-  const { renderer, calls } = createDocumentRendererMock({
-    handler: async (_dbc, _deps, params) => {
-      // Return pathContext with sourceContributionId from params (not documentIdentity)
-      return {
-        pathContext: {
-          projectId: params.projectId,
-          fileType: FileType.RenderedDocument,
-          sessionId: params.sessionId,
-          iteration: params.iterationNumber,
-          stageSlug: params.stageSlug,
-          documentKey: params.documentKey,
-          modelSlug: "mock-model",
-          sourceContributionId: params.sourceContributionId,
-        },
-        renderedBytes: new Uint8Array(),
-      };
-    },
-  });
-  
   // (1) Create a RENDER job with payload containing sourceContributionId: anyId and documentIdentity: differentId (different values)
   const job = makeRenderJob({
     sourceContributionId: anyId,
@@ -1053,26 +1133,38 @@ Deno.test("processRenderJob - passes sourceContributionId and documentIdentity t
   });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
   
   // (2) Call processRenderJob with the job
   await processRenderJob(
     dbClient as unknown as SupabaseClient<Database>,
     job,
     ownerId,
-    {
-      documentRenderer: renderer,
-      logger,
-      downloadFromStorage: async () => ({ data: new ArrayBuffer(0), error: null }),
-      fileManager: new MockFileManagerService(),
-      notificationService: mockNotificationService,
-    },
+    renderCtx,
     "auth-token",
   );
   
   // (3) Verify renderDocument is called with exactly the values from the payload (no coercion or equality checks)
-  assertEquals(calls.length, 1, "renderDocument should be called exactly once");
-  const renderParams = calls[0].params;
-  assert(isRecord(renderParams), "Renderer params must be a record");
+  assertEquals(renderDocumentStub.calls.length, 1, "renderDocument should be called exactly once");
+  const renderParams = renderDocumentStub.calls[0].args[2];
   assertEquals(renderParams.sourceContributionId, anyId, "sourceContributionId should equal the payload value (no coercion)");
   assertEquals(renderParams.documentIdentity, differentId, "documentIdentity should equal the payload value (no coercion)");
   assert(renderParams.sourceContributionId !== renderParams.documentIdentity, "sourceContributionId and documentIdentity should remain different");
@@ -1101,5 +1193,6 @@ Deno.test("processRenderJob - passes sourceContributionId and documentIdentity t
   // (5) Verify the job completes successfully
   assert(updatePayload.status === "completed", "Job should complete successfully when sourceContributionId differs from documentIdentity");
   
+  renderDocumentStub.restore();
   clearAllStubs?.();
 });

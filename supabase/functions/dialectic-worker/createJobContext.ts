@@ -52,6 +52,7 @@ export function createJobContext(params: JobContextParams): IJobContext {
         // From IPlanJobContext (PLAN-specific)
         getGranularityPlanner: params.getGranularityPlanner,
         planComplexStage: params.planComplexStage,
+        findSourceDocuments: params.findSourceDocuments,
 
         // From IRenderJobContext (RENDER-specific)
         documentRenderer: params.documentRenderer,
@@ -122,9 +123,13 @@ export function createPlanJobContext(root: IJobContext): IPlanJobContext {
         // From ILoggerContext
         logger: root.logger,
 
+        // From INotificationContext
+        notificationService: root.notificationService,
+
         // PLAN-specific utilities
         getGranularityPlanner: root.getGranularityPlanner,
         planComplexStage: root.planComplexStage,
+        findSourceDocuments: root.findSourceDocuments,
     };
 }
 

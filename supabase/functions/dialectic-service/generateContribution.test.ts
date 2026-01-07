@@ -2,19 +2,30 @@ import { assertEquals, assertExists, assertObjectMatch, fail, assert } from "htt
 import { spy } from "jsr:@std/testing@0.225.1/mock";
 import { generateContributions } from "./generateContribution.ts";
 import {
-    type GenerateContributionsPayload,
-    type GenerateContributionsDeps,
-    type StageWithRecipeSteps,
-    type DatabaseRecipeSteps,
+    GenerateContributionsPayload,
+    GenerateContributionsDeps,
+    DatabaseRecipeSteps,
 } from "./dialectic.interface.ts";
-import type { Database } from "../types_db.ts";
+import { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
 import { isPlanJobInsert, isDatabaseRecipeSteps, isDialecticPlanJobPayload } from "../_shared/utils/type-guards/type_guards.dialectic.ts";
-import { createMockSupabaseClient, type MockQueryBuilderState } from "../_shared/supabase.mock.ts";
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { createMockSupabaseClient, MockQueryBuilderState } from "../_shared/supabase.mock.ts";
+import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { FileType } from "../_shared/types/file_manager.types.ts";
-import type { Tables } from "../types_db.ts";
-import { mapToStageWithRecipeSteps } from '../_shared/utils/mappers.ts';
+import { DownloadFromStorageFn, DeleteFromStorageFn } from "../_shared/supabase_storage_utils.ts";
+import { Tables } from "../types_db.ts";
+
+const downloadFromStorage100: DownloadFromStorageFn = (_supabase, _bucket, _path) =>
+    Promise.resolve({ data: new ArrayBuffer(100), error: null });
+
+const downloadFromStorage8: DownloadFromStorageFn = (_supabase, _bucket, _path) =>
+    Promise.resolve({ data: new ArrayBuffer(8), error: null });
+
+const downloadFromStorage1: DownloadFromStorageFn = (_supabase, _bucket, _path) =>
+    Promise.resolve({ data: new ArrayBuffer(1), error: null });
+
+const deleteFromStorageOk: DeleteFromStorageFn = (_supabase, _bucket, _paths) =>
+    Promise.resolve({ error: null });
 
 const createMockDbResponse = (stepCount: number): DatabaseRecipeSteps => {
     const stage: Tables<'dialectic_stages'> = {
@@ -150,7 +161,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
             { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
             {
                 callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
-                downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(100), error: null }),
+                downloadFromStorage: downloadFromStorage100,
                 getExtensionFromMimeType: () => 'txt',
                 logger: logger,
                 randomUUID: () => '123',
@@ -158,7 +169,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
                     uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                     assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
                 },
-                deleteFromStorage: () => Promise.resolve({ error: null }),
+                deleteFromStorage: deleteFromStorageOk,
             },
             'jwt.token.here'
         );
@@ -262,7 +273,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
             { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
             {
                 callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
-                downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(100), error: null }),
+                downloadFromStorage: downloadFromStorage100,
                 getExtensionFromMimeType: () => 'txt',
                 logger: logger,
                 randomUUID: () => '123',
@@ -270,7 +281,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
                     uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                     assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
                 },
-                deleteFromStorage: () => Promise.resolve({ error: null }),
+                deleteFromStorage: deleteFromStorageOk,
             },
             'jwt.token.here'
         );
@@ -344,7 +355,7 @@ Deno.test("generateContributions - Failure Path: Fails if stage recipe lookup fa
         { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
             callUnifiedAIModel: () => Promise.resolve({ content: 'test-content', error: null }),
-            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(100), error: null }),
+            downloadFromStorage: downloadFromStorage100,
             getExtensionFromMimeType: () => '.txt',
             logger,
             randomUUID: () => 'mock-uuid',
@@ -352,7 +363,7 @@ Deno.test("generateContributions - Failure Path: Fails if stage recipe lookup fa
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123', iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
-            deleteFromStorage: () => Promise.resolve({ error: null }),
+            deleteFromStorage: deleteFromStorageOk,
         },
         'jwt.token.here'
     );
@@ -418,11 +429,11 @@ Deno.test("generateContributions - Failure Path: Fails to enqueue a job", async 
 
     const mockDeps: GenerateContributionsDeps = {
       callUnifiedAIModel: () => Promise.resolve({ content: 'test-content', error: null }),
-      downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(100), error: null }),
+      downloadFromStorage: downloadFromStorage100,
       getExtensionFromMimeType: () => '.txt',
       logger,
       randomUUID: () => 'mock-uuid',
-      deleteFromStorage: () => Promise.resolve({ data: [], error: null }),
+      deleteFromStorage: deleteFromStorageOk,
       fileManager: {
         uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
         assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
@@ -467,7 +478,7 @@ Deno.test("generateContributions - Validation: Fails if stageSlug is missing", a
         { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
             callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
-            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(100), error: null }),
+            downloadFromStorage: downloadFromStorage100,
             getExtensionFromMimeType: () => 'txt',
             logger: logger,
             randomUUID: () => '123',
@@ -475,7 +486,7 @@ Deno.test("generateContributions - Validation: Fails if stageSlug is missing", a
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123', iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
-            deleteFromStorage: () => Promise.resolve({ error: null }),
+            deleteFromStorage: deleteFromStorageOk,
         },
         'jwt.token.here'
     );
@@ -502,7 +513,7 @@ Deno.test("generateContributions - Validation: Fails if sessionId is missing", a
         { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
             callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
-            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(100), error: null }),
+            downloadFromStorage: downloadFromStorage100,
             getExtensionFromMimeType: () => 'txt',
             logger: logger,
             randomUUID: () => '123',
@@ -510,7 +521,7 @@ Deno.test("generateContributions - Validation: Fails if sessionId is missing", a
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123', iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
-            deleteFromStorage: () => Promise.resolve({ error: null }),
+            deleteFromStorage: deleteFromStorageOk,
         },
         'jwt.token.here'
     );
@@ -539,7 +550,7 @@ Deno.test("generateContributions - Validation: Fails if userId is missing", asyn
         { id: '', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
             callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
-            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(100), error: null }),
+            downloadFromStorage: downloadFromStorage100,
             getExtensionFromMimeType: () => 'txt',
             logger: logger,
             randomUUID: () => '123',
@@ -547,7 +558,7 @@ Deno.test("generateContributions - Validation: Fails if userId is missing", asyn
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123', iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
-            deleteFromStorage: () => Promise.resolve({ error: null }),
+            deleteFromStorage: deleteFromStorageOk,
         },
         'jwt.token.here'
     );
@@ -592,7 +603,7 @@ Deno.test("generateContributions - Validation: Fails if selectedModelIds is empt
         { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
             callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
-            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(100), error: null }),
+            downloadFromStorage: downloadFromStorage100,
             getExtensionFromMimeType: () => 'txt',
             logger: logger,
             randomUUID: () => '123',
@@ -600,7 +611,7 @@ Deno.test("generateContributions - Validation: Fails if selectedModelIds is empt
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123', iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
-            deleteFromStorage: () => Promise.resolve({ error: null }),
+            deleteFromStorage: deleteFromStorageOk,
         },
         'jwt.token.here'
     );
@@ -654,7 +665,7 @@ Deno.test("generateContributions - Validation: Fails if walletId is missing (man
         { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
             callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
-            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(8), error: null }),
+            downloadFromStorage: downloadFromStorage8,
             getExtensionFromMimeType: () => 'txt',
             logger,
             randomUUID: () => 'uuid',
@@ -662,7 +673,7 @@ Deno.test("generateContributions - Validation: Fails if walletId is missing (man
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'file', created_at: new Date().toISOString(), file_name: 'name', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: 'user-123', iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
-            deleteFromStorage: () => Promise.resolve({ error: null }),
+            deleteFromStorage: deleteFromStorageOk,
         },
         'jwt.token.here'
     );
@@ -727,7 +738,7 @@ Deno.test("generateContributions - Fails when authToken is missing and does not 
         { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
             callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
-            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(1), error: null }),
+            downloadFromStorage: downloadFromStorage1,
             getExtensionFromMimeType: () => 'txt',
             logger,
             randomUUID: () => 'uuid',
@@ -735,7 +746,7 @@ Deno.test("generateContributions - Fails when authToken is missing and does not 
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
-            deleteFromStorage: () => Promise.resolve({ error: null }),
+            deleteFromStorage: deleteFromStorageOk,
         },
         // RED: missing/empty auth token
         ''
@@ -796,7 +807,7 @@ Deno.test("generateContributions - should reject job creation when authToken is 
         { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
             callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
-            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(1), error: null }),
+            downloadFromStorage: downloadFromStorage1,
             getExtensionFromMimeType: () => 'txt',
             logger,
             randomUUID: () => 'uuid',
@@ -804,7 +815,7 @@ Deno.test("generateContributions - should reject job creation when authToken is 
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
-            deleteFromStorage: () => Promise.resolve({ error: null }),
+            deleteFromStorage: deleteFromStorageOk,
         },
         null as any // Type assertion to bypass TypeScript and test runtime validation
     );
@@ -865,7 +876,7 @@ Deno.test("generateContributions - should reject job creation when authToken is 
         { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
             callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
-            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(1), error: null }),
+            downloadFromStorage: downloadFromStorage1,
             getExtensionFromMimeType: () => 'txt',
             logger,
             randomUUID: () => 'uuid',
@@ -873,7 +884,7 @@ Deno.test("generateContributions - should reject job creation when authToken is 
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
-            deleteFromStorage: () => Promise.resolve({ error: null }),
+            deleteFromStorage: deleteFromStorageOk,
         },
         undefined as any // Type assertion to bypass TypeScript and test runtime validation
     );
@@ -966,7 +977,7 @@ Deno.test("generateContributions - plan jobs carry payload.user_jwt equal to pro
         { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
             callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
-            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(1), error: null }),
+            downloadFromStorage: downloadFromStorage1,
             getExtensionFromMimeType: () => 'txt',
             logger,
             randomUUID: () => 'uuid',
@@ -974,7 +985,7 @@ Deno.test("generateContributions - plan jobs carry payload.user_jwt equal to pro
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
-            deleteFromStorage: () => Promise.resolve({ error: null }),
+            deleteFromStorage: deleteFromStorageOk,
         },
         providedJwt
     );
@@ -1059,7 +1070,7 @@ Deno.test("generateContributions - plan jobs include model_slug from ai_provider
         { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
             callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
-            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(1), error: null }),
+            downloadFromStorage: downloadFromStorage1,
             getExtensionFromMimeType: () => 'txt',
             logger,
             randomUUID: () => 'uuid',
@@ -1067,7 +1078,7 @@ Deno.test("generateContributions - plan jobs include model_slug from ai_provider
                 uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                 assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
             },
-            deleteFromStorage: () => Promise.resolve({ error: null }),
+            deleteFromStorage: deleteFromStorageOk,
         },
         providedJwt
     );
@@ -1153,7 +1164,7 @@ Deno.test("should create jobs with a top-level 'is_test_job' flag when specified
             { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
             {
                 callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
-                downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(100), error: null }),
+                downloadFromStorage: downloadFromStorage100,
                 getExtensionFromMimeType: () => 'txt',
                 logger: logger,
                 randomUUID: () => '123',
@@ -1161,7 +1172,7 @@ Deno.test("should create jobs with a top-level 'is_test_job' flag when specified
                     uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
                     assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
                 },
-                deleteFromStorage: () => Promise.resolve({ error: null }),
+                deleteFromStorage: deleteFromStorageOk,
             },
             'jwt.token.here'
         );
@@ -1305,7 +1316,7 @@ Deno.test("generateContributions successfully enqueues jobs given a valid and co
 
     const mockDeps: GenerateContributionsDeps = {
       callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
-      downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(100), error: null }),
+      downloadFromStorage: downloadFromStorage100,
       getExtensionFromMimeType: () => 'txt',
       logger: logger,
       randomUUID: () => '123',
@@ -1313,7 +1324,7 @@ Deno.test("generateContributions successfully enqueues jobs given a valid and co
         uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
         assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
        },
-      deleteFromStorage: () => Promise.resolve({ error: null }),
+      deleteFromStorage: deleteFromStorageOk,
     };
 
     // 3. Execute the function.

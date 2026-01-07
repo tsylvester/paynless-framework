@@ -11,7 +11,6 @@ import {
     DialecticJobRow, 
     GranularityPlannerFn, 
     DialecticPlanJobPayload, 
-    IDialecticJobDeps, 
     UnifiedAIResponse, 
     DialecticRecipeTemplateStep,
     DialecticExecuteJobPayload,
@@ -31,6 +30,9 @@ import {
     isDialecticStageRecipeStep,
 } from '../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
 import { IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
+import { IPlanJobContext } from './JobContext.interface.ts';
+import { createPlanJobContext, createJobContext } from './createJobContext.ts';
+import { createMockJobContextParams } from './JobContext.mock.ts';
 
 const mockTemplateRecipeSteps: DialecticRecipeTemplateStep[] = [
     {
@@ -121,7 +123,7 @@ const mockInstanceRow_Cloned = {
 
 describe('processComplexJob', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
-    let mockDeps: IDialecticJobDeps;
+    let planCtx: IPlanJobContext;
     let mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
     let mockJobProcessors: IJobProcessors;
     let mockProcessorSpies: MockJobProcessorsSpies;
@@ -188,48 +190,13 @@ describe('processComplexJob', () => {
             job_type: 'PLAN',
         };
 
-        const mockUnifiedAIResponse: UnifiedAIResponse = { content: 'mock', finish_reason: 'stop' };
-        mockDeps = {
-            logger,
+        const mockParams = {
+            ...createMockJobContextParams(),
             planComplexStage: mockProcessorSpies.planComplexStage,
-            downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({
-                data: await new Blob(['Mock content']).arrayBuffer(),
-                error: null
-            })),
-            getGranularityPlanner: spy((_strategyId: string): GranularityPlannerFn | undefined => undefined),
-            ragService: new MockRagService(),
-            fileManager: new MockFileManagerService(),
-            countTokens: spy(() => 0),
-            getAiProviderConfig: spy(async () => Promise.resolve({
-                api_identifier: 'mock-api',
-                input_token_cost_rate: 0,
-                output_token_cost_rate: 0,
-                provider_max_input_tokens: 8192,
-                tokenization_strategy: {
-                    type: 'tiktoken',
-                    tiktoken_encoding_name: 'cl100k_base',
-                    tiktoken_model_name_for_rules_fallback: 'gpt-4o',
-                    is_chatml_model: false,
-                    api_identifier_for_tokenization: 'mock-api'
-                },
-            })),
-            callUnifiedAIModel: spy(async () => mockUnifiedAIResponse),
-            getSeedPromptForStage: spy(async () => ({
-                content: 'mock',
-                fullPath: 'mock',
-                bucket: 'mock',
-                path: 'mock',
-                fileName: 'mock'
-            })),
-            continueJob: spy(async () => ({ enqueued: true })),
-            retryJob: spy(async () => ({})),
             notificationService: mockNotificationService,
-            executeModelCallAndSave: spy(async () => {}),
-            getExtensionFromMimeType: spy(() => '.txt'),
-            randomUUID: spy(() => 'mock-uuid'),
-            deleteFromStorage: spy(async () => ({ data: [], error: null })),
-            documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
         };
+        const rootCtx = createJobContext(mockParams);
+        planCtx = createPlanJobContext(rootCtx);
     });
 
     it('plans and enqueues child jobs', async () => {
@@ -252,12 +219,18 @@ describe('processComplexJob', () => {
             job_type: 'PLAN',
         };
 
-        mockDeps.planComplexStage = async (...args) => {
-            mockProcessorSpies.planComplexStage(...args);
-            return [mockChildJob1, mockChildJob2];
+        const testMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async (...args: Parameters<typeof mockProcessorSpies.planComplexStage>) => {
+                mockProcessorSpies.planComplexStage(...args);
+                return [mockChildJob1, mockChildJob2];
+            },
+            notificationService: mockNotificationService,
         };
+        const testRootCtx = createJobContext(testMockParams);
+        const testPlanCtx = createPlanJobContext(testRootCtx);
 
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', testPlanCtx, 'user-jwt-123');
 
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
         assertExists(insertSpy);
@@ -277,12 +250,18 @@ describe('processComplexJob', () => {
     });
 
     it('handles planner failure gracefully', async () => {
-        mockDeps.planComplexStage = async (...args) => {
-            mockProcessorSpies.planComplexStage(...args);
-            throw new Error('Planner failed!');
+        const failMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async (...args: Parameters<typeof mockProcessorSpies.planComplexStage>) => {
+                mockProcessorSpies.planComplexStage(...args);
+                throw new Error('Planner failed!');
+            },
+            notificationService: mockNotificationService,
         };
+        const failRootCtx = createJobContext(failMockParams);
+        const failPlanCtx = createPlanJobContext(failRootCtx);
 
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', failPlanCtx, 'user-jwt-123');
 
         const updateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
         assertExists(updateSpy);
@@ -298,11 +277,17 @@ describe('processComplexJob', () => {
     });
 
     it('completes parent job if planner returns no children', async () => {
-        mockDeps.planComplexStage = async (...args) => {
-            mockProcessorSpies.planComplexStage(...args);
-            return [];
+        const noChildrenMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async (...args: Parameters<typeof mockProcessorSpies.planComplexStage>) => {
+                mockProcessorSpies.planComplexStage(...args);
+                return [];
+            },
+            notificationService: mockNotificationService,
         };
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-no-children', mockDeps, 'user-jwt-123');
+        const noChildrenRootCtx = createJobContext(noChildrenMockParams);
+        const noChildrenPlanCtx = createPlanJobContext(noChildrenRootCtx);
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-no-children', noChildrenPlanCtx, 'user-jwt-123');
 
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
         assert(!insertSpy || insertSpy.callCount === 0, 'Should not attempt to insert any child jobs');
@@ -329,10 +314,16 @@ describe('processComplexJob', () => {
             is_test_job: false,
             job_type: 'PLAN',
         };
-        mockDeps.planComplexStage = async (...args) => {
-            mockProcessorSpies.planComplexStage(...args);
-            return [mockChildJob];
+        const insertFailMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async (...args: Parameters<typeof mockProcessorSpies.planComplexStage>) => {
+                mockProcessorSpies.planComplexStage(...args);
+                return [mockChildJob];
+            },
+            notificationService: mockNotificationService,
         };
+        const insertFailRootCtx = createJobContext(insertFailMockParams);
+        const insertFailPlanCtx = createPlanJobContext(insertFailRootCtx);
 
         const failingSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -346,7 +337,7 @@ describe('processComplexJob', () => {
             }
         });
 
-        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-insert-fail', mockDeps, 'user-jwt-123');
+        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-insert-fail', insertFailPlanCtx, 'user-jwt-123');
 
         const updateSpy = failingSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
         assertExists(updateSpy);
@@ -369,10 +360,16 @@ describe('processComplexJob', () => {
             completed_at: null, results: null, error_details: null, parent_job_id: mockParentJob.id,
             target_contribution_id: null, prerequisite_job_id: null, is_test_job: false, job_type: 'PLAN',
         };
-        mockDeps.planComplexStage = async (...args) => {
-            mockProcessorSpies.planComplexStage(...args);
-            return [mockChildJob];
+        const updateFailMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async (...args: Parameters<typeof mockProcessorSpies.planComplexStage>) => {
+                mockProcessorSpies.planComplexStage(...args);
+                return [mockChildJob];
+            },
+            notificationService: mockNotificationService,
         };
+        const updateFailRootCtx = createJobContext(updateFailMockParams);
+        const updateFailPlanCtx = createPlanJobContext(updateFailRootCtx);
 
         const failingSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -387,7 +384,7 @@ describe('processComplexJob', () => {
             }
         });
 
-        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-update-fail', mockDeps, 'user-jwt-123');
+        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-update-fail', updateFailPlanCtx, 'user-jwt-123');
 
         const updateSpy = failingSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
         assertExists(updateSpy);
@@ -410,10 +407,16 @@ describe('processComplexJob', () => {
     });
 
     it('handles ContextWindowError gracefully', async () => {
-        mockDeps.planComplexStage = async (...args) => {
-            mockProcessorSpies.planComplexStage(...args);
-            throw new ContextWindowError('Planning failed due to context window size.');
+        const contextWindowMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async (...args: Parameters<typeof mockProcessorSpies.planComplexStage>) => {
+                mockProcessorSpies.planComplexStage(...args);
+                throw new ContextWindowError('Planning failed due to context window size.');
+            },
+            notificationService: mockNotificationService,
         };
+        const contextWindowRootCtx = createJobContext(contextWindowMockParams);
+        const contextWindowPlanCtx = createPlanJobContext(contextWindowRootCtx);
 
         // This test requires a valid recipe to get past the initial checks
         const customSupabase = createMockSupabaseClient(undefined, {
@@ -426,7 +429,7 @@ describe('processComplexJob', () => {
         });
 
 
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', contextWindowPlanCtx, 'user-jwt-123');
 
         const updateSpy = customSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
         assertExists(updateSpy);
@@ -453,14 +456,20 @@ describe('processComplexJob', () => {
             is_test_job: false,
             job_type: 'EXECUTE', // Child jobs are for execution
         };
-        mockDeps.planComplexStage = async (...args) => {
-            mockProcessorSpies.planComplexStage(...args);
-            return [mockChildJob];
+        const happyMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async (...args: Parameters<typeof mockProcessorSpies.planComplexStage>) => {
+                mockProcessorSpies.planComplexStage(...args);
+                return [mockChildJob];
+            },
+            notificationService: mockNotificationService,
         };
+        const happyRootCtx = createJobContext(happyMockParams);
+        const happyPlanCtx = createPlanJobContext(happyRootCtx);
 
         // Act:
         // - Call processComplexJob with a new job.
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', happyPlanCtx, 'user-jwt-123');
         
         // Assert:
         // - planComplexStage was called with the *first* step from the recipe steps.
@@ -485,9 +494,6 @@ describe('processComplexJob', () => {
     it('emits planner_started when planner work begins with document and model context', async () => {
         // Arrange
         resetMockNotificationService();
-        // Re-bind deps to the reset mock instance
-        mockDeps.notificationService = mockNotificationService;
-
         // Ensure a simple child is produced to pass happy path
         const firstStep = mockTemplateRecipeSteps[0];
         const mockChildJob: DialecticJobRow = {
@@ -499,13 +505,19 @@ describe('processComplexJob', () => {
             is_test_job: false,
             job_type: 'EXECUTE',
         };
-        mockDeps.planComplexStage = async (...args) => {
-            mockProcessorSpies.planComplexStage(...args);
-            return [mockChildJob];
+        const notificationMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async (...args: Parameters<typeof mockProcessorSpies.planComplexStage>) => {
+                mockProcessorSpies.planComplexStage(...args);
+                return [mockChildJob];
+            },
+            notificationService: mockNotificationService,
         };
+        const notificationRootCtx = createJobContext(notificationMockParams);
+        const notificationPlanCtx = createPlanJobContext(notificationRootCtx);
 
         // Act
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, notificationPlanCtx, 'user-jwt-123');
 
         // Assert
         const calls = mockNotificationService.sendDocumentCentricNotification.calls;
@@ -589,7 +601,7 @@ describe('processComplexJob', () => {
 
         // Act:
         // - Call processComplexJob.
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         // - planComplexStage was called with the *second* step from the recipe.
@@ -658,7 +670,7 @@ describe('processComplexJob', () => {
         
         // Act:
         // - Call processComplexJob.
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         // - The final 'update' call on the parent job sets the status to 'completed'.
@@ -802,7 +814,7 @@ describe('processComplexJob', () => {
 
         // Act:
         // - Call processComplexJob
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         // - planComplexStage was called ONCE with the SECOND step (business_case), NOT the first step (header_context)
@@ -950,7 +962,7 @@ describe('processComplexJob', () => {
         mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
 
         // Act:
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         // - planComplexStage should be called ONCE with generate-business-case step, NOT build-stage-header
@@ -1032,7 +1044,7 @@ describe('processComplexJob', () => {
         });
 
         // Act:
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         // - planComplexStage should NOT be called (no steps to plan)
@@ -1121,7 +1133,7 @@ describe('processComplexJob', () => {
         mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
 
         // Act:
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         // - planComplexStage should be called with the first step (the mismatch doesn't prevent planning)
@@ -1197,7 +1209,7 @@ describe('processComplexJob', () => {
         });
 
         // Act
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert
         // - planComplexStage should NOT be called because all steps are already completed.

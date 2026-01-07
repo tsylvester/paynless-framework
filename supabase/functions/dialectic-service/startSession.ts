@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import {
     StartSessionPayload,
     StartSessionSuccessResponse,
@@ -32,7 +31,7 @@ export async function startSession(
   partialDeps?: Partial<StartSessionDeps>
 ): Promise<{ data?: StartSessionSuccessResponse; error?: { message: string; status?: number; details?: string, code?: string } }> {
     const log: ILogger = partialDeps?.logger || logger;
-    const fileManager: IFileManager = partialDeps?.fileManager || new FileManagerService(dbClient, { constructStoragePath });
+    const fileManager: IFileManager = partialDeps?.fileManager || new FileManagerService(dbClient, { constructStoragePath, logger });
     const randomUUID = partialDeps?.randomUUID || (() => crypto.randomUUID());
     const getAiProviderAdapterDep = partialDeps?.getAiProviderAdapter || getAiProviderAdapter;
 

@@ -3,22 +3,24 @@ import {
   assertExists,
   assert,
 } from 'https://deno.land/std@0.190.0/testing/asserts.ts'
-import { stub, type Stub } from 'https://deno.land/std@0.190.0/testing/mock.ts'
+import { stub } from 'https://deno.land/std@0.190.0/testing/mock.ts'
 import {
   createMockSupabaseClient,
-  type MockSupabaseClientSetup,
-  type MockSupabaseDataConfig,
+  MockSupabaseClientSetup,
+  MockSupabaseDataConfig,
 } from '../supabase.mock.ts'
 import { FileManagerService } from './file_manager.ts'
-import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '../../types_db.ts'
+import { SupabaseClient } from '@supabase/supabase-js'
+import { Database } from '../../types_db.ts'
 import { constructStoragePath } from '../utils/path_constructor.ts'
+import { MockLogger } from '../logger.mock.ts'
 
 Deno.test('FileManagerService', async (t) => {
   let setup: MockSupabaseClientSetup
   let fileManager: FileManagerService
   let envStub: any
   let originalEnvGet: typeof Deno.env.get
+  let logger: MockLogger
 
   const beforeEach = (config: MockSupabaseDataConfig = {}) => {
     originalEnvGet = Deno.env.get.bind(Deno.env);
@@ -30,7 +32,8 @@ Deno.test('FileManagerService', async (t) => {
     })
 
     setup = createMockSupabaseClient('test-user-id', config)
-    fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath })
+    logger = new MockLogger()
+    fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath, logger })
   }
 
   const afterEach = () => {

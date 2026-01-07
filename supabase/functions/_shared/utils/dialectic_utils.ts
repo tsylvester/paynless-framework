@@ -1,11 +1,11 @@
-import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import {
 	GetSeedPromptForStageFn,
 	isResourceDescription,
 	SeedPromptData,
 } from '../../dialectic-service/dialectic.interface.ts';
-import type { Database } from '../../types_db.ts';
-import type { DownloadStorageResult } from '../supabase_storage_utils.ts';
+import { Database } from '../../types_db.ts';
+import { DownloadFromStorageFn } from '../supabase_storage_utils.ts';
 
 
 export const getSeedPromptForStage: GetSeedPromptForStageFn = async (
@@ -14,7 +14,7 @@ export const getSeedPromptForStage: GetSeedPromptForStageFn = async (
   sessionId: string,
   stageSlug: string,
   iterationNumber: number,
-  downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>
+  downloadFromStorage: DownloadFromStorageFn
 ): Promise<SeedPromptData> => {
   const { data: projectResources, error: projectResourcesError } = await dbClient
     .from('dialectic_project_resources')
@@ -54,7 +54,7 @@ export const getSeedPromptForStage: GetSeedPromptForStageFn = async (
   const cleanedFileName = seedPromptFileName.startsWith('/') ? seedPromptFileName.slice(1) : seedPromptFileName;
   const fullSeedPromptPath = `${cleanedDir}/${cleanedFileName}`;
 
-  const { data: promptContentBuffer, error: promptDownloadError } = await downloadFromStorage(seedPromptBucketName, fullSeedPromptPath);
+  const { data: promptContentBuffer, error: promptDownloadError } = await downloadFromStorage(dbClient, seedPromptBucketName, fullSeedPromptPath);
 
   if (promptDownloadError || !promptContentBuffer) {
     throw new Error(`Could not retrieve the seed prompt for this stage. Details: ${promptDownloadError?.message}`);

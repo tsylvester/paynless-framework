@@ -4,8 +4,8 @@ import type { Database } from '../types_db.ts';
 import type {
     DialecticJobRow,
     DialecticPlanJobPayload,
-    IDialecticJobDeps,
 } from '../dialectic-service/dialectic.interface.ts';
+import type { IPlanJobContext } from './JobContext.interface.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import {
     isDialecticPlanJobPayload,
@@ -25,7 +25,7 @@ export async function processComplexJob(
     dbClient: SupabaseClient<Database>,
     job: DialecticJobRow & { payload: DialecticPlanJobPayload },
     projectOwnerUserId: string,
-    deps: IDialecticJobDeps,
+    ctx: IPlanJobContext,
     authToken: string,
 ): Promise<void> {
     const { id: parentJobId } = job;
@@ -122,8 +122,8 @@ export async function processComplexJob(
         edges = (edgeRows ?? []).map((e) => ({ from_step_id: e.from_step_id, to_step_id: e.to_step_id }));
     }
 
-    deps.logger.info(`[processComplexJob] Loaded ${steps.length} steps and ${edges.length} edges`);
-    deps.logger.info(`[processComplexJob] Edges: ${JSON.stringify(edges.map(e => ({ from: e.from_step_id, to: e.to_step_id })))}`);
+    ctx.logger.info(`[processComplexJob] Loaded ${steps.length} steps and ${edges.length} edges`);
+    ctx.logger.info(`[processComplexJob] Edges: ${JSON.stringify(edges.map(e => ({ from: e.from_step_id, to: e.to_step_id })))}`);
 
     // 3. Determine readiness by looking at ALL child jobs (not just completed) and the DAG
     const { data: allChildren, error: childrenError } = await dbClient
@@ -217,13 +217,13 @@ export async function processComplexJob(
         // Track in-progress jobs
         if (childStatus === 'pending' || childStatus === 'processing' || childStatus === 'retrying') {
             stepsWithInProgressJobs.add(stepSlug);
-            deps.logger.info(`[processComplexJob] Step '${stepSlug}' has in-progress child job ${child.id} with status '${childStatus}'`);
+            ctx.logger.info(`[processComplexJob] Step '${stepSlug}' has in-progress child job ${child.id} with status '${childStatus}'`);
         }
         
         // Track failed jobs (terminal failure states)
         if (childStatus === 'failed' || childStatus === 'retry_loop_failed') {
             stepsWithFailedJobs.add(stepSlug);
-            deps.logger.info(`[processComplexJob] Step '${stepSlug}' has failed child job ${child.id} with status '${childStatus}'`);
+            ctx.logger.info(`[processComplexJob] Step '${stepSlug}' has failed child job ${child.id} with status '${childStatus}'`);
         }
         
         // Track completed source documents for selective re-planning
@@ -235,19 +235,19 @@ export async function processComplexJob(
                 const completedSet = completedSourceDocumentsByStep.get(stepSlug) ?? new Set<string>();
                 completedSet.add(sourceDocId);
                 completedSourceDocumentsByStep.set(stepSlug, completedSet);
-                deps.logger.info(`[processComplexJob] Step '${stepSlug}' has completed source document with identifier '${sourceDocId}'`);
+                ctx.logger.info(`[processComplexJob] Step '${stepSlug}' has completed source document with identifier '${sourceDocId}'`);
             }
         }
     }
     
     // Log in-progress job tracking
     if (stepsWithInProgressJobs.size > 0) {
-        deps.logger.info(`[processComplexJob] Steps with in-progress jobs (excluded from re-planning): [${Array.from(stepsWithInProgressJobs).join(', ')}]`);
+        ctx.logger.info(`[processComplexJob] Steps with in-progress jobs (excluded from re-planning): [${Array.from(stepsWithInProgressJobs).join(', ')}]`);
     }
     
     // Log completed source documents per step
     for (const [stepSlug, completedIds] of completedSourceDocumentsByStep.entries()) {
-        deps.logger.info(`[processComplexJob] Step '${stepSlug}' has ${completedIds.size} completed source document(s): [${Array.from(completedIds).join(', ')}]`);
+        ctx.logger.info(`[processComplexJob] Step '${stepSlug}' has ${completedIds.size} completed source document(s): [${Array.from(completedIds).join(', ')}]`);
     }
     // Build predecessor map from edges
     const predecessors = new Map<string, Set<string>>();
@@ -262,9 +262,9 @@ export async function processComplexJob(
         const predIds = predecessors.get(stepId);
         if (predIds && predIds.size > 0) {
             const predSlugs = Array.from(predIds).map(id => stepSlugById.get(id) || id);
-            deps.logger.info(`[processComplexJob] Step '${slug}' (id: ${stepId}) has ${predIds.size} predecessor(s): [${predSlugs.join(', ')}]`);
+            ctx.logger.info(`[processComplexJob] Step '${slug}' (id: ${stepId}) has ${predIds.size} predecessor(s): [${predSlugs.join(', ')}]`);
         } else {
-            deps.logger.info(`[processComplexJob] Step '${slug}' (id: ${stepId}) has NO predecessors`);
+            ctx.logger.info(`[processComplexJob] Step '${slug}' (id: ${stepId}) has NO predecessors`);
         }
     }
 
@@ -337,10 +337,10 @@ export async function processComplexJob(
 
     // Log the first step for continuity with prior messages
     const firstReady = filteredReadySteps[0];
-    deps.logger.info(`[processComplexJob] Processing step '${firstReady.step_slug}' for job ${parentJobId}`);
-    deps.logger.info(`[processComplexJob] Total ready steps: ${filteredReadySteps.length}, step slugs: [${filteredReadySteps.map(s => s.step_slug).join(', ')}]`);
+    ctx.logger.info(`[processComplexJob] Processing step '${firstReady.step_slug}' for job ${parentJobId}`);
+    ctx.logger.info(`[processComplexJob] Total ready steps: ${filteredReadySteps.length}, step slugs: [${filteredReadySteps.map(s => s.step_slug).join(', ')}]`);
     for (const step of filteredReadySteps) {
-        deps.logger.info(`[processComplexJob] Ready step '${step.step_slug}' inputs_required: ${JSON.stringify(step.inputs_required)}`);
+        ctx.logger.info(`[processComplexJob] Ready step '${step.step_slug}' inputs_required: ${JSON.stringify(step.inputs_required)}`);
     }
     
     // Log which steps are excluded due to in-progress jobs
@@ -348,7 +348,7 @@ export async function processComplexJob(
         Array.from(stepIdToStep.values()).some(step => step.step_slug === slug)
     );
     if (excludedSteps.length > 0) {
-        deps.logger.info(`[processComplexJob] Steps excluded from planning due to in-progress jobs: [${excludedSteps.join(', ')}]`);
+        ctx.logger.info(`[processComplexJob] Steps excluded from planning due to in-progress jobs: [${excludedSteps.join(', ')}]`);
     }
 
     // CRITICAL VALIDATION: If multiple steps are ready initially (no completed steps yet), only the header_context generator should be ready.
@@ -359,13 +359,13 @@ export async function processComplexJob(
         );
         if (stepsRequiringHeader.length > 0) {
             const errorMsg = `[processComplexJob] CRITICAL BUG: Multiple steps are ready initially, including steps that require header_context. This indicates the DAG edges are not set up correctly. Ready steps requiring header_context: [${stepsRequiringHeader.map(s => s.step_slug).join(', ')}]. This should never happen - these steps should have 'build-stage-header' as a predecessor.`;
-            deps.logger.error(errorMsg);
+            ctx.logger.error(errorMsg);
             // Don't throw here - let it fail naturally so we can see the full error, but log it clearly
         }
     }
 
 	// Emit planner_started notification with required context
-	await deps.notificationService.sendDocumentCentricNotification({
+	await ctx.notificationService.sendDocumentCentricNotification({
 		type: 'planner_started',
 		sessionId: job.session_id,
 		stageSlug: stageSlug,
@@ -376,24 +376,24 @@ export async function processComplexJob(
 	}, projectOwnerUserId);
 
     try {
-        if (!deps.planComplexStage) {
+        if (!ctx.planComplexStage) {
             throw new Error("planComplexStage dependency is missing.");
         }
         // 5. Delegate to the planner for each ready step and aggregate child jobs.
         const plannedChildrenArrays = await Promise.all(
             filteredReadySteps.map((recipeStep) => {
-                deps.logger.info(`[processComplexJob] Calling planComplexStage for step '${recipeStep.step_slug}' with inputs_required: ${JSON.stringify(recipeStep.inputs_required)}`);
+                ctx.logger.info(`[processComplexJob] Calling planComplexStage for step '${recipeStep.step_slug}' with inputs_required: ${JSON.stringify(recipeStep.inputs_required)}`);
                 
                 // Check if this step has completed source documents that should be excluded from re-planning
                 const completedSourceDocIds = completedSourceDocumentsByStep.get(recipeStep.step_slug);
                 if (completedSourceDocIds && completedSourceDocIds.size > 0) {
-                    deps.logger.info(`[processComplexJob] Step '${recipeStep.step_slug}' has ${completedSourceDocIds.size} completed source document(s) that should be excluded from re-planning: [${Array.from(completedSourceDocIds).join(', ')}]`);
+                    ctx.logger.info(`[processComplexJob] Step '${recipeStep.step_slug}' has ${completedSourceDocIds.size} completed source document(s) that should be excluded from re-planning: [${Array.from(completedSourceDocIds).join(', ')}]`);
                 }
                 
-                return deps.planComplexStage!(
+                return ctx.planComplexStage!(
                     dbClient,
                     job,
-                    deps,
+                    ctx,
                     recipeStep,
                     authToken,
                     completedSourceDocIds ?? undefined,
@@ -403,7 +403,7 @@ export async function processComplexJob(
         const childJobs = plannedChildrenArrays.flat();
 
         if (!childJobs || childJobs.length === 0) {
-            deps.logger.warn(`[processComplexJob] Planner returned no child jobs for parent ${parentJobId}. Completing parent job.`);
+            ctx.logger.warn(`[processComplexJob] Planner returned no child jobs for parent ${parentJobId}. Completing parent job.`);
             await dbClient.from('dialectic_generation_jobs').update({
                 status: 'completed',
                 completed_at: new Date().toISOString(),
@@ -412,7 +412,7 @@ export async function processComplexJob(
             return;
         }
 
-        deps.logger.info(`[processComplexJob] Planner created ${childJobs.length} child jobs for parent ${parentJobId}. Enqueuing now.`);
+        ctx.logger.info(`[processComplexJob] Planner created ${childJobs.length} child jobs for parent ${parentJobId}. Enqueuing now.`);
         //console.log('[processComplexJob] Child jobs to be inserted:', JSON.stringify(childJobs, null, 2));
 
         // 6. Enqueue the child jobs.
@@ -430,11 +430,11 @@ export async function processComplexJob(
             throw new Error(`Failed to update parent job status: ${updateError.message}`);
         }
 
-        deps.logger.info(`[processComplexJob] Successfully enqueued child jobs and updated parent job ${parentJobId} to 'waiting_for_children'.`);
+        ctx.logger.info(`[processComplexJob] Successfully enqueued child jobs and updated parent job ${parentJobId} to 'waiting_for_children'.`);
 
     } catch (e) {
         const error = e instanceof Error ? e : new Error(String(e));
-        deps.logger.error(`[processComplexJob] Error processing complex job ${parentJobId}`, { error });
+        ctx.logger.error(`[processComplexJob] Error processing complex job ${parentJobId}`, { error });
         
         const failureReason = e instanceof ContextWindowError 
             ? `Context window limit exceeded: ${error.message}`
@@ -453,7 +453,7 @@ export async function processComplexJob(
                 ? String(firstReady.output_type)
                 : 'unknown';
             const errCode = e instanceof ContextWindowError ? 'CONTEXT_WINDOW_ERROR' : 'PLANNING_FAILED';
-            await deps.notificationService.sendDocumentCentricNotification({
+            await ctx.notificationService.sendDocumentCentricNotification({
                 type: 'job_failed',
                 sessionId: job.session_id,
                 stageSlug: stageSlug,

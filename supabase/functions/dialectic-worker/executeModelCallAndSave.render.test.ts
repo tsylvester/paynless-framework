@@ -24,6 +24,7 @@ import {
 } from '../_shared/types/file_manager.types.ts';
 import { isRecord, isFileType } from '../_shared/utils/type_guards.ts';
 import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
+import { ShouldEnqueueRenderJobResult } from '../_shared/types/shouldEnqueueRenderJob.interface.ts';
 
 // Import test fixtures from main test file
 import {
@@ -77,7 +78,7 @@ export const createMockUnifiedAIResponse = (overrides: Partial<UnifiedAIResponse
  * Returns the stub object so it can be restored if needed.
  */
 export function stubShouldEnqueueRenderJobForMarkdown(deps: { shouldEnqueueRenderJob: unknown }) {
-    return stub(deps, 'shouldEnqueueRenderJob', () => Promise.resolve({
+    return stub(deps, 'shouldEnqueueRenderJob', (): Promise<ShouldEnqueueRenderJobResult> => Promise.resolve({
         shouldRender: true,
         reason: 'is_markdown',
     }));
@@ -87,10 +88,15 @@ export function stubShouldEnqueueRenderJobForMarkdown(deps: { shouldEnqueueRende
  * Stubs shouldEnqueueRenderJob to return an error reason.
  * Returns the stub object so it can be restored if needed.
  */
-export function stubShouldEnqueueRenderJobError(deps: { shouldEnqueueRenderJob: unknown }, reason: 'stage_not_found' | 'instance_not_found' | 'steps_not_found' | 'parse_error' | 'query_error' | 'no_active_recipe') {
-    return stub(deps, 'shouldEnqueueRenderJob', () => Promise.resolve({
+export function stubShouldEnqueueRenderJobError(
+    deps: { shouldEnqueueRenderJob: unknown },
+    reason: 'stage_not_found' | 'instance_not_found' | 'steps_not_found' | 'parse_error' | 'query_error' | 'no_active_recipe',
+    details?: string,
+) {
+    return stub(deps, 'shouldEnqueueRenderJob', (): Promise<ShouldEnqueueRenderJobResult> => Promise.resolve({
         shouldRender: false,
         reason,
+        details,
     }));
 }
 
@@ -2714,6 +2720,12 @@ Deno.test('skips RENDER job when shouldEnqueueRenderJob returns { shouldRender: 
 
     const deps = getMockDeps({ fileManager });
 
+    // Arrange: Step 57.b.i - explicitly mock shouldEnqueueRenderJob structured result for JSON output
+    stub(deps, 'shouldEnqueueRenderJob', (): Promise<ShouldEnqueueRenderJobResult> => Promise.resolve({
+        shouldRender: false,
+        reason: 'is_json',
+    }));
+
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({
             content: '{"content": "AI response"}',
@@ -2736,16 +2748,18 @@ Deno.test('skips RENDER job when shouldEnqueueRenderJob returns { shouldRender: 
     // Act
     await executeModelCallAndSave(params);
 
-    // Assert: No RENDER job should be inserted and no error should be thrown
+    // Assert: Step 57.b.i - RENDER job should NOT be inserted and no error should be thrown
     const insertCalls = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
     if (insertCalls) {
         const renderInserts = insertCalls.callsArgs.filter((callArg) => {
-            const inserted = Array.isArray(callArg) ? callArg[0] : callArg;
-            return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
+            const inserted = Array.isArray(callArg[0]) ? callArg[0][0] : callArg[0];
+            return isRecord(inserted) && inserted['job_type'] === 'RENDER';
         });
-        assertEquals(renderInserts.length, 0, 'Should not enqueue RENDER job when shouldEnqueueRenderJob returns { shouldRender: false, reason: \'is_json\' }');
-    } else {
-        assert(true, 'No RENDER job enqueued when shouldEnqueueRenderJob returns { shouldRender: false, reason: \'is_json\' }');
+        assertEquals(
+            renderInserts.length,
+            0,
+            'Should not enqueue RENDER job when shouldEnqueueRenderJob returns { shouldRender: false, reason: \'is_json\' }'
+        );
     }
 
     clearAllStubs?.();
@@ -2767,7 +2781,8 @@ Deno.test('throws an error when shouldEnqueueRenderJob returns an error reason l
 
     const deps = getMockDeps({ fileManager });
 
-    stubShouldEnqueueRenderJobError(deps, 'stage_not_found');
+    // Arrange: Step 57.b.ii - explicitly mock structured error result
+    stubShouldEnqueueRenderJobError(deps, 'stage_not_found', 'DB error');
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
         createMockUnifiedAIResponse({

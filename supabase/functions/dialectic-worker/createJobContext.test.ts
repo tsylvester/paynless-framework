@@ -35,6 +35,7 @@ describe('createJobContext Factory and Slicers', () => {
             assertEquals(result.continueJob, params.continueJob);
             assertEquals(result.getSeedPromptForStage, params.getSeedPromptForStage);
             assertEquals(result.planComplexStage, params.planComplexStage);
+            assertEquals(result.findSourceDocuments, params.findSourceDocuments);
             assertEquals(result.documentRenderer, params.documentRenderer);
         });
     });
@@ -65,6 +66,7 @@ describe('createJobContext Factory and Slicers', () => {
             // Runtime check: planComplexStage should NOT be present
             assertEquals('planComplexStage' in result, false);
             assertEquals('getGranularityPlanner' in result, false);
+            assertEquals('findSourceDocuments' in result, false);
         });
     });
 
@@ -78,8 +80,10 @@ describe('createJobContext Factory and Slicers', () => {
 
             // Assert it includes plan-specific fields
             assertEquals(result.logger, root.logger);
+            assertEquals(result.notificationService, root.notificationService);
             assertEquals(result.getGranularityPlanner, root.getGranularityPlanner);
             assertEquals(result.planComplexStage, root.planComplexStage);
+            assertEquals(result.findSourceDocuments, root.findSourceDocuments);
 
             // Runtime check: should NOT include execute or render fields
             assertEquals('fileManager' in result, false);
@@ -105,6 +109,7 @@ describe('createJobContext Factory and Slicers', () => {
             // Runtime check: should NOT include execute or plan fields
             assertEquals('ragService' in result, false);
             assertEquals('planComplexStage' in result, false);
+            assertEquals('findSourceDocuments' in result, false);
         });
     });
 });

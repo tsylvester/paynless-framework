@@ -42,7 +42,11 @@ Deno.test('getSeedPromptForStage - Happy Path', async () => {
         }
     });
 
-    const mockDownloadFromStorage = spy(async (): Promise<DownloadStorageResult> => {
+    const mockDownloadFromStorage = spy(async (
+        _supabase: unknown,
+        _bucket: string,
+        _path: string
+    ): Promise<DownloadStorageResult> => {
         const content = new TextEncoder().encode('This is the seed prompt.');
         const buffer = new ArrayBuffer(content.byteLength);
         new Uint8Array(buffer).set(content);
@@ -68,10 +72,8 @@ Deno.test('getSeedPromptForStage - Happy Path', async () => {
     assertEquals(result.fullPath, 'prompts/prompt.md');
 
     assertEquals(mockDownloadFromStorage.calls.length, 1);
-    assertEquals(mockDownloadFromStorage.calls[0].args, [
-        'test-bucket',
-        'prompts/prompt.md'
-    ]);
+    assertEquals(mockDownloadFromStorage.calls[0].args[1], 'test-bucket');
+    assertEquals(mockDownloadFromStorage.calls[0].args[2], 'prompts/prompt.md');
 });
 
 Deno.test('getSeedPromptForStage - Throws when no matching resource found', async () => {
@@ -123,7 +125,11 @@ Deno.test('getSeedPromptForStage - Throws when resource download fails', async (
         }
     });
 
-    const mockDownloadFromStorage = spy(async (): Promise<DownloadStorageResult> => {
+    const mockDownloadFromStorage = spy(async (
+        _supabase: unknown,
+        _bucket: string,
+        _path: string
+    ): Promise<DownloadStorageResult> => {
         return { data: null, error: new Error('Storage download failed') };
     });
 

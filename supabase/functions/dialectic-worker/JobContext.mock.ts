@@ -11,12 +11,16 @@ import { mockNotificationService } from '../_shared/utils/notification.service.m
 import { MockLogger } from '../_shared/logger.mock.ts';
 import { createMockDownloadFromStorage } from '../_shared/supabase_storage_utils.mock.ts';
 import { IJobContext } from './JobContext.interface.ts';
+import { createJobContext } from './createJobContext.ts';
+import { createMockFindSourceDocuments } from './findSourceDocuments.mock.ts';
+
+type JobContextParamsOverrides = { [K in keyof JobContextParams]?: JobContextParams[K] };
 
 /**
  * Helper: Creates mock JobContextParams with all required fields
  * Uses existing mock services from the codebase
  */
-export function createMockJobContextParams(): JobContextParams {
+export function createMockJobContextParams(overrides?: JobContextParamsOverrides): JobContextParams {
     const fileManager = new MockFileManagerService();
     const ragService = new MockRagService();
     const indexingService = new MockIndexingService();
@@ -25,8 +29,9 @@ export function createMockJobContextParams(): JobContextParams {
     const promptAssembler = new MockPromptAssembler();
     const logger = new MockLogger();
     const mockDownloadFn = createMockDownloadFromStorage({ mode: 'success', data: new ArrayBuffer(0) });
+    const findSourceDocuments = createMockFindSourceDocuments({ mode: 'empty' });
 
-    return {
+    const baseParams: JobContextParams = {
         logger: logger,
         fileManager: fileManager,
         downloadFromStorage: mockDownloadFn,
@@ -82,42 +87,26 @@ export function createMockJobContextParams(): JobContextParams {
         }),
         getGranularityPlanner: () => () => [],
         planComplexStage: async () => [],
+        findSourceDocuments: findSourceDocuments,
         documentRenderer: documentRenderer,
         continueJob: async () => ({ enqueued: false }),
         retryJob: async () => ({}),
         executeModelCallAndSave: async () => {},
+    };
+
+    if (!overrides) {
+        return baseParams;
+    }
+
+    return {
+        ...baseParams,
+        ...overrides,
     };
 }
 
 /**
  * Helper: Creates mock IJobContext with all 24 fields
  */
-export function createMockRootContext(): IJobContext {
-    const params = createMockJobContextParams();
-    return {
-        logger: params.logger,
-        fileManager: params.fileManager,
-        downloadFromStorage: params.downloadFromStorage,
-        deleteFromStorage: params.deleteFromStorage,
-        callUnifiedAIModel: params.callUnifiedAIModel,
-        getAiProviderAdapter: params.getAiProviderAdapter,
-        getAiProviderConfig: params.getAiProviderConfig,
-        ragService: params.ragService,
-        indexingService: params.indexingService,
-        embeddingClient: params.embeddingClient,
-        countTokens: params.countTokens,
-        tokenWalletService: params.tokenWalletService,
-        notificationService: params.notificationService,
-        getSeedPromptForStage: params.getSeedPromptForStage,
-        promptAssembler: params.promptAssembler,
-        getExtensionFromMimeType: params.getExtensionFromMimeType,
-        randomUUID: params.randomUUID,
-        shouldEnqueueRenderJob: params.shouldEnqueueRenderJob,
-        getGranularityPlanner: params.getGranularityPlanner,
-        planComplexStage: params.planComplexStage,
-        documentRenderer: params.documentRenderer,
-        continueJob: params.continueJob,
-        retryJob: params.retryJob,
-        executeModelCallAndSave: params.executeModelCallAndSave,
-    };
+export function createMockRootContext(overrides?: JobContextParamsOverrides): IJobContext {
+    return createJobContext(createMockJobContextParams(overrides));
 }

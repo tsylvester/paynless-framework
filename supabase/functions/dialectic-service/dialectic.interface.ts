@@ -15,10 +15,6 @@ import {
   FileType 
 } from '../_shared/types/file_manager.types.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
-import { 
-  DeleteStorageResult, 
-  DownloadStorageResult 
-} from '../_shared/supabase_storage_utils.ts';
 import {
   FinishReason,
   FactoryDependencies,
@@ -50,7 +46,12 @@ import { ICompressionStrategy } from '../_shared/utils/vector_utils.ts';
 import { ServiceError } from "../_shared/types.ts";
 import { IDocumentRenderer } from '../_shared/services/document_renderer.interface.ts';
 import { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
-import { IExecuteJobContext } from '../dialectic-worker/JobContext.interface.ts';
+import { DeleteFromStorageFn } from '../_shared/supabase_storage_utils.ts';
+import { 
+  IExecuteJobContext, 
+  IPlanJobContext, 
+  IRenderJobContext 
+} from '../dialectic-worker/JobContext.interface.ts';
 
 export type DialecticStageRecipeEdge = Database['public']['Tables']['dialectic_stage_recipe_edges']['Row'];
 export type DialecticStageRecipeInstance = Database['public']['Tables']['dialectic_stage_recipe_instances']['Row'];
@@ -60,7 +61,7 @@ export type ProcessSimpleJobFn = (
   dbClient: SupabaseClient<Database>,
   job: DialecticJobRow & { payload: DialecticExecuteJobPayload },
   projectOwnerUserId: string,
-  deps: IDialecticJobDeps,
+  deps: IExecuteJobContext,
   authToken: string,
 ) => Promise<void>;
 
@@ -68,7 +69,7 @@ export type ProcessComplexJobFn = (
   dbClient: SupabaseClient<Database>,
   job: DialecticJobRow & { payload: DialecticPlanJobPayload },
   projectOwnerUserId: string,
-  deps: IDialecticJobDeps,
+  deps: IPlanJobContext,
   authToken: string,
 ) => Promise<void>;
 
@@ -76,14 +77,14 @@ export type ProcessRenderJobFn = (
   dbClient: SupabaseClient<Database>,
   job: DialecticJobRow,
   projectOwnerUserId: string,
-  deps: IDialecticJobDeps,
+  deps: IRenderJobContext,
   authToken: string,
 ) => Promise<void>;
 
 export type PlanComplexStageFn = (
   dbClient: SupabaseClient<Database>,
   parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
-  deps: IDialecticJobDeps,
+  deps: IPlanJobContext,
   recipeStep: DialecticRecipeStep,
   authToken: string,
   completedSourceDocumentIds?: Set<string>,
@@ -106,7 +107,7 @@ export type GetSeedPromptForStageFn = (
   sessionId: string,
   stageSlug: string,
   iterationNumber: number,
-  downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>
+  downloadFromStorage: DownloadFromStorageFn
 ) => Promise<SeedPromptData>;
 
 export interface IJobProcessors {
@@ -577,12 +578,12 @@ export interface GenerateContributionsDeps {
     userAuthToken: string, 
     dependencies?: CallModelDependencies,
   ) => Promise<UnifiedAIResponse>;
-  downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>;
+  downloadFromStorage: DownloadFromStorageFn;
   getExtensionFromMimeType: typeof getExtensionFromMimeType;
   logger: ILogger;
   randomUUID: () => string;
   fileManager: IFileManager;
-  deleteFromStorage: (bucket: string, paths: string[]) => Promise<DeleteStorageResult>;
+  deleteFromStorage: DeleteFromStorageFn;
 }
 export interface GenerateContributionsPayload {
   sessionId: string;

@@ -13,7 +13,6 @@ import {
     GranularityPlannerFn, 
     DialecticPlanJobPayload, 
     DialecticExecuteJobPayload,
-    IDialecticJobDeps, 
     UnifiedAIResponse, 
     DialecticRecipeTemplateStep,
 } from '../dialectic-service/dialectic.interface.ts';
@@ -29,6 +28,9 @@ import { describe, it, beforeEach } from 'https://deno.land/std@0.170.0/testing/
 import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
+import { IPlanJobContext } from './JobContext.interface.ts';
+import { createPlanJobContext, createJobContext } from './createJobContext.ts';
+import { createMockJobContextParams } from './JobContext.mock.ts';
 
 const mockTemplateRecipeSteps: DialecticRecipeTemplateStep[] = [
     {
@@ -109,7 +111,7 @@ const mockInstanceRow_NotCloned = {
 
 describe('processComplexJob', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
-    let mockDeps: IDialecticJobDeps;
+    let planCtx: IPlanJobContext;
     let mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
     let mockJobProcessors: IJobProcessors;
     let mockProcessorSpies: MockJobProcessorsSpies;
@@ -176,48 +178,13 @@ describe('processComplexJob', () => {
             job_type: 'PLAN',
         };
 
-        const mockUnifiedAIResponse: UnifiedAIResponse = { content: 'mock', finish_reason: 'stop' };
-        mockDeps = {
-            logger,
+        const mockParams = {
+            ...createMockJobContextParams(),
             planComplexStage: mockProcessorSpies.planComplexStage,
-            downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({
-                data: await new Blob(['Mock content']).arrayBuffer(),
-                error: null
-            })),
-            getGranularityPlanner: spy((_strategyId: string): GranularityPlannerFn | undefined => undefined),
-            ragService: new MockRagService(),
-            fileManager: new MockFileManagerService(),
-            countTokens: spy(() => 0),
-            getAiProviderConfig: spy(async () => Promise.resolve({
-                api_identifier: 'mock-api',
-                input_token_cost_rate: 0,
-                output_token_cost_rate: 0,
-                provider_max_input_tokens: 8192,
-                tokenization_strategy: {
-                    type: 'tiktoken',
-                    tiktoken_encoding_name: 'cl100k_base',
-                    tiktoken_model_name_for_rules_fallback: 'gpt-4o',
-                    is_chatml_model: false,
-                    api_identifier_for_tokenization: 'mock-api'
-                },
-            })),
-            callUnifiedAIModel: spy(async () => mockUnifiedAIResponse),
-            getSeedPromptForStage: spy(async () => ({
-                content: 'mock',
-                fullPath: 'mock',
-                bucket: 'mock',
-                path: 'mock',
-                fileName: 'mock'
-            })),
-            continueJob: spy(async () => ({ enqueued: true })),
-            retryJob: spy(async () => ({})),
             notificationService: mockNotificationService,
-            executeModelCallAndSave: spy(async () => {}),
-            getExtensionFromMimeType: spy(() => '.txt'),
-            randomUUID: spy(() => 'mock-uuid'),
-            deleteFromStorage: spy(async () => ({ data: [], error: null })),
-            documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
         };
+        const rootCtx = createJobContext(mockParams);
+        planCtx = createPlanJobContext(rootCtx);
     });
 
     // Group 2: Error Handling & Input Validation
@@ -245,7 +212,7 @@ describe('processComplexJob', () => {
         // Per project standards, type casting is permitted when testing invalid objects.
         await assertRejects(
             async () => {
-                await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, malformedJob as any, 'user-id-complex', mockDeps, 'user-jwt-123');
+                await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, malformedJob as any, 'user-id-complex', planCtx, 'user-jwt-123');
             },
             Error,
             'invalid payload for complex processing'
@@ -268,7 +235,7 @@ describe('processComplexJob', () => {
         
         // Act:
         // - Call processComplexJob.
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', planCtx, 'user-jwt-123');
         
         // Assert:
         // - The 'update' spy was called with a status of 'failed' and a descriptive error message.
@@ -296,7 +263,7 @@ describe('processComplexJob', () => {
         
         // Act:
         // - Call processComplexJob.
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', planCtx, 'user-jwt-123');
         
         // Assert:
         // - The 'update' spy was called with a status of 'failed' and a descriptive error message.
@@ -325,7 +292,7 @@ describe('processComplexJob', () => {
         mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
 
         // Act
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', planCtx, 'user-jwt-123');
 
         // Assert: planner was called with the first step from the recipe (no step_info required)
         const firstStep = mockTemplateRecipeSteps[0];
@@ -337,11 +304,17 @@ describe('processComplexJob', () => {
         // This tests the general error handling for the downstream planner.
         // Arrange:
         // - Configure the deps.planComplexStage spy to throw a new Error('Planner failed!').
-        mockDeps.planComplexStage = async () => Promise.reject(new Error('Planner failed!'));
+        const errorMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async () => Promise.reject(new Error('Planner failed!')),
+            notificationService: mockNotificationService,
+        };
+        const errorRootCtx = createJobContext(errorMockParams);
+        const errorPlanCtx = createPlanJobContext(errorRootCtx);
         
         // Act:
         // - Call processComplexJob.
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', errorPlanCtx, 'user-jwt-123');
         
         // Assert:
         // - The 'update' spy was called with a status of 'failed' and the correct error message.
@@ -357,11 +330,16 @@ describe('processComplexJob', () => {
     it('emits job_failed notification when planner throws a generic error', async () => {
         // Arrange
         resetMockNotificationService();
-        mockDeps.notificationService = mockNotificationService;
-        mockDeps.planComplexStage = async () => Promise.reject(new Error('Planner failed!'));
+        const errorMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async () => Promise.reject(new Error('Planner failed!')),
+            notificationService: mockNotificationService,
+        };
+        const errorRootCtx = createJobContext(errorMockParams);
+        const errorPlanCtx = createPlanJobContext(errorRootCtx);
 
         // Act
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', errorPlanCtx, 'user-jwt-123');
 
         // Assert
         const calls = mockNotificationService.sendDocumentCentricNotification.calls;
@@ -384,11 +362,16 @@ describe('processComplexJob', () => {
     it('emits job_failed notification when planner throws a ContextWindowError', async () => {
         // Arrange
         resetMockNotificationService();
-        mockDeps.notificationService = mockNotificationService;
-        mockDeps.planComplexStage = async () => Promise.reject(new ContextWindowError('Context too large!'));
+        const errorMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async () => Promise.reject(new ContextWindowError('Context too large!')),
+            notificationService: mockNotificationService,
+        };
+        const errorRootCtx = createJobContext(errorMockParams);
+        const errorPlanCtx = createPlanJobContext(errorRootCtx);
 
         // Act
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', errorPlanCtx, 'user-jwt-123');
 
         // Assert
         const calls = mockNotificationService.sendDocumentCentricNotification.calls;
@@ -412,11 +395,17 @@ describe('processComplexJob', () => {
         // This tests specialized error handling.
         // Arrange:
         // - Configure deps.planComplexStage to throw a new ContextWindowError('Context too large!').
-        mockDeps.planComplexStage = async () => Promise.reject(new ContextWindowError('Context too large!'));
+        const contextWindowMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async () => Promise.reject(new ContextWindowError('Context too large!')),
+            notificationService: mockNotificationService,
+        };
+        const contextWindowRootCtx = createJobContext(contextWindowMockParams);
+        const contextWindowPlanCtx = createPlanJobContext(contextWindowRootCtx);
         
         // Act:
         // - Call processComplexJob.
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', contextWindowPlanCtx, 'user-jwt-123');
         
         // Assert:
         // - The 'update' spy was called with a status of 'failed' and an error message that specifically mentions the context window.
@@ -471,7 +460,7 @@ describe('processComplexJob', () => {
         
         // Act:
         // - Call processComplexJob.
-        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', mockDeps, 'user-jwt-123');
+        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', planCtx, 'user-jwt-123');
 
         // Assert:
         // - The 'update' spy was called to set the parent job's status to 'failed'.
@@ -526,7 +515,7 @@ describe('processComplexJob', () => {
 
         // Act:
         // - Call processComplexJob.
-        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', mockDeps, 'user-jwt-123');
+        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', planCtx, 'user-jwt-123');
 
         // Assert:
         // - The function should catch the update error and make a second update call to set the job status to 'failed'.
@@ -600,7 +589,7 @@ describe('processComplexJob', () => {
         // - processComplexJob should throw an error indicating planner_metadata is required
         await assertRejects(
             async () => {
-                await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+                await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
             },
             Error,
             'planner_metadata.recipe_step_id is missing or invalid'
@@ -667,7 +656,7 @@ describe('processComplexJob', () => {
         // - processComplexJob should throw an error indicating planner_metadata.recipe_step_id is required
         await assertRejects(
             async () => {
-                await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+                await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
             },
             Error,
             'planner_metadata.recipe_step_id is missing or invalid'
@@ -737,7 +726,7 @@ describe('processComplexJob', () => {
         // - processComplexJob should throw an error indicating planner_metadata.recipe_step_id must be non-empty
         await assertRejects(
             async () => {
-                await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+                await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
             },
             Error,
             'planner_metadata.recipe_step_id is missing or invalid'
@@ -804,7 +793,7 @@ describe('processComplexJob', () => {
         });
 
         // Act:
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         // - planComplexStage should NOT be called because the step has an in-progress job
@@ -869,7 +858,7 @@ describe('processComplexJob', () => {
         });
 
         // Act:
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 0, 'planComplexStage should not be called when step has a processing job');
@@ -933,7 +922,7 @@ describe('processComplexJob', () => {
         });
 
         // Act:
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 0, 'planComplexStage should not be called when step has a pending job');
@@ -1040,7 +1029,7 @@ describe('processComplexJob', () => {
         });
 
         // Act:
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         // Both steps should be excluded: step-one (completed) and step-two (retrying)
@@ -1148,7 +1137,7 @@ describe('processComplexJob', () => {
         });
 
         // Act:
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         // The step should NOT be re-planned because it has a retrying job (in-progress)
@@ -1299,7 +1288,7 @@ describe('processComplexJob', () => {
         });
 
         // Act:
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         // The step should NOT be re-planned because it has in-progress jobs
@@ -1366,7 +1355,7 @@ describe('processComplexJob', () => {
         mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
 
         // Act:
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         // The step CAN be re-planned because failed is a terminal state
@@ -1433,7 +1422,7 @@ describe('processComplexJob', () => {
         mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
 
         // Act:
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         // The step CAN be re-planned because retry_loop_failed is a terminal state
@@ -1457,7 +1446,7 @@ describe('processComplexJob', () => {
         mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
 
         // Act:
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         // The step IS included in readySteps (can be planned for the first time)
@@ -1616,7 +1605,7 @@ describe('processComplexJob', () => {
         mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
 
         // Act:
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         // planComplexStage should be called (step can be re-planned)
@@ -1742,7 +1731,7 @@ describe('processComplexJob', () => {
         mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
 
         // Act:
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert:
         // The step can be re-planned, but completed contributions should remain available

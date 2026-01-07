@@ -16,7 +16,7 @@ export async function generateContributions(
     dbClient: SupabaseClient<Database>,
     payload: GenerateContributionsPayload,
     user: User,
-    _deps: GenerateContributionsDeps,
+    deps: GenerateContributionsDeps,
     authToken: string,
 ): Promise<{ success: boolean; data?: { job_ids: string[] }; error?: { message: string; status?: number; details?: string; code?: string } }> {
 

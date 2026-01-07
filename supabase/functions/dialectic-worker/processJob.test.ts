@@ -1,59 +1,28 @@
 
 import { assertEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
-import { spy } from 'jsr:@std/testing@0.225.1/mock';
-import type { Database } from '../types_db.ts';
-import { createMockSupabaseClient, type IMockQueryBuilder } from '../_shared/supabase.mock.ts';
-import { processJob } from './processJob.ts';
-import { logger } from '../_shared/logger.ts';
-import type { DialecticJobPayload, IDialecticJobDeps, SeedPromptData, IContinueJobResult, DialecticPlanJobPayload } from '../dialectic-service/dialectic.interface.ts';
-import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
-import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
-import type { UnifiedAIResponse } from '../dialectic-service/dialectic.interface.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { Database } from '../types_db.ts';
+import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
+import { processJob } from './processJob.ts';
+import { 
+    DialecticJobPayload, 
+    DialecticPlanJobPayload 
+} from '../dialectic-service/dialectic.interface.ts';
 import { isJson } from '../_shared/utils/type_guards.ts';
 import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
-import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
-import { MockRagService } from '../_shared/services/rag_service.mock.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
+import { 
+    createExecuteJobContext, 
+    createJobContext, 
+    createPlanJobContext, 
+    createRenderJobContext 
+} from './createJobContext.ts';
+import { IJobContext } from './JobContext.interface.ts';
+import { createMockJobContextParams } from './JobContext.mock.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
-const mockDeps: IDialecticJobDeps = {
-    logger,
-    callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => ({
-        content: 'Happy path AI content',
-        error: null,
-        finish_reason: 'stop',
-    })),
-    downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ data: new ArrayBuffer(0), error: null })),
-    fileManager: new MockFileManagerService(),
-    getExtensionFromMimeType: spy(() => '.md'),
-    randomUUID: spy(() => 'mock-uuid-happy'),
-    deleteFromStorage: spy(async () => await Promise.resolve({ error: null })),
-    getSeedPromptForStage: spy(async (): Promise<SeedPromptData> => ({
-        content: 'Happy path AI content',
-        fullPath: 'happy/path/ai/content.md',
-        bucket: 'happy-path-ai-content',
-        path: 'happy/path/ai/content.md',
-        fileName: 'happy-path-ai-content.md',
-    })),
-    continueJob: spy(async (): Promise<IContinueJobResult> => ({
-        enqueued: true,
-        error: undefined,
-    })),
-    retryJob: spy(async (): Promise<{ error?: Error }> => ({ error: undefined })),
-    notificationService: mockNotificationService,
-    executeModelCallAndSave: spy(async (): Promise<void> => { /* dummy */ }),
-    ragService: new MockRagService(),
-    countTokens: spy(() => 100),
-    getAiProviderConfig: spy(async () => await Promise.resolve({ 
-        api_identifier: 'mock-model', 
-        input_token_cost_rate: 0, 
-        output_token_cost_rate: 0, 
-        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'p50k_base' } })),
-    getGranularityPlanner: spy(() => () => []),
-    planComplexStage: spy(async () => await Promise.resolve([])),
-    documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.business_case, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
-};
+
+// Create full IJobContext via createJobContext(mockParams)
+const mockCtx: IJobContext = createJobContext(createMockJobContextParams());
 
 // Step 6.a — Dispatch strictly by job.job_type: PLAN -> processComplexJob (ignore payload shape)
 Deno.test('processJob - dispatches by job.job_type: PLAN routes to processComplexJob', async () => {
@@ -99,9 +68,9 @@ Deno.test('processJob - dispatches by job.job_type: PLAN routes to processComple
             mockSupabase.client as unknown as SupabaseClient<Database>,
             { ...mockJob, payload: executeShapedPayload },
             'user-id',
-            mockDeps,
-            'mock-token',
             processors,
+            mockCtx,
+            'mock-token',
         );
 
         assertEquals(spies.processComplexJob.calls.length, 1, 'PLAN must dispatch to processComplexJob');
@@ -162,9 +131,9 @@ Deno.test('processJob - dispatches by job.job_type: EXECUTE routes to processSim
             mockSupabase.client as unknown as SupabaseClient<Database>,
             { ...mockJob, payload: planShapedPayload },
             'user-id',
-            mockDeps,
-            'mock-token',
             processors,
+            mockCtx,
+            'mock-token',
         );
 
         assertEquals(spies.processSimpleJob.calls.length, 1, 'EXECUTE must dispatch to processSimpleJob');
@@ -226,9 +195,9 @@ Deno.test('processJob - ignores processing_strategy; PLAN always routes to proce
             mockSupabase.client as unknown as SupabaseClient<Database>,
             { ...mockJob, payload: planPayload },
             'user-id',
-            mockDeps,
-            'mock-token',
             processors,
+            mockCtx,
+            'mock-token',
         );
 
         assertEquals(spies.processComplexJob.calls.length, 1, 'PLAN must dispatch to processComplexJob even with unsupported processing_strategy');
@@ -284,16 +253,15 @@ Deno.test('processJob - PLAN passes job unchanged and propagates args', async ()
             mockSupabase.client as unknown as SupabaseClient<Database>,
             { ...rowJob, payload: planPayload },
             'user-id-plan',
-            mockDeps,
-            authToken,
             processors,
+            mockCtx,
+            authToken,
         );
 
         const call = spies.processComplexJob.calls[0];
         assertEquals(call.args[0], mockSupabase.client, 'dbClient should be passed through unchanged');
         assertEquals(call.args[1], { ...rowJob, payload: planPayload }, 'job row should be passed through unchanged');
         assertEquals(call.args[2], 'user-id-plan', 'projectOwnerUserId should be passed through unchanged');
-        assertEquals(call.args[3], mockDeps, 'deps should be passed through unchanged');
         assertEquals(call.args[4], authToken, 'authToken should be passed through unchanged');
     } finally {
         spies.processSimpleJob.restore();
@@ -347,16 +315,15 @@ Deno.test('processJob - EXECUTE passes job unchanged and propagates args', async
             mockSupabase.client as unknown as SupabaseClient<Database>,
             { ...rowJob, payload: planShaped },
             'user-id-exec',
-            mockDeps,
-            authToken,
             processors,
+            mockCtx,
+            authToken,
         );
 
         const call = spies.processSimpleJob.calls[0];
         assertEquals(call.args[0], mockSupabase.client, 'dbClient should be passed through unchanged');
         assertEquals(call.args[1], { ...rowJob, payload: planShaped }, 'job row should be passed through unchanged');
         assertEquals(call.args[2], 'user-id-exec', 'projectOwnerUserId should be passed through unchanged');
-        assertEquals(call.args[3], mockDeps, 'deps should be passed through unchanged');
         assertEquals(call.args[4], authToken, 'authToken should be passed through unchanged');
     } finally {
         spies.processSimpleJob.restore();
@@ -408,9 +375,9 @@ Deno.test('processJob - PLAN does not query dialectic_stages in router', async (
             mockSupabase.client as unknown as SupabaseClient<Database>,
             { ...rowJob, payload },
             'user-id-no-stage-plan',
-            mockDeps,
-            'mock-token',
             processors,
+            mockCtx,
+            'mock-token',
         );
 
         const stageFromCalls = mockSupabase.spies.fromSpy.calls.filter((call) => call.args && call.args[0] === 'dialectic_stages');
@@ -466,9 +433,9 @@ Deno.test('processJob - EXECUTE does not query dialectic_stages in router', asyn
             mockSupabase.client as unknown as SupabaseClient<Database>,
             { ...rowJob, payload },
             'user-id-no-stage-exec',
-            mockDeps,
-            'mock-token',
             processors,
+            mockCtx,
+            'mock-token',
         );
 
         const stageFromCalls = mockSupabase.spies.fromSpy.calls.filter((call) => call.args && call.args[0] === 'dialectic_stages');
@@ -525,9 +492,9 @@ Deno.test('processJob - null job_type should throw and not dispatch', async () =
             mockSupabase.client as unknown as SupabaseClient<Database>,
             { ...rowJob, payload },
             'user-id-null-type',
-            mockDeps,
-            'mock-token',
             processors,
+            mockCtx,
+            'mock-token',
         );
     } catch (_e) {
         threw = true;
@@ -592,9 +559,9 @@ Deno.test('processJob - bubbles errors from downstream processor', async () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             { ...rowJob, payload },
             'user-id-bubble',
-            mockDeps,
-            'mock-token',
             processors,
+            mockCtx,
+            'mock-token',
         );
     } catch (e) {
         threw = true;
@@ -653,9 +620,9 @@ Deno.test('processJob - dispatches by job.job_type: RENDER routes to processRend
             mockSupabase.client as unknown as SupabaseClient<Database>,
             { ...mockJob, payload: planShapedPayload },
             'user-id',
-            mockDeps,
-            'mock-token',
             processors,
+            mockCtx,
+            'mock-token',
         );
 
         assertEquals(spies.processRenderJob.calls.length, 1, 'RENDER must dispatch to processRenderJob');
@@ -713,16 +680,15 @@ Deno.test('processJob - RENDER passes job unchanged and propagates args', async 
             mockSupabase.client as unknown as SupabaseClient<Database>,
             { ...rowJob, payload: planShapedPayload },
             'user-id-render',
-            mockDeps,
-            authToken,
             processors,
+            mockCtx,
+            authToken,
         );
 
         const call = spies.processRenderJob.calls[0];
         assertEquals(call.args[0], mockSupabase.client, 'dbClient should be passed through unchanged');
         assertEquals(call.args[1], { ...rowJob, payload: planShapedPayload }, 'job row should be passed through unchanged');
         assertEquals(call.args[2], 'user-id-render', 'projectOwnerUserId should be passed through unchanged');
-        assertEquals(call.args[3], mockDeps, 'deps should be passed through unchanged');
         assertEquals(call.args[4], authToken, 'authToken should be passed through unchanged');
     } finally {
         spies.processRenderJob.restore();
@@ -775,9 +741,9 @@ Deno.test('processJob - RENDER does not query dialectic_stages in router', async
             mockSupabase.client as unknown as SupabaseClient<Database>,
             { ...rowJob, payload: planShapedPayload },
             'user-id-no-stage-render',
-            mockDeps,
-            'mock-token',
             processors,
+            mockCtx,
+            'mock-token',
         );
 
         const stageFromCalls = mockSupabase.spies.fromSpy.calls.filter((call) => call.args && call.args[0] === 'dialectic_stages');
@@ -787,6 +753,228 @@ Deno.test('processJob - RENDER does not query dialectic_stages in router', async
         spies.processRenderJob.restore();
         spies.processSimpleJob.restore();
         spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Step 51.b.iv — Context slicing: EXECUTE jobs receive IExecuteJobContext
+Deno.test('processJob - slices to IExecuteJobContext for EXECUTE jobs', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const payload: DialecticJobPayload = {
+        sessionId: 'session-id-slice-execute',
+        projectId: 'project-id-slice-execute',
+        stageSlug: 'thesis',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
+
+    const mockJob: MockJob = {
+        id: 'job-id-slice-execute',
+        user_id: 'user-id',
+        session_id: 'session-id-slice-execute',
+        stage_slug: 'thesis',
+        payload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'EXECUTE',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload },
+            'user-id',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
+
+        assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called');
+        const call = spies.processSimpleJob.calls[0];
+        const receivedCtx = call.args[3];
+        const expectedCtx = createExecuteJobContext(mockCtx);
+        assertEquals(receivedCtx, expectedCtx, 'EXECUTE job should receive createExecuteJobContext(ctx) result');
+
+        if (typeof receivedCtx !== 'object' || receivedCtx === null) {
+            throw new Error('Expected EXECUTE job processor to receive an object context');
+        }
+
+        // Verify EXECUTE-only fields are present
+        assertEquals(Reflect.has(receivedCtx, 'ragService'), true, 'IExecuteJobContext should have ragService');
+        assertEquals(Reflect.has(receivedCtx, 'promptAssembler'), true, 'IExecuteJobContext should have promptAssembler');
+        assertEquals(typeof Reflect.get(receivedCtx, 'getSeedPromptForStage'), 'function', 'IExecuteJobContext should have getSeedPromptForStage');
+
+        // Verify PLAN-only fields are absent
+        assertEquals(Reflect.has(receivedCtx, 'planComplexStage'), false, 'IExecuteJobContext should NOT have planComplexStage');
+    } finally {
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        spies.processRenderJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Step 51.b.v — Context slicing: PLAN jobs receive IPlanJobContext
+Deno.test('processJob - slices to IPlanJobContext for PLAN jobs', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const payload: DialecticPlanJobPayload = {
+        sessionId: 'session-id-slice-plan',
+        projectId: 'project-id-slice-plan',
+        stageSlug: 'antithesis',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
+
+    const mockJob: MockJob = {
+        id: 'job-id-slice-plan',
+        user_id: 'user-id',
+        session_id: 'session-id-slice-plan',
+        stage_slug: 'antithesis',
+        payload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'PLAN',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload },
+            'user-id',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
+
+        assertEquals(spies.processComplexJob.calls.length, 1, 'processComplexJob should be called');
+        const call = spies.processComplexJob.calls[0];
+        const receivedCtx = call.args[3];
+        const expectedCtx = createPlanJobContext(mockCtx);
+        assertEquals(receivedCtx, expectedCtx, 'PLAN job should receive createPlanJobContext(ctx) result');
+
+        if (typeof receivedCtx !== 'object' || receivedCtx === null) {
+            throw new Error('Expected PLAN job processor to receive an object context');
+        }
+
+        // Verify PLAN-only fields are present (minimal plan context)
+        assertEquals(Reflect.has(receivedCtx, 'logger'), true, 'IPlanJobContext should have logger');
+        assertEquals(typeof Reflect.get(receivedCtx, 'planComplexStage'), 'function', 'IPlanJobContext should have planComplexStage');
+        assertEquals(typeof Reflect.get(receivedCtx, 'getGranularityPlanner'), 'function', 'IPlanJobContext should have getGranularityPlanner');
+
+        // Verify EXECUTE-only fields are absent
+        assertEquals(Reflect.has(receivedCtx, 'ragService'), false, 'IPlanJobContext should NOT have ragService');
+        assertEquals(Reflect.has(receivedCtx, 'promptAssembler'), false, 'IPlanJobContext should NOT have promptAssembler');
+    } finally {
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        spies.processRenderJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Step 51.b.vi — Context slicing: RENDER jobs receive IRenderJobContext
+Deno.test('processJob - slices to IRenderJobContext for RENDER jobs', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const payload: DialecticJobPayload = {
+        sessionId: 'session-id-slice-render',
+        projectId: 'project-id-slice-render',
+        stageSlug: 'synthesis',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
+
+    const mockJob: MockJob = {
+        id: 'job-id-slice-render',
+        user_id: 'user-id',
+        session_id: 'session-id-slice-render',
+        stage_slug: 'synthesis',
+        payload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'RENDER',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload },
+            'user-id',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
+
+        assertEquals(spies.processRenderJob.calls.length, 1, 'processRenderJob should be called');
+        const call = spies.processRenderJob.calls[0];
+        const receivedCtx = call.args[3];
+        const expectedCtx = createRenderJobContext(mockCtx);
+        assertEquals(receivedCtx, expectedCtx, 'RENDER job should receive createRenderJobContext(ctx) result');
+
+        if (typeof receivedCtx !== 'object' || receivedCtx === null) {
+            throw new Error('Expected RENDER job processor to receive an object context');
+        }
+
+        // Verify RENDER-only fields are present
+        assertEquals(Reflect.has(receivedCtx, 'logger'), true, 'IRenderJobContext should have logger');
+        assertEquals(Reflect.has(receivedCtx, 'documentRenderer'), true, 'IRenderJobContext should have documentRenderer');
+        assertEquals(Reflect.has(receivedCtx, 'fileManager'), true, 'IRenderJobContext should have fileManager');
+        assertEquals(Reflect.has(receivedCtx, 'notificationService'), true, 'IRenderJobContext should have notificationService');
+
+        // Verify EXECUTE/PLAN-only fields are absent
+        assertEquals(Reflect.has(receivedCtx, 'ragService'), false, 'IRenderJobContext should NOT have ragService');
+        assertEquals(Reflect.has(receivedCtx, 'planComplexStage'), false, 'IRenderJobContext should NOT have planComplexStage');
+    } finally {
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        spies.processRenderJob.restore();
         mockSupabase.clearAllStubs?.();
     }
 });
