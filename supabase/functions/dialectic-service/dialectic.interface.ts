@@ -739,6 +739,9 @@ export type RelationshipRole = ContributionType | 'source_group';
  */
 export type DocumentRelationships = {
   [key in RelationshipRole]?: string | null;
+} & {
+  isContinuation?: boolean;
+  turnIndex?: number;
 };
 
 /**

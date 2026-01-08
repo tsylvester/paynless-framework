@@ -920,7 +920,7 @@ Deno.test('extractSourceDocumentIdentifier can extract source_group from job pay
     }
 });
 
-Deno.test('planAllToOne includes stageSlug in document_relationships map to support RENDER job validation', () => {
+Deno.test('planAllToOne PLAN branch must not set document_relationships[stageSlug] for root header_context jobs', () => {
     const parentPayload = MOCK_PARENT_JOB.payload;
     if (!parentPayload) {
         throw new Error('Test setup error: MOCK_PARENT_JOB.payload cannot be null');
@@ -928,49 +928,151 @@ Deno.test('planAllToOne includes stageSlug in document_relationships map to supp
 
     const parentJobWithStageSlug: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
         ...MOCK_PARENT_JOB,
-		payload: {
-			projectId: parentPayload.projectId,
-			sessionId: parentPayload.sessionId,
-			stageSlug: 'thesis', // This is the override for the test
-			iterationNumber: parentPayload.iterationNumber,
-			model_id: parentPayload.model_id,
-			walletId: parentPayload.walletId,
-			user_jwt: parentPayload.user_jwt,
-		},
+        payload: {
+            projectId: parentPayload.projectId,
+            sessionId: parentPayload.sessionId,
+            stageSlug: 'thesis',
+            iterationNumber: parentPayload.iterationNumber,
+            model_id: parentPayload.model_id,
+            walletId: parentPayload.walletId,
+            user_jwt: parentPayload.user_jwt,
+        },
     };
 
-    const recipeStepThatOutputsRenderedDoc: DialecticStageRecipeStep = {
-        ...MOCK_RECIPE_STEP,
+    const planRecipeStep: DialecticRecipeTemplateStep = {
+        id: 'plan-step-id-root-test',
+        template_id: 'template-id-123',
+        step_number: 1,
+        step_key: 'thesis_build_stage_header',
+        step_slug: 'build-stage-header',
+        step_name: 'Build Stage Header',
+        step_description: 'Generate HeaderContext JSON',
+        prompt_template_id: 'template-planner-prompt-id',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        output_type: FileType.HeaderContext,
+        granularity_strategy: 'all_to_one',
+        inputs_required: [
+            {
+                type: 'seed_prompt',
+                slug: 'thesis',
+                required: true,
+            },
+        ],
+        inputs_relevance: [],
         outputs_required: {
-            ...MOCK_RECIPE_STEP.outputs_required,
+            system_materials: {
+                executive_summary: '',
+                input_artifacts_summary: '',
+                stage_rationale: '',
+            },
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [
+                {
+                    document_key: FileType.business_case,
+                    content_to_include: {
+                        field1: '',
+                        field2: [],
+                    },
+                },
+            ],
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        parallel_group: null,
+        branch_key: null,
+    };
+
+    const anchorDocument = MOCK_SOURCE_DOCS[0];
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, parentJobWithStageSlug, planRecipeStep, parentJobWithStageSlug.payload.user_jwt);
+
+    assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    assertEquals(isDialecticExecuteJobPayload(job), true, 'PLAN recipe steps should create EXECUTE child jobs');
+    if (isDialecticExecuteJobPayload(job)) {
+        const executePayload: DialecticExecuteJobPayload = job;
+        assertExists(executePayload.document_relationships, 'EXECUTE job payload should include document_relationships');
+        assertExists(executePayload.document_relationships?.source_group, 'document_relationships should include source_group');
+        assertEquals(
+            executePayload.document_relationships.source_group,
+            anchorDocument.id,
+            'source_group should be set to anchorDocument.id (lineage preserved)',
+        );
+        assert(
+            !('thesis' in executePayload.document_relationships),
+            'document_relationships[stageSlug] must be absent/undefined for root jobs (not set to anchor id)',
+        );
+    } else {
+        throw new Error('Expected EXECUTE job');
+    }
+});
+
+Deno.test('planAllToOne EXECUTE branch must not set document_relationships[stageSlug] for root document jobs', () => {
+    const parentPayload = MOCK_PARENT_JOB.payload;
+    if (!parentPayload) {
+        throw new Error('Test setup error: MOCK_PARENT_JOB.payload cannot be null');
+    }
+
+    const parentJobWithStageSlug: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        ...MOCK_PARENT_JOB,
+        payload: {
+            projectId: parentPayload.projectId,
+            sessionId: parentPayload.sessionId,
+            stageSlug: 'thesis',
+            iterationNumber: parentPayload.iterationNumber,
+            model_id: parentPayload.model_id,
+            walletId: parentPayload.walletId,
+            user_jwt: parentPayload.user_jwt,
+        },
+    };
+
+    const executeRecipeStep: DialecticStageRecipeStep = {
+        ...MOCK_RECIPE_STEP,
+        job_type: 'EXECUTE',
+        outputs_required: {
             documents: [{
                 artifact_class: 'rendered_document',
                 file_type: 'markdown',
                 document_key: FileType.business_case,
-                template_filename: 'business_case.md',
+                template_filename: 'thesis_business_case.md',
             }],
+            assembled_json: [],
+            files_to_generate: [
+                {
+                    from_document_key: FileType.business_case,
+                    template_filename: 'thesis_business_case.md',
+                },
+            ],
         },
     };
 
-    const childPayloads = planAllToOne(
-        MOCK_SOURCE_DOCS,
-        parentJobWithStageSlug,
-        recipeStepThatOutputsRenderedDoc,
-        'user-jwt-123'
-    );
+    const anchorDocument = MOCK_SOURCE_DOCS[0];
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, parentJobWithStageSlug, executeRecipeStep, parentJobWithStageSlug.payload.user_jwt);
 
-    assertEquals(childPayloads.length, 1);
-    const payload = childPayloads[0];
-
-    if (isDialecticExecuteJobPayload(payload)) {
-        assertExists(payload.document_relationships);
-        assert(
-            'thesis' in payload.document_relationships,
-            "document_relationships should contain a key matching the stageSlug ('thesis')"
+    assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    assertEquals(isDialecticExecuteJobPayload(job), true, 'Job type should be execute');
+    if (isDialecticExecuteJobPayload(job)) {
+        const executePayload: DialecticExecuteJobPayload = job;
+        assertExists(executePayload.document_relationships, 'EXECUTE job payload should include document_relationships');
+        assertExists(executePayload.document_relationships?.source_group, 'document_relationships should include source_group');
+        assertEquals(
+            executePayload.document_relationships.source_group,
+            anchorDocument.id,
+            'source_group should be set to anchorDocument.id (lineage preserved)',
         );
-        assertEquals(typeof payload.document_relationships['thesis'], 'string');
-        assertEquals(payload.document_relationships['thesis'], MOCK_SOURCE_DOCS[0].id);
+        assert(
+            !('thesis' in executePayload.document_relationships),
+            'document_relationships[stageSlug] must be absent/undefined for root jobs (not set to anchor id)',
+        );
     } else {
-        throw new Error('Expected EXECUTE job payload');
+        throw new Error('Expected EXECUTE job');
     }
 });

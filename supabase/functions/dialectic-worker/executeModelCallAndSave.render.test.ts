@@ -15,15 +15,17 @@ import {
     DialecticExecuteJobPayload,
     DialecticContributionRow,
     DialecticRenderJobPayload,
+    DocumentRelationships,
 } from '../dialectic-service/dialectic.interface.ts';
 import { 
     FileType, 
-    DocumentRelationships, 
     DialecticStageSlug,
     ModelContributionFileTypes
 } from '../_shared/types/file_manager.types.ts';
-import { isRecord, isFileType } from '../_shared/utils/type_guards.ts';
-import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
+import { 
+    isRecord, 
+    isFileType 
+} from '../_shared/utils/type_guards.ts';
 import { ShouldEnqueueRenderJobResult } from '../_shared/types/shouldEnqueueRenderJob.interface.ts';
 
 // Import test fixtures from main test file
@@ -2331,16 +2333,18 @@ Deno.test('extracts documentIdentity using stageSlug key specifically, not first
 
     const stageSlug = DialecticStageSlug.Thesis;
     const wrongId = 'wrong-id';
-    const correctId = 'correct-id';
+    // The fix enforces document_relationships[stageSlug] = contribution.id for root chunks
+    // So correctId will be overwritten to contribution.id
+    const correctId = mockContribution.id;
 
     const deps = getMockDeps();
     assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
     const fileManager: MockFileManagerService = deps.fileManager;
     // Mock contribution with document_relationships containing multiple keys
-    // The first key (Antithesis) has value 'wrong-id', but stageSlug (Thesis) has value 'correct-id'
+    // The first key (Antithesis) has value 'wrong-id', but stageSlug (Thesis) will be enforced to contribution.id
     const contributionDocumentRelationships: DocumentRelationships = {
         [DialecticStageSlug.Antithesis]: wrongId,
-        [DialecticStageSlug.Thesis]: correctId,
+        [DialecticStageSlug.Thesis]: 'some-initial-value', // Will be overwritten to contribution.id by the fix
     };
     const contributionWithMultipleKeys: DialecticContributionRow = {
         ...mockContribution,
@@ -2363,7 +2367,7 @@ Deno.test('extracts documentIdentity using stageSlug key specifically, not first
 
     const payloadDocumentRelationships: DocumentRelationships = {
         [DialecticStageSlug.Antithesis]: wrongId,
-        [DialecticStageSlug.Thesis]: correctId,
+        [DialecticStageSlug.Thesis]: 'some-initial-value', // Will be overwritten to contribution.id by the fix
     };
     const payload: DialecticExecuteJobPayload = {
         ...testPayload,

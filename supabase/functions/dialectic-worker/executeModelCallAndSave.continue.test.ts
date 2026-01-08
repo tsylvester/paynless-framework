@@ -3,10 +3,12 @@ import {
     assertExists,
     assert,
   } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
-  import { spy, stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
-  import type { Database } from '../types_db.ts';
+  import { 
+    spy, stub,
+  } from 'https://deno.land/std@0.224.0/testing/mock.ts';
+  import { Database } from '../types_db.ts';
   import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
-  import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+  import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
   import {
     isJson,
     isRecord,
@@ -14,7 +16,7 @@ import {
 } from '../_shared/utils/type_guards.ts';
 import { isModelContributionContext } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
 import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
-import type { 
+import { 
     DialecticJobRow, 
     UnifiedAIResponse, 
     ExecuteModelCallAndSaveParams, 
@@ -22,10 +24,9 @@ import type {
     DialecticExecuteJobPayload,
     DialecticContributionRow,
     ContributionType,
+    DocumentRelationships,
 } from '../dialectic-service/dialectic.interface.ts';
-
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
-
 import { 
     createMockJob, 
     testPayload, 
@@ -39,13 +40,17 @@ import {
     spyCallModel,
     buildExecuteParams,
 } from './executeModelCallAndSave.test.ts';
-
-import { FileType, DocumentRelationships, DialecticStageSlug, ModelContributionFileTypes } from '../_shared/types/file_manager.types.ts';
-import type { Messages } from '../_shared/types.ts';
-import { withMockEnv, getStorageSpies } from '../_shared/supabase.mock.ts';
-import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
-import type { ShouldEnqueueRenderJobResult } from '../_shared/types/shouldEnqueueRenderJob.interface.ts';
-import type { IExecuteJobContext } from './JobContext.interface.ts';
+import { 
+  FileType, 
+  DialecticStageSlug 
+} from '../_shared/types/file_manager.types.ts';
+import { Messages } from '../_shared/types.ts';
+import { 
+  mockNotificationService, 
+  resetMockNotificationService 
+} from '../_shared/utils/notification.service.mock.ts';
+import { ShouldEnqueueRenderJobResult } from '../_shared/types/shouldEnqueueRenderJob.interface.ts';
+import { IExecuteJobContext } from './JobContext.interface.ts';
 
 // Copied from executeModelCallAndSave.test.ts to make this test file self-contained
 export const createMockUnifiedAIResponse = (overrides: Partial<UnifiedAIResponse> = {}): UnifiedAIResponse => ({
@@ -737,12 +742,23 @@ Deno.test('executeModelCallAndSave - final assembly triggers using SAVED relatio
   );
 
   await t.step('should call assembleAndSaveFinalDocument with root id from SAVED record', async () => {
+    // This test verifies that for continuation chunks, document_relationships from the payload
+    // is persisted and then used to determine the root ID for assembly.
+    // Note: For root chunks, document_relationships[stageSlug] = contribution.id,
+    // so this test must use a continuation chunk (with target_contribution_id) to preserve the payload relationships.
     const params: ExecuteModelCallAndSaveParams = {
       dbClient: dbClient as unknown as SupabaseClient<Database>,
       deps,
       authToken: 'auth-token',
-      // Payload intentionally omits document_relationships to prove we read from SAVED record
-      job: createMockJob({ ...testPayload, stageSlug }),
+      // Continuation chunks require document_relationships in payload (validated at line 1181-1183)
+      // The payload's document_relationships is persisted and then used for assembly
+      job: createMockJob({ 
+        ...testPayload, 
+        stageSlug,
+        target_contribution_id: rootId, // Continuation chunk
+        continuation_count: 1,
+        document_relationships: relSaved, // Must be provided for continuation chunks
+      }),
       projectOwnerUserId: 'user-789',
       providerDetails: mockProviderData,
       promptConstructionPayload: buildPromptPayload({ currentUserPrompt: 'User' }),
@@ -752,10 +768,12 @@ Deno.test('executeModelCallAndSave - final assembly triggers using SAVED relatio
 
     await executeModelCallAndSave(params);
 
-    // Expectation: assemble should be invoked with root id from SAVED record
+    // Expectation: assemble should be invoked with root id from persisted document_relationships
+    // For continuation chunks, document_relationships from payload is persisted (line 1305-1324),
+    // then contribution.document_relationships is updated (line 1324), and assembly reads from it (line 1647)
     const calls = fileManager.assembleAndSaveFinalDocument.calls;
     assertEquals(calls.length, 1, 'assembleAndSaveFinalDocument should be called once for final chunk');
-    assertEquals(calls[0].args[0], rootId, 'assembleAndSaveFinalDocument should use root id from SAVED relationships');
+    assertEquals(calls[0].args[0], rootId, 'assembleAndSaveFinalDocument should use root id from persisted document_relationships');
   });
 
   stopStub.restore();

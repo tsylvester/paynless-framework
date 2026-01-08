@@ -303,13 +303,6 @@ export enum DialecticStageSlug {
   Paralysis = 'paralysis',
 }
 
-export type DocumentRelationships = {
-  [K in DialecticStageSlug]?: string;
-} & {
-  isContinuation?: boolean;
-  turnIndex?: number;
-};
-
 /**
  * Represents a record in one of the file metadata tables.
  * This is a union type to allow the FileManagerService to return a record

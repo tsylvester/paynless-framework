@@ -3,7 +3,10 @@ import {
     assertExists,
     assert,
   } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
-  import { spy, stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
+  import { 
+    spy, 
+    stub,
+  } from 'https://deno.land/std@0.224.0/testing/mock.ts';
   import { Database, Tables } from '../types_db.ts';
   import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
   import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
@@ -13,7 +16,6 @@ import {
     isJson,
     isRecord,
     isChatApiRequest,
-    isDialecticJobRow,
 } from '../_shared/utils/type_guards.ts';
 import { isModelContributionContext } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
   import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
@@ -26,18 +28,28 @@ import { isModelContributionContext } from '../_shared/utils/type-guards/type_gu
     DialecticJobPayload,
     DialecticExecuteJobPayload,
     PromptConstructionPayload,
-    SourceDocument
+    SourceDocument,
+    DocumentRelationships,
   } from '../dialectic-service/dialectic.interface.ts';
-import { FileType, UploadContext, DocumentRelationships, DialecticStageSlug } from '../_shared/types/file_manager.types.ts';
-import { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
-import { LogMetadata, Messages, AiModelExtendedConfig } from '../_shared/types.ts';
+import { 
+  FileType, 
+  DialecticStageSlug 
+} from '../_shared/types/file_manager.types.ts';
+import { LogMetadata } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
-import { CountTokensFn, CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
+import { 
+  CountTokensFn, 
+  CountTokensDeps, 
+  CountableChatPayload 
+} from '../_shared/types/tokenizer.types.ts';
 import { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
-import { RenderCheckReason, ShouldEnqueueRenderJobResult } from '../_shared/types/shouldEnqueueRenderJob.interface.ts';
+import { 
+  RenderCheckReason, 
+  ShouldEnqueueRenderJobResult 
+} from '../_shared/types/shouldEnqueueRenderJob.interface.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { IExecuteJobContext } from './JobContext.interface.ts';
 import { createJobContext, createExecuteJobContext } from './createJobContext.ts';
@@ -79,7 +91,7 @@ export function createMockJob(payload: DialecticJobPayload, overrides: Partial<D
     const baseJob: DialecticJobRow = {
         id: 'job-id-123',
         session_id: 'session-id-123',
-        stage_slug: 'test-stage',
+        stage_slug: 'thesis',
         iteration_number: 1,
         status: 'pending',
         user_id: 'user-id-123',
@@ -108,7 +120,7 @@ export const testPayload: DialecticExecuteJobPayload = {
     output_type: FileType.HeaderContext,
     projectId: 'project-abc',
     sessionId: 'session-456',
-    stageSlug: 'test-stage',
+    stageSlug: 'thesis',
     model_id: 'model-def',
     iterationNumber: 1,
     continueUntilComplete: false,
@@ -116,7 +128,7 @@ export const testPayload: DialecticExecuteJobPayload = {
     user_jwt: 'jwt.token.here',
     canonicalPathParams: {
         contributionType: 'thesis',
-        stageSlug: 'test-stage',
+        stageSlug: 'thesis',
     }
   };
   
@@ -163,7 +175,7 @@ export const mockFullProviderData: Tables<'ai_providers'> = {
 export const mockContribution: DialecticContributionRow = {
       id: 'contrib-123',
       session_id: 'session-456',
-      stage: 'test-stage',
+      stage: 'thesis',
       iteration_number: 1,
       model_id: 'model-def',
       edit_version: 1,
@@ -573,14 +585,14 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
                         {
                             id: 'doc-oversize',
                             content: 'X'.repeat(2000),
-                            stage_slug: 'test-stage',
+                            stage_slug: 'thesis',
                             project_id: 'project-abc',
                             session_id: 'session-456',
                             iteration_number: 1,
                             resource_type: 'rendered_document',
                             created_at: new Date().toISOString(),
                             // Provide separate directory path and file name so identity can be parsed
-                            storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+                            storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
                             file_name: 'modelA_1_rendered_document.md',
                         }
                     ],
@@ -599,7 +611,7 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
                 resourceDocuments: [{
                     id: 'doc-1',
                     content: "This content is intentionally very long to exceed the maximum token limit set in the mock provider config and force an error.",
-                    stage: 'test-stage',
+                    stage: 'thesis',
                     // Add all required properties to satisfy the SourceDocument type
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
@@ -656,7 +668,7 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
                 compressionStrategy: getSortedCompressionCandidates,
                 inputsRelevance: [],
                 inputsRequired: [
-                    { type: 'document', document_key: FileType.RenderedDocument, required: true, slug: 'test-stage' },
+                    { type: 'document', document_key: FileType.RenderedDocument, required: true, slug: 'thesis' },
                 ],
             };
             await executeModelCallAndSave(params);
@@ -808,7 +820,7 @@ Deno.test('executeModelCallAndSave - should accept PromptConstructionPayload and
         storage_path: 'test/path',
         tokens_used_input: 10,
         tokens_used_output: 20,
-        stage: 'test-stage',
+        stage: 'thesis',
         is_header: false,
         source_prompt_resource_id: null,
     };
@@ -1055,13 +1067,13 @@ Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are f
             {
               id: 'doc-r1',
               content: 'Doc X content',
-              stage_slug: 'test-stage',
+              stage_slug: 'thesis',
               project_id: 'project-abc',
               session_id: 'session-456',
               iteration_number: 1,
               resource_type: 'rendered_document',
               created_at: new Date().toISOString(),
-              storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+              storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
               file_name: 'modelA_1_rendered_document.md',
             },
           ],
@@ -1147,7 +1159,7 @@ Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are f
     storage_path: 'p',
     tokens_used_input: 0,
     tokens_used_output: 0,
-    stage: 'test-stage',
+    stage: 'thesis',
     is_header: false,
     source_prompt_resource_id: null,
   };
@@ -1161,7 +1173,7 @@ Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are f
 
   const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
     promptConstructionPayload,
-    inputsRequired: [ { type: 'document', document_key: FileType.RenderedDocument, required: true, slug: 'test-stage' } ],
+    inputsRequired: [ { type: 'document', document_key: FileType.RenderedDocument, required: true, slug: 'thesis' } ],
   });
 
   await executeModelCallAndSave(params);
@@ -1194,13 +1206,13 @@ Deno.test('executeModelCallAndSave - builds full ChatApiRequest including resour
             {
               id: 'doc-xyz',
               content: 'Doc content for sizing and send',
-              stage_slug: 'test-stage',
+              stage_slug: 'thesis',
               project_id: 'project-abc',
               session_id: 'session-456',
               iteration_number: 1,
               resource_type: 'rendered_document',
               created_at: new Date().toISOString(),
-              storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+              storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
               file_name: 'modelB_1_rendered_document.md',
             },
           ],
@@ -1244,7 +1256,7 @@ Deno.test('executeModelCallAndSave - builds full ChatApiRequest including resour
     storage_path: 'test/path',
     tokens_used_input: 10,
     tokens_used_output: 20,
-    stage: 'test-stage',
+    stage: 'thesis',
   };
 
   const promptConstructionPayload: PromptConstructionPayload = buildPromptPayload({
@@ -1256,7 +1268,7 @@ Deno.test('executeModelCallAndSave - builds full ChatApiRequest including resour
 
   const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
     promptConstructionPayload,
-    inputsRequired: [ { type: 'document', document_key: FileType.RenderedDocument, required: true, slug: 'test-stage' } ],
+    inputsRequired: [ { type: 'document', document_key: FileType.RenderedDocument, required: true, slug: 'thesis' } ],
   });
 
   await executeModelCallAndSave(params);
@@ -1314,7 +1326,7 @@ Deno.test('executeModelCallAndSave - identity: sized payload equals sent request
     storage_path: 'test/path',
     tokens_used_input: 10,
     tokens_used_output: 20,
-    stage: 'test-stage',
+    stage: 'thesis',
     is_header: false,
     source_prompt_resource_id: null,
   };
@@ -1378,13 +1390,13 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
             {
               id: 'doc-for-compress',
               content: 'Some longish content to be summarized',
-              stage_slug: 'test-stage',
+              stage_slug: 'thesis',
               project_id: 'project-abc',
               session_id: 'session-456',
               iteration_number: 1,
               resource_type: 'rendered_document',
               created_at: new Date().toISOString(),
-              storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+              storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
               file_name: 'modelC_1_business_case.md',
             },
           ],
@@ -1441,7 +1453,7 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
         storage_path: 'test/path',
         tokens_used_input: 10,
         tokens_used_output: 20,
-        stage: 'test-stage',
+        stage: 'thesis',
         is_header: false,
         source_prompt_resource_id: null,
       },
@@ -1465,7 +1477,7 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
   const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, depsWithCount, {
     promptConstructionPayload,
     // Ensure executor gathers this doc and compression can operate
-    inputsRequired: [ { type: 'document', document_key: FileType.business_case, required: true, slug: 'test-stage' } ],
+    inputsRequired: [ { type: 'document', document_key: FileType.business_case, required: true, slug: 'thesis' } ],
     // Provide a simple compression strategy that yields a candidate so loop runs
     compressionStrategy: async () => [ { id: 'doc-for-compress', sourceType: 'resource', content: 'Some longish content to be summarized', score: 1 } as unknown as any ],
   });
@@ -1697,13 +1709,13 @@ Deno.test('executeModelCallAndSave - gathers artifacts across contributions/reso
         const mk = (id: string, content: string, key: string) => ({
           id,
           content,
-          stage: 'test-stage',
+          stage: 'thesis',
           project_id: 'project-abc',
           session_id: 'session-456',
           iteration_number: 1,
           type: 'document',
           created_at: new Date().toISOString(),
-          storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+          storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
           file_name: `model-collect_1_${key}.md`,
         });
         const data = [
@@ -1718,13 +1730,13 @@ Deno.test('executeModelCallAndSave - gathers artifacts across contributions/reso
         const mk = (id: string, content: string, key: string) => ({
           id,
           content,
-          stage_slug: 'test-stage',
+          stage_slug: 'thesis',
           project_id: 'project-abc',
           session_id: 'session-456',
           iteration_number: 1,
           resource_type: 'rendered_document',
           created_at: new Date().toISOString(),
-          storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+          storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
           file_name: `model-collect_1_${key}.md`,
         });
         const data = [mk('r1', 'R1', 'seed_prompt'), mk('r2', 'R2', 'business_case'), mk('r3', 'R3', 'feature_spec')];
@@ -1736,13 +1748,13 @@ Deno.test('executeModelCallAndSave - gathers artifacts across contributions/reso
         const mk = (id: string, content: string, key: string) => ({
           id,
           content,
-          stage_slug: 'test-stage',
+          stage_slug: 'thesis',
           project_id: 'project-abc',
           session_id: 'session-456',
           iteration_number: 1,
           type: 'feedback',
           created_at: new Date().toISOString(),
-          storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+          storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
           file_name: `model-collect_1_${key}.md`,
         });
         const data = [mk('f1', 'F1', 'business_case')];
@@ -1771,10 +1783,10 @@ Deno.test('executeModelCallAndSave - gathers artifacts across contributions/reso
     compressionStrategy: getSortedCompressionCandidates,
     inputsRelevance: [],
     inputsRequired: [
-      { type: 'document', document_key: FileType.business_case, required: true, slug: 'test-stage' },
-      { type: 'document', document_key: FileType.feature_spec, required: true, slug: 'test-stage' },
-      { type: 'document', document_key: FileType.SeedPrompt, required: true, slug: 'test-stage' },
-      { type: 'feedback', document_key: FileType.business_case, required: false, slug: 'test-stage' },
+      { type: 'document', document_key: FileType.business_case, required: true, slug: 'thesis' },
+      { type: 'document', document_key: FileType.feature_spec, required: true, slug: 'thesis' },
+      { type: 'document', document_key: FileType.SeedPrompt, required: true, slug: 'thesis' },
+      { type: 'feedback', document_key: FileType.business_case, required: false, slug: 'thesis' },
     ],
   };
 
@@ -1821,7 +1833,7 @@ Deno.test('executeModelCallAndSave - scoped selection includes only artifacts ma
           file_name: `modelM_1_${key}.md`,
         });
         const data = [
-          mk('c-match', 'CM', 'business_case', 'test-stage'),
+          mk('c-match', 'CM', 'business_case', 'thesis'),
           mk('c-skip', 'CS', 'risk_register', 'other-stage'),
         ];
         return { data, error: null };
@@ -1832,13 +1844,13 @@ Deno.test('executeModelCallAndSave - scoped selection includes only artifacts ma
         const mk = (id: string, content: string, key: string) => ({
           id,
           content,
-          stage_slug: 'test-stage',
+          stage_slug: 'thesis',
           project_id: 'project-abc',
           session_id: 'session-456',
           iteration_number: 1,
           resource_type: 'rendered_document',
           created_at: new Date().toISOString(),
-          storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+          storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
           file_name: `modelM_1_${key}.md`,
         });
         const data = [mk('r-match', 'RM', 'business_case')];
@@ -1850,13 +1862,13 @@ Deno.test('executeModelCallAndSave - scoped selection includes only artifacts ma
         const mk = (id: string, content: string, key: string) => ({
           id,
           content,
-          stage_slug: 'test-stage',
+          stage_slug: 'thesis',
           project_id: 'project-abc',
           session_id: 'session-456',
           iteration_number: 1,
           type: 'feedback',
           created_at: new Date().toISOString(),
-          storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+          storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
           file_name: `modelM_1_${key}.md`,
           resource_description: { document_key: key },
         });
@@ -1886,8 +1898,8 @@ Deno.test('executeModelCallAndSave - scoped selection includes only artifacts ma
     compressionStrategy: getSortedCompressionCandidates,
     inputsRelevance: [],
     inputsRequired: [
-      { type: 'document', document_key: FileType.business_case, required: true, slug: 'test-stage' },
-      { type: 'feedback', document_key: FileType.UserFeedback, required: false, slug: 'test-stage' },
+      { type: 'document', document_key: FileType.business_case, required: true, slug: 'thesis' },
+      { type: 'feedback', document_key: FileType.UserFeedback, required: false, slug: 'thesis' },
     ],
   };
 
@@ -1998,11 +2010,8 @@ Deno.test('executeModelCallAndSave - schedules RENDER job after success with ren
   const deps: IExecuteJobContext = getMockDeps();
   assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
   const fileManager: MockFileManagerService = deps.fileManager;
-  // Ensure saved contribution carries a true-root identity
-  const documentRelationships: DocumentRelationships = {
-    [DialecticStageSlug.Thesis]: 'doc-root-abc',
-  };
-  const savedWithIdentity: DialecticContributionRow = { ...mockContribution, document_relationships: documentRelationships };
+  // Ensure saved contribution - the fix will enforce document_relationships[stageSlug] = contribution.id
+  const savedWithIdentity: DialecticContributionRow = { ...mockContribution };
   fileManager.setUploadAndRegisterFileResponse(savedWithIdentity, null);
 
   // This test asserts the RENDER job enqueue path. The production decision is delegated to
@@ -2068,7 +2077,7 @@ Deno.test('executeModelCallAndSave - schedules RENDER job after success with ren
   assertEquals(pl['sessionId'], renderPayload.sessionId);
   assertEquals(pl['iterationNumber'], renderPayload.iterationNumber);
   assertEquals(pl['stageSlug'], renderPayload.stageSlug);
-  assertEquals(pl['documentIdentity'], 'doc-root-abc');
+  assertEquals(pl['documentIdentity'], mockContribution.id);
   assert(!('step_info' in pl), 'Payload must not include deprecated step_info');
 
   clearAllStubs?.();

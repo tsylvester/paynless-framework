@@ -31,7 +31,7 @@ function createMockJob(payload: DialecticExecuteJobPayload, overrides: Partial<D
     const baseJob: DialecticJobRow = {
         id: 'job-id-123',
         session_id: 'session-id-123',
-        stage_slug: 'test-stage',
+        stage_slug: 'thesis',
         iteration_number: 1,
         status: 'pending',
         user_id: 'user-id-123',
@@ -59,7 +59,7 @@ const testPayload: DialecticExecuteJobPayload = {
     output_type: FileType.business_case,
     projectId: 'project-abc',
     sessionId: 'session-456',
-    stageSlug: 'test-stage',
+    stageSlug: 'thesis',
     model_id: 'model-def',
     iterationNumber: 1,
     continueUntilComplete: false,
@@ -67,7 +67,7 @@ const testPayload: DialecticExecuteJobPayload = {
     user_jwt: 'jwt.token.here',
     canonicalPathParams: {
         contributionType: 'thesis',
-        stageSlug: 'test-stage',
+        stageSlug: 'thesis',
     },
     document_key: FileType.business_case,
 };
@@ -101,7 +101,7 @@ const mockFullProviderData = {
 const mockContribution: DialecticContributionRow = {
     id: 'contrib-123',
     session_id: 'session-456',
-    stage: 'test-stage',
+    stage: 'thesis',
     iteration_number: 1,
     model_id: 'model-def',
     edit_version: 1,
@@ -120,7 +120,7 @@ const mockContribution: DialecticContributionRow = {
     seed_prompt_url: null,
     size_bytes: 100,
     storage_bucket: 'test-bucket',
-    storage_path: 'test/path',
+    storage_path: 'thesis/path',
     target_contribution_id: null,
     tokens_used_input: 10,
     tokens_used_output: 20,
@@ -147,13 +147,13 @@ Deno.test('gatherArtifacts - queries resources first and finds rendered document
                     const resource = {
                         id: 'resource-123',
                         content: 'Rendered document content',
-                        stage_slug: 'test-stage',
+                        stage_slug: 'thesis',
                         project_id: 'project-abc',
                         session_id: 'session-456',
                         iteration_number: 1,
                         resource_type: 'rendered_document',
                         created_at: new Date().toISOString(),
-                        storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+                        storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
                         file_name: 'model-collect_1_business_case.md',
                     };
                     return Promise.resolve({ data: [resource], error: null });
@@ -204,7 +204,7 @@ Deno.test('gatherArtifacts - queries resources first and finds rendered document
                 type: 'document',
                 document_key: FileType.business_case,
                 required: true,
-                slug: 'test-stage',
+                slug: 'thesis',
             },
         ],
     };
@@ -240,13 +240,13 @@ Deno.test('gatherArtifacts - prefers resources over contributions when both exis
                     const resource = {
                         id: 'resource-123',
                         content: 'Rendered document content from resources',
-                        stage_slug: 'test-stage',
+                        stage_slug: 'thesis',
                         project_id: 'project-abc',
                         session_id: 'session-456',
                         iteration_number: 1,
                         resource_type: 'rendered_document',
                         created_at: new Date().toISOString(),
-                        storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+                        storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
                         file_name: 'model-collect_1_business_case.md',
                     };
                     return Promise.resolve({ data: [resource], error: null });
@@ -258,12 +258,12 @@ Deno.test('gatherArtifacts - prefers resources over contributions when both exis
                     const contribution = {
                         id: 'contrib-123',
                         content: 'Raw chunk content from contributions',
-                        stage: 'test-stage',
+                        stage: 'thesis',
                         project_id: 'project-abc',
                         session_id: 'session-456',
                         iteration_number: 1,
                         created_at: new Date().toISOString(),
-                        storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+                        storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
                         file_name: 'model-collect_1_business_case.md',
                     };
                     return Promise.resolve({ data: [contribution], error: null });
@@ -309,7 +309,7 @@ Deno.test('gatherArtifacts - prefers resources over contributions when both exis
                 type: 'document',
                 document_key: FileType.business_case,
                 required: true,
-                slug: 'test-stage',
+                slug: 'thesis',
             },
         ],
     };
@@ -387,7 +387,7 @@ Deno.test('gatherArtifacts - throws error when required rendered document not fo
                 type: 'document',
                 document_key: FileType.business_case,
                 required: true,
-                slug: 'test-stage',
+                slug: 'thesis',
             },
         ],
     };
@@ -434,12 +434,12 @@ Deno.test('gatherArtifacts - continues to query contributions for intermediate a
                     const contribution = {
                         id: 'header-contrib-123',
                         content: 'Header context content',
-                        stage: 'test-stage',
+                        stage: 'thesis',
                         project_id: 'project-abc',
                         session_id: 'session-456',
                         iteration_number: 1,
                         created_at: new Date().toISOString(),
-                        storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+                        storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
                         file_name: 'model-collect_1_header_context.json',
                     };
                     return Promise.resolve({ data: [contribution], error: null });
@@ -488,7 +488,7 @@ Deno.test('gatherArtifacts - continues to query contributions for intermediate a
         inputsRequired: [
             {
                 type: 'header_context',
-                slug: 'test-stage',
+                slug: 'thesis',
                 document_key: FileType.HeaderContext,
             },
         ],

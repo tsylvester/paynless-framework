@@ -4,8 +4,13 @@ import {
   ExecuteModelCallAndSaveParams,
   SourceDocument,
   DialecticRenderJobPayload,
+  DocumentRelationships,
 } from '../dialectic-service/dialectic.interface.ts';
-import { FileType, ModelContributionFileTypes, ModelContributionUploadContext } from '../_shared/types/file_manager.types.ts';
+import { 
+    FileType, 
+    ModelContributionFileTypes, 
+    ModelContributionUploadContext 
+} from '../_shared/types/file_manager.types.ts';
 import { 
     isDialecticContribution, 
     isAiModelExtendedConfig, 
@@ -19,9 +24,21 @@ import {
     isJson,
     isDialecticRenderJobPayload,
 } from "../_shared/utils/type_guards.ts";
-import { AiModelExtendedConfig, ChatApiRequest, Messages, FinishReason } from '../_shared/types.ts';
-import { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
-import { ContextWindowError, RenderJobValidationError, RenderJobEnqueueError } from '../_shared/utils/errors.ts';
+import { 
+    AiModelExtendedConfig, 
+    ChatApiRequest, 
+    Messages, 
+    FinishReason 
+} from '../_shared/types.ts';
+import { 
+    CountTokensDeps, 
+    CountableChatPayload 
+} from '../_shared/types/tokenizer.types.ts';
+import { 
+    ContextWindowError, 
+    RenderJobValidationError, 
+    RenderJobEnqueueError 
+} from '../_shared/utils/errors.ts';
 import { ResourceDocuments } from "../_shared/types.ts";
 import { getMaxOutputTokens } from '../_shared/utils/affordability_utils.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
@@ -29,7 +46,11 @@ import { TablesInsert } from '../types_db.ts';
 import { sanitizeJsonContent } from '../_shared/utils/jsonSanitizer.ts';
 import { isJsonSanitizationResult } from '../_shared/utils/type-guards/type_guards.jsonSanitizer.ts';
 import { JsonSanitizationResult } from '../_shared/types/jsonSanitizer.interface.ts';
-import { isDocumentKey, isFileType } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
+import { 
+    isDocumentKey, 
+    isFileType 
+} from '../_shared/utils/type-guards/type_guards.file_manager.ts';
+
 export async function executeModelCallAndSave(
     params: ExecuteModelCallAndSaveParams,
 ) {
@@ -1304,23 +1325,42 @@ export async function executeModelCallAndSave(
     }
 
     // Initialize root-only relationships IMMEDIATELY after save (before RENDER job creation)
-    if (!isContinuationForStorage && isDocumentKey(fileType)) {
+    if (!isContinuationForStorage) {
         const existing = contribution.document_relationships;
         const existingStageValue = isRecord(existing) ? existing[stageSlug] : undefined;
 
         const needsInit =
             !isRecord(existing) ||
             typeof existingStageValue !== 'string' ||
-            existingStageValue.trim() === '';
+            existingStageValue.trim() === '' ||
+            existingStageValue !== contribution.id;
 
         if (needsInit) {
-            const merged: Record<string, string> = {};
-            if (isRecord(existing)) {
-                for (const [k, v] of Object.entries(existing)) {
-                    if (typeof v === 'string') {
-                        merged[k] = v;
+            // Type-safe construction: build DocumentRelationships using validated keys
+            const merged: DocumentRelationships = {};
+            
+            // Copy existing valid RelationshipRole keys (ContributionType or 'source_group')
+            if (isRecord(existing) && isDocumentRelationships(existing)) {
+                for (const [key, value] of Object.entries(existing)) {
+                    if (typeof value === 'string') {
+                        // Validate key is a valid RelationshipRole: either ContributionType or 'source_group'
+                        if (isContributionType(key) || key === 'source_group') {
+                            // Type-safe: key is validated as RelationshipRole
+                            if (isContributionType(key)) {
+                                merged[key] = value;
+                            } else if (key === 'source_group') {
+                                merged.source_group = value;
+                            }
+                        }
                     }
                 }
+            }
+            
+            // Validate stageSlug is a valid ContributionType, then set it
+            if (!isContributionType(stageSlug)) {
+                throw new RenderJobValidationError(
+                    `Invalid stageSlug for document_relationships: ${stageSlug} is not a valid ContributionType. Contribution ID: ${contribution.id}`
+                );
             }
             merged[stageSlug] = contribution.id;
 
@@ -1335,11 +1375,13 @@ export async function executeModelCallAndSave(
                 );
             }
 
-            // Validate initialization succeeded
+            // Validate initialization succeeded using type-safe access pattern
+            const stageSlugEntry = Object.entries(merged).find(([key]) => key === stageSlug);
             if (
-                typeof merged[stageSlug] !== 'string' ||
-                merged[stageSlug].trim() === '' ||
-                merged[stageSlug] !== contribution.id
+                !stageSlugEntry ||
+                typeof stageSlugEntry[1] !== 'string' ||
+                stageSlugEntry[1].trim() === '' ||
+                stageSlugEntry[1] !== contribution.id
             ) {
                 throw new RenderJobValidationError(
                     `document_relationships[${stageSlug}] is required and must be persisted before RENDER job creation. Contribution ID: ${contribution.id}`
@@ -1351,8 +1393,9 @@ export async function executeModelCallAndSave(
     }
 
     // Validate document_relationships presence for document outputs before render decision
-    const stageRelationshipForStage = isRecord(contribution.document_relationships)
-        ? contribution.document_relationships[stageSlug]
+    // Use type-safe access pattern: Object.entries().find() instead of direct indexing
+    const stageRelationshipForStage = isRecord(contribution.document_relationships) && isDocumentRelationships(contribution.document_relationships)
+        ? Object.entries(contribution.document_relationships).find(([key]) => key === stageSlug)?.[1]
         : undefined;
 
     if (

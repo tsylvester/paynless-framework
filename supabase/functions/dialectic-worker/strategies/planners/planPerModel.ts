@@ -203,7 +203,6 @@ export const planPerModel: GranularityPlannerFn = (
 
 	const document_relationships: Record<string, string> = {
 		source_group: anchorDoc.id,
-		[stageSlug]: anchorDoc.id,
 	};
 
 	const inputs: Record<string, string> = {};

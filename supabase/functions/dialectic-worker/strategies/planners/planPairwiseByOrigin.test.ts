@@ -313,7 +313,6 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 		thesis: 'thesis-1',
 		antithesis: 'antithesis-1a',
 		source_group: 'thesis-1',
-		synthesis: 'thesis-1',
 	});
 
 	// Check canonical params
@@ -433,18 +432,6 @@ Deno.test('planPairwiseByOrigin constructs child payloads with dynamic stage con
 		if (isDialecticExecuteJobPayload(child)) {
 			assertEquals(child.sourceContributionId, child.inputs?.antithesis_id);
 			assertEquals(child.document_key, FileType.PairwiseSynthesisChunk, 'document_key should be set from outputs_required.documents[0].document_key');
-            
-            // Step 41.b: Assert stageSlug key exists in document_relationships
-            assertExists(
-                child.document_relationships?.[expectedStage],
-                `document_relationships should contain dynamic stage key '${expectedStage}'`
-            );
-            // The value should match the source_group (which is the anchorDoc.id)
-            assertEquals(
-                child.document_relationships?.[expectedStage],
-                child.document_relationships?.source_group,
-                `Value for key '${expectedStage}' must match source_group`
-            );
 		} else {
 			throw new Error('Expected EXECUTE job');
 		}
@@ -1064,5 +1051,88 @@ Deno.test('planPairwiseByOrigin throws error for EXECUTE job when files_to_gener
 		'planPairwiseByOrigin requires',
 		'Should throw error when files_to_generate entry is missing template_filename',
 	);
+});
+
+Deno.test('planPairwiseByOrigin EXECUTE branch must not set document_relationships[stageSlug] for root jobs', () => {
+	const parentPayload = MOCK_PARENT_JOB.payload;
+	if (!parentPayload) {
+		throw new Error('Test setup error: MOCK_PARENT_JOB.payload cannot be null');
+	}
+
+	// Use a stageSlug that doesn't match any contribution_type in the test data
+	// This proves the planner doesn't set document_relationships[stageSlug] separately,
+	// since the key would only exist if set by the planner (not by contribution_type assignment)
+	const parentJobWithNonMatchingStageSlug: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		...MOCK_PARENT_JOB,
+		payload: {
+			projectId: parentPayload.projectId,
+			sessionId: parentPayload.sessionId,
+			stageSlug: 'synthesis', // Doesn't match 'thesis' or 'antithesis' contribution_types in test data
+			iterationNumber: parentPayload.iterationNumber,
+			model_id: parentPayload.model_id,
+			walletId: parentPayload.walletId,
+			target_contribution_id: parentPayload.target_contribution_id,
+			user_jwt: parentPayload.user_jwt,
+		},
+	};
+
+	const executeRecipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.business_case,
+				template_filename: 'thesis_business_case.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [
+				{
+					from_document_key: FileType.business_case,
+					template_filename: 'thesis_business_case.md',
+				},
+			],
+		},
+	};
+
+	const childPayloads = planPairwiseByOrigin(
+		MOCK_SOURCE_DOCS,
+		parentJobWithNonMatchingStageSlug,
+		executeRecipeStep,
+		parentJobWithNonMatchingStageSlug.payload.user_jwt
+	);
+
+	assertEquals(childPayloads.length, 3, 'Should create one child job per thesis-antithesis pair');
+
+	for (const payload of childPayloads) {
+		assertExists(payload, 'Child job should exist');
+		if (isDialecticExecuteJobPayload(payload)) {
+			const executePayload: DialecticExecuteJobPayload = payload;
+			assertExists(executePayload.document_relationships, 'EXECUTE job payload should include document_relationships');
+			assertExists(executePayload.document_relationships?.source_group, 'document_relationships should include source_group');
+			
+			// Find the anchor document (thesis) for this pair
+			const thesisId = executePayload.inputs?.thesis_id;
+			assertExists(thesisId, 'Payload should have thesis_id in inputs');
+			assertEquals(
+				executePayload.document_relationships.source_group,
+				thesisId,
+				'source_group should be set to anchorDoc.id (thesis id) for lineage tracking',
+			);
+			
+			// Assert that the stageSlug key is NOT present when it doesn't match any contribution_type
+			// This proves the planner does not set document_relationships[stageSlug] separately.
+			// If the bug existed, it would set document_relationships['synthesis'] = anchorDoc.id,
+			// but since 'synthesis' doesn't match any contribution_type, the key would only exist
+			// if set by the planner's stageSlug assignment (which we've removed).
+			assert(
+				!('synthesis' in executePayload.document_relationships),
+				'document_relationships[stageSlug] must be absent when stageSlug does not match any contribution_type. This proves the planner does not set it separately (the key would only exist if set by the removed stageSlug assignment).',
+			);
+		} else {
+			throw new Error('Expected EXECUTE job');
+		}
+	}
 });
  

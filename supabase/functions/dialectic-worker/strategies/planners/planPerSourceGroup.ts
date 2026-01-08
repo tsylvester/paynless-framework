@@ -242,8 +242,7 @@ export const planPerSourceGroup: GranularityPlannerFn = (
             output_type: recipeStep.output_type,
             canonicalPathParams: createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorDoc, stageSlug),
             document_relationships: {
-                source_group: groupId,
-                [stageSlug]: groupId 
+                source_group: groupId
             },
             inputs: {
                 document_ids: documentIds,

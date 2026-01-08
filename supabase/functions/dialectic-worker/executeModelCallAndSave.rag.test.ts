@@ -3,26 +3,29 @@ import {
     assert,
   } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
   import { spy, stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
-  import type { Database } from '../types_db.ts';
-  import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+  import { Database } from '../types_db.ts';
+  import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
   import {
     isRecord,
 } from '../_shared/utils/type_guards.ts';
   import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
-  import type { 
+  import { 
     ExecuteModelCallAndSaveParams, 
     PromptConstructionPayload,
-    SourceDocument
+    SourceDocument,
+    DocumentRelationships,
 } from '../dialectic-service/dialectic.interface.ts';
-import { Messages } from '../_shared/types.ts';
-import type { AiModelExtendedConfig } from '../_shared/types.ts';
+import { Messages, AiModelExtendedConfig } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
-import { ICompressionStrategy, getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
+import { 
+  ICompressionStrategy, 
+  getSortedCompressionCandidates 
+} from '../_shared/utils/vector_utils.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
-import type { CountTokensFn } from '../_shared/types/tokenizer.types.ts';
+import { CountTokensFn } from '../_shared/types/tokenizer.types.ts';
 import { 
     createMockJob, 
     testPayload, 
@@ -32,7 +35,6 @@ import {
     setupMockClient, 
     getMockDeps 
 } from './executeModelCallAndSave.test.ts';
-import { DocumentRelationships } from '../_shared/types/file_manager.types.ts';
 
 
 Deno.test('resource documents are used for sizing but not included in ChatApiRequest.messages', async () => {

@@ -66,7 +66,7 @@ export function createMockJob(payload: DialecticJobPayload, overrides: Partial<D
     const baseJob: DialecticJobRow = {
         id: 'job-id-123',
         session_id: 'session-id-123',
-        stage_slug: 'test-stage',
+        stage_slug: 'thesis',
         iteration_number: 1,
         status: 'pending',
         user_id: 'user-id-123',
@@ -95,7 +95,7 @@ export const testPayload: DialecticExecuteJobPayload = {
     output_type: FileType.business_case, // Document key fileType
     projectId: 'project-abc',
     sessionId: 'session-456',
-    stageSlug: 'test-stage',
+    stageSlug: 'thesis',
     model_id: 'model-def',
     iterationNumber: 1,
     continueUntilComplete: false,
@@ -104,7 +104,7 @@ export const testPayload: DialecticExecuteJobPayload = {
     document_key: 'business_case',
     canonicalPathParams: {
         contributionType: 'thesis',
-        stageSlug: 'test-stage',
+        stageSlug: 'thesis',
     },
 };
 
@@ -159,7 +159,7 @@ export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
 export const mockContribution: DialecticContributionRow = {
     id: 'contrib-123',
     session_id: 'session-456',
-    stage: 'test-stage',
+    stage: 'thesis',
     iteration_number: 1,
     model_id: 'model-def',
     edit_version: 1,

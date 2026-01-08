@@ -746,8 +746,7 @@ Deno.test('extractSourceDocumentIdentifier can extract identifier from job paylo
 	}
 });
 
-Deno.test('planPerModel includes stageSlug in document_relationships map to support RENDER job validation', () => {
-
+Deno.test('planPerModel EXECUTE branch must not set document_relationships[stageSlug] for root jobs', () => {
 	const parentPayload = MOCK_PARENT_JOB.payload;
 	if (!parentPayload) {
 		throw new Error('Test setup error: MOCK_PARENT_JOB.payload cannot be null');
@@ -758,47 +757,62 @@ Deno.test('planPerModel includes stageSlug in document_relationships map to supp
 		payload: {
 			projectId: parentPayload.projectId,
 			sessionId: parentPayload.sessionId,
-			stageSlug: 'thesis', // This is the override for the test
+			stageSlug: 'thesis',
 			iterationNumber: parentPayload.iterationNumber,
 			model_id: parentPayload.model_id,
 			walletId: parentPayload.walletId,
 			user_jwt: parentPayload.user_jwt,
-			sourceContributionId: parentPayload.sourceContributionId,
 		},
 	};
 
-	const recipeStepThatOutputsRenderedDoc: DialecticStageRecipeStep = {
+	const executeRecipeStep: DialecticStageRecipeStep = {
 		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
 		outputs_required: {
-			...MOCK_RECIPE_STEP.outputs_required,
 			documents: [{
 				artifact_class: 'rendered_document',
 				file_type: 'markdown',
 				document_key: FileType.business_case,
-				template_filename: 'business_case.md',
+				template_filename: 'thesis_business_case.md',
 			}],
+			assembled_json: [],
+			files_to_generate: [
+				{
+					from_document_key: FileType.business_case,
+					template_filename: 'thesis_business_case.md',
+				},
+			],
 		},
 	};
 
+	const anchorDoc = MOCK_SOURCE_DOCS[0];
 	const childPayloads = planPerModel(
 		MOCK_SOURCE_DOCS,
 		parentJobWithStageSlug,
-		recipeStepThatOutputsRenderedDoc,
-		'user-jwt-123'
+		executeRecipeStep,
+		parentJobWithStageSlug.payload.user_jwt
 	);
 
-	assertEquals(childPayloads.length, 1);
+	assertEquals(childPayloads.length, 1, 'Should create exactly one child job');
 	const payload = childPayloads[0];
+	assertExists(payload, 'Child job should exist');
 
 	if (isDialecticExecuteJobPayload(payload)) {
-		assertExists(payload.document_relationships);
-		assert(
-			'thesis' in payload.document_relationships,
-			"document_relationships should contain a key matching the stageSlug ('thesis')"
+		const executePayload: DialecticExecuteJobPayload = payload;
+		assertExists(executePayload.document_relationships, 'EXECUTE job payload should include document_relationships');
+		assertExists(executePayload.document_relationships?.source_group, 'document_relationships should include source_group');
+		assertEquals(
+			executePayload.document_relationships.source_group,
+			anchorDoc.id,
+			'source_group should be set to anchorDoc.id (first source document) for lineage tracking',
 		);
-		assertEquals(typeof payload.document_relationships['thesis'], 'string');
-		assertEquals(payload.document_relationships['thesis'], MOCK_SOURCE_DOCS[0].id);
+		
+		// Assert that the stageSlug key is NOT present
+		assert(
+			!('thesis' in executePayload.document_relationships),
+			'document_relationships[stageSlug] must be absent/undefined for root jobs (not set to anchorDoc.id)',
+		);
 	} else {
-		throw new Error('Expected EXECUTE job payload');
+		throw new Error('Expected EXECUTE job');
 	}
 });

@@ -149,7 +149,7 @@ export const planAllToOne: GranularityPlannerFn = (
             planner_metadata: { recipe_step_id: recipeStep.id },
             document_key: documentKey,
             context_for_documents: contextForDocuments,
-            document_relationships: { source_group: anchorDocument.id, [stageSlug]: anchorDocument.id },
+            document_relationships: { source_group: anchorDocument.id },
             // Conditionally include target_contribution_id only if parent has a valid string value
             ...(typeof parentJob.payload.target_contribution_id === 'string' && parentJob.payload.target_contribution_id.length > 0
                 ? { target_contribution_id: parentJob.payload.target_contribution_id }
@@ -275,7 +275,7 @@ export const planAllToOne: GranularityPlannerFn = (
             inputs: {
                 document_ids: documentIds,
             },
-            document_relationships: { source_group: anchorDocument.id, [stageSlug]: anchorDocument.id },
+            document_relationships: { source_group: anchorDocument.id },
             planner_metadata: { recipe_step_id: recipeStep.id },
             document_key: documentKey,
             // Conditionally include target_contribution_id only if parent has a valid string value

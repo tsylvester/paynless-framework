@@ -196,17 +196,6 @@ Deno.test('planPerSourceGroup constructs child payloads with dynamic stage consi
                 executeChild.document_relationships?.source_group,
                 'Child payload must expose the canonical source contribution id'
             );
-            
-            // Step 40.b: Assert stageSlug key exists in document_relationships
-            assertExists(
-                executeChild.document_relationships?.[expectedStage],
-                `document_relationships should contain dynamic stage key '${expectedStage}'`
-            );
-            assertEquals(
-                executeChild.document_relationships?.[expectedStage],
-                executeChild.sourceContributionId,
-                `Value for key '${expectedStage}' must match sourceContributionId`
-            );
         }
 	}
 });
@@ -697,7 +686,7 @@ Deno.test('planPerSourceGroup throws error for EXECUTE job when files_to_generat
     );
 });
 
-Deno.test('planPerSourceGroup includes stageSlug in document_relationships map to support RENDER job validation', () => {
+Deno.test('planPerSourceGroup EXECUTE branch must not set document_relationships[stageSlug] for root jobs', () => {
     const parentPayload = MOCK_PARENT_JOB.payload;
     if (!parentPayload) {
         throw new Error('Test setup error: MOCK_PARENT_JOB.payload cannot be null');
@@ -708,7 +697,7 @@ Deno.test('planPerSourceGroup includes stageSlug in document_relationships map t
         payload: {
             projectId: parentPayload.projectId,
             sessionId: parentPayload.sessionId,
-            stageSlug: 'thesis', // This is the override for the test
+            stageSlug: 'thesis',
             iterationNumber: parentPayload.iterationNumber,
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
@@ -717,49 +706,65 @@ Deno.test('planPerSourceGroup includes stageSlug in document_relationships map t
         },
     };
 
-    const recipeStepThatOutputsRenderedDoc: DialecticStageRecipeStep = {
+    const executeRecipeStep: DialecticStageRecipeStep = {
         ...MOCK_RECIPE_STEP,
-		instance_id: 'instance-id-456',
-		template_step_id: 'template-step-id-789',
-		execution_order: 1,
-		is_skipped: false,
-		object_filter: {},
-		output_overrides: {},
+        instance_id: 'instance-id-456',
+        template_step_id: 'template-step-id-789',
+        execution_order: 1,
+        is_skipped: false,
+        object_filter: {},
+        output_overrides: {},
         config_override: {},
         outputs_required: {
-            ...MOCK_RECIPE_STEP.outputs_required,
             documents: [{
                 artifact_class: 'rendered_document',
                 file_type: 'markdown',
                 document_key: FileType.business_case,
-                template_filename: 'business_case.md',
+                template_filename: 'thesis_business_case.md',
             }],
+            assembled_json: [],
+            files_to_generate: [
+                {
+                    from_document_key: FileType.business_case,
+                    template_filename: 'thesis_business_case.md',
+                },
+            ],
         },
     };
 
     const childPayloads = planPerSourceGroup(
         MOCK_SOURCE_DOCS,
         parentJobWithStageSlug,
-        recipeStepThatOutputsRenderedDoc,
-        'user-jwt-123'
+        executeRecipeStep,
+        parentJobWithStageSlug.payload.user_jwt
     );
 
-    assertEquals(childPayloads.length, 2);
-    
+    assertEquals(childPayloads.length, 2, 'Should create one child job per source group');
+
     for (const payload of childPayloads) {
+        assertExists(payload, 'Child job should exist');
         if (isDialecticExecuteJobPayload(payload)) {
-            assertExists(payload.document_relationships);
+            const executePayload: DialecticExecuteJobPayload = payload;
+            assertExists(executePayload.document_relationships, 'EXECUTE job payload should include document_relationships');
+            assertExists(executePayload.document_relationships?.source_group, 'document_relationships should include source_group');
+            
+            const groupId = executePayload.document_relationships.source_group;
             assert(
-                'thesis' in payload.document_relationships,
-                "document_relationships should contain a key matching the stageSlug ('thesis')"
+                typeof groupId === 'string' && groupId.length > 0,
+                'source_group should be set to a valid groupId (lineage preserved)',
             );
-            assertEquals(typeof payload.document_relationships['thesis'], 'string');
             assert(
-                payload.document_relationships['thesis'] === 'thesis-1' ||
-                payload.document_relationships['thesis'] === 'thesis-2'
+                groupId === 'thesis-1' || groupId === 'thesis-2',
+                `source_group should be one of the expected group IDs (thesis-1 or thesis-2), got: ${groupId}`,
+            );
+            
+            // Assert that the stageSlug key is NOT present
+            assert(
+                !('thesis' in executePayload.document_relationships),
+                'document_relationships[stageSlug] must be absent/undefined for root jobs (not set to groupId)',
             );
         } else {
-            throw new Error('Expected EXECUTE job payload');
+            throw new Error('Expected EXECUTE job');
         }
     }
 });
