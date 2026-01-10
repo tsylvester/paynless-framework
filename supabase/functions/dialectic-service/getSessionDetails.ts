@@ -15,7 +15,7 @@ export async function getSessionDetails(
   dbClient: SupabaseClient,
   user: User,
 ): Promise<{ data?: GetSessionDetailsResponse; error?: ServiceError; status?: number }> {
-  const { sessionId } = payload;
+  const { sessionId, skipSeedPrompt } = payload;
 
   if (!sessionId) {
     logger.warn('getSessionDetails: Missing sessionId in payload', { payload });
@@ -71,24 +71,22 @@ export async function getSessionDetails(
       return { error: { message: 'You are not authorized to access this session.', code: 'FORBIDDEN' }, status: 403 };
     }
 
-    // Step 4: Fetch the seed prompt for the current stage, iteration, and session
-    // Seed prompt is required for the application to function - if it's missing, return an error
+    // Step 4: Fetch the seed prompt for the session (only one seed_prompt exists per session)
+    // If skipSeedPrompt is true, skip the query and return null for activeSeedPrompt
     let activeSeedPrompt: AssembledPrompt | null = null;
-    if (session.current_stage_id && session.dialectic_stages?.slug) {
-      // First, find the resource metadata in the database
-      logger.info(`getSessionDetails: Querying for seed prompt with iteration_number = ${session.iteration_count}`);
+    if (!skipSeedPrompt) {
+      // Query for the seed prompt using only session_id and resource_type
+      // Only one seed_prompt exists per session, so no need to filter by stage_slug or iteration_number
+      logger.info(`getSessionDetails: Querying for seed prompt for session ${sessionId}`);
       const { data: seedPromptResource, error: resourceError } = await dbClient
         .from('dialectic_project_resources')
         .select('id, storage_path, file_name, storage_bucket')
-        .eq('project_id', session.project_id)
         .eq('resource_type', 'seed_prompt')
         .eq('session_id', sessionId)
-        .eq('stage_slug', session.dialectic_stages.slug)
-        .eq('iteration_number', session.iteration_count)
         .single();
 
       if (resourceError) {
-        logger.error('getSessionDetails: Error fetching seed prompt resource', { sessionId, stageId: session.current_stage_id, iterationCount: session.iteration_count, error: resourceError });
+        logger.error('getSessionDetails: Error fetching seed prompt resource', { sessionId, error: resourceError });
         if (resourceError.code === 'PGRST116') {
           return { error: { message: 'Seed prompt is required but not found.', code: 'MISSING_REQUIRED_RESOURCE' }, status: 500 };
         }
@@ -96,7 +94,7 @@ export async function getSessionDetails(
       }
 
       if (!seedPromptResource || !seedPromptResource.storage_path || !seedPromptResource.file_name || !seedPromptResource.storage_bucket) {
-        logger.error('getSessionDetails: Seed prompt resource found but missing required fields', { sessionId, stageId: session.current_stage_id, seedPromptResource });
+        logger.error('getSessionDetails: Seed prompt resource found but missing required fields', { sessionId, seedPromptResource });
         return { error: { message: 'Seed prompt is required but not found.', code: 'MISSING_REQUIRED_RESOURCE' }, status: 500 };
       }
 
@@ -132,6 +130,8 @@ export async function getSessionDetails(
         logger.error('getSessionDetails: Error decoding prompt content from ArrayBuffer', { sessionId, error: errorMessage });
         return { error: { message: 'Failed to read seed prompt content.', code: 'PARSE_ERROR', details: errorMessage }, status: 500 };
       }
+    } else {
+      logger.info(`getSessionDetails: Skipping seed prompt query as skipSeedPrompt is true for session ${sessionId}`);
     }
     
     logger.info('getSessionDetails: Successfully fetched and authorized session', { sessionId, userId: user.id, projectId: session.project_id, activeSeedPrompt });

@@ -2146,7 +2146,11 @@ export const useDialecticStore = create<DialecticStore>()(
 		set({ isLoadingActiveSessionDetail: true, activeSessionDetailError: null });
 
 		try {
-			const response = await api.dialectic().getSessionDetails(sessionId); // Expects ApiResponse<GetSessionDetailsResponse>
+			// Check if we already have the seed_prompt in the store - if so, skip fetching it
+			const currentState = get();
+			const skipSeedPrompt = currentState.activeSeedPrompt !== null;
+			
+			const response = await api.dialectic().getSessionDetails(sessionId, skipSeedPrompt); // Expects ApiResponse<GetSessionDetailsResponse>
 
 			if (response.error || !response.data) {
 				logger.error("[DialecticStore] Error fetching session details:", {
@@ -2180,7 +2184,9 @@ export const useDialecticStore = create<DialecticStore>()(
 			);
 
       set((state) => {
-        state.activeSeedPrompt = activeSeedPrompt || null;
+        if (!state.activeSeedPrompt && activeSeedPrompt) {
+          state.activeSeedPrompt = activeSeedPrompt;
+        }
         let sessionWithContributions = fetchedSession; // Default to fetchedSession
 
         if (state.currentProjectDetail && state.currentProjectDetail.dialectic_sessions) {

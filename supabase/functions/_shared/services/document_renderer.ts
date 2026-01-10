@@ -335,6 +335,7 @@ export async function renderDocument(
     sourceContributionId: sourceContributionId,
   };
 
+  let latestRenderedResourceId: string | undefined = undefined;
   if (deps.fileManager && typeof deps.fileManager.uploadAndRegisterFile === "function") {
     try {
       const uploadContext: ResourceUploadContext = {
@@ -377,6 +378,11 @@ export async function renderDocument(
         
         throw new Error(errorMessage);
       }
+
+      // Capture the resource ID from successful upload
+      if (uploadResult.record && typeof uploadResult.record === 'object' && 'id' in uploadResult.record && typeof uploadResult.record.id === 'string') {
+        latestRenderedResourceId = uploadResult.record.id;
+      }
     } catch (e) {
       deps.logger?.error?.("Failed to upload rendered document", { error: e });
       throw e;
@@ -385,7 +391,7 @@ export async function renderDocument(
 
   // 7) Notification 
   const targetUser = base.user_id;
-  if (deps.notificationService && typeof deps.notificationService.sendDocumentCentricNotification === "function" && targetUser) {
+  if (deps.notificationService && typeof deps.notificationService.sendDocumentCentricNotification === "function" && targetUser && latestRenderedResourceId) {
     const renderJobId = `render-${documentIdentity}`;
     try {
       await deps.notificationService.sendDocumentCentricNotification({
@@ -396,6 +402,7 @@ export async function renderDocument(
         job_id: renderJobId,
         document_key: documentKey,
         modelId: modelSlug,
+        latestRenderedResourceId,
       }, targetUser);
     } catch (e) {
       deps.logger?.warn?.("Failed to send render_completed notification", { error: e });

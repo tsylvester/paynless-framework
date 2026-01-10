@@ -1263,7 +1263,7 @@ Deno.test('planPerSourceDocumentByLineage throws error when outputs_required.doc
     );
 });
 
-Deno.test('planPerSourceDocumentByLineage includes context_for_documents in payload for PLAN jobs with valid context_for_documents', () => {
+Deno.test('planPerSourceDocumentByLineage includes context_for_documents in EXECUTE job payload for PLAN recipe steps with valid context_for_documents', () => {
     const sourceDocs = [
         getMockSourceDoc('model-a-id', 'doc-a-id', 'group-a'),
     ];
@@ -1288,6 +1288,17 @@ Deno.test('planPerSourceDocumentByLineage includes context_for_documents in payl
         parallel_group: null,
         inputs_relevance: [],
         outputs_required: {
+            system_materials: {
+                executive_summary: '',
+                input_artifacts_summary: '',
+                stage_rationale: '',
+            },
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
             context_for_documents: [
                 {
                     document_key: FileType.business_case,
@@ -1308,12 +1319,16 @@ Deno.test('planPerSourceDocumentByLineage includes context_for_documents in payl
     assertEquals(childJobs.length, 1, 'Should create exactly one child job');
     const job = childJobs[0];
     assertExists(job, 'Child job should exist');
-    if (isDialecticPlanJobPayload(job)) {
-        assertExists(job.context_for_documents, 'PLAN job payload should include context_for_documents');
+    assertEquals(isDialecticExecuteJobPayload(job), true, 'PLAN recipe steps should create EXECUTE child jobs, not PLAN child jobs');
+    if (isDialecticExecuteJobPayload(job)) {
+        assertExists(job.context_for_documents, 'EXECUTE job payload should include context_for_documents');
         assertEquals(job.context_for_documents.length, 1, 'context_for_documents should have one entry');
         assertEquals(job.context_for_documents[0].document_key, FileType.business_case, 'document_key should match');
+        assertEquals(job.prompt_template_id, 'tmpl-12345', 'EXECUTE job should inherit prompt_template_id from recipe step');
+        assertEquals(job.output_type, FileType.HeaderContext, 'EXECUTE job should have HeaderContext output_type');
+        assertEquals(job.document_key, FileType.HeaderContext, 'EXECUTE job should have document_key from header_context_artifact');
     } else {
-        throw new Error('Expected PLAN job');
+        throw new Error('Expected EXECUTE job');
     }
 });
 
@@ -1661,4 +1676,91 @@ Deno.test('planPerSourceDocumentByLineage EXECUTE branch must not set document_r
 			throw new Error('Expected EXECUTE job');
 		}
 	}
+});
+
+Deno.test('planPerSourceDocumentByLineage should create EXECUTE child jobs for PLAN recipe steps with header_context_artifact and context_for_documents', () => {
+    const sourceDocs = [
+        getMockSourceDoc('model-a-id', 'doc-a-id', 'group-a'),
+        getMockSourceDoc('model-b-id', 'doc-b-id', 'group-b'),
+    ];
+    const mockParentJob = getMockParentJob();
+    const planRecipeStep: DialecticRecipeTemplateStep = {
+        id: 'plan-step-prepare-proposal-review-plan',
+        template_id: 'template-id-antithesis',
+        step_number: 1,
+        step_key: 'prepare-proposal-review-plan',
+        step_slug: 'prepare-proposal-review-plan',
+        step_name: 'Prepare Proposal Review Plan',
+        step_description: 'Generate HeaderContext for proposal review planning',
+        prompt_template_id: 'template-planner-prompt-id-antithesis',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        output_type: FileType.HeaderContext,
+        granularity_strategy: 'per_source_document_by_lineage',
+        inputs_required: [
+            {
+                type: 'seed_prompt',
+                slug: 'thesis',
+                required: true,
+            },
+            {
+                type: 'document',
+                slug: 'business_case',
+                document_key: FileType.business_case,
+                required: true,
+            },
+        ],
+        inputs_relevance: [],
+        outputs_required: {
+            system_materials: {
+                executive_summary: '',
+                input_artifacts_summary: '',
+                stage_rationale: '',
+            },
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [
+                {
+                    document_key: FileType.business_case,
+                    content_to_include: {
+                        market_opportunity: '',
+                        user_problem_validation: '',
+                        competitive_analysis: '',
+                    },
+                },
+            ],
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        parallel_group: null,
+        branch_key: null,
+    };
+
+    const childJobs = planPerSourceDocumentByLineage(sourceDocs, mockParentJob, planRecipeStep, 'user-jwt-123');
+    
+    assertEquals(childJobs.length, 2, 'Should create one child job per source group');
+    
+    for (const job of childJobs) {
+        assertExists(job, 'Child job should exist');
+        assertEquals(isDialecticExecuteJobPayload(job), true, 'PLAN recipe steps should create EXECUTE child jobs, not PLAN child jobs');
+        if (isDialecticExecuteJobPayload(job)) {
+            const executePayload: DialecticExecuteJobPayload = job;
+            assertEquals(executePayload.output_type, FileType.HeaderContext, 'EXECUTE job should have HeaderContext output_type');
+            assertEquals(executePayload.prompt_template_id, 'template-planner-prompt-id-antithesis', 'EXECUTE job should inherit prompt_template_id from recipe step');
+            assertEquals(executePayload.document_key, FileType.HeaderContext, 'EXECUTE job should have document_key from outputs_required.header_context_artifact.document_key');
+            assertExists(executePayload.context_for_documents, 'EXECUTE job should include context_for_documents from recipe step');
+            assertEquals(executePayload.context_for_documents!.length, 1, 'context_for_documents should have one entry');
+            assertEquals(executePayload.context_for_documents![0].document_key, FileType.business_case, 'context_for_documents document_key should match');
+            assertExists(executePayload.planner_metadata, 'EXECUTE job should include planner_metadata');
+            assertEquals(executePayload.planner_metadata!.recipe_step_id, 'plan-step-prepare-proposal-review-plan', 'planner_metadata.recipe_step_id should match recipe step id');
+            assertExists(executePayload.canonicalPathParams, 'EXECUTE job should include canonicalPathParams');
+            assertExists(executePayload.inputs, 'EXECUTE job should include inputs');
+        } else {
+            throw new Error('Expected EXECUTE job');
+        }
+    }
 });

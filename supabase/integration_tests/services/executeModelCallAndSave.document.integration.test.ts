@@ -436,9 +436,9 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
 
     // There should be one PLAN, four EXECUTE, and four RENDER jobs.
     assertEquals(finalJobs.filter(j => j.job_type === 'PLAN').length, 1, "Should be one PLAN job");
-    assertEquals(finalJobs.filter(j => j.job_type === 'EXECUTE').length, 4, "Should be four EXECUTE jobs");
-    assertEquals(finalJobs.filter(j => j.job_type === 'RENDER').length, 4, "Should be four RENDER jobs");
-
+    assertEquals(finalJobs.filter(j => j.job_type === 'EXECUTE').length, 5, "Should be five EXECUTE jobs");
+    assertEquals(finalJobs.filter(j => j.job_type === 'RENDER').length, 4, "Should be four RENDER jobs (header_context does not require rendering)");
+    
     // Verify that rendered documents exist for each of the 4 EXECUTE jobs.
     const { data: finalResources, error: finalResourcesError } = await adminClient
       .from("dialectic_project_resources")

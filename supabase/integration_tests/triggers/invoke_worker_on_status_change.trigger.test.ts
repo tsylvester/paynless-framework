@@ -68,13 +68,17 @@ async function createJob(
     attempt_count: number;
     max_retries: number;
     is_test_job: boolean;
+    job_type: Database["public"]["Enums"]["dialectic_job_type_enum"] | null;
+    parent_job_id: string | null;
+    stage_slug: string;
+    session_id: string;
   }>,
 ): Promise<string> {
   const { data, error } = await adminClient
     .from("dialectic_generation_jobs")
     .insert({
-      session_id: createdSessionId,
-      stage_slug: "test-stage-for-worker",
+      session_id: overrides?.session_id ?? createdSessionId,
+      stage_slug: overrides?.stage_slug ?? "test-stage-for-worker",
       iteration_number: 1,
       user_id: createdUserId,
       status,
@@ -82,6 +86,8 @@ async function createJob(
       attempt_count: overrides?.attempt_count ?? 0,
       max_retries: overrides?.max_retries ?? 3,
       is_test_job: overrides?.is_test_job ?? false,
+      job_type: overrides?.job_type ?? null,
+      parent_job_id: overrides?.parent_job_id ?? null,
     })
     .select("id")
     .single();
@@ -119,6 +125,40 @@ async function getJobStatus(
     .single();
   if (error) {
     throw new Error(`Failed to fetch job ${jobId}: ${error.message}`);
+  }
+  return data.status;
+}
+
+// Helper to create a session with a specific status
+async function createSessionWithStatus(
+  status: string,
+  stageSlug: string,
+): Promise<string> {
+  const { data, error } = await adminClient
+    .from("dialectic_sessions")
+    .insert({
+      project_id: createdProjectId,
+      status,
+      iteration_count: 1,
+      current_stage_id: createdStageId,
+    })
+    .select("id")
+    .single();
+  if (error) {
+    throw new Error(`Failed to create session: ${error.message}`);
+  }
+  return data.id;
+}
+
+// Helper to get a session's status
+async function getSessionStatus(sessionId: string): Promise<string> {
+  const { data, error } = await adminClient
+    .from("dialectic_sessions")
+    .select("status")
+    .eq("id", sessionId)
+    .single();
+  if (error) {
+    throw new Error(`Failed to fetch session ${sessionId}: ${error.message}`);
   }
   return data.status;
 }
@@ -577,6 +617,183 @@ describe("`invoke_worker_on_status_change` Trigger Integration Tests", () => {
       false,
       "Worker should NOT be invoked when status is updated to the same value",
     );
+  });
+
+  // Step 65.b: RED tests for session status transition to running_{stage}
+  describe("Step 65.b: Session Status Transition to running_{stage}", () => {
+    it("65.b.i: should set session status to running_{stage_slug} when root PLAN job transitions pending → processing", async () => {
+      // Create a session with status = 'pending_thesis'
+      const testSessionId = await createSessionWithStatus("pending_thesis", "thesis");
+
+      // Create a root PLAN job (parent_job_id IS NULL, job_type = 'PLAN') with status = 'pending'
+      const payload = {
+        job_type: "plan",
+        model_id: "test-model",
+        sessionId: testSessionId,
+        projectId: createdProjectId,
+      };
+
+      const jobId = await createJob("pending", payload, {
+        job_type: "PLAN",
+        parent_job_id: null,
+        stage_slug: "thesis",
+        session_id: testSessionId,
+      });
+
+      // Update the job's status to 'processing'
+      await updateJobStatus(jobId, "processing");
+
+      // Wait for trigger to process
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Query dialectic_sessions and assert status = 'running_thesis'
+      // RED: This test must initially FAIL because the function does not currently update session status
+      const sessionStatus = await getSessionStatus(testSessionId);
+      assertEquals(
+        sessionStatus,
+        "running_thesis",
+        "Session status should be updated to 'running_thesis' when root PLAN job transitions from pending to processing",
+      );
+
+      // Cleanup
+      await adminClient
+        .from("dialectic_sessions")
+        .delete()
+        .eq("id", testSessionId);
+    });
+
+    it("65.b.ii: should NOT change session status when non-root job transitions pending → processing", async () => {
+      // Create a session with status = 'pending_thesis'
+      const testSessionId = await createSessionWithStatus("pending_thesis", "thesis");
+
+      // Create a PLAN job as parent
+      const parentPayload = {
+        job_type: "plan",
+        model_id: "test-model",
+        sessionId: testSessionId,
+        projectId: createdProjectId,
+      };
+      const parentJobId = await createJob("pending", parentPayload, {
+        job_type: "PLAN",
+        parent_job_id: null,
+        stage_slug: "thesis",
+        session_id: testSessionId,
+      });
+
+      // Create a child EXECUTE job with parent_job_id set
+      const childPayload = {
+        job_type: "execute",
+        model_id: "test-model",
+        sessionId: testSessionId,
+        projectId: createdProjectId,
+      };
+      const childJobId = await createJob("pending", childPayload, {
+        job_type: "EXECUTE",
+        parent_job_id: parentJobId,
+        stage_slug: "thesis",
+        session_id: testSessionId,
+      });
+
+      // Update the child job's status to 'processing'
+      await updateJobStatus(childJobId, "processing");
+
+      // Wait for trigger to process
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Assert session status is still 'pending_thesis' (unchanged)
+      const sessionStatus = await getSessionStatus(testSessionId);
+      assertEquals(
+        sessionStatus,
+        "pending_thesis",
+        "Session status should NOT change when non-root job transitions to processing",
+      );
+
+      // Cleanup
+      await adminClient
+        .from("dialectic_sessions")
+        .delete()
+        .eq("id", testSessionId);
+    });
+
+    it("65.b.iii: should NOT change session status when EXECUTE job transitions pending → processing", async () => {
+      // Create a session with status = 'pending_thesis'
+      const testSessionId = await createSessionWithStatus("pending_thesis", "thesis");
+
+      // Create a root EXECUTE job (parent_job_id IS NULL, job_type = 'EXECUTE')
+      const payload = {
+        job_type: "execute",
+        model_id: "test-model",
+        sessionId: testSessionId,
+        projectId: createdProjectId,
+      };
+
+      const jobId = await createJob("pending", payload, {
+        job_type: "EXECUTE",
+        parent_job_id: null,
+        stage_slug: "thesis",
+        session_id: testSessionId,
+      });
+
+      // Update job status to 'processing'
+      await updateJobStatus(jobId, "processing");
+
+      // Wait for trigger to process
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Assert session status is still 'pending_thesis' (only root PLAN jobs trigger this transition)
+      const sessionStatus = await getSessionStatus(testSessionId);
+      assertEquals(
+        sessionStatus,
+        "pending_thesis",
+        "Session status should NOT change when EXECUTE job transitions to processing (only root PLAN jobs trigger this transition)",
+      );
+
+      // Cleanup
+      await adminClient
+        .from("dialectic_sessions")
+        .delete()
+        .eq("id", testSessionId);
+    });
+
+    it("65.b.iv: should NOT change session status if session is not in pending_{stage_slug} state", async () => {
+      // Create a session with status = 'running_thesis' (already running)
+      const testSessionId = await createSessionWithStatus("running_thesis", "thesis");
+
+      // Create a root PLAN job
+      const payload = {
+        job_type: "plan",
+        model_id: "test-model",
+        sessionId: testSessionId,
+        projectId: createdProjectId,
+      };
+
+      const jobId = await createJob("pending", payload, {
+        job_type: "PLAN",
+        parent_job_id: null,
+        stage_slug: "thesis",
+        session_id: testSessionId,
+      });
+
+      // Update job status to 'processing'
+      await updateJobStatus(jobId, "processing");
+
+      // Wait for trigger to process
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Assert session status is still 'running_thesis' (idempotent, no double-transition)
+      const sessionStatus = await getSessionStatus(testSessionId);
+      assertEquals(
+        sessionStatus,
+        "running_thesis",
+        "Session status should NOT change if session is not in pending_{stage_slug} state (idempotent, no double-transition)",
+      );
+
+      // Cleanup
+      await adminClient
+        .from("dialectic_sessions")
+        .delete()
+        .eq("id", testSessionId);
+    });
   });
 });
 

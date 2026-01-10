@@ -589,6 +589,421 @@ All stages follow the same abstract pattern, with variations in:
 - Whether intermediate artifacts are rendered
 - Which prior stage documents are consumed
 
+## State Management Map
+
+This section documents the state transitions for `dialectic_generation_jobs` and `dialectic_sessions` tables, including which triggers and functions manage each transition. This map helps identify gaps, overlaps, and race conditions in state management.
+
+### Job Status Lifecycle (`dialectic_generation_jobs.status`)
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending: INSERT default
+    
+    pending --> processing: Worker starts (on_new_job_created)
+    pending --> waiting_for_prerequisite: App code sets (handle_job_completion)
+    pending --> waiting_for_children: PLAN creates children (processComplexJob)
+    
+    waiting_for_prerequisite --> pending: Prereq completes (handle_job_completion)
+    waiting_for_prerequisite --> failed: Prereq fails (handle_job_completion)
+    
+    waiting_for_children --> pending_next_step: All children done (handle_job_completion)
+    waiting_for_children --> failed: Child fails (handle_job_completion)
+    
+    pending_next_step --> processing: Worker processes (on_job_status_change)
+    pending_continuation --> processing: Worker processes (on_job_status_change)
+    
+    processing --> completed: Success
+    processing --> failed: Failure
+    processing --> retrying: Retry (retryJob)
+    
+    retrying --> processing: Retry attempt (on_job_status_change)
+    retrying --> retry_loop_failed: Max retries (invoke_worker_on_status_change)
+    
+    completed --> [*]: Terminal
+    failed --> [*]: Terminal
+    retry_loop_failed --> [*]: Terminal
+    
+    note right of pending
+        INSERT triggers on_new_job_created
+        → invoke_dialectic_worker()
+    end note
+    
+    note right of processing
+        Status changes trigger on_job_status_change
+        for: pending, pending_next_step,
+        pending_continuation, retrying
+        → invoke_worker_on_status_change()
+    end note
+    
+    note right of completed
+        Terminal states trigger on_job_terminal_state
+        → handle_job_completion()
+        Handles: parent/child, prerequisites
+        GAP: Does NOT update session status
+    end note
+```
+
+### Session Status Lifecycle (`dialectic_sessions.status`)
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending_thesis: Session creation (startSession)
+    
+    pending_thesis --> running_thesis: First root PLAN job starts processing
+    running_thesis --> pending_antithesis: All thesis jobs complete
+    
+    pending_antithesis --> running_antithesis: First root PLAN job starts processing
+    running_antithesis --> pending_synthesis: All antithesis jobs complete
+    
+    pending_synthesis --> running_synthesis: First root PLAN job starts processing
+    running_synthesis --> pending_parenthesis: All synthesis jobs complete
+    
+    pending_parenthesis --> running_parenthesis: First root PLAN job starts processing
+    running_parenthesis --> pending_paralysis: All parenthesis jobs complete
+    
+    pending_paralysis --> running_paralysis: First root PLAN job starts processing
+    running_paralysis --> iteration_complete_pending_review: All paralysis jobs complete (terminal)
+    
+    note right of running_antithesis
+        CRITICAL GAPS:
+        1. No trigger updates session status
+           when all jobs for a stage complete
+        2. No logic to determine next stage
+           from dialectic_stage_transitions
+        3. No transition to "running_" status
+           (tests expect it but no code sets it)
+           GAP: Should be set when root PLAN job
+           transitions to 'processing' status
+        4. Session remains in pending_thesis
+           even after all jobs finish
+    end note
+    
+    note left of pending_thesis
+        Status names follow pattern:
+        pending_{stage_slug} → running_{stage_slug} → pending_{next_stage_slug}
+        e.g., pending_thesis → running_thesis → pending_antithesis
+    end note
+```
+
+### Cross-Table State Dependencies
+
+```mermaid
+flowchart TD
+    subgraph "Job Completion Flow"
+        J1["Job enters terminal state<br/>(completed, failed, retry_loop_failed)"] --> T1["Trigger: on_job_terminal_state"]
+        T1 --> F1["Function: handle_job_completion()"]
+        F1 --> C1{"Has parent_job_id?"}
+        C1 -->|Yes| P1["Check if all siblings complete<br/>(excludes RENDER jobs)"]
+        C1 -->|No| GAP1["GAP: Root job completes<br/>but no session check"]
+        P1 -->|All complete| P2["Wake parent job<br/>(pending_next_step or completed)"]
+        P1 -->|Any failed| P3["Fail parent job"]
+        P2 --> GAP1
+        P3 --> GAP1
+        F1 --> PR1{"Has prerequisite_job_id?"}
+        PR1 -->|Yes| PR2["Wake jobs waiting<br/>for this prerequisite"]
+        PR1 -->|No| GAP1
+        PR2 --> GAP1
+    end
+    
+    subgraph "Session Status Update Missing (Critical Gaps)"
+        GAP1 --> GAP2["GAP 1: Should check if stage complete"]
+        GAP2 --> GAP3["GAP 2: Query root jobs only<br/>(parent_job_id IS NULL)"]
+        GAP3 --> GAP4["GAP 3: Exclude RENDER jobs<br/>(job_type != 'RENDER')"]
+        GAP4 --> GAP5["GAP 4: Exclude waiting_for_prerequisite<br/>(jobs not yet ready)"]
+        GAP5 --> GAP6["GAP 5: Wait for PLAN job completion<br/>(not individual EXECUTE jobs)"]
+        GAP6 --> GAP7["GAP 6: Determine next stage<br/>(query dialectic_stage_transitions)"]
+        GAP7 --> GAP8["GAP 7: Get stage slug from<br/>dialectic_stages table"]
+        GAP8 --> GAP9["GAP 8: Update session status<br/>to pending_{next_stage_slug}"]
+        GAP9 --> GAP10["GAP 9: Handle terminal stages<br/>(no next stage)"]
+    end
+```
+
+### Trigger Coverage Matrix
+
+```mermaid
+flowchart LR
+    subgraph "Existing Triggers on dialectic_generation_jobs"
+        T1["on_new_job_created<br/>INSERT"] --> F1["invoke_dialectic_worker()"]
+        T2["on_job_status_change<br/>UPDATE<br/>(pending, pending_next_step,<br/>pending_continuation, retrying)"] --> F2["invoke_worker_on_status_change()"]
+        T3["on_job_terminal_state<br/>UPDATE<br/>(completed, failed,<br/>retry_loop_failed)"] --> F3["handle_job_completion()"]
+    end
+    
+    subgraph "Current Functions and Responsibilities"
+        F1 --> A1["Invokes worker for new jobs"]
+        F2 --> A2["Invokes worker for status changes<br/>Checks retry limits"]
+        F3 --> A3["Handles parent/child relationships<br/>Handles prerequisites<br/>Wakes parent jobs<br/>Fails parent on child failure"]
+    end
+    
+    subgraph "Missing Coverage (Gaps to Fix)"
+        M1["GAP: No running_{stage} status<br/>(should be set in F2)"]
+        M2["GAP: No session status update logic<br/>(should be added to F3)"]
+        M3["GAP: No stage completion check<br/>(should be added to F3)"]
+        M4["GAP: No next stage determination<br/>(should be added to F3)"]
+        M5["GAP: No terminal stage handling<br/>(should be added to F3)"]
+    end
+    
+    F2 -.->|"FIX: Add running_{stage}"| M1
+    F3 -.->|"FIX: Add session completion"| M2
+    M2 --> M3
+    M3 --> M4
+    M4 --> M5
+```
+
+### Current State Summary
+
+**Job State Management: ✅ Working**
+- All job status transitions are properly managed by triggers
+- Parent/child relationships are handled correctly
+- Prerequisite dependencies are handled correctly
+- RENDER jobs are correctly excluded from blocking logic
+
+**Session State Management: ❌ Broken**
+- No trigger or function updates `dialectic_sessions.status` when stages complete
+- No logic sets `running_{stage}` status when root PLAN jobs start processing
+- Session status remains in initial state (`pending_thesis`) even after all jobs complete
+- This prevents automatic progression to next stage
+- Tests expect `pending_antithesis` but get `pending_thesis`
+- Tests expect `running_thesis` but no code sets it
+
+**Required Fix:**
+
+The fix requires:
+1. Adding `running_{stage}` status transition logic to `invoke_worker_on_status_change()` (existing function, no new trigger needed)
+2. Adding session completion check logic to `handle_job_completion()` (existing function, no new trigger needed)
+
+Both fixes use existing triggers and functions only. No new triggers or functions should be created.
+
+### 1. When to Check Session Completion
+
+Session status should only be checked when:
+- A root job (no `parent_job_id`) enters a terminal state AND it's a PLAN job that's `completed`, OR
+- After handling parent/child relationships, if a root PLAN job is now `completed`
+
+**Critical Consideration: Stages with Multiple PLAN Jobs**
+
+Some stages (e.g., synthesis) have multiple PLAN jobs that execute sequentially:
+- **Synthesis stage example**:
+  - PLAN job 1 (pairwise header) → creates EXECUTE children → completes when children done
+  - PLAN job 2 (final header) → creates EXECUTE children → completes when children done
+  - Stage is complete only when ALL root PLAN jobs are `completed`
+
+The completion check must verify that **ALL root PLAN jobs** for the stage are `completed`, not just one. This is handled by the completion detection logic (section 2) which queries all root jobs for the stage and ensures they're all in terminal states.
+
+This ensures:
+- PLAN jobs coordinate all stage work through child EXECUTE jobs
+- Session status updates only when the entire stage (ALL PLAN jobs + all their EXECUTE children) is complete
+- Individual EXECUTE job completions don't trigger premature session updates
+- Multi-phase stages (like synthesis) are correctly handled by checking all PLAN jobs
+
+### 2. Stage Completion Detection Logic
+
+The completion check must:
+
+a. **Query only root jobs** for the session/stage/iteration:
+   ```sql
+   WHERE parent_job_id IS NULL
+   AND session_id = v_session_id
+   AND stage_slug = v_stage_slug
+   AND COALESCE(iteration_number, 1) = v_iteration_number
+   ```
+   
+   **CRITICAL**: Use direct columns (`session_id`, `stage_slug`, `iteration_number`) from `dialectic_generation_jobs` table, NOT `payload->>'sessionId'`. These columns were added in migration `20250922165259_document_centric_generation.sql`.
+   
+   This query returns ALL root jobs for the stage, which may include:
+   - Multiple PLAN jobs (for multi-phase stages like synthesis)
+   - Root EXECUTE jobs (for simple stages without PLAN jobs, though rare in current architecture)
+
+b. **Exclude RENDER jobs** (they are side-effects, never block completion):
+   ```sql
+   AND job_type != 'RENDER'
+   ```
+
+c. **Exclude jobs waiting for prerequisites** (they're not ready yet):
+   ```sql
+   AND status != 'waiting_for_prerequisite'
+   ```
+
+d. **Check that all root jobs are in terminal states**:
+   ```sql
+   AND status IN ('completed', 'failed', 'retry_loop_failed')
+   ```
+   
+   This ensures no root jobs are still pending, processing, or waiting. All must have reached a terminal state.
+
+e. **Verify ALL PLAN jobs are completed**: Filter the root jobs to only PLAN jobs and verify:
+   ```sql
+   -- After the main query, filter for PLAN jobs
+   AND job_type = 'PLAN'
+   AND status = 'completed'
+   ```
+   
+   **Critical for multi-PLAN stages**: For stages like synthesis with multiple PLAN jobs:
+   - ALL root PLAN jobs must be `completed` (not `failed` or `retry_loop_failed`)
+   - If ANY PLAN job failed, the stage failed and session status should not advance
+   - The count of completed PLAN jobs must equal the total count of root PLAN jobs
+   
+   **Why PLAN jobs specifically**: PLAN jobs orchestrate the entire stage through their child EXECUTE jobs. When a PLAN job completes, it means all its children completed successfully. Therefore, all PLAN jobs completing = entire stage complete.
+
+f. **Handle root EXECUTE jobs** (if any exist): If the stage has root EXECUTE jobs (not children of PLAN jobs), they must also be `completed`:
+   ```sql
+   -- Filter for root EXECUTE jobs
+   AND job_type = 'EXECUTE'
+   AND parent_job_id IS NULL
+   AND status = 'completed'
+   ```
+   
+   Note: In the current doc-centric architecture, most EXECUTE jobs are children of PLAN jobs. Root EXECUTE jobs are rare but possible for simple stages.
+
+### 3. Next Stage Determination
+
+After confirming stage completion, determine the next stage:
+
+a. **Get current stage ID**: Query `dialectic_stages` using `stage_slug` from job table column (NOT payload) to get `stage.id`:
+   ```sql
+   SELECT id INTO v_current_stage_id
+   FROM dialectic_stages
+   WHERE slug = v_stage_slug;
+   ```
+
+b. **Get process template ID**: Join through `dialectic_sessions` → `dialectic_projects` → `process_template_id`:
+   ```sql
+   SELECT p.process_template_id INTO v_process_template_id
+   FROM dialectic_sessions s
+   JOIN dialectic_projects p ON s.project_id = p.id
+   WHERE s.id = v_session_id;
+   ```
+
+c. **Query stage transitions**: Find next stage via:
+   ```sql
+   SELECT dst.target_stage_id, ds.slug as next_stage_slug
+   INTO v_target_stage_id, v_next_stage_slug
+   FROM dialectic_stage_transitions dst
+   JOIN dialectic_stages ds ON dst.target_stage_id = ds.id
+   WHERE dst.source_stage_id = v_current_stage_id
+   AND dst.process_template_id = v_process_template_id
+   LIMIT 1;
+   ```
+
+d. **Handle terminal stages**: If no transition exists (`v_next_stage_slug IS NULL`), the stage is terminal. Set status to `iteration_complete_pending_review` (as done in `submitStageResponses.ts`).
+
+e. **Build next status**: If `v_next_stage_slug` is not null, construct `pending_{next_stage_slug}` (e.g., `pending_antithesis`):
+   ```sql
+   v_next_status := 'pending_' || v_next_stage_slug;
+   ```
+
+### 4. Implementation Strategy
+
+**Key Principle**: Use existing triggers and functions only. Do NOT create new triggers or functions. All fixes must be made within `handle_job_completion()` and `invoke_worker_on_status_change()`.
+
+#### 4.1 Add `running_{stage}` Status Transition
+
+**Location**: Modify `invoke_worker_on_status_change()` function (called by `on_job_status_change` trigger)
+
+**When**: When a root PLAN job transitions from `pending` to `processing` status
+
+**Implementation**: Add logic to `invoke_worker_on_status_change()` to:
+1. Check if job is root PLAN job: `NEW.parent_job_id IS NULL AND NEW.job_type = 'PLAN'`
+2. Check if status transition is `pending` → `processing`: `OLD.status = 'pending' AND NEW.status = 'processing'`
+3. Extract `session_id`, `stage_slug` from job table columns (NOT payload)
+4. Update session status to `running_{stage_slug}` if current status is `pending_{stage_slug}`:
+   ```sql
+   UPDATE dialectic_sessions
+   SET status = 'running_' || NEW.stage_slug,
+       updated_at = now()
+   WHERE id = NEW.session_id
+   AND status = 'pending_' || NEW.stage_slug;
+   ```
+
+**Why in existing trigger**: The `on_job_status_change` trigger already fires when jobs transition to `processing`, so we can piggyback on this existing mechanism without creating new triggers.
+
+#### 4.2 Add Session Completion Check to `handle_job_completion()`
+
+**Location**: Add new Part 3 to `handle_job_completion()` function (called by `on_job_terminal_state` trigger)
+
+**When**: After Part 2 (parent/child handling) completes:
+- If a root PLAN job was just marked as `completed` (either directly or via parent/child logic), OR
+- If a root job (no parent) enters a terminal state AND it's a PLAN job that's `completed`
+
+**Implementation**: Add Part 3 to `handle_job_completion()`:
+
+1. **Extract identifiers from job table columns** (NOT payload):
+   ```sql
+   v_session_id := NEW.session_id;
+   v_stage_slug := NEW.stage_slug;
+   v_iteration_number := COALESCE(NEW.iteration_number, 1);
+   ```
+
+2. **Check if this is a root PLAN job completion**:
+   ```sql
+   IF NEW.parent_job_id IS NULL AND NEW.job_type = 'PLAN' AND NEW.status = 'completed' THEN
+       -- Proceed with session completion check
+   END IF;
+   ```
+
+3. **Query root jobs for stage completion** (using direct columns):
+   ```sql
+   SELECT 
+       COUNT(*) FILTER (WHERE job_type = 'PLAN' AND status = 'completed') as completed_plans,
+       COUNT(*) FILTER (WHERE job_type = 'PLAN') as total_plans,
+       COUNT(*) FILTER (WHERE job_type != 'RENDER' AND status NOT IN ('completed', 'failed', 'retry_loop_failed') AND status != 'waiting_for_prerequisite') as incomplete_jobs
+   INTO v_completed_plans, v_total_plans, v_incomplete_jobs
+   FROM dialectic_generation_jobs
+   WHERE parent_job_id IS NULL
+     AND session_id = v_session_id
+     AND stage_slug = v_stage_slug
+     AND COALESCE(iteration_number, 1) = v_iteration_number
+     AND job_type != 'RENDER'
+     AND status != 'waiting_for_prerequisite'
+   FOR UPDATE;  -- Lock rows to prevent race conditions
+   ```
+
+4. **Check completion condition**:
+   ```sql
+   IF v_completed_plans = v_total_plans AND v_total_plans > 0 AND v_incomplete_jobs = 0 THEN
+       -- Stage is complete, determine next stage
+   END IF;
+   ```
+
+5. **Determine next stage** (as described in section 3)
+
+6. **Update session status synchronously** (in same transaction):
+   ```sql
+   UPDATE dialectic_sessions
+   SET status = CASE 
+       WHEN v_next_stage_slug IS NOT NULL THEN 'pending_' || v_next_stage_slug
+       ELSE 'iteration_complete_pending_review'
+   END,
+   updated_at = now()
+   WHERE id = v_session_id;
+   ```
+
+**Transaction Safety**: All updates happen in the same database transaction. The trigger function runs within a transaction, so job status and session status updates are atomic.
+
+### 5. Edge Cases to Handle
+
+- **Failed PLAN jobs**: If ANY PLAN job fails (`status = 'failed'` or `'retry_loop_failed'`), don't advance session status (stage failed, not complete). The completion check requires ALL PLAN jobs to be `completed`.
+- **Failed EXECUTE jobs**: If any EXECUTE job fails, PLAN job should fail (handled in Part 2), so session won't advance.
+- **RENDER job failures**: RENDER job failures don't block stage completion (RENDER jobs excluded from checks). RENDER jobs are side-effects and never block stage progression.
+- **Prerequisites**: Jobs in `waiting_for_prerequisite` are excluded from completion checks (they're not ready). These jobs will be woken up when prerequisites complete (handled in Part 1).
+- **Terminal stages**: If no next stage transition exists (`v_next_stage_slug IS NULL`), set status to `iteration_complete_pending_review`.
+- **Race conditions**: Use `SELECT ... FOR UPDATE` when querying jobs to lock rows during the check, preventing concurrent updates from causing inconsistent states. All updates happen in the same transaction.
+- **Multi-PLAN stages**: For stages like synthesis with multiple PLAN jobs, ALL root PLAN jobs must be `completed` before stage is considered complete. The query counts completed vs total PLAN jobs to handle this.
+- **Root EXECUTE jobs**: If stage has root EXECUTE jobs (not children of PLAN jobs), they must also be `completed`. The completion check includes these in the `incomplete_jobs` count.
+- **Retry cycle**: Jobs go through retry cycle (`retrying` → `processing`) until max retries reached, then marked `retry_loop_failed`. This is handled by existing `invoke_worker_on_status_change()` function.
+
+### 6. Testing Requirements
+
+The fix must be proven to work with:
+- Test 21.b.i: Session status advances to `pending_antithesis` after all thesis jobs complete.
+- Test 21.b.iv: Session status advances when all EXECUTE and RENDER jobs complete.
+- Test 21.b.v: Session status does NOT advance when RENDER jobs are stuck (RENDER jobs excluded).
+- Verify `running_thesis` status is set when first root PLAN job starts processing.
+- Verify PLAN job completion triggers session update.
+- Verify terminal stages set correct status (`iteration_complete_pending_review`).
+- Verify failed stages don't advance session (failed PLAN jobs block progression).
+- Verify multi-PLAN stages (synthesis) require ALL PLAN jobs to complete.
+- Verify transaction safety: job status and session status updated atomically.
+
 ## Document Storage Architecture
 
 ### Target Architecture
@@ -647,3 +1062,49 @@ To align with target architecture, the following functions must be updated to qu
 - **Finished documents** → `dialectic_project_resources` (one canonical version, upserted)
 - **Link between them**: `dialectic_project_resources.source_contribution_id` points to root contribution ID
 - **Query strategy**: Check resources first for finished documents, contributions only for raw/intermediate artifacts
+
+## State Management Fix Summary
+
+### Current State (Broken)
+
+1. **Session Status Never Updates**: Session remains in `pending_thesis` even after all jobs complete
+2. **No `running_{stage}` Status**: Tests expect `running_thesis` but no code sets it
+3. **No Stage Completion Detection**: No logic checks if all PLAN jobs for a stage are complete
+4. **No Next Stage Determination**: No logic queries `dialectic_stage_transitions` to find next stage
+5. **Incorrect Column Usage**: Proposed solutions incorrectly use `payload->>'sessionId'` instead of direct `session_id` column
+
+### Target State (Fixed)
+
+1. **Session Status Updates Automatically**: When all root PLAN jobs for a stage complete, session status advances to `pending_{next_stage_slug}`
+2. **`running_{stage}` Status Set**: When first root PLAN job starts processing, session status transitions from `pending_{stage_slug}` to `running_{stage_slug}`
+3. **Stage Completion Detected**: Logic checks that ALL root PLAN jobs are `completed` (not `failed` or `retry_loop_failed`)
+4. **Next Stage Determined**: Logic queries `dialectic_stage_transitions` to find next stage, or sets `iteration_complete_pending_review` for terminal stages
+5. **Correct Column Usage**: All queries use direct columns (`session_id`, `stage_slug`, `iteration_number`) from `dialectic_generation_jobs` table
+
+### Implementation Approach
+
+**CRITICAL**: Use existing triggers and functions only. Do NOT create new triggers or functions.
+
+1. **Fix `invoke_worker_on_status_change()`** (existing function):
+   - Add logic to set `running_{stage_slug}` when root PLAN job transitions `pending` → `processing`
+   - Uses existing `on_job_status_change` trigger (no new trigger needed)
+
+2. **Fix `handle_job_completion()`** (existing function):
+   - Add Part 3: Session completion check
+   - Extract identifiers from job table columns (NOT payload)
+   - Query root PLAN jobs for stage completion
+   - Determine next stage from `dialectic_stage_transitions`
+   - Update session status synchronously in same transaction
+   - Uses existing `on_job_terminal_state` trigger (no new trigger needed)
+
+### Key Corrections from Analysis
+
+1. **Table Columns**: `dialectic_generation_jobs` has direct columns `session_id`, `stage_slug`, `iteration_number` (added in migration `20250922165259_document_centric_generation.sql`). Use these, NOT `payload->>'sessionId'`.
+
+2. **Multi-PLAN Stages**: Query ALL root PLAN jobs, count completed vs total. Stage complete only when `completed_plans = total_plans AND total_plans > 0`.
+
+3. **Transaction Safety**: Use `SELECT ... FOR UPDATE` to lock rows, ensure all updates happen in same transaction.
+
+4. **Synchronous Updates**: All status updates happen synchronously in the same database transaction. No async job enqueueing for status updates.
+
+5. **Retry Cycle**: Jobs exhaust retry cycle (`retrying` → `processing`) before being marked `retry_loop_failed`. This is already handled correctly by existing `invoke_worker_on_status_change()` function.

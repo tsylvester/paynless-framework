@@ -57,6 +57,7 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
 
     // Handle PLAN and EXECUTE jobs separately
     if (recipeStep.job_type === 'PLAN') {
+        // PLAN recipe steps create EXECUTE child jobs that execute the Planner prompt to generate HeaderContext
         // Validate context_for_documents for PLAN jobs
         if (!recipeStep.outputs_required) {
             throw new Error('planPerSourceDocumentByLineage requires recipeStep.outputs_required.context_for_documents for PLAN jobs, but outputs_required is missing');
@@ -100,13 +101,53 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
             }
         }
         
-        // Create one PLAN job payload per group
-        const childPayloads: DialecticPlanJobPayload[] = [];
+        // For PLAN recipe steps, extract document_key from header_context_artifact.document_key
+        // PLAN steps have header_context_artifact (not a documents array) per OutputRule interface
+        const headerContextArtifact = recipeStep.outputs_required.header_context_artifact;
+        if (!headerContextArtifact) {
+            throw new Error('planPerSourceDocumentByLineage requires recipeStep.outputs_required.header_context_artifact for PLAN jobs, but header_context_artifact is missing');
+        }
+        
+        if (typeof headerContextArtifact !== 'object') {
+            throw new Error('planPerSourceDocumentByLineage requires recipeStep.outputs_required.header_context_artifact to be an object for PLAN jobs');
+        }
+        
+        if (!('document_key' in headerContextArtifact)) {
+            throw new Error('planPerSourceDocumentByLineage requires recipeStep.outputs_required.header_context_artifact.document_key for PLAN jobs, but document_key is missing');
+        }
+        
+        const rawDocumentKey = headerContextArtifact.document_key;
+        if (rawDocumentKey === null || rawDocumentKey === undefined) {
+            throw new Error(`planPerSourceDocumentByLineage requires recipeStep.outputs_required.header_context_artifact.document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
+        }
+        if (typeof rawDocumentKey !== 'string') {
+            throw new Error(`planPerSourceDocumentByLineage requires recipeStep.outputs_required.header_context_artifact.document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
+        }
+        if (rawDocumentKey.length === 0) {
+            throw new Error(`planPerSourceDocumentByLineage requires recipeStep.outputs_required.header_context_artifact.document_key to be a non-empty string, but received: '${rawDocumentKey}'`);
+        }
+        const documentKey = rawDocumentKey;
+        
+        if (!isModelContributionFileType(recipeStep.output_type)) {
+            throw new Error(`Invalid output_type for planPerSourceDocumentByLineage: ${recipeStep.output_type}`);
+        }
+        
+        // Create EXECUTE job payloads for PLAN recipe step (one per group, will execute Planner prompt to generate HeaderContext)
+        const childPayloads: DialecticExecuteJobPayload[] = [];
         for (const groupId in groups) {
             const groupDocs = groups[groupId];
             if (groupDocs.length === 0) continue;
 
-            const planPayload: DialecticPlanJobPayload = {
+            // Use the first document as the anchor for canonical path generation
+            const anchorDoc = groupDocs[0];
+            const documentIds = groupDocs.map(doc => doc.id);
+            const canonicalPathParams = createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorDoc, stageSlug);
+            let derivedSourceContributionId: string | null = null;
+            if (anchorDoc.document_relationships?.source_group) {
+                derivedSourceContributionId = anchorDoc.id;
+            }
+
+            const executePayload: DialecticExecuteJobPayload = {
                 // Inherit ALL fields from parent job payload (defensive programming)
                 projectId: parentJob.payload.projectId,
                 sessionId: parentJob.payload.sessionId,
@@ -121,13 +162,26 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
                 ...(parentJob.payload.continueUntilComplete !== undefined ? { continueUntilComplete: parentJob.payload.continueUntilComplete } : {}),
                 ...(parentJob.payload.maxRetries !== undefined ? { maxRetries: parentJob.payload.maxRetries } : {}),
                 ...(parentJob.payload.continuation_count !== undefined ? { continuation_count: parentJob.payload.continuation_count } : {}),
+                ...(parentJob.payload.is_test_job !== undefined ? { is_test_job: parentJob.payload.is_test_job } : {}),
+
+                sourceContributionId: derivedSourceContributionId,
+                // Override job-specific properties
+                prompt_template_id: recipeStep.prompt_template_id,
+                output_type: recipeStep.output_type,
+                canonicalPathParams: canonicalPathParams,
+                inputs: {
+                    document_ids: documentIds,
+                },
+                planner_metadata: { recipe_step_id: recipeStep.id },
+                document_key: documentKey,
+                context_for_documents: contextForDocuments,
+                document_relationships: { source_group: groupId },
+                // Conditionally include target_contribution_id only if parent has a valid string value
                 ...(typeof parentJob.payload.target_contribution_id === 'string' && parentJob.payload.target_contribution_id.length > 0
                     ? { target_contribution_id: parentJob.payload.target_contribution_id }
                     : {}),
-                ...(parentJob.payload.is_test_job !== undefined ? { is_test_job: parentJob.payload.is_test_job } : {}),
-                context_for_documents: contextForDocuments,
             };
-            childPayloads.push(planPayload);
+            childPayloads.push(executePayload);
         }
         
         return childPayloads;

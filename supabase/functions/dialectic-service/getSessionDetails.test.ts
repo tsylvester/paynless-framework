@@ -3,11 +3,20 @@ import {
   assertExists,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { stub } from "https://deno.land/std@0.208.0/testing/mock.ts";
-import { describe, it, beforeEach, afterEach } from "https://deno.land/std@0.208.0/testing/bdd.ts";
-import type { User } from 'npm:@supabase/supabase-js';
+import { 
+  describe, 
+  it, 
+  beforeEach, 
+  afterEach 
+} from "https://deno.land/std@0.208.0/testing/bdd.ts";
+import { User } from 'npm:@supabase/supabase-js';
 import { getSessionDetails } from './getSessionDetails.ts';
 import { logger } from '../_shared/logger.ts';
-import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockQueryBuilderState } from '../_shared/supabase.mock.ts';
+import { 
+  createMockSupabaseClient, 
+  MockSupabaseClientSetup, 
+  MockQueryBuilderState 
+} from '../_shared/supabase.mock.ts';
 
 const getMockUser = (id: string): User => ({
   id,
@@ -59,7 +68,7 @@ describe("getSessionDetails Unit Tests", () => {
     }
   });
 
-  it("should return full session details including the activeSeedPrompt on success", async () => {
+  it("should return full session details including the activeSeedPrompt on success when skipSeedPrompt is false", async () => {
     const mockPromptContent = "This is the seed prompt from storage.";
     const mockResource = { 
       id: "res-123", 
@@ -69,6 +78,7 @@ describe("getSessionDetails Unit Tests", () => {
       resource_type: 'seed_prompt',
       session_id: mockSessionId,
       stage_slug: 'test-stage',
+      iteration_number: 1,
     };
 
     mockClientSetup = createMockSupabaseClient(mockOwnerUser.id, {
@@ -128,20 +138,35 @@ describe("getSessionDetails Unit Tests", () => {
               });
             }
 
-            // Assert stage_slug filter is present
+            // Assert stage_slug filter is NOT present (only one seed_prompt per session exists)
             const hasStageSlugFilter = state.filters.some(
               (filter) =>
                 filter.type === 'eq' &&
-                filter.column === 'stage_slug' &&
-                filter.value === mockDbSession.dialectic_stages.slug,
+                filter.column === 'stage_slug',
             );
-            if (!hasStageSlugFilter) {
+            if (hasStageSlugFilter) {
               return Promise.resolve({
                 data: null,
-                error: new Error('seed_prompt queries must filter by stage_slug'),
+                error: new Error('seed_prompt queries must NOT filter by stage_slug - only one seed_prompt exists per session'),
                 count: 0,
                 status: 400,
-                statusText: 'Missing stage_slug filter',
+                statusText: 'Unnecessary stage_slug filter detected',
+              });
+            }
+
+            // Assert iteration_number filter is NOT present (only one seed_prompt per session exists)
+            const hasIterationNumberFilter = state.filters.some(
+              (filter) =>
+                filter.type === 'eq' &&
+                filter.column === 'iteration_number',
+            );
+            if (hasIterationNumberFilter) {
+              return Promise.resolve({
+                data: null,
+                error: new Error('seed_prompt queries must NOT filter by iteration_number - only one seed_prompt exists per session'),
+                count: 0,
+                status: 400,
+                statusText: 'Unnecessary iteration_number filter detected',
               });
             }
 
@@ -168,13 +193,44 @@ describe("getSessionDetails Unit Tests", () => {
       copy: () => Promise.resolve({ data: { path: '' }, error: null }),
     }));
 
-    const result = await getSessionDetails({ sessionId: mockSessionId }, mockClientSetup.client as any, mockOwnerUser);
+    const result = await getSessionDetails({ sessionId: mockSessionId, skipSeedPrompt: false }, mockClientSetup.client as any, mockOwnerUser);
     
     assertExists(result.data, "Response data should exist on success");
     assertEquals(result.status, 200);
     assertEquals(result.data.session.id, mockSessionId);
-    assertExists(result.data.activeSeedPrompt, "activeSeedPrompt should be present in the response");
+    assertExists(result.data.activeSeedPrompt, "activeSeedPrompt should be present in the response when skipSeedPrompt is false");
     assertEquals(result.data.activeSeedPrompt?.promptContent, mockPromptContent);
+  });
+
+  it("should skip seed prompt query and return activeSeedPrompt as null when skipSeedPrompt is true", async () => {
+    let dialecticProjectResourcesSelectCalled = false;
+
+    mockClientSetup = createMockSupabaseClient(mockOwnerUser.id, {
+      genericMockResults: {
+        'dialectic_sessions': { select: { data: [mockDbSession] } },
+        'dialectic_projects': { select: { data: [mockDbProject] } },
+        'dialectic_project_resources': {
+          select: () => {
+            dialecticProjectResourcesSelectCalled = true;
+            return Promise.resolve({
+              data: null,
+              error: new Error('dialectic_project_resources select should not be called when skipSeedPrompt is true'),
+              count: 0,
+              status: 400,
+              statusText: 'Query should not be executed',
+            });
+          },
+        },
+      },
+    });
+
+    const result = await getSessionDetails({ sessionId: mockSessionId, skipSeedPrompt: true }, mockClientSetup.client as any, mockOwnerUser);
+    
+    assertEquals(dialecticProjectResourcesSelectCalled, false, "dialectic_project_resources select should NOT be called when skipSeedPrompt is true");
+    assertExists(result.data, "Response data should exist on success");
+    assertEquals(result.status, 200);
+    assertEquals(result.data.session.id, mockSessionId);
+    assertEquals(result.data.activeSeedPrompt, null, "activeSeedPrompt should be null when skipSeedPrompt is true");
   });
 
   it("should return a 404 error if the session is not found", async () => {
@@ -243,7 +299,7 @@ describe("getSessionDetails Unit Tests", () => {
     assertEquals(result.error?.code, 'DB_ERROR');
   });
 
-  it("should return a 500 error if seed prompt is required but not found", async () => {
+  it("should return a 500 error if seed prompt is required but not found when skipSeedPrompt is false", async () => {
     mockClientSetup = createMockSupabaseClient(mockOwnerUser.id, {
         genericMockResults: {
             'dialectic_sessions': { select: { data: [mockDbSession] } },
@@ -301,27 +357,42 @@ describe("getSessionDetails Unit Tests", () => {
                   });
                 }
 
-                // Assert stage_slug filter is present
+                // Assert stage_slug filter is NOT present (only one seed_prompt per session exists)
                 const hasStageSlugFilter = state.filters.some(
                   (filter) =>
                     filter.type === 'eq' &&
-                    filter.column === 'stage_slug' &&
-                    filter.value === mockDbSession.dialectic_stages.slug,
+                    filter.column === 'stage_slug',
                 );
-                if (!hasStageSlugFilter) {
+                if (hasStageSlugFilter) {
                   return Promise.resolve({
                     data: null,
-                    error: new Error('seed_prompt queries must filter by stage_slug'),
+                    error: new Error('seed_prompt queries must NOT filter by stage_slug - only one seed_prompt exists per session'),
                     count: 0,
                     status: 400,
-                    statusText: 'Missing stage_slug filter',
+                    statusText: 'Unnecessary stage_slug filter detected',
                   });
                 }
 
-                // All filters satisfied but no resource found
+                // Assert iteration_number filter is NOT present (only one seed_prompt per session exists)
+                const hasIterationNumberFilter = state.filters.some(
+                  (filter) =>
+                    filter.type === 'eq' &&
+                    filter.column === 'iteration_number',
+                );
+                if (hasIterationNumberFilter) {
+                  return Promise.resolve({
+                    data: null,
+                    error: new Error('seed_prompt queries must NOT filter by iteration_number - only one seed_prompt exists per session'),
+                    count: 0,
+                    status: 400,
+                    statusText: 'Unnecessary iteration_number filter detected',
+                  });
+                }
+
+                // All filters satisfied but no resource found (PGRST116)
                 return Promise.resolve({
                   data: null,
-                  error: null,
+                  error: { name: 'MockDBError', code: 'PGRST116', message: 'Not found' },
                   count: 0,
                   status: 200,
                   statusText: 'OK',
@@ -331,14 +402,14 @@ describe("getSessionDetails Unit Tests", () => {
         },
     });
 
-    const result = await getSessionDetails({ sessionId: mockSessionId }, mockClientSetup.client as any, mockOwnerUser);
+    const result = await getSessionDetails({ sessionId: mockSessionId, skipSeedPrompt: false }, mockClientSetup.client as any, mockOwnerUser);
     
     assertEquals(result.status, 500);
     assertEquals(result.error?.code, 'MISSING_REQUIRED_RESOURCE');
     assertEquals(result.error?.message, 'Seed prompt is required but not found.');
   });
 
-  it("should return activeSeedPrompt when seed prompt exists with iteration_number = 1 for iteration 1", async () => {
+  it("should return activeSeedPrompt when seed prompt exists", async () => {
     const mockPromptContent = "This is the seed prompt for iteration 1.";
     const mockResource = { 
       id: "res-123", 
@@ -351,14 +422,15 @@ describe("getSessionDetails Unit Tests", () => {
       iteration_number: 1,
     };
 
-    const sessionWithIteration1 = {
+    // Session has progressed to iteration 3, but seed_prompt is always at iteration 1
+    const sessionWithIteration3 = {
       ...mockDbSession,
-      iteration_count: 1,
+      iteration_count: 3,
     };
 
     mockClientSetup = createMockSupabaseClient(mockOwnerUser.id, {
         genericMockResults: {
-            'dialectic_sessions': { select: { data: [sessionWithIteration1] } },
+            'dialectic_sessions': { select: { data: [sessionWithIteration3] } },
             'dialectic_projects': { select: { data: [mockDbProject] } },
             'dialectic_project_resources': {
               select: (state: MockQueryBuilderState) => {
@@ -413,54 +485,35 @@ describe("getSessionDetails Unit Tests", () => {
                   });
                 }
 
-                // Assert stage_slug filter is present
+                // Assert stage_slug filter is NOT present (only one seed_prompt per session exists)
                 const hasStageSlugFilter = state.filters.some(
                   (filter) =>
                     filter.type === 'eq' &&
-                    filter.column === 'stage_slug' &&
-                    filter.value === sessionWithIteration1.dialectic_stages.slug,
+                    filter.column === 'stage_slug',
                 );
-                if (!hasStageSlugFilter) {
+                if (hasStageSlugFilter) {
                   return Promise.resolve({
                     data: null,
-                    error: new Error('seed_prompt queries must filter by stage_slug'),
+                    error: new Error('seed_prompt queries must NOT filter by stage_slug - only one seed_prompt exists per session'),
                     count: 0,
                     status: 400,
-                    statusText: 'Missing stage_slug filter',
+                    statusText: 'Unnecessary stage_slug filter detected',
                   });
                 }
 
-                // Assert iteration_number filter uses .eq('iteration_number', 1) for iteration 1
-                const hasIterationNumberEqFilter = state.filters.some(
+                // Assert iteration_number filter is NOT present (only one seed_prompt per session exists)
+                const hasIterationNumberFilter = state.filters.some(
                   (filter) =>
                     filter.type === 'eq' &&
-                    filter.column === 'iteration_number' &&
-                    filter.value === 1,
+                    filter.column === 'iteration_number',
                 );
-                if (!hasIterationNumberEqFilter) {
+                if (hasIterationNumberFilter) {
                   return Promise.resolve({
                     data: null,
-                    error: new Error('seed_prompt queries must use .eq(\'iteration_number\', 1) for iteration 1'),
+                    error: new Error('seed_prompt queries must NOT filter by iteration_number - only one seed_prompt exists per session'),
                     count: 0,
                     status: 400,
-                    statusText: 'Missing iteration_number eq filter',
-                  });
-                }
-
-                // Assert iteration_number IS NULL is NEVER used for iteration 1
-                const hasIterationNumberIsNullFilter = state.filters.some(
-                  (filter) =>
-                    filter.type === 'is' &&
-                    filter.column === 'iteration_number' &&
-                    filter.value === null,
-                );
-                if (hasIterationNumberIsNullFilter) {
-                  return Promise.resolve({
-                    data: null,
-                    error: new Error('seed_prompt queries must NOT use .is(\'iteration_number\', null) for iteration 1'),
-                    count: 0,
-                    status: 400,
-                    statusText: 'Invalid iteration_number IS NULL filter detected',
+                    statusText: 'Unnecessary iteration_number filter detected',
                   });
                 }
 
@@ -487,13 +540,135 @@ describe("getSessionDetails Unit Tests", () => {
       copy: () => Promise.resolve({ data: { path: '' }, error: null }),
     }));
 
-    const result = await getSessionDetails({ sessionId: mockSessionId }, mockClientSetup.client as any, mockOwnerUser);
+    const result = await getSessionDetails({ sessionId: mockSessionId, skipSeedPrompt: false }, mockClientSetup.client as any, mockOwnerUser);
     
     assertExists(result.data, "Response data should exist on success");
     assertEquals(result.status, 200);
     assertEquals(result.data.session.id, mockSessionId);
-    assertExists(result.data.activeSeedPrompt, "activeSeedPrompt should be present when seed prompt exists with iteration_number = 1 for iteration 1");
+    assertEquals(result.data.session.iteration_count, 3, "Session should have iteration_count = 3");
+    assertExists(result.data.activeSeedPrompt, "activeSeedPrompt should be present when seed prompt exists, regardless of session.iteration_count");
     assertEquals(result.data.activeSeedPrompt?.promptContent, mockPromptContent);
     assertEquals(result.data.activeSeedPrompt?.source_prompt_resource_id, mockResource.id);
+  });
+
+  it("should use skipSeedPrompt default to false when not provided and fetch seed prompt", async () => {
+    const mockPromptContent = "This is the seed prompt from storage (default behavior).";
+    const mockResource = { 
+      id: "res-456", 
+      storage_path: "path/to",
+      file_name: "prompt.md",
+      storage_bucket: "dialectic-contributions",
+      resource_type: 'seed_prompt',
+      session_id: mockSessionId,
+      stage_slug: 'test-stage',
+      iteration_number: 1,
+    };
+
+    let queryWasCalled = false;
+
+    mockClientSetup = createMockSupabaseClient(mockOwnerUser.id, {
+      genericMockResults: {
+        'dialectic_sessions': { select: { data: [mockDbSession] } },
+        'dialectic_projects': { select: { data: [mockDbProject] } },
+        'dialectic_project_resources': {
+          select: (state: MockQueryBuilderState) => {
+            queryWasCalled = true;
+            
+            // Assert resource_type filter is present
+            const hasResourceTypeFilter = state.filters.some(
+              (filter) =>
+                filter.type === 'eq' &&
+                filter.column === 'resource_type' &&
+                filter.value === 'seed_prompt',
+            );
+            if (!hasResourceTypeFilter) {
+              return Promise.resolve({
+                data: null,
+                error: new Error('seed_prompt queries must filter by resource_type'),
+                count: 0,
+                status: 400,
+                statusText: 'Missing resource_type filter',
+              });
+            }
+
+            // Assert session_id filter is present
+            const hasSessionIdFilter = state.filters.some(
+              (filter) =>
+                filter.type === 'eq' &&
+                filter.column === 'session_id' &&
+                filter.value === mockSessionId,
+            );
+            if (!hasSessionIdFilter) {
+              return Promise.resolve({
+                data: null,
+                error: new Error('seed_prompt queries must filter by session_id'),
+                count: 0,
+                status: 400,
+                statusText: 'Missing session_id filter',
+              });
+            }
+
+            // Assert stage_slug filter is NOT present (only one seed_prompt per session exists)
+            const hasStageSlugFilter = state.filters.some(
+              (filter) =>
+                filter.type === 'eq' &&
+                filter.column === 'stage_slug',
+            );
+            if (hasStageSlugFilter) {
+              return Promise.resolve({
+                data: null,
+                error: new Error('seed_prompt queries must NOT filter by stage_slug - only one seed_prompt exists per session'),
+                count: 0,
+                status: 400,
+                statusText: 'Unnecessary stage_slug filter detected',
+              });
+            }
+
+            // Assert iteration_number filter is NOT present (only one seed_prompt per session exists)
+            const hasIterationNumberFilter = state.filters.some(
+              (filter) =>
+                filter.type === 'eq' &&
+                filter.column === 'iteration_number',
+            );
+            if (hasIterationNumberFilter) {
+              return Promise.resolve({
+                data: null,
+                error: new Error('seed_prompt queries must NOT filter by iteration_number - only one seed_prompt exists per session'),
+                count: 0,
+                status: 400,
+                statusText: 'Unnecessary iteration_number filter detected',
+              });
+            }
+
+            return Promise.resolve({
+              data: [mockResource],
+              error: null,
+              count: 1,
+              status: 200,
+              statusText: 'OK',
+            });
+          },
+        },
+      },
+    });
+
+    // Mock the storage client download method
+    stub(mockClientSetup.client.storage, "from", () => ({
+      download: () => Promise.resolve({ data: new Blob([mockPromptContent]), error: null }),
+      upload: () => Promise.resolve({ data: { path: '' }, error: null }),
+      createSignedUrl: () => Promise.resolve({ data: { signedUrl: '' }, error: null }),
+      remove: () => Promise.resolve({ data: [], error: null }),
+      list: () => Promise.resolve({ data: [], error: null }),
+      copy: () => Promise.resolve({ data: { path: '' }, error: null }),
+    }));
+
+    // Call without skipSeedPrompt (should default to false and fetch)
+    const result = await getSessionDetails({ sessionId: mockSessionId }, mockClientSetup.client as any, mockOwnerUser);
+    
+    assertEquals(queryWasCalled, true, "dialectic_project_resources query should be called when skipSeedPrompt is not provided (defaults to false)");
+    assertExists(result.data, "Response data should exist on success");
+    assertEquals(result.status, 200);
+    assertExists(result.data.activeSeedPrompt, "activeSeedPrompt should be present when skipSeedPrompt is not provided (defaults to false)");
+    assertEquals(result.data.activeSeedPrompt?.promptContent, mockPromptContent);
   });
 }); 

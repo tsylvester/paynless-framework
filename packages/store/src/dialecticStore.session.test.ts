@@ -800,6 +800,47 @@ describe('useDialecticStore', () => {
             expect(state.activeSessionDetail).toEqual(mockSessionData);
             expect(state.currentProjectDetail).toBeNull(); // Should not create a project detail object
         });
+
+        it('should preserve existing activeSeedPrompt and not overwrite it when getSessionDetails is called', async () => {
+            const existingSeedPrompt: AssembledPrompt = {
+                promptContent: 'Existing seed prompt from startSession',
+                source_prompt_resource_id: 'res-existing-seed-1',
+            };
+            
+            useDialecticStore.setState({ 
+                activeSeedPrompt: existingSeedPrompt,
+                activeContextSessionId: mockSessionId,
+            });
+
+            const differentSeedPrompt: AssembledPrompt = {
+                promptContent: 'Different seed prompt from getSessionDetails',
+                source_prompt_resource_id: 'res-different-seed-2',
+            };
+
+            const apiResponseWithDifferentSeedPrompt: ApiResponse<{ 
+                session: DialecticSession; 
+                currentStageDetails: DialecticStage; 
+                activeSeedPrompt: AssembledPrompt | null; 
+            }> = {
+                data: {
+                    session: mockSessionData,
+                    currentStageDetails: mockStageDetails,
+                    activeSeedPrompt: differentSeedPrompt,
+                },
+                status: 200,
+            };
+
+            getMockDialecticClient().getSessionDetails.mockResolvedValue(apiResponseWithDifferentSeedPrompt);
+
+            await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(mockSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.isLoadingActiveSessionDetail).toBe(false);
+            expect(state.activeSessionDetail).toEqual(mockSessionData);
+            expect(state.activeSessionDetailError).toBeNull();
+            expect(state.activeSeedPrompt).toEqual(existingSeedPrompt);
+            expect(state.activeSeedPrompt).not.toEqual(differentSeedPrompt);
+        });
     });
 
     describe('activateProjectAndSessionContextForDeepLink Thunk', () => {

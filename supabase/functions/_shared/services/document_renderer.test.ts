@@ -561,10 +561,11 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
   });
 
   await t.step("issues a notification that the document has been rendered with its signature", async () => {
-    // End-state: call deps.notificationService with signature { projectId, sessionId, iterationNumber, stageSlug, documentIdentity }
+    // End-state: call deps.notificationService with signature { projectId, sessionId, iterationNumber, stageSlug, documentIdentity, latestRenderedResourceId }
     const rootId = "root-render-2";
     const sessionId = "session_r2";
     const stageSlug = "thesis";
+    const expectedResourceId = "resource-id-render-2";
     const contributionsNotif: ContributionRowMinimal[] = [
       {
         id: rootId,
@@ -619,12 +620,13 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       },
     });
 
+    const mockFileRecord = createMockFileRecord({ id: expectedResourceId });
     const params: RenderDocumentParams = { projectId: "project_123", sessionId, iterationNumber: 1, stageSlug, documentIdentity: rootId, documentKey: FileType.business_case, sourceContributionId: rootId };
     await renderDocument(dbClient, { 
       downloadFromStorage, 
       fileManager: (() => {
         const fm = new MockFileManagerService();
-        fm.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+        fm.setUploadAndRegisterFileResponse(mockFileRecord, null);
         return fm;
       })(),
       notificationService: mockNotificationService,
@@ -641,6 +643,8 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     assert(payload.document_key === "business_case");
     assert(payload.modelId === 'gpt-4o-mini');
     assert(payload.iterationNumber === 1);
+    assert(typeof payload.latestRenderedResourceId === 'string', "payload should include latestRenderedResourceId as a string");
+    assert(payload.latestRenderedResourceId === expectedResourceId, "latestRenderedResourceId should match the ID from the uploaded file record");
     assert(userId === contributionsNotif[0].user_id);
 
     clearAllStubs?.();

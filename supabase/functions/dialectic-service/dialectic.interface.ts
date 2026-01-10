@@ -396,6 +396,7 @@ type UpdateSessionModelsAction = { action: 'updateSessionModels', payload: Updat
 // Define new payload and action for getSessionDetails
 export interface GetSessionDetailsPayload { // Export if it might be used externally, otherwise keep as local type
   sessionId: string;
+  skipSeedPrompt?: boolean;
 }
 type GetSessionDetailsAction = { action: 'getSessionDetails', payload: GetSessionDetailsPayload };
 

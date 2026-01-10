@@ -2202,4 +2202,46 @@ describe('findSourceDocuments', () => {
         assertEquals(documents[0].id, 'header-54b-iv', 'should return the header_context from contributions');
         assertEquals(documents[0].contribution_type, 'header_context', 'should have correct contribution_type');
     });
+
+    it('should allow optional feedback to be missing without throwing an error', async () => {
+        // RED test: Proves that optional feedback (required: false) should not cause an error
+        // when no feedback records exist. This test will fail with current implementation
+        // because findSourceDocuments throws an error even when required: false.
+        const rules: InputRule[] = [
+            { 
+                type: 'feedback', 
+                slug: 'test-stage', 
+                document_key: FileType.business_case,
+                required: false 
+            },
+        ];
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_feedback: {
+                    select: () =>
+                        Promise.resolve({
+                            data: [], // No feedback exists - user hasn't provided any
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        }),
+                },
+            },
+        });
+
+        // This should NOT throw an error because feedback is optional (required: false)
+        // Current implementation will throw: "A required input of type 'feedback' was not found"
+        // This proves the flaw: optional feedback is being treated as required
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rules,
+        );
+
+        // When optional feedback is missing, the function should return successfully
+        // with an empty array (or continue processing other rules if present)
+        assertEquals(documents.length, 0, 'Should return empty array when optional feedback is missing');
+    });
 });

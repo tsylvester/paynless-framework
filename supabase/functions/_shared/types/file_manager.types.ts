@@ -11,7 +11,7 @@ import {
   ContributionType, 
   StorageError 
 } from '../../dialectic-service/dialectic.interface.ts';
-import { PostgrestError } from '@supabase/supabase-js';
+import { PostgrestError } from 'npm:@supabase/supabase-js@^2';
 
 export interface FileManagerDependencies {
   constructStoragePath: (context: PathContext) => { storagePath: string; fileName: string; }

@@ -423,9 +423,13 @@ export async function findSourceDocuments(
         }
 
         if (!sourceRecords || sourceRecords.length === 0) {
-            // Only throw if the rule is not optional, which we can assume for now.
-            // A more robust implementation might check a `rule.optional` flag.
-            throw new Error(`A required input of type '${rule.type}' was not found for the current job.`);
+            // Only throw if the rule is required (required === true or undefined, which defaults to required).
+            // If required === false, the input is optional and we should skip it without error.
+            if (rule.required !== false) {
+                throw new Error(`A required input of type '${rule.type}' was not found for the current job.`);
+            }
+            // If required === false, skip this rule and continue to the next one
+            continue;
         }
 
         for (const record of sourceRecords) {
