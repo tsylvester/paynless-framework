@@ -104,6 +104,7 @@ export function isIExecuteJobContext(value: unknown): value is IExecuteJobContex
         'getSeedPromptForStage' in value &&
         'promptAssembler' in value &&
         'getExtensionFromMimeType' in value &&
+        'extractSourceGroupFragment' in value &&
         'randomUUID' in value &&
         'shouldEnqueueRenderJob' in value &&
         'continueJob' in value &&
@@ -112,6 +113,7 @@ export function isIExecuteJobContext(value: unknown): value is IExecuteJobContex
         typeof value.promptAssembler === 'object' &&
         value.promptAssembler !== null &&
         typeof value.getExtensionFromMimeType === 'function' &&
+        typeof value.extractSourceGroupFragment === 'function' &&
         typeof value.randomUUID === 'function' &&
         typeof value.shouldEnqueueRenderJob === 'function' &&
         typeof value.continueJob === 'function' &&

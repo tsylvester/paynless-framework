@@ -38,6 +38,18 @@ describe('createJobContext Factory and Slicers', () => {
             assertEquals(result.findSourceDocuments, params.findSourceDocuments);
             assertEquals(result.documentRenderer, params.documentRenderer);
         });
+
+        it('includes extractSourceGroupFragment from params', () => {
+            const mockExtractSourceGroupFragment = () => 'test-fragment';
+            const params = createMockJobContextParams({
+                extractSourceGroupFragment: mockExtractSourceGroupFragment,
+            });
+            const result = createJobContext(params);
+
+            // Assert extractSourceGroupFragment is included
+            assertEquals(result.extractSourceGroupFragment, mockExtractSourceGroupFragment);
+            assertEquals(result.extractSourceGroupFragment, params.extractSourceGroupFragment);
+        });
     });
 
     describe('createExecuteJobContext', () => {
@@ -57,6 +69,14 @@ describe('createJobContext Factory and Slicers', () => {
             assertEquals(result.shouldEnqueueRenderJob, root.shouldEnqueueRenderJob);
             assertEquals(result.continueJob, root.continueJob);
             assertEquals(result.retryJob, root.retryJob);
+        });
+
+        it('extracts extractSourceGroupFragment from root', () => {
+            const root = createMockRootContext();
+            const result = createExecuteJobContext(root);
+
+            // Assert extractSourceGroupFragment is extracted from root
+            assertEquals(result.extractSourceGroupFragment, root.extractSourceGroupFragment);
         });
 
         it('does NOT include plan-specific fields', () => {

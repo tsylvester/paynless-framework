@@ -14,6 +14,8 @@ import {
     isIRenderJobContext,
     isIJobContext,
 } from './JobContext.type_guards.ts';
+import { createMockRootContext } from '../JobContext.mock.ts';
+import { createExecuteJobContext, createPlanJobContext, createRenderJobContext } from '../createJobContext.ts';
 
 describe('JobContexts Type Guards', () => {
     describe('isILoggerContext', () => {
@@ -113,100 +115,68 @@ describe('JobContexts Type Guards', () => {
 
     describe('isIExecuteJobContext', () => {
         it('returns true for valid execute context with all required fields', () => {
-            const mockLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
-            const mockFileManager = { upload: () => {}, download: () => {} };
-            const mockDownloadFromStorage = () => Promise.resolve({ data: null, error: null });
-            const mockDeleteFromStorage = () => Promise.resolve({ error: null });
-            const mockCallUnifiedAIModel = () => Promise.resolve({ content: '', error: null });
-            const mockGetAiProviderAdapter = () => null;
-            const mockGetAiProviderConfig = () => Promise.resolve({} as any);
-            const mockRagService = { search: () => {} };
-            const mockIndexingService = { index: () => {} };
-            const mockEmbeddingClient = { embed: () => {} };
-            const mockCountTokens = () => 0;
-            const mockTokenWalletService = { debit: () => {}, credit: () => {} };
-            const mockNotificationService = { send: () => {} };
-            const mockGetSeedPromptForStage = () => Promise.resolve({ content: '', fullPath: '', bucket: '', path: '', fileName: '' });
-            const mockPromptAssembler = { assemble: () => {} };
-            const mockGetExtensionFromMimeType = () => '.txt';
-            const mockRandomUUID = () => 'uuid';
-            const mockShouldEnqueueRenderJob = () => Promise.resolve({ shouldRender: false, reason: 'is_json' as const });
-            const mockContinueJob = () => Promise.resolve({ enqueued: false });
-            const mockRetryJob = () => Promise.resolve({});
-
-            const context = {
-                logger: mockLogger,
-                fileManager: mockFileManager,
-                downloadFromStorage: mockDownloadFromStorage,
-                deleteFromStorage: mockDeleteFromStorage,
-                callUnifiedAIModel: mockCallUnifiedAIModel,
-                getAiProviderAdapter: mockGetAiProviderAdapter,
-                getAiProviderConfig: mockGetAiProviderConfig,
-                ragService: mockRagService,
-                indexingService: mockIndexingService,
-                embeddingClient: mockEmbeddingClient,
-                countTokens: mockCountTokens,
-                tokenWalletService: mockTokenWalletService,
-                notificationService: mockNotificationService,
-                getSeedPromptForStage: mockGetSeedPromptForStage,
-                promptAssembler: mockPromptAssembler,
-                getExtensionFromMimeType: mockGetExtensionFromMimeType,
-                randomUUID: mockRandomUUID,
-                shouldEnqueueRenderJob: mockShouldEnqueueRenderJob,
-                continueJob: mockContinueJob,
-                retryJob: mockRetryJob,
-            };
+            const rootContext = createMockRootContext();
+            const context = createExecuteJobContext(rootContext);
 
             assertEquals(isIExecuteJobContext(context), true);
         });
 
         it('returns false for partial execute context missing base context fields', () => {
-            const mockGetSeedPromptForStage = () => Promise.resolve({ content: '', fullPath: '', bucket: '', path: '', fileName: '' });
-            const mockPromptAssembler = { assemble: () => {} };
-            const mockGetExtensionFromMimeType = () => '.txt';
-            const mockRandomUUID = () => 'uuid';
-            const mockShouldEnqueueRenderJob = () => Promise.resolve({ shouldRender: false, reason: 'is_json' as const });
-
             const context = {
-                getSeedPromptForStage: mockGetSeedPromptForStage,
-                promptAssembler: mockPromptAssembler,
-                getExtensionFromMimeType: mockGetExtensionFromMimeType,
-                randomUUID: mockRandomUUID,
-                shouldEnqueueRenderJob: mockShouldEnqueueRenderJob,
+                getSeedPromptForStage: async () => ({ content: '', fullPath: '', bucket: '', path: '', fileName: '' }),
+                promptAssembler: { assemble: () => {} },
+                getExtensionFromMimeType: () => '.txt',
+                extractSourceGroupFragment: () => 'test',
+                randomUUID: () => 'uuid',
+                shouldEnqueueRenderJob: async () => ({ shouldRender: false, reason: 'is_json' as const }),
             };
 
             assertEquals(isIExecuteJobContext(context), false);
         });
 
         it('returns false for partial execute context missing EXECUTE-specific fields', () => {
-            const mockLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
-            const mockFileManager = { upload: () => {}, download: () => {} };
-            const mockDownloadFromStorage = () => Promise.resolve({ data: null, error: null });
-            const mockDeleteFromStorage = () => Promise.resolve({ error: null });
-            const mockCallUnifiedAIModel = () => Promise.resolve({ content: '', error: null });
-            const mockGetAiProviderAdapter = () => null;
-            const mockGetAiProviderConfig = () => Promise.resolve({} as any);
-            const mockRagService = { search: () => {} };
-            const mockIndexingService = { index: () => {} };
-            const mockEmbeddingClient = { embed: () => {} };
-            const mockCountTokens = () => 0;
-            const mockTokenWalletService = { debit: () => {}, credit: () => {} };
-            const mockNotificationService = { send: () => {} };
+            const rootContext = createMockRootContext();
+            const baseContext = {
+                logger: rootContext.logger,
+                fileManager: rootContext.fileManager,
+                downloadFromStorage: rootContext.downloadFromStorage,
+                deleteFromStorage: rootContext.deleteFromStorage,
+                callUnifiedAIModel: rootContext.callUnifiedAIModel,
+                getAiProviderAdapter: rootContext.getAiProviderAdapter,
+                getAiProviderConfig: rootContext.getAiProviderConfig,
+                ragService: rootContext.ragService,
+                indexingService: rootContext.indexingService,
+                embeddingClient: rootContext.embeddingClient,
+                countTokens: rootContext.countTokens,
+                tokenWalletService: rootContext.tokenWalletService,
+                notificationService: rootContext.notificationService,
+            };
 
+            assertEquals(isIExecuteJobContext(baseContext), false);
+        });
+
+        it('returns false when extractSourceGroupFragment is missing', () => {
+            const rootContext = createMockRootContext();
+            const contextWithoutFragment = createExecuteJobContext(rootContext);
+            // Remove extractSourceGroupFragment to test missing field
+            const { extractSourceGroupFragment, ...context } = contextWithoutFragment;
+
+            assertEquals(isIExecuteJobContext(context), false);
+        });
+
+        it('returns true when extractSourceGroupFragment is present and is a function', () => {
+            const rootContext = createMockRootContext();
+            const context = createExecuteJobContext(rootContext);
+
+            assertEquals(isIExecuteJobContext(context), true);
+        });
+
+        it('returns false when extractSourceGroupFragment is not a function', () => {
+            const rootContext = createMockRootContext();
+            const contextWithInvalidFragment = createExecuteJobContext(rootContext);
             const context = {
-                logger: mockLogger,
-                fileManager: mockFileManager,
-                downloadFromStorage: mockDownloadFromStorage,
-                deleteFromStorage: mockDeleteFromStorage,
-                callUnifiedAIModel: mockCallUnifiedAIModel,
-                getAiProviderAdapter: mockGetAiProviderAdapter,
-                getAiProviderConfig: mockGetAiProviderConfig,
-                ragService: mockRagService,
-                indexingService: mockIndexingService,
-                embeddingClient: mockEmbeddingClient,
-                countTokens: mockCountTokens,
-                tokenWalletService: mockTokenWalletService,
-                notificationService: mockNotificationService,
+                ...contextWithInvalidFragment,
+                extractSourceGroupFragment: 'not-a-function' as unknown as typeof contextWithInvalidFragment.extractSourceGroupFragment,
             };
 
             assertEquals(isIExecuteJobContext(context), false);
@@ -215,24 +185,16 @@ describe('JobContexts Type Guards', () => {
 
     describe('isIPlanJobContext', () => {
         it('returns true for valid plan context', () => {
-            const mockLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
-            const mockGetGranularityPlanner = () => () => [];
-            const mockPlanComplexStage = () => Promise.resolve([]);
-
-            const context = {
-                logger: mockLogger,
-                getGranularityPlanner: mockGetGranularityPlanner,
-                planComplexStage: mockPlanComplexStage,
-            };
+            const rootContext = createMockRootContext();
+            const context = createPlanJobContext(rootContext);
 
             assertEquals(isIPlanJobContext(context), true);
         });
 
         it('returns false for partial plan context', () => {
-            const mockLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
-
+            const rootContext = createMockRootContext();
             const context = {
-                logger: mockLogger,
+                logger: rootContext.logger,
             };
 
             assertEquals(isIPlanJobContext(context), false);
@@ -241,38 +203,20 @@ describe('JobContexts Type Guards', () => {
 
     describe('isIRenderJobContext', () => {
         it('returns true for valid render context', () => {
-            const mockLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
-            const mockFileManager = { upload: () => {}, download: () => {} };
-            const mockDownloadFromStorage = () => Promise.resolve({ data: null, error: null });
-            const mockDeleteFromStorage = () => Promise.resolve({ error: null });
-            const mockNotificationService = { send: () => {} };
-            const mockDocumentRenderer = { render: () => {} };
-
-            const context = {
-                logger: mockLogger,
-                fileManager: mockFileManager,
-                downloadFromStorage: mockDownloadFromStorage,
-                deleteFromStorage: mockDeleteFromStorage,
-                notificationService: mockNotificationService,
-                documentRenderer: mockDocumentRenderer,
-            };
+            const rootContext = createMockRootContext();
+            const context = createRenderJobContext(rootContext);
 
             assertEquals(isIRenderJobContext(context), true);
         });
 
         it('returns false for partial render context', () => {
-            const mockLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
-            const mockFileManager = { upload: () => {}, download: () => {} };
-            const mockDownloadFromStorage = () => Promise.resolve({ data: null, error: null });
-            const mockDeleteFromStorage = () => Promise.resolve({ error: null });
-            const mockNotificationService = { send: () => {} };
-
+            const rootContext = createMockRootContext();
             const context = {
-                logger: mockLogger,
-                fileManager: mockFileManager,
-                downloadFromStorage: mockDownloadFromStorage,
-                deleteFromStorage: mockDeleteFromStorage,
-                notificationService: mockNotificationService,
+                logger: rootContext.logger,
+                fileManager: rootContext.fileManager,
+                downloadFromStorage: rootContext.downloadFromStorage,
+                deleteFromStorage: rootContext.deleteFromStorage,
+                notificationService: rootContext.notificationService,
             };
 
             assertEquals(isIRenderJobContext(context), false);
@@ -281,147 +225,23 @@ describe('JobContexts Type Guards', () => {
 
     describe('isIJobContext', () => {
         it('returns true for valid root context with all fields from all composed contexts plus orchestration utilities', () => {
-            const mockLogger = { info: () => {}, error: () => {}, warn: () => {} };
-            const mockFileManager = { upload: () => {}, download: () => {} };
-            const mockDownloadFromStorage = () => Promise.resolve({ data: null, error: null });
-            const mockDeleteFromStorage = () => Promise.resolve({ error: null });
-            const mockCallUnifiedAIModel = () => Promise.resolve({});
-            const mockGetAiProviderAdapter = () => ({});
-            const mockGetAiProviderConfig = () => Promise.resolve({});
-            const mockRagService = { query: () => {} };
-            const mockIndexingService = { index: () => {} };
-            const mockEmbeddingClient = { embed: () => {} };
-            const mockCountTokens = () => 0;
-            const mockTokenWalletService = { debit: () => {}, credit: () => {} };
-            const mockNotificationService = { send: () => {} };
-            const mockGetSeedPromptForStage = () => Promise.resolve({ seedPromptText: '', resourceDescriptions: [] });
-            const mockPromptAssembler = { assemble: () => {} };
-            const mockGetExtensionFromMimeType = () => '.txt';
-            const mockRandomUUID = () => 'uuid';
-            const mockShouldEnqueueRenderJob = () => Promise.resolve({ shouldEnqueue: false });
-            const mockGetGranularityPlanner = () => () => Promise.resolve({ chunks: [] });
-            const mockPlanComplexStage = () => Promise.resolve([]);
-            const mockDocumentRenderer = { render: () => {} };
-            const mockContinueJob = () => Promise.resolve();
-            const mockRetryJob = () => Promise.resolve();
-            const mockExecuteModelCallAndSave = () => Promise.resolve();
-
-            const context = {
-                logger: mockLogger,
-                fileManager: mockFileManager,
-                downloadFromStorage: mockDownloadFromStorage,
-                deleteFromStorage: mockDeleteFromStorage,
-                callUnifiedAIModel: mockCallUnifiedAIModel,
-                getAiProviderAdapter: mockGetAiProviderAdapter,
-                getAiProviderConfig: mockGetAiProviderConfig,
-                ragService: mockRagService,
-                indexingService: mockIndexingService,
-                embeddingClient: mockEmbeddingClient,
-                countTokens: mockCountTokens,
-                tokenWalletService: mockTokenWalletService,
-                notificationService: mockNotificationService,
-                getSeedPromptForStage: mockGetSeedPromptForStage,
-                promptAssembler: mockPromptAssembler,
-                getExtensionFromMimeType: mockGetExtensionFromMimeType,
-                randomUUID: mockRandomUUID,
-                shouldEnqueueRenderJob: mockShouldEnqueueRenderJob,
-                getGranularityPlanner: mockGetGranularityPlanner,
-                planComplexStage: mockPlanComplexStage,
-                documentRenderer: mockDocumentRenderer,
-                continueJob: mockContinueJob,
-                retryJob: mockRetryJob,
-                executeModelCallAndSave: mockExecuteModelCallAndSave,
-            };
+            const context = createMockRootContext();
 
             assertEquals(isIJobContext(context), true);
         });
 
         it('returns false for root context missing base context fields', () => {
-            const mockLogger = { info: () => {}, error: () => {}, warn: () => {} };
-            const mockFileManager = { upload: () => {}, download: () => {} };
-            const mockDownloadFromStorage = () => Promise.resolve({ data: null, error: null });
-            const mockDeleteFromStorage = () => Promise.resolve({ error: null });
-            const mockNotificationService = { send: () => {} };
-            const mockGetSeedPromptForStage = () => Promise.resolve({ seedPromptText: '', resourceDescriptions: [] });
-            const mockPromptAssembler = { assemble: () => {} };
-            const mockGetExtensionFromMimeType = () => '.txt';
-            const mockRandomUUID = () => 'uuid';
-            const mockShouldEnqueueRenderJob = () => Promise.resolve({ shouldEnqueue: false });
-            const mockGetGranularityPlanner = () => () => Promise.resolve({ chunks: [] });
-            const mockPlanComplexStage = () => Promise.resolve([]);
-            const mockDocumentRenderer = { render: () => {} };
-            const mockContinueJob = () => Promise.resolve();
-            const mockRetryJob = () => Promise.resolve();
-            const mockExecuteModelCallAndSave = () => Promise.resolve();
-
-            const contextMissingModelContext = {
-                logger: mockLogger,
-                fileManager: mockFileManager,
-                downloadFromStorage: mockDownloadFromStorage,
-                deleteFromStorage: mockDeleteFromStorage,
-                notificationService: mockNotificationService,
-                getSeedPromptForStage: mockGetSeedPromptForStage,
-                promptAssembler: mockPromptAssembler,
-                getExtensionFromMimeType: mockGetExtensionFromMimeType,
-                randomUUID: mockRandomUUID,
-                shouldEnqueueRenderJob: mockShouldEnqueueRenderJob,
-                getGranularityPlanner: mockGetGranularityPlanner,
-                planComplexStage: mockPlanComplexStage,
-                documentRenderer: mockDocumentRenderer,
-                continueJob: mockContinueJob,
-                retryJob: mockRetryJob,
-                executeModelCallAndSave: mockExecuteModelCallAndSave,
-            };
+            const rootContext = createMockRootContext();
+            // Remove model context fields to test missing base context
+            const { callUnifiedAIModel, getAiProviderAdapter, getAiProviderConfig, ...contextMissingModelContext } = rootContext;
 
             assertEquals(isIJobContext(contextMissingModelContext), false);
         });
 
         it('returns false for root context missing orchestration utilities', () => {
-            const mockLogger = { info: () => {}, error: () => {}, warn: () => {} };
-            const mockFileManager = { upload: () => {}, download: () => {} };
-            const mockDownloadFromStorage = () => Promise.resolve({ data: null, error: null });
-            const mockDeleteFromStorage = () => Promise.resolve({ error: null });
-            const mockCallUnifiedAIModel = () => Promise.resolve({});
-            const mockGetAiProviderAdapter = () => ({});
-            const mockGetAiProviderConfig = () => Promise.resolve({});
-            const mockRagService = { query: () => {} };
-            const mockIndexingService = { index: () => {} };
-            const mockEmbeddingClient = { embed: () => {} };
-            const mockCountTokens = () => 0;
-            const mockTokenWalletService = { debit: () => {}, credit: () => {} };
-            const mockNotificationService = { send: () => {} };
-            const mockGetSeedPromptForStage = () => Promise.resolve({ seedPromptText: '', resourceDescriptions: [] });
-            const mockPromptAssembler = { assemble: () => {} };
-            const mockGetExtensionFromMimeType = () => '.txt';
-            const mockRandomUUID = () => 'uuid';
-            const mockShouldEnqueueRenderJob = () => Promise.resolve({ shouldEnqueue: false });
-            const mockGetGranularityPlanner = () => () => Promise.resolve({ chunks: [] });
-            const mockPlanComplexStage = () => Promise.resolve([]);
-            const mockDocumentRenderer = { render: () => {} };
-
-            const contextMissingOrchestration = {
-                logger: mockLogger,
-                fileManager: mockFileManager,
-                downloadFromStorage: mockDownloadFromStorage,
-                deleteFromStorage: mockDeleteFromStorage,
-                callUnifiedAIModel: mockCallUnifiedAIModel,
-                getAiProviderAdapter: mockGetAiProviderAdapter,
-                getAiProviderConfig: mockGetAiProviderConfig,
-                ragService: mockRagService,
-                indexingService: mockIndexingService,
-                embeddingClient: mockEmbeddingClient,
-                countTokens: mockCountTokens,
-                tokenWalletService: mockTokenWalletService,
-                notificationService: mockNotificationService,
-                getSeedPromptForStage: mockGetSeedPromptForStage,
-                promptAssembler: mockPromptAssembler,
-                getExtensionFromMimeType: mockGetExtensionFromMimeType,
-                randomUUID: mockRandomUUID,
-                shouldEnqueueRenderJob: mockShouldEnqueueRenderJob,
-                getGranularityPlanner: mockGetGranularityPlanner,
-                planComplexStage: mockPlanComplexStage,
-                documentRenderer: mockDocumentRenderer,
-            };
+            const rootContext = createMockRootContext();
+            // Remove orchestration utilities to test missing fields
+            const { continueJob, retryJob, executeModelCallAndSave, ...contextMissingOrchestration } = rootContext;
 
             assertEquals(isIJobContext(contextMissingOrchestration), false);
         });

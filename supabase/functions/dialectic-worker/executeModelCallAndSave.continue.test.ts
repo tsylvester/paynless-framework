@@ -819,6 +819,9 @@ Deno.test('executeModelCallAndSave - sets dynamic document_relationships key bas
       },
       output_type: FileType.business_case,
       document_key: FileType.business_case,
+      document_relationships: {
+        source_group: '550e8400-e29b-41d4-a716-446655440000',
+      },
     };
     const params: ExecuteModelCallAndSaveParams = {
       dbClient: dbClient as unknown as SupabaseClient<Database>,

@@ -1070,4 +1070,110 @@ Deno.test('planPerSourceDocument EXECUTE branch must not set document_relationsh
 		}
 	}
 });
+
+Deno.test('planPerSourceDocument plans comparison_vector when recipeStep.output_type is assembled_document_json', () => {
+	const executeRecipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
+		output_type: FileType.AssembledDocumentJson,
+		outputs_required: {
+			documents: [{
+				artifact_class: 'assembled_document_json',
+				file_type: 'json',
+				document_key: FileType.comparison_vector,
+				template_filename: 'antithesis_comparison_vector.json',
+				content_to_include: {
+					proposal: {
+						lineage_key: '',
+						source_model_slug: '',
+					},
+					dimensions: {
+						feasibility: { score: 0, rationale: '' },
+						complexity: { score: 0, rationale: '' },
+						security: { score: 0, rationale: '' },
+						performance: { score: 0, rationale: '' },
+						maintainability: { score: 0, rationale: '' },
+						scalability: { score: 0, rationale: '' },
+						cost: { score: 0, rationale: '' },
+						time_to_market: { score: 0, rationale: '' },
+						compliance_risk: { score: 0, rationale: '' },
+						alignment_with_constraints: { score: 0, rationale: '' },
+					},
+				},
+			}],
+			assembled_json: [],
+			files_to_generate: [
+				{
+					from_document_key: FileType.comparison_vector,
+					template_filename: 'antithesis_comparison_vector.json',
+				},
+			],
+		},
+	};
+
+	const childPayloads = planPerSourceDocument(
+		MOCK_SOURCE_DOCS,
+		MOCK_PARENT_JOB,
+		executeRecipeStep,
+		MOCK_PARENT_JOB.payload.user_jwt,
+	);
+
+	assertEquals(childPayloads.length, MOCK_SOURCE_DOCS.length, 'Should create one child job per source document');
+	for (const payload of childPayloads) {
+		assertExists(payload, 'Child job should exist');
+		assertEquals(isDialecticExecuteJobPayload(payload), true, 'Child job should be an EXECUTE payload');
+		if (!isDialecticExecuteJobPayload(payload)) {
+			throw new Error('Expected EXECUTE job');
+		}
+		assertEquals(payload.output_type, FileType.comparison_vector);
+		assertEquals(payload.document_key, FileType.comparison_vector);
+	}
+});
+
+Deno.test('planPerSourceDocument includes inputs.header_context_id when recipeStep.inputs_required includes header_context', () => {
+	const headerContextDoc: SourceDocument = {
+		...MOCK_SOURCE_DOCS[0],
+		id: 'hc-1',
+		contribution_type: 'header_context',
+		stage: 'antithesis',
+		file_name: 'mock-model_0_header_context.json',
+		storage_bucket: 'b1',
+		storage_path: 'p1',
+		model_name: 'M1',
+	};
+
+	const thesisDoc: SourceDocument = {
+		...MOCK_SOURCE_DOCS[1],
+		id: 'thesis-1',
+		contribution_type: 'thesis',
+		stage: 'thesis',
+		model_name: 'M1',
+	};
+
+	const executeRecipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
+		inputs_required: [
+			{ type: 'header_context', slug: 'antithesis', required: true },
+			{ type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true },
+		],
+		output_type: FileType.business_case_critique,
+	};
+
+	const childPayloads = planPerSourceDocument(
+		[headerContextDoc, thesisDoc],
+		MOCK_PARENT_JOB,
+		executeRecipeStep,
+		MOCK_PARENT_JOB.payload.user_jwt,
+	);
+
+	const thesisPayload = childPayloads.find(
+		(p) => isDialecticExecuteJobPayload(p) && p.inputs?.thesis_id === thesisDoc.id,
+	);
+	assertExists(thesisPayload);
+	if (!isDialecticExecuteJobPayload(thesisPayload)) {
+		throw new Error('Expected EXECUTE job');
+	}
+	assertEquals(thesisPayload.inputs?.header_context_id, headerContextDoc.id);
+});
  

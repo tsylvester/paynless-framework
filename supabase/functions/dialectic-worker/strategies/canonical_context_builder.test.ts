@@ -244,3 +244,168 @@ Deno.test('createCanonicalPathParams preserves intermediate ContributionType reg
     const params = createCanonicalPathParams(sourceDocs, FileType.PairwiseSynthesisChunk, mockSourceDocument1, stage);
     assertEquals(params.contributionType, 'pairwise_synthesis_chunk');
 });
+
+Deno.test('createCanonicalPathParams extracts sourceAnchorModelSlug from HeaderContext storage path for antithesis patterns', () => {
+    const mockAntithesisHeaderContext: SourceDocument = {
+        ...mockSourceDocument1,
+        contribution_type: 'header_context',
+        model_name: 'claude',
+        storage_path: 'project-123/session_abc12345/iteration_1/2_antithesis/_work/context',
+        file_name: 'claude_critiquing_gpt-4_98765432_0_header_context.json',
+        id: 'header-context-uuid-123',
+        attempt_count: 0,
+    };
+    
+    const params = createCanonicalPathParams(
+        [mockAntithesisHeaderContext],
+        FileType.TurnPrompt,
+        mockAntithesisHeaderContext,
+        'antithesis'
+    );
+    
+    assertEquals(params.sourceAnchorModelSlug, 'gpt-4');
+});
+
+Deno.test('createCanonicalPathParams uses model_name for simple HeaderContext when no critiquing pattern exists', () => {
+    const mockSimpleHeaderContext: SourceDocument = {
+        ...mockSourceDocument1,
+        contribution_type: 'header_context',
+        model_name: 'gpt-4',
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis/_work/context',
+        file_name: 'gpt-4_0_header_context.json',
+        id: 'header-context-uuid-456',
+        attempt_count: 0,
+    };
+    
+    const params = createCanonicalPathParams(
+        [mockSimpleHeaderContext],
+        FileType.TurnPrompt,
+        mockSimpleHeaderContext,
+        'thesis'
+    );
+    
+    assertEquals(params.sourceAnchorModelSlug, 'gpt-4');
+});
+
+Deno.test('createCanonicalPathParams extracts sourceAnchorModelSlug from rendered document filename when model_name is null', () => {
+    const mockRenderedDocument: SourceDocument = {
+        ...mockSourceDocument1,
+        contribution_type: 'rendered_document',
+        model_name: null,
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        file_name: 'mock-model_0_business_case.md',
+        id: 'rendered-doc-uuid-789',
+        attempt_count: 0,
+        stage: 'thesis',
+    };
+    
+    const params = createCanonicalPathParams(
+        [mockRenderedDocument],
+        FileType.HeaderContext,
+        mockRenderedDocument,
+        'antithesis'
+    );
+    
+    assertExists(params.sourceAnchorModelSlug);
+    assertEquals(params.sourceAnchorModelSlug, 'mock-model');
+});
+
+Deno.test('createCanonicalPathParams extracts sourceAnchorModelSlug from rendered document filename when creating HeaderContext for antithesis stage even when model_name exists', () => {
+    // When creating HeaderContext for antithesis stage, extract from filename even if model_name exists
+    // because model_name may be incorrect or represent the critiquing model, not the source model
+    const mockRenderedDocument: SourceDocument = {
+        ...mockSourceDocument1,
+        contribution_type: 'rendered_document',
+        model_name: 'wrong-model', // Should be ignored, extract from filename instead
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        file_name: 'mock-model_0_business_case.md', // Filename contains correct source model
+        id: 'rendered-doc-uuid-789',
+        attempt_count: 0,
+        stage: 'thesis',
+    };
+    
+    const params = createCanonicalPathParams(
+        [mockRenderedDocument],
+        FileType.HeaderContext,
+        mockRenderedDocument,
+        'antithesis'
+    );
+    
+    // Should extract 'mock-model' from filename, NOT use 'wrong-model' from model_name
+    assertExists(params.sourceAnchorModelSlug);
+    assertEquals(params.sourceAnchorModelSlug, 'mock-model', 'Should extract sourceAnchorModelSlug from filename when creating HeaderContext for antithesis stage, ignoring model_name');
+});
+
+Deno.test('createCanonicalPathParams extracts sourceAttemptCount from rendered document filename when attempt_count is missing', () => {
+    const mockRenderedDocument: SourceDocument = {
+        ...mockSourceDocument1,
+        contribution_type: 'rendered_document',
+        model_name: null,
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        file_name: 'mock-model_7_business_case.md',
+        id: 'rendered-doc-uuid-attempt-7',
+        attempt_count: undefined,
+        stage: 'thesis',
+    };
+
+    const params = createCanonicalPathParams(
+        [mockRenderedDocument],
+        FileType.HeaderContext,
+        mockRenderedDocument,
+        'antithesis'
+    );
+
+    assertExists(params.sourceAttemptCount);
+    assertEquals(params.sourceAttemptCount, 7);
+});
+
+Deno.test('createCanonicalPathParams extracts sourceAnchorModelSlug from rendered document filename when creating HeaderContext for antithesis stage (model_name is null)', () => {
+    const mockRenderedDocumentFromThesis: SourceDocument = {
+        ...mockSourceDocument1,
+        contribution_type: 'thesis',
+        model_name: null,
+        storage_path: 'project-123/session_abc12345/iteration_1/1_thesis/documents',
+        file_name: 'gpt-4_0_business_case.md',
+        id: 'rendered-doc-thesis-uuid',
+        attempt_count: 0,
+        stage: 'thesis',
+    };
+    
+    const params = createCanonicalPathParams(
+        [mockRenderedDocumentFromThesis],
+        FileType.HeaderContext,
+        mockRenderedDocumentFromThesis,
+        'antithesis'
+    );
+    
+    assertExists(params.sourceAnchorModelSlug);
+    assertEquals(params.sourceAnchorModelSlug, 'gpt-4');
+});
+
+Deno.test('createCanonicalPathParams extracts sourceAnchorModelSlug from filename when creating HeaderContext for antithesis stage even when model_name exists', () => {
+    // When creating HeaderContext for antithesis stage, we must extract sourceAnchorModelSlug
+    // from the filename (which contains the original source model), NOT from model_name
+    // (which may be the critiquing model or incorrect). This ensures the critiquing pattern
+    // uses the correct source model slug.
+    const mockRenderedDocumentFromThesis: SourceDocument = {
+        ...mockSourceDocument1,
+        contribution_type: 'thesis',
+        model_name: 'claude', // This is the critiquing model, but we need the source model from filename
+        storage_path: 'project-123/session_abc12345/iteration_1/1_thesis/documents',
+        file_name: 'gpt-4_0_business_case.md', // Filename contains the original source model 'gpt-4'
+        id: 'rendered-doc-thesis-uuid',
+        attempt_count: 0,
+        stage: 'thesis',
+    };
+    
+    const params = createCanonicalPathParams(
+        [mockRenderedDocumentFromThesis],
+        FileType.HeaderContext,
+        mockRenderedDocumentFromThesis,
+        'antithesis'
+    );
+    
+    // Should extract 'gpt-4' from filename, NOT use 'claude' from model_name
+    assertExists(params.sourceAnchorModelSlug);
+    assertEquals(params.sourceAnchorModelSlug, 'gpt-4', 'Should extract sourceAnchorModelSlug from filename when creating HeaderContext for antithesis stage, ignoring model_name');
+});

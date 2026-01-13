@@ -46,6 +46,7 @@ export function createJobContext(params: JobContextParams): IJobContext {
         getSeedPromptForStage: params.getSeedPromptForStage,
         promptAssembler: params.promptAssembler,
         getExtensionFromMimeType: params.getExtensionFromMimeType,
+        extractSourceGroupFragment: params.extractSourceGroupFragment,
         randomUUID: params.randomUUID,
         shouldEnqueueRenderJob: params.shouldEnqueueRenderJob,
 
@@ -102,6 +103,7 @@ export function createExecuteJobContext(root: IJobContext): IExecuteJobContext {
         getSeedPromptForStage: root.getSeedPromptForStage,
         promptAssembler: root.promptAssembler,
         getExtensionFromMimeType: root.getExtensionFromMimeType,
+        extractSourceGroupFragment: root.extractSourceGroupFragment,
         randomUUID: root.randomUUID,
         shouldEnqueueRenderJob: root.shouldEnqueueRenderJob,
 

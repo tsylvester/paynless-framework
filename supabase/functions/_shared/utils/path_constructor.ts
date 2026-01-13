@@ -1,5 +1,6 @@
 import { FileType, type PathContext } from '../types/file_manager.types.ts';
 import { isDocumentKey } from './type-guards/type_guards.file_manager.ts';
+import { extractSourceGroupFragment } from './path_utils.ts';
 
 /**
  * Defines the structure for a constructed path, separating directory and filename.
@@ -68,6 +69,7 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     turnIndex,
     documentKey,
     stepName,
+    sourceGroupFragment,
   } = context;
 
   // Validate ALL required values for document file types BEFORE any path construction logic
@@ -169,30 +171,82 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined || !documentKey) {
         throw new Error('Required context missing for turn_prompt.');
       }
+      const sanitizedFragment = extractSourceGroupFragment(sourceGroupFragment);
+      const fragmentSegment = sanitizedFragment ? `_${sanitizedFragment}` : '';
       const continuationSuffix = isContinuation ? `_continuation_${turnIndex}` : '';
-      const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizeForPath(documentKey)}${continuationSuffix}_prompt.md`;
-      return { storagePath: `${stageRootPath}/_work/prompts`, fileName };
+      
+      // Check if antithesis pattern applies: stageSlug === 'antithesis' AND sourceAnchorModelSlug exists
+      if (rawStageSlug === 'antithesis' && sourceAnchorModelSlug) {
+        const sourceAnchorModelSlugSanitized = sanitizeForPath(sourceAnchorModelSlug);
+        const sanitizedDocumentKey = sanitizeForPath(documentKey);
+        // Antithesis pattern: {modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_{documentKey}[_continuation_{turnIndex}]_prompt.md
+        const fileName = `${modelSlugSanitized}_critiquing_${sourceAnchorModelSlugSanitized}${fragmentSegment}_${attemptCount}_${sanitizedDocumentKey}${continuationSuffix}_prompt.md`;
+        return { storagePath: `${stageRootPath}/_work/prompts`, fileName };
+      } else {
+        // Simple pattern: {modelSlug}_{attemptCount}_{documentKey}[_{fragment}][_continuation_{turnIndex}]_prompt.md
+        const sanitizedDocumentKey = sanitizeForPath(documentKey);
+        const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizedDocumentKey}${fragmentSegment}${continuationSuffix}_prompt.md`;
+        return { storagePath: `${stageRootPath}/_work/prompts`, fileName };
+      }
     }
     case FileType.HeaderContext: {
       if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
         throw new Error('Required context missing for header_context.');
       }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_header_context.json`;
-      return { storagePath: `${stageRootPath}/_work/context`, fileName };
+      const sanitizedFragment = extractSourceGroupFragment(sourceGroupFragment);
+      const fragmentSegment = sanitizedFragment ? `_${sanitizedFragment}` : '';
+      
+      // Check if antithesis pattern applies: stageSlug === 'antithesis' AND sourceAnchorModelSlug exists
+      if (rawStageSlug === 'antithesis' && sourceAnchorModelSlug) {
+        const sourceAnchorModelSlugSanitized = sanitizeForPath(sourceAnchorModelSlug);
+        // Antithesis pattern: {modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_header_context.json
+        const fileName = `${modelSlugSanitized}_critiquing_${sourceAnchorModelSlugSanitized}${fragmentSegment}_${attemptCount}_header_context.json`;
+        return { storagePath: `${stageRootPath}/_work/context`, fileName };
+      } else {
+        // Simple pattern: {modelSlug}_{attemptCount}[_{fragment}]_header_context.json
+        const fileName = `${modelSlugSanitized}_${attemptCount}${fragmentSegment}_header_context.json`;
+        return { storagePath: `${stageRootPath}/_work/context`, fileName };
+      }
     }
     case FileType.AssembledDocumentJson: {
       if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined || !documentKey) {
         throw new Error('Required context missing for assembled_document_json.');
       }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizeForPath(documentKey)}_assembled.json`;
-      return { storagePath: `${stageRootPath}/_work/assembled_json`, fileName };
+      const sanitizedFragment = extractSourceGroupFragment(sourceGroupFragment);
+      const fragmentSegment = sanitizedFragment ? `_${sanitizedFragment}` : '';
+      const sanitizedDocumentKey = sanitizeForPath(documentKey);
+      
+      // Check if antithesis pattern applies: stageSlug === 'antithesis' AND sourceAnchorModelSlug exists
+      if (rawStageSlug === 'antithesis' && sourceAnchorModelSlug) {
+        const sourceAnchorModelSlugSanitized = sanitizeForPath(sourceAnchorModelSlug);
+        // Antithesis pattern: {modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_{documentKey}_assembled.json
+        const fileName = `${modelSlugSanitized}_critiquing_${sourceAnchorModelSlugSanitized}${fragmentSegment}_${attemptCount}_${sanitizedDocumentKey}_assembled.json`;
+        return { storagePath: `${stageRootPath}/_work/assembled_json`, fileName };
+      } else {
+        // Simple pattern: {modelSlug}_{attemptCount}_{documentKey}[_{fragment}]_assembled.json
+        const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizedDocumentKey}${fragmentSegment}_assembled.json`;
+        return { storagePath: `${stageRootPath}/_work/assembled_json`, fileName };
+      }
     }
     case FileType.RenderedDocument: {
       if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined || !documentKey) {
         throw new Error('Required context missing for rendered_document.');
       }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizeForPath(documentKey)}.md`;
-      return { storagePath: `${stageRootPath}/documents`, fileName };
+      const sanitizedFragment = extractSourceGroupFragment(sourceGroupFragment);
+      const fragmentSegment = sanitizedFragment ? `_${sanitizedFragment}` : '';
+      const sanitizedDocumentKey = sanitizeForPath(documentKey);
+      
+      // Check if antithesis pattern applies: stageSlug === 'antithesis' AND sourceAnchorModelSlug exists
+      if (rawStageSlug === 'antithesis' && sourceAnchorModelSlug) {
+        const sourceAnchorModelSlugSanitized = sanitizeForPath(sourceAnchorModelSlug);
+        // Antithesis pattern: {modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_{documentKey}.md
+        const fileName = `${modelSlugSanitized}_critiquing_${sourceAnchorModelSlugSanitized}${fragmentSegment}_${attemptCount}_${sanitizedDocumentKey}.md`;
+        return { storagePath: `${stageRootPath}/documents`, fileName };
+      } else {
+        // Simple pattern: {modelSlug}_{attemptCount}_{documentKey}[_{fragment}].md
+        const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizedDocumentKey}${fragmentSegment}.md`;
+        return { storagePath: `${stageRootPath}/documents`, fileName };
+      }
     }
 
     // --- New Synthesis-specific FileTypes ---
@@ -282,18 +336,34 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       }
 
       // Handle new document-centric raw JSONs first, as they have a simpler naming scheme.
-      if (fileType === FileType.ModelContributionRawJson && documentKey) {
+      // However, if contributionType is 'antithesis', it will be handled in the switch case below.
+      if (fileType === FileType.ModelContributionRawJson && documentKey && contributionType !== 'antithesis') {
         // Validate turnIndex for continuation chunks before constructing path
         if (isContinuation === true) {
           if (turnIndex === undefined || typeof turnIndex !== 'number' || turnIndex <= 0) {
             throw new Error('turnIndex is required and must be a number > 0 for continuation chunks');
           }
         }
+        const sanitizedFragment = extractSourceGroupFragment(sourceGroupFragment);
+        const fragmentSegment = sanitizedFragment ? `_${sanitizedFragment}` : '';
         const sanitizedDocumentKey = sanitizeForPath(documentKey);
         const continuationSuffix = isContinuation ? `_continuation_${turnIndex}` : '';
-        const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizedDocumentKey}${continuationSuffix}_raw.json`;
-        const storagePath = isContinuation ? `${stageRootPath}/_work/raw_responses` : `${stageRootPath}/raw_responses`;
-        return { storagePath, fileName };
+        
+        // Check if antithesis pattern applies: stageSlug === 'antithesis' AND sourceAnchorModelSlug exists
+        if (rawStageSlug === 'antithesis' && sourceAnchorModelSlug) {
+          const sourceAnchorModelSlugSanitized = sanitizeForPath(sourceAnchorModelSlug);
+          // Antithesis pattern: {modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_{documentKey}[_continuation_{turnIndex}]_raw.json
+          // Fragment appears between sourceAnchorModelSlug and attemptCount for antithesis patterns
+          const fileName = `${modelSlugSanitized}_critiquing_${sourceAnchorModelSlugSanitized}${fragmentSegment}_${attemptCount}_${sanitizedDocumentKey}${continuationSuffix}_raw.json`;
+          const storagePath = isContinuation ? `${stageRootPath}/_work/raw_responses` : `${stageRootPath}/raw_responses`;
+          return { storagePath, fileName };
+        } else {
+          // Simple pattern: ${modelSlug}_${attemptCount}_${documentKey}[_{fragment}]${continuationSuffix}_raw.json
+          // Fragment appears after documentKey, before continuation suffix if present
+          const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizedDocumentKey}${fragmentSegment}${continuationSuffix}_raw.json`;
+          const storagePath = isContinuation ? `${stageRootPath}/_work/raw_responses` : `${stageRootPath}/raw_responses`;
+          return { storagePath, fileName };
+        }
       }
 
       let baseFileName: string;
@@ -318,12 +388,20 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       }
 
       switch (effectiveContributionType) {
-        case 'antithesis':
+        case 'antithesis': {
           if (!sourceModelSlugs || sourceModelSlugs.length !== 1 || !sourceAnchorType || sourceAttemptCount === undefined) {
             throw new Error('Antithesis requires one sourceModelSlug, a sourceAnchorType, and a sourceAttemptCount.');
           }
-          baseFileName = `${modelSlugSanitized}_critiquing_(${sanitizeForPath(sourceModelSlugs[0])}'s_${sanitizeForPath(sourceAnchorType)}_${sourceAttemptCount})_${attemptCount}_${contributionTypeSanitized}`;
+          const sanitizedFragment = extractSourceGroupFragment(sourceGroupFragment);
+          const fragmentSegment = sanitizedFragment ? `_${sanitizedFragment}` : '';
+          // Antithesis pattern: ${modelSlug}_critiquing_(${sourceModelSlug}'s_${sourceAnchorType}_${sourceAttemptCount})[_{fragment}]_${attemptCount}_${documentKey or contributionType}
+          // For ModelContributionRawJson with documentKey: fragment goes between sourceAttemptCount segment and attemptCount, use documentKey instead of contributionType
+          const finalSegment = (fileType === FileType.ModelContributionRawJson && documentKey) 
+            ? sanitizeForPath(documentKey)
+            : contributionTypeSanitized;
+          baseFileName = `${modelSlugSanitized}_critiquing_(${sanitizeForPath(sourceModelSlugs[0])}'s_${sanitizeForPath(sourceAnchorType)}_${sourceAttemptCount})${fragmentSegment}_${attemptCount}_${finalSegment}`;
           break;
+        }
         case FileType.PairwiseSynthesisChunk:
           if (!sourceAnchorType || !sourceAnchorModelSlug || !pairedModelSlug) {
             throw new Error('Required sourceAnchorType, sourceAnchorModelSlug, and pairedModelSlug missing for pairwise_synthesis_chunk.');

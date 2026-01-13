@@ -256,31 +256,51 @@ export async function assembleTurnPrompt(
     );
   }
 
-  // Query database for template storage information
-  // We must filter by storage_path to ensure we only get prompt files (agent-facing) 
-  // and not template files (user-facing). Prompt files are in docs/prompts/{stage_slug}/,
-  // while template files are in docs/templates/{stage_slug}/.
-  // We also filter by document_key in filename to ensure precise matching.
-  type DocumentTemplateRow = Database['public']['Tables']['dialectic_document_templates']['Row'];
-  const templateFileName = docInfo.template_filename;
-  let templateQuery = dbClient
-    .from('dialectic_document_templates')
-    .select('*')
-    .ilike('storage_path', `docs/prompts/${stage.slug}/%`)
-    .ilike('file_name', `%${documentKey}%`)
-    .eq('is_active', true);
-
-  // Optionally filter by domain_id to ensure we get the correct template for the project's domain
-  if (project.selected_domain_id) {
-    templateQuery = templateQuery.eq('domain_id', project.selected_domain_id);
+  // 5.b Resolve Turn prompt template via recipe_step.prompt_template_id (authoritative, no fallbacks)
+  if (typeof stage.recipe_step.prompt_template_id !== "string" || stage.recipe_step.prompt_template_id.length === 0) {
+    throw new Error(
+      `PRECONDITION_FAILED: Recipe step is missing prompt_template_id for document_key '${documentKey}'.`,
+    );
   }
 
-  const { data: templateRow, error: templateErr } = await templateQuery
-    .maybeSingle<DocumentTemplateRow>();
+  type SystemPromptRow = Database["public"]["Tables"]["system_prompts"]["Row"];
+  const { data: systemPrompt, error: systemPromptError } = await dbClient
+    .from("system_prompts")
+    .select("id, document_template_id")
+    .eq("id", stage.recipe_step.prompt_template_id)
+    .single<SystemPromptRow>();
+
+  if (systemPromptError || !systemPrompt) {
+    throw new Error(
+      `Failed to load system_prompts row for prompt_template_id '${stage.recipe_step.prompt_template_id}': ${systemPromptError?.message ?? "not found"}`,
+    );
+  }
+
+  const documentTemplateId = systemPrompt.document_template_id;
+  if (typeof documentTemplateId !== "string" || documentTemplateId.length === 0) {
+    throw new Error(
+      `System prompt '${systemPrompt.id}' is missing document_template_id. Turn prompts must resolve templates via document_template_id.`,
+    );
+  }
+
+  type DocumentTemplateRow = Database["public"]["Tables"]["dialectic_document_templates"]["Row"];
+  if (typeof project.selected_domain_id !== "string" || project.selected_domain_id.length === 0) {
+    throw new Error(
+      `Project '${project.id}' is missing selected_domain_id. Template lookup requires domain_id.`,
+    );
+  }
+
+  const { data: templateRow, error: templateErr } = await dbClient
+    .from("dialectic_document_templates")
+    .select("storage_bucket, storage_path, file_name")
+    .eq("id", documentTemplateId)
+    .eq("domain_id", project.selected_domain_id)
+    .eq("is_active", true)
+    .single<DocumentTemplateRow>();
 
   if (templateErr || !templateRow) {
     throw new Error(
-      `No template mapping found for storage_path='docs/prompts/${stage.slug}/%' file_name containing '${documentKey}'${project.selected_domain_id ? ` domain_id='${project.selected_domain_id}'` : ''}: ${templateErr ? (templateErr).message ?? 'unknown error' : 'not found'}`
+      `Failed to resolve document template '${documentTemplateId}' for domain_id '${project.selected_domain_id}': ${templateErr?.message ?? "not found"}`,
     );
   }
 
@@ -288,21 +308,33 @@ export async function assembleTurnPrompt(
   const templateStoragePath = templateRow.storage_path;
   const templateFile = templateRow.file_name;
 
-  if (!templateBucket || !templateStoragePath || !templateFile) {
-    throw new Error(`Invalid template row: ${JSON.stringify(templateRow)}`);
+  if (typeof templateBucket !== "string" || templateBucket.length === 0) {
+    throw new Error(
+      `Invalid template row '${documentTemplateId}': missing storage_bucket.`,
+    );
+  }
+  if (typeof templateStoragePath !== "string" || templateStoragePath.length === 0) {
+    throw new Error(
+      `Invalid template row '${documentTemplateId}': missing storage_path.`,
+    );
+  }
+  if (typeof templateFile !== "string" || templateFile.length === 0) {
+    throw new Error(
+      `Invalid template row '${documentTemplateId}': missing file_name.`,
+    );
   }
 
-  const fullTemplatePath = `${templateStoragePath.replace(/\/$/, '')}/${templateFile}`;
+  const fullTemplatePath =
+    `${templateStoragePath.replace(/\/$/, "")}/${templateFile.replace(/^\//, "")}`;
 
-  const { data: templateBlob, error: templateError } =
-    await downloadFromStorage(
-      dbClient,
-      templateBucket,
-      fullTemplatePath,
-    );
+  const { data: templateBlob, error: templateError } = await downloadFromStorage(
+    dbClient,
+    templateBucket,
+    fullTemplatePath,
+  );
   if (templateError || !templateBlob) {
     throw new Error(
-      `Failed to download document template file ${templateFileName} from storage: ${templateError?.message}`,
+      `Failed to download turn prompt template '${fullTemplatePath}' from bucket '${templateBucket}': ${templateError?.message}`,
     );
   }
 

@@ -239,10 +239,10 @@ Deno.test('executeModelCallAndSave enforces document_relationships[stageSlug] = 
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },
@@ -333,6 +333,7 @@ Deno.test('executeModelCallAndSave does not overwrite document_relationships[sta
     const targetContributionId = rootContributionId;
 
     // Job payload with target_contribution_id and document_relationships containing root contribution id
+    // Include source_group for filename disambiguation
     const continuationPayload: DialecticExecuteJobPayload = {
         ...testPayload,
         output_type: FileType.business_case,
@@ -341,6 +342,7 @@ Deno.test('executeModelCallAndSave does not overwrite document_relationships[sta
         target_contribution_id: targetContributionId,
         continuation_count: 1,
         document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
             [stageSlug]: rootContributionId, // Root contribution id from payload
         },
     };
@@ -351,6 +353,7 @@ Deno.test('executeModelCallAndSave does not overwrite document_relationships[sta
         id: continuationContributionId,
         target_contribution_id: targetContributionId,
         document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
             [stageSlug]: rootContributionId, // Root contribution id should be preserved
         },
     };
@@ -393,10 +396,10 @@ Deno.test('executeModelCallAndSave does not overwrite document_relationships[sta
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },

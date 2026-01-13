@@ -902,6 +902,9 @@ Deno.test('executeModelCallAndSave - emits document_completed when finish_reason
     ...testPayload,
     output_type: FileType.business_case,
     document_key: 'business_case',
+    document_relationships: {
+      source_group: '550e8400-e29b-41d4-a716-446655440000',
+    },
   };
 
   const params: ExecuteModelCallAndSaveParams = {
@@ -947,6 +950,7 @@ Deno.test('executeModelCallAndSave - emits document_chunk_completed for continua
   // Use a document file type with document_key for document_chunk_completed event
   // Use valid DialecticStageSlug enum value for document_relationships key
   const documentRelationships: DocumentRelationships = {
+    source_group: '550e8400-e29b-41d4-a716-446655440000',
     [DialecticStageSlug.Thesis]: 'root-123',
   };
   const continuationPayload: DialecticExecuteJobPayload = {
@@ -1960,10 +1964,10 @@ Deno.test('executeModelCallAndSave - schedules RENDER job after success with ren
     inputs_required: [],
     inputs_relevance: [],
     outputs_required: {
-      documents: [
+      files_to_generate: [
         {
-          document_key: 'business_case',
-          file_type: 'markdown',
+          from_document_key: 'business_case',
+          template_filename: 'thesis_business_case.md',
         },
       ],
     },
@@ -2038,6 +2042,9 @@ Deno.test('executeModelCallAndSave - schedules RENDER job after success with ren
     output_type: FileType.business_case,
     document_key: 'business_case',
     stageSlug: DialecticStageSlug.Thesis,
+    document_relationships: {
+      source_group: '550e8400-e29b-41d4-a716-446655440000',
+    },
   };
 
   const job = createMockJob(renderPayload);

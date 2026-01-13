@@ -42,7 +42,8 @@ import {
 import { ResourceDocuments } from "../_shared/types.ts";
 import { getMaxOutputTokens } from '../_shared/utils/affordability_utils.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
-import { TablesInsert } from '../types_db.ts';
+import { extractSourceGroupFragment } from '../_shared/utils/path_utils.ts';
+import { Database, Tables, TablesInsert } from '../types_db.ts';
 import { sanitizeJsonContent } from '../_shared/utils/jsonSanitizer.ts';
 import { isJsonSanitizationResult } from '../_shared/utils/type-guards/type_guards.jsonSanitizer.ts';
 import { JsonSanitizationResult } from '../_shared/types/jsonSanitizer.interface.ts';
@@ -1250,6 +1251,26 @@ export async function executeModelCallAndSave(
         ? FileType.ModelContributionRawJson 
         : fileType;
 
+    // Extract source_group fragment for filename disambiguation
+    // Fragment is extracted from document_relationships.source_group UUID (first 8 chars after hyphen removal)
+    // source_group is required for document outputs to enable filename disambiguation
+    const sourceGroup = job.payload.document_relationships?.source_group ?? undefined;
+    if (isDocumentKey(fileType) && !sourceGroup) {
+        throw new Error('source_group is required for document outputs');
+    }
+    const sourceGroupFragment = extractSourceGroupFragment(sourceGroup);
+
+    // Verify sourceAnchorModelSlug propagates correctly for antithesis patterns
+    // restOfCanonicalPathParams (spread from job.payload.canonicalPathParams) already includes sourceAnchorModelSlug
+    // when present, enabling antithesis pattern detection in constructStoragePath
+    if (restOfCanonicalPathParams.sourceAnchorModelSlug) {
+        deps.logger.info('[executeModelCallAndSave] sourceAnchorModelSlug present in canonicalPathParams, will propagate to pathContext for antithesis pattern detection', {
+            sourceAnchorModelSlug: restOfCanonicalPathParams.sourceAnchorModelSlug,
+            stageSlug: restOfCanonicalPathParams.stageSlug,
+            outputType: output_type,
+        });
+    }
+
     const uploadContext: ModelContributionUploadContext = {
         pathContext: {
             projectId: job.payload.projectId,
@@ -1263,6 +1284,7 @@ export async function executeModelCallAndSave(
             contributionType,
             isContinuation: isContinuationForStorage,
             turnIndex: isContinuationForStorage ? job.payload.continuation_count : undefined,
+            ...(sourceGroupFragment ? { sourceGroupFragment } : {}),
         },
         fileContent: contentForStorage, 
         mimeType: "application/json",
@@ -1472,6 +1494,115 @@ export async function executeModelCallAndSave(
         }
         const sourceContributionIdStrict: string = contribution.id;
 
+        // Query recipe step to extract template_filename from outputs_required.files_to_generate[]
+        // CRITICAL: Use the same stage/iteration context as the EXECUTE job to ensure correct recipe instance is retrieved
+        let templateFilename: string | undefined = undefined;
+
+        try {
+            // 1. Query dialectic_stages to get active_recipe_instance_id for the stageSlug
+            const { data: stageData, error: stageError } = await dbClient
+                .from('dialectic_stages')
+                .select('active_recipe_instance_id')
+                .eq('slug', stageSlug)
+                .single();
+
+            if (stageError || !stageData) {
+                throw new RenderJobValidationError(`Failed to query stage for template_filename extraction: ${stageError?.message || 'Stage not found'}`);
+            }
+            if (!stageData.active_recipe_instance_id) {
+                throw new RenderJobValidationError(`Stage '${stageSlug}' has no active recipe instance`);
+            }
+
+            // 2. Query dialectic_stage_recipe_instances to check if is_cloned
+            const { data: instance, error: instanceError } = await dbClient
+                .from('dialectic_stage_recipe_instances')
+                .select('*')
+                .eq('id', stageData.active_recipe_instance_id)
+                .single();
+
+            if (instanceError || !instance) {
+                throw new RenderJobValidationError(`Failed to query recipe instance for template_filename extraction: ${instanceError?.message || 'Instance not found'}`);
+            }
+
+            // 3. Query recipe steps based on whether instance is cloned
+            let steps: unknown[] = [];
+
+            if (instance.is_cloned === true) {
+                // If cloned, query dialectic_stage_recipe_steps where instance_id = active_recipe_instance_id
+                const { data: stepRows, error: stepErr } = await dbClient
+                    .from('dialectic_stage_recipe_steps')
+                    .select('*')
+                    .eq('instance_id', instance.id);
+
+                if (stepErr || !stepRows || stepRows.length === 0) {
+                    throw new RenderJobValidationError(`Failed to query cloned recipe steps for template_filename extraction: ${stepErr?.message || 'Steps not found'}`);
+                }
+
+                steps = stepRows;
+            } else {
+                // If not cloned, query dialectic_recipe_template_steps where template_id = instance.template_id
+                const { data: stepRows, error: stepErr } = await dbClient
+                    .from('dialectic_recipe_template_steps')
+                    .select('*')
+                    .eq('template_id', instance.template_id);
+
+                if (stepErr || !stepRows || stepRows.length === 0) {
+                    throw new RenderJobValidationError(`Failed to query template recipe steps for template_filename extraction: ${stepErr?.message || 'Steps not found'}`);
+                }
+
+                steps = stepRows;
+            }
+
+            // 4. Find the step where output_type matches the job's output_type
+            const matchingStep = steps.find((step) => {
+                if (!isRecord(step)) return false;
+                return step.output_type === output_type;
+            });
+
+            if (!matchingStep || !isRecord(matchingStep)) {
+                throw new RenderJobValidationError(`No recipe step found with output_type '${output_type}' for stage '${stageSlug}'`);
+            }
+
+            // 5. Extract template_filename from outputs_required.files_to_generate[] where from_document_key matches documentKey
+            const outputsRequired = matchingStep.outputs_required;
+            if (!outputsRequired || !isRecord(outputsRequired)) {
+                throw new RenderJobValidationError(`Recipe step with output_type '${output_type}' has missing or invalid outputs_required`);
+            }
+
+            const filesToGenerate = outputsRequired.files_to_generate;
+            if (!Array.isArray(filesToGenerate) || filesToGenerate.length === 0) {
+                throw new RenderJobValidationError(`Recipe step with output_type '${output_type}' has missing or empty files_to_generate array`);
+            }
+
+            // Find the entry where from_document_key matches validatedDocumentKeyAsFileType
+            const matchingFileEntry = filesToGenerate.find((entry) => {
+                if (!isRecord(entry)) return false;
+                return entry.from_document_key === validatedDocumentKeyAsFileType;
+            });
+
+            if (!matchingFileEntry || !isRecord(matchingFileEntry)) {
+                throw new RenderJobValidationError(`No files_to_generate entry found with from_document_key '${validatedDocumentKeyAsFileType}' in recipe step with output_type '${output_type}'`);
+            }
+
+            // 6. Extract and validate template_filename
+            const extractedTemplateFilename = matchingFileEntry.template_filename;
+            if (typeof extractedTemplateFilename !== 'string' || extractedTemplateFilename.trim() === '') {
+                throw new RenderJobValidationError(`template_filename is missing or invalid in files_to_generate entry for from_document_key '${validatedDocumentKeyAsFileType}'`);
+            }
+
+            templateFilename = extractedTemplateFilename.trim();
+        } catch (error) {
+            if (error instanceof RenderJobValidationError) {
+                throw error;
+            }
+            throw new RenderJobValidationError(`Failed to extract template_filename from recipe step: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+
+        // Validate template_filename is a non-empty string (should never happen after extraction, but double-check)
+        if (!templateFilename || typeof templateFilename !== 'string' || templateFilename.trim() === '') {
+            throw new RenderJobValidationError('template_filename must be a non-empty string');
+        }
+
         const renderPayload: DialecticRenderJobPayload = {
             projectId,
             sessionId,
@@ -1480,6 +1611,7 @@ export async function executeModelCallAndSave(
             documentIdentity: documentIdentityStrict,
             documentKey: validatedDocumentKeyAsFileType,
             sourceContributionId: sourceContributionIdStrict,
+            template_filename: templateFilename,
             user_jwt: userAuthTokenStrict,
             model_id,
             walletId,

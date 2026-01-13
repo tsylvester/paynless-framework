@@ -199,9 +199,10 @@
 * Do not be lazy, do not be hasty, do not rush, do not be expedient: Take the time to do the work correctly and completely the first time. Be thorough, correct, and professional. Laziness, hastiness, rushing, and expediency are wasteful, frustrating, and violate your Instructions for Agent block and System Instructions. 
 
 ## Checklist-Specific Editing Rules
-
 *   THE AGENT NEVER TOUCHES THE CHECKLIST UNLESS THEY ARE EXPLICITLY INSTRUCTED TO! 
 *   When editing checklists, each numbered step (1, 2, 3, etc.) represents editing ONE FILE with a complete TDD cycle.
+*   "One file per step" means the checklist only addresses one **source file** for each top level checklist step. 
+*   Included in "one file per step" is **the entire support system** for that **one source file**: interfaces/types, type guard tests, type guards, unit tests, --> source file <--, integration tests
 *   Sub-steps within each numbered step use legal-style numbering (1.a, 1.b, 1.a.i, 1.a.ii, etc.) for the complete TDD cycle for that file.
 *   All changes to a single file are described and performed within that file's numbered step.
 *   Types files (interfaces, enums) are exempt from RED/GREEN testing requirements.
@@ -211,14 +212,26 @@
 *   Use proper legal-style nesting for sub-steps within each file edit.
 *   NEVER create multiple top-level steps for the same file edit operation.
 *   Adding console logs is not required to be detailed in checklist work. 
+*   NEVER suggest making a type or interface update its own step - that is NEVER correct, types or interfaces are ALWAYS 'x'.b for whatever function demands the type change 
+*   NEVER suggest separating out type guard tests or guards from the interface that uses them, type guard tests are ALWAYS 'x'.b.i for whatever function demands the type change
+*   NEVER suggest editing two source files in a single top level checklist step, function1.ts and function2.ts are different steps
+*   "I'll suggest one step for the interface, one step for the type guards, and then one step for the unit test and source file!" NO! WRONG! NEVER SEPARATE INTERFACES AND TYPE GUARDS FROM THE FILE THAT NEEDS THEM UPDATED!  
+*   "I'll structure the checklist as function1, function1-test! " NO! WRONG! TESTS FIRST! 
+*   "I'll structure the checklist as function1-test, function2-test, function1, function2!" NO! WRONG! NEVER MIX MULTIPLE SOURCE FILES IN ONE STEP! 
+*   "I'll orphan an interface edit in its own step!" NO! WRONG! NEVER ORPHAN A TYPE EDIT! PUT IT WITH WHOEVER NEEDS THE TYPE CHANGE! AND UPDATE THE TYPE GUARDS! 
+*   "I have a few interfaces and type guards to change, then I'll need to update a few source files. I'll make those all separate steps." NO! WRONG! 
+*   "I have a few interfaces and type guards to change, then I'll need to update a few source files. I'll make that all one step." NO! WRONG! 
+*   "I have a few interfaces and type guards to change. I'll group each change to an interface and its type guards with the source file that needs them first, and ensure each source file has its own top level step. I won't orphan any interfaces or type guards. And I won't cram a bunch of source file changes into the same step, those are all their own top level step." YES! MY GOD! THAT'S WHAT THE INSTRUCTIONS TELL YOU TO DO! 
 
 ## Example Checklist
 
-*   `[ ]`   1. **Title** Objective
-    *   `[ ]`   1.a. [DEPS] A list explaining dependencies of the function, its signature, and its return shape
+*   `[ ]`   1. **Title** Objective (every template literal must be replaced with actual data, the checklist item should never carry template literals)
+    *   `[ ]`   1.a. [DEPS] A list explaining dependencies of the function, its signature, and its return shape 
         *   `[ ]` 1.a.i. eg. `function(something)` in `file.ts` provides this or that
-    *   `[ ]`   1.b. [TYPES] A list strictly typing all the objects used in the function
-    *   `[ ]`   1.c. [TEST-UNIT] A list explaining the test cases
+    *   `[ ]`   1.b. [TYPES] A list strictly typing all the objects used in the function 
+        *   `[ ]` 1.b.i  [TYPE-GUARD-TEST] A list of type guard tests that need to be updated for the interface change (omit if no type guards will change)
+        *   `[ ]` 1.b.ii [TYPE-GUARDS] A list of the type guards that need to be updated for the interface change (omit if no type guards will change)
+    *   `[ ]`   1.c. [TEST-UNIT] A list explaining the test cases 
         *   `[ ]` 1.c.i. Assert `function(something)` in `file.ts` acts a certain way 
     *   `[ ]`   1.d. [{$WORK_AREA}] A list explaining the implementation requirements
         *   `[ ]` 1.d.i. Implement `function(something)` in `file.ts` acts a certain way 

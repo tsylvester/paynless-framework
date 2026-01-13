@@ -111,9 +111,9 @@ Deno.test('executeModelCallAndSave - should NOT call assembleAndSaveFinalDocumen
                     inputs_required: [],
                     inputs_relevance: [],
                     outputs_required: {
-                        documents: [{
-                            document_key: 'business_case',
-                            file_type: 'markdown'
+                        files_to_generate: [{
+                            from_document_key: 'business_case',
+                            template_filename: 'thesis_business_case.md'
                         }]
                     },
                     parallel_group: null,
@@ -130,10 +130,14 @@ Deno.test('executeModelCallAndSave - should NOT call assembleAndSaveFinalDocumen
     assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
     const fileManager: MockFileManagerService = deps.fileManager;
     // Create a contribution with document_relationships containing root ID
+    // Include source_group for filename disambiguation
     const rootContributionId = 'root-contrib-123';
     const savedContribution: DialecticContributionRow = {
         ...mockContribution,
-        document_relationships: { thesis: rootContributionId },
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+            thesis: rootContributionId,
+        },
     };
     fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
 
@@ -161,6 +165,10 @@ Deno.test('executeModelCallAndSave - should NOT call assembleAndSaveFinalDocumen
         ...testPayload,
         output_type: FileType.business_case, // Markdown document that triggers shouldRender === true
         document_key: 'business_case',
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+            thesis: rootContributionId,
+        },
     };
 
     const job = createMockJob(markdownPayload);

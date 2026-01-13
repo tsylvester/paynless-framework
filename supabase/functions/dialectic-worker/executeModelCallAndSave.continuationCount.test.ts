@@ -57,6 +57,9 @@ Deno.test('executeModelCallAndSave - Step 12.b: requires continuation_count for 
                 contributionType: 'thesis',
                 stageSlug: stageSlug,
             },
+            document_relationships: {
+                source_group: '550e8400-e29b-41d4-a716-446655440000',
+            },
             // No target_contribution_id - this is a root chunk (omit property entirely)
             // continuation_count is also omitted for root chunks
         };
@@ -117,7 +120,10 @@ Deno.test('executeModelCallAndSave - Step 12.b: requires continuation_count for 
             },
             target_contribution_id: 'contrib-root-123',
             continuation_count: 1,
-            document_relationships: { [stageSlug]: 'contrib-root-123' },
+            document_relationships: {
+                source_group: '550e8400-e29b-41d4-a716-446655440000',
+                [stageSlug]: 'contrib-root-123',
+            },
         };
 
         const continuationJob = createMockJob(continuationPayload, {
@@ -176,7 +182,10 @@ Deno.test('executeModelCallAndSave - Step 12.b: requires continuation_count for 
             },
             target_contribution_id: 'contrib-root-123',
             continuation_count: 2,
-            document_relationships: { [stageSlug]: 'contrib-root-123' },
+            document_relationships: {
+                source_group: '550e8400-e29b-41d4-a716-446655440000',
+                [stageSlug]: 'contrib-root-123',
+            },
         };
 
         const continuationJob = createMockJob(continuationPayload, {
@@ -235,7 +244,10 @@ Deno.test('executeModelCallAndSave - Step 12.b: requires continuation_count for 
             },
             target_contribution_id: 'contrib-root-123',
             continuation_count: undefined,
-            document_relationships: { [stageSlug]: 'contrib-root-123' },
+            document_relationships: {
+                source_group: '550e8400-e29b-41d4-a716-446655440000',
+                [stageSlug]: 'contrib-root-123',
+            },
         };
 
         const continuationJob = createMockJob(continuationPayload, {
@@ -288,7 +300,10 @@ Deno.test('executeModelCallAndSave - Step 12.b: requires continuation_count for 
             },
             target_contribution_id: 'contrib-root-123',
             continuation_count: 0,
-            document_relationships: { [stageSlug]: 'contrib-root-123' },
+            document_relationships: {
+                source_group: '550e8400-e29b-41d4-a716-446655440000',
+                [stageSlug]: 'contrib-root-123',
+            },
         };
 
         const continuationJob = createMockJob(continuationPayload, {
@@ -341,7 +356,10 @@ Deno.test('executeModelCallAndSave - Step 12.b: requires continuation_count for 
             },
             target_contribution_id: 'contrib-root-123',
             continuation_count: -1,
-            document_relationships: { [stageSlug]: 'contrib-root-123' },
+            document_relationships: {
+                source_group: '550e8400-e29b-41d4-a716-446655440000',
+                [stageSlug]: 'contrib-root-123',
+            },
         };
 
         const continuationJob = createMockJob(continuationPayload, {
@@ -393,9 +411,14 @@ Deno.test('executeModelCallAndSave - Step 12.b: requires continuation_count for 
                 stageSlug: stageSlug,
             },
             target_contribution_id: 'contrib-root-123',
-            continuation_count: 'invalid' as any, // Intentionally invalid type for testing
-            document_relationships: { [stageSlug]: 'contrib-root-123' },
+            continuation_count: 1,
+            document_relationships: {
+                source_group: '550e8400-e29b-41d4-a716-446655440000',
+                [stageSlug]: 'contrib-root-123',
+            },
         };
+        // Intentionally invalidate type at runtime without using TypeScript casting.
+        Reflect.set(continuationPayload, 'continuation_count', 'invalid');
 
         const continuationJob = createMockJob(continuationPayload, {
             target_contribution_id: 'contrib-root-123',

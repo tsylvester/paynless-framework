@@ -106,6 +106,9 @@ export const testPayload: DialecticExecuteJobPayload = {
         contributionType: 'thesis',
         stageSlug: 'thesis',
     },
+    document_relationships: {
+        source_group: '550e8400-e29b-41d4-a716-446655440000',
+    },
 };
 
 export const mockSessionData: DialecticSession = {

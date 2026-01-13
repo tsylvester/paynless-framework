@@ -1077,6 +1077,7 @@ export function isDialecticRenderJobPayload(payload: unknown): payload is Dialec
     if (!('documentIdentity' in payload) || typeof payload.documentIdentity !== 'string' || payload.documentIdentity.trim() === '') throw new Error('Missing or invalid documentIdentity.');
     if (!('documentKey' in payload) || !isFileType(payload.documentKey)) throw new Error('Missing or invalid documentKey.');
     if (!('sourceContributionId' in payload) || typeof payload.sourceContributionId !== 'string' || payload.sourceContributionId.trim() === '') throw new Error('Missing or invalid sourceContributionId.');
+    if (!('template_filename' in payload) || typeof payload.template_filename !== 'string' || payload.template_filename.trim() === '') throw new Error('Missing or invalid template_filename.');
 
     // Optional/Nullable properties from DialecticBaseJobPayload
     if (('stageSlug' in payload) && typeof payload.stageSlug !== 'string') throw new Error('Invalid stageSlug.');
@@ -1091,7 +1092,7 @@ export function isDialecticRenderJobPayload(payload: unknown): payload is Dialec
     // Final check for extraneous properties to enforce a strict shape.
     const allowedKeys = new Set<string>([
         'sessionId', 'projectId', 'model_id', 'walletId', 'stageSlug', 'iterationNumber',
-        'documentIdentity', 'documentKey', 'sourceContributionId', 'user_jwt',
+        'documentIdentity', 'documentKey', 'sourceContributionId', 'user_jwt', 'template_filename',
         // Base job payload fields that may be present on render jobs
         'continueUntilComplete', 'maxRetries', 'continuation_count', 'target_contribution_id', 'is_test_job', 'model_slug'
     ]);

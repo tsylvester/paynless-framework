@@ -3,6 +3,7 @@ import { Buffer } from "https://deno.land/std@0.177.0/node/buffer.ts";
 import type { Database } from "../../types_db.ts";
 import { FileType, type PathContext } from "../types/file_manager.types.ts";
 import { deconstructStoragePath } from "../utils/path_deconstructor.ts";
+import { extractSourceGroupFragment } from "../utils/path_utils.ts";
 import type {
   RenderDocumentParams,
   RenderDocumentResult,
@@ -36,7 +37,15 @@ export async function renderDocument(
   deps: DocumentRendererDeps,
   params: RenderDocumentParams,
 ): Promise<RenderDocumentResult> {
-  const { sessionId, iterationNumber, stageSlug, documentIdentity, documentKey, projectId, sourceContributionId } = params;
+  const {
+    sessionId,
+    iterationNumber,
+    stageSlug,
+    documentIdentity,
+    documentKey,
+    projectId,
+    sourceContributionId,
+  } = params;
 
   // 1) Load contribution rows for this document chain using DB-side filtering and ordering
   const { data: rows, error: selectError } = await dbClient
@@ -138,13 +147,20 @@ export async function renderDocument(
   const modelSlug = info.modelSlug;
   const attemptCount = info.attemptCount;
 
+  // Extract sourceGroupFragment from base chunk's document_relationships.source_group
+  // Extract sourceAnchorModelSlug from deconstructed path info (if available for antithesis patterns)
+  const sourceGroup = isRecord(base.document_relationships) && typeof base.document_relationships.source_group === 'string'
+    ? base.document_relationships.source_group
+    : undefined;
+  const sourceGroupFragment = extractSourceGroupFragment(sourceGroup);
+  const sourceAnchorModelSlug = info.sourceAnchorModelSlug;
+
   // 7) Load template by querying dialectic_document_templates (authoritative map)
-  // Query by unique name field using convention: {stage_slug}_{document_key}
-  // Templates are uniquely identified by (name, domain_id) per the schema
+  // Templates must be resolved deterministically via the authoritative template reference
+  // carried by the RENDER job payload. No derived-name lookup.
   type DocumentTemplateRow = Database['public']['Tables']['dialectic_document_templates']['Row'];
   const stage = String(stageSlug).toLowerCase();
   const docKey = String(documentKey);
-  const templateName = `${stage}_${docKey}`;
   
   // Query project to get domain_id (required for template lookup)
   const { data: projectData, error: projectError } = await dbClient
@@ -161,16 +177,22 @@ export async function renderDocument(
     throw new Error(`Project '${projectId}' does not have a selected_domain_id. Template lookup requires domain_id.`);
   }
   
+  // Strip .md extension from template_filename to match the name field in dialectic_document_templates
+  // The name field stores the base name (e.g., 'thesis_business_case') while template_filename includes .md (e.g., 'thesis_business_case.md')
+  const templateNameForQuery = params.template_filename.endsWith('.md') 
+    ? params.template_filename.slice(0, -3) 
+    : params.template_filename;
+  
   const { data: templateRow, error: templateErr } = await dbClient
     .from('dialectic_document_templates')
     .select('*')
-    .eq('name', templateName)
+    .eq('name', templateNameForQuery)
     .eq('domain_id', projectData.selected_domain_id)
     .eq('is_active', true)
     .maybeSingle<DocumentTemplateRow>();
 
   if (templateErr || !templateRow) {
-    throw new Error(`No template mapping found for stage='${stage}' document='${docKey}' name='${templateName}' domain_id='${projectData.selected_domain_id}': ${templateErr ? (templateErr).message ?? 'unknown error' : 'not found'}`);
+    throw new Error(`No template mapping found for stage='${stage}' document='${docKey}' name='${templateNameForQuery}' (from template_filename='${params.template_filename}') domain_id='${projectData.selected_domain_id}': ${templateErr ? (templateErr).message ?? 'unknown error' : 'not found'}`);
   }
 
   const templateBucket = templateRow.storage_bucket;
@@ -333,6 +355,8 @@ export async function renderDocument(
     modelSlug,
     attemptCount,
     sourceContributionId: sourceContributionId,
+    sourceGroupFragment,
+    ...(sourceAnchorModelSlug ? { sourceAnchorModelSlug } : {}),
   };
 
   let latestRenderedResourceId: string | undefined = undefined;
@@ -349,6 +373,8 @@ export async function renderDocument(
           modelSlug: pathContext.modelSlug,
           attemptCount: pathContext.attemptCount,
           sourceContributionId: pathContext.sourceContributionId ?? null,
+          sourceGroupFragment: pathContext.sourceGroupFragment,
+          ...(pathContext.sourceAnchorModelSlug ? { sourceAnchorModelSlug: pathContext.sourceAnchorModelSlug } : {}),
         },
         fileContent: Buffer.from(renderedBytes),
         mimeType: "text/markdown",

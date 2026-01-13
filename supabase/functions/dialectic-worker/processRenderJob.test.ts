@@ -34,6 +34,7 @@ const makeRenderJob = (payloadOverrides: Partial<DialecticRenderJobPayload> = {}
     stageSlug: "thesis",
     documentIdentity: "doc-root-1",
     documentKey: FileType.business_case,
+    template_filename: "thesis_business_case.md",
     ...payloadOverrides,
   };
 
@@ -1193,6 +1194,65 @@ Deno.test("processRenderJob - passes sourceContributionId and documentIdentity t
   // (5) Verify the job completes successfully
   assert(updatePayload.status === "completed", "Job should complete successfully when sourceContributionId differs from documentIdentity");
   
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - extracts template_filename from payload and passes it to renderDocument", async () => {
+  // This test must initially FAIL because processRenderJob doesn't extract or pass template_filename yet
+  const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
+  const templateFilename = "antithesis_business_case_critique.md";
+  
+  // (1) Create mock RENDER job with payload containing template_filename
+  const job = makeRenderJob({ template_filename: templateFilename });
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  
+  // (2) Mock renderDocument function
+  let receivedTemplateFilename: string | undefined;
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => {
+      receivedTemplateFilename = params.template_filename;
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
+  );
+
+  // (3) Call processRenderJob with the job
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  // (4) Assert renderDocument was called with RenderDocumentParams containing template_filename
+  assertEquals(renderDocumentStub.calls.length, 1, "renderDocument should be called exactly once");
+  const params = renderDocumentStub.calls[0].args[2];
+  // This test must initially FAIL because processRenderJob doesn't extract or pass template_filename yet
+  assertEquals(
+    params.template_filename,
+    templateFilename,
+    `renderDocument should receive template_filename: '${templateFilename}' from job payload. Got: ${receivedTemplateFilename}`
+  );
+
   renderDocumentStub.restore();
   clearAllStubs?.();
 });

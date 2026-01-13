@@ -126,6 +126,7 @@ export interface PathContext {
   sourceContributionId?: string | null;
   documentKey?: string; // e.g., 'executive_summary', 'technical_design'
   stepName?: string; // e.g., 'critique_and_improve'
+  sourceGroupFragment?: string; // First 8 characters of source_group UUID (sanitized) for filename disambiguation
 }
 
 /**

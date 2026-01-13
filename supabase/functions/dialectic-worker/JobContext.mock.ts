@@ -13,6 +13,7 @@ import { createMockDownloadFromStorage } from '../_shared/supabase_storage_utils
 import { IJobContext } from './JobContext.interface.ts';
 import { createJobContext } from './createJobContext.ts';
 import { createMockFindSourceDocuments } from './findSourceDocuments.mock.ts';
+import { extractSourceGroupFragment } from '../_shared/utils/path_utils.ts';
 
 type JobContextParamsOverrides = { [K in keyof JobContextParams]?: JobContextParams[K] };
 
@@ -80,6 +81,7 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
         }),
         promptAssembler: promptAssembler,
         getExtensionFromMimeType: () => '.txt',
+        extractSourceGroupFragment: extractSourceGroupFragment,
         randomUUID: () => 'test-uuid',
         shouldEnqueueRenderJob: async () => ({
             shouldRender: false,

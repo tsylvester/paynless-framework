@@ -30,8 +30,10 @@ export function deconstructStoragePath(
   const fullPath = storageDir ? `${storageDir}/${fileName}` : fileName;
 
   // Regex patterns defined as strings
-  const antithesisContribRawPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/raw_responses/([^_]+)_critiquing_\\(([^_]+)'s_([^_]+)_(\\d+)\\)_(\\d+)_(.+)_raw\\.json$";
-  const antithesisContribPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/([^_]+)_critiquing_\\(([^_]+)'s_([^_]+)_(\\d+)\\)_(\\d+)_(.+)\\.md$";
+  // Antithesis document patterns with optional fragment between closing parenthesis and attemptCount
+  // Model slugs can contain hyphens, so use (.+?) non-greedy to stop at '_critiquing_' or '_'
+  const antithesisContribRawPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/raw_responses/(.+?)_critiquing_\\((.+?)'s_(.+?)_(\\d+)\\)(?:_([a-f0-9]{8}))?_(\\d+)_(.+)_raw\\.json$";
+  const antithesisContribPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/(.+?)_critiquing_\\((.+?)'s_(.+?)_(\\d+)\\)(?:_([a-f0-9]{8}))?_(\\d+)_(.+)\\.md$";
   
   // New pattern for continuation chunks - must be checked before general model contributions
   const modelContribContinuationPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(.+)_(\\d+)_(.+)_continuation_(\\d+)(\\.md)$";
@@ -56,21 +58,43 @@ export function deconstructStoragePath(
   
   // Document-centric artifact patterns
   const plannerPromptPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/prompts/(.+)_(\\d+)_?(.*?)_planner_prompt\\.md$";
-  const turnPromptPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/prompts/(.+)_(\\d+)_(.+?)(_continuation_(\\d+))?_prompt\\.md$";
+  // TurnPrompt patterns: antithesis pattern must be checked before simple pattern
+  // Model slugs can contain hyphens, so use (.+?) non-greedy to stop at '_critiquing_'
+  const turnPromptAntithesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/prompts/(.+?)_critiquing_(.+?)(?:_([a-f0-9]{8}))?_(\\d+)_(.+?)(_continuation_(\\d+))?_prompt\\.md$";
+  const turnPromptPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/prompts/(.+)_(\\d+)_(.+?)(?:_([a-f0-9]{8}))?(_continuation_(\\d+))?_prompt\\.md$";
   const synthesisHeaderContextPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+)_(\\d+)_synthesis_header_context\\.json$";
-  const headerContextPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+)_(\\d+)_header_context\\.json$";
-  const assembledJsonPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/assembled_json/(.+)_(\\d+)_(.+)_assembled\\.json$";
-  const renderedDocumentPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/documents/(.+)_(\\d+)_(.+)\\.md$";
+  // HeaderContext patterns: antithesis pattern must be checked before simple pattern
+  // Model slugs can contain hyphens, so use (.+?) non-greedy to stop at '_critiquing_'
+  const headerContextAntithesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+?)_critiquing_(.+?)(?:_([a-f0-9]{8}))?_(\\d+)_header_context\\.json$";
+  const headerContextPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+)_(\\d+)(?:_([a-f0-9]{8}))?_header_context\\.json$";
+  // AssembledDocumentJson patterns: antithesis pattern must be checked before simple pattern
+  // Model slugs can contain hyphens, so use (.+?) non-greedy to stop at '_critiquing_'
+  const assembledJsonAntithesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/assembled_json/(.+?)_critiquing_(.+?)(?:_([a-f0-9]{8}))?_(\\d+)_(.+)_assembled\\.json$";
+  const assembledJsonPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/assembled_json/(.+)_(\\d+)_(.+?)(?:_([a-f0-9]{8}))?_assembled\\.json$";
+  // RenderedDocument patterns: antithesis pattern must be checked before simple pattern
+  // Model slugs can contain hyphens, so use (.+?) non-greedy to stop at '_critiquing_'
+  const renderedDocumentAntithesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/documents/(.+?)_critiquing_(.+?)(?:_([a-f0-9]{8}))?_(\\d+)_(.+)\\.md$";
+  // Simple pattern: handle paths WITH fragment first (more specific), then without fragment
+  // Pattern for paths WITH fragment: {modelSlug}_{attemptCount}_{documentKey}_{fragment}.md
+  // Use non-greedy for documentKey to stop before fragment, modelSlug can contain hyphens
+  const renderedDocumentWithFragmentPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/documents/(.+?)_(\\d+)_(.+?)_([a-f0-9]{8})\\.md$";
+  // Pattern for paths WITHOUT fragment: {modelSlug}_{attemptCount}_{documentKey}.md  
+  const renderedDocumentPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/documents/(.+?)_(\\d+)_(.+)\\.md$";
   const renderedDocumentJsonPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/documents/(.+)_(\\d+)_(.+)\\.json$";
-  const docCentricRawJsonPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/raw_responses/(.+)_(\\d+)_(.+?)(_continuation_(\\d+))?_raw\\.json$";
-  const docCentricRawJsonContinuationPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/raw_responses/(.+)_(\\d+)_(.+?)_continuation_(\\d+)_raw\\.json$";
+  // ModelContributionRawJson patterns with optional fragment
+  // Simple critiquing pattern: {modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_{documentKey}_raw.json
+  // Must be checked before simple pattern (docCentricRawJsonPatternString) because it's more specific
+  // Pattern: modelSlug (non-greedy), _critiquing_, sourceAnchorModelSlug (non-greedy), optional fragment (_8hex), _attemptCount_, documentKey, _raw.json
+  const docCentricRawJsonSimpleCritiquingPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/raw_responses/(.+?)_critiquing_([^_]+?)(?:_([a-f0-9]{8}))?_(\\d+)_(.+?)_raw\\.json$";
+  const docCentricRawJsonPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/raw_responses/(.+)_(\\d+)_(.+?)(?:_([a-f0-9]{8}))?(_continuation_(\\d+))?_raw\\.json$";
+  const docCentricRawJsonContinuationPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/raw_responses/(.+)_(\\d+)_(.+?)(?:_([a-f0-9]{8}))?_continuation_(\\d+)_raw\\.json$";
   
   const intermediateSynthesisDocPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(.+)_(\\d+)_(synthesis_(?:pairwise|document)_[^/]+?)\\.(json|md)$";
 
   const genericWorkFilePatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(.+)_(\\d+)_(.+)\\.md$";
   const genericIntermediateFilePatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/([^/]+)$";
 
-  // Path: .../raw_responses/{modelSlug}_critiquing_({sourceModelSlug}'s_{sourceContribType}_{sourceAttemptCount})_{attemptCount}_antithesis_raw.json
+  // Path: .../raw_responses/{modelSlug}_critiquing_({sourceModelSlug}'s_{sourceContribType}_{sourceAttemptCount})[_{fragment}]_{attemptCount}_{documentKey}_raw.json
   let matches = fullPath.match(new RegExp(antithesisContribRawPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
@@ -82,18 +106,20 @@ export function deconstructStoragePath(
     info.sourceModelSlug = matches[6];
     info.sourceContributionType = matches[7];
     info.sourceAttemptCount = parseInt(matches[8], 10);
-    info.attemptCount = parseInt(matches[9], 10);
+    info.sourceGroupFragment = matches[9] || undefined; // Optional fragment between closing parenthesis and attemptCount
+    info.attemptCount = parseInt(matches[10], 10);
     info.contributionType = 'antithesis';
-    info.fileTypeGuess = FileType.ModelContributionRawJson;
-    info.documentKey = matches[10];
+    info.documentKey = matches[11];
     const specificFileType = Object.values(FileType).find(ft => ft === info.documentKey);
     if (specificFileType) {
       info.fileTypeGuess = specificFileType;
+    } else {
+      info.fileTypeGuess = FileType.ModelContributionRawJson;
     }
     return info;
   }
 
-  // Path: .../{modelSlug}_critiquing_({sourceModelSlug}'s_{sourceContribType}_{sourceAttemptCount})_{attemptCount}_antithesis.md
+  // Path: .../{modelSlug}_critiquing_({sourceModelSlug}'s_{sourceContribType}_{sourceAttemptCount})[_{fragment}]_{attemptCount}_{documentKey}.md
   matches = fullPath.match(new RegExp(antithesisContribPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
@@ -105,9 +131,10 @@ export function deconstructStoragePath(
     info.sourceModelSlug = matches[6];
     info.sourceContributionType = matches[7];
     info.sourceAttemptCount = parseInt(matches[8], 10);
-    info.attemptCount = parseInt(matches[9], 10);
+    info.sourceGroupFragment = matches[9] || undefined; // Optional fragment between closing parenthesis and attemptCount
+    info.attemptCount = parseInt(matches[10], 10);
     info.contributionType = 'antithesis';
-    info.documentKey = matches[10];
+    info.documentKey = matches[11];
     const specificFileType = Object.values(FileType).find(ft => ft === info.documentKey);
     if (specificFileType) {
       info.fileTypeGuess = specificFileType;
@@ -149,7 +176,7 @@ export function deconstructStoragePath(
   // --- Document-Centric Artifacts ---
   // These are checked with high priority as they are the new canonical format.
 
-  // Path: .../_work/raw_responses/{modelSlug}_{attemptCount}_{documentKey}_continuation_{turnIndex}_raw.json
+  // Path: .../_work/raw_responses/{modelSlug}_{attemptCount}_{documentKey}[_{fragment}]_continuation_{turnIndex}_raw.json
   matches = fullPath.match(new RegExp(docCentricRawJsonContinuationPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
@@ -160,8 +187,9 @@ export function deconstructStoragePath(
     info.modelSlug = matches[5];
     info.attemptCount = parseInt(matches[6], 10);
     info.documentKey = matches[7];
+    info.sourceGroupFragment = matches[8] || undefined; // Optional fragment after documentKey, before continuation
     info.isContinuation = true;
-    info.turnIndex = parseInt(matches[8], 10);
+    info.turnIndex = parseInt(matches[9], 10);
     info.fileTypeGuess = FileType.ModelContributionRawJson;
     return info;
   }
@@ -181,7 +209,28 @@ export function deconstructStoragePath(
     return info;
   }
 
-  // Path: .../_work/prompts/{modelSlug}_{attemptCount}_{documentKey}[_continuation_{turnIndex}]_prompt.md
+  // Path: .../_work/prompts/{modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_{documentKey}[_continuation_{turnIndex}]_prompt.md
+  matches = fullPath.match(new RegExp(turnPromptAntithesisPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.sourceAnchorModelSlug = matches[6];
+    info.sourceGroupFragment = matches[7] || undefined; // Optional fragment between sourceAnchorModelSlug and attemptCount
+    info.attemptCount = parseInt(matches[8], 10);
+    info.documentKey = matches[9];
+    if (matches[11]) {
+      info.isContinuation = true;
+      info.turnIndex = parseInt(matches[11], 10);
+    }
+    info.fileTypeGuess = FileType.TurnPrompt;
+    return info;
+  }
+
+  // Path: .../_work/prompts/{modelSlug}_{attemptCount}_{documentKey}[_{fragment}][_continuation_{turnIndex}]_prompt.md
   matches = fullPath.match(new RegExp(turnPromptPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
@@ -192,9 +241,10 @@ export function deconstructStoragePath(
     info.modelSlug = matches[5];
     info.attemptCount = parseInt(matches[6], 10);
     info.documentKey = matches[7];
-    if (matches[9]) {
+    info.sourceGroupFragment = matches[8] || undefined; // Optional fragment after documentKey
+    if (matches[10]) {
       info.isContinuation = true;
-      info.turnIndex = parseInt(matches[9], 10);
+      info.turnIndex = parseInt(matches[10], 10);
     }
     info.fileTypeGuess = FileType.TurnPrompt;
     return info;
@@ -215,7 +265,24 @@ export function deconstructStoragePath(
     return info;
   }
 
-  // Path: .../_work/context/{modelSlug}_{attemptCount}_header_context.json
+  // Path: .../_work/context/{modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_header_context.json
+  matches = fullPath.match(new RegExp(headerContextAntithesisPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.sourceAnchorModelSlug = matches[6];
+    info.sourceGroupFragment = matches[7] || undefined; // Optional fragment between sourceAnchorModelSlug and attemptCount
+    info.attemptCount = parseInt(matches[8], 10);
+    info.contributionType = 'header_context';
+    info.fileTypeGuess = FileType.HeaderContext;
+    return info;
+  }
+
+  // Path: .../_work/context/{modelSlug}_{attemptCount}[_{fragment}]_header_context.json
   matches = fullPath.match(new RegExp(headerContextPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
@@ -225,12 +292,30 @@ export function deconstructStoragePath(
     info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
     info.modelSlug = matches[5];
     info.attemptCount = parseInt(matches[6], 10);
+    info.sourceGroupFragment = matches[7] || undefined; // Optional fragment after attemptCount
     info.contributionType = 'header_context';
     info.fileTypeGuess = FileType.HeaderContext;
     return info;
   }
 
-  // Path: .../_work/assembled_json/{modelSlug}_{attemptCount}_{documentKey}_assembled.json
+  // Path: .../_work/assembled_json/{modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_{documentKey}_assembled.json
+  matches = fullPath.match(new RegExp(assembledJsonAntithesisPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.sourceAnchorModelSlug = matches[6];
+    info.sourceGroupFragment = matches[7] || undefined; // Optional fragment between sourceAnchorModelSlug and attemptCount
+    info.attemptCount = parseInt(matches[8], 10);
+    info.documentKey = matches[9];
+    info.fileTypeGuess = FileType.AssembledDocumentJson;
+    return info;
+  }
+
+  // Path: .../_work/assembled_json/{modelSlug}_{attemptCount}_{documentKey}[_{fragment}]_assembled.json
   matches = fullPath.match(new RegExp(assembledJsonPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
@@ -241,11 +326,59 @@ export function deconstructStoragePath(
     info.modelSlug = matches[5];
     info.attemptCount = parseInt(matches[6], 10);
     info.documentKey = matches[7];
+    info.sourceGroupFragment = matches[8] || undefined; // Optional fragment after documentKey
     info.fileTypeGuess = FileType.AssembledDocumentJson;
     return info;
   }
 
-  // Path: .../documents/{modelSlug}_{attemptCount}_{documentKey}.md
+  // Path: .../documents/{modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_{documentKey}.md
+  matches = fullPath.match(new RegExp(renderedDocumentAntithesisPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.sourceAnchorModelSlug = matches[6];
+    info.sourceGroupFragment = matches[7] || undefined; // Optional fragment between sourceAnchorModelSlug and attemptCount
+    info.attemptCount = parseInt(matches[8], 10);
+    info.documentKey = matches[9];
+    info.fileTypeGuess = FileType.RenderedDocument;
+
+    // If documentKey matches a FileType enum value, use it for round-trip consistency
+    const specificFileType = Object.values(FileType).find(ft => ft === info.documentKey);
+    if (specificFileType) {
+      info.fileTypeGuess = specificFileType;
+    }
+
+    return info;
+  }
+
+  // Path: .../documents/{modelSlug}_{attemptCount}_{documentKey}_{fragment}.md (WITH fragment)
+  matches = fullPath.match(new RegExp(renderedDocumentWithFragmentPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.attemptCount = parseInt(matches[6], 10);
+    info.documentKey = matches[7];
+    info.sourceGroupFragment = matches[8]; // Fragment is present (8 hex chars)
+    info.fileTypeGuess = FileType.RenderedDocument;
+
+    // If documentKey matches a FileType enum value, use it for round-trip consistency
+    const specificFileType = Object.values(FileType).find(ft => ft === info.documentKey);
+    if (specificFileType) {
+      info.fileTypeGuess = specificFileType;
+    }
+
+    return info;
+  }
+
+  // Path: .../documents/{modelSlug}_{attemptCount}_{documentKey}.md (WITHOUT fragment)
   matches = fullPath.match(new RegExp(renderedDocumentPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
@@ -256,10 +389,10 @@ export function deconstructStoragePath(
     info.modelSlug = matches[5];
     info.attemptCount = parseInt(matches[6], 10);
     info.documentKey = matches[7];
+    info.sourceGroupFragment = undefined; // No fragment
     info.fileTypeGuess = FileType.RenderedDocument;
 
-    // After generic match, refine guess based on documentKey.
-    // This is now a universal lookup, replacing the flawed, stage-specific logic.
+    // If documentKey matches a FileType enum value, use it for round-trip consistency
     const specificFileType = Object.values(FileType).find(ft => ft === info.documentKey);
     if (specificFileType) {
       info.fileTypeGuess = specificFileType;
@@ -279,7 +412,9 @@ export function deconstructStoragePath(
     info.modelSlug = matches[5];
     info.attemptCount = parseInt(matches[6], 10);
     info.documentKey = matches[7];
+    info.fileTypeGuess = FileType.RenderedDocument;
 
+    // If documentKey matches a FileType enum value, use it for round-trip consistency
     const specificFileType = Object.values(FileType).find(ft => ft === info.documentKey);
     if (specificFileType) {
       info.fileTypeGuess = specificFileType;
@@ -288,7 +423,25 @@ export function deconstructStoragePath(
     return info;
   }
 
-  // Path: .../raw_responses/{modelSlug}_{attemptCount}_{documentKey}[_continuation_{turnIndex}]_raw.json
+  // Path: .../raw_responses/{modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_{documentKey}_raw.json
+  // Simple critiquing pattern for ModelContributionRawJson (must be checked before simple pattern)
+  matches = fullPath.match(new RegExp(docCentricRawJsonSimpleCritiquingPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.sourceAnchorModelSlug = matches[6];
+    info.sourceGroupFragment = matches[7] || undefined; // Optional fragment between sourceAnchorModelSlug and attemptCount
+    info.attemptCount = parseInt(matches[8], 10);
+    info.documentKey = matches[9];
+    info.fileTypeGuess = FileType.ModelContributionRawJson;
+    return info;
+  }
+
+  // Path: .../raw_responses/{modelSlug}_{attemptCount}_{documentKey}[_{fragment}][_continuation_{turnIndex}]_raw.json
   matches = fullPath.match(new RegExp(docCentricRawJsonPatternString));
   if (matches) {
       info.originalProjectId = matches[1];
@@ -299,6 +452,7 @@ export function deconstructStoragePath(
       info.modelSlug = matches[5];
       info.attemptCount = parseInt(matches[6], 10);
       const ambiguousPart = matches[7];
+      info.sourceGroupFragment = matches[8] || undefined; // Optional fragment after documentKey, before continuation
       // For doc-centric raw JSON files, check if ambiguousPart matches the stage slug from the path.
       // If ambiguousPart equals the stage slug, it's a stage slug contribution type (set as contributionType).
       // Otherwise, it's a document key or JSON artifact (set as documentKey).
@@ -312,9 +466,9 @@ export function deconstructStoragePath(
       if (!info.documentKey && (!info.stageSlug || ambiguousPart !== info.stageSlug)) {
         throw new Error(`Cannot extract documentKey from path. Path: ${fullPath}, ambiguousPart: ${ambiguousPart}, stageSlug: ${info.stageSlug}`);
       }
-      if (matches[9]) {
+      if (matches[10]) {
           info.isContinuation = true;
-          info.turnIndex = parseInt(matches[9], 10);
+          info.turnIndex = parseInt(matches[10], 10);
       }
       info.fileTypeGuess = FileType.ModelContributionRawJson;
       return info;

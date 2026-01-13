@@ -21,6 +21,7 @@ import {
   deleteFromStorage,
 } from '../_shared/supabase_storage_utils.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
+import { extractSourceGroupFragment } from '../_shared/utils/path_utils.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { createSupabaseAdminClient, } from '../_shared/auth.ts';
@@ -117,6 +118,7 @@ export async function createDialecticWorkerDeps(
     getSeedPromptForStage,
     promptAssembler,
     getExtensionFromMimeType,
+    extractSourceGroupFragment,
     randomUUID: crypto.randomUUID.bind(crypto),
     shouldEnqueueRenderJob,
     getGranularityPlanner,

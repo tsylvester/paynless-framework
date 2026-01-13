@@ -174,6 +174,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       documentIdentity: rootId,
       documentKey: FileType.business_case,
       sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md", 
     };
 
     const mockFileManager = new MockFileManagerService();
@@ -305,6 +306,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       documentIdentity: rootId,
       documentKey: FileType.business_case,
       sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md", 
     };
 
     const result: RenderDocumentResult = await renderDocument(
@@ -415,6 +417,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       documentIdentity: rootId,
       documentKey: FileType.business_case,
       sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md", 
     };
 
     const result: RenderDocumentResult = await renderDocument(
@@ -524,6 +527,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       documentIdentity: rootId,
       documentKey: FileType.business_case,
       sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md", 
     };
 
     await renderDocument(dbClient, { 
@@ -621,7 +625,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     });
 
     const mockFileRecord = createMockFileRecord({ id: expectedResourceId });
-    const params: RenderDocumentParams = { projectId: "project_123", sessionId, iterationNumber: 1, stageSlug, documentIdentity: rootId, documentKey: FileType.business_case, sourceContributionId: rootId };
+    const params: RenderDocumentParams = { projectId: "project_123", sessionId, iterationNumber: 1, stageSlug, documentIdentity: rootId, documentKey: FileType.business_case, sourceContributionId: rootId, template_filename: "thesis_business_case.md", };
     await renderDocument(dbClient, { 
       downloadFromStorage, 
       fileManager: (() => {
@@ -720,7 +724,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       },
     });
 
-    const paramsIdem: RenderDocumentParams = { projectId: "project_123", sessionId, iterationNumber: 1, stageSlug, documentIdentity: rootId, documentKey: FileType.business_case, sourceContributionId: rootId };
+    const paramsIdem: RenderDocumentParams = { projectId: "project_123", sessionId, iterationNumber: 1, stageSlug, documentIdentity: rootId, documentKey: FileType.business_case, sourceContributionId: rootId, template_filename: "thesis_business_case.md", };
 
     const fmIdem = new MockFileManagerService();
     fmIdem.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
@@ -829,7 +833,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       },
     });
 
-    const params: RenderDocumentParams = { projectId: "project_123", sessionId, iterationNumber: 1, stageSlug, documentIdentity: rootId, documentKey: FileType.business_case, sourceContributionId: rootId };
+    const params: RenderDocumentParams = { projectId: "project_123", sessionId, iterationNumber: 1, stageSlug, documentIdentity: rootId, documentKey: FileType.business_case, sourceContributionId: rootId, template_filename: "thesis_business_case.md", };
     const mockFileManager = new MockFileManagerService();
     mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
     const result: RenderDocumentResult = await renderDocument(dbClient, { 
@@ -905,7 +909,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       },
     });
 
-    const params: RenderDocumentParams = { projectId: "project_123", sessionId, iterationNumber: 1, stageSlug, documentIdentity: rootId, documentKey: FileType.business_case, sourceContributionId: rootId };
+    const params: RenderDocumentParams = { projectId: "project_123", sessionId, iterationNumber: 1, stageSlug, documentIdentity: rootId, documentKey: FileType.business_case, sourceContributionId: rootId, template_filename: "thesis_business_case.md", };
     const mockFileManager = new MockFileManagerService();
     mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
     const result: RenderDocumentResult = await renderDocument(dbClient, { 
@@ -996,6 +1000,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       documentIdentity: rootId,
       documentKey: FileType.business_case,
       sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md", 
     };
 
     await renderDocument(
@@ -1134,6 +1139,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       documentIdentity: rootId,
       documentKey: FileType.business_case,
       sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md", 
     };
 
     await renderDocument(
@@ -1249,6 +1255,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
       documentIdentity: rootId,
       documentKey: FileType.business_case,
       sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md", 
     };
 
     const result: RenderDocumentResult = await renderDocument(
@@ -1368,6 +1375,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
       documentIdentity: rootId,
       documentKey: FileType.business_case,
       sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md", 
     };
 
     const result: RenderDocumentResult = await renderDocument(
@@ -1481,6 +1489,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
       documentIdentity: rootId,
       documentKey: FileType.business_case,
       sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md", 
     };
 
     const result: RenderDocumentResult = await renderDocument(
@@ -1622,6 +1631,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
       documentIdentity: rootId,
       documentKey: FileType.business_case,
       sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md", 
     };
 
     const result: RenderDocumentResult = await renderDocument(
@@ -1732,6 +1742,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
       documentIdentity: rootId,
       documentKey: documentKey,
       sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md", 
     };
 
     // Assert the desired behavior: renderDocument successfully retrieves template and renders document
@@ -1874,6 +1885,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
       documentIdentity: rootId,
       documentKey,
       sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md", 
     };
 
     // Assert the desired behavior: renderDocument successfully retrieves the correct template
@@ -1984,6 +1996,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
       documentIdentity: rootId,
       documentKey,
       sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md", 
     };
 
     // Configure MockFileManagerService to return an error (not throw)
@@ -2099,6 +2112,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
       documentIdentity: rootId,
       documentKey: FileType.business_case,
       sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md", 
     };
 
     // Assert the CORRECT TARGET BEHAVIOR: renderDocument should parse JSON content string and use renderPrompt
@@ -2224,6 +2238,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
       documentIdentity: rootId,
       documentKey: FileType.business_case,
       sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md", 
     };
 
     // Assert the desired behavior: renderDocument should successfully parse JSON with trailing whitespace
@@ -2344,6 +2359,7 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
       documentIdentity: rootContributionId,
       documentKey: FileType.business_case,
       sourceContributionId: rootContributionId,
+      template_filename: "thesis_business_case.md", 
     };
 
     const mockFileManager = new MockFileManagerService();
@@ -2492,6 +2508,7 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
       documentIdentity: rootContributionId,
       documentKey: FileType.business_case,
       sourceContributionId: continuationContributionId,
+      template_filename: "thesis_business_case.md", 
     };
 
     const mockFileManager = new MockFileManagerService();
@@ -2672,6 +2689,7 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
       documentIdentity: rootId,
       documentKey: FileType.business_case,
       sourceContributionId: cont2Id,
+      template_filename: "thesis_business_case.md", 
     };
 
     const mockFileManager = new MockFileManagerService();
@@ -2797,6 +2815,7 @@ Deno.test("DocumentRenderer - correctly calls FileManagerService to save the ren
             documentIdentity: rootId,
             documentKey,
             sourceContributionId: rootId,
+            template_filename: "thesis_business_case.md", 
         };
 
         await renderDocument(
@@ -2828,6 +2847,611 @@ Deno.test("DocumentRenderer - correctly calls FileManagerService to save the ren
             const actualType = uploadArgs.fileContent?.constructor?.name || typeof uploadArgs.fileContent;
             assert(false, `fileContent was not a Uint8Array, but ${actualType}. Cannot verify content.`);
         }
+
+        clearAllStubs?.();
+    });
+});
+
+Deno.test("DocumentRenderer - PathContext includes sourceGroupFragment when base chunk has document_relationships.source_group", async (t) => {
+    const setup = (config: MockSupabaseDataConfig = {}) => {
+        const { client, spies, clearAllStubs } = createMockSupabaseClient(undefined, config);
+        return { dbClient: client as unknown as SupabaseClient<Database>, spies, clearAllStubs };
+    };
+    
+    await t.step("PathContext includes sourceGroupFragment extracted from base chunk document_relationships.source_group", async () => {
+        const rootId = "root-fragment-test-1";
+        const sessionId = "session_fragment_test";
+        const stageSlug = "thesis";
+        const documentKey = FileType.business_case;
+        const sourceGroup = "550e8400-e29b-41d4-a716-446655440000";
+        const expectedFragment = "550e8400";
+
+        const contributions: ContributionRowMinimal[] = [
+            {
+                id: rootId,
+                session_id: sessionId,
+                stage: "THESIS",
+                iteration_number: 1,
+                storage_bucket: "content",
+                storage_path: "project_123/session_s/iteration_1/thesis/documents",
+                file_name: "gpt-4o-mini_0_business_case.md",
+                raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
+                mime_type: "text/markdown",
+                document_relationships: { 
+                    thesis: rootId,
+                    source_group: sourceGroup
+                },
+                created_at: new Date(2025, 8, 1, 10, 0, 0).toISOString(),
+                target_contribution_id: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                user_id: "user_123",
+            },
+        ];
+
+        const structuredData = { executive_summary: "Test content" };
+        const agentResponse = { content: JSON.stringify(structuredData) };
+
+        const { dbClient, clearAllStubs } = setup({
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_projects: {
+                    select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_document_templates: {
+                    select: { data: [{ id: "template-1", created_at: "2025-01-01T00:00:00Z", description: null, domain_id: "domain-1", file_name: "thesis_business_case.md", is_active: true, name: "thesis_business_case", storage_bucket: "prompt-templates", storage_path: "templates/thesis", updated_at: "2025-01-01T00:00:00Z" }], error: null, count: null, status: 200, statusText: "OK" },
+                },
+            },
+            storageMock: {
+                downloadResult: async (_bucketId: string, path: string) => {
+                    if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
+                        return { data: new Blob([JSON.stringify(agentResponse)], { type: "application/json" }), error: null };
+                    }
+                    return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
+                },
+            },
+        });
+
+        const mockFileManager = new MockFileManagerService();
+        mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+        const params: RenderDocumentParams = {
+            projectId: "project_123",
+            sessionId,
+            iterationNumber: 1,
+            stageSlug,
+            documentIdentity: rootId,
+            documentKey,
+            sourceContributionId: rootId,
+            template_filename: "thesis_business_case.md", 
+        };
+
+        await renderDocument(
+            dbClient,
+            {
+                downloadFromStorage,
+                fileManager: mockFileManager,
+                notificationService: mockNotificationService,
+                notifyUserId: "user_123",
+                logger: logger,
+            },
+            params,
+        );
+
+        assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "uploadAndRegisterFile should be called exactly once");
+        
+        const uploadArgs = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
+        assert(isResourceContext(uploadArgs), `uploadAndRegisterFile context is not a valid ResourceUploadContext`);
+        
+        // This test must initially FAIL because renderDocument does not currently extract sourceGroupFragment
+        assertEquals(uploadArgs.pathContext.sourceGroupFragment, expectedFragment, "PathContext should include sourceGroupFragment extracted from base chunk document_relationships.source_group");
+
+        clearAllStubs?.();
+    });
+});
+
+Deno.test("DocumentRenderer - fragment extraction handles UUID with hyphens correctly", async (t) => {
+    const setup = (config: MockSupabaseDataConfig = {}) => {
+        const { client, spies, clearAllStubs } = createMockSupabaseClient(undefined, config);
+        return { dbClient: client as unknown as SupabaseClient<Database>, spies, clearAllStubs };
+    };
+    
+    await t.step("fragment extraction correctly handles UUID with hyphens", async () => {
+        const rootId = "root-fragment-hyphens-1";
+        const sessionId = "session_fragment_hyphens";
+        const stageSlug = "thesis";
+        const documentKey = FileType.business_case;
+        const sourceGroup = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+        const expectedFragment = "a1b2c3d4";
+
+        const contributions: ContributionRowMinimal[] = [
+            {
+                id: rootId,
+                session_id: sessionId,
+                stage: "THESIS",
+                iteration_number: 1,
+                storage_bucket: "content",
+                storage_path: "project_123/session_s/iteration_1/thesis/documents",
+                file_name: "gpt-4o-mini_0_business_case.md",
+                raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
+                mime_type: "text/markdown",
+                document_relationships: { 
+                    thesis: rootId,
+                    source_group: sourceGroup
+                },
+                created_at: new Date(2025, 8, 1, 10, 0, 0).toISOString(),
+                target_contribution_id: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                user_id: "user_123",
+            },
+        ];
+
+        const structuredData = { executive_summary: "Test content" };
+        const agentResponse = { content: JSON.stringify(structuredData) };
+
+        const { dbClient, clearAllStubs } = setup({
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_projects: {
+                    select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_document_templates: {
+                    select: { data: [{ id: "template-1", created_at: "2025-01-01T00:00:00Z", description: null, domain_id: "domain-1", file_name: "thesis_business_case.md", is_active: true, name: "thesis_business_case", storage_bucket: "prompt-templates", storage_path: "templates/thesis", updated_at: "2025-01-01T00:00:00Z" }], error: null, count: null, status: 200, statusText: "OK" },
+                },
+            },
+            storageMock: {
+                downloadResult: async (_bucketId: string, path: string) => {
+                    if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
+                        return { data: new Blob([JSON.stringify(agentResponse)], { type: "application/json" }), error: null };
+                    }
+                    return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
+                },
+            },
+        });
+
+        const mockFileManager = new MockFileManagerService();
+        mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+        const params: RenderDocumentParams = {
+            projectId: "project_123",
+            sessionId,
+            iterationNumber: 1,
+            stageSlug,
+            documentIdentity: rootId,
+            documentKey,
+            sourceContributionId: rootId,
+            template_filename: "thesis_business_case.md", 
+        };
+
+        await renderDocument(
+            dbClient,
+            {
+                downloadFromStorage,
+                fileManager: mockFileManager,
+                notificationService: mockNotificationService,
+                notifyUserId: "user_123",
+                logger: logger,
+            },
+            params,
+        );
+
+        assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "uploadAndRegisterFile should be called exactly once");
+        
+        const uploadArgs = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
+        assert(isResourceContext(uploadArgs), `uploadAndRegisterFile context is not a valid ResourceUploadContext`);
+        
+        // This test must initially FAIL because renderDocument does not currently extract sourceGroupFragment
+        assertEquals(uploadArgs.pathContext.sourceGroupFragment, expectedFragment, "PathContext should include sourceGroupFragment with hyphens removed and converted to lowercase");
+
+        clearAllStubs?.();
+    });
+});
+
+Deno.test("DocumentRenderer - PathContext works without source_group", async (t) => {
+    const setup = (config: MockSupabaseDataConfig = {}) => {
+        const { client, spies, clearAllStubs } = createMockSupabaseClient(undefined, config);
+        return { dbClient: client as unknown as SupabaseClient<Database>, spies, clearAllStubs };
+    };
+    
+    await t.step("PathContext does not include sourceGroupFragment when contribution lacks document_relationships.source_group", async () => {
+        const rootId = "root-no-fragment-1";
+        const sessionId = "session_no_fragment";
+        const stageSlug = "thesis";
+        const documentKey = FileType.business_case;
+
+        const contributions: ContributionRowMinimal[] = [
+            {
+                id: rootId,
+                session_id: sessionId,
+                stage: "THESIS",
+                iteration_number: 1,
+                storage_bucket: "content",
+                storage_path: "project_123/session_s/iteration_1/thesis/documents",
+                file_name: "gpt-4o-mini_0_business_case.md",
+                raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
+                mime_type: "text/markdown",
+                document_relationships: { 
+                    thesis: rootId
+                    // No source_group field
+                },
+                created_at: new Date(2025, 8, 1, 10, 0, 0).toISOString(),
+                target_contribution_id: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                user_id: "user_123",
+            },
+        ];
+
+        const structuredData = { executive_summary: "Test content" };
+        const agentResponse = { content: JSON.stringify(structuredData) };
+
+        const { dbClient, clearAllStubs } = setup({
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_projects: {
+                    select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_document_templates: {
+                    select: { data: [{ id: "template-1", created_at: "2025-01-01T00:00:00Z", description: null, domain_id: "domain-1", file_name: "thesis_business_case.md", is_active: true, name: "thesis_business_case", storage_bucket: "prompt-templates", storage_path: "templates/thesis", updated_at: "2025-01-01T00:00:00Z" }], error: null, count: null, status: 200, statusText: "OK" },
+                },
+            },
+            storageMock: {
+                downloadResult: async (_bucketId: string, path: string) => {
+                    if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
+                        return { data: new Blob([JSON.stringify(agentResponse)], { type: "application/json" }), error: null };
+                    }
+                    return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
+                },
+            },
+        });
+
+        const mockFileManager = new MockFileManagerService();
+        mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+        const params: RenderDocumentParams = {
+            projectId: "project_123",
+            sessionId,
+            iterationNumber: 1,
+            stageSlug,
+            documentIdentity: rootId,
+            documentKey,
+            sourceContributionId: rootId,
+            template_filename: "thesis_business_case.md", 
+        };
+
+        await renderDocument(
+            dbClient,
+            {
+                downloadFromStorage,
+                fileManager: mockFileManager,
+                notificationService: mockNotificationService,
+                notifyUserId: "user_123",
+                logger: logger,
+            },
+            params,
+        );
+
+        assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "uploadAndRegisterFile should be called exactly once");
+        
+        const uploadArgs = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
+        assert(isResourceContext(uploadArgs), `uploadAndRegisterFile context is not a valid ResourceUploadContext`);
+        
+        // This test should verify that sourceGroupFragment is undefined when source_group is missing
+        assertEquals(uploadArgs.pathContext.sourceGroupFragment, undefined, "PathContext should not include sourceGroupFragment when document_relationships.source_group is missing");
+
+        clearAllStubs?.();
+    });
+});
+
+Deno.test("DocumentRenderer - fragment extraction handles missing document_relationships gracefully", async (t) => {
+    const setup = (config: MockSupabaseDataConfig = {}) => {
+        const { client, spies, clearAllStubs } = createMockSupabaseClient(undefined, config);
+        return { dbClient: client as unknown as SupabaseClient<Database>, spies, clearAllStubs };
+    };
+    
+    await t.step("fragment extraction handles null or missing document_relationships without throwing errors", async () => {
+        const rootId = "root-null-rels-1";
+        const sessionId = "session_null_rels";
+        const stageSlug = "thesis";
+        const documentKey = FileType.business_case;
+
+        const contributions: ContributionRowMinimal[] = [
+            {
+                id: rootId,
+                session_id: sessionId,
+                stage: "THESIS",
+                iteration_number: 1,
+                storage_bucket: "content",
+                storage_path: "project_123/session_s/iteration_1/thesis/documents",
+                file_name: "gpt-4o-mini_0_business_case.md",
+                raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
+                mime_type: "text/markdown",
+                // document_relationships must contain thesis for the query to work, but we test that
+                // accessing source_group when it's missing doesn't throw
+                document_relationships: { 
+                    thesis: rootId
+                    // No source_group field - tests that accessing missing property is safe
+                },
+                created_at: new Date(2025, 8, 1, 10, 0, 0).toISOString(),
+                target_contribution_id: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                user_id: "user_123",
+            },
+        ];
+
+        const structuredData = { executive_summary: "Test content" };
+        const agentResponse = { content: JSON.stringify(structuredData) };
+
+        const { dbClient, clearAllStubs } = setup({
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_projects: {
+                    select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_document_templates: {
+                    select: { data: [{ id: "template-1", created_at: "2025-01-01T00:00:00Z", description: null, domain_id: "domain-1", file_name: "thesis_business_case.md", is_active: true, name: "thesis_business_case", storage_bucket: "prompt-templates", storage_path: "templates/thesis", updated_at: "2025-01-01T00:00:00Z" }], error: null, count: null, status: 200, statusText: "OK" },
+                },
+            },
+            storageMock: {
+                downloadResult: async (_bucketId: string, path: string) => {
+                    if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
+                        return { data: new Blob([JSON.stringify(agentResponse)], { type: "application/json" }), error: null };
+                    }
+                    return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
+                },
+            },
+        });
+
+        const mockFileManager = new MockFileManagerService();
+        mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+        const params: RenderDocumentParams = {
+            projectId: "project_123",
+            sessionId,
+            iterationNumber: 1,
+            stageSlug,
+            documentIdentity: rootId,
+            documentKey,
+            sourceContributionId: rootId,
+            template_filename: "thesis_business_case.md", 
+        };
+
+        // This test verifies that fragment extraction doesn't throw when accessing source_group
+        // Note: document_relationships cannot be null because renderDocument queries require it to contain thesis.
+        // This test ensures safe property access when source_group is missing from the object.
+        await renderDocument(
+            dbClient,
+            {
+                downloadFromStorage,
+                fileManager: mockFileManager,
+                notificationService: mockNotificationService,
+                notifyUserId: "user_123",
+                logger: logger,
+            },
+            params,
+        );
+
+        assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "uploadAndRegisterFile should be called exactly once");
+        
+        const uploadArgs = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
+        assert(isResourceContext(uploadArgs), `uploadAndRegisterFile context is not a valid ResourceUploadContext`);
+        
+        // This test should pass: fragment should be undefined when source_group is missing from document_relationships
+        assertEquals(uploadArgs.pathContext.sourceGroupFragment, undefined, "PathContext should have undefined sourceGroupFragment when document_relationships.source_group is missing");
+
+        clearAllStubs?.();
+    });
+});
+
+Deno.test("DocumentRenderer - uses template_filename from RenderDocumentParams to query database", async (t) => {
+    const setup = (config: MockSupabaseDataConfig = {}) => {
+        const { client, spies, clearAllStubs } = createMockSupabaseClient(undefined, config);
+        return { dbClient: client as unknown as SupabaseClient<Database>, spies, clearAllStubs };
+    };
+    
+    await t.step("renderDocument uses params.template_filename to query dialectic_document_templates", async () => {
+        const rootId = "root-template-filename-test-1";
+        const sessionId = "session_template_filename_test";
+        const stageSlug = "antithesis";
+        const documentKey = FileType.business_case;
+        const templateFilename = "antithesis_business_case_critique.md";
+
+        const contributions: ContributionRowMinimal[] = [
+            {
+                id: rootId,
+                session_id: sessionId,
+                stage: "ANTITHESIS",
+                iteration_number: 1,
+                storage_bucket: "content",
+                storage_path: "project_123/session_s/iteration_1/antithesis/documents",
+                file_name: "claude_critiquing_gpt-4_98765432_1_business_case_critique.md",
+                raw_response_storage_path: "project_123/session_s/iteration_1/antithesis/documents/claude_critiquing_gpt-4_98765432_1_business_case_critique_raw.json",
+                mime_type: "text/markdown",
+                document_relationships: { antithesis: rootId },
+                created_at: new Date(2025, 8, 1, 10, 0, 0).toISOString(),
+                target_contribution_id: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                user_id: "user_123",
+            },
+        ];
+
+        const structuredData = { executive_summary: "Test template filename content" };
+        const agentResponse = { content: JSON.stringify(structuredData) };
+
+        const { dbClient, spies, clearAllStubs } = setup({
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_projects: {
+                    select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_document_templates: {
+                    select: { data: [{ id: "template-1", created_at: "2025-01-01T00:00:00Z", description: null, domain_id: "domain-1", file_name: templateFilename, is_active: true, name: templateFilename.replace('.md', ''), storage_bucket: "prompt-templates", storage_path: "templates/antithesis", updated_at: "2025-01-01T00:00:00Z" }], error: null, count: null, status: 200, statusText: "OK" },
+                },
+            },
+            storageMock: {
+                downloadResult: async (_bucketId: string, path: string) => {
+                    if (path.endsWith("claude_critiquing_gpt-4_98765432_1_business_case_critique_raw.json")) {
+                        return { data: new Blob([JSON.stringify(agentResponse)], { type: "application/json" }), error: null };
+                    }
+                    return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
+                },
+            },
+        });
+
+        const mockFileManager = new MockFileManagerService();
+        mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+        const params: RenderDocumentParams = {
+            projectId: "project_123",
+            sessionId,
+            iterationNumber: 1,
+            stageSlug,
+            documentIdentity: rootId,
+            documentKey,
+            sourceContributionId: rootId,
+            template_filename: templateFilename,
+        };
+
+        await renderDocument(
+            dbClient,
+            {
+                downloadFromStorage,
+                fileManager: mockFileManager,
+                notificationService: mockNotificationService,
+                notifyUserId: "user_123",
+                logger: logger,
+            },
+            params,
+        );
+
+        // Assert that dialectic_document_templates was queried with eq('name', templateFilename)
+        const eqCalls = spies.getHistoricQueryBuilderSpies("dialectic_document_templates", "eq");
+        assert(eqCalls !== undefined, "dialectic_document_templates.eq() should have been called");
+        assert(eqCalls.callCount > 0, "dialectic_document_templates.eq() should have been called at least once");
+        
+        // Find the call to eq('name', ...) and verify it uses params.template_filename
+        const nameEqCalls = (eqCalls?.callsArgs || []).filter((args) => Array.isArray(args) && args[0] === "name");
+        assert(nameEqCalls.length > 0, "expected eq('name', ...) to be called on dialectic_document_templates");
+        
+        // The function strips .md extension from template_filename before querying
+        // The database name field stores the base name without .md extension
+        const nameEqValue = nameEqCalls[0][1];
+        const expectedName = templateFilename.replace('.md', '');
+        assertEquals(nameEqValue, expectedName, `database query should strip .md extension from params.template_filename ('${templateFilename}') and use '${expectedName}' as the filter value. Got: ${nameEqValue}`);
+
+        clearAllStubs?.();
+    });
+});
+
+Deno.test("DocumentRenderer - successfully finds template when template_filename includes .md extension but database name field does not", async (t) => {
+    const setup = (config: MockSupabaseDataConfig = {}) => {
+        const { client, spies, clearAllStubs } = createMockSupabaseClient(undefined, config);
+        return { dbClient: client as unknown as SupabaseClient<Database>, spies, clearAllStubs };
+    };
+    
+    await t.step("renderDocument finds template when template_filename has .md but database name does not", async () => {
+        const rootId = "root-md-extension-test";
+        const sessionId = "session_md_extension";
+        const stageSlug = "thesis";
+        const documentKey = FileType.business_case;
+        const templateFilenameWithExtension = "thesis_business_case.md";
+        const templateNameInDatabase = "thesis_business_case";
+
+        const contributions: ContributionRowMinimal[] = [
+            {
+                id: rootId,
+                session_id: sessionId,
+                stage: "THESIS",
+                iteration_number: 1,
+                storage_bucket: "content",
+                storage_path: "project_123/session_s/iteration_1/thesis/documents",
+                file_name: "gpt-4o-mini_0_business_case.md",
+                raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
+                mime_type: "text/markdown",
+                document_relationships: { thesis: rootId },
+                created_at: new Date(2025, 8, 1, 10, 0, 0).toISOString(),
+                target_contribution_id: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                user_id: "user_123",
+            },
+        ];
+
+        const structuredData = { executive_summary: "Test content for md extension mismatch" };
+        const agentResponse = { content: JSON.stringify(structuredData) };
+
+        const { dbClient, spies, clearAllStubs } = setup({
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_projects: {
+                    select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_document_templates: {
+                    select: { data: [{ id: "template-1", created_at: "2025-01-01T00:00:00Z", description: "Markdown template for the Thesis business case document.", domain_id: "domain-1", file_name: templateFilenameWithExtension, is_active: true, name: templateNameInDatabase, storage_bucket: "prompt-templates", storage_path: "docs/templates/thesis", updated_at: "2025-01-01T00:00:00Z" }], error: null, count: null, status: 200, statusText: "OK" },
+                },
+            },
+            storageMock: {
+                downloadResult: async (_bucketId: string, path: string) => {
+                    if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
+                        return { data: new Blob([JSON.stringify(agentResponse)], { type: "application/json" }), error: null };
+                    }
+                    return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
+                },
+            },
+        });
+
+        const mockFileManager = new MockFileManagerService();
+        mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+        const params: RenderDocumentParams = {
+            projectId: "project_123",
+            sessionId,
+            iterationNumber: 1,
+            stageSlug,
+            documentIdentity: rootId,
+            documentKey,
+            sourceContributionId: rootId,
+            template_filename: templateFilenameWithExtension,
+        };
+
+        await renderDocument(
+            dbClient,
+            {
+                downloadFromStorage,
+                fileManager: mockFileManager,
+                notificationService: mockNotificationService,
+                notifyUserId: "user_123",
+                logger: logger,
+            },
+            params,
+        );
+
+        const eqCalls = spies.getHistoricQueryBuilderSpies("dialectic_document_templates", "eq");
+        assert(eqCalls !== undefined, "dialectic_document_templates.eq() should have been called");
+        assert(eqCalls.callCount > 0, "dialectic_document_templates.eq() should have been called at least once");
+        
+        const nameEqCalls = (eqCalls?.callsArgs || []).filter((args) => Array.isArray(args) && args[0] === "name");
+        assert(nameEqCalls.length > 0, "expected eq('name', ...) to be called on dialectic_document_templates");
+        
+        const actualNameQuery = nameEqCalls[0][1];
+        assertEquals(actualNameQuery, templateNameInDatabase, `renderDocument should query by name='${templateNameInDatabase}' (without .md) to match the database, not '${templateFilenameWithExtension}' (with .md). Got: '${actualNameQuery}'`);
+
+        assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "renderDocument should successfully render and upload the document");
 
         clearAllStubs?.();
     });

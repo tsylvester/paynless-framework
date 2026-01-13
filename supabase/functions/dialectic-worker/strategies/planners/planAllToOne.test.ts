@@ -1076,3 +1076,241 @@ Deno.test('planAllToOne EXECUTE branch must not set document_relationships[stage
         throw new Error('Expected EXECUTE job');
     }
 });
+
+Deno.test('planAllToOne extracts sourceAnchorModelSlug from thesis document filename when creating HeaderContext for antithesis stage, not from seed_prompt', () => {
+    // This test proves the flaw: when creating HeaderContext for antithesis stage,
+    // planAllToOne should extract sourceAnchorModelSlug from thesis documents (rendered documents),
+    // not from the seed_prompt which is typically the first sourceDoc.
+    const parentPayload = MOCK_PARENT_JOB.payload;
+    if (!parentPayload) {
+        throw new Error('Test setup error: MOCK_PARENT_JOB.payload cannot be null');
+    }
+
+    const parentJobWithAntithesisStage: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        ...MOCK_PARENT_JOB,
+        payload: {
+            projectId: parentPayload.projectId,
+            sessionId: parentPayload.sessionId,
+            stageSlug: 'antithesis', // Target stage is antithesis
+            iterationNumber: parentPayload.iterationNumber,
+            model_id: parentPayload.model_id,
+            walletId: parentPayload.walletId,
+            user_jwt: parentPayload.user_jwt,
+        },
+    };
+
+    // Create sourceDocs: seed_prompt first (will be anchorDocument), then thesis rendered documents
+    const seedPromptDoc: SourceDocument = {
+        id: 'seed-prompt-id-123',
+        contribution_type: 'seed_prompt',
+        content: '',
+        citations: [],
+        error: null,
+        mime_type: 'text/plain',
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        size_bytes: 0,
+        target_contribution_id: null,
+        seed_prompt_url: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+        document_relationships: null,
+        attempt_count: 0,
+        session_id: 'session-abc',
+        user_id: 'user-123',
+        stage: 'thesis',
+        iteration_number: 1,
+        edit_version: 1,
+        is_latest_edit: true,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        file_name: null, // seed_prompt has no filename
+        storage_bucket: 'dialectic-contributions',
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis',
+        model_id: 'model-123',
+        model_name: null, // seed_prompt has no model_name
+        prompt_template_id_used: null,
+    };
+
+    // Thesis rendered document with filename containing model slug
+    const thesisRenderedDoc: SourceDocument = {
+        id: 'thesis-rendered-doc-id-456',
+        contribution_type: 'thesis',
+        content: '',
+        citations: [],
+        error: null,
+        mime_type: 'text/markdown',
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        size_bytes: 0,
+        target_contribution_id: null,
+        seed_prompt_url: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+        document_relationships: null,
+        attempt_count: 0,
+        session_id: 'session-abc',
+        user_id: 'user-123',
+        stage: 'thesis',
+        iteration_number: 1,
+        edit_version: 1,
+        is_latest_edit: true,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        file_name: 'gpt-4_0_business_case.md', // Filename contains source model slug 'gpt-4'
+        storage_bucket: 'dialectic-project-resources',
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        model_id: 'model-456',
+        model_name: null, // model_name is null, must extract from filename
+        prompt_template_id_used: null,
+        document_key: FileType.business_case,
+    };
+
+    // Thesis feature_spec document with lower relevance
+    const thesisFeatureSpecDoc: SourceDocument = {
+        id: 'thesis-feature-spec-doc-id-789',
+        contribution_type: 'thesis',
+        content: '',
+        citations: [],
+        error: null,
+        mime_type: 'text/markdown',
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        size_bytes: 0,
+        target_contribution_id: null,
+        seed_prompt_url: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+        document_relationships: null,
+        attempt_count: 0,
+        session_id: 'session-abc',
+        user_id: 'user-123',
+        stage: 'thesis',
+        iteration_number: 1,
+        edit_version: 1,
+        is_latest_edit: true,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        file_name: 'claude-3_0_feature_spec.md', // Different model slug
+        storage_bucket: 'dialectic-project-resources',
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        model_id: 'model-789',
+        model_name: null,
+        prompt_template_id_used: null,
+        document_key: FileType.feature_spec,
+    };
+
+    const sourceDocs: SourceDocument[] = [seedPromptDoc, thesisRenderedDoc, thesisFeatureSpecDoc]; // seed_prompt is first (would be anchorDocument without relevance algorithm)
+
+    const planRecipeStep: DialecticRecipeTemplateStep = {
+        id: 'plan-step-id-antithesis-header',
+        template_id: 'template-id-123',
+        step_number: 1,
+        step_key: 'antithesis_prepare_proposal_review_plan',
+        step_slug: 'prepare-proposal-review-plan',
+        step_name: 'Prepare Proposal Review Plan',
+        step_description: 'Generate HeaderContext JSON for antithesis stage',
+        prompt_template_id: 'template-planner-prompt-id',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        output_type: FileType.HeaderContext, // Creating HeaderContext
+        granularity_strategy: 'all_to_one',
+        inputs_required: [
+            {
+                type: 'seed_prompt',
+                slug: 'thesis',
+                required: true,
+            },
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.business_case,
+                required: true,
+            },
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.feature_spec,
+                required: true,
+            },
+        ],
+        inputs_relevance: [
+            {
+                document_key: FileType.business_case,
+                relevance: 1.0, // Highest relevance - should be selected
+            },
+            {
+                document_key: FileType.feature_spec,
+                relevance: 0.9, // Lower relevance - should NOT be selected
+            },
+        ],
+        outputs_required: {
+            system_materials: {
+                executive_summary: '',
+                input_artifacts_summary: '',
+                stage_rationale: '',
+            },
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [
+                {
+                    document_key: FileType.business_case_critique,
+                    content_to_include: {
+                        notes: [],
+                    },
+                },
+            ],
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        parallel_group: null,
+        branch_key: null,
+    };
+
+    const childJobs = planAllToOne(sourceDocs, parentJobWithAntithesisStage, planRecipeStep, parentJobWithAntithesisStage.payload.user_jwt);
+
+    assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    assertEquals(isDialecticExecuteJobPayload(job), true, 'PLAN recipe steps should create EXECUTE child jobs');
+    
+    if (isDialecticExecuteJobPayload(job)) {
+        const executePayload: DialecticExecuteJobPayload = job;
+        assertExists(executePayload.canonicalPathParams, 'EXECUTE job should include canonicalPathParams');
+        
+        // planAllToOne should use findAnchorDocumentForHeaderContext to select the anchor based on inputs_relevance.
+        // The thesis business_case document has relevance 1.0, so it should be selected as the anchor.
+        // sourceAnchorModelSlug should be extracted from thesisRenderedDoc filename ('gpt-4').
+        assertExists(
+            executePayload.canonicalPathParams.sourceAnchorModelSlug,
+            'canonicalPathParams should include sourceAnchorModelSlug extracted from thesis document filename for antithesis HeaderContext'
+        );
+        assertEquals(
+            executePayload.canonicalPathParams.sourceAnchorModelSlug,
+            'gpt-4',
+            'sourceAnchorModelSlug should be extracted from thesis rendered document filename (gpt-4_0_business_case.md) using relevance-based anchor selection, not from seed_prompt'
+        );
+        assertEquals(
+            executePayload.canonicalPathParams.stageSlug,
+            'antithesis',
+            'stageSlug should be antithesis (target stage)'
+        );
+    } else {
+        throw new Error('Expected EXECUTE job');
+    }
+});
+
+

@@ -61,7 +61,10 @@ Deno.test('executeModelCallAndSave throws exception when document_relationships 
             contributionType: 'thesis',
             stageSlug: DialecticStageSlug.Thesis,
         },
-        // NOT providing document_relationships - code will try to initialize it
+        // Provide source_group to pass validation, but NOT the stage key - code will try to initialize it
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+        },
     };
 
     const { client: dbClient, clearAllStubs } = setupMockClient({
@@ -132,6 +135,10 @@ Deno.test('executeModelCallAndSave throws exception when document_relationships 
         canonicalPathParams: {
             contributionType: 'thesis',
             stageSlug: DialecticStageSlug.Thesis,
+        },
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+            // Missing 'thesis' key - code will try to initialize it
         },
     };
 
@@ -225,6 +232,62 @@ Deno.test('executeModelCallAndSave throws exception when database insert fails f
         'dialectic_contributions': {
             update: { data: [], error: null }
         },
+        // Mock recipe step queries (required for template_filename extraction)
+        'dialectic_stages': {
+            select: {
+                data: [{
+                    id: 'stage-1',
+                    slug: DialecticStageSlug.Thesis,
+                    active_recipe_instance_id: 'instance-1',
+                }],
+                error: null
+            }
+        },
+        'dialectic_stage_recipe_instances': {
+            select: {
+                data: [{
+                    id: 'instance-1',
+                    stage_id: 'stage-1',
+                    template_id: 'template-1',
+                    is_cloned: false,
+                    cloned_at: null,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                }],
+                error: null
+            }
+        },
+        'dialectic_recipe_template_steps': {
+            select: {
+                data: [{
+                    id: 'step-1',
+                    template_id: 'template-1',
+                    step_number: 1,
+                    step_key: 'execute_business_case',
+                    step_slug: 'execute-business-case',
+                    step_name: 'Execute Business Case',
+                    step_description: null,
+                    job_type: 'EXECUTE',
+                    prompt_type: 'Turn',
+                    prompt_template_id: null,
+                    output_type: 'business_case',
+                    granularity_strategy: 'per_source_document',
+                    inputs_required: [],
+                    inputs_relevance: [],
+                    outputs_required: {
+                        files_to_generate: [{
+                            from_document_key: 'business_case',
+                            template_filename: 'thesis_business_case.md',
+                        }],
+                    },
+                    parallel_group: null,
+                    branch_key: null,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                }],
+                error: null
+            }
+        },
         // Mock dialectic_generation_jobs insert to FAIL (simulating RLS policy rejection)
         'dialectic_generation_jobs': {
             insert: {
@@ -242,7 +305,10 @@ Deno.test('executeModelCallAndSave throws exception when database insert fails f
     const fileManager: MockFileManagerService = deps.fileManager;
     const contributionWithRelationships = {
         ...mockContribution,
-        document_relationships: { thesis: 'doc-456' },
+        document_relationships: {
+            source_group: 'group-123',
+            thesis: 'doc-456',
+        },
     };
     fileManager.setUploadAndRegisterFileResponse(contributionWithRelationships, null);
 
@@ -292,6 +358,7 @@ Deno.test('executeModelCallAndSave throws exception when shouldEnqueueRenderJob 
             stageSlug: DialecticStageSlug.Thesis,
         },
         document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
             thesis: 'doc-root-123', // Required for documentIdentity
         },
     };

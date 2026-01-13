@@ -145,10 +145,10 @@ Deno.test('should not enqueue RENDER job for header_context output type', async 
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },
@@ -257,10 +257,10 @@ Deno.test('should enqueue RENDER job for markdown document output type', async (
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },
@@ -292,9 +292,13 @@ Deno.test('should enqueue RENDER job for markdown document output type', async (
     assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
     // Provide document_relationships up-front so executeModelCallAndSave can derive documentIdentity
     // from document_relationships[stageSlug] (no reliance on dialectic_contributions.update side-effects here).
+    // Include source_group for filename disambiguation
     const savedContribution: DialecticContributionRow = {
         ...mockContribution,
-        document_relationships: { [DialecticStageSlug.Thesis]: mockContribution.id },
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+            [DialecticStageSlug.Thesis]: mockContribution.id,
+        },
     };
     deps.fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
 
@@ -316,6 +320,10 @@ Deno.test('should enqueue RENDER job for markdown document output type', async (
         output_type: FileType.business_case,
         document_key: 'business_case',
         stageSlug: DialecticStageSlug.Thesis,
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+            [DialecticStageSlug.Thesis]: mockContribution.id,
+        },
     };
 
     const job = createMockJob(businessCasePayload);
@@ -402,10 +410,10 @@ Deno.test('should enqueue RENDER job on every chunk completion, not just final c
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },
@@ -458,6 +466,7 @@ Deno.test('should enqueue RENDER job on every chunk completion, not just final c
 
     // Continuation job payload with target_contribution_id set and document_relationships
     const continuationDocumentRelationships: DocumentRelationships = {
+        source_group: '550e8400-e29b-41d4-a716-446655440000',
         [DialecticStageSlug.Thesis]: 'doc-root-xyz',
     };
     const continuationPayload: DialecticExecuteJobPayload = {
@@ -557,10 +566,10 @@ Deno.test('executeModelCallAndSave - RENDER job payload includes documentKey wit
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },
@@ -618,7 +627,10 @@ Deno.test('executeModelCallAndSave - RENDER job payload includes documentKey wit
         tokens_used_output: mockContribution.tokens_used_output,
         updated_at: mockContribution.updated_at,
         user_id: mockContribution.user_id,
-        document_relationships: { thesis: 'doc-root-abc' },
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+            thesis: 'doc-root-abc',
+        },
         is_header: mockContribution.is_header,
         source_prompt_resource_id: mockContribution.source_prompt_resource_id,
     };
@@ -644,6 +656,10 @@ Deno.test('executeModelCallAndSave - RENDER job payload includes documentKey wit
         output_type: FileType.business_case,
         document_key: 'business_case',
         stageSlug: DialecticStageSlug.Thesis,
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+            thesis: 'doc-root-abc',
+        },
     };
 
     const job = createMockJob(businessCasePayload);
@@ -723,6 +739,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload includes documentKey wit
         documentIdentity: documentIdentity,
         documentKey: documentKey,
         sourceContributionId: sourceContributionId,
+        template_filename: 'thesis_business_case.md',
     };
 
     assert('documentKey' in pl, 'RENDER job payload must include documentKey field');
@@ -771,10 +788,10 @@ Deno.test('executeModelCallAndSave - RENDER job payload contains all required fi
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },
@@ -831,6 +848,9 @@ Deno.test('executeModelCallAndSave - RENDER job payload contains all required fi
         output_type: FileType.business_case,
         document_key: 'business_case',
         stageSlug: DialecticStageSlug.Thesis,
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+        },
     };
 
     const job = createMockJob(businessCasePayload);
@@ -910,6 +930,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload contains all required fi
         documentIdentity: documentIdentity,
         documentKey: documentKey,
         sourceContributionId: sourceContributionId,
+        template_filename: 'thesis_business_case.md',
     };
 
     assert('projectId' in pl, 'RENDER job payload must include projectId');
@@ -974,10 +995,10 @@ Deno.test('executeModelCallAndSave - RENDER job payload sourceContributionId mus
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },
@@ -1038,6 +1059,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload sourceContributionId mus
 
     // Continuation chunk payload (with target_contribution_id and document_relationships in payload)
     const continuationDocumentRelationships: DocumentRelationships = {
+        source_group: '550e8400-e29b-41d4-a716-446655440000',
         [DialecticStageSlug.Thesis]: semanticIdentifier,
     };
     const businessCasePayload: DialecticExecuteJobPayload = {
@@ -1128,6 +1150,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload sourceContributionId mus
         documentIdentity: documentIdentity,
         documentKey: documentKey,
         sourceContributionId: sourceContributionId,
+        template_filename: 'thesis_business_case.md',
     };
 
     assert('sourceContributionId' in pl, 'RENDER job payload must include sourceContributionId field');
@@ -1208,10 +1231,10 @@ Deno.test('executeModelCallAndSave - RENDER jobs for root and continuation chunk
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: documentKey,
-                    file_type: 'markdown',
+                    from_document_key: documentKey,
+                    template_filename: `thesis_${documentKey}.md`,
                 },
             ],
         },
@@ -1300,6 +1323,9 @@ Deno.test('executeModelCallAndSave - RENDER jobs for root and continuation chunk
         stageSlug: DialecticStageSlug.Thesis,
         // No target_contribution_id (root chunk)
         continueUntilComplete: false,
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+        },
     };
 
     const rootJob = createMockJob(rootPayload);
@@ -1348,6 +1374,7 @@ Deno.test('executeModelCallAndSave - RENDER jobs for root and continuation chunk
     fileManager.setUploadAndRegisterFileResponse(continuationContribution, null);
 
     const continuationDocumentRelationships: DocumentRelationships = {
+        source_group: '550e8400-e29b-41d4-a716-446655440000',
         [DialecticStageSlug.Thesis]: documentIdentity,
     };
     const continuationPayload: DialecticExecuteJobPayload = {
@@ -1460,10 +1487,10 @@ Deno.test('executeModelCallAndSave - enqueues RENDER job with ALL required paylo
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },
@@ -1523,6 +1550,9 @@ Deno.test('executeModelCallAndSave - enqueues RENDER job with ALL required paylo
         document_key: 'business_case',
         stageSlug: DialecticStageSlug.Thesis,
         user_jwt: testJwtToken,
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+        },
     };
 
     const job = createMockJob(businessCasePayload);
@@ -1602,6 +1632,7 @@ Deno.test('executeModelCallAndSave - enqueues RENDER job with ALL required paylo
         documentIdentity: documentIdentity,
         documentKey: documentKey,
         sourceContributionId: sourceContributionId,
+        template_filename: 'thesis_business_case.md',
     };
 
     // Field 1: user_jwt (string, for trigger authentication)
@@ -1687,10 +1718,10 @@ Deno.test('executeModelCallAndSave - throws error when parent job payload lacks 
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },
@@ -1739,6 +1770,9 @@ Deno.test('executeModelCallAndSave - throws error when parent job payload lacks 
         output_type: FileType.business_case,
         document_key: 'business_case',
         stageSlug: DialecticStageSlug.Thesis,
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+        },
     };
     // Explicitly remove user_jwt to simulate missing field
     delete (payloadWithoutJwt as any).user_jwt;
@@ -1810,10 +1844,10 @@ Deno.test('executeModelCallAndSave - RENDER job payload user_jwt matches parent 
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },
@@ -1869,6 +1903,9 @@ Deno.test('executeModelCallAndSave - RENDER job payload user_jwt matches parent 
         document_key: 'business_case',
         stageSlug: DialecticStageSlug.Thesis,
         user_jwt: specificTokenValue,
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+        },
     };
 
     const job = createMockJob(businessCasePayload);
@@ -1948,6 +1985,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload user_jwt matches parent 
         documentIdentity: documentIdentity,
         documentKey: documentKey,
         sourceContributionId: sourceContributionId,
+        template_filename: 'thesis_business_case.md',
     };
 
     // Verify user_jwt is passed through exactly without modification
@@ -1998,10 +2036,10 @@ Deno.test('extracts documentIdentity from document_relationships[stageSlug] for 
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },
@@ -2061,6 +2099,9 @@ Deno.test('extracts documentIdentity from document_relationships[stageSlug] for 
         document_key: 'business_case',
         stageSlug: DialecticStageSlug.Thesis,
         // No target_contribution_id (root chunk)
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+        },
     };
 
     const job = createMockJob(rootPayload);
@@ -2142,10 +2183,10 @@ Deno.test('extracts documentIdentity from document_relationships[stageSlug] for 
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },
@@ -2203,6 +2244,7 @@ Deno.test('extracts documentIdentity from document_relationships[stageSlug] for 
 
     // Continuation chunk payload with target_contribution_id and document_relationships
     const continuationDocumentRelationships: DocumentRelationships = {
+        source_group: '550e8400-e29b-41d4-a716-446655440000',
         [DialecticStageSlug.Thesis]: rootContributionId,
     };
     const continuationPayload: DialecticExecuteJobPayload = {
@@ -2300,10 +2342,10 @@ Deno.test('extracts documentIdentity using stageSlug key specifically, not first
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },
@@ -2366,6 +2408,7 @@ Deno.test('extracts documentIdentity using stageSlug key specifically, not first
     ));
 
     const payloadDocumentRelationships: DocumentRelationships = {
+        source_group: '550e8400-e29b-41d4-a716-446655440000',
         [DialecticStageSlug.Antithesis]: wrongId,
         [DialecticStageSlug.Thesis]: 'some-initial-value', // Will be overwritten to contribution.id by the fix
     };
@@ -2452,10 +2495,10 @@ Deno.test('throws error when document_relationships is null after persistence', 
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },
@@ -2513,6 +2556,9 @@ Deno.test('throws error when document_relationships is null after persistence', 
         document_key: 'business_case',
         stageSlug: DialecticStageSlug.Thesis,
         // No target_contribution_id (root chunk)
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+        },
     };
 
     const job = createMockJob(rootPayload);
@@ -2587,10 +2633,10 @@ Deno.test('validatedDocumentKey is undefined for document outputs, preventing RE
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [
+            files_to_generate: [
                 {
-                    document_key: 'business_case',
-                    file_type: 'markdown',
+                    from_document_key: 'business_case',
+                    template_filename: 'thesis_business_case.md',
                 },
             ],
         },
@@ -2634,6 +2680,9 @@ Deno.test('validatedDocumentKey is undefined for document outputs, preventing RE
         output_type: 'business_case' as ModelContributionFileTypes,
         document_key: 'business_case',
         stageSlug: DialecticStageSlug.Thesis,
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+        },
     };
 
     const job = createMockJob(businessCasePayload);
@@ -2696,7 +2745,7 @@ Deno.test('skips RENDER job when shouldEnqueueRenderJob returns { shouldRender: 
         inputs_required: [],
         inputs_relevance: [],
         outputs_required: {
-            documents: [],
+            files_to_generate: [],
         },
         parallel_group: null,
         branch_key: null,
@@ -2804,6 +2853,9 @@ Deno.test('throws an error when shouldEnqueueRenderJob returns an error reason l
         output_type: FileType.business_case,
         document_key: 'business_case',
         stageSlug: DialecticStageSlug.Thesis,
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+        },
     };
 
     const job = createMockJob(markdownPayload);
@@ -2818,4 +2870,153 @@ Deno.test('throws an error when shouldEnqueueRenderJob returns an error reason l
     );
 
     if (clearAllStubs) clearAllStubs();
+});
+
+Deno.test('should query recipe step and extract template_filename for RENDER job payload', async () => {
+    // This test must initially FAIL because executeModelCallAndSave doesn't query recipe step or extract template_filename yet
+    // Arrange: Create EXECUTE job with output_type: 'business_case' (markdown document)
+    const mockStage: Tables<'dialectic_stages'> = {
+        id: 'stage-1',
+        slug: DialecticStageSlug.Thesis,
+        display_name: 'Test Stage',
+        description: null,
+        default_system_prompt_id: null,
+        recipe_template_id: 'template-1',
+        active_recipe_instance_id: 'instance-1',
+        expected_output_template_ids: [],
+        created_at: new Date().toISOString(),
+    };
+
+    const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
+        id: 'instance-1',
+        stage_id: 'stage-1',
+        template_id: 'template-1',
+        is_cloned: false,
+        cloned_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    // Mock recipe step with outputs_required.files_to_generate containing template_filename
+    const mockStep: Tables<'dialectic_recipe_template_steps'> = {
+        id: 'step-1',
+        template_id: 'template-1',
+        step_number: 1,
+        step_key: 'execute_business_case',
+        step_slug: 'execute-business-case',
+        step_name: 'Execute Business Case',
+        step_description: null,
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        prompt_template_id: null,
+        output_type: 'business_case',
+        granularity_strategy: 'per_source_document',
+        inputs_required: [],
+        inputs_relevance: [],
+        outputs_required: {
+            files_to_generate: [
+                {
+                    from_document_key: 'business_case',
+                    template_filename: 'antithesis_business_case_critique.md',
+                },
+            ],
+        },
+        parallel_group: null,
+        branch_key: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        },
+        'dialectic_stages': {
+            select: { data: [mockStage], error: null }
+        },
+        'dialectic_stage_recipe_instances': {
+            select: { data: [mockInstance], error: null }
+        },
+        'dialectic_recipe_template_steps': {
+            select: { data: [mockStep], error: null }
+        },
+        'dialectic_generation_jobs': {
+            insert: { data: [mockRenderJob], error: null }
+        },
+    });
+
+    const deps = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    
+    // Provide document_relationships up-front so executeModelCallAndSave can derive documentIdentity
+    // Include source_group for filename disambiguation
+    const savedContribution: DialecticContributionRow = {
+        ...mockContribution,
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+            [DialecticStageSlug.Thesis]: mockContribution.id,
+        },
+    };
+    deps.fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
+
+    // Mock shouldEnqueueRenderJob to return { shouldRender: true, reason: 'is_markdown' }
+    stubShouldEnqueueRenderJobForMarkdown(deps);
+
+    stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
+        createMockUnifiedAIResponse({
+            content: '{"content": "AI response"}',
+            contentType: 'application/json',
+            inputTokens: 10,
+            outputTokens: 5,
+            processingTimeMs: 50,
+            rawProviderResponse: { finish_reason: 'stop' },
+        })
+    ));
+
+    const businessCasePayload: DialecticExecuteJobPayload = {
+        ...testPayload,
+        output_type: FileType.business_case,
+        document_key: 'business_case',
+        stageSlug: DialecticStageSlug.Thesis,
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+            [DialecticStageSlug.Thesis]: mockContribution.id,
+        },
+    };
+
+    const job = createMockJob(businessCasePayload);
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+    // Act: Call executeModelCallAndSave
+    await executeModelCallAndSave(params);
+
+    // Assert: RENDER job is created with payload containing template_filename
+    const insertCalls = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertExists(insertCalls, 'Expected to track insert calls for dialectic_generation_jobs');
+
+    // Filter for RENDER job inserts only
+    const renderInserts = insertCalls.callsArgs.filter((callArg) => {
+        const inserted = Array.isArray(callArg) ? callArg[0] : callArg;
+        return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
+    });
+
+    assertEquals(renderInserts.length, 1, 'Should enqueue exactly one RENDER job for markdown document output type');
+
+    const insertedArg = renderInserts[0];
+    const inserted = Array.isArray(insertedArg) ? (insertedArg[0]) : (insertedArg);
+
+    assert(isRecord(inserted), 'Inserted payload must be an object');
+
+    // Verify RENDER job payload contains template_filename
+    const pl = inserted['payload'];
+    assert(isRecord(pl), 'Inserted payload.payload must be an object');
+    
+    // This test must initially FAIL because executeModelCallAndSave doesn't query recipe step or extract template_filename yet
+    assertEquals(
+        pl['template_filename'],
+        'antithesis_business_case_critique.md',
+        `RENDER job payload should contain template_filename: 'antithesis_business_case_critique.md' extracted from recipe step's outputs_required.files_to_generate[]. Got: ${pl['template_filename']}`
+    );
+
+    clearAllStubs?.();
 });

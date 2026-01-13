@@ -118,8 +118,19 @@ export interface PathContext {
   turnIndex?: number;
   documentKey?: string;
   stepName?: string;
+  sourceGroupFragment?: string; // Optional fragment extracted from `document_relationships.source_group` UUID (first 8 characters, sanitized) to disambiguate filenames when the same model processes multiple source groups in parallel.
 }
 ```
+
+**Fragment Usage for Filename Disambiguation**
+
+The `sourceGroupFragment` field is used to ensure unique filenames when multiple instances of the same AI model process different source document groups (lineages) in parallel. The fragment is extracted from the `document_relationships.source_group` UUID by taking the first 8 characters after removing hyphens, converting to lowercase, and sanitizing for filesystem use. This prevents duplicate resource errors when parallel jobs generate files with otherwise identical naming patterns.
+
+Fragment positions in filenames follow standardized patterns:
+- **Simple patterns** (non-antithesis): Fragment appears after `documentKey` (or after `attemptCount` for HeaderContext)
+- **Antithesis patterns**: Fragment appears between `sourceAnchorModelSlug` and `attemptCount`
+
+The fragment is optional and only appears in filenames when `source_group` exists in `document_relationships`.
 
 ### `UploadContext`
 
@@ -196,30 +207,30 @@ The following structure represents the target state for the document-centric arc
             │   ├── _work/
             │   │   ├── prompts/
             │   │   │   ├── {model_slug}_{n}_planner_prompt.md
-            │   │   │   └── {model_slug}_{n}_{document_key}[_continuation_{c}]_prompt.md
+            │   │   │   └── {model_slug}_{n}_{document_key}[_{fragment}][_continuation_{c}]_prompt.md
             │   │   ├── context/
-            │   │   │   └── {model_slug}_{n}_header_context.json
+            │   │   │   └── {model_slug}_{n}[_{fragment}]_header_context.json
             │   │   └── assembled_json/
-            │   │       └── {model_slug}_{n}_{document_key}_assembled.json
+            │   │       └── {model_slug}_{n}_{document_key}[_{fragment}]_assembled.json
             │   ├── raw_responses/
             │   │   ├── {model_slug}_{n}_planner_raw.json
-            │   │   └── {model_slug}_{n}_{document_key}[_continuation_{c}]_raw.json
+            │   │   └── {model_slug}_{n}_{document_key}[_{fragment}][_continuation_{c}]_raw.json
             │   ├── documents/
-            │   │   └── {model_slug}_{n}_{document_key}.md
+            │   │   └── {model_slug}_{n}_{document_key}[_{fragment}].md
             │   ├── seed_prompt.md
             │   └── user_feedback_thesis.md
             ├── 2_antithesis/
             │   ├── _work/
             │   │   ├── prompts/
-            │   │   │   └── {model_slug}_critiquing_{source_model_slug}_{n}_{document_key}[_continuation_{c}]_prompt.md
+            │   │   │   └── {model_slug}_critiquing_{source_model_slug}[_{fragment}]_{n}_{document_key}[_continuation_{c}]_prompt.md
             │   │   ├── context/
-            │   │   │   └── {model_slug}_critiquing_{source_model_slug}_{n}_header_context.json
+            │   │   │   └── {model_slug}_critiquing_{source_model_slug}[_{fragment}]_{n}_header_context.json
             │   │   └── assembled_json/
-            │   │       └── {model_slug}_critiquing_{source_model_slug}_{n}_{document_key}_assembled.json
+            │   │       └── {model_slug}_critiquing_{source_model_slug}[_{fragment}]_{n}_{document_key}_assembled.json
             │   ├── raw_responses/
-            │   │   └── {model_slug}_critiquing_{source_model_slug}_{n}_{document_key}[_continuation_{c}]_raw.json
+            │   │   └── {model_slug}_critiquing_{source_model_slug}[_{fragment}]_{n}_{document_key}[_continuation_{c}]_raw.json
             │   ├── documents/
-            │   │   └── {model_slug}_critiquing_{source_model_slug}_{n}_{document_key}.md
+            │   │   └── {model_slug}_critiquing_{source_model_slug}[_{fragment}]_{n}_{document_key}.md
             │   ├── seed_prompt.md
             │   └── user_feedback_antithesis.md
             └── ... (Structure repeats for 3_synthesis, 4_parenthesis, 5_paralysis)

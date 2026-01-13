@@ -10,6 +10,7 @@ import type {
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
 import { isContributionType, isContentToInclude } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 import { isModelContributionFileType } from '../../../_shared/utils/type-guards/type_guards.file_manager.ts';
+import { ModelContributionFileTypes } from '../../../_shared/types/file_manager.types.ts';
 
 const deriveSourceContributionId = (
 	documentId: string | null | undefined,
@@ -232,6 +233,16 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 		}
 		// If the step does not output documents, documentKey remains undefined
 
+		// If this step requires a header_context input, ensure we can supply header_context_id in payload.inputs.
+		const requiresHeaderContext = Array.isArray(recipeStep.inputs_required)
+			&& recipeStep.inputs_required.some((rule) => rule?.type === 'header_context');
+		const headerContextId = requiresHeaderContext
+			? sourceDocs.find((d) => d.contribution_type === 'header_context')?.id
+			: undefined;
+		if (requiresHeaderContext && (typeof headerContextId !== 'string' || headerContextId.length === 0)) {
+			throw new Error("planPerSourceDocument requires a sourceDoc with contribution_type 'header_context' when recipeStep.inputs_required includes header_context");
+		}
+
 		const childPayloads: DialecticExecuteJobPayload[] = [];
 
 		console.log(
@@ -241,9 +252,22 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 		for (const doc of sourceDocs) {
 			console.log(`[planPerSourceDocument] Processing doc: ${doc.id}`);
 
+			// Resolve the effective output type for the child job.
+			// Some recipe steps (e.g. comparison_vector) use an artifact-class output_type like
+			// 'assembled_document_json' while the actual model contribution file type should be
+			// derived from outputs_required.documents[0].document_key.
+			let effectiveOutputType: ModelContributionFileTypes;
+			if (isModelContributionFileType(recipeStep.output_type)) {
+				effectiveOutputType = recipeStep.output_type;
+			} else if (typeof documentKey === 'string' && isModelContributionFileType(documentKey)) {
+				effectiveOutputType = documentKey;
+			} else {
+				throw new Error(`Invalid output_type for planPerSourceDocument: ${recipeStep.output_type}`);
+			}
+
 			const canonicalPathParams = createCanonicalPathParams(
 				[doc],
-				recipeStep.output_type,
+				effectiveOutputType,
 				doc,
 				stageSlug
 			);
@@ -256,10 +280,10 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 			if (doc.contribution_type) {
 				inputs[`${doc.contribution_type}_id`] = doc.id;
 			}
-
-			if(!isModelContributionFileType(recipeStep.output_type)) {
-				throw new Error(`Invalid output_type for planPerSourceDocument: ${recipeStep.output_type}`);
+			if (requiresHeaderContext && headerContextId) {
+				inputs.header_context_id = headerContextId;
 			}
+
 			const newPayload: DialecticExecuteJobPayload = {
 				// Inherit ALL fields from parent job payload (defensive programming)
 				projectId: parentJob.payload.projectId,
@@ -280,7 +304,7 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 				...(parentJob.payload.is_test_job !== undefined ? { is_test_job: parentJob.payload.is_test_job } : {}),
 				// Override job-specific properties
 				prompt_template_id: recipeStep.prompt_template_id,
-				output_type: recipeStep.output_type,
+				output_type: effectiveOutputType,
 				canonicalPathParams, // Use the new contract
 				document_relationships: { source_group: doc.id },
 				inputs,

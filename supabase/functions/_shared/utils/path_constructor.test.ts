@@ -11,8 +11,11 @@ import {
   sanitizeForPath,
 } from './path_constructor.ts'
 import { deconstructStoragePath } from '../utils/path_deconstructor.ts'
-import { FileType, type PathContext } from '../types/file_manager.types.ts'
-import type { DeconstructedPathInfo } from './path_deconstructor.types.ts'
+import { 
+  FileType, 
+  PathContext 
+} from '../types/file_manager.types.ts'
+import { DeconstructedPathInfo } from './path_deconstructor.types.ts'
 import { isContributionType } from './type_guards.ts'
 
 Deno.test('constructStoragePath and deconstructStoragePath should be perfect inverses', async (t) => {
@@ -759,6 +762,24 @@ Deno.test('constructStoragePath', async (t) => {
         const { storagePath, fileName } = constructStoragePath(antithesisRawContext);
         assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/raw_responses`);
         assertEquals(fileName, `gpt-4-turbo_critiquing_(claude-3-opus's_thesis_0)_0_antithesis_raw.json`);
+    });
+
+    await t.step('ModelContributionRawJson with stageSlug=antithesis and sourceAnchorModelSlug should use simple critiquing pattern', () => {
+        const context: PathContext = {
+          ...baseContext,
+          stageSlug: 'antithesis',
+          fileType: FileType.ModelContributionRawJson,
+          documentKey: 'business_case',
+          sourceAnchorModelSlug: 'claude-3-opus',
+          sourceGroupFragment: '98765432',
+        };
+        const { storagePath, fileName } = constructStoragePath(context);
+        assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/raw_responses`);
+        assertEquals(
+          fileName,
+          'gpt-4-turbo_critiquing_claude-3-opus_98765432_0_business_case_raw.json',
+          'ModelContributionRawJson with stageSlug=antithesis and sourceAnchorModelSlug should use simple critiquing pattern per documentation'
+        );
     });
 
     await t.step('constructs raw path for pairwise_synthesis_chunk', () => {

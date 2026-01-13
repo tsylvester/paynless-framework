@@ -32,6 +32,7 @@ export type RenderDocumentParams = {
   documentIdentity: string; // true-root id for this document chain
   documentKey: FileType;
   sourceContributionId: string;
+  template_filename: string; // canonical template filename from recipe step's outputs_required.files_to_generate[] array, matching file_name in dialectic_document_templates table
 };
 
 export type RenderDocumentResult = {

@@ -1,7 +1,18 @@
 // supabase/functions/dialectic-worker/strategies/helpers.test.ts
-import { assertEquals, assertExists } from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import type { SourceDocument } from '../../dialectic-service/dialectic.interface.ts';
-import { groupSourceDocumentsByType, findRelatedContributions } from './helpers.ts';
+import { 
+    assertEquals, 
+    assertExists
+} from 'https://deno.land/std@0.224.0/assert/mod.ts';
+import { 
+    SourceDocument, 
+    DialecticStageRecipeStep 
+} from '../../dialectic-service/dialectic.interface.ts';
+import { FileType } from '../../_shared/types/file_manager.types.ts';
+import { 
+    groupSourceDocumentsByType, 
+    findRelatedContributions, 
+    selectAnchorSourceDocument 
+} from './helpers.ts';
 
 // Mock Data
 const MOCK_SOURCE_DOCUMENTS: SourceDocument[] = [
@@ -321,4 +332,843 @@ Deno.test('findRelatedContributions handles complex real-world scenarios', () =>
     assertEquals(relatedDocs.length, 2, "Should only find the two documents directly related to 'thesis-A'");
     assertExists(relatedDocs.find(d => d.id === 'antithesis-A-1'));
     assertExists(relatedDocs.find(d => d.id === 'antithesis-A-2'));
+});
+
+Deno.test('selectAnchorSourceDocument selects highest-relevance document among required document inputs', () => {
+    const recipeStep: DialecticStageRecipeStep = {
+        id: 'step-id-1',
+        instance_id: 'instance-id-1',
+        template_step_id: 'template-step-id-1',
+        step_key: 'test-step',
+        step_slug: 'test-step',
+        step_name: 'Test Step',
+        prompt_template_id: 'template-id-1',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        inputs_required: [
+            {
+                type: 'seed_prompt',
+                slug: 'antithesis',
+                document_key: FileType.SeedPrompt,
+                required: true,
+            },
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.business_case,
+                required: true,
+            },
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.feature_spec,
+                required: true,
+            },
+        ],
+        inputs_relevance: [
+            {
+                document_key: FileType.business_case,
+                relevance: 1.0,
+            },
+            {
+                document_key: FileType.feature_spec,
+                relevance: 0.9,
+            },
+        ],
+        outputs_required: {
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [],
+        },
+        granularity_strategy: 'all_to_one',
+        output_type: FileType.HeaderContext,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        config_override: {},
+        is_skipped: false,
+        object_filter: {},
+        output_overrides: {},
+        branch_key: null,
+        execution_order: 1,
+        parallel_group: null,
+        step_description: 'Test Step',
+    };
+
+    const seedPromptDoc: SourceDocument = {
+        id: 'seed-prompt-doc',
+        content: 'Seed prompt content',
+        contribution_type: 'seed_prompt',
+        session_id: 'session-1',
+        user_id: 'user-1',
+        stage: 'antithesis',
+        iteration_number: 1,
+        edit_version: 1,
+        is_latest_edit: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: 'seed_prompt.md',
+        storage_bucket: 'bucket-1',
+        storage_path: 'path-1',
+        model_id: 'model-1',
+        model_name: 'gpt-4',
+        prompt_template_id_used: 'template-1',
+        seed_prompt_url: null,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        error: null,
+        citations: null,
+        size_bytes: 0,
+        mime_type: 'text/markdown',
+        target_contribution_id: null,
+        document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+        document_key: FileType.SeedPrompt,
+    };
+
+    const businessCaseDoc: SourceDocument = {
+        id: 'business-case-doc',
+        content: 'Business case content',
+        contribution_type: 'thesis',
+        session_id: 'session-1',
+        user_id: 'user-1',
+        stage: 'thesis',
+        iteration_number: 1,
+        edit_version: 1,
+        is_latest_edit: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: 'gpt-4_0_business_case.md',
+        storage_bucket: 'bucket-1',
+        storage_path: 'path-1',
+        model_id: 'model-1',
+        model_name: 'gpt-4',
+        prompt_template_id_used: 'template-1',
+        seed_prompt_url: null,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        error: null,
+        citations: null,
+        size_bytes: 0,
+        mime_type: 'text/markdown',
+        target_contribution_id: null,
+        document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+        document_key: FileType.business_case,
+    };
+
+    const featureSpecDoc: SourceDocument = {
+        id: 'feature-spec-doc',
+        content: 'Feature spec content',
+        contribution_type: 'thesis',
+        session_id: 'session-1',
+        user_id: 'user-1',
+        stage: 'thesis',
+        iteration_number: 1,
+        edit_version: 1,
+        is_latest_edit: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: 'gpt-4_0_feature_spec.md',
+        storage_bucket: 'bucket-1',
+        storage_path: 'path-1',
+        model_id: 'model-1',
+        model_name: 'gpt-4',
+        prompt_template_id_used: 'template-1',
+        seed_prompt_url: null,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        error: null,
+        citations: null,
+        size_bytes: 0,
+        mime_type: 'text/markdown',
+        target_contribution_id: null,
+        document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+        document_key: FileType.feature_spec,
+    };
+
+    const sourceDocs: SourceDocument[] = [seedPromptDoc, businessCaseDoc, featureSpecDoc];
+
+    const result = selectAnchorSourceDocument(recipeStep, sourceDocs);
+
+    assertEquals(result.id, 'business-case-doc', 'Should return business_case document with highest relevance (1.0), not seed_prompt or feature_spec');
+    assertEquals(result.document_key, FileType.business_case, 'Should return business_case document');
+});
+
+Deno.test('selectAnchorSourceDocument ignores seed_prompt and feedback inputs when selecting anchor', () => {
+    const recipeStep: DialecticStageRecipeStep = {
+        id: 'step-id-1',
+        instance_id: 'instance-id-1',
+        template_step_id: 'template-step-id-1',
+        step_key: 'test-step',
+        step_slug: 'test-step',
+        step_name: 'Test Step',
+        prompt_template_id: 'template-id-1',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        inputs_required: [
+            {
+                type: 'seed_prompt',
+                slug: 'antithesis',
+                document_key: FileType.SeedPrompt,
+                required: true,
+            },
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.business_case,
+                required: true,
+            },
+        ],
+        inputs_relevance: [
+            {
+                type: 'seed_prompt',
+                document_key: FileType.SeedPrompt,
+                relevance: 1.0,
+            },
+            {
+                document_key: FileType.business_case,
+                relevance: 0.9,
+            },
+        ],
+        outputs_required: {
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [],
+        },
+        granularity_strategy: 'all_to_one',
+        output_type: FileType.HeaderContext,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        config_override: {},
+        is_skipped: false,
+        object_filter: {},
+        output_overrides: {},
+        branch_key: null,
+        execution_order: 1,
+        parallel_group: null,
+        step_description: 'Test Step',
+    };
+
+    const seedPromptDoc: SourceDocument = {
+        id: 'seed-prompt-doc',
+        content: 'Seed prompt content',
+        contribution_type: 'seed_prompt',
+        session_id: 'session-1',
+        user_id: 'user-1',
+        stage: 'antithesis',
+        iteration_number: 1,
+        edit_version: 1,
+        is_latest_edit: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: 'seed_prompt.md',
+        storage_bucket: 'bucket-1',
+        storage_path: 'path-1',
+        model_id: 'model-1',
+        model_name: 'gpt-4',
+        prompt_template_id_used: 'template-1',
+        seed_prompt_url: null,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        error: null,
+        citations: null,
+        size_bytes: 0,
+        mime_type: 'text/markdown',
+        target_contribution_id: null,
+        document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+        document_key: FileType.SeedPrompt,
+    };
+
+    const businessCaseDoc: SourceDocument = {
+        id: 'business-case-doc',
+        content: 'Business case content',
+        contribution_type: 'thesis',
+        session_id: 'session-1',
+        user_id: 'user-1',
+        stage: 'thesis',
+        iteration_number: 1,
+        edit_version: 1,
+        is_latest_edit: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: 'gpt-4_0_business_case.md',
+        storage_bucket: 'bucket-1',
+        storage_path: 'path-1',
+        model_id: 'model-1',
+        model_name: 'gpt-4',
+        prompt_template_id_used: 'template-1',
+        seed_prompt_url: null,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        error: null,
+        citations: null,
+        size_bytes: 0,
+        mime_type: 'text/markdown',
+        target_contribution_id: null,
+        document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+        document_key: FileType.business_case,
+    };
+
+    const sourceDocs: SourceDocument[] = [seedPromptDoc, businessCaseDoc];
+
+    const result = selectAnchorSourceDocument(recipeStep, sourceDocs);
+
+    assertEquals(result.id, 'business-case-doc', 'Should return document (not seed_prompt), proving non-document inputs are excluded from anchor candidates');
+    assertEquals(result.document_key, FileType.business_case, 'Should return business_case document despite seed_prompt having higher relevance');
+});
+
+Deno.test('selectAnchorSourceDocument throws when multiple documents have identical highest relevance', () => {
+    const recipeStep: DialecticStageRecipeStep = {
+        id: 'step-id-1',
+        instance_id: 'instance-id-1',
+        template_step_id: 'template-step-id-1',
+        step_key: 'test-step',
+        step_slug: 'test-step',
+        step_name: 'Test Step',
+        prompt_template_id: 'template-id-1',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        inputs_required: [
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.business_case,
+                required: true,
+            },
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.feature_spec,
+                required: true,
+            },
+        ],
+        inputs_relevance: [
+            {
+                document_key: FileType.business_case,
+                relevance: 1.0,
+            },
+            {
+                document_key: FileType.feature_spec,
+                relevance: 1.0,
+            },
+        ],
+        outputs_required: {
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [],
+        },
+        granularity_strategy: 'all_to_one',
+        output_type: FileType.HeaderContext,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        config_override: {},
+        is_skipped: false,
+        object_filter: {},
+        output_overrides: {},
+        branch_key: null,
+        execution_order: 1,
+        parallel_group: null,
+        step_description: 'Test Step',
+    };
+
+    const businessCaseDoc: SourceDocument = {
+        id: 'business-case-doc',
+        content: 'Business case content',
+        contribution_type: 'thesis',
+        session_id: 'session-1',
+        user_id: 'user-1',
+        stage: 'thesis',
+        iteration_number: 1,
+        edit_version: 1,
+        is_latest_edit: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: 'gpt-4_0_business_case.md',
+        storage_bucket: 'bucket-1',
+        storage_path: 'path-1',
+        model_id: 'model-1',
+        model_name: 'gpt-4',
+        prompt_template_id_used: 'template-1',
+        seed_prompt_url: null,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        error: null,
+        citations: null,
+        size_bytes: 0,
+        mime_type: 'text/markdown',
+        target_contribution_id: null,
+        document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+        document_key: FileType.business_case,
+    };
+
+    const featureSpecDoc: SourceDocument = {
+        id: 'feature-spec-doc',
+        content: 'Feature spec content',
+        contribution_type: 'thesis',
+        session_id: 'session-1',
+        user_id: 'user-1',
+        stage: 'thesis',
+        iteration_number: 1,
+        edit_version: 1,
+        is_latest_edit: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: 'gpt-4_0_feature_spec.md',
+        storage_bucket: 'bucket-1',
+        storage_path: 'path-1',
+        model_id: 'model-1',
+        model_name: 'gpt-4',
+        prompt_template_id_used: 'template-1',
+        seed_prompt_url: null,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        error: null,
+        citations: null,
+        size_bytes: 0,
+        mime_type: 'text/markdown',
+        target_contribution_id: null,
+        document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+        document_key: FileType.feature_spec,
+    };
+
+    const sourceDocs: SourceDocument[] = [businessCaseDoc, featureSpecDoc];
+
+    let caughtError: Error | null = null;
+    try {
+        selectAnchorSourceDocument(recipeStep, sourceDocs);
+    } catch (error) {
+        if (error instanceof Error) {
+            caughtError = error;
+        } else {
+            throw error;
+        }
+    }
+    assertExists(caughtError, 'Should throw error when multiple documents have identical highest relevance');
+    assertEquals(caughtError.message.includes('Ambiguous anchor selection'), true, 'Error message should mention ambiguous anchor selection');
+    assertEquals(caughtError.message.includes('multiple documents with identical highest relevance'), true, 'Error message should mention multiple documents with identical highest relevance');
+});
+
+Deno.test('selectAnchorSourceDocument throws when required document input has no relevance score', () => {
+    const recipeStep: DialecticStageRecipeStep = {
+        id: 'step-id-1',
+        instance_id: 'instance-id-1',
+        template_step_id: 'template-step-id-1',
+        step_key: 'test-step',
+        step_slug: 'test-step',
+        step_name: 'Test Step',
+        prompt_template_id: 'template-id-1',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        inputs_required: [
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.business_case,
+                required: true,
+            },
+        ],
+        inputs_relevance: [],
+        outputs_required: {
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [],
+        },
+        granularity_strategy: 'all_to_one',
+        output_type: FileType.HeaderContext,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        config_override: {},
+        is_skipped: false,
+        object_filter: {},
+        output_overrides: {},
+        branch_key: null,
+        execution_order: 1,
+        parallel_group: null,
+        step_description: 'Test Step',
+    };
+
+    const businessCaseDoc: SourceDocument = {
+        id: 'business-case-doc',
+        content: 'Business case content',
+        contribution_type: 'thesis',
+        session_id: 'session-1',
+        user_id: 'user-1',
+        stage: 'thesis',
+        iteration_number: 1,
+        edit_version: 1,
+        is_latest_edit: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: 'gpt-4_0_business_case.md',
+        storage_bucket: 'bucket-1',
+        storage_path: 'path-1',
+        model_id: 'model-1',
+        model_name: 'gpt-4',
+        prompt_template_id_used: 'template-1',
+        seed_prompt_url: null,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        error: null,
+        citations: null,
+        size_bytes: 0,
+        mime_type: 'text/markdown',
+        target_contribution_id: null,
+        document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+        document_key: FileType.business_case,
+    };
+
+    const sourceDocs: SourceDocument[] = [businessCaseDoc];
+
+    let caughtError: Error | null = null;
+    try {
+        selectAnchorSourceDocument(recipeStep, sourceDocs);
+    } catch (error) {
+        if (error instanceof Error) {
+            caughtError = error;
+        } else {
+            throw error;
+        }
+    }
+    assertExists(caughtError, 'Should throw error when required document input has no relevance score');
+    assertEquals(caughtError.message.includes('Missing relevance score'), true, 'Error message should mention missing relevance score');
+    assertEquals(caughtError.message.includes('required document input'), true, 'Error message should mention required document input');
+});
+
+Deno.test('selectAnchorSourceDocument throws when no document-type inputs exist in inputs_required', () => {
+    const recipeStep: DialecticStageRecipeStep = {
+        id: 'step-id-1',
+        instance_id: 'instance-id-1',
+        template_step_id: 'template-step-id-1',
+        step_key: 'test-step',
+        step_slug: 'test-step',
+        step_name: 'Test Step',
+        prompt_template_id: 'template-id-1',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        inputs_required: [
+            {
+                type: 'seed_prompt',
+                slug: 'antithesis',
+                document_key: FileType.SeedPrompt,
+                required: true,
+            },
+        ],
+        inputs_relevance: [],
+        outputs_required: {
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [],
+        },
+        granularity_strategy: 'all_to_one',
+        output_type: FileType.HeaderContext,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        config_override: {},
+        is_skipped: false,
+        object_filter: {},
+        output_overrides: {},
+        branch_key: null,
+        execution_order: 1,
+        parallel_group: null,
+        step_description: 'Test Step',
+    };
+
+    const seedPromptDoc: SourceDocument = {
+        id: 'seed-prompt-doc',
+        content: 'Seed prompt content',
+        contribution_type: 'seed_prompt',
+        session_id: 'session-1',
+        user_id: 'user-1',
+        stage: 'antithesis',
+        iteration_number: 1,
+        edit_version: 1,
+        is_latest_edit: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: 'seed_prompt.md',
+        storage_bucket: 'bucket-1',
+        storage_path: 'path-1',
+        model_id: 'model-1',
+        model_name: 'gpt-4',
+        prompt_template_id_used: 'template-1',
+        seed_prompt_url: null,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        error: null,
+        citations: null,
+        size_bytes: 0,
+        mime_type: 'text/markdown',
+        target_contribution_id: null,
+        document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+        document_key: FileType.SeedPrompt,
+    };
+
+    const sourceDocs: SourceDocument[] = [seedPromptDoc];
+
+    let caughtError: Error | null = null;
+    try {
+        selectAnchorSourceDocument(recipeStep, sourceDocs);
+    } catch (error) {
+        if (error instanceof Error) {
+            caughtError = error;
+        } else {
+            throw error;
+        }
+    }
+    assertExists(caughtError, 'Should throw error when no document-type inputs exist in inputs_required');
+    assertEquals(caughtError.message, 'No document-type inputs found in recipe step inputs_required', 'Error message should match expected message');
+});
+
+Deno.test('selectAnchorSourceDocument throws when anchor document not found in sourceDocs', () => {
+    const recipeStep: DialecticStageRecipeStep = {
+        id: 'step-id-1',
+        instance_id: 'instance-id-1',
+        template_step_id: 'template-step-id-1',
+        step_key: 'test-step',
+        step_slug: 'test-step',
+        step_name: 'Test Step',
+        prompt_template_id: 'template-id-1',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        inputs_required: [
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.business_case,
+                required: true,
+            },
+        ],
+        inputs_relevance: [
+            {
+                document_key: FileType.business_case,
+                relevance: 1.0,
+            },
+        ],
+        outputs_required: {
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [],
+        },
+        granularity_strategy: 'all_to_one',
+        output_type: FileType.HeaderContext,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        config_override: {},
+        is_skipped: false,
+        object_filter: {},
+        output_overrides: {},
+        branch_key: null,
+        execution_order: 1,
+        parallel_group: null,
+        step_description: 'Test Step',
+    };
+
+    const wrongDocumentDoc: SourceDocument = {
+        id: 'wrong-document-doc',
+        content: 'Wrong document content',
+        contribution_type: 'thesis',
+        session_id: 'session-1',
+        user_id: 'user-1',
+        stage: 'thesis',
+        iteration_number: 1,
+        edit_version: 1,
+        is_latest_edit: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: 'gpt-4_0_feature_spec.md',
+        storage_bucket: 'bucket-1',
+        storage_path: 'path-1',
+        model_id: 'model-1',
+        model_name: 'gpt-4',
+        prompt_template_id_used: 'template-1',
+        seed_prompt_url: null,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        error: null,
+        citations: null,
+        size_bytes: 0,
+        mime_type: 'text/markdown',
+        target_contribution_id: null,
+        document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+        document_key: FileType.feature_spec,
+    };
+
+    const sourceDocs: SourceDocument[] = [wrongDocumentDoc];
+
+    let caughtError: Error | null = null;
+    try {
+        selectAnchorSourceDocument(recipeStep, sourceDocs);
+    } catch (error) {
+        if (error instanceof Error) {
+            caughtError = error;
+        } else {
+            throw error;
+        }
+    }
+    assertExists(caughtError, 'Should throw error when anchor document not found in sourceDocs');
+    assertEquals(caughtError.message.includes('Anchor document not found in sourceDocs'), true, 'Error message should mention anchor document not found');
+});
+
+Deno.test('selectAnchorSourceDocument matches by stage and document_key or contribution_type', () => {
+    const recipeStep: DialecticStageRecipeStep = {
+        id: 'step-id-1',
+        instance_id: 'instance-id-1',
+        template_step_id: 'template-step-id-1',
+        step_key: 'test-step',
+        step_slug: 'test-step',
+        step_name: 'Test Step',
+        prompt_template_id: 'template-id-1',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        inputs_required: [
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.business_case,
+                required: true,
+            },
+        ],
+        inputs_relevance: [
+            {
+                document_key: FileType.business_case,
+                relevance: 1.0,
+            },
+        ],
+        outputs_required: {
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [],
+        },
+        granularity_strategy: 'all_to_one',
+        output_type: FileType.HeaderContext,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        config_override: {},
+        is_skipped: false,
+        object_filter: {},
+        output_overrides: {},
+        branch_key: null,
+        execution_order: 1,
+        parallel_group: null,
+        step_description: 'Test Step',
+    };
+
+    const businessCaseDoc: SourceDocument = {
+        id: 'business-case-doc',
+        content: 'Business case content',
+        contribution_type: 'thesis',
+        session_id: 'session-1',
+        user_id: 'user-1',
+        stage: 'thesis',
+        iteration_number: 1,
+        edit_version: 1,
+        is_latest_edit: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: 'gpt-4_0_business_case.md',
+        storage_bucket: 'bucket-1',
+        storage_path: 'path-1',
+        model_id: 'model-1',
+        model_name: 'gpt-4',
+        prompt_template_id_used: 'template-1',
+        seed_prompt_url: null,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        error: null,
+        citations: null,
+        size_bytes: 0,
+        mime_type: 'text/markdown',
+        target_contribution_id: null,
+        document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+        document_key: FileType.business_case,
+    };
+
+    const sourceDocs: SourceDocument[] = [businessCaseDoc];
+
+    const result = selectAnchorSourceDocument(recipeStep, sourceDocs);
+
+    assertEquals(result.id, 'business-case-doc', 'Should return matching document by stage and document_key');
+    assertEquals(result.stage, 'thesis', 'Should match stage from inputs_required slug');
+    assertEquals(result.document_key, FileType.business_case, 'Should match document_key from inputs_required');
 }); 

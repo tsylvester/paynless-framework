@@ -21,7 +21,7 @@ export async function processRenderJob(
       throw new Error('Invalid payload');
     }
 
-    const { projectId, sessionId, iterationNumber, stageSlug, documentIdentity, documentKey, sourceContributionId } = job.payload;
+    const { projectId, sessionId, iterationNumber, stageSlug, documentIdentity, documentKey, sourceContributionId, template_filename } = job.payload;
     if (!projectId || !sessionId || !stageSlug || !documentIdentity) {
       throw new Error('Missing required render parameters');
     }
@@ -52,6 +52,9 @@ export async function processRenderJob(
     if(!isString(sourceContributionId)) {
       throw new Error('sourceContributionId must be a string');
     }
+    if(!isString(template_filename) || template_filename.trim() === '') {
+      throw new Error('template_filename must be a non-empty string');
+    }
     const params: RenderDocumentParams = {
       projectId,
       sessionId,
@@ -60,6 +63,7 @@ export async function processRenderJob(
       documentIdentity,
       documentKey,
       sourceContributionId,
+      template_filename,
     };
 
     const rendererDeps: DocumentRendererDeps = {
@@ -80,6 +84,7 @@ export async function processRenderJob(
         documentIdentity: params.documentIdentity,
         documentKey: params.documentKey,
         sourceContributionId: params.sourceContributionId,
+        template_filename: params.template_filename,
       }
     });
     
@@ -108,6 +113,8 @@ export async function processRenderJob(
       fileType: renderResult.pathContext.fileType,
       modelSlug: renderResult.pathContext.modelSlug,
       sourceContributionId: renderResult.pathContext.sourceContributionId,
+      ...(renderResult.pathContext.sourceAnchorModelSlug ? { sourceAnchorModelSlug: renderResult.pathContext.sourceAnchorModelSlug } : {}),
+      ...(renderResult.pathContext.sourceGroupFragment ? { sourceGroupFragment: renderResult.pathContext.sourceGroupFragment } : {}),
     };
 
     await dbClient

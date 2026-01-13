@@ -28,6 +28,7 @@ import {
 } from '../dialectic-service/dialectic.interface.ts';
 import { IPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
 import { GetExtensionFromMimeTypeFn } from '../_shared/path_utils.ts';
+import { ExtractSourceGroupFragmentFn } from '../_shared/utils/path_utils.ts';
 import { ShouldEnqueueRenderJobFn } from '../_shared/types/shouldEnqueueRenderJob.interface.ts';
 import { IDocumentRenderer } from '../_shared/services/document_renderer.interface.ts';
 import { GetGranularityPlannerFn } from '../dialectic-service/dialectic.interface.ts';
@@ -151,6 +152,7 @@ export interface IExecuteJobContext extends
     readonly getSeedPromptForStage: GetSeedPromptForStageFn;
     readonly promptAssembler: IPromptAssembler;
     readonly getExtensionFromMimeType: GetExtensionFromMimeTypeFn;
+    readonly extractSourceGroupFragment: ExtractSourceGroupFragmentFn;
     readonly randomUUID: () => string;
     readonly shouldEnqueueRenderJob: ShouldEnqueueRenderJobFn;
     // Orchestration callbacks (needed by executeModelCallAndSave)
@@ -220,6 +222,7 @@ export interface JobContextParams {
     readonly getSeedPromptForStage: GetSeedPromptForStageFn;
     readonly promptAssembler: IPromptAssembler;
     readonly getExtensionFromMimeType: GetExtensionFromMimeTypeFn;
+    readonly extractSourceGroupFragment: ExtractSourceGroupFragmentFn;
     readonly randomUUID: () => string;
     readonly shouldEnqueueRenderJob: ShouldEnqueueRenderJobFn;
     readonly getGranularityPlanner: GetGranularityPlannerFn;

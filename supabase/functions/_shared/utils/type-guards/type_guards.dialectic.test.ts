@@ -3361,6 +3361,7 @@ Deno.test('Type Guard: isDialecticRenderJobPayload', async (t) => {
         documentIdentity: 'document-identity-123',
         documentKey: FileType.business_case,
         sourceContributionId: 'source-contribution-123',
+        template_filename: 'thesis_business_case.md',
     };
 
     await t.step('should return true for a valid render job payload with all required fields', () => {
@@ -3533,6 +3534,39 @@ Deno.test('Type Guard: isDialecticRenderJobPayload', async (t) => {
             Error,
             'Payload contains unknown properties: unknown_property'
         );
+    });
+
+    await t.step('should return true for valid render job payload with template_filename', () => {
+        const p: DialecticRenderJobPayload = {
+            ...basePayload,
+            template_filename: 'antithesis_business_case_critique.md',
+        };
+        // This test must initially FAIL because type guard doesn't validate template_filename yet
+        assert(isDialecticRenderJobPayload(p));
+    });
+
+    await t.step('should throw error when template_filename is missing', () => {
+        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).template_filename;
+        // This test must initially FAIL because type guard doesn't validate template_filename yet
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid template_filename.');
+    });
+
+    await t.step('should throw error when template_filename is not a string', () => {
+        const p = { ...basePayload, template_filename: 123 as any };
+        // This test must initially FAIL because type guard doesn't validate template_filename yet
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid template_filename.');
+    });
+
+    await t.step('should throw error when template_filename is empty string', () => {
+        const p = { ...basePayload, template_filename: '' };
+        // This test must initially FAIL because type guard doesn't validate template_filename yet
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid template_filename.');
+    });
+
+    await t.step('should throw error when template_filename is whitespace-only string', () => {
+        const p = { ...basePayload, template_filename: '   ' };
+        // This test must initially FAIL because type guard doesn't validate template_filename yet
+        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid template_filename.');
     });
 });
 

@@ -1764,3 +1764,154 @@ Deno.test('planPerSourceDocumentByLineage should create EXECUTE child jobs for P
         }
     }
 });
+
+Deno.test('planPerSourceDocumentByLineage extracts sourceAnchorModelSlug from most relevant thesis document filename when creating HeaderContext for antithesis stage, not from first document in group', () => {
+    const mockParentJob = getMockParentJob();
+    const parentPayload = mockParentJob.payload;
+    if (!parentPayload) {
+        throw new Error('Test setup error: mockParentJob.payload cannot be null');
+    }
+
+    const parentJobWithAntithesisStage: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        ...mockParentJob,
+        stage_slug: 'antithesis',
+        payload: {
+            projectId: parentPayload.projectId,
+            sessionId: parentPayload.sessionId,
+            stageSlug: 'antithesis',
+            iterationNumber: parentPayload.iterationNumber,
+            model_id: parentPayload.model_id,
+            walletId: parentPayload.walletId,
+            user_jwt: parentPayload.user_jwt,
+        },
+    };
+
+    // Seed prompt document (would be groupDocs[0] without relevance algorithm)
+    const seedPromptDoc: SourceDocument = {
+        ...getMockSourceDoc(null, 'seed-prompt-doc-id', 'thesis-group-a'),
+        contribution_type: 'seed_prompt',
+        file_name: null,
+        stage: 'thesis',
+    };
+
+    // Thesis business_case document with highest relevance
+    const thesisBusinessCaseDoc: SourceDocument = {
+        ...getMockSourceDoc('model-456', 'thesis-business-case-doc-id', 'thesis-group-a'),
+        contribution_type: 'thesis',
+        file_name: 'gpt-4_0_business_case.md',
+        stage: 'thesis',
+        document_key: FileType.business_case,
+    };
+
+    // Thesis feature_spec document with lower relevance
+    const thesisFeatureSpecDoc: SourceDocument = {
+        ...getMockSourceDoc('model-789', 'thesis-feature-spec-doc-id', 'thesis-group-a'),
+        contribution_type: 'thesis',
+        file_name: 'claude-3_0_feature_spec.md',
+        stage: 'thesis',
+        document_key: FileType.feature_spec,
+    };
+
+    const sourceDocs: SourceDocument[] = [seedPromptDoc, thesisBusinessCaseDoc, thesisFeatureSpecDoc];
+
+    const planRecipeStep: DialecticRecipeTemplateStep = {
+        id: 'plan-step-id-antithesis-header',
+        template_id: 'template-id-123',
+        step_number: 1,
+        step_key: 'antithesis_prepare_proposal_review_plan',
+        step_slug: 'prepare-proposal-review-plan',
+        step_name: 'Prepare Proposal Review Plan',
+        step_description: 'Generate HeaderContext JSON for antithesis stage',
+        prompt_template_id: 'template-planner-prompt-id',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        output_type: FileType.HeaderContext,
+        granularity_strategy: 'per_source_document_by_lineage',
+        inputs_required: [
+            {
+                type: 'seed_prompt',
+                slug: 'thesis',
+                required: true,
+            },
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.business_case,
+                required: true,
+            },
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.feature_spec,
+                required: true,
+            },
+        ],
+        inputs_relevance: [
+            {
+                document_key: FileType.business_case,
+                relevance: 1.0,
+            },
+            {
+                document_key: FileType.feature_spec,
+                relevance: 0.9,
+            },
+        ],
+        outputs_required: {
+            system_materials: {
+                executive_summary: '',
+                input_artifacts_summary: '',
+                stage_rationale: '',
+            },
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [
+                {
+                    document_key: FileType.business_case_critique,
+                    content_to_include: {
+                        notes: [],
+                    },
+                },
+            ],
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        parallel_group: null,
+        branch_key: null,
+    };
+
+    const childJobs = planPerSourceDocumentByLineage(sourceDocs, parentJobWithAntithesisStage, planRecipeStep, parentJobWithAntithesisStage.payload.user_jwt);
+
+    assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    assertEquals(isDialecticExecuteJobPayload(job), true, 'PLAN recipe steps should create EXECUTE child jobs');
+    
+    if (isDialecticExecuteJobPayload(job)) {
+        const executePayload: DialecticExecuteJobPayload = job;
+        assertExists(executePayload.canonicalPathParams, 'EXECUTE job should include canonicalPathParams');
+        
+        // planPerSourceDocumentByLineage should use findAnchorDocumentForHeaderContext to select the anchor based on inputs_relevance.
+        // The thesis business_case document has relevance 1.0, so it should be selected as the anchor.
+        // sourceAnchorModelSlug should be extracted from thesisBusinessCaseDoc filename ('gpt-4').
+        assertExists(
+            executePayload.canonicalPathParams.sourceAnchorModelSlug,
+            'canonicalPathParams should include sourceAnchorModelSlug extracted from thesis document filename for antithesis HeaderContext'
+        );
+        assertEquals(
+            executePayload.canonicalPathParams.sourceAnchorModelSlug,
+            'gpt-4',
+            'sourceAnchorModelSlug should be extracted from thesis business_case document filename (gpt-4_0_business_case.md) using relevance-based anchor selection, not from seed_prompt or first document in group'
+        );
+        assertEquals(
+            executePayload.canonicalPathParams.stageSlug,
+            'antithesis',
+            'stageSlug should be antithesis (target stage)'
+        );
+    } else {
+        throw new Error('Expected EXECUTE job');
+    }
+});

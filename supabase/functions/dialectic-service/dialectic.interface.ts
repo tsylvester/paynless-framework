@@ -769,6 +769,7 @@ export interface DialecticRenderJobPayload extends DialecticBaseJobPayload {
     documentIdentity: string;
     documentKey: FileType;
     sourceContributionId: string;
+    template_filename: string; // canonical template filename extracted from recipe step's outputs_required.files_to_generate[] array
 }
 
 // Update the main union type

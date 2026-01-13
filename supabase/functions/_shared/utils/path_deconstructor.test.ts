@@ -953,6 +953,29 @@ Deno.test("[path_deconstructor] failing cases - bugs discovered from inverse tes
     assertEquals(info.sourceContributionType, 'thesis');
     assertEquals(info.sourceAttemptCount, 1);
   });
+
+  await t.step("ModelContributionRawJson with simple critiquing pattern should extract sourceAnchorModelSlug", () => {
+    const dirPart = "project-uuid-123/session_sessionu/iteration_1/2_antithesis/raw_responses";
+    const filePart = "claude-3-opus_critiquing_gpt-4_98765432_0_business_case_raw.json";
+    const info = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
+
+    assertEquals(info.error, undefined);
+    assertEquals(info.fileTypeGuess, FileType.ModelContributionRawJson);
+    assertEquals(info.modelSlug, 'claude-3-opus');
+    assertEquals(info.attemptCount, 0);
+    assertEquals(info.documentKey, 'business_case');
+    assertEquals(info.stageSlug, 'antithesis');
+    assertEquals(
+      info.sourceAnchorModelSlug,
+      'gpt-4',
+      'deconstructStoragePath should extract sourceAnchorModelSlug from simple critiquing pattern for ModelContributionRawJson'
+    );
+    assertEquals(
+      info.sourceGroupFragment,
+      '98765432',
+      'deconstructStoragePath should extract sourceGroupFragment from simple critiquing pattern for ModelContributionRawJson'
+    );
+  });
 });
 
 Deno.test('[path_deconstructor] extracts documentKey for header_context JSON-only artifact', () => {
