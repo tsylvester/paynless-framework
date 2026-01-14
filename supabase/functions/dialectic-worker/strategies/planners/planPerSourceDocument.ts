@@ -6,8 +6,10 @@ import type {
 	DocumentRelationships,
 	GranularityPlannerFn,
 	ContextForDocument,
+	SelectAnchorResult,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
+import { selectAnchorSourceDocument } from '../helpers.ts';
 import { isContributionType, isContentToInclude } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 import { isModelContributionFileType } from '../../../_shared/utils/type-guards/type_guards.file_manager.ts';
 import { ModelContributionFileTypes } from '../../../_shared/types/file_manager.types.ts';
@@ -245,6 +247,14 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 
 		const childPayloads: DialecticExecuteJobPayload[] = [];
 
+		// Select canonical anchor once for all child jobs based on recipe relevance,
+		// not varying per iteration
+		const anchorResult: SelectAnchorResult = selectAnchorSourceDocument(recipeStep, sourceDocs);
+		if (anchorResult.status === 'anchor_not_found') {
+			throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
+		}
+		const anchorForCanonicalPathParams = anchorResult.status === 'anchor_found' ? anchorResult.document : null;
+
 		console.log(
 			'[planPerSourceDocument] Received sourceDocs:',
 			JSON.stringify(sourceDocs, null, 2)
@@ -268,7 +278,7 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 			const canonicalPathParams = createCanonicalPathParams(
 				[doc],
 				effectiveOutputType,
-				doc,
+				anchorForCanonicalPathParams,
 				stageSlug
 			);
 			console.log(

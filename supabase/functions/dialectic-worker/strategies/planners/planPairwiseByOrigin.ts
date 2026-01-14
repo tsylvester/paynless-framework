@@ -5,8 +5,9 @@ import type {
 	GranularityPlannerFn,
 	SourceDocument,
 	ContextForDocument,
+	SelectAnchorResult,
 } from '../../../dialectic-service/dialectic.interface.ts';
-import { groupSourceDocumentsByType } from '../helpers.ts';
+import { groupSourceDocumentsByType, selectAnchorSourceDocument } from '../helpers.ts';
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
 import { isContributionType, isContentToInclude } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 import { isModelContributionFileType } from '../../../_shared/utils/type-guards/type_guards.file_manager.ts';
@@ -270,10 +271,16 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 
 				// Step 7.a.ii: Call the canonical context builder
 				const pair: SourceDocument[] = [anchorDoc, pairedDoc];
+				// Select canonical anchor from pair based on recipe relevance, not structural anchor
+				const anchorResult: SelectAnchorResult = selectAnchorSourceDocument(recipeStep, pair);
+				if (anchorResult.status === 'anchor_not_found') {
+					throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
+				}
+				const anchorForCanonicalPathParams = anchorResult.status === 'anchor_found' ? anchorResult.document : null;
 				const canonicalPathParams = createCanonicalPathParams(
 					pair,
 					recipeStep.output_type,
-					anchorDoc,
+					anchorForCanonicalPathParams,
 					stageSlug
 				);
 				console.log(

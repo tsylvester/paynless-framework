@@ -12,7 +12,7 @@ const mockSourceDocument1: SourceDocument = {
     document_relationships: {},
     edit_version: 0,
     error: null,
-    file_name: null,
+    file_name: 'a-model_5_business_case.md',
     id: 'thesis-uuid-123456789',
     attempt_count: 5,
     is_latest_edit: false,
@@ -20,7 +20,7 @@ const mockSourceDocument1: SourceDocument = {
     mime_type: '',
     size_bytes: 0,
     storage_bucket: '',
-    storage_path: '',
+    storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
     user_id: null,
     content: '',
     original_model_contribution_id: null,
@@ -47,14 +47,14 @@ const mockSourceDocument2: SourceDocument = {
     document_relationships: {},
     edit_version: 0,
     error: null,
-    file_name: null,
+    file_name: 'b-model_0_feature_spec.md',
     id: '',
     is_latest_edit: false,
     iteration_number: 0,
     mime_type: '',
     size_bytes: 0,
     storage_bucket: '',
-    storage_path: '',
+    storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
     user_id: null,
     content: '',
     original_model_contribution_id: null,
@@ -81,14 +81,14 @@ const mockSourceDocument3: SourceDocument = {
     document_relationships: {},
     edit_version: 0,
     error: null,
-    file_name: null,
+    file_name: 'c-model_0_technical_spec.md',
     id: '',
     is_latest_edit: false,
     iteration_number: 0,
     mime_type: '',
     size_bytes: 0,
     storage_bucket: '',
-    storage_path: '',
+    storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
     user_id: null,
     content: '',
     original_model_contribution_id: null,
@@ -115,14 +115,14 @@ const mockSourceDocumentNoModelName: SourceDocument = {
     document_relationships: {},
     edit_version: 0,
     error: null,
-    file_name: null,
+    file_name: 'd-model_0_architecture_doc.md',
     id: '',
     is_latest_edit: false,
     iteration_number: 0,
     mime_type: '',
     size_bytes: 0,
     storage_bucket: '',
-    storage_path: '',
+    storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
     user_id: null,
     content: '',
     original_model_contribution_id: null,
@@ -168,7 +168,8 @@ Deno.test('createCanonicalPathParams handles missing model names', () => {
     const stage: ContributionType = 'thesis';
     const params = createCanonicalPathParams(sourceDocs, 'thesis', mockSourceDocument2, stage);
 
-    assertEquals(params.sourceModelSlugs, ['b-model', 'c-model']);
+    // With universal extraction, all docs extract from filename when model_name is missing
+    assertEquals(params.sourceModelSlugs, ['b-model', 'c-model', 'd-model']);
 });
 
 Deno.test('createCanonicalPathParams identifies anchor document properties', () => {
@@ -408,4 +409,158 @@ Deno.test('createCanonicalPathParams extracts sourceAnchorModelSlug from filenam
     // Should extract 'gpt-4' from filename, NOT use 'claude' from model_name
     assertExists(params.sourceAnchorModelSlug);
     assertEquals(params.sourceAnchorModelSlug, 'gpt-4', 'Should extract sourceAnchorModelSlug from filename when creating HeaderContext for antithesis stage, ignoring model_name');
+});
+
+Deno.test('createCanonicalPathParams extracts sourceAnchorModelSlug from filename for thesis document anchor regardless of output type', () => {
+    // Universal extraction should work for ANY output type, not just HeaderContext
+    // This tests that filename-based extraction works for synthesis output using thesis anchor
+    const mockThesisAnchor: SourceDocument = {
+        ...mockSourceDocument1,
+        contribution_type: 'thesis',
+        model_name: 'wrong-model', // Should be ignored in universal extraction
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        file_name: 'correct-model_0_business_case.md', // Filename contains correct source model
+        id: 'thesis-anchor-uuid',
+        attempt_count: 0,
+        stage: 'thesis',
+    };
+    
+    const params = createCanonicalPathParams(
+        [mockThesisAnchor],
+        'synthesis', // NOT HeaderContext - testing universal extraction
+        mockThesisAnchor,
+        'synthesis'
+    );
+    
+    // Should extract 'correct-model' from filename, NOT use 'wrong-model' from model_name
+    // This proves universal extraction works for any output type, not just HeaderContext
+    assertExists(params.sourceAnchorModelSlug);
+    assertEquals(params.sourceAnchorModelSlug, 'correct-model', 'Should extract sourceAnchorModelSlug from filename for any output type (synthesis), not just HeaderContext');
+});
+
+Deno.test('createCanonicalPathParams extracts sourceAttemptCount from filename when attempt_count field is missing', () => {
+    // Universal extraction should work for ANY anchor type when DB field is missing
+    // This tests that attempt count extraction works for non-header_context anchors
+    const mockAnchor: SourceDocument = {
+        ...mockSourceDocument1,
+        contribution_type: 'thesis',
+        model_name: 'some-model',
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        file_name: 'model_7_document.md', // Filename contains attempt count 7
+        id: 'anchor-uuid',
+        attempt_count: undefined, // DB field is missing
+        stage: 'thesis',
+    };
+    
+    const params = createCanonicalPathParams(
+        [mockAnchor],
+        'synthesis', // Any output type
+        mockAnchor,
+        'synthesis'
+    );
+    
+    // Should extract attempt count 7 from filename when DB field is undefined
+    assertExists(params.sourceAttemptCount);
+    assertEquals(params.sourceAttemptCount, 7, 'Should extract sourceAttemptCount from filename when attempt_count field is missing');
+});
+
+Deno.test('createCanonicalPathParams throws error when anchor document missing storage_path or file_name', () => {
+    // No fallbacks - missing data must be fixed at source
+    // System must fail loudly when anchor lacks canonical filename
+    // NOTE: This test only applies when anchorDoc is non-null
+    const mockAnchorWithoutFile: SourceDocument = {
+        ...mockSourceDocument1,
+        contribution_type: 'thesis',
+        model_name: 'some-model',
+        storage_path: '', // Missing storage path
+        file_name: null, // Missing filename
+        id: 'anchor-without-file-uuid',
+        attempt_count: 0,
+        stage: 'thesis',
+    };
+    
+    // Should throw error when required fields are missing (only applies when anchorDoc is non-null)
+    assertThrows(
+        () => {
+            createCanonicalPathParams(
+                [mockAnchorWithoutFile],
+                'synthesis',
+                mockAnchorWithoutFile,
+                'synthesis'
+            );
+        },
+        Error,
+        'Anchor document missing required storage_path or file_name',
+        'Should throw error when anchor document lacks canonical filename (no fallbacks) - only applies when anchorDoc is non-null'
+    );
+});
+
+Deno.test('createCanonicalPathParams handles null anchorDoc by leaving sourceAnchorModelSlug undefined', () => {
+    // When anchorDoc is null (recipe has zero document-type inputs), sourceAnchorModelSlug should be undefined
+    // No fallback derivation - there is no anchor, so there are no anchor-derived values
+    const sourceDocs: SourceDocument[] = [
+        mockSourceDocument1,
+        mockSourceDocument2,
+    ];
+    const stage: ContributionType = 'thesis';
+    const params = createCanonicalPathParams(sourceDocs, 'thesis', null, stage);
+    
+    assertEquals(params.sourceAnchorModelSlug, undefined, 'sourceAnchorModelSlug should be undefined when anchorDoc is null');
+});
+
+Deno.test('createCanonicalPathParams handles null anchorDoc with empty sourceDocs array', () => {
+    // When anchorDoc is null and sourceDocs is empty, function should return valid result without throwing
+    const sourceDocs: SourceDocument[] = [];
+    const stage: ContributionType = 'thesis';
+    const params = createCanonicalPathParams(sourceDocs, 'thesis', null, stage);
+    
+    assertEquals(params.sourceModelSlugs, undefined);
+    assertEquals(params.sourceAnchorModelSlug, undefined, 'sourceAnchorModelSlug should be undefined when anchorDoc is null');
+    assertEquals(params.contributionType, 'thesis');
+});
+
+Deno.test('createCanonicalPathParams handles null anchorDoc for THESIS stage', () => {
+    // THESIS stage steps may have zero document-type inputs (only seed_prompt or header_context)
+    // When anchorDoc is null, function should not throw and sourceAnchorModelSlug should be undefined
+    const seedPromptDoc: SourceDocument = {
+        id: 'seed-prompt-doc-id',
+        contribution_type: 'seed_prompt',
+        content: 'Seed prompt content',
+        citations: [],
+        created_at: '2024-01-01T00:00:00Z',
+        document_relationships: {},
+        edit_version: 0,
+        error: null,
+        file_name: null,
+        is_latest_edit: false,
+        iteration_number: 0,
+        mime_type: 'text/plain',
+        size_bytes: 0,
+        storage_bucket: 'dialectic-contributions',
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis',
+        user_id: null,
+        original_model_contribution_id: null,
+        processing_time_ms: 0,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        session_id: 'session-abc',
+        stage: 'thesis',
+        target_contribution_id: null,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        model_id: '',
+        updated_at: '2024-01-01T00:00:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
+        model_name: null,
+        attempt_count: 0,
+    };
+    
+    const sourceDocs: SourceDocument[] = [seedPromptDoc];
+    const stage: ContributionType = 'thesis';
+    const params = createCanonicalPathParams(sourceDocs, 'thesis', null, stage);
+    
+    assertEquals(params.sourceAnchorModelSlug, undefined, 'sourceAnchorModelSlug should be undefined when anchorDoc is null for THESIS stage');
+    assertEquals(params.contributionType, 'thesis');
 });

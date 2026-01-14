@@ -2,7 +2,8 @@
 import { 
     SourceDocument, 
     DialecticRecipeStep, 
-    InputRule
+    InputRule,
+    SelectAnchorResult
 } from '../../dialectic-service/dialectic.interface.ts';
 /**
  * Groups an array of source documents by their `contribution_type`.
@@ -54,20 +55,23 @@ export function findRelatedContributions(documents: SourceDocument[], targetId: 
  * 2. Finding which document has the highest relevance score from inputs_relevance
  * 3. Matching that document in sourceDocs by stage and document_key/contribution_type
  * 
- * Throws errors on invalid/ambiguous recipe metadata. Never returns defaults or fallbacks.
+ * Returns a SelectAnchorResult discriminated union distinguishing three outcomes:
+ * - no_document_inputs_required: recipe step has zero document-type inputs (valid configuration)
+ * - anchor_found: anchor document was successfully selected
+ * - anchor_not_found: recipe requires documents but anchor not found in sourceDocs
+ * 
+ * Throws errors on invalid/ambiguous recipe metadata (programmer errors). Never returns defaults or fallbacks.
  * 
  * @param recipeStep - The recipe step containing inputs_required and inputs_relevance
  * @param sourceDocs - The source documents to search within
- * @returns The anchor document to use for canonicalPathParams
- * @throws Error when no document-type inputs exist in inputs_required
+ * @returns SelectAnchorResult discriminated union indicating the selection outcome
  * @throws Error when multiple documents have identical highest relevance (ambiguous)
  * @throws Error when required document input has no relevance score
- * @throws Error when anchor document not found in sourceDocs
  */
 export function selectAnchorSourceDocument(
     recipeStep: DialecticRecipeStep,
     sourceDocs: SourceDocument[]
-): SourceDocument {
+): SelectAnchorResult {
     const inputsRequired = recipeStep.inputs_required;
 
     // Extract document-type inputs from inputs_required
@@ -81,7 +85,7 @@ export function selectAnchorSourceDocument(
     }
 
     if (documentInputs.length === 0) {
-        throw new Error('No document-type inputs found in recipe step inputs_required');
+        return { status: 'no_document_inputs_required' };
     }
 
     // Build relevance map from inputs_relevance
@@ -153,13 +157,11 @@ export function selectAnchorSourceDocument(
         // Match document_key or contribution_type
         if (targetDocumentKey && typeof targetDocumentKey === 'string') {
             if (doc.document_key === targetDocumentKey || doc.contribution_type === targetDocumentKey) {
-                return doc;
+                return { status: 'anchor_found', document: doc };
             }
         }
     }
 
-    // No matching document found - throw error (no fallback)
-    throw new Error(
-        `Anchor document not found in sourceDocs for stage '${targetSlug}' document_key '${targetDocumentKey}'`
-    );
+    // No matching document found - return error result (no fallback)
+    return { status: 'anchor_not_found', targetSlug: targetSlug, targetDocumentKey: targetDocumentKey };
 } 

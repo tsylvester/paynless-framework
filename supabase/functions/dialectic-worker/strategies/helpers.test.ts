@@ -5,7 +5,8 @@ import {
 } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { 
     SourceDocument, 
-    DialecticStageRecipeStep 
+    DialecticStageRecipeStep,
+    SelectAnchorResult
 } from '../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../_shared/types/file_manager.types.ts';
 import { 
@@ -505,10 +506,13 @@ Deno.test('selectAnchorSourceDocument selects highest-relevance document among r
 
     const sourceDocs: SourceDocument[] = [seedPromptDoc, businessCaseDoc, featureSpecDoc];
 
-    const result = selectAnchorSourceDocument(recipeStep, sourceDocs);
+    const result: SelectAnchorResult = selectAnchorSourceDocument(recipeStep, sourceDocs);
 
-    assertEquals(result.id, 'business-case-doc', 'Should return business_case document with highest relevance (1.0), not seed_prompt or feature_spec');
-    assertEquals(result.document_key, FileType.business_case, 'Should return business_case document');
+    assertEquals(result.status, 'anchor_found', 'Should return anchor_found status');
+    if (result.status === 'anchor_found') {
+        assertEquals(result.document.id, 'business-case-doc', 'Should return business_case document with highest relevance (1.0), not seed_prompt or feature_spec');
+        assertEquals(result.document.document_key, FileType.business_case, 'Should return business_case document');
+    }
 });
 
 Deno.test('selectAnchorSourceDocument ignores seed_prompt and feedback inputs when selecting anchor', () => {
@@ -642,10 +646,13 @@ Deno.test('selectAnchorSourceDocument ignores seed_prompt and feedback inputs wh
 
     const sourceDocs: SourceDocument[] = [seedPromptDoc, businessCaseDoc];
 
-    const result = selectAnchorSourceDocument(recipeStep, sourceDocs);
+    const result: SelectAnchorResult = selectAnchorSourceDocument(recipeStep, sourceDocs);
 
-    assertEquals(result.id, 'business-case-doc', 'Should return document (not seed_prompt), proving non-document inputs are excluded from anchor candidates');
-    assertEquals(result.document_key, FileType.business_case, 'Should return business_case document despite seed_prompt having higher relevance');
+    assertEquals(result.status, 'anchor_found', 'Should return anchor_found status');
+    if (result.status === 'anchor_found') {
+        assertEquals(result.document.id, 'business-case-doc', 'Should return document (not seed_prompt), proving non-document inputs are excluded from anchor candidates');
+        assertEquals(result.document.document_key, FileType.business_case, 'Should return business_case document despite seed_prompt having higher relevance');
+    }
 });
 
 Deno.test('selectAnchorSourceDocument throws when multiple documents have identical highest relevance', () => {
@@ -888,7 +895,7 @@ Deno.test('selectAnchorSourceDocument throws when required document input has no
     assertEquals(caughtError.message.includes('required document input'), true, 'Error message should mention required document input');
 });
 
-Deno.test('selectAnchorSourceDocument throws when no document-type inputs exist in inputs_required', () => {
+Deno.test('selectAnchorSourceDocument returns no_document_inputs_required when no document-type inputs exist in inputs_required', () => {
     const recipeStep: DialecticStageRecipeStep = {
         id: 'step-id-1',
         instance_id: 'instance-id-1',
@@ -968,21 +975,12 @@ Deno.test('selectAnchorSourceDocument throws when no document-type inputs exist 
 
     const sourceDocs: SourceDocument[] = [seedPromptDoc];
 
-    let caughtError: Error | null = null;
-    try {
-        selectAnchorSourceDocument(recipeStep, sourceDocs);
-    } catch (error) {
-        if (error instanceof Error) {
-            caughtError = error;
-        } else {
-            throw error;
-        }
-    }
-    assertExists(caughtError, 'Should throw error when no document-type inputs exist in inputs_required');
-    assertEquals(caughtError.message, 'No document-type inputs found in recipe step inputs_required', 'Error message should match expected message');
+    const result: SelectAnchorResult = selectAnchorSourceDocument(recipeStep, sourceDocs);
+
+    assertEquals(result.status, 'no_document_inputs_required', 'Should return no_document_inputs_required status when recipe step has zero document-type inputs');
 });
 
-Deno.test('selectAnchorSourceDocument throws when anchor document not found in sourceDocs', () => {
+Deno.test('selectAnchorSourceDocument returns anchor_not_found when anchor document not found in sourceDocs', () => {
     const recipeStep: DialecticStageRecipeStep = {
         id: 'step-id-1',
         instance_id: 'instance-id-1',
@@ -1067,18 +1065,13 @@ Deno.test('selectAnchorSourceDocument throws when anchor document not found in s
 
     const sourceDocs: SourceDocument[] = [wrongDocumentDoc];
 
-    let caughtError: Error | null = null;
-    try {
-        selectAnchorSourceDocument(recipeStep, sourceDocs);
-    } catch (error) {
-        if (error instanceof Error) {
-            caughtError = error;
-        } else {
-            throw error;
-        }
+    const result: SelectAnchorResult = selectAnchorSourceDocument(recipeStep, sourceDocs);
+
+    assertEquals(result.status, 'anchor_not_found', 'Should return anchor_not_found status when anchor document not found in sourceDocs');
+    if (result.status === 'anchor_not_found') {
+        assertEquals(result.targetSlug, 'thesis', 'Should include targetSlug in anchor_not_found result');
+        assertEquals(result.targetDocumentKey, 'business_case', 'Should include targetDocumentKey in anchor_not_found result');
     }
-    assertExists(caughtError, 'Should throw error when anchor document not found in sourceDocs');
-    assertEquals(caughtError.message.includes('Anchor document not found in sourceDocs'), true, 'Error message should mention anchor document not found');
 });
 
 Deno.test('selectAnchorSourceDocument matches by stage and document_key or contribution_type', () => {
@@ -1166,9 +1159,111 @@ Deno.test('selectAnchorSourceDocument matches by stage and document_key or contr
 
     const sourceDocs: SourceDocument[] = [businessCaseDoc];
 
-    const result = selectAnchorSourceDocument(recipeStep, sourceDocs);
+    const result: SelectAnchorResult = selectAnchorSourceDocument(recipeStep, sourceDocs);
 
-    assertEquals(result.id, 'business-case-doc', 'Should return matching document by stage and document_key');
-    assertEquals(result.stage, 'thesis', 'Should match stage from inputs_required slug');
-    assertEquals(result.document_key, FileType.business_case, 'Should match document_key from inputs_required');
+    assertEquals(result.status, 'anchor_found', 'Should return anchor_found status');
+    if (result.status === 'anchor_found') {
+        assertEquals(result.document.id, 'business-case-doc', 'Should return matching document by stage and document_key');
+        assertEquals(result.document.stage, 'thesis', 'Should match stage from inputs_required slug');
+        assertEquals(result.document.document_key, FileType.business_case, 'Should match document_key from inputs_required');
+    }
+});
+
+Deno.test('selectAnchorSourceDocument returns no_document_inputs_required for THESIS planner step with only seed_prompt input', () => {
+    const recipeStep: DialecticStageRecipeStep = {
+        id: 'step-id-1',
+        instance_id: 'instance-id-1',
+        template_step_id: 'template-step-id-1',
+        step_key: 'thesis_build_stage_header',
+        step_slug: 'thesis-build-stage-header',
+        step_name: 'Build Stage Header',
+        prompt_template_id: 'template-id-1',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        inputs_required: [
+            {
+                type: 'seed_prompt',
+                slug: 'thesis',
+                document_key: FileType.SeedPrompt,
+                required: true,
+            },
+        ],
+        inputs_relevance: [],
+        outputs_required: {
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [],
+        },
+        granularity_strategy: 'all_to_one',
+        output_type: FileType.HeaderContext,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        config_override: {},
+        is_skipped: false,
+        object_filter: {},
+        output_overrides: {},
+        branch_key: null,
+        execution_order: 1,
+        parallel_group: null,
+        step_description: 'Test Step',
+    };
+
+    const sourceDocs: SourceDocument[] = [];
+
+    const result: SelectAnchorResult = selectAnchorSourceDocument(recipeStep, sourceDocs);
+
+    assertEquals(result.status, 'no_document_inputs_required', 'Should return no_document_inputs_required status when recipe step has only seed_prompt input (no document-type inputs)');
+});
+
+Deno.test('selectAnchorSourceDocument returns no_document_inputs_required for THESIS execute step with only header_context input', () => {
+    const recipeStep: DialecticStageRecipeStep = {
+        id: 'step-id-1',
+        instance_id: 'instance-id-1',
+        template_step_id: 'template-step-id-1',
+        step_key: 'thesis_generate_business_case',
+        step_slug: 'thesis-generate-business-case',
+        step_name: 'Generate Business Case',
+        prompt_template_id: 'template-id-1',
+        prompt_type: 'Turn',
+        job_type: 'EXECUTE',
+        inputs_required: [
+            {
+                type: 'header_context',
+                slug: 'thesis',
+                document_key: FileType.HeaderContext,
+                required: true,
+            },
+        ],
+        inputs_relevance: [],
+        outputs_required: {
+            documents: [{
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                document_key: FileType.business_case,
+                template_filename: 'business_case.md',
+            }],
+        },
+        granularity_strategy: 'all_to_one',
+        output_type: FileType.business_case,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        config_override: {},
+        is_skipped: false,
+        object_filter: {},
+        output_overrides: {},
+        branch_key: null,
+        execution_order: 1,
+        parallel_group: null,
+        step_description: 'Test Step',
+    };
+
+    const sourceDocs: SourceDocument[] = [];
+
+    const result: SelectAnchorResult = selectAnchorSourceDocument(recipeStep, sourceDocs);
+
+    assertEquals(result.status, 'no_document_inputs_required', 'Should return no_document_inputs_required status when recipe step has only header_context input (no document-type inputs)');
 }); 

@@ -4,6 +4,7 @@ import {
     assertExists, 
     assert, 
     assertRejects,
+    assertThrows,
 } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
 import { 
@@ -46,14 +47,15 @@ const getMockSourceDoc = (modelId: string | null, docId: string, sourceGroup: st
     citations: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    file_name: `file-${docId}`,
+    file_name: `gpt-4_0_pairwise_synthesis_chunk.md`,
     storage_bucket: 'bucket',
-    storage_path: `path-${docId}`,
+    storage_path: `project-123/session_abc/iteration_1/3_synthesis/documents`,
     size_bytes: 100,
     mime_type: 'text/plain',
     document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
     is_header: false,
     source_prompt_resource_id: null,
+    document_key: FileType.PairwiseSynthesisChunk,
 });
 
 const getMockParentJob = (): DialecticJobRow & { payload: DialecticPlanJobPayload } => ({
@@ -100,12 +102,12 @@ const getMockRecipeStep = (): DialecticStageRecipeStep => ({
     prompt_template_id: 'tmpl-12345',
     output_type: FileType.ReducedSynthesis,
     granularity_strategy: 'per_source_document_by_lineage',
-    inputs_required: [{ type: 'document', slug: 'pairwise_synthesis_chunk', document_key: FileType.PairwiseSynthesisChunk, required: true }],
+    inputs_required: [{ type: 'document', slug: 'synthesis', document_key: FileType.PairwiseSynthesisChunk, required: true }],
     job_type: 'EXECUTE',
     prompt_type: 'Turn',
     branch_key: null,
     parallel_group: null,
-    inputs_relevance: [],
+    inputs_relevance: [{ document_key: FileType.PairwiseSynthesisChunk, relevance: 1.0 }],
     config_override: {},
     is_skipped: false,
     object_filter: {},
@@ -308,9 +310,9 @@ Deno.test('planPerSourceDocumentByLineage should treat a doc without a source_gr
         citations: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        file_name: `file-${docId}`,
+        file_name: `gpt-4_0_business_case.md`,
         storage_bucket: 'bucket',
-        storage_path: `path-${docId}`,
+        storage_path: `project-123/session_abc/iteration_1/1_thesis/documents`,
         size_bytes: 100,
         mime_type: 'text/plain',
         document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
@@ -367,7 +369,7 @@ Deno.test('planPerSourceDocumentByLineage should treat a doc without a source_gr
         prompt_type: 'Turn',
         branch_key: null,
         parallel_group: null,
-        inputs_relevance: [],
+        inputs_relevance: [{ document_key: FileType.business_case, relevance: 1.0 }],
         outputs_required: {
             documents: [{
                 artifact_class: 'rendered_document',
@@ -385,7 +387,14 @@ Deno.test('planPerSourceDocumentByLineage should treat a doc without a source_gr
 
     await t.step('should create a new lineage group using doc ID if source_group is missing', () => {
         // Arrange: A source document that is a 'thesis' and has no 'source_group'
-        const sourceDocWithoutLineage = getMockSourceDoc('model-a-id', 'thesis-doc-1', null);
+        const sourceDocWithoutLineage: SourceDocument = {
+            ...getMockSourceDoc('model-a-id', 'thesis-doc-1', null),
+            stage: 'thesis',
+            contribution_type: 'thesis',
+            document_key: FileType.business_case,
+            file_name: 'gpt-4_0_business_case.md',
+            storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        };
         const mockParentJob = getMockParentJob();
         const mockRecipeStep = getMockRecipeStep();
 
@@ -431,7 +440,7 @@ Deno.test('planPerSourceDocumentByLineage surfaces sourceContributionId for line
         session_id: 'sess-id',
         contribution_type: 'pairwise_synthesis_chunk',
         model_id: 'model-a-id',
-        model_name: `model-${docId}-model`,
+        model_name: `model-a-name`,
         content: `content for ${docId}`,
         user_id: 'user-id',
         stage: 'synthesis',
@@ -450,14 +459,15 @@ Deno.test('planPerSourceDocumentByLineage surfaces sourceContributionId for line
         citations: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        file_name: `file-${docId}`,
+        file_name: `gpt-4_0_pairwise_synthesis_chunk.md`,
         storage_bucket: 'bucket',
-        storage_path: `path-${docId}`,
+        storage_path: `project-123/session_abc/iteration_1/3_synthesis/documents`,
         size_bytes: 100,
         mime_type: 'text/plain',
         document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
         is_header: false,
         source_prompt_resource_id: null,
+        document_key: FileType.PairwiseSynthesisChunk,
     });
 
     const mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
@@ -504,12 +514,12 @@ Deno.test('planPerSourceDocumentByLineage surfaces sourceContributionId for line
         prompt_template_id: 'tmpl-lineage-123',
         output_type: FileType.ReducedSynthesis,
         granularity_strategy: 'per_source_document_by_lineage',
-        inputs_required: [{ type: 'document', slug: 'pairwise_synthesis_chunk', document_key: FileType.PairwiseSynthesisChunk, required: true }],
+        inputs_required: [{ type: 'document', slug: 'synthesis', document_key: FileType.PairwiseSynthesisChunk, required: true }],
         job_type: 'EXECUTE',
         prompt_type: 'Turn',
         branch_key: null,
         parallel_group: null,
-        inputs_relevance: [],
+        inputs_relevance: [{ document_key: FileType.PairwiseSynthesisChunk, relevance: 1.0 }],
         outputs_required: {
             documents: [{
                 artifact_class: 'rendered_document',
@@ -582,14 +592,15 @@ Deno.test('planPerSourceDocumentByLineage includes planner_metadata with recipe_
         citations: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        file_name: `file-${docId}`,
+        file_name: `gpt-4_0_pairwise_synthesis_chunk.md`,
         storage_bucket: 'bucket',
-        storage_path: `path-${docId}`,
+        storage_path: `project-123/session_abc/iteration_1/3_synthesis/documents`,
         size_bytes: 100,
         mime_type: 'text/plain',
         document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
         is_header: false,
         source_prompt_resource_id: null,
+        document_key: FileType.PairwiseSynthesisChunk,
     });
 
     const mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
@@ -636,12 +647,12 @@ Deno.test('planPerSourceDocumentByLineage includes planner_metadata with recipe_
         prompt_template_id: 'tmpl-789',
         output_type: FileType.ReducedSynthesis,
         granularity_strategy: 'per_source_document_by_lineage',
-        inputs_required: [{ type: 'document', slug: 'pairwise_synthesis_chunk', document_key: FileType.PairwiseSynthesisChunk, required: true }],
+        inputs_required: [{ type: 'document', slug: 'synthesis', document_key: FileType.PairwiseSynthesisChunk, required: true }],
         job_type: 'EXECUTE',
         prompt_type: 'Turn',
         branch_key: null,
         parallel_group: null,
-        inputs_relevance: [],
+        inputs_relevance: [{ document_key: FileType.PairwiseSynthesisChunk, relevance: 1.0 }],
         outputs_required: {
             documents: [{
                 artifact_class: 'rendered_document',
@@ -708,14 +719,15 @@ Deno.test('planPerSourceDocumentByLineage should inherit all fields from parent 
         citations: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        file_name: `file-${docId}`,
+        file_name: `gpt-4_0_pairwise_synthesis_chunk.md`,
         storage_bucket: 'bucket',
-        storage_path: `path-${docId}`,
+        storage_path: `project-123/session_abc/iteration_1/3_synthesis/documents`,
         size_bytes: 100,
         mime_type: 'text/plain',
         document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
         is_header: false,
         source_prompt_resource_id: null,
+        document_key: FileType.PairwiseSynthesisChunk,
     });
 
     const mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
@@ -762,12 +774,12 @@ Deno.test('planPerSourceDocumentByLineage should inherit all fields from parent 
         prompt_template_id: 'tmpl-12345',
         output_type: FileType.ReducedSynthesis,
         granularity_strategy: 'per_source_document_by_lineage',
-        inputs_required: [{ type: 'document', slug: 'pairwise_synthesis_chunk', document_key: FileType.PairwiseSynthesisChunk, required: true }],
+        inputs_required: [{ type: 'document', slug: 'synthesis', document_key: FileType.PairwiseSynthesisChunk, required: true }],
         job_type: 'EXECUTE',
         prompt_type: 'Turn',
         branch_key: null,
         parallel_group: null,
-        inputs_relevance: [],
+        inputs_relevance: [{ document_key: FileType.PairwiseSynthesisChunk, relevance: 1.0 }],
         outputs_required: {
             documents: [{
                 artifact_class: 'rendered_document',
@@ -816,7 +828,8 @@ Deno.test('planPerSourceDocumentByLineage sets document_key in payload when reci
         model_name: `model-${modelId}-name`,
         content: `content for ${docId}`,
         user_id: 'user-id',
-        stage: 'parenthesis',
+        stage: 'thesis',
+        document_key: FileType.business_case,
         iteration_number: 1,
         prompt_template_id_used: 'prompt-a',
         seed_prompt_url: null,
@@ -832,9 +845,9 @@ Deno.test('planPerSourceDocumentByLineage sets document_key in payload when reci
         citations: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        file_name: `file-${docId}`,
+        file_name: `gpt-4_0_business_case.md`,
         storage_bucket: 'bucket',
-        storage_path: `path-${docId}`,
+        storage_path: `project-123/session_abc/iteration_1/1_thesis/documents`,
         size_bytes: 100,
         mime_type: 'text/plain',
         document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
@@ -891,7 +904,7 @@ Deno.test('planPerSourceDocumentByLineage sets document_key in payload when reci
         prompt_type: 'Turn',
         branch_key: null,
         parallel_group: null,
-        inputs_relevance: [],
+        inputs_relevance: [{ document_key: FileType.business_case, relevance: 1.0 }],
         outputs_required: {
             documents: [{
                 artifact_class: 'rendered_document',
@@ -936,7 +949,8 @@ Deno.test('planPerSourceDocumentByLineage does NOT set document_key when outputs
         model_name: `model-${modelId}-name`,
         content: `content for ${docId}`,
         user_id: 'user-id',
-        stage: 'parenthesis',
+        stage: 'thesis',
+        document_key: FileType.business_case,
         iteration_number: 1,
         prompt_template_id_used: 'prompt-a',
         seed_prompt_url: null,
@@ -952,9 +966,9 @@ Deno.test('planPerSourceDocumentByLineage does NOT set document_key when outputs
         citations: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        file_name: `file-${docId}`,
+        file_name: `gpt-4_0_business_case.md`,
         storage_bucket: 'bucket',
-        storage_path: `path-${docId}`,
+        storage_path: `project-123/session_abc/iteration_1/1_thesis/documents`,
         size_bytes: 100,
         mime_type: 'text/plain',
         document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
@@ -1011,7 +1025,7 @@ Deno.test('planPerSourceDocumentByLineage does NOT set document_key when outputs
         prompt_type: 'Turn',
         branch_key: null,
         parallel_group: null,
-        inputs_relevance: [],
+        inputs_relevance: [{ document_key: FileType.business_case, relevance: 1.0 }],
         outputs_required: {
             documents: [],
             assembled_json: [],
@@ -1045,7 +1059,8 @@ Deno.test('planPerSourceDocumentByLineage does NOT set document_key when outputs
         model_name: `model-${modelId}-name`,
         content: `content for ${docId}`,
         user_id: 'user-id',
-        stage: 'parenthesis',
+        stage: 'thesis',
+        document_key: FileType.business_case,
         iteration_number: 1,
         prompt_template_id_used: 'prompt-a',
         seed_prompt_url: null,
@@ -1061,9 +1076,9 @@ Deno.test('planPerSourceDocumentByLineage does NOT set document_key when outputs
         citations: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        file_name: `file-${docId}`,
+        file_name: `gpt-4_0_business_case.md`,
         storage_bucket: 'bucket',
-        storage_path: `path-${docId}`,
+        storage_path: `project-123/session_abc/iteration_1/1_thesis/documents`,
         size_bytes: 100,
         mime_type: 'text/plain',
         document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
@@ -1120,7 +1135,7 @@ Deno.test('planPerSourceDocumentByLineage does NOT set document_key when outputs
         prompt_type: 'Turn',
         branch_key: null,
         parallel_group: null,
-        inputs_relevance: [],
+        inputs_relevance: [{ document_key: FileType.business_case, relevance: 1.0 }],
         outputs_required: {
             header_context_artifact: {
                 type: 'header_context',
@@ -1159,7 +1174,8 @@ Deno.test('planPerSourceDocumentByLineage throws error when outputs_required.doc
         model_name: `model-${modelId}-name`,
         content: `content for ${docId}`,
         user_id: 'user-id',
-        stage: 'parenthesis',
+        stage: 'thesis',
+        document_key: FileType.business_case,
         iteration_number: 1,
         prompt_template_id_used: 'prompt-a',
         seed_prompt_url: null,
@@ -1175,9 +1191,9 @@ Deno.test('planPerSourceDocumentByLineage throws error when outputs_required.doc
         citations: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        file_name: `file-${docId}`,
+        file_name: `gpt-4_0_business_case.md`,
         storage_bucket: 'bucket',
-        storage_path: `path-${docId}`,
+        storage_path: `project-123/session_abc/iteration_1/1_thesis/documents`,
         size_bytes: 100,
         mime_type: 'text/plain',
         document_relationships: sourceGroup ? { source_group: sourceGroup } : null,
@@ -1234,7 +1250,7 @@ Deno.test('planPerSourceDocumentByLineage throws error when outputs_required.doc
         prompt_type: 'Turn',
         branch_key: null,
         parallel_group: null,
-        inputs_relevance: [],
+        inputs_relevance: [{ document_key: FileType.business_case, relevance: 1.0 }],
         outputs_required: {
             documents: [{
                 artifact_class: 'rendered_document',
@@ -1281,12 +1297,12 @@ Deno.test('planPerSourceDocumentByLineage includes context_for_documents in EXEC
         prompt_template_id: 'tmpl-12345',
         output_type: FileType.HeaderContext,
         granularity_strategy: 'per_source_document_by_lineage',
-        inputs_required: [{ type: 'document', slug: 'pairwise_synthesis_chunk', document_key: FileType.PairwiseSynthesisChunk, required: true }],
+        inputs_required: [{ type: 'document', slug: 'synthesis', document_key: FileType.PairwiseSynthesisChunk, required: true }],
         job_type: 'PLAN',
         prompt_type: 'Planner',
         branch_key: null,
         parallel_group: null,
-        inputs_relevance: [],
+        inputs_relevance: [{ document_key: FileType.PairwiseSynthesisChunk, relevance: 1.0 }],
         outputs_required: {
             system_materials: {
                 executive_summary: '',
@@ -1350,12 +1366,12 @@ Deno.test('planPerSourceDocumentByLineage throws error for PLAN job when context
         prompt_template_id: 'tmpl-12345',
         output_type: FileType.HeaderContext,
         granularity_strategy: 'per_source_document_by_lineage',
-        inputs_required: [{ type: 'document', slug: 'pairwise_synthesis_chunk', document_key: FileType.PairwiseSynthesisChunk, required: true }],
+        inputs_required: [{ type: 'document', slug: 'synthesis', document_key: FileType.PairwiseSynthesisChunk, required: true }],
         job_type: 'PLAN',
         prompt_type: 'Planner',
         branch_key: null,
         parallel_group: null,
-        inputs_relevance: [],
+        inputs_relevance: [{ document_key: FileType.PairwiseSynthesisChunk, relevance: 1.0 }],
         outputs_required: {
             documents: [],
             assembled_json: [],
@@ -1391,12 +1407,12 @@ Deno.test('planPerSourceDocumentByLineage throws error for PLAN job when context
         prompt_template_id: 'tmpl-12345',
         output_type: FileType.HeaderContext,
         granularity_strategy: 'per_source_document_by_lineage',
-        inputs_required: [{ type: 'document', slug: 'pairwise_synthesis_chunk', document_key: FileType.PairwiseSynthesisChunk, required: true }],
+        inputs_required: [{ type: 'document', slug: 'synthesis', document_key: FileType.PairwiseSynthesisChunk, required: true }],
         job_type: 'PLAN',
         prompt_type: 'Planner',
         branch_key: null,
         parallel_group: null,
-        inputs_relevance: [],
+        inputs_relevance: [{ document_key: FileType.PairwiseSynthesisChunk, relevance: 1.0 }],
         outputs_required: {
             context_for_documents: [
                 {
@@ -1439,12 +1455,12 @@ Deno.test('planPerSourceDocumentByLineage throws error for PLAN job when context
         prompt_template_id: 'tmpl-12345',
         output_type: FileType.HeaderContext,
         granularity_strategy: 'per_source_document_by_lineage',
-        inputs_required: [{ type: 'document', slug: 'pairwise_synthesis_chunk', document_key: FileType.PairwiseSynthesisChunk, required: true }],
+        inputs_required: [{ type: 'document', slug: 'synthesis', document_key: FileType.PairwiseSynthesisChunk, required: true }],
         job_type: 'PLAN',
         prompt_type: 'Planner',
         branch_key: null,
         parallel_group: null,
-        inputs_relevance: [],
+        inputs_relevance: [{ document_key: FileType.PairwiseSynthesisChunk, relevance: 1.0 }],
         outputs_required: {
             context_for_documents: [
                 {
@@ -1679,9 +1695,19 @@ Deno.test('planPerSourceDocumentByLineage EXECUTE branch must not set document_r
 });
 
 Deno.test('planPerSourceDocumentByLineage should create EXECUTE child jobs for PLAN recipe steps with header_context_artifact and context_for_documents', () => {
-    const sourceDocs = [
-        getMockSourceDoc('model-a-id', 'doc-a-id', 'group-a'),
-        getMockSourceDoc('model-b-id', 'doc-b-id', 'group-b'),
+    const sourceDocs: SourceDocument[] = [
+        {
+            ...getMockSourceDoc('model-a-id', 'doc-a-id', 'group-a'),
+            stage: 'thesis',
+            contribution_type: 'thesis',
+            document_key: FileType.business_case,
+        },
+        {
+            ...getMockSourceDoc('model-b-id', 'doc-b-id', 'group-b'),
+            stage: 'thesis',
+            contribution_type: 'thesis',
+            document_key: FileType.business_case,
+        },
     ];
     const mockParentJob = getMockParentJob();
     const planRecipeStep: DialecticRecipeTemplateStep = {
@@ -1705,12 +1731,12 @@ Deno.test('planPerSourceDocumentByLineage should create EXECUTE child jobs for P
             },
             {
                 type: 'document',
-                slug: 'business_case',
+                slug: 'thesis',
                 document_key: FileType.business_case,
                 required: true,
             },
         ],
-        inputs_relevance: [],
+        inputs_relevance: [{ document_key: FileType.business_case, relevance: 1.0 }],
         outputs_required: {
             system_materials: {
                 executive_summary: '',
@@ -1914,4 +1940,504 @@ Deno.test('planPerSourceDocumentByLineage extracts sourceAnchorModelSlug from mo
     } else {
         throw new Error('Expected EXECUTE job');
     }
+});
+
+Deno.test('planPerSourceDocumentByLineage EXECUTE branch uses relevance-selected anchor for canonical path params', () => {
+    const mockParentJob = getMockParentJob();
+    const parentPayload = mockParentJob.payload;
+    if (!parentPayload) {
+        throw new Error('Test setup error: mockParentJob.payload cannot be null');
+    }
+
+    const parentJobWithSynthesisStage: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        ...mockParentJob,
+        stage_slug: 'synthesis',
+        payload: {
+            projectId: parentPayload.projectId,
+            sessionId: parentPayload.sessionId,
+            stageSlug: 'synthesis',
+            iterationNumber: parentPayload.iterationNumber,
+            model_id: parentPayload.model_id,
+            walletId: parentPayload.walletId,
+            user_jwt: parentPayload.user_jwt,
+        },
+    };
+
+    // Seed prompt document (would be groupDocs[0] without relevance algorithm)
+    const seedPromptDoc: SourceDocument = {
+        ...getMockSourceDoc(null, 'seed-prompt-doc-id', 'thesis-group-b'),
+        contribution_type: 'seed_prompt',
+        file_name: null,
+        stage: 'thesis',
+        document_key: FileType.SeedPrompt,
+    };
+
+    // Thesis business_case document with highest relevance
+    const thesisBusinessCaseDoc: SourceDocument = {
+        ...getMockSourceDoc('model-high-rel', 'thesis-business-case-id', 'thesis-group-b'),
+        contribution_type: 'thesis',
+        file_name: 'high-relevance-model_0_business_case.md',
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        stage: 'thesis',
+        document_key: FileType.business_case,
+    };
+
+    // Thesis feature_spec document with lower relevance
+    const thesisFeatureSpecDoc: SourceDocument = {
+        ...getMockSourceDoc('model-low-rel', 'thesis-feature-spec-id', 'thesis-group-b'),
+        contribution_type: 'thesis',
+        file_name: 'low-relevance-model_0_feature_spec.md',
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        stage: 'thesis',
+        document_key: FileType.feature_spec,
+    };
+
+    const sourceDocs: SourceDocument[] = [seedPromptDoc, thesisFeatureSpecDoc, thesisBusinessCaseDoc];
+
+    const executeRecipeStep: DialecticRecipeTemplateStep = {
+        id: 'execute-step-id-synthesis',
+        template_id: 'template-id-456',
+        step_number: 2,
+        step_key: 'synthesis_generate_synthesis',
+        step_slug: 'generate-synthesis',
+        step_name: 'Generate Synthesis',
+        step_description: 'Generate synthesis document',
+        prompt_template_id: 'template-executor-prompt-id',
+        prompt_type: 'Turn',
+        job_type: 'EXECUTE',
+        output_type: FileType.Synthesis,
+        granularity_strategy: 'per_source_document_by_lineage',
+        inputs_required: [
+            {
+                type: 'seed_prompt',
+                slug: 'thesis',
+                required: true,
+            },
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.business_case,
+                required: true,
+            },
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.feature_spec,
+                required: true,
+            },
+        ],
+        inputs_relevance: [
+            {
+                document_key: FileType.business_case,
+                relevance: 1.0,
+            },
+            {
+                document_key: FileType.feature_spec,
+                relevance: 0.8,
+            },
+        ],
+        outputs_required: {
+            system_materials: {
+                executive_summary: '',
+                input_artifacts_summary: '',
+                stage_rationale: '',
+            },
+            documents: [
+                {
+                    artifact_class: 'rendered_document',
+                    file_type: 'markdown',
+                    document_key: FileType.Synthesis,
+                    template_filename: 'synthesis.md',
+                },
+            ],
+            files_to_generate: [
+                {
+                    from_document_key: FileType.Synthesis,
+                    template_filename: 'synthesis.md',
+                },
+            ],
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        parallel_group: null,
+        branch_key: null,
+    };
+
+    const childJobs = planPerSourceDocumentByLineage(sourceDocs, parentJobWithSynthesisStage, executeRecipeStep, parentJobWithSynthesisStage.payload.user_jwt);
+
+    assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    assertEquals(isDialecticExecuteJobPayload(job), true, 'EXECUTE recipe steps should create EXECUTE child jobs');
+    
+    if (isDialecticExecuteJobPayload(job)) {
+        const executePayload: DialecticExecuteJobPayload = job;
+        assertExists(executePayload.canonicalPathParams, 'EXECUTE job should include canonicalPathParams');
+        
+        // EXECUTE branch should use selectAnchorSourceDocument to select the anchor based on inputs_relevance.
+        // The thesis business_case document has relevance 1.0 (highest), so it should be selected as the anchor.
+        // sourceAnchorModelSlug should be extracted from thesisBusinessCaseDoc filename ('high-relevance-model').
+        // Currently FAILS because EXECUTE branch uses groupDocs[0] (seed_prompt or feature_spec depending on order).
+        assertExists(
+            executePayload.canonicalPathParams.sourceAnchorModelSlug,
+            'canonicalPathParams should include sourceAnchorModelSlug extracted from highest-relevance thesis document'
+        );
+        assertEquals(
+            executePayload.canonicalPathParams.sourceAnchorModelSlug,
+            'high-relevance-model',
+            'sourceAnchorModelSlug should be extracted from thesis business_case document filename (highest relevance 1.0), not from seed_prompt or first document in group'
+        );
+    } else {
+        throw new Error('Expected EXECUTE job');
+    }
+});
+
+Deno.test('planPerSourceDocumentByLineage throws when recipe has no relevance metadata for required document inputs', () => {
+    const mockParentJob = getMockParentJob();
+    const parentPayload = mockParentJob.payload;
+    if (!parentPayload) {
+        throw new Error('Test setup error: mockParentJob.payload cannot be null');
+    }
+
+    const parentJobWithAntithesisStage: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        ...mockParentJob,
+        stage_slug: 'antithesis',
+        payload: {
+            projectId: parentPayload.projectId,
+            sessionId: parentPayload.sessionId,
+            stageSlug: 'antithesis',
+            iterationNumber: parentPayload.iterationNumber,
+            model_id: parentPayload.model_id,
+            walletId: parentPayload.walletId,
+            user_jwt: parentPayload.user_jwt,
+        },
+    };
+
+    const thesisBusinessCaseDoc: SourceDocument = {
+        ...getMockSourceDoc('model-999', 'thesis-business-case-no-rel', 'thesis-group-c'),
+        contribution_type: 'thesis',
+        file_name: 'gpt-4_0_business_case.md',
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        stage: 'thesis',
+        document_key: FileType.business_case,
+    };
+
+    const thesisFeatureSpecDoc: SourceDocument = {
+        ...getMockSourceDoc('model-888', 'thesis-feature-spec-no-rel', 'thesis-group-c'),
+        contribution_type: 'thesis',
+        file_name: 'claude-3_0_feature_spec.md',
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        stage: 'thesis',
+        document_key: FileType.feature_spec,
+    };
+
+    const sourceDocs: SourceDocument[] = [thesisBusinessCaseDoc, thesisFeatureSpecDoc];
+
+    // Recipe step with document inputs but NO inputs_relevance
+    const planRecipeStepNoRelevance: DialecticRecipeTemplateStep = {
+        id: 'plan-step-id-no-relevance',
+        template_id: 'template-id-789',
+        step_number: 1,
+        step_key: 'antithesis_prepare_plan_no_relevance',
+        step_slug: 'prepare-plan-no-relevance',
+        step_name: 'Prepare Plan Without Relevance',
+        step_description: 'Test case for missing relevance metadata',
+        prompt_template_id: 'template-planner-prompt-id',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        output_type: FileType.HeaderContext,
+        granularity_strategy: 'per_source_document_by_lineage',
+        inputs_required: [
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.business_case,
+                required: true,
+            },
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.feature_spec,
+                required: true,
+            },
+        ],
+        inputs_relevance: [], // NO relevance metadata - should cause error
+        outputs_required: {
+            system_materials: {
+                executive_summary: '',
+                input_artifacts_summary: '',
+                stage_rationale: '',
+            },
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [
+                {
+                    document_key: FileType.business_case,
+                    content_to_include: {
+                        notes: [],
+                    },
+                },
+            ],
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        parallel_group: null,
+        branch_key: null,
+    };
+
+    // Should throw error from selectAnchorSourceDocument about missing relevance score
+    // Currently FAILS because planner falls back to groupDocs[0] instead of using selectAnchorSourceDocument
+    assertThrows(
+        () => {
+            planPerSourceDocumentByLineage(sourceDocs, parentJobWithAntithesisStage, planRecipeStepNoRelevance, parentJobWithAntithesisStage.payload.user_jwt);
+        },
+        Error,
+        'Missing relevance score',
+        'Should throw error when recipe has document inputs but no relevance metadata (no fallback to ordering)'
+    );
+});
+
+Deno.test('planPerSourceDocumentByLineage handles no_document_inputs_required by passing null anchor to createCanonicalPathParams', () => {
+    const mockParentJob = getMockParentJob();
+    Object.defineProperty(mockParentJob.payload, 'stageSlug', { value: 'thesis', configurable: true, enumerable: true, writable: true });
+    Object.defineProperty(mockParentJob, 'stage_slug', { value: 'thesis', configurable: true, enumerable: true, writable: true });
+
+    const seedPromptDoc: SourceDocument = {
+        ...getMockSourceDoc(null, 'seed-prompt-doc-id', null),
+        contribution_type: 'seed_prompt',
+        file_name: null,
+        stage: 'thesis',
+        document_key: FileType.SeedPrompt,
+    };
+
+    const sourceDocs: SourceDocument[] = [seedPromptDoc];
+
+    const planRecipeStepWithOnlySeedPrompt: DialecticRecipeTemplateStep = {
+        id: 'plan-step-thesis-build-header',
+        template_id: 'template-id-thesis',
+        step_number: 1,
+        step_key: 'thesis_build_stage_header',
+        step_slug: 'thesis-build-stage-header',
+        step_name: 'Build Stage Header',
+        step_description: 'Generate HeaderContext for thesis stage',
+        prompt_template_id: 'template-planner-prompt-id-thesis',
+        prompt_type: 'Planner',
+        job_type: 'PLAN',
+        output_type: FileType.HeaderContext,
+        granularity_strategy: 'per_source_document_by_lineage',
+        inputs_required: [
+            {
+                type: 'seed_prompt',
+                slug: 'thesis',
+                required: true,
+            },
+        ],
+        inputs_relevance: [],
+        outputs_required: {
+            system_materials: {
+                executive_summary: '',
+                input_artifacts_summary: '',
+                stage_rationale: '',
+            },
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [
+                {
+                    document_key: FileType.business_case,
+                    content_to_include: {
+                        field1: '',
+                        field2: [],
+                    },
+                },
+            ],
+            documents: [],
+            assembled_json: [],
+            files_to_generate: [],
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        parallel_group: null,
+        branch_key: null,
+    };
+
+    const childJobs = planPerSourceDocumentByLineage(sourceDocs, mockParentJob, planRecipeStepWithOnlySeedPrompt, 'user-jwt-123');
+    
+    assertEquals(childJobs.length, 1, 'Should create one child job');
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    if (isDialecticExecuteJobPayload(job)) {
+        assertExists(job.canonicalPathParams, 'EXECUTE job should include canonicalPathParams');
+        // This test will initially FAIL because planner doesn't handle SelectAnchorResult
+        // After implementation, sourceAnchorModelSlug should be undefined because no anchor is passed (no_document_inputs_required)
+        assertEquals(
+            job.canonicalPathParams.sourceAnchorModelSlug,
+            undefined,
+            'sourceAnchorModelSlug should be undefined when recipe step has no document inputs'
+        );
+    } else {
+        throw new Error('Expected EXECUTE job');
+    }
+});
+
+Deno.test('planPerSourceDocumentByLineage handles anchor_found by using result.document', () => {
+    const mockParentJob = getMockParentJob();
+    
+    const thesisBusinessCaseDoc: SourceDocument = {
+        ...getMockSourceDoc('model-high-rel', 'thesis-business-case-id', 'thesis-group-a'),
+        contribution_type: 'thesis',
+        file_name: 'gpt-4_0_business_case.md',
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        stage: 'thesis',
+        document_key: FileType.business_case,
+    };
+
+    const sourceDocs: SourceDocument[] = [thesisBusinessCaseDoc];
+
+    const executeRecipeStep: DialecticRecipeStep = {
+        id: 'execute-step-id',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        template_id: 'template-id-123',
+        step_key: 'test-step-key',
+        step_slug: 'test-step-slug',
+        step_description: 'Test step',
+        step_number: 1,
+        step_name: 'test-step',
+        prompt_template_id: 'tmpl-12345',
+        output_type: FileType.ReducedSynthesis,
+        granularity_strategy: 'per_source_document_by_lineage',
+        inputs_required: [
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.business_case,
+                required: true,
+            },
+        ],
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        branch_key: null,
+        parallel_group: null,
+        inputs_relevance: [
+            {
+                document_key: FileType.business_case,
+                relevance: 1.0,
+            },
+        ],
+        outputs_required: {
+            documents: [{
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                document_key: FileType.ReducedSynthesis,
+                template_filename: 'reduced_synthesis.md',
+            }],
+            assembled_json: [],
+            files_to_generate: [{
+                template_filename: 'reduced_synthesis.md',
+                from_document_key: FileType.ReducedSynthesis,
+            }],
+        },
+    };
+
+    const childJobs = planPerSourceDocumentByLineage(sourceDocs, mockParentJob, executeRecipeStep, 'user-jwt-123');
+
+    assertEquals(childJobs.length, 1, 'Should create one child job');
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    if (isDialecticExecuteJobPayload(job)) {
+        assertExists(job.canonicalPathParams, 'EXECUTE job should include canonicalPathParams');
+        // This test will initially FAIL because planner doesn't handle SelectAnchorResult
+        // After implementation, sourceAnchorModelSlug should match the highest-relevance document ('gpt-4')
+        assertExists(
+            job.canonicalPathParams.sourceAnchorModelSlug,
+            'canonicalPathParams should include sourceAnchorModelSlug extracted from highest-relevance document'
+        );
+        assertEquals(
+            job.canonicalPathParams.sourceAnchorModelSlug,
+            'gpt-4',
+            'sourceAnchorModelSlug should match the highest-relevance document'
+        );
+    } else {
+        throw new Error('Expected EXECUTE job');
+    }
+});
+
+Deno.test('planPerSourceDocumentByLineage throws on anchor_not_found', () => {
+    const mockParentJob = getMockParentJob();
+    
+    // Create sourceDocs with documents that form groups, but don't match the required document_key
+    const wrongDocument: SourceDocument = {
+        ...getMockSourceDoc('model-a-id', 'wrong-doc-id', 'group-a'),
+        contribution_type: 'thesis',
+        file_name: 'gpt-4_0_feature_spec.md',
+        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        stage: 'thesis',
+        document_key: FileType.feature_spec, // Wrong document_key - recipe requires business_case
+    };
+
+    const sourceDocs: SourceDocument[] = [wrongDocument];
+
+    const executeRecipeStep: DialecticRecipeStep = {
+        id: 'execute-step-id',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        template_id: 'template-id-123',
+        step_key: 'test-step-key',
+        step_slug: 'test-step-slug',
+        step_description: 'Test step',
+        step_number: 1,
+        step_name: 'test-step',
+        prompt_template_id: 'tmpl-12345',
+        output_type: FileType.ReducedSynthesis,
+        granularity_strategy: 'per_source_document_by_lineage',
+        inputs_required: [
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.business_case, // Recipe requires business_case
+                required: true,
+            },
+        ],
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        branch_key: null,
+        parallel_group: null,
+        inputs_relevance: [
+            {
+                document_key: FileType.business_case,
+                relevance: 1.0,
+            },
+        ],
+        outputs_required: {
+            documents: [{
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                document_key: FileType.ReducedSynthesis,
+                template_filename: 'reduced_synthesis.md',
+            }],
+            assembled_json: [],
+            files_to_generate: [{
+                template_filename: 'reduced_synthesis.md',
+                from_document_key: FileType.ReducedSynthesis,
+            }],
+        },
+    };
+
+    // Should throw error when anchor document not found (recipe requires business_case but sourceDocs only has feature_spec)
+    assertThrows(
+        () => {
+            planPerSourceDocumentByLineage(sourceDocs, mockParentJob, executeRecipeStep, 'user-jwt-123');
+        },
+        Error,
+        'Anchor document not found',
+        'Should throw error when anchor document not found in sourceDocs'
+    );
 });

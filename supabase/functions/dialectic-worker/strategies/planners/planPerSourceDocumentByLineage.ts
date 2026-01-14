@@ -1,9 +1,17 @@
 // supabase/functions/dialectic-worker/strategies/planners/planPerSourceDocumentByLineage.ts
-import type { DialecticExecuteJobPayload, DialecticPlanJobPayload, GranularityPlannerFn, ContextForDocument } from '../../../dialectic-service/dialectic.interface.ts';
+import { 
+    DialecticExecuteJobPayload, 
+    GranularityPlannerFn, 
+    ContextForDocument,
+} from '../../../dialectic-service/dialectic.interface.ts';
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
-import { isContributionType, isContentToInclude } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
+import { 
+    isContributionType, 
+    isContentToInclude 
+} from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 import { isModelContributionFileType } from '../../../_shared/utils/type-guards/type_guards.file_manager.ts';
+import { selectAnchorSourceDocument } from '../helpers.ts';
 
 /**
  * Groups source documents by their `document_relationships.source_group` property.
@@ -13,7 +21,7 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
     sourceDocs,
     parentJob,
     recipeStep,
-    authToken
+    _authToken
 ) => {
     if (!recipeStep.output_type) {
         throw new Error('planPerSourceDocumentByLineage requires a recipe step with a defined output_type.');
@@ -138,10 +146,17 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
             const groupDocs = groups[groupId];
             if (groupDocs.length === 0) continue;
 
-            // Use the first document as the anchor for canonical path generation
+            // Use universal selector for canonical path params
+            const anchorResult = selectAnchorSourceDocument(recipeStep, groupDocs);
+            if (anchorResult.status === 'anchor_not_found') {
+                throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
+            }
+            const anchorForCanonicalPathParams = anchorResult.status === 'anchor_found' ? anchorResult.document : null;
+            
+            // Use the first document as the anchor for sourceContributionId and source_group (preserves lineage)
             const anchorDoc = groupDocs[0];
             const documentIds = groupDocs.map(doc => doc.id);
-            const canonicalPathParams = createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorDoc, stageSlug);
+            const canonicalPathParams = createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorForCanonicalPathParams, stageSlug);
             let derivedSourceContributionId: string | null = null;
             if (anchorDoc.document_relationships?.source_group) {
                 derivedSourceContributionId = anchorDoc.id;
@@ -277,9 +292,16 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
             const groupDocs = groups[groupId];
             if (groupDocs.length === 0) continue;
 
-            // Use the first document as the anchor for canonical path generation.
+            // Use universal selector for canonical path params
+            const anchorResult = selectAnchorSourceDocument(recipeStep, groupDocs);
+            if (anchorResult.status === 'anchor_not_found') {
+                throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
+            }
+            const anchorForCanonicalPathParams = anchorResult.status === 'anchor_found' ? anchorResult.document : null;
+            
+            // Use the first document as the anchor for sourceContributionId and source_group (preserves lineage)
             const anchorDoc = groupDocs[0];
-            const canonicalPathParams = createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorDoc, stageSlug);
+            const canonicalPathParams = createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorForCanonicalPathParams, stageSlug);
             let derivedSourceContributionId: string | null = null;
             if (anchorDoc.document_relationships?.source_group) {
                 derivedSourceContributionId = anchorDoc.id;

@@ -1119,6 +1119,11 @@ export type SourceDocument = Omit<DialecticContributionRow, 'document_relationsh
   stage_slug?: string;
 };
 
+export type SelectAnchorResult = 
+  | { status: 'no_document_inputs_required' } 
+  | { status: 'anchor_found'; document: SourceDocument } 
+  | { status: 'anchor_not_found'; targetSlug: string; targetDocumentKey: string | undefined };
+
 export type SourceFeedback = Omit<DialecticFeedback, 'resource_description'> & { 
   content: string;
   document_relationships?: DocumentRelationships | null;

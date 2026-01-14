@@ -14,7 +14,7 @@ const intermediateFileTypeMap: Partial<Record<FileType, ContributionType>> = {
 export function createCanonicalPathParams(
     sourceDocs: SourceDocument[],
     outputType: FileType | ContributionType,
-    anchorDoc: SourceDocument,
+    anchorDoc: SourceDocument | null,
     stage: ContributionType,
 ): CanonicalPathParams {
     let resolvedContributionType: ContributionType;
@@ -56,100 +56,75 @@ export function createCanonicalPathParams(
     }
     const uniqueSourceModelSlugs = Array.from(new Set(sourceModelSlugs)).sort();
     
-    // Find the non-anchor document to identify the paired model slug
-    const pairedDoc = sourceDocs.find(doc => doc.id !== anchorDoc.id);
-    
-    // Extract pairedModelSlug from paired document, falling back to filename deconstruction
+    // Extract pairedModelSlug from paired document (only when anchor exists)
     let resolvedPairedModelSlug: string | undefined;
-    if (pairedDoc) {
-        if (pairedDoc.model_name) {
-            resolvedPairedModelSlug = pairedDoc.model_name;
-        } else if (pairedDoc.storage_path && pairedDoc.file_name) {
-            try {
-                const deconstructed = deconstructStoragePath({
-                    storageDir: pairedDoc.storage_path,
-                    fileName: pairedDoc.file_name
-                });
-                if (deconstructed.modelSlug) {
-                    resolvedPairedModelSlug = deconstructed.modelSlug;
+    if (anchorDoc !== null) {
+        // Find the non-anchor document to identify the paired model slug
+        const pairedDoc = sourceDocs.find(doc => doc.id !== anchorDoc.id);
+        
+        // Extract pairedModelSlug from paired document, falling back to filename deconstruction
+        if (pairedDoc) {
+            if (pairedDoc.model_name) {
+                resolvedPairedModelSlug = pairedDoc.model_name;
+            } else if (pairedDoc.storage_path && pairedDoc.file_name) {
+                try {
+                    const deconstructed = deconstructStoragePath({
+                        storageDir: pairedDoc.storage_path,
+                        fileName: pairedDoc.file_name
+                    });
+                    if (deconstructed.modelSlug) {
+                        resolvedPairedModelSlug = deconstructed.modelSlug;
+                    }
+                } catch (error) {
+                    // Deconstruction failed, pairedModelSlug remains undefined
+                    console.warn(`[createCanonicalPathParams] Failed to extract model slug from paired document ${pairedDoc.id}: ${error instanceof Error ? error.message : String(error)}`);
                 }
-            } catch (error) {
-                // Deconstruction failed, pairedModelSlug remains undefined
-                console.warn(`[createCanonicalPathParams] Failed to extract model slug from paired document ${pairedDoc.id}: ${error instanceof Error ? error.message : String(error)}`);
             }
         }
     }
 
     // Extract sourceAnchorModelSlug from anchor document
     let resolvedSourceAnchorModelSlug: string | undefined;
-    let resolvedSourceAttemptCount: number | undefined =
-        typeof anchorDoc.attempt_count === 'number' ? anchorDoc.attempt_count : undefined;
+    let resolvedSourceAttemptCount: number | undefined;
     
-    // For HeaderContext documents, always try deconstruction first to check for critiquing patterns
-    // The model_name is the critiquing model, but sourceAnchorModelSlug should be the source model
-    if (anchorDoc.contribution_type === 'header_context' && anchorDoc.storage_path && anchorDoc.file_name) {
-        try {
-            const deconstructed = deconstructStoragePath({
-                storageDir: anchorDoc.storage_path,
-                fileName: anchorDoc.file_name
-            });
-            // If deconstruction extracted sourceAnchorModelSlug, use it (antithesis critiquing pattern)
-            if (deconstructed.sourceAnchorModelSlug) {
-                resolvedSourceAnchorModelSlug = deconstructed.sourceAnchorModelSlug;
-            } else {
-                // No critiquing pattern found, fall back to model_name
-                resolvedSourceAnchorModelSlug = anchorDoc.model_name || undefined;
-            }
-            if (resolvedSourceAttemptCount === undefined && Number.isFinite(deconstructed.attemptCount)) {
-                resolvedSourceAttemptCount = deconstructed.attemptCount;
-            }
-        } catch (error) {
-            // Deconstruction failed, fall back to model_name
-            console.warn(`[createCanonicalPathParams] Failed to deconstruct HeaderContext storage path, falling back to model_name: ${error instanceof Error ? error.message : String(error)}`);
-            resolvedSourceAnchorModelSlug = anchorDoc.model_name || undefined;
+    if (anchorDoc === null) {
+        // No anchor means no anchor-derived values - leave sourceAnchorModelSlug and sourceAttemptCount undefined
+    } else {
+        resolvedSourceAttemptCount = typeof anchorDoc.attempt_count === 'number' ? anchorDoc.attempt_count : undefined;
+        
+        // Universal extraction: always require filename deconstruction, regardless of anchor type
+        // No fallbacks - missing data must be fixed at source
+        if (!anchorDoc.storage_path || !anchorDoc.file_name) {
+            throw new Error(
+                `[createCanonicalPathParams] Anchor document missing required storage_path or file_name. ` +
+                `Document ID: ${anchorDoc.id}, storage_path: ${anchorDoc.storage_path}, file_name: ${anchorDoc.file_name}. ` +
+                `All anchor documents must have canonical filenames for path parameter extraction.`
+            );
         }
-    } else if (isFileType(outputType) && outputType === FileType.HeaderContext && stage === 'antithesis' && anchorDoc.storage_path && anchorDoc.file_name) {
-        // When creating HeaderContext for antithesis stage, always extract sourceAnchorModelSlug from filename
-        // even if model_name exists, because model_name may be the critiquing model or incorrect.
-        // The filename contains the original source model slug that we need for the critiquing pattern.
-        try {
-            const deconstructed = deconstructStoragePath({
-                storageDir: anchorDoc.storage_path,
-                fileName: anchorDoc.file_name
-            });
-            if (deconstructed.modelSlug) {
-                // Use modelSlug extracted from filename (original source model)
-                resolvedSourceAnchorModelSlug = deconstructed.modelSlug;
-            }
-            if (resolvedSourceAttemptCount === undefined && Number.isFinite(deconstructed.attemptCount)) {
-                resolvedSourceAttemptCount = deconstructed.attemptCount;
-            }
-        } catch (error) {
-            // Deconstruction failed, fall back to model_name as last resort
-            console.warn(`[createCanonicalPathParams] Failed to deconstruct storage path when creating HeaderContext for antithesis stage, falling back to model_name: ${error instanceof Error ? error.message : String(error)}`);
-            resolvedSourceAnchorModelSlug = anchorDoc.model_name || undefined;
+
+        const deconstructed = deconstructStoragePath({
+            storageDir: anchorDoc.storage_path,
+            fileName: anchorDoc.file_name
+        });
+        
+        // Extract sourceAnchorModelSlug: handle critiquing patterns and simple patterns
+        if (deconstructed.sourceAnchorModelSlug) {
+            // Critiquing pattern (e.g., antithesis HeaderContext): use sourceAnchorModelSlug
+            resolvedSourceAnchorModelSlug = deconstructed.sourceAnchorModelSlug;
+        } else if (deconstructed.modelSlug) {
+            // Simple pattern: use modelSlug from filename
+            resolvedSourceAnchorModelSlug = deconstructed.modelSlug;
+        } else {
+            throw new Error(
+                `[createCanonicalPathParams] Failed to extract model slug from anchor document filename. ` +
+                `Document ID: ${anchorDoc.id}, file_name: ${anchorDoc.file_name}. ` +
+                `Filename must follow canonical naming convention.`
+            );
         }
-    } else if (anchorDoc.model_name) {
-        // For non-HeaderContext documents, use model_name if available
-        resolvedSourceAnchorModelSlug = anchorDoc.model_name;
-    } else if (anchorDoc.storage_path && anchorDoc.file_name) {
-        // When model_name is missing (e.g., rendered documents from dialectic_project_resources),
-        // extract model slug from the storage path via deconstruction
-        try {
-            const deconstructed = deconstructStoragePath({
-                storageDir: anchorDoc.storage_path,
-                fileName: anchorDoc.file_name
-            });
-            if (deconstructed.modelSlug) {
-                // Use modelSlug extracted from filename
-                resolvedSourceAnchorModelSlug = deconstructed.modelSlug;
-            }
-            if (resolvedSourceAttemptCount === undefined && Number.isFinite(deconstructed.attemptCount)) {
-                resolvedSourceAttemptCount = deconstructed.attemptCount;
-            }
-        } catch (error) {
-            // Deconstruction failed, sourceAnchorModelSlug remains undefined
-            console.warn(`[createCanonicalPathParams] Failed to deconstruct storage path: ${error instanceof Error ? error.message : String(error)}`);
+        
+        // Extract sourceAttemptCount from filename when DB field is missing
+        if (resolvedSourceAttemptCount === undefined && Number.isFinite(deconstructed.attemptCount)) {
+            resolvedSourceAttemptCount = deconstructed.attemptCount;
         }
     }
 
@@ -157,7 +132,7 @@ export function createCanonicalPathParams(
         contributionType: resolvedContributionType,
         stageSlug: stage,
         sourceModelSlugs: uniqueSourceModelSlugs.length > 0 ? uniqueSourceModelSlugs : undefined,
-        sourceAnchorType: anchorDoc.contribution_type || undefined,
+        sourceAnchorType: anchorDoc?.contribution_type || undefined,
         sourceAnchorModelSlug: resolvedSourceAnchorModelSlug,
         sourceAttemptCount: resolvedSourceAttemptCount,
         pairedModelSlug: resolvedPairedModelSlug,

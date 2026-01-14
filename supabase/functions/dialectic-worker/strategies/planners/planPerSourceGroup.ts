@@ -3,10 +3,12 @@ import type {
     DialecticExecuteJobPayload, 
     DialecticPlanJobPayload, 
     GranularityPlannerFn, 
-    SourceDocument
+    SourceDocument,
+    SelectAnchorResult
 } from "../../../dialectic-service/dialectic.interface.ts";
 
 import { createCanonicalPathParams } from "../canonical_context_builder.ts";
+import { selectAnchorSourceDocument } from "../helpers.ts";
 import { FileType } from "../../../_shared/types/file_manager.types.ts";
 import { isContributionType, isContentToInclude } from "../../../_shared/utils/type-guards/type_guards.dialectic.ts";
 import { isModelContributionFileType } from "../../../_shared/utils/type-guards/type_guards.file_manager.ts";
@@ -175,10 +177,18 @@ export const planPerSourceGroup: GranularityPlannerFn = (
         const documentIds = groupDocs.map(doc => doc.id);
 
         // The canonical source contribution for this group is the parent whose id matches the group id.
+        // Used for lineage tracking (sourceContributionId and source_group)
         const anchorDoc = sourceDocs.find(doc => doc.id === groupId);
         if (!anchorDoc) {
             throw new Error(`planPerSourceGroup missing anchor SourceDocument for group ${groupId}`);
         }
+
+        // Use universal selector for canonical path params (selects highest-relevance document)
+        const anchorResult: SelectAnchorResult = selectAnchorSourceDocument(recipeStep, groupDocs);
+        if (anchorResult.status === 'anchor_not_found') {
+            throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
+        }
+        const anchorForCanonicalPathParams = anchorResult.status === 'anchor_found' ? anchorResult.document : null;
 
         if(!isModelContributionFileType(recipeStep.output_type)) {
             throw new Error(`Invalid output_type for planPerSourceGroup: ${recipeStep.output_type}`);
@@ -240,7 +250,7 @@ export const planPerSourceGroup: GranularityPlannerFn = (
             // Override job-specific properties
             prompt_template_id: recipeStep.prompt_template_id,
             output_type: recipeStep.output_type,
-            canonicalPathParams: createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorDoc, stageSlug),
+            canonicalPathParams: createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorForCanonicalPathParams, stageSlug),
             document_relationships: {
                 source_group: groupId
             },

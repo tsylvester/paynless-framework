@@ -1,10 +1,9 @@
 // supabase/functions/dialectic-worker/strategies/planners/planAllToOne.ts
-import type { DialecticExecuteJobPayload, GranularityPlannerFn } from "../../../dialectic-service/dialectic.interface.ts";
+import { DialecticExecuteJobPayload, GranularityPlannerFn } from "../../../dialectic-service/dialectic.interface.ts";
 import { createCanonicalPathParams } from "../canonical_context_builder.ts";
 import { isContributionType, isContentToInclude } from "../../../_shared/utils/type-guards/type_guards.dialectic.ts";
 import { isModelContributionFileType } from "../../../_shared/utils/type-guards/type_guards.file_manager.ts";
-import { FileType } from "../../../_shared/types/file_manager.types.ts";
-import { findAnchorDocumentForHeaderContext } from "../helpers.ts";
+import { selectAnchorSourceDocument } from "../helpers.ts";
 
 export const planAllToOne: GranularityPlannerFn = (
     sourceDocs,
@@ -122,25 +121,12 @@ export const planAllToOne: GranularityPlannerFn = (
         }
         const documentKey = rawDocumentKey;
         
-        // For HeaderContext, use relevance-based algorithm when both inputs_required has document-type inputs
-        // AND inputs_relevance contains document-type entries
-        // Still use anchorDocument (sourceDocs[0]) for sourceContributionId and source_group to preserve lineage
-        let anchorForCanonicalPathParams = anchorDocument;
-        if (recipeStep.output_type === FileType.HeaderContext) {
-            const inputsRequired = recipeStep.inputs_required;
-            const hasDocumentInputs = Array.isArray(inputsRequired) && inputsRequired.some(
-                (rule) => rule && rule.type === 'document' && typeof rule.slug === 'string' && rule.slug.length > 0
-            );
-            
-            const inputsRelevance = recipeStep.inputs_relevance;
-            const hasDocumentRelevance = Array.isArray(inputsRelevance) && inputsRelevance.some(
-                (rule) => rule && (rule.type === 'document' || rule.type === undefined) && rule.document_key && typeof rule.document_key === 'string'
-            );
-            
-            if (hasDocumentInputs && hasDocumentRelevance) {
-                anchorForCanonicalPathParams = findAnchorDocumentForHeaderContext(recipeStep, sourceDocs, recipeStep.output_type);
-            }
+        // Use universal selector for canonical path params
+        const anchorResult = selectAnchorSourceDocument(recipeStep, sourceDocs);
+        if (anchorResult.status === 'anchor_not_found') {
+            throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
         }
+        const anchorForCanonicalPathParams = anchorResult.status === 'anchor_found' ? anchorResult.document : null;
         
         // Create EXECUTE job payload for PLAN recipe step (will execute Planner prompt to generate HeaderContext)
         const executePayload: DialecticExecuteJobPayload = {
@@ -272,6 +258,13 @@ export const planAllToOne: GranularityPlannerFn = (
         }
         // If the step does not output documents, documentKey remains undefined
 
+        // Use universal selector for canonical path params
+        const anchorResult = selectAnchorSourceDocument(recipeStep, sourceDocs);
+        if (anchorResult.status === 'anchor_not_found') {
+            throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
+        }
+        const anchorForCanonicalPathParams = anchorResult.status === 'anchor_found' ? anchorResult.document : null;
+
         const executePayload: DialecticExecuteJobPayload = {
             // Inherit ALL fields from parent job payload (defensive programming)
             projectId: parentJob.payload.projectId,
@@ -293,7 +286,7 @@ export const planAllToOne: GranularityPlannerFn = (
             // Override job-specific properties
             prompt_template_id: recipeStep.prompt_template_id,
             output_type: recipeStep.output_type,
-            canonicalPathParams: createCanonicalPathParams(sourceDocs, recipeStep.output_type, anchorDocument, stageSlug),
+            canonicalPathParams: createCanonicalPathParams(sourceDocs, recipeStep.output_type, anchorForCanonicalPathParams, stageSlug),
             inputs: {
                 document_ids: documentIds,
             },
