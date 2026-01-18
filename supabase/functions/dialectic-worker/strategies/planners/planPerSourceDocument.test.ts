@@ -106,7 +106,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
 		sessionId: 'session-abc',
 		stageSlug: 'antithesis',
 		iterationNumber: 1,
-		model_id: 'model-ghi',
+		model_id: 'gpt-4',
 		walletId: 'wallet-default',
 		user_jwt: 'parent-jwt-default',
 	},
@@ -194,6 +194,7 @@ Deno.test('planPerSourceDocument should create one child job for each source doc
 	);
 	assertEquals(job1Payload.output_type, FileType.business_case_critique);
 	assertEquals(job1Payload.document_relationships, { source_group: 'doc-1' });
+	assertEquals(job1Payload.model_id, 'gpt-4', 'EXECUTE job model_id must match source document model_id');
 
 	assertExists(job1Payload.canonicalPathParams);
 	assertEquals(job1Payload.canonicalPathParams.sourceAnchorType, 'thesis');
@@ -206,6 +207,7 @@ Deno.test('planPerSourceDocument should create one child job for each source doc
 	if (!isDialecticExecuteJobPayload(job2Payload)) {
 		throw new Error('Expected EXECUTE job');
 	}
+	assertEquals(job2Payload.model_id, 'gpt-4', 'EXECUTE job model_id must match source document model_id');
 	assertExists(job2Payload.canonicalPathParams);
 	assertEquals(job2Payload.canonicalPathParams.sourceAnchorType, 'thesis');
 	assertEquals(job2Payload.canonicalPathParams.sourceAnchorModelSlug, 'gpt-4');
@@ -235,6 +237,7 @@ Deno.test('planPerSourceDocument should correctly handle a single source documen
 
 	assertEquals(payload.inputs?.thesis_id, 'doc-1');
 	assertEquals(payload.prompt_template_id, 'antithesis_step1_critique');
+	assertEquals(payload.model_id, 'gpt-4', 'EXECUTE job model_id must match source document model_id');
 });
 
 Deno.test('should correctly plan jobs for antithesis stage', () => {
@@ -257,7 +260,7 @@ Deno.test('should correctly plan jobs for antithesis stage', () => {
 			file_name: 'gpt-4-turbo_0_business_case.md',
 			storage_bucket: 'dialectic-project-resources',
 			storage_path: 'project-xyz/session_abc/iteration_1/1_thesis/documents',
-			model_id: 'gpt-4-turbo',
+			model_id: 'gpt-4',
 			mime_type: 'text/markdown',
 			is_latest_edit: true,
 			iteration_number: 1,
@@ -292,7 +295,7 @@ Deno.test('should correctly plan jobs for antithesis stage', () => {
 			file_name: 'claude-3-opus_0_business_case.md',
 			storage_bucket: 'dialectic-project-resources',
 			storage_path: 'project-xyz/session_abc/iteration_1/1_thesis/documents',
-			model_id: 'claude-3-opus',
+			model_id: 'gpt-4',
 			mime_type: 'text/markdown',
 			is_latest_edit: true,
 			iteration_number: 1,
@@ -330,7 +333,10 @@ Deno.test('should correctly plan jobs for antithesis stage', () => {
 	});
 	assertExists(job1Payload.canonicalPathParams);
 	assertEquals(job1Payload.canonicalPathParams.sourceAnchorType, 'thesis');
+	// sourceAnchorModelSlug is extracted from anchor document's filename, not model_id
+	// The anchor is selected once for all jobs (first matching doc: thesis-doc-1 with filename 'gpt-4-turbo_0_business_case.md')
 	assertEquals(job1Payload.canonicalPathParams.sourceAnchorModelSlug, 'gpt-4-turbo');
+	assertEquals(job1Payload.model_id, 'gpt-4', 'EXECUTE job model_id must match source document model_id');
 
 	// Check payload for the second thesis doc
 	const job2Payload = childPayloads.find(p => isDialecticExecuteJobPayload(p) && p.inputs?.thesis_id === 'thesis-doc-2');
@@ -345,12 +351,14 @@ Deno.test('should correctly plan jobs for antithesis stage', () => {
 	});
 	assertExists(job2Payload.canonicalPathParams);
 	assertEquals(job2Payload.canonicalPathParams.sourceAnchorType, 'thesis');
+	// Both jobs use the same anchor document (thesis-doc-1), so sourceAnchorModelSlug is the same
 	assertEquals(job2Payload.canonicalPathParams.sourceAnchorModelSlug, 'gpt-4-turbo');
+	assertEquals(job2Payload.model_id, 'gpt-4', 'EXECUTE job model_id must match source document model_id');
 });
 
-Deno.test('planPerSourceDocument Test Case A: The Failing Case (Proves the bug exists)', () => {
-	const failingParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
-		id: 'failing-parent-job',
+Deno.test('planPerSourceDocument Test Case A: EXECUTE jobs inherit model_id from source document, not parent job', () => {
+	const parentJobWithDifferentModel: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		id: 'parent-job-different-model',
 		session_id: 'session-abc',
 		user_id: 'user-def',
 		stage_slug: 'antithesis',
@@ -361,7 +369,7 @@ Deno.test('planPerSourceDocument Test Case A: The Failing Case (Proves the bug e
 			sessionId: 'session-abc',
 			stageSlug: 'antithesis',
 			iterationNumber: 1,
-			model_id: 'parent-model-id', // This is the key part
+			model_id: 'parent-model-id', // Parent has different model_id than source docs
 			walletId: 'wallet-default',
 			user_jwt: 'parent-jwt-default',
 		},
@@ -380,31 +388,31 @@ Deno.test('planPerSourceDocument Test Case A: The Failing Case (Proves the bug e
 		job_type: 'PLAN',
 	};
 
-	const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, failingParentJob, MOCK_RECIPE_STEP, 'user-jwt-123');
+	// MOCK_SOURCE_DOCS have model_id: 'gpt-4', which differs from parent's 'parent-model-id'
+	// After filtering, if parent model_id doesn't match source docs, should return empty array
+	// OR if we're testing with matching model_id, child jobs should inherit from source docs
+	const sourceDocsWithMatchingModel: SourceDocument[] = MOCK_SOURCE_DOCS.map(doc => ({
+		...doc,
+		model_id: 'parent-model-id', // Match parent model_id for this test
+	}));
 
-	// This test PASSES if the assertion inside it THROWS an error, proving the bug.
-	// The planner currently assigns the parent job's model ID to ALL children,
-	// which does not match the model ID of the source documents.
-	try {
-		// This is the CORRECT behavior we want to enforce.
-		// With the bug present, this assertion will fail for at least one child,
-		// throwing an error and proving the bug exists.
-		childPayloads.forEach(child => {
-			assertEquals(child.model_id, failingParentJob.payload.model_id, "Child job model_id must match the parent job's model_id");
-		});
-		// If the loop completes, it means the bug is fixed, so this test should now fail.
-		assert(false, "Test A expected an error to be thrown, but none was. The bug may be fixed.");
-	} catch (e) {
-		// We expect to catch an error, which means the test passes and the bug is confirmed.
-		assert(e instanceof Error, "The thrown object should be an error.");
-		console.log("Test A passed by catching an expected error, confirming the bug's presence.");
+	const childPayloads = planPerSourceDocument(sourceDocsWithMatchingModel, parentJobWithDifferentModel, MOCK_RECIPE_STEP, 'user-jwt-123');
+
+	// After fix: EXECUTE jobs should inherit model_id from source document, not parent
+	assertEquals(childPayloads.length, 2, 'Should create 2 child jobs');
+	for (const child of childPayloads) {
+		if (!isDialecticExecuteJobPayload(child)) {
+			throw new Error('Expected EXECUTE job');
+		}
+		// Child job model_id should match source document's model_id, not parent's
+		assertEquals(child.model_id, 'parent-model-id', "EXECUTE job model_id must match source document's model_id, not parent job's model_id");
 	}
 });
 
 
-Deno.test('planPerSourceDocument Test Case B: The Passing Case (Describes the correct behavior)', () => {
-	const passingParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
-		id: 'passing-parent-job',
+Deno.test('planPerSourceDocument Test Case B: EXECUTE jobs inherit model_id from source document when parent model_id matches', () => {
+	const parentJobWithMatchingModel: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		id: 'parent-job-matching-model',
 		session_id: 'session-abc',
 		user_id: 'user-def',
 		stage_slug: 'antithesis',
@@ -415,7 +423,7 @@ Deno.test('planPerSourceDocument Test Case B: The Passing Case (Describes the co
 			sessionId: 'session-abc',
 			stageSlug: 'antithesis',
 			iterationNumber: 1,
-			model_id: 'parent-model-id', // This is the key part
+			model_id: 'gpt-4', // Matches MOCK_SOURCE_DOCS model_id
 			walletId: 'wallet-default',
 			user_jwt: 'parent-jwt-default',
 		},
@@ -434,13 +442,17 @@ Deno.test('planPerSourceDocument Test Case B: The Passing Case (Describes the co
 		job_type: 'PLAN',
 	};
 
-	const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, passingParentJob, MOCK_RECIPE_STEP, 'user-jwt-123');
+	const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, parentJobWithMatchingModel, MOCK_RECIPE_STEP, 'user-jwt-123');
 
-	// This test will FAIL initially because the planner assigns the wrong model_id.
-	// After the fix, it will PASS.
-	childPayloads.forEach(child => {
-		assertEquals(child.model_id, passingParentJob.payload.model_id, "Child job model_id must match the parent job's model_id");
-	});
+	// After fix: EXECUTE jobs should inherit model_id from source document
+	assertEquals(childPayloads.length, 2, 'Should create 2 child jobs');
+	for (const child of childPayloads) {
+		if (!isDialecticExecuteJobPayload(child)) {
+			throw new Error('Expected EXECUTE job');
+		}
+		// Child job model_id should match source document's model_id ('gpt-4'), not necessarily parent's
+		assertEquals(child.model_id, 'gpt-4', "EXECUTE job model_id must match source document's model_id");
+	}
 });
 
 // ==============================================
@@ -500,7 +512,7 @@ Deno.test('planPerSourceDocument inherits model_slug from parent job payload', (
 			sessionId: 'session-abc',
 			stageSlug: 'antithesis',
 			iterationNumber: 1,
-			model_id: 'model-ghi',
+			model_id: 'gpt-4',
 			model_slug: 'parent-model-slug',
 			walletId: 'wallet-default',
 			user_jwt: 'parent-jwt-token',
@@ -539,6 +551,9 @@ Deno.test('planPerSourceDocument inherits model_slug from parent job payload', (
 			'parent-jwt-token',
 			'Child payload must inherit user_jwt from parent payload'
 		);
+		if (isDialecticExecuteJobPayload(payload)) {
+			assertEquals(payload.model_id, 'gpt-4', 'EXECUTE job model_id must match source document model_id');
+		}
 	}
 });
 
@@ -601,11 +616,13 @@ Deno.test('planPerSourceDocument threads sourceContributionId for known source d
 	if (!isDialecticExecuteJobPayload(netNewPayload)) {
 		throw new Error('Expected EXECUTE job');
 	}
-	assertEquals(
-		netNewPayload.sourceContributionId,
-		undefined,
-		'Net-new documents must not declare a sourceContributionId'
-	);
+		assertEquals(
+			netNewPayload.sourceContributionId,
+			undefined,
+			'Net-new documents must not declare a sourceContributionId'
+		);
+		assertEquals(contributionPayload.model_id, 'gpt-4', 'EXECUTE job model_id must match source document model_id');
+		assertEquals(netNewPayload.model_id, 'gpt-4', 'EXECUTE job model_id must match source document model_id');
 });
 
 Deno.test('planPerSourceDocument includes planner_metadata with recipe_step_id in all child payloads', () => {
@@ -676,6 +693,7 @@ Deno.test('planPerSourceDocument sets document_key in payload when recipeStep.ou
 			FileType.business_case_critique,
 			'document_key should be extracted from recipeStep.outputs_required.documents[0].document_key',
 		);
+		assertEquals(payload.model_id, 'gpt-4', 'EXECUTE job model_id must match source document model_id');
 	}
 });
 
@@ -1003,6 +1021,7 @@ Deno.test('planPerSourceDocument omits target_contribution_id from child payload
 				throw new Error('target_contribution_id must be a non-empty string if present');
 			}
 		}
+		assertEquals(payload.model_id, 'gpt-4', 'EXECUTE job model_id must match source document model_id');
 	}
 });
 
@@ -1073,13 +1092,17 @@ Deno.test('planPerSourceDocument EXECUTE branch must not set document_relationsh
 				!('thesis' in executePayload.document_relationships),
 				'document_relationships[stageSlug] must be absent/undefined for root jobs (not set to doc id)',
 			);
+			assertEquals(executePayload.model_id, sourceDoc.model_id, 'EXECUTE job model_id must match source document model_id');
 		} else {
 			throw new Error('Expected EXECUTE job');
 		}
 	}
 });
 
-Deno.test('planPerSourceDocument plans comparison_vector when recipeStep.output_type is assembled_document_json', () => {
+Deno.test('planPerSourceDocument uses recipeStep.output_type when it is a valid ModelContributionFileType', () => {
+	// When recipeStep.output_type is a valid ModelContributionFileType (like assembled_document_json),
+	// the planner uses it directly rather than falling back to document_key.
+	// The document_key (comparison_vector) is still used for the payload.document_key field.
 	const executeRecipeStep: DialecticStageRecipeStep = {
 		...MOCK_RECIPE_STEP,
 		job_type: 'EXECUTE',
@@ -1133,8 +1156,11 @@ Deno.test('planPerSourceDocument plans comparison_vector when recipeStep.output_
 		if (!isDialecticExecuteJobPayload(payload)) {
 			throw new Error('Expected EXECUTE job');
 		}
-		assertEquals(payload.output_type, FileType.comparison_vector);
+		// output_type comes from recipeStep.output_type when it's a valid ModelContributionFileType
+		assertEquals(payload.output_type, FileType.AssembledDocumentJson);
+		// document_key comes from outputs_required.documents[0].document_key
 		assertEquals(payload.document_key, FileType.comparison_vector);
+		assertEquals(payload.model_id, 'gpt-4', 'EXECUTE job model_id must match source document model_id');
 	}
 });
 
@@ -1184,6 +1210,7 @@ Deno.test('planPerSourceDocument includes inputs.header_context_id when recipeSt
 		throw new Error('Expected EXECUTE job');
 	}
 	assertEquals(thesisPayload.inputs?.header_context_id, headerContextDoc.id);
+	assertEquals(thesisPayload.model_id, 'gpt-4', 'EXECUTE job model_id must match source document model_id');
 });
 
 Deno.test('planPerSourceDocument uses relevance-selected anchor for canonical path params in each child job', () => {
@@ -1242,7 +1269,7 @@ Deno.test('planPerSourceDocument uses relevance-selected anchor for canonical pa
 		file_name: 'highest-relevance-model_0_business_case.md',
 		storage_bucket: 'dialectic-project-resources',
 		storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
-		model_id: 'model-highest-rel',
+		model_id: 'gpt-4',
 		model_name: null,
 		prompt_template_id_used: null,
 		document_key: FileType.business_case,
@@ -1279,7 +1306,7 @@ Deno.test('planPerSourceDocument uses relevance-selected anchor for canonical pa
 		file_name: 'lower-relevance-model_0_feature_spec.md',
 		storage_bucket: 'dialectic-project-resources',
 		storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
-		model_id: 'model-lower-rel',
+		model_id: 'gpt-4',
 		model_name: null,
 		prompt_template_id_used: null,
 		document_key: FileType.feature_spec,
@@ -1376,11 +1403,13 @@ Deno.test('planPerSourceDocument uses relevance-selected anchor for canonical pa
 				executePayload.canonicalPathParams.sourceAnchorModelSlug,
 				'canonicalPathParams should include sourceAnchorModelSlug from highest-relevance document'
 			);
+			// sourceAnchorModelSlug is extracted from anchor document's filename (businessCaseDoc with filename 'highest-relevance-model_0_business_case.md')
 			assertEquals(
 				executePayload.canonicalPathParams.sourceAnchorModelSlug,
 				'highest-relevance-model',
 				'sourceAnchorModelSlug should match business_case document (highest relevance 1.0) for ALL child jobs, not vary per iteration'
 			);
+			assertEquals(executePayload.model_id, 'gpt-4', 'EXECUTE job model_id must match source document model_id');
 		} else {
 			throw new Error('Expected EXECUTE job');
 		}
@@ -1438,7 +1467,7 @@ Deno.test('planPerSourceDocument handles no_document_inputs_required by passing 
 		file_name: null,
 		storage_bucket: 'dialectic-contributions',
 		storage_path: 'project-123/session_abc/iteration_1/1_thesis',
-		model_id: 'model-123',
+		model_id: 'gpt-4',
 		model_name: null,
 		prompt_template_id_used: null,
 		document_key: undefined,
@@ -1474,7 +1503,7 @@ Deno.test('planPerSourceDocument handles no_document_inputs_required by passing 
 		file_name: 'model_0_feature_spec.md',
 		storage_bucket: 'dialectic-project-resources',
 		storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
-		model_id: 'model-123',
+		model_id: 'gpt-4',
 		model_name: null,
 		prompt_template_id_used: null,
 		document_key: FileType.feature_spec,
@@ -1542,6 +1571,7 @@ Deno.test('planPerSourceDocument handles no_document_inputs_required by passing 
 				undefined,
 				'sourceAnchorModelSlug should be undefined when recipe step has no document inputs (no_document_inputs_required)'
 			);
+			assertEquals(executePayload.model_id, 'gpt-4', 'EXECUTE job model_id must match source document model_id');
 		} else {
 			throw new Error('Expected EXECUTE job');
 		}
@@ -1599,7 +1629,7 @@ Deno.test('planPerSourceDocument handles anchor_found by using result.document',
 		file_name: 'anchor-model-slug_0_business_case.md',
 		storage_bucket: 'dialectic-project-resources',
 		storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
-		model_id: 'model-123',
+		model_id: 'gpt-4',
 		model_name: null,
 		prompt_template_id_used: null,
 		document_key: FileType.business_case,
@@ -1635,7 +1665,7 @@ Deno.test('planPerSourceDocument handles anchor_found by using result.document',
 		file_name: 'lower-relevance-model_0_feature_spec.md',
 		storage_bucket: 'dialectic-project-resources',
 		storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
-		model_id: 'model-456',
+		model_id: 'gpt-4',
 		model_name: null,
 		prompt_template_id_used: null,
 		document_key: FileType.feature_spec,
@@ -1742,7 +1772,9 @@ Deno.test('planPerSourceDocument handles anchor_found by using result.document',
 
 	const childJobs = planPerSourceDocument(sourceDocs, parentJobWithThesisStage, executeRecipeStep, parentJobWithThesisStage.payload.user_jwt);
 
-	assertEquals(childJobs.length, 3, 'Should create one child job per source document');
+	// Only documents with model_id matching parent (gpt-4) pass the filter
+	// sourceDoc1 has model_id: 'model-789', so it's filtered out
+	assertEquals(childJobs.length, 2, 'Should create one child job per source document with matching model_id');
 	for (const job of childJobs) {
 		assertExists(job, 'Child job should exist');
 		assertEquals(isDialecticExecuteJobPayload(job), true, 'EXECUTE recipe steps should create EXECUTE child jobs');
@@ -1753,11 +1785,13 @@ Deno.test('planPerSourceDocument handles anchor_found by using result.document',
 				executePayload.canonicalPathParams.sourceAnchorModelSlug,
 				'canonicalPathParams should include sourceAnchorModelSlug from highest-relevance document'
 			);
+			// sourceAnchorModelSlug is extracted from anchor document's filename (businessCaseDoc with filename 'anchor-model-slug_0_business_case.md')
 			assertEquals(
 				executePayload.canonicalPathParams.sourceAnchorModelSlug,
 				'anchor-model-slug',
 				'sourceAnchorModelSlug should match business_case document (highest relevance 1.0) for ALL child jobs'
 			);
+			assertEquals(executePayload.model_id, 'gpt-4', 'EXECUTE job model_id must match source document model_id');
 		} else {
 			throw new Error('Expected EXECUTE job');
 		}
@@ -1815,7 +1849,7 @@ Deno.test('planPerSourceDocument throws on anchor_not_found', async () => {
 		file_name: 'model_0_feature_spec.md',
 		storage_bucket: 'dialectic-project-resources',
 		storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
-		model_id: 'model-123',
+		model_id: 'gpt-4',
 		model_name: null,
 		prompt_template_id_used: null,
 		document_key: FileType.feature_spec,
@@ -1881,6 +1915,822 @@ Deno.test('planPerSourceDocument throws on anchor_not_found', async () => {
 		Error,
 		'Anchor document not found for stage \'thesis\' document_key \'business_case\'',
 		'Should throw error when anchor document not found in sourceDocs'
+	);
+});
+
+// ==============================================
+// Step 95.c: Model-filtering behavior tests
+// ==============================================
+
+Deno.test('planPerSourceDocument 95.c.i: Given 3 header_contexts from 3 different models, planner called with model_id=A only creates jobs for model A\'s header_context', async (t) => {
+	const headerContextModelA: SourceDocument = {
+		id: 'hc-model-a',
+		contribution_type: 'header_context',
+		content: 'Header context from model A',
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		stage: 'thesis',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		file_name: 'model-a_0_header_context.json',
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-xyz/session_abc/iteration_1/1_thesis',
+		model_id: 'model-a',
+		model_name: 'Model A',
+		prompt_template_id_used: 'p1',
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 1,
+		tokens_used_output: 1,
+		processing_time_ms: 1,
+		error: null,
+		citations: null,
+		size_bytes: 1,
+		mime_type: 'application/json',
+		target_contribution_id: null,
+		document_relationships: null,
+		is_header: false,
+		source_prompt_resource_id: null,
+		document_key: undefined,
+		attempt_count: 0,
+	};
+
+	const headerContextModelB: SourceDocument = {
+		...headerContextModelA,
+		id: 'hc-model-b',
+		content: 'Header context from model B',
+		file_name: 'model-b_0_header_context.json',
+		model_id: 'model-b',
+		model_name: 'Model B',
+	};
+
+	const headerContextModelC: SourceDocument = {
+		...headerContextModelA,
+		id: 'hc-model-c',
+		content: 'Header context from model C',
+		file_name: 'model-c_0_header_context.json',
+		model_id: 'model-c',
+		model_name: 'Model C',
+	};
+
+	const parentJobForModelA: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		id: MOCK_PARENT_JOB.id,
+		session_id: MOCK_PARENT_JOB.session_id,
+		user_id: MOCK_PARENT_JOB.user_id,
+		stage_slug: MOCK_PARENT_JOB.stage_slug,
+		iteration_number: MOCK_PARENT_JOB.iteration_number,
+		payload: {
+			projectId: MOCK_PARENT_JOB.payload.projectId,
+			sessionId: MOCK_PARENT_JOB.payload.sessionId,
+			stageSlug: MOCK_PARENT_JOB.payload.stageSlug,
+			iterationNumber: MOCK_PARENT_JOB.payload.iterationNumber,
+			model_id: 'model-a',
+			walletId: MOCK_PARENT_JOB.payload.walletId,
+			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+		},
+		attempt_count: MOCK_PARENT_JOB.attempt_count,
+		completed_at: MOCK_PARENT_JOB.completed_at,
+		created_at: MOCK_PARENT_JOB.created_at,
+		error_details: MOCK_PARENT_JOB.error_details,
+		max_retries: MOCK_PARENT_JOB.max_retries,
+		parent_job_id: MOCK_PARENT_JOB.parent_job_id,
+		prerequisite_job_id: MOCK_PARENT_JOB.prerequisite_job_id,
+		results: MOCK_PARENT_JOB.results,
+		started_at: MOCK_PARENT_JOB.started_at,
+		status: MOCK_PARENT_JOB.status,
+		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
+		is_test_job: MOCK_PARENT_JOB.is_test_job,
+		job_type: MOCK_PARENT_JOB.job_type,
+	};
+
+	const parentJobForModelB: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		id: MOCK_PARENT_JOB.id,
+		session_id: MOCK_PARENT_JOB.session_id,
+		user_id: MOCK_PARENT_JOB.user_id,
+		stage_slug: MOCK_PARENT_JOB.stage_slug,
+		iteration_number: MOCK_PARENT_JOB.iteration_number,
+		payload: {
+			projectId: MOCK_PARENT_JOB.payload.projectId,
+			sessionId: MOCK_PARENT_JOB.payload.sessionId,
+			stageSlug: MOCK_PARENT_JOB.payload.stageSlug,
+			iterationNumber: MOCK_PARENT_JOB.payload.iterationNumber,
+			model_id: 'model-b',
+			walletId: MOCK_PARENT_JOB.payload.walletId,
+			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+		},
+		attempt_count: MOCK_PARENT_JOB.attempt_count,
+		completed_at: MOCK_PARENT_JOB.completed_at,
+		created_at: MOCK_PARENT_JOB.created_at,
+		error_details: MOCK_PARENT_JOB.error_details,
+		max_retries: MOCK_PARENT_JOB.max_retries,
+		parent_job_id: MOCK_PARENT_JOB.parent_job_id,
+		prerequisite_job_id: MOCK_PARENT_JOB.prerequisite_job_id,
+		results: MOCK_PARENT_JOB.results,
+		started_at: MOCK_PARENT_JOB.started_at,
+		status: MOCK_PARENT_JOB.status,
+		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
+		is_test_job: MOCK_PARENT_JOB.is_test_job,
+		job_type: MOCK_PARENT_JOB.job_type,
+	};
+
+	const parentJobForModelC: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		id: MOCK_PARENT_JOB.id,
+		session_id: MOCK_PARENT_JOB.session_id,
+		user_id: MOCK_PARENT_JOB.user_id,
+		stage_slug: MOCK_PARENT_JOB.stage_slug,
+		iteration_number: MOCK_PARENT_JOB.iteration_number,
+		payload: {
+			projectId: MOCK_PARENT_JOB.payload.projectId,
+			sessionId: MOCK_PARENT_JOB.payload.sessionId,
+			stageSlug: MOCK_PARENT_JOB.payload.stageSlug,
+			iterationNumber: MOCK_PARENT_JOB.payload.iterationNumber,
+			model_id: 'model-c',
+			walletId: MOCK_PARENT_JOB.payload.walletId,
+			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+		},
+		attempt_count: MOCK_PARENT_JOB.attempt_count,
+		completed_at: MOCK_PARENT_JOB.completed_at,
+		created_at: MOCK_PARENT_JOB.created_at,
+		error_details: MOCK_PARENT_JOB.error_details,
+		max_retries: MOCK_PARENT_JOB.max_retries,
+		parent_job_id: MOCK_PARENT_JOB.parent_job_id,
+		prerequisite_job_id: MOCK_PARENT_JOB.prerequisite_job_id,
+		results: MOCK_PARENT_JOB.results,
+		started_at: MOCK_PARENT_JOB.started_at,
+		status: MOCK_PARENT_JOB.status,
+		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
+		is_test_job: MOCK_PARENT_JOB.is_test_job,
+		job_type: MOCK_PARENT_JOB.job_type,
+	};
+
+	const executeRecipeStepWithHeaderContext: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
+		inputs_required: [
+			{ type: 'header_context', slug: 'thesis', required: true },
+		],
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.business_case,
+				template_filename: 'business_case.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [{
+				from_document_key: FileType.business_case,
+				template_filename: 'business_case.md',
+			}],
+		},
+	};
+
+	const sourceDocs = [headerContextModelA, headerContextModelB, headerContextModelC];
+	
+	const allChildPayloads: DialecticExecuteJobPayload[] = [];
+
+	await t.step('Model A: planner filters to model A\'s header_context and creates 1 job', () => {
+		const childPayloads = planPerSourceDocument(sourceDocs, parentJobForModelA, executeRecipeStepWithHeaderContext, parentJobForModelA.payload.user_jwt);
+		assertEquals(childPayloads.length, 1, 'Should create only 1 job for model A');
+		const payload = childPayloads[0];
+		if (!isDialecticExecuteJobPayload(payload)) {
+			throw new Error('Expected EXECUTE job');
+		}
+		assertEquals(payload.inputs?.header_context_id, 'hc-model-a', 'Should use model A\'s header_context');
+		assertEquals(payload.model_id, 'model-a', 'Child job should have model A\'s model_id');
+		allChildPayloads.push(payload);
+	});
+
+	await t.step('Model B: planner filters to model B\'s header_context and creates 1 job', () => {
+		const childPayloads = planPerSourceDocument(sourceDocs, parentJobForModelB, executeRecipeStepWithHeaderContext, parentJobForModelB.payload.user_jwt);
+		assertEquals(childPayloads.length, 1, 'Should create only 1 job for model B');
+		const payload = childPayloads[0];
+		if (!isDialecticExecuteJobPayload(payload)) {
+			throw new Error('Expected EXECUTE job');
+		}
+		assertEquals(payload.inputs?.header_context_id, 'hc-model-b', 'Should use model B\'s header_context');
+		assertEquals(payload.model_id, 'model-b', 'Child job should have model B\'s model_id');
+		allChildPayloads.push(payload);
+	});
+
+	await t.step('Model C: planner filters to model C\'s header_context and creates 1 job', () => {
+		const childPayloads = planPerSourceDocument(sourceDocs, parentJobForModelC, executeRecipeStepWithHeaderContext, parentJobForModelC.payload.user_jwt);
+		assertEquals(childPayloads.length, 1, 'Should create only 1 job for model C');
+		const payload = childPayloads[0];
+		if (!isDialecticExecuteJobPayload(payload)) {
+			throw new Error('Expected EXECUTE job');
+		}
+		assertEquals(payload.inputs?.header_context_id, 'hc-model-c', 'Should use model C\'s header_context');
+		assertEquals(payload.model_id, 'model-c', 'Child job should have model C\'s model_id');
+		allChildPayloads.push(payload);
+	});
+
+	assertEquals(allChildPayloads.length, 3, 'Should have 3 jobs total, one for each model');
+	
+	const headerContextIds = allChildPayloads.map(p => p.inputs?.header_context_id).filter((id): id is string => typeof id === 'string');
+	assertEquals(new Set(headerContextIds).size, 3, 'Should have 3 distinct header_context_ids');
+	assertEquals(headerContextIds.includes('hc-model-a'), true, 'Should include model A\'s header_context_id');
+	assertEquals(headerContextIds.includes('hc-model-b'), true, 'Should include model B\'s header_context_id');
+	assertEquals(headerContextIds.includes('hc-model-c'), true, 'Should include model C\'s header_context_id');
+	
+	const modelIds = allChildPayloads.map(p => p.model_id).filter((id): id is string => typeof id === 'string');
+	assertEquals(new Set(modelIds).size, 3, 'Should have 3 distinct model_ids');
+	assertEquals(modelIds.includes('model-a'), true, 'Should include model A');
+	assertEquals(modelIds.includes('model-b'), true, 'Should include model B');
+	assertEquals(modelIds.includes('model-c'), true, 'Should include model C');
+	
+	for (const payload of allChildPayloads) {
+		if (!isDialecticExecuteJobPayload(payload)) {
+			throw new Error('Expected EXECUTE job');
+		}
+		const expectedHeaderContextId = payload.model_id === 'model-a' ? 'hc-model-a' : payload.model_id === 'model-b' ? 'hc-model-b' : 'hc-model-c';
+		assertEquals(payload.inputs?.header_context_id, expectedHeaderContextId, `Job for ${payload.model_id} should use matching header_context`);
+	}
+});
+
+Deno.test('planPerSourceDocument 95.c.ii: Given header_context from model A and parent job for model B, no jobs created (empty result)', () => {
+	const headerContextModelA: SourceDocument = {
+		id: 'hc-model-a',
+		contribution_type: 'header_context',
+		content: 'Header context from model A',
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		stage: 'thesis',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		file_name: 'model-a_0_header_context.json',
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-xyz/session_abc/iteration_1/1_thesis',
+		model_id: 'model-a',
+		model_name: 'Model A',
+		prompt_template_id_used: 'p1',
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 1,
+		tokens_used_output: 1,
+		processing_time_ms: 1,
+		error: null,
+		citations: null,
+		size_bytes: 1,
+		mime_type: 'application/json',
+		target_contribution_id: null,
+		document_relationships: null,
+		is_header: false,
+		source_prompt_resource_id: null,
+		document_key: undefined,
+		attempt_count: 0,
+	};
+
+	const parentJobForModelB: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		id: MOCK_PARENT_JOB.id,
+		session_id: MOCK_PARENT_JOB.session_id,
+		user_id: MOCK_PARENT_JOB.user_id,
+		stage_slug: MOCK_PARENT_JOB.stage_slug,
+		iteration_number: MOCK_PARENT_JOB.iteration_number,
+		payload: {
+			projectId: MOCK_PARENT_JOB.payload.projectId,
+			sessionId: MOCK_PARENT_JOB.payload.sessionId,
+			stageSlug: MOCK_PARENT_JOB.payload.stageSlug,
+			iterationNumber: MOCK_PARENT_JOB.payload.iterationNumber,
+			model_id: 'model-b', // Parent is for model B, but source doc is from model A
+			walletId: MOCK_PARENT_JOB.payload.walletId,
+			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+		},
+		attempt_count: MOCK_PARENT_JOB.attempt_count,
+		completed_at: MOCK_PARENT_JOB.completed_at,
+		created_at: MOCK_PARENT_JOB.created_at,
+		error_details: MOCK_PARENT_JOB.error_details,
+		max_retries: MOCK_PARENT_JOB.max_retries,
+		parent_job_id: MOCK_PARENT_JOB.parent_job_id,
+		prerequisite_job_id: MOCK_PARENT_JOB.prerequisite_job_id,
+		results: MOCK_PARENT_JOB.results,
+		started_at: MOCK_PARENT_JOB.started_at,
+		status: MOCK_PARENT_JOB.status,
+		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
+		is_test_job: MOCK_PARENT_JOB.is_test_job,
+		job_type: MOCK_PARENT_JOB.job_type,
+	};
+
+	const executeRecipeStepWithHeaderContext: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
+		inputs_required: [
+			{ type: 'header_context', slug: 'thesis', required: true },
+		],
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.business_case,
+				template_filename: 'business_case.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [{
+				from_document_key: FileType.business_case,
+				template_filename: 'business_case.md',
+			}],
+		},
+	};
+
+	const sourceDocs = [headerContextModelA];
+	const childPayloads = planPerSourceDocument(sourceDocs, parentJobForModelB, executeRecipeStepWithHeaderContext, parentJobForModelB.payload.user_jwt);
+
+	// Should return empty array when no source docs match parent model_id
+	assertEquals(childPayloads.length, 0, 'Should return empty array when header_context from model A but parent job is for model B');
+});
+
+Deno.test('planPerSourceDocument 95.c.iii: Given multiple docs from same model, creates job for each doc from that model', () => {
+	const doc1ModelA: SourceDocument = {
+		...MOCK_SOURCE_DOCS[0],
+		id: 'doc-1-model-a',
+		model_id: 'model-a',
+		model_name: 'Model A',
+	};
+
+	const doc2ModelA: SourceDocument = {
+		...MOCK_SOURCE_DOCS[1],
+		id: 'doc-2-model-a',
+		model_id: 'model-a',
+		model_name: 'Model A',
+	};
+
+	const doc3ModelA: SourceDocument = {
+		...MOCK_SOURCE_DOCS[0],
+		id: 'doc-3-model-a',
+		model_id: 'model-a',
+		model_name: 'Model A',
+	};
+
+	const parentJobForModelA: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		id: MOCK_PARENT_JOB.id,
+		session_id: MOCK_PARENT_JOB.session_id,
+		user_id: MOCK_PARENT_JOB.user_id,
+		stage_slug: MOCK_PARENT_JOB.stage_slug,
+		iteration_number: MOCK_PARENT_JOB.iteration_number,
+		payload: {
+			projectId: MOCK_PARENT_JOB.payload.projectId,
+			sessionId: MOCK_PARENT_JOB.payload.sessionId,
+			stageSlug: MOCK_PARENT_JOB.payload.stageSlug,
+			iterationNumber: MOCK_PARENT_JOB.payload.iterationNumber,
+			model_id: 'model-a',
+			walletId: MOCK_PARENT_JOB.payload.walletId,
+			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+		},
+		attempt_count: MOCK_PARENT_JOB.attempt_count,
+		completed_at: MOCK_PARENT_JOB.completed_at,
+		created_at: MOCK_PARENT_JOB.created_at,
+		error_details: MOCK_PARENT_JOB.error_details,
+		max_retries: MOCK_PARENT_JOB.max_retries,
+		parent_job_id: MOCK_PARENT_JOB.parent_job_id,
+		prerequisite_job_id: MOCK_PARENT_JOB.prerequisite_job_id,
+		results: MOCK_PARENT_JOB.results,
+		started_at: MOCK_PARENT_JOB.started_at,
+		status: MOCK_PARENT_JOB.status,
+		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
+		is_test_job: MOCK_PARENT_JOB.is_test_job,
+		job_type: MOCK_PARENT_JOB.job_type,
+	};
+
+	const sourceDocs = [doc1ModelA, doc2ModelA, doc3ModelA];
+	const childPayloads = planPerSourceDocument(sourceDocs, parentJobForModelA, MOCK_RECIPE_STEP, parentJobForModelA.payload.user_jwt);
+
+	// Should create one job for each document from model A
+	assertEquals(childPayloads.length, 3, 'Should create 3 jobs, one for each document from model A');
+	for (let i = 0; i < childPayloads.length; i++) {
+		const payload = childPayloads[i];
+		if (!isDialecticExecuteJobPayload(payload)) {
+			throw new Error('Expected EXECUTE job');
+		}
+		assertEquals(payload.model_id, 'model-a', `Child job ${i} should have model A's model_id`);
+		const expectedDocId = sourceDocs[i].id;
+		const contributionType = sourceDocs[i].contribution_type;
+		if (contributionType) {
+			assertEquals(payload.inputs?.[`${contributionType}_id`], expectedDocId, `Child job ${i} should reference source document ${i}`);
+		}
+	}
+});
+
+Deno.test('planPerSourceDocument 95.c.iv: Model filtering applies only when source docs have model identification; docs without model_id are filtered out', () => {
+	const docWithoutModelId: SourceDocument = {
+		...MOCK_SOURCE_DOCS[0],
+		id: 'doc-no-model-id',
+		model_id: null, // No model_id - will be filtered out
+		model_name: null,
+	};
+
+	const docWithModelId: SourceDocument = {
+		...MOCK_SOURCE_DOCS[1],
+		id: 'doc-with-model-id',
+		model_id: 'model-a',
+		model_name: 'Model A',
+	};
+
+	const parentJobForModelA: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		id: MOCK_PARENT_JOB.id,
+		session_id: MOCK_PARENT_JOB.session_id,
+		user_id: MOCK_PARENT_JOB.user_id,
+		stage_slug: MOCK_PARENT_JOB.stage_slug,
+		iteration_number: MOCK_PARENT_JOB.iteration_number,
+		payload: {
+			projectId: MOCK_PARENT_JOB.payload.projectId,
+			sessionId: MOCK_PARENT_JOB.payload.sessionId,
+			stageSlug: MOCK_PARENT_JOB.payload.stageSlug,
+			iterationNumber: MOCK_PARENT_JOB.payload.iterationNumber,
+			model_id: 'model-a',
+			walletId: MOCK_PARENT_JOB.payload.walletId,
+			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+		},
+		attempt_count: MOCK_PARENT_JOB.attempt_count,
+		completed_at: MOCK_PARENT_JOB.completed_at,
+		created_at: MOCK_PARENT_JOB.created_at,
+		error_details: MOCK_PARENT_JOB.error_details,
+		max_retries: MOCK_PARENT_JOB.max_retries,
+		parent_job_id: MOCK_PARENT_JOB.parent_job_id,
+		prerequisite_job_id: MOCK_PARENT_JOB.prerequisite_job_id,
+		results: MOCK_PARENT_JOB.results,
+		started_at: MOCK_PARENT_JOB.started_at,
+		status: MOCK_PARENT_JOB.status,
+		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
+		is_test_job: MOCK_PARENT_JOB.is_test_job,
+		job_type: MOCK_PARENT_JOB.job_type,
+	};
+
+	const sourceDocs = [docWithoutModelId, docWithModelId];
+	const childPayloads = planPerSourceDocument(sourceDocs, parentJobForModelA, MOCK_RECIPE_STEP, parentJobForModelA.payload.user_jwt);
+
+	// Doc without model_id is filtered out (null !== 'model-a'), only doc with matching model_id is included
+	assertEquals(childPayloads.length, 1, 'Should create job only for doc with matching model_id; doc without model_id is filtered out');
+	
+	const payloadWithModelId = childPayloads.find(p => isDialecticExecuteJobPayload(p) && p.inputs?.thesis_id === 'doc-with-model-id');
+	assertExists(payloadWithModelId, 'Should create job for doc with matching model_id');
+	if (!isDialecticExecuteJobPayload(payloadWithModelId)) {
+		throw new Error('Expected EXECUTE job');
+	}
+	assertEquals(payloadWithModelId.model_id, 'model-a', 'Child job for doc with model_id should use source doc model_id');
+});
+
+Deno.test('planPerSourceDocument 95.c.v: EXECUTE jobs inherit model_id from the source document, not parent job', () => {
+	const docModelA: SourceDocument = {
+		...MOCK_SOURCE_DOCS[0],
+		id: 'doc-model-a',
+		model_id: 'model-a',
+		model_name: 'Model A',
+	};
+
+	const docModelB: SourceDocument = {
+		...MOCK_SOURCE_DOCS[1],
+		id: 'doc-model-b',
+		model_id: 'model-b',
+		model_name: 'Model B',
+	};
+
+	const parentJobForModelA: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		id: MOCK_PARENT_JOB.id,
+		session_id: MOCK_PARENT_JOB.session_id,
+		user_id: MOCK_PARENT_JOB.user_id,
+		stage_slug: MOCK_PARENT_JOB.stage_slug,
+		iteration_number: MOCK_PARENT_JOB.iteration_number,
+		payload: {
+			projectId: MOCK_PARENT_JOB.payload.projectId,
+			sessionId: MOCK_PARENT_JOB.payload.sessionId,
+			stageSlug: MOCK_PARENT_JOB.payload.stageSlug,
+			iterationNumber: MOCK_PARENT_JOB.payload.iterationNumber,
+			model_id: 'model-a', // Parent is for model A
+			walletId: MOCK_PARENT_JOB.payload.walletId,
+			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+		},
+		attempt_count: MOCK_PARENT_JOB.attempt_count,
+		completed_at: MOCK_PARENT_JOB.completed_at,
+		created_at: MOCK_PARENT_JOB.created_at,
+		error_details: MOCK_PARENT_JOB.error_details,
+		max_retries: MOCK_PARENT_JOB.max_retries,
+		parent_job_id: MOCK_PARENT_JOB.parent_job_id,
+		prerequisite_job_id: MOCK_PARENT_JOB.prerequisite_job_id,
+		results: MOCK_PARENT_JOB.results,
+		started_at: MOCK_PARENT_JOB.started_at,
+		status: MOCK_PARENT_JOB.status,
+		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
+		is_test_job: MOCK_PARENT_JOB.is_test_job,
+		job_type: MOCK_PARENT_JOB.job_type,
+	};
+
+	// Only docModelA should pass filtering (matches parent model_id)
+	const sourceDocs = [docModelA, docModelB];
+	const childPayloads = planPerSourceDocument(sourceDocs, parentJobForModelA, MOCK_RECIPE_STEP, parentJobForModelA.payload.user_jwt);
+
+	// Should only create job for docModelA (matches parent model_id)
+	assertEquals(childPayloads.length, 1, 'Should create only 1 job for doc matching parent model_id');
+	const payload = childPayloads[0];
+	if (!isDialecticExecuteJobPayload(payload)) {
+		throw new Error('Expected EXECUTE job');
+	}
+	// EXECUTE job should inherit model_id from source document, not parent
+	assertEquals(payload.model_id, 'model-a', 'EXECUTE job model_id must match source document\'s model_id, not parent job\'s model_id');
+	assertEquals(payload.inputs?.thesis_id, 'doc-model-a', 'Should reference the correct source document');
+});
+
+Deno.test('planPerSourceDocument: When ONLY header_contexts exist (matching parent model), creates one job per header_context', () => {
+	// Per documentation: "Document generation from header | per_source_document | One job per header_context"
+	// When findSourceDocuments returns only header_contexts (no other documents), we should iterate over them
+	// and create one job per header_context, using each header_context as an input to its own job
+	
+	const headerContextModelA: SourceDocument = {
+		id: 'hc-model-a-only',
+		contribution_type: 'header_context',
+		content: 'Header context from model A',
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		stage: 'thesis',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		file_name: 'model-a_0_header_context.json',
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-xyz/session_abc/iteration_1/1_thesis',
+		model_id: 'model-a',
+		model_name: 'Model A',
+		prompt_template_id_used: 'p1',
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 1,
+		tokens_used_output: 1,
+		processing_time_ms: 1,
+		error: null,
+		citations: null,
+		size_bytes: 1,
+		mime_type: 'application/json',
+		target_contribution_id: null,
+		document_relationships: null,
+		is_header: false,
+		source_prompt_resource_id: null,
+		document_key: undefined,
+		attempt_count: 0,
+	};
+
+	const parentJobForModelA: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		id: MOCK_PARENT_JOB.id,
+		session_id: MOCK_PARENT_JOB.session_id,
+		user_id: MOCK_PARENT_JOB.user_id,
+		stage_slug: MOCK_PARENT_JOB.stage_slug,
+		iteration_number: MOCK_PARENT_JOB.iteration_number,
+		payload: {
+			projectId: MOCK_PARENT_JOB.payload.projectId,
+			sessionId: MOCK_PARENT_JOB.payload.sessionId,
+			stageSlug: MOCK_PARENT_JOB.payload.stageSlug,
+			iterationNumber: MOCK_PARENT_JOB.payload.iterationNumber,
+			model_id: 'model-a',
+			walletId: MOCK_PARENT_JOB.payload.walletId,
+			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+		},
+		attempt_count: MOCK_PARENT_JOB.attempt_count,
+		completed_at: MOCK_PARENT_JOB.completed_at,
+		created_at: MOCK_PARENT_JOB.created_at,
+		error_details: MOCK_PARENT_JOB.error_details,
+		max_retries: MOCK_PARENT_JOB.max_retries,
+		parent_job_id: MOCK_PARENT_JOB.parent_job_id,
+		prerequisite_job_id: MOCK_PARENT_JOB.prerequisite_job_id,
+		results: MOCK_PARENT_JOB.results,
+		started_at: MOCK_PARENT_JOB.started_at,
+		status: MOCK_PARENT_JOB.status,
+		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
+		is_test_job: MOCK_PARENT_JOB.is_test_job,
+		job_type: MOCK_PARENT_JOB.job_type,
+	};
+
+	const executeRecipeStepWithHeaderContext: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
+		inputs_required: [
+			{ type: 'header_context', slug: 'thesis', required: true },
+		],
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.business_case,
+				template_filename: 'business_case.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [{
+				from_document_key: FileType.business_case,
+				template_filename: 'business_case.md',
+			}],
+		},
+	};
+
+	// ONLY header_context exists (no other documents) - this simulates what findSourceDocuments returns
+	// when the EXECUTE step only requires header_context input
+	const sourceDocs = [headerContextModelA];
+	const childPayloads = planPerSourceDocument(sourceDocs, parentJobForModelA, executeRecipeStepWithHeaderContext, parentJobForModelA.payload.user_jwt);
+
+	// Per documentation line 186: "Document generation from header | per_source_document | One job per header_context"
+	// When ONLY header_contexts exist, we should create one job per header_context
+	assertEquals(childPayloads.length, 1, 'Should create 1 job for the header_context when only header_contexts exist');
+	const payload = childPayloads[0];
+	if (!isDialecticExecuteJobPayload(payload)) {
+		throw new Error('Expected EXECUTE job');
+	}
+	assertEquals(payload.inputs?.header_context_id, 'hc-model-a-only', 'Job should use the header_context as input');
+	assertEquals(payload.model_id, 'model-a', 'Child job should have the header_context\'s model_id');
+});
+
+Deno.test('planPerSourceDocument selects anchor from ALL source documents, not just filtered ones', () => {
+	// RED test: Proves that selectAnchorSourceDocument is incorrectly passed only filteredSourceDocs
+	// (documents matching parent model_id) instead of ALL sourceDocs.
+	//
+	// Scenario (Antithesis stage):
+	// - Parent job has model_id='model-b' (the critiquing model)
+	// - sourceDocs contains:
+	//   - header_context from model-b (stage: antithesis) <- filtered in
+	//   - thesis documents from model-a, model-b, model-c (stage: thesis) <- model-a and model-c filtered OUT
+	// - inputs_required asks for 'document' from 'thesis' stage with document_key 'business_case'
+	// - inputs_relevance says business_case has highest relevance (1.0)
+	//
+	// Current bug: filteredSourceDocs only has model-b's header_context (stage: antithesis),
+	// so selectAnchorSourceDocument cannot find the thesis business_case anchor and throws.
+	//
+	// Expected: selectAnchorSourceDocument should receive ALL sourceDocs to find the anchor,
+	// then the planner filters for job creation separately.
+
+	const parentPayload = MOCK_PARENT_JOB.payload;
+	if (!parentPayload) {
+		throw new Error('Test setup error: MOCK_PARENT_JOB.payload cannot be null');
+	}
+
+	// Parent job is for model-b (the critiquing model) in antithesis stage
+	const parentJobForModelB: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		...MOCK_PARENT_JOB,
+		stage_slug: 'antithesis',
+		payload: {
+			projectId: parentPayload.projectId,
+			sessionId: parentPayload.sessionId,
+			stageSlug: 'antithesis',
+			iterationNumber: parentPayload.iterationNumber,
+			model_id: 'model-b', // The critiquing model
+			walletId: parentPayload.walletId,
+			user_jwt: parentPayload.user_jwt,
+		},
+	};
+
+	// Header context from model-b (antithesis stage) - this will be in filteredSourceDocs
+	const headerContextModelB: SourceDocument = {
+		id: 'hc-model-b-antithesis',
+		contribution_type: 'header_context',
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		stage: 'antithesis',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		file_name: 'model-b_critiquing_model-a_0_header_context.json',
+		storage_bucket: 'dialectic-contributions',
+		storage_path: 'project-xyz/session_abc/iteration_1/2_antithesis/_work/context',
+		model_id: 'model-b',
+		model_name: 'Model B',
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 100,
+		mime_type: 'application/json',
+		target_contribution_id: null,
+		document_relationships: { source_group: 'lineage-a' },
+		is_header: true,
+		source_prompt_resource_id: null,
+		attempt_count: 0,
+	};
+
+	// Thesis business_case from model-a - this will be FILTERED OUT (model-a !== model-b)
+	const thesisBusinessCaseModelA: SourceDocument = {
+		id: 'thesis-bc-model-a',
+		contribution_type: 'document',
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		stage: 'thesis',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		file_name: 'model-a_0_business_case.md',
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-xyz/session_abc/iteration_1/1_thesis/documents',
+		model_id: 'model-a', // Different from parent model_id!
+		model_name: 'Model A',
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 1000,
+		mime_type: 'text/markdown',
+		target_contribution_id: null,
+		document_relationships: { source_group: 'lineage-a', thesis: 'thesis-bc-model-a' },
+		is_header: false,
+		source_prompt_resource_id: null,
+		document_key: FileType.business_case,
+		attempt_count: 0,
+	};
+
+	// All source documents from findSourceDocuments
+	const sourceDocs: SourceDocument[] = [headerContextModelB, thesisBusinessCaseModelA];
+
+	// Antithesis recipe step that requires thesis documents as input
+	const antithesisRecipeStep: DialecticStageRecipeStep = {
+		id: 'antithesis-critique-step',
+		instance_id: 'instance-id-123',
+		template_step_id: 'template-step-id-456',
+		step_key: 'antithesis_generate_critique',
+		step_slug: 'generate-critique',
+		step_name: 'Generate Critique',
+		step_description: 'Critique the thesis documents',
+		prompt_template_id: 'antithesis-critique-template',
+		prompt_type: 'Turn',
+		job_type: 'EXECUTE',
+		inputs_required: [
+			{ type: 'header_context', slug: 'antithesis', required: true },
+			{ type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true },
+		],
+		inputs_relevance: [
+			{ document_key: FileType.business_case, relevance: 1.0 },
+		],
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.business_case_critique,
+				template_filename: 'business_case_critique.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [{
+				from_document_key: FileType.business_case_critique,
+				template_filename: 'business_case_critique.md',
+			}],
+		},
+		granularity_strategy: 'per_source_document',
+		output_type: FileType.business_case_critique,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		config_override: {},
+		is_skipped: false,
+		object_filter: {},
+		output_overrides: {},
+		branch_key: null,
+		execution_order: 1,
+		parallel_group: null,
+	};
+
+	// This should NOT throw - the anchor (thesis business_case) exists in sourceDocs
+	// But current implementation throws because it only passes filteredSourceDocs to selectAnchorSourceDocument,
+	// and thesisBusinessCaseModelA is filtered out (model-a !== model-b)
+	const childPayloads = planPerSourceDocument(
+		sourceDocs,
+		parentJobForModelB,
+		antithesisRecipeStep,
+		parentJobForModelB.payload.user_jwt
+	);
+
+	// Should create 1 job for model-b's header_context
+	assertEquals(childPayloads.length, 1, 'Should create 1 child job for model-b header_context');
+
+	const payload = childPayloads[0];
+	if (!isDialecticExecuteJobPayload(payload)) {
+		throw new Error('Expected EXECUTE job');
+	}
+
+	// The anchor should be found from the thesis business_case (model-a), even though
+	// the parent job is for model-b
+	assertExists(
+		payload.canonicalPathParams?.sourceAnchorModelSlug,
+		'canonicalPathParams.sourceAnchorModelSlug should be set from thesis anchor document'
+	);
+	assertEquals(
+		payload.canonicalPathParams.sourceAnchorModelSlug,
+		'model-a',
+		'sourceAnchorModelSlug should be model-a (from thesis business_case anchor), not model-b'
 	);
 });
  

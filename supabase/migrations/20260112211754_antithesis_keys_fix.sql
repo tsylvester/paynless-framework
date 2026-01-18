@@ -881,3 +881,289 @@ BEGIN
     WHERE e.id = ed.executor_id;
   END LOOP;
 END $$;
+
+-- ---------------------------------------------------------------------------
+-- Synthesis pairwise granularity_strategy fix
+-- Updates Step 2 pairwise steps to use 'pairwise_by_origin' instead of 'per_source_document'
+-- ---------------------------------------------------------------------------
+
+DO $$
+DECLARE
+  v_pairwise_step_keys text[] := ARRAY[
+    'synthesis_pairwise_business_case',
+    'synthesis_pairwise_feature_spec',
+    'synthesis_pairwise_technical_approach',
+    'synthesis_pairwise_success_metrics'
+  ];
+  v_step_key text;
+BEGIN
+  -- Update template steps
+  FOREACH v_step_key IN ARRAY v_pairwise_step_keys
+  LOOP
+    UPDATE public.dialectic_recipe_template_steps
+    SET granularity_strategy = 'pairwise_by_origin',
+        updated_at = now()
+    WHERE step_key = v_step_key
+      AND granularity_strategy = 'per_source_document';
+    
+    IF NOT FOUND THEN
+      RAISE WARNING 'Template step with step_key=% not found or already updated', v_step_key;
+    END IF;
+  END LOOP;
+
+  -- Update instance steps
+  FOREACH v_step_key IN ARRAY v_pairwise_step_keys
+  LOOP
+    UPDATE public.dialectic_stage_recipe_steps
+    SET granularity_strategy = 'pairwise_by_origin',
+        updated_at = now()
+    WHERE step_key = v_step_key
+      AND granularity_strategy = 'per_source_document';
+    
+    IF NOT FOUND THEN
+      RAISE WARNING 'Instance step with step_key=% not found or already updated', v_step_key;
+    END IF;
+  END LOOP;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Synthesis consolidation granularity_strategy fix
+-- Updates Step 3 consolidation steps to use 'per_model' instead of 'all_to_one'
+-- ---------------------------------------------------------------------------
+
+DO $$
+DECLARE
+  v_consolidation_step_keys text[] := ARRAY[
+    'synthesis_document_business_case',
+    'synthesis_document_feature_spec',
+    'synthesis_document_technical_approach',
+    'synthesis_document_success_metrics'
+  ];
+  v_step_key text;
+BEGIN
+  -- Update template steps
+  FOREACH v_step_key IN ARRAY v_consolidation_step_keys
+  LOOP
+    UPDATE public.dialectic_recipe_template_steps
+    SET granularity_strategy = 'per_model',
+        updated_at = now()
+    WHERE step_key = v_step_key
+      AND granularity_strategy = 'all_to_one';
+    
+    IF NOT FOUND THEN
+      RAISE WARNING 'Template step with step_key=% not found or already updated', v_step_key;
+    END IF;
+  END LOOP;
+
+  -- Update instance steps
+  FOREACH v_step_key IN ARRAY v_consolidation_step_keys
+  LOOP
+    UPDATE public.dialectic_stage_recipe_steps
+    SET granularity_strategy = 'per_model',
+        updated_at = now()
+    WHERE step_key = v_step_key
+      AND granularity_strategy = 'all_to_one';
+    
+    IF NOT FOUND THEN
+      RAISE WARNING 'Instance step with step_key=% not found or already updated', v_step_key;
+    END IF;
+  END LOOP;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Paralysis multi-input granularity_strategy fix
+-- Updates EXECUTE steps to use 'per_model' instead of 'per_source_document' for steps requiring bundled inputs
+-- ---------------------------------------------------------------------------
+
+DO $$
+DECLARE
+  v_paralysis_step_keys text[] := ARRAY[
+    'generate-actionable-checklist',
+    'generate-updated-master-plan',
+    'generate-advisor-recommendations'
+  ];
+  v_step_key text;
+BEGIN
+  -- Update template steps
+  FOREACH v_step_key IN ARRAY v_paralysis_step_keys
+  LOOP
+    UPDATE public.dialectic_recipe_template_steps
+    SET granularity_strategy = 'per_model',
+        updated_at = now()
+    WHERE step_key = v_step_key
+      AND granularity_strategy = 'per_source_document';
+    
+    IF NOT FOUND THEN
+      RAISE WARNING 'Template step with step_key=% not found or already updated', v_step_key;
+    END IF;
+  END LOOP;
+
+  -- Update instance steps
+  FOREACH v_step_key IN ARRAY v_paralysis_step_keys
+  LOOP
+    UPDATE public.dialectic_stage_recipe_steps
+    SET granularity_strategy = 'per_model',
+        updated_at = now()
+    WHERE step_key = v_step_key
+      AND granularity_strategy = 'per_source_document';
+
+    IF NOT FOUND THEN
+      RAISE WARNING 'Instance step with step_key=% not found or already updated', v_step_key;
+    END IF;
+  END LOOP;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Antithesis inputs_relevance tie-breaker fix
+-- Fixes tied relevance scores (0.95) for business_case and feature_spec.
+-- For comparison/evaluation of technical proposals, feature_spec (what they're
+-- building) is more relevant than business_case (why they're building it).
+-- This ensures deterministic anchor selection in selectAnchorSourceDocument.
+-- ---------------------------------------------------------------------------
+
+DO $$
+DECLARE
+  v_step_keys text[] := ARRAY[
+    'antithesis_generate_comparison_vector'
+  ];
+  v_step_key text;
+BEGIN
+  -- The old relevance array has business_case and feature_spec both at 0.95:
+  -- [{"document_key":"header_context","relevance":1.0},{"document_key":"business_case","relevance":0.95},{"document_key":"feature_spec","relevance":0.95},...
+  -- We change business_case to 0.90 so feature_spec (0.95) is the clear winner for anchor selection.
+
+  FOREACH v_step_key IN ARRAY v_step_keys
+  LOOP
+    -- Update template steps
+    UPDATE public.dialectic_recipe_template_steps
+    SET inputs_relevance = (
+      SELECT jsonb_agg(
+        CASE
+          WHEN elem->>'document_key' = 'business_case' AND (elem->>'relevance')::numeric = 0.95 AND NOT (elem ? 'type')
+          THEN jsonb_set(elem, '{relevance}', '0.90'::jsonb)
+          ELSE elem
+        END
+        ORDER BY ord
+      )
+      FROM jsonb_array_elements(inputs_relevance) WITH ORDINALITY AS t(elem, ord)
+    ),
+    updated_at = now()
+    WHERE step_key = v_step_key
+      AND inputs_relevance IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM jsonb_array_elements(inputs_relevance) elem
+        WHERE elem->>'document_key' = 'business_case'
+          AND (elem->>'relevance')::numeric = 0.95
+          AND NOT (elem ? 'type')
+      );
+
+    -- Update instance steps
+    UPDATE public.dialectic_stage_recipe_steps
+    SET inputs_relevance = (
+      SELECT jsonb_agg(
+        CASE
+          WHEN elem->>'document_key' = 'business_case' AND (elem->>'relevance')::numeric = 0.95 AND NOT (elem ? 'type')
+          THEN jsonb_set(elem, '{relevance}', '0.90'::jsonb)
+          ELSE elem
+        END
+        ORDER BY ord
+      )
+      FROM jsonb_array_elements(inputs_relevance) WITH ORDINALITY AS t(elem, ord)
+    ),
+    updated_at = now()
+    WHERE step_key = v_step_key
+      AND inputs_relevance IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM jsonb_array_elements(inputs_relevance) elem
+        WHERE elem->>'document_key' = 'business_case'
+          AND (elem->>'relevance')::numeric = 0.95
+          AND NOT (elem ? 'type')
+      );
+  END LOOP;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Synthesis comparison_vector input type fix
+-- Corrects input type for 'comparison_vector' from 'document' to 'contribution'
+-- in Synthesis stages, as comparison_vector is not a rendered document.
+-- ---------------------------------------------------------------------------
+
+DO $$
+DECLARE
+  v_step_keys text[] := ARRAY[
+    'synthesis_prepare_pairwise_header',
+    'synthesis_pairwise_business_case',
+    'synthesis_pairwise_feature_spec',
+    'synthesis_pairwise_technical_approach',
+    'synthesis_pairwise_success_metrics'
+  ];
+  v_step_key text;
+BEGIN
+  FOREACH v_step_key IN ARRAY v_step_keys
+  LOOP
+    -- Update template steps
+    UPDATE public.dialectic_recipe_template_steps
+    SET inputs_required = (
+      SELECT jsonb_agg(
+        CASE
+          WHEN elem->>'document_key' = 'comparison_vector' AND elem->>'type' = 'document'
+          THEN jsonb_set(elem, '{type}', '"contribution"'::jsonb)
+          ELSE elem
+        END
+        ORDER BY ord
+      )
+      FROM jsonb_array_elements(inputs_required) WITH ORDINALITY AS t(elem, ord)
+    ),
+    updated_at = now()
+    WHERE step_key = v_step_key
+      AND inputs_required IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM jsonb_array_elements(inputs_required) elem
+        WHERE elem->>'document_key' = 'comparison_vector'
+          AND elem->>'type' = 'document'
+      );
+
+    -- Update instance steps
+    UPDATE public.dialectic_stage_recipe_steps
+    SET inputs_required = (
+      SELECT jsonb_agg(
+        CASE
+          WHEN elem->>'document_key' = 'comparison_vector' AND elem->>'type' = 'document'
+          THEN jsonb_set(elem, '{type}', '"contribution"'::jsonb)
+          ELSE elem
+        END
+        ORDER BY ord
+      )
+      FROM jsonb_array_elements(inputs_required) WITH ORDINALITY AS t(elem, ord)
+    ),
+    updated_at = now()
+    WHERE step_key = v_step_key
+      AND inputs_required IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM jsonb_array_elements(inputs_required) elem
+        WHERE elem->>'document_key' = 'comparison_vector'
+          AND elem->>'type' = 'document'
+      );
+  END LOOP;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Synthesis prepare_pairwise_header output key fix
+-- Sets branch_key to 'header_context_pairwise' for synthesis_prepare_pairwise_header
+-- to ensure the output file is named correctly for downstream consumers.
+-- ---------------------------------------------------------------------------
+
+DO $$
+BEGIN
+    -- Update template step
+    UPDATE public.dialectic_recipe_template_steps
+    SET branch_key = 'header_context_pairwise',
+        updated_at = now()
+    WHERE step_key = 'synthesis_prepare_pairwise_header';
+
+    -- Update instance step
+    UPDATE public.dialectic_stage_recipe_steps
+    SET branch_key = 'header_context_pairwise',
+        updated_at = now()
+    WHERE step_key = 'synthesis_prepare_pairwise_header';
+END $$;

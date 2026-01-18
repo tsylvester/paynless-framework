@@ -351,6 +351,128 @@ describe('findSourceDocuments', () => {
         assertEquals(documents[0].id, 'header-context-contribution-id');
     });
 
+    it("returns only the header_context matching the parent job's model_id when multiple models exist", async () => {
+        // Given: 3 header_context contributions with different model_ids (A, B, C)
+        // Given: Parent job has model_id = 'model-A'
+        // Expect: findSourceDocuments returns only the header_context with model_id = 'model-A'
+
+        const rule: InputRule[] = [{ type: 'header_context', slug: 'thesis' }];
+
+        const mockHeaderContextModelA: DialecticContributionRow = {
+            id: 'header-context-model-A',
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            stage: 'thesis',
+            iteration_number: 1,
+            model_id: 'model-A',
+            model_name: 'Model A',
+            prompt_template_id_used: 'prompt-1',
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 10,
+            tokens_used_output: 20,
+            processing_time_ms: 100,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: 'header_context',
+            file_name: 'header_model_a.json',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis/_work/context',
+            size_bytes: 80,
+            mime_type: 'application/json',
+            document_relationships: null,
+            is_header: true,
+            source_prompt_resource_id: null,
+        };
+
+        const mockHeaderContextModelB: DialecticContributionRow = {
+            ...mockHeaderContextModelA,
+            id: 'header-context-model-B',
+            model_id: 'model-B',
+            model_name: 'Model B',
+            file_name: 'header_model_b.json',
+        };
+
+        const mockHeaderContextModelC: DialecticContributionRow = {
+            ...mockHeaderContextModelA,
+            id: 'header-context-model-C',
+            model_id: 'model-C',
+            model_name: 'Model C',
+            file_name: 'header_model_c.json',
+        };
+
+        // Set parent job to model-A
+        mockParentJob.payload.model_id = 'model-A';
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () =>
+                        Promise.resolve({
+                            data: null,
+                            error: new Error('header_context test must not query project_resources'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
+                        }),
+                },
+                dialectic_contributions: {
+                    select: (state: MockQueryBuilderState) => {
+                        // Verify standard filters are applied
+                        const hasContributionTypeFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'contribution_type' &&
+                                filter.value === 'header_context',
+                        );
+                        if (!hasContributionTypeFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('must filter by contribution_type'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing contribution_type filter',
+                            });
+                        }
+
+                        // Simulate DB filtering: Filter data based on model_id if present in query
+                        const allData = [mockHeaderContextModelB, mockHeaderContextModelC, mockHeaderContextModelA];
+                        const modelIdFilter = state.filters.find(
+                            (filter) => filter.type === 'eq' && filter.column === 'model_id'
+                        );
+                        
+                        const filteredData = modelIdFilter
+                            ? allData.filter(d => d.model_id === modelIdFilter.value)
+                            : allData;
+
+                        return Promise.resolve({
+                            data: filteredData,
+                            error: null,
+                            count: filteredData.length,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(documents.length, 1, 'Should return exactly 1 header_context');
+        assertEquals(documents[0].model_id, 'model-A');
+    });
+
     it("successfully returns a document from resources using the 'slug' property", async () => {
         const rule: InputRule[] = [{ type: 'document', slug: 'thesis' }];
         const mockThesisResource: DialecticProjectResourceRow = {
@@ -1124,14 +1246,17 @@ describe('findSourceDocuments', () => {
         assertEquals(documents[0].id, 'general-resource-id');
     });
 
-    it("throws when a 'project_resource' rule cannot find an unused resource", async () => {
+    it("returns the same resource once when multiple rules require the same project_resource", async () => {
+        // Updated: findSourceDocuments now returns ALL matching documents without "consuming" them.
+        // Multiple rules requesting the same resource get it returned once (deduped).
+        // The planner is responsible for distribution, not findSourceDocuments.
         const rules: InputRule[] = [
             { type: 'project_resource', slug: 'test-stage', document_key: FileType.GeneralResource },
             { type: 'project_resource', slug: 'test-stage', document_key: FileType.GeneralResource },
         ];
 
         const projectResource: DialecticProjectResourceRow = {
-            id: 'general-resource-consumed',
+            id: 'general-resource-shared',
             project_id: 'proj-1',
             user_id: 'user-123',
             file_name: 'general_resource.md',
@@ -1164,16 +1289,15 @@ describe('findSourceDocuments', () => {
             },
         });
 
-        await assertRejects(
-            () =>
-                findSourceDocuments(
-                    mockSupabase.client as unknown as SupabaseClient<Database>,
-                    mockParentJob,
-                    rules,
-                ),
-            Error,
-            "A required input of type 'project_resource' was not found for the current job.",
+        // Should NOT throw - same resource satisfies both rules, returned once
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rules,
         );
+
+        assertEquals(documents.length, 1, 'Should return the resource once (deduped)');
+        assertEquals(documents[0].id, 'general-resource-shared');
     });
 
     it('enforces column predicates and rejects JSON-path filters for rendered document resources', async () => {
@@ -1845,6 +1969,121 @@ describe('findSourceDocuments', () => {
         assertEquals(feedbackDoc!.content, '', 'feedback type should have empty content');
     });
 
+    it("successfully returns a 'contribution' input type from dialectic_contributions", async () => {
+        const rule: InputRule[] = [{ type: 'contribution', slug: 'test-stage', document_key: FileType.comparison_vector }];
+        const mockContribution: DialecticContributionRow = {
+            id: 'contribution-id',
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            stage: 'test-stage',
+            iteration_number: 1,
+            model_id: 'model-1',
+            model_name: 'Test Model',
+            prompt_template_id_used: 'prompt-1',
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 10,
+            tokens_used_output: 20,
+            processing_time_ms: 100,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: 'comparison_vector',
+            file_name: 'comparison_vector.json',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/raw_responses',
+            size_bytes: 80,
+            mime_type: 'application/json',
+            document_relationships: null,
+            is_header: false,
+            source_prompt_resource_id: null,
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () =>
+                        Promise.resolve({
+                            data: null,
+                            error: new Error('contribution type test must not query project_resources'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
+                        }),
+                },
+                dialectic_contributions: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasSessionFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'session_id' &&
+                                filter.value === mockContribution.session_id,
+                        );
+                        if (!hasSessionFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('contribution queries must scope by session_id'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing session_id filter',
+                            });
+                        }
+
+                        const hasIterationFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'iteration_number' &&
+                                filter.value === mockContribution.iteration_number,
+                        );
+                        if (!hasIterationFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('contribution queries must filter by iteration_number'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing iteration_number filter',
+                            });
+                        }
+
+                        // Check for document_key filtering (either ilike file_name OR eq contribution_type)
+                        const hasDocumentKeyFilter = state.filters.some(
+                            (filter) =>
+                                (filter.type === 'ilike' &&
+                                filter.column === 'file_name' &&
+                                String(filter.value).includes('comparison_vector')) ||
+                                (filter.type === 'eq' &&
+                                filter.column === 'contribution_type' &&
+                                filter.value === 'comparison_vector')
+                        );
+                        
+                        return Promise.resolve({
+                            data: [mockContribution],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(documents.length, 1);
+        assertEquals(documents[0].id, 'contribution-id');
+        assertEquals(documents[0].contribution_type, 'comparison_vector');
+    });
+
     // Step 54.b.i: Test that when resources exist, contributions are NOT queried
     it('queries resources first and does not query contributions when resources are found', async () => {
         const rule: InputRule[] = [{
@@ -2203,16 +2442,150 @@ describe('findSourceDocuments', () => {
         assertEquals(documents[0].contribution_type, 'header_context', 'should have correct contribution_type');
     });
 
+    it('populates document_relationships from source contribution when returning rendered documents', async () => {
+        // When findSourceDocuments returns a rendered document from dialectic_project_resources,
+        // it should use source_contribution_id to fetch the contribution's document_relationships
+        // and merge them into the returned SourceDocument.
+        const rule: InputRule[] = [{
+            type: 'document',
+            slug: 'thesis',
+            document_key: FileType.business_case,
+        }];
+
+        const sourceContributionId = 'contrib-with-doc-rels';
+        const expectedSourceGroup = 'lineage-group-abc';
+
+        const mockResource: DialecticProjectResourceRow = {
+            id: 'rendered-doc-with-lineage',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'sess-1_thesis_business_case_v1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/markdown',
+            size_bytes: 4096,
+            resource_description: { type: 'document', document_key: FileType.business_case },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: sourceContributionId,
+            stage_slug: 'thesis',
+        };
+
+        const mockSourceContribution: DialecticContributionRow = {
+            id: sourceContributionId,
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            stage: 'thesis',
+            iteration_number: 1,
+            model_id: 'model-1',
+            model_name: 'Test Model',
+            prompt_template_id_used: 'prompt-1',
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 10,
+            tokens_used_output: 20,
+            processing_time_ms: 100,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: 'thesis',
+            file_name: 'sess-1_thesis_business_case_v1.json',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
+            size_bytes: 123,
+            mime_type: 'application/json',
+            document_relationships: { source_group: expectedSourceGroup, thesis: 'anchor-id-123' },
+            is_header: false,
+            source_prompt_resource_id: null,
+        };
+
+        let contributionQueryCalled = false;
+        let queriedContributionIds: string[] = [];
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () =>
+                        Promise.resolve({
+                            data: [mockResource],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        }),
+                },
+                dialectic_contributions: {
+                    select: (state: MockQueryBuilderState) => {
+                        contributionQueryCalled = true;
+                        // Capture the IDs being queried via .in() filter
+                        const inFilter = state.filters.find(
+                            (filter) => filter.type === 'in' && filter.column === 'id'
+                        );
+                        if (inFilter && Array.isArray(inFilter.value)) {
+                            queriedContributionIds = inFilter.value as string[];
+                        }
+                        return Promise.resolve({
+                            data: [mockSourceContribution],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(documents.length, 1, 'Should return one document');
+        assertEquals(documents[0].id, 'rendered-doc-with-lineage', 'Should return the rendered document');
+
+        // The key assertion: document_relationships should be populated from the source contribution
+        assertEquals(
+            contributionQueryCalled,
+            true,
+            'Should query contributions to fetch document_relationships for rendered document with source_contribution_id'
+        );
+        assertEquals(
+            queriedContributionIds.includes(sourceContributionId),
+            true,
+            'Should query the contribution by source_contribution_id using .in() filter'
+        );
+        assertEquals(
+            documents[0].document_relationships?.source_group,
+            expectedSourceGroup,
+            'Should have document_relationships.source_group from source contribution'
+        );
+        assertEquals(
+            (documents[0].document_relationships as Record<string, unknown>)?.thesis,
+            'anchor-id-123',
+            'Should have document_relationships.thesis from source contribution'
+        );
+    });
+
     it('should allow optional feedback to be missing without throwing an error', async () => {
         // RED test: Proves that optional feedback (required: false) should not cause an error
         // when no feedback records exist. This test will fail with current implementation
         // because findSourceDocuments throws an error even when required: false.
         const rules: InputRule[] = [
-            { 
-                type: 'feedback', 
-                slug: 'test-stage', 
+            {
+                type: 'feedback',
+                slug: 'test-stage',
                 document_key: FileType.business_case,
-                required: false 
+                required: false
             },
         ];
 
@@ -2243,5 +2616,199 @@ describe('findSourceDocuments', () => {
         // When optional feedback is missing, the function should return successfully
         // with an empty array (or continue processing other rules if present)
         assertEquals(documents.length, 0, 'Should return empty array when optional feedback is missing');
+    });
+
+    it('should return ALL matching documents for a document_key, not just the first one', async () => {
+        // RED test: Proves that findSourceDocuments returns only one document per document_key
+        // when multiple exist (e.g., 3 models each produced a business_case).
+        // The planner needs ALL documents to group them by lineage correctly.
+        // Current implementation returns only 1 due to selectRecordsForRule returning early.
+        const rules: InputRule[] = [
+            {
+                type: 'document',
+                slug: 'thesis',
+                document_key: FileType.business_case,
+                required: true,
+            },
+        ];
+
+        // Three business_case documents from three different models/lineages
+        const mockResource1: DialecticProjectResourceRow = {
+            id: 'business-case-model-a',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'model-a_0_business_case_lineage1.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis/documents',
+            mime_type: 'text/markdown',
+            size_bytes: 1000,
+            resource_description: { document_key: 'business_case' },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: 'contrib-model-a',
+            stage_slug: 'thesis',
+        };
+
+        const mockResource2: DialecticProjectResourceRow = {
+            id: 'business-case-model-b',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'model-b_0_business_case_lineage2.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis/documents',
+            mime_type: 'text/markdown',
+            size_bytes: 1100,
+            resource_description: { document_key: 'business_case' },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: 'contrib-model-b',
+            stage_slug: 'thesis',
+        };
+
+        const mockResource3: DialecticProjectResourceRow = {
+            id: 'business-case-model-c',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'model-c_0_business_case_lineage3.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis/documents',
+            mime_type: 'text/markdown',
+            size_bytes: 1200,
+            resource_description: { document_key: 'business_case' },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: 'contrib-model-c',
+            stage_slug: 'thesis',
+        };
+
+        // Mock contributions to provide document_relationships for each
+        const mockContributions = [
+            {
+                id: 'contrib-model-a',
+                document_relationships: {
+                    source_group: 'lineage-group-a',
+                    source_document: 'contrib-model-a',
+                    thesis: 'contrib-model-a',
+                },
+            },
+            {
+                id: 'contrib-model-b',
+                document_relationships: {
+                    source_group: 'lineage-group-b',
+                    source_document: 'contrib-model-b',
+                    thesis: 'contrib-model-b',
+                },
+            },
+            {
+                id: 'contrib-model-c',
+                document_relationships: {
+                    source_group: 'lineage-group-c',
+                    source_document: 'contrib-model-c',
+                    thesis: 'contrib-model-c',
+                },
+            },
+        ];
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () =>
+                        Promise.resolve({
+                            data: [mockResource1, mockResource2, mockResource3],
+                            error: null,
+                            count: 3,
+                            status: 200,
+                            statusText: 'OK',
+                        }),
+                },
+                dialectic_contributions: {
+                    select: (state: MockQueryBuilderState) => {
+                        // Return contributions matching the .in() filter
+                        const inFilter = state.filters.find(
+                            (filter) => filter.type === 'in' && filter.column === 'id'
+                        );
+                        if (inFilter && Array.isArray(inFilter.value)) {
+                            const requestedIds = inFilter.value as string[];
+                            const matchingContribs = mockContributions.filter(c =>
+                                requestedIds.includes(c.id)
+                            );
+                            return Promise.resolve({
+                                data: matchingContribs,
+                                error: null,
+                                count: matchingContribs.length,
+                                status: 200,
+                                statusText: 'OK',
+                            });
+                        }
+                        return Promise.resolve({
+                            data: [],
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rules,
+        );
+
+        // The planner needs ALL 3 documents to group them by lineage.
+        // Current implementation returns only 1 because selectRecordsForRule
+        // returns [record] (first unused) when allowMultiple is false.
+        assertEquals(
+            documents.length,
+            3,
+            'findSourceDocuments must return ALL matching documents (3), not just the first one. ' +
+            'The planner needs all documents to group them by lineage correctly. ' +
+            `Actual count: ${documents.length}`
+        );
+
+        // Verify all three documents are present with distinct IDs
+        const documentIds = documents.map(d => d.id);
+        assertEquals(
+            documentIds.includes('business-case-model-a'),
+            true,
+            'Should include business_case from model A'
+        );
+        assertEquals(
+            documentIds.includes('business-case-model-b'),
+            true,
+            'Should include business_case from model B'
+        );
+        assertEquals(
+            documentIds.includes('business-case-model-c'),
+            true,
+            'Should include business_case from model C'
+        );
+
+        // Verify each document has its correct lineage from document_relationships
+        const lineageGroups = documents
+            .map(d => d.document_relationships?.source_group)
+            .filter((sg): sg is string => sg !== null && sg !== undefined);
+        assertEquals(
+            lineageGroups.length,
+            3,
+            'All 3 documents should have document_relationships with source_group'
+        );
+        assertEquals(
+            new Set(lineageGroups).size,
+            3,
+            'Each document should have a distinct lineage (source_group)'
+        );
     });
 });

@@ -8,6 +8,7 @@ import {
   ModelContributionFileTypes,
   ResourceFileTypes,
   DocumentKey,
+  DocumentRelated,
   FileManagerError,
 } from '../../types/file_manager.types.ts'
 import { OutputType } from '../../../dialectic-service/dialectic.interface.ts'
@@ -107,6 +108,7 @@ export function isFileType(value: unknown): value is FileType {
 const MODEL_CONTRIBUTION_FILE_TYPES_MAP: { [K in ModelContributionFileTypes]: true } = {
     [FileType.ModelContributionRawJson]: true,
     [FileType.HeaderContext]: true,
+    [FileType.AssembledDocumentJson]: true,
     [FileType.PairwiseSynthesisChunk]: true,
     [FileType.ReducedSynthesis]: true,
     [FileType.Synthesis]: true,
@@ -208,6 +210,24 @@ const DOCUMENT_KEY_MAP: { [K in DocumentKey]: true } = {
 
 export function isDocumentKey(value: FileType): value is DocumentKey {
     return Object.prototype.hasOwnProperty.call(DOCUMENT_KEY_MAP, value);
+}
+
+const DOCUMENT_RELATED_ADDITIONAL_MAP: { [K in Exclude<DocumentRelated, DocumentKey>]: true } = {
+    [FileType.AssembledDocumentJson]: true,
+    [FileType.ModelContributionRawJson]: true,
+    [FileType.RenderedDocument]: true,
+};
+
+export function isDocumentRelated(value: unknown): value is DocumentRelated {
+    if (typeof value !== 'string') {
+        return false;
+    }
+    // Check if it matches any DocumentKey
+    if (Object.prototype.hasOwnProperty.call(DOCUMENT_KEY_MAP, value)) {
+        return true;
+    }
+    // Check if it matches the additional related types
+    return Object.prototype.hasOwnProperty.call(DOCUMENT_RELATED_ADDITIONAL_MAP, value);
 }
 
 export function isStorageError(error: FileManagerError): error is StorageError {

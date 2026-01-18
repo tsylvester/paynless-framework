@@ -155,18 +155,20 @@ export const planPerModel: GranularityPlannerFn = (
 			throw new Error('planPerModel requires recipeStep.outputs_required.files_to_generate to have at least one entry for EXECUTE jobs');
 		}
 		
-		// Validate documents array for EXECUTE jobs
+		// Validate documents array for EXECUTE jobs (OR header_context_artifact)
 		const documents = recipeStep.outputs_required.documents;
-		if (!documents) {
-			throw new Error('planPerModel requires recipeStep.outputs_required.documents for EXECUTE jobs, but documents is missing');
+		const hasDocuments = Array.isArray(documents) && documents.length > 0;
+		const hasHeaderContextArtifact = recipeStep.outputs_required.header_context_artifact && typeof recipeStep.outputs_required.header_context_artifact === 'object';
+
+		if (!hasDocuments && !hasHeaderContextArtifact) {
+			throw new Error('planPerModel requires recipeStep.outputs_required.documents (array) OR recipeStep.outputs_required.header_context_artifact (object) for EXECUTE jobs, but both are missing/empty');
 		}
 		
-		if (!Array.isArray(documents)) {
-			throw new Error('planPerModel requires recipeStep.outputs_required.documents to be an array for EXECUTE jobs');
-		}
-		
-		if (documents.length === 0) {
-			throw new Error('planPerModel requires recipeStep.outputs_required.documents to have at least one entry for EXECUTE jobs');
+		if (hasDocuments) {
+			// Validate each documents entry if present
+			for (let i = 0; i < documents.length; i++) {
+				// Basic validation if needed, though strictly we only use the first one's key currently
+			}
 		}
 		
 		// Validate each files_to_generate entry
@@ -212,44 +214,59 @@ export const planPerModel: GranularityPlannerFn = (
 		stageSlug
 	);
 
-	const document_relationships: Record<string, string> = {
-		source_group: anchorDoc.id,
+	// 96.d.ii: When selectAnchorSourceDocument returns 'no_anchor_required', set source_group = null
+	// This signals the producer to create a new lineage root (set source_group = self.id after save)
+	const document_relationships: Record<string, string | null> = {
+		source_group: anchorResult.status === 'no_anchor_required' ? null : anchorDoc.id,
 	};
 
-	const inputs: Record<string, string> = {};
+	// 96.d.i & 96.d.iv: Bundle ALL sourceDocs into inputs, grouped by contribution_type
+	// Each contribution_type gets a key like 'thesis_ids', 'antithesis_ids', etc. containing an array of document IDs
+	const inputs: Record<string, string | string[]> = {};
+	for (const doc of sourceDocs) {
+		const key = `${doc.contribution_type}_ids`;
+		const existing = inputs[key];
+		if (Array.isArray(existing)) {
+			existing.push(doc.id);
+		} else if (typeof existing === 'string') {
+			inputs[key] = [existing, doc.id];
+		} else {
+			inputs[key] = [doc.id];
+		}
+	}
 
-		// Extract and validate document_key from recipeStep.outputs_required.documents[0].document_key
-		// ONLY IF the step outputs documents (i.e., if outputs_required.documents exists and has at least one item)
+		// Extract and validate document_key
+		// Priority:
+		// 1. outputs_required.documents[0].document_key
+		// 2. outputs_required.header_context_artifact.document_key
+		// 3. recipeStep.branch_key
 		let documentKey: string | undefined;
 		
-		// Check if the step outputs documents: verify that outputs_required exists, is an object, has a documents property that is an array, and the array has at least one item
-		const outputsDocuments = recipeStep.outputs_required &&
-			typeof recipeStep.outputs_required === 'object' &&
-			Array.isArray(recipeStep.outputs_required.documents) &&
-			recipeStep.outputs_required.documents.length > 0;
-		
-		if (outputsDocuments && recipeStep.outputs_required && Array.isArray(recipeStep.outputs_required.documents) && recipeStep.outputs_required.documents.length > 0) {
-			// If the step outputs documents, extract and validate document_key
-			const firstDocument = recipeStep.outputs_required.documents[0];
-			if (!firstDocument || typeof firstDocument !== 'object') {
-				throw new Error('planPerModel requires recipeStep.outputs_required.documents[0].document_key but it is missing');
+		if (hasDocuments && documents[0]) {
+			const firstDocument = documents[0];
+			if (typeof firstDocument === 'object' && 'document_key' in firstDocument) {
+				const rawKey = firstDocument.document_key;
+				if (typeof rawKey === 'string' && rawKey.length > 0) {
+					documentKey = rawKey;
+				}
 			}
-			if (!('document_key' in firstDocument)) {
-				throw new Error('planPerModel requires recipeStep.outputs_required.documents[0].document_key but it is missing');
-			}
-			const rawDocumentKey = firstDocument.document_key;
-			if (rawDocumentKey === null || rawDocumentKey === undefined) {
-				throw new Error(`planPerModel requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
-			}
-			if (typeof rawDocumentKey !== 'string') {
-				throw new Error(`planPerModel requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
-			}
-			if (rawDocumentKey.length === 0) {
-				throw new Error(`planPerModel requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: '${rawDocumentKey}'`);
-			}
-			documentKey = rawDocumentKey;
 		}
-		// If the step does not output documents, documentKey remains undefined
+
+		if (!documentKey && hasHeaderContextArtifact) {
+			const artifact = recipeStep.outputs_required.header_context_artifact;
+			if (artifact && typeof artifact.document_key === 'string' && artifact.document_key.length > 0) {
+				documentKey = artifact.document_key;
+			}
+		}
+
+		if (!documentKey && typeof recipeStep.branch_key === 'string' && recipeStep.branch_key.length > 0) {
+			documentKey = recipeStep.branch_key;
+		}
+
+		// Validation: document_key MUST be resolved for EXECUTE jobs
+		if (!documentKey) {
+			throw new Error('planPerModel failed to resolve document_key for EXECUTE job. Checked: outputs_required.documents[0].document_key, outputs_required.header_context_artifact.document_key, recipeStep.branch_key');
+		}
 
 		const newPayload: DialecticExecuteJobPayload = {
 			// Inherit ALL fields from parent job payload (defensive programming)

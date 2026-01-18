@@ -23,6 +23,7 @@ Deno.test('path_constructor fragment support', async (t) => {
     const context: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
+      documentKey: 'header_context',
       sourceGroupFragment: 'a1b2c3d4',
     };
     const { fileName } = constructStoragePath(context);
@@ -153,6 +154,7 @@ Deno.test('path_constructor fragment support', async (t) => {
     const context: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
+      documentKey: 'header_context',
       modelSlug: 'claude',
       sourceAnchorModelSlug: 'gpt-4',
       attemptCount: 0,
@@ -167,6 +169,7 @@ Deno.test('path_constructor fragment support', async (t) => {
     const context: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
+      documentKey: 'header_context',
       modelSlug: 'gpt-4-turbo',
       attemptCount: 0,
       sourceGroupFragment: 'a1b2c3d4',
@@ -180,6 +183,7 @@ Deno.test('path_constructor fragment support', async (t) => {
     const headerContextSimple: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
+      documentKey: 'header_context',
       modelSlug: 'gpt-4-turbo',
       attemptCount: 0,
       stageSlug: 'thesis',
@@ -191,6 +195,7 @@ Deno.test('path_constructor fragment support', async (t) => {
     const headerContextAntithesis: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
+      documentKey: 'header_context',
       modelSlug: 'claude',
       sourceAnchorModelSlug: 'gpt-4',
       attemptCount: 0,
@@ -205,6 +210,7 @@ Deno.test('path_constructor fragment support', async (t) => {
     const context: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
+      documentKey: 'header_context',
       modelSlug: 'gpt-4-turbo',
       attemptCount: 0,
       sourceGroupFragment: 'A1-B2-C3', // Contains hyphens - should be sanitized
@@ -224,6 +230,7 @@ Deno.test('path_constructor fragment support', async (t) => {
     const contextEmptyString: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
+      documentKey: 'header_context',
       sourceGroupFragment: '', // Empty string should result in undefined fragment
     };
     const { fileName: fileNameEmpty } = constructStoragePath(contextEmptyString);
@@ -232,6 +239,7 @@ Deno.test('path_constructor fragment support', async (t) => {
     const contextUndefined: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
+      documentKey: 'header_context',
       sourceGroupFragment: undefined,
     };
     const { fileName: fileNameUndefined } = constructStoragePath(contextUndefined);
@@ -252,6 +260,7 @@ Deno.test('path_constructor fragment support', async (t) => {
     const context: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
+      documentKey: 'header_context',
       modelSlug: 'claude',
       sourceAnchorModelSlug: 'gpt-4', // Exists but stageSlug is 'thesis'
       attemptCount: 0,
@@ -281,6 +290,7 @@ Deno.test('path_constructor fragment support', async (t) => {
     const context: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
+      documentKey: 'header_context',
       modelSlug: 'claude',
       sourceAnchorModelSlug: undefined, // Missing even though stageSlug is 'antithesis'
       attemptCount: 0,

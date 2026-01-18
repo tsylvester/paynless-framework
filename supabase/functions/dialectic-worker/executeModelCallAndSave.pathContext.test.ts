@@ -813,3 +813,77 @@ Deno.test('executeModelCallAndSave propagates sourceAnchorModelSlug from canonic
     callUnifiedAISpy.restore();
     clearAllStubs?.();
 });
+
+Deno.test('executeModelCallAndSave - pathContext validation - 101.c: extracts document_key for assembled_document_json output type', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    });
+
+    const deps: IExecuteJobContext = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const fileManager: MockFileManagerService = deps.fileManager;
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+
+    const payload: DialecticExecuteJobPayload = {
+        prompt_template_id: 'test-prompt',
+        inputs: {},
+        output_type: FileType.AssembledDocumentJson,
+        projectId: 'project-123',
+        sessionId: 'session-123',
+        stageSlug: 'thesis',
+        model_id: 'model-def',
+        iterationNumber: 1,
+        continueUntilComplete: false,
+        walletId: 'wallet-ghi',
+        user_jwt: 'jwt.token.here',
+        document_key: 'business_case',
+        canonicalPathParams: {
+            contributionType: 'thesis',
+            stageSlug: 'thesis',
+        },
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+        },
+    };
+
+    const job = createMockJob(payload, {
+        attempt_count: 0,
+        job_type: 'EXECUTE',
+    });
+
+    const providerDetails: SelectedAiProvider = {
+        id: 'model-def',
+        provider: 'mock-provider',
+        name: 'Mock AI',
+        api_identifier: 'claude-opus',
+    };
+
+    const callUnifiedAISpy = stub(
+        deps,
+        'callUnifiedAIModel',
+        async (): Promise<UnifiedAIResponse> => ({
+            content: '{"content": "AI response content"}',
+            contentType: 'application/json',
+            inputTokens: 10,
+            outputTokens: 20,
+            processingTimeMs: 100,
+            finish_reason: 'stop',
+            rawProviderResponse: { mock: 'response' },
+        }),
+    );
+
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+        job,
+        providerDetails,
+    });
+
+    await executeModelCallAndSave(params);
+
+    assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
+    const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+    assert(isModelContributionContext(uploadContext), 'uploadContext should be ModelContributionUploadContext');
+    assertEquals(uploadContext.pathContext.documentKey, 'business_case', 'pathContext.documentKey should be extracted for AssembledDocumentJson');
+
+    callUnifiedAISpy.restore();
+    clearAllStubs?.();
+});

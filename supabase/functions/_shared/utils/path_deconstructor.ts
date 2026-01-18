@@ -65,8 +65,9 @@ export function deconstructStoragePath(
   const synthesisHeaderContextPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+)_(\\d+)_synthesis_header_context\\.json$";
   // HeaderContext patterns: antithesis pattern must be checked before simple pattern
   // Model slugs can contain hyphens, so use (.+?) non-greedy to stop at '_critiquing_'
-  const headerContextAntithesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+?)_critiquing_(.+?)(?:_([a-f0-9]{8}))?_(\\d+)_header_context\\.json$";
-  const headerContextPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+)_(\\d+)(?:_([a-f0-9]{8}))?_header_context\\.json$";
+  // documentKey can be any value like 'header_context', 'header_context_pairwise', etc.
+  const headerContextAntithesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+?)_critiquing_(.+?)(?:_([a-f0-9]{8}))?_(\\d+)_(.+)\\.json$";
+  const headerContextPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+)_(\\d+)(?:_([a-f0-9]{8}))?_(.+)\\.json$";
   // AssembledDocumentJson patterns: antithesis pattern must be checked before simple pattern
   // Model slugs can contain hyphens, so use (.+?) non-greedy to stop at '_critiquing_'
   const assembledJsonAntithesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/assembled_json/(.+?)_critiquing_(.+?)(?:_([a-f0-9]{8}))?_(\\d+)_(.+)_assembled\\.json$";
@@ -265,7 +266,7 @@ export function deconstructStoragePath(
     return info;
   }
 
-  // Path: .../_work/context/{modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_header_context.json
+  // Path: .../_work/context/{modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_{documentKey}.json
   matches = fullPath.match(new RegExp(headerContextAntithesisPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
@@ -277,12 +278,13 @@ export function deconstructStoragePath(
     info.sourceAnchorModelSlug = matches[6];
     info.sourceGroupFragment = matches[7] || undefined; // Optional fragment between sourceAnchorModelSlug and attemptCount
     info.attemptCount = parseInt(matches[8], 10);
+    info.documentKey = matches[9]; // Extract documentKey from filename
     info.contributionType = 'header_context';
     info.fileTypeGuess = FileType.HeaderContext;
     return info;
   }
 
-  // Path: .../_work/context/{modelSlug}_{attemptCount}[_{fragment}]_header_context.json
+  // Path: .../_work/context/{modelSlug}_{attemptCount}[_{fragment}]_{documentKey}.json
   matches = fullPath.match(new RegExp(headerContextPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
@@ -293,6 +295,7 @@ export function deconstructStoragePath(
     info.modelSlug = matches[5];
     info.attemptCount = parseInt(matches[6], 10);
     info.sourceGroupFragment = matches[7] || undefined; // Optional fragment after attemptCount
+    info.documentKey = matches[8]; // Extract documentKey from filename
     info.contributionType = 'header_context';
     info.fileTypeGuess = FileType.HeaderContext;
     return info;

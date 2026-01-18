@@ -73,6 +73,17 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 		throw new Error(`planPerSourceDocument requires job_type to be 'PLAN' or 'EXECUTE', received: ${recipeStep.job_type}`);
 	}
 
+	// 95.d.i: Extract model_id from parent job payload
+	const parentModelId = parentJob.payload.model_id;
+
+	// 95.d.ii: Filter sourceDocs to only include documents where doc.model_id === parentJob.payload.model_id
+	const filteredSourceDocs = sourceDocs.filter(doc => doc.model_id === parentModelId);
+
+	// 95.d.iii: If filtered list is empty, return empty array (no jobs for this model)
+	if (filteredSourceDocs.length === 0) {
+		return [];
+	}
+
 	// Handle PLAN and EXECUTE jobs separately
 	if (recipeStep.job_type === 'PLAN') {
 		// Validate context_for_documents for PLAN jobs
@@ -239,7 +250,7 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 		const requiresHeaderContext = Array.isArray(recipeStep.inputs_required)
 			&& recipeStep.inputs_required.some((rule) => rule?.type === 'header_context');
 		const headerContextId = requiresHeaderContext
-			? sourceDocs.find((d) => d.contribution_type === 'header_context')?.id
+			? filteredSourceDocs.find((d) => d.contribution_type === 'header_context')?.id
 			: undefined;
 		if (requiresHeaderContext && (typeof headerContextId !== 'string' || headerContextId.length === 0)) {
 			throw new Error("planPerSourceDocument requires a sourceDoc with contribution_type 'header_context' when recipeStep.inputs_required includes header_context");
@@ -249,6 +260,10 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 
 		// Select canonical anchor once for all child jobs based on recipe relevance,
 		// not varying per iteration
+		// 95.d.v: Handle 'derive_from_header_context' status from selectAnchorSourceDocument
+		// IMPORTANT: Pass ALL sourceDocs (not filteredSourceDocs) to selectAnchorSourceDocument.
+		// The anchor may come from a different model's output (e.g., thesis documents from model-a
+		// when the parent job is for model-b in antithesis stage). Filtering is only for job creation.
 		const anchorResult: SelectAnchorResult = selectAnchorSourceDocument(recipeStep, sourceDocs);
 		if (anchorResult.status === 'anchor_not_found') {
 			throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
@@ -256,11 +271,17 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 		const anchorForCanonicalPathParams = anchorResult.status === 'anchor_found' ? anchorResult.document : null;
 
 		console.log(
-			'[planPerSourceDocument] Received sourceDocs:',
-			JSON.stringify(sourceDocs, null, 2)
+			'[planPerSourceDocument] Received filteredSourceDocs:',
+			JSON.stringify(filteredSourceDocs, null, 2)
 		);
-		for (const doc of sourceDocs) {
+		for (const doc of filteredSourceDocs) {
 			console.log(`[planPerSourceDocument] Processing doc: ${doc.id}`);
+
+			// After filtering, doc.model_id must match parentModelId (which is a string)
+			if (!doc.model_id || typeof doc.model_id !== 'string') {
+				throw new Error(`planPerSourceDocument: doc.model_id must be a string after filtering, but got: ${typeof doc.model_id}`);
+			}
+			const docModelId: string = doc.model_id;
 
 			// Resolve the effective output type for the child job.
 			// Some recipe steps (e.g. comparison_vector) use an artifact-class output_type like
@@ -300,7 +321,8 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 				sessionId: parentJob.payload.sessionId,
 				stageSlug: parentJob.payload.stageSlug,
 				iterationNumber: parentJob.payload.iterationNumber,
-				model_id: parentJob.payload.model_id,
+				// 95.d.iv: For EXECUTE jobs, set child job's model_id from the source document's model_id
+				model_id: docModelId,
 				user_jwt: parentJwt, // Use the validated parentJwt
 				walletId: parentJob.payload.walletId,
 				// Optional fields - include only if present in parent

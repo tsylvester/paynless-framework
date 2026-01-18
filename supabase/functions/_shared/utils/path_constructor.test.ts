@@ -102,14 +102,19 @@ Deno.test('constructStoragePath and deconstructStoragePath should be perfect inv
         };
       }
       
-      return {
-        fileType,
-        context,
-        expectedDeconstructed: {
-          ...baseExpected,
-          contributionType: fileTypeStr,
-        },
-      };
+      // HeaderContext requires documentKey, so handle it in the switch statement instead
+      if (fileType === FileType.HeaderContext) {
+        // Let it fall through to the switch statement below
+      } else {
+        return {
+          fileType,
+          context,
+          expectedDeconstructed: {
+            ...baseExpected,
+            contributionType: fileTypeStr,
+          },
+        };
+      }
     } else {
       // Handle all other cases that are not contribution types
       switch (fileType) {
@@ -209,11 +214,16 @@ Deno.test('constructStoragePath and deconstructStoragePath should be perfect inv
             expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', modelSlug, attemptCount, documentKey },
           };
         case FileType.HeaderContext:
+          return {
+            fileType,
+            context: { ...baseModelContext, documentKey: 'header_context' },
+            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', modelSlug, attemptCount, contributionType: 'header_context' },
+          };
         case FileType.SynthesisHeaderContext:
           return {
             fileType,
-            context: baseModelContext,
-            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', modelSlug, attemptCount, contributionType: fileType === FileType.HeaderContext ? 'header_context' : 'synthesis_header_context' },
+            context: { ...baseModelContext, documentKey: 'synthesis_header_context' },
+            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', modelSlug, attemptCount, contributionType: 'synthesis_header_context' },
           };
         case FileType.comparison_vector:
           return {
@@ -1089,9 +1099,46 @@ Deno.test('constructStoragePath', async (t) => {
     });
 
     await t.step('constructs path for HeaderContext', () => {
-      const { storagePath, fileName } = constructStoragePath({ ...docContext, fileType: FileType.HeaderContext });
+      const headerContext: PathContext = {
+        ...baseContext,
+        fileType: FileType.HeaderContext,
+        stageSlug: 'thesis',
+        attemptCount: 1,
+        documentKey: 'header_context',
+      };
+      const { storagePath, fileName } = constructStoragePath(headerContext);
       const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/_work/context`;
       const expectedFileName = `${modelSlug}_1_header_context.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+    });
+
+    await t.step('constructs path for HeaderContext with documentKey', () => {
+      const headerContext: PathContext = {
+        ...baseContext,
+        fileType: FileType.HeaderContext,
+        stageSlug: 'thesis',
+        attemptCount: 1,
+        documentKey: 'header_context',
+      };
+      const { storagePath, fileName } = constructStoragePath(headerContext);
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/_work/context`;
+      const expectedFileName = `${modelSlug}_1_header_context.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+    });
+
+    await t.step('constructs path for HeaderContext with header_context_pairwise documentKey', () => {
+      const pairwiseContext: PathContext = {
+        ...baseContext,
+        fileType: FileType.HeaderContext,
+        stageSlug: 'synthesis',
+        attemptCount: 0,
+        documentKey: 'header_context_pairwise',
+      };
+      const { storagePath, fileName } = constructStoragePath(pairwiseContext);
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/context`;
+      const expectedFileName = `${modelSlug}_0_header_context_pairwise.json`;
       assertEquals(storagePath, expectedPath);
       assertEquals(fileName, expectedFileName);
     });
@@ -1332,13 +1379,11 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug,
         modelSlug,
         attemptCount,
-        documentKey: undefined,
+        documentKey: 'header_context',
       };
-      assert(nonDocumentContext.documentKey === undefined, 'documentKey must be undefined for this test');
       const { storagePath, fileName } = constructStoragePath(nonDocumentContext);
       const expectedNonDocPath = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/_work/context`;
-      const fileTypeString = sanitizeForPath(nonDocumentFileType.toString());
-      const expectedNonDocFileName = `${modelSlug}_${attemptCount}_${fileTypeString}.json`;
+      const expectedNonDocFileName = `${modelSlug}_${attemptCount}_header_context.json`;
       assertEquals(storagePath, expectedNonDocPath);
       assertEquals(fileName, expectedNonDocFileName);
     });
@@ -1382,11 +1427,11 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug,
         modelSlug,
         attemptCount,
-        documentKey: undefined,
+        documentKey: 'header_context',
       };
       const { storagePath: nonDocPath, fileName: nonDocFileName } = constructStoragePath(nonDocumentContext);
-      assert(nonDocPath.includes('_work/context'), 'Non-document file type should work without documentKey');
-      assert(nonDocFileName.includes('header_context'), 'Non-document file type should work without documentKey');
+      assert(nonDocPath.includes('_work/context'), 'Non-document file type should work with documentKey');
+      assert(nonDocFileName.includes('header_context'), 'Non-document file type should work with documentKey');
     });
   });
 
@@ -1595,11 +1640,11 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'thesis',
         modelSlug: 'claude-opus',
         attemptCount: 0,
-        documentKey: undefined,
+        documentKey: 'header_context',
       };
       const { storagePath, fileName } = constructStoragePath(nonDocumentContext);
-      assert(storagePath.includes('_work/context'), 'Non-document file type should work without documentKey');
-      assert(fileName.includes('header_context'), 'Non-document file type should work without documentKey');
+      assert(storagePath.includes('_work/context'), 'Non-document file type should work with documentKey');
+      assert(fileName.includes('header_context'), 'Non-document file type should work with documentKey');
     });
 
     await t.step('40.f.iv: verifies document file types require ALL values but non-document types do not', () => {
@@ -1635,7 +1680,7 @@ Deno.test('constructStoragePath', async (t) => {
         'documentKey',
       );
 
-      // (3) Call with non-document file type and missing documentKey, assert it does NOT throw an error
+      // (3) Call with non-document file type with documentKey, assert it does NOT throw an error
       const nonDocumentContext: PathContext = {
         projectId: 'project-123',
         fileType: FileType.HeaderContext,
@@ -1644,11 +1689,11 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'thesis',
         modelSlug: 'claude-opus',
         attemptCount: 0,
-        documentKey: undefined,
+        documentKey: 'header_context',
       };
       const { storagePath: nonDocPath, fileName: nonDocFileName } = constructStoragePath(nonDocumentContext);
-      assert(nonDocPath.includes('_work/context'), 'Non-document file type should work without documentKey');
-      assert(nonDocFileName.includes('header_context'), 'Non-document file type should work without documentKey');
+      assert(nonDocPath.includes('_work/context'), 'Non-document file type should work with documentKey');
+      assert(nonDocFileName.includes('header_context'), 'Non-document file type should work with documentKey');
     });
   });
 

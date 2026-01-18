@@ -48,6 +48,7 @@ import {
     isDialecticProjectResourceRow,
     isObjectWithOptionalId,
     isArrayWithOptionalId,
+    isSelectAnchorResult,
 } from './type_guards.dialectic.ts';
 import { 
     BranchKey, 
@@ -77,6 +78,8 @@ import {
     EditedDocumentResource,
     DialecticPlanJobPayload,
     DialecticRenderJobPayload,
+    SelectAnchorResult,
+    SourceDocument,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 import { ContinueReason, FinishReason } from '../../types.ts';
@@ -2131,6 +2134,16 @@ Deno.test('Type Guard: isInputRule and isInputRuleArray', async (t) => {
         assert(isInputRule(rule));
     });
 
+    await t.step('isInputRule: should return true for type "contribution"', () => {
+        const rule: InputRule = { 
+            ...validInputRule, 
+            type: 'contribution', 
+            slug: 'antithesis', 
+            document_key: FileType.comparison_vector 
+        };
+        assert(isInputRule(rule));
+    });
+
     await t.step('isInputRule: should return true when required is missing (defaults to false)', () => {
         const ruleWithoutRequired = { 
             type: 'document',
@@ -3570,6 +3583,153 @@ Deno.test('Type Guard: isDialecticRenderJobPayload', async (t) => {
     });
 });
 
+Deno.test('Type Guard: isSelectAnchorResult', async (t) => {
+    await t.step('should return true for status "no_anchor_required"', () => {
+        const result: SelectAnchorResult = {
+            status: 'no_anchor_required',
+        };
+        assert(isSelectAnchorResult(result));
+    });
+
+    await t.step('should return true for status "derive_from_header_context"', () => {
+        const result: SelectAnchorResult = {
+            status: 'derive_from_header_context',
+        };
+        assert(isSelectAnchorResult(result));
+    });
+
+    await t.step('should return true for status "anchor_found" with valid document', () => {
+        const sourceDoc: SourceDocument = {
+            id: 'doc-1',
+            session_id: 'session-1',
+            user_id: 'user-1',
+            contribution_type: 'thesis',
+            stage: 'thesis',
+            iteration_number: 1,
+            edit_version: 1,
+            is_latest_edit: true,
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            file_name: 'test.md',
+            storage_bucket: 'bucket',
+            storage_path: 'path',
+            model_id: 'model-1',
+            model_name: 'Model 1',
+            prompt_template_id_used: 'template-1',
+            seed_prompt_url: null,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            tokens_used_input: 100,
+            tokens_used_output: 200,
+            processing_time_ms: 500,
+            error: null,
+            citations: null,
+            size_bytes: 1024,
+            mime_type: 'text/markdown',
+            target_contribution_id: null,
+            is_header: false,
+            source_prompt_resource_id: null,
+            content: 'Test content',
+            document_key: 'business_case',
+            attempt_count: 1,
+        };
+        const result: SelectAnchorResult = {
+            status: 'anchor_found',
+            document: sourceDoc,
+        };
+        assert(isSelectAnchorResult(result));
+    });
+
+    await t.step('should return true for status "anchor_not_found" with targetSlug and targetDocumentKey', () => {
+        const result: SelectAnchorResult = {
+            status: 'anchor_not_found',
+            targetSlug: 'thesis',
+            targetDocumentKey: 'business_case',
+        };
+        assert(isSelectAnchorResult(result));
+    });
+
+    await t.step('should return true for status "anchor_not_found" with targetSlug and undefined targetDocumentKey', () => {
+        const result: SelectAnchorResult = {
+            status: 'anchor_not_found',
+            targetSlug: 'thesis',
+            targetDocumentKey: undefined,
+        };
+        assert(isSelectAnchorResult(result));
+    });
+
+    await t.step('should return false when status is invalid', () => {
+        const result = {
+            status: 'invalid_status',
+        };
+        assert(!isSelectAnchorResult(result));
+    });
+
+    await t.step('should return false when status is missing', () => {
+        const result = {};
+        assert(!isSelectAnchorResult(result));
+    });
+
+    await t.step('should return false when status is "anchor_found" but document is missing', () => {
+        const result = {
+            status: 'anchor_found',
+        };
+        assert(!isSelectAnchorResult(result));
+    });
+
+    await t.step('should return false when status is "anchor_found" but document is invalid', () => {
+        const result = {
+            status: 'anchor_found',
+            document: 'not-a-document',
+        };
+        assert(!isSelectAnchorResult(result));
+    });
+
+    await t.step('should return false when status is "anchor_not_found" but targetSlug is missing', () => {
+        const result = {
+            status: 'anchor_not_found',
+            targetDocumentKey: 'business_case',
+        };
+        assert(!isSelectAnchorResult(result));
+    });
+
+    await t.step('should return false when status is "anchor_not_found" but targetSlug is not a string', () => {
+        const result = {
+            status: 'anchor_not_found',
+            targetSlug: 123,
+            targetDocumentKey: 'business_case',
+        };
+        assert(!isSelectAnchorResult(result));
+    });
+
+    await t.step('should return false when status is "anchor_not_found" and targetDocumentKey is not a string or undefined', () => {
+        const result = {
+            status: 'anchor_not_found',
+            targetSlug: 'thesis',
+            targetDocumentKey: 123,
+        };
+        assert(!isSelectAnchorResult(result));
+    });
+
+    await t.step('should return false for null', () => {
+        assert(!isSelectAnchorResult(null));
+    });
+
+    await t.step('should return false for non-object types', () => {
+        assert(!isSelectAnchorResult('string'));
+        assert(!isSelectAnchorResult(123));
+        assert(!isSelectAnchorResult(true));
+        assert(!isSelectAnchorResult([]));
+    });
+
+    await t.step('should return false when object has unknown properties with valid status', () => {
+        const result = {
+            status: 'no_anchor_required',
+            unknownProperty: 'value',
+        };
+        assert(!isSelectAnchorResult(result));
+    });
+});
 
 
 

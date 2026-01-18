@@ -17,8 +17,7 @@ import type {
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { planPerModel } from './planPerModel.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
-import { extractSourceDocumentIdentifier } from '../../../_shared/utils/source_document_identifier.ts';
-import { isJson, isRecord } from '../../../_shared/utils/type-guards/type_guards.common.ts';
+import { isJson } from '../../../_shared/utils/type-guards/type_guards.common.ts';
 import { isDialecticExecuteJobPayload } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
@@ -337,7 +336,7 @@ Deno.test('planPerModel throws error when outputs_required.documents array is em
 			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithEmptyDocuments, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
-		'planPerModel requires recipeStep.outputs_required.documents to have at least one entry for EXECUTE jobs',
+		'planPerModel requires recipeStep.outputs_required.documents (array) OR recipeStep.outputs_required.header_context_artifact (object) for EXECUTE jobs, but both are missing/empty',
 		'Should throw error when documents array is empty for EXECUTE job',
 	);
 });
@@ -364,7 +363,7 @@ Deno.test('planPerModel throws error when outputs_required.documents[0] is missi
 			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithoutDocumentKey, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
-		'planPerModel requires recipeStep.outputs_required.documents[0].document_key but it is missing',
+		'planPerModel failed to resolve document_key for EXECUTE job',
 		'Should throw error when documents[0] is missing document_key property',
 	);
 });
@@ -392,7 +391,7 @@ Deno.test('planPerModel throws error when outputs_required.documents[0].document
 			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithNullDocumentKey, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
-		'planPerModel requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string',
+		'planPerModel failed to resolve document_key for EXECUTE job',
 		'Should throw error when document_key is null',
 	);
 });
@@ -420,7 +419,7 @@ Deno.test('planPerModel throws error when outputs_required.documents[0].document
 			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithEmptyDocumentKey, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
-		'planPerModel requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string',
+		'planPerModel failed to resolve document_key for EXECUTE job',
 		'Should throw error when document_key is empty string',
 	);
 });
@@ -429,12 +428,7 @@ Deno.test('planPerModel throws error when outputs_required is missing documents 
 	const recipeStepWithoutDocumentsProperty: DialecticStageRecipeStep = {
 		...MOCK_RECIPE_STEP,
 		outputs_required: {
-			header_context_artifact: {
-				type: 'header_context',
-				document_key: FileType.HeaderContext,
-				artifact_class: 'header_context',
-				file_type: 'json',
-			},
+			// Removed header_context_artifact to ensure failure
 			assembled_json: [],
 			files_to_generate: [{
 				from_document_key: FileType.Synthesis,
@@ -448,7 +442,7 @@ Deno.test('planPerModel throws error when outputs_required is missing documents 
 			planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, recipeStepWithoutDocumentsProperty, MOCK_PARENT_JOB.payload.user_jwt);
 		},
 		Error,
-		'planPerModel requires recipeStep.outputs_required.documents for EXECUTE jobs, but documents is missing',
+		'planPerModel requires recipeStep.outputs_required.documents (array) OR recipeStep.outputs_required.header_context_artifact (object) for EXECUTE jobs',
 		'Should throw error when documents property is missing for EXECUTE job',
 	);
 });
@@ -689,7 +683,10 @@ Deno.test('planPerModel throws error for EXECUTE job when files_to_generate entr
 	);
 });
 
-Deno.test('planPerModel sets document_relationships.source_group to anchor document ID and removes synthesis_group in EXECUTE job payloads', () => {
+Deno.test('planPerModel sets document_relationships.source_group to null for per_model EXECUTE jobs (consolidation creates new lineage)', () => {
+	// MOCK_RECIPE_STEP has granularity_strategy: 'per_model' and job_type: 'EXECUTE'
+	// selectAnchorSourceDocument returns 'no_anchor_required' for this configuration
+	// Therefore source_group should be null (new lineage root)
 	const childPayloads = planPerModel(
 		MOCK_SOURCE_DOCS,
 		MOCK_PARENT_JOB,
@@ -704,14 +701,14 @@ Deno.test('planPerModel sets document_relationships.source_group to anchor docum
 	if (isDialecticExecuteJobPayload(jobPayload)) {
 		const executePayload: DialecticExecuteJobPayload = jobPayload;
 		assertExists(executePayload.document_relationships, 'document_relationships should exist');
-		
-		// Assert source_group is set to anchor document's ID (first source document)
+
+		// Assert source_group is null for per_model consolidation (new lineage root)
 		assertEquals(
 			executePayload.document_relationships.source_group,
-			MOCK_SOURCE_DOCS[0].id,
-			'document_relationships.source_group should be set to anchor document ID (first source document)'
+			null,
+			'document_relationships.source_group should be null for per_model EXECUTE jobs (consolidation creates new lineage root)'
 		);
-		
+
 		// Assert synthesis_group is NOT present (removed, not preserved)
 		assert(
 			!('synthesis_group' in executePayload.document_relationships),
@@ -722,7 +719,10 @@ Deno.test('planPerModel sets document_relationships.source_group to anchor docum
 	}
 });
 
-Deno.test('extractSourceDocumentIdentifier can extract identifier from job payload created by planPerModel', () => {
+Deno.test('planPerModel per_model jobs have null source_group (extractSourceDocumentIdentifier not applicable)', () => {
+	// per_model EXECUTE jobs return no_anchor_required, so source_group is null
+	// extractSourceDocumentIdentifier is designed for jobs that DO have source_group
+	// This test verifies the expected behavior for per_model consolidation jobs
 	const childPayloads = planPerModel(
 		MOCK_SOURCE_DOCS,
 		MOCK_PARENT_JOB,
@@ -735,14 +735,11 @@ Deno.test('extractSourceDocumentIdentifier can extract identifier from job paylo
 	assertExists(jobPayload, 'Child job payload should exist');
 
 	if (isDialecticExecuteJobPayload(jobPayload)) {
-		// Extract identifier using extractSourceDocumentIdentifier
-		const extractedIdentifier = extractSourceDocumentIdentifier(jobPayload);
-		
-		// Assert it returns the source_group value (anchor document's ID)
+		// per_model EXECUTE jobs have null source_group (new lineage root)
 		assertEquals(
-			extractedIdentifier,
-			MOCK_SOURCE_DOCS[0].id,
-			'extractSourceDocumentIdentifier should return the source_group value (anchor document ID)'
+			jobPayload.document_relationships?.source_group,
+			null,
+			'per_model EXECUTE jobs should have null source_group (consolidation creates new lineage)'
 		);
 	} else {
 		throw new Error('Expected EXECUTE job');
@@ -750,6 +747,8 @@ Deno.test('extractSourceDocumentIdentifier can extract identifier from job paylo
 });
 
 Deno.test('planPerModel EXECUTE branch must not set document_relationships[stageSlug] for root jobs', () => {
+	// per_model EXECUTE jobs return no_anchor_required, so source_group is null (new lineage root)
+	// This test verifies stageSlug is NOT added to document_relationships
 	const parentPayload = MOCK_PARENT_JOB.payload;
 	if (!parentPayload) {
 		throw new Error('Test setup error: MOCK_PARENT_JOB.payload cannot be null');
@@ -788,7 +787,6 @@ Deno.test('planPerModel EXECUTE branch must not set document_relationships[stage
 		},
 	};
 
-	const anchorDoc = MOCK_SOURCE_DOCS[0];
 	const childPayloads = planPerModel(
 		MOCK_SOURCE_DOCS,
 		parentJobWithStageSlug,
@@ -803,13 +801,14 @@ Deno.test('planPerModel EXECUTE branch must not set document_relationships[stage
 	if (isDialecticExecuteJobPayload(payload)) {
 		const executePayload: DialecticExecuteJobPayload = payload;
 		assertExists(executePayload.document_relationships, 'EXECUTE job payload should include document_relationships');
-		assertExists(executePayload.document_relationships?.source_group, 'document_relationships should include source_group');
+
+		// per_model EXECUTE jobs have null source_group (consolidation creates new lineage root)
 		assertEquals(
 			executePayload.document_relationships.source_group,
-			anchorDoc.id,
-			'source_group should be set to anchorDoc.id (first source document) for lineage tracking',
+			null,
+			'source_group should be null for per_model EXECUTE jobs (consolidation creates new lineage root)',
 		);
-		
+
 		// Assert that the stageSlug key is NOT present
 		assert(
 			!('thesis' in executePayload.document_relationships),
@@ -820,9 +819,9 @@ Deno.test('planPerModel EXECUTE branch must not set document_relationships[stage
 	}
 });
 
-Deno.test('planPerModel uses relevance-selected anchor for canonical path params, not first doc', () => {
-	// Test proves planner should use universal selector for canonical params,
-	// selecting highest-relevance document (business_case), NOT the first document (seed_prompt).
+Deno.test('planPerModel per_model EXECUTE jobs have null source_group and pass null anchor to createCanonicalPathParams', () => {
+	// per_model EXECUTE jobs return no_anchor_required from selectAnchorSourceDocument
+	// This means: source_group = null AND anchor passed to createCanonicalPathParams = null
 	const parentPayload = MOCK_PARENT_JOB.payload;
 	if (!parentPayload) {
 		throw new Error('Test setup error: MOCK_PARENT_JOB.payload cannot be null');
@@ -844,7 +843,7 @@ Deno.test('planPerModel uses relevance-selected anchor for canonical path params
 		},
 	};
 
-	// Seed prompt document is first (will be used by current implementation)
+	// Seed prompt document is first
 	const seedPromptDoc: SourceDocument = {
 		id: 'seed-prompt-first',
 		contribution_type: 'seed_prompt',
@@ -881,7 +880,7 @@ Deno.test('planPerModel uses relevance-selected anchor for canonical path params
 		document_key: undefined,
 	};
 
-	// Business case document (highest relevance, but NOT first)
+	// Business case document (second)
 	const businessCaseDoc: SourceDocument = {
 		id: 'business-case-high-rel',
 		contribution_type: 'thesis',
@@ -985,30 +984,24 @@ Deno.test('planPerModel uses relevance-selected anchor for canonical path params
 	const job = childJobs[0];
 	assertExists(job, 'Child job should exist');
 	assertEquals(isDialecticExecuteJobPayload(job), true, 'EXECUTE recipe steps should create EXECUTE child jobs');
-	
+
 	if (isDialecticExecuteJobPayload(job)) {
 		const executePayload: DialecticExecuteJobPayload = job;
 		assertExists(executePayload.canonicalPathParams, 'EXECUTE job should include canonicalPathParams');
-		
-		// planPerModel currently uses sourceDocs[0] (seed_prompt) for canonical params.
-		// After fix, must use selectAnchorSourceDocument to select highest-relevance document.
-		// Should select business_case (relevance 1.0), NOT seed_prompt (first doc).
-		assertExists(
-			executePayload.canonicalPathParams.sourceAnchorModelSlug,
-			'canonicalPathParams should include sourceAnchorModelSlug from highest-relevance document'
-		);
-		assertEquals(
-			executePayload.canonicalPathParams.sourceAnchorModelSlug,
-			'highest-relevance-model',
-			'sourceAnchorModelSlug should match business_case document (highest relevance 1.0), not seed_prompt (first doc)'
-		);
-		
-		// Verify lineage is still preserved (source_group should be first doc id for backward compatibility)
+
+		// per_model EXECUTE jobs have null source_group (consolidation creates new lineage root)
 		assertExists(executePayload.document_relationships, 'EXECUTE job should include document_relationships');
 		assertEquals(
 			executePayload.document_relationships.source_group,
-			'seed-prompt-first',
-			'source_group should still be set to first doc id for lineage tracking'
+			null,
+			'source_group should be null for per_model EXECUTE jobs (consolidation creates new lineage root)'
+		);
+
+		// sourceAnchorModelSlug is undefined when anchor is null (no_anchor_required)
+		assertEquals(
+			executePayload.canonicalPathParams.sourceAnchorModelSlug,
+			undefined,
+			'sourceAnchorModelSlug should be undefined when anchor is null (per_model no_anchor_required)'
 		);
 	} else {
 		throw new Error('Expected EXECUTE job');
@@ -1141,8 +1134,9 @@ Deno.test('planPerModel handles no_document_inputs_required by passing null anch
 	}
 });
 
-Deno.test('planPerModel handles anchor_found by using result.document', () => {
-	// Recipe step with document inputs and relevance - should use highest-relevance document
+Deno.test('planPerModel per_model EXECUTE with document inputs still returns no_anchor_required', () => {
+	// per_model EXECUTE jobs always return no_anchor_required regardless of document inputs
+	// This is the consolidation scenario - bundling all inputs into one job
 	const parentPayload = MOCK_PARENT_JOB.payload;
 	if (!parentPayload) {
 		throw new Error('Test setup error: MOCK_PARENT_JOB.payload cannot be null');
@@ -1308,22 +1302,29 @@ Deno.test('planPerModel handles anchor_found by using result.document', () => {
 	if (isDialecticExecuteJobPayload(job)) {
 		const executePayload: DialecticExecuteJobPayload = job;
 		assertExists(executePayload.canonicalPathParams, 'EXECUTE job should include canonicalPathParams');
-		assertExists(
-			executePayload.canonicalPathParams.sourceAnchorModelSlug,
-			'canonicalPathParams should include sourceAnchorModelSlug from highest-relevance document'
+
+		// per_model EXECUTE jobs always return no_anchor_required, so source_group is null
+		assertExists(executePayload.document_relationships, 'EXECUTE job should include document_relationships');
+		assertEquals(
+			executePayload.document_relationships.source_group,
+			null,
+			'source_group should be null for per_model EXECUTE jobs (consolidation creates new lineage root)'
 		);
+
+		// sourceAnchorModelSlug is undefined when anchor is null (no_anchor_required)
 		assertEquals(
 			executePayload.canonicalPathParams.sourceAnchorModelSlug,
-			'anchor-model-slug',
-			'sourceAnchorModelSlug should match business_case document (highest relevance 1.0)'
+			undefined,
+			'sourceAnchorModelSlug should be undefined for per_model (no_anchor_required)'
 		);
 	} else {
 		throw new Error('Expected EXECUTE job');
 	}
 });
 
-Deno.test('planPerModel throws on anchor_not_found', async () => {
-	// Recipe step requiring document that doesn't exist in sourceDocs - should throw error
+Deno.test('planPerModel per_model does not throw even when document_key mismatch (no_anchor_required)', () => {
+	// per_model EXECUTE jobs return no_anchor_required BEFORE checking document inputs
+	// So even if document_key doesn't match, it won't throw - it creates job with null source_group
 	const parentPayload = MOCK_PARENT_JOB.payload;
 	if (!parentPayload) {
 		throw new Error('Test setup error: MOCK_PARENT_JOB.payload cannot be null');
@@ -1433,12 +1434,396 @@ Deno.test('planPerModel throws on anchor_not_found', async () => {
 		step_description: 'Test Step',
 	};
 
-	await assertRejects(
-		async () => {
-			planPerModel(sourceDocs, parentJobWithThesisStage, executeRecipeStep, parentJobWithThesisStage.payload.user_jwt);
+	// per_model returns no_anchor_required, so this does NOT throw
+	const childJobs = planPerModel(sourceDocs, parentJobWithThesisStage, executeRecipeStep, parentJobWithThesisStage.payload.user_jwt);
+
+	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+	const job = childJobs[0];
+	assertExists(job, 'Child job should exist');
+
+	if (isDialecticExecuteJobPayload(job)) {
+		// per_model always returns no_anchor_required, so source_group is null
+		assertEquals(
+			job.document_relationships?.source_group,
+			null,
+			'source_group should be null for per_model (no_anchor_required)'
+		);
+	} else {
+		throw new Error('Expected EXECUTE job');
+	}
+});
+
+// ==============================================
+// Step 96.c: Input bundling and lineage handling tests
+// ==============================================
+
+Deno.test('96.c.i: Given n² pairwise outputs, planPerModel creates 1 job per model with all outputs bundled', () => {
+	// Given: 9 pairwise comparison documents (3 models × 3 comparisons each)
+	// When: planPerModel is called with parent job model_id = 'model-A'
+	// Then: Creates exactly 1 job containing all 9 documents bundled
+
+	const pairwiseDocs: SourceDocument[] = [];
+	const models = ['model-A', 'model-B', 'model-C'];
+
+	// Create 9 pairwise comparison documents (n² for n=3 models)
+	for (let i = 0; i < 9; i++) {
+		pairwiseDocs.push({
+			id: `pairwise-doc-${i}`,
+			content: `Pairwise comparison ${i}`,
+			contribution_type: 'antithesis',
+			model_name: models[i % 3],
+			model_id: models[i % 3],
+			document_key: FileType.comparison_vector,
+			session_id: 'session-abc',
+			user_id: 'user-def',
+			stage: 'antithesis',
+			iteration_number: 1,
+			edit_version: 1,
+			is_latest_edit: true,
+			created_at: new Date().toISOString(),
+			updated_at: new Date().toISOString(),
+			file_name: `${models[i % 3]}_${i}_comparison_vector.json`,
+			storage_bucket: 'test-bucket',
+			storage_path: 'project-123/session_abc/iteration_1/2_antithesis/documents',
+			prompt_template_id_used: 'template-123',
+			target_contribution_id: null,
+			seed_prompt_url: null,
+			original_model_contribution_id: null,
+			raw_response_storage_path: null,
+			tokens_used_input: 100,
+			tokens_used_output: 200,
+			processing_time_ms: 1000,
+			error: null,
+			citations: null,
+			size_bytes: 100,
+			mime_type: 'application/json',
+			document_relationships: null,
+			is_header: false,
+			source_prompt_resource_id: null,
+			attempt_count: 0,
+		});
+	}
+
+	const parentJobForConsolidation: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		...MOCK_PARENT_JOB,
+		stage_slug: 'synthesis',
+		payload: {
+			projectId: MOCK_PAYLOAD.projectId,
+			sessionId: MOCK_PAYLOAD.sessionId,
+			stageSlug: 'synthesis',
+			iterationNumber: MOCK_PAYLOAD.iterationNumber,
+			model_id: 'model-A',
+			walletId: MOCK_PAYLOAD.walletId,
+			user_jwt: MOCK_PAYLOAD.user_jwt,
 		},
-		Error,
-		'Anchor document not found for stage \'thesis\' document_key \'business_case\'',
-		'Should throw error when anchor document not found in sourceDocs'
+	};
+
+	const consolidationRecipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		id: 'consolidation-step-id',
+		job_type: 'EXECUTE',
+		granularity_strategy: 'per_model',
+		output_type: FileType.ReducedSynthesis,
+		inputs_required: [
+			{ type: 'document', slug: 'antithesis', document_key: FileType.comparison_vector, required: true, multiple: true },
+		],
+		inputs_relevance: [{ document_key: FileType.comparison_vector, relevance: 1.0 }],
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.ReducedSynthesis,
+				template_filename: 'reduced_synthesis.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [{
+				from_document_key: FileType.ReducedSynthesis,
+				template_filename: 'reduced_synthesis.md',
+			}],
+		},
+	};
+
+	const childPayloads = planPerModel(
+		pairwiseDocs,
+		parentJobForConsolidation,
+		consolidationRecipeStep,
+		parentJobForConsolidation.payload.user_jwt
 	);
+
+	assertEquals(childPayloads.length, 1, 'Should create exactly 1 job for consolidation (bundles all inputs)');
+});
+
+Deno.test('96.c.ii: Job payload inputs contains array of all bundled document IDs', () => {
+	// Given: Multiple source documents
+	// When: planPerModel bundles them
+	// Then: payload.inputs contains array with all document IDs
+
+	const sourceDocs: SourceDocument[] = [
+		{
+			...MOCK_SOURCE_DOCS[0],
+			id: 'bundled-doc-1',
+			contribution_type: 'antithesis',
+			document_key: FileType.comparison_vector,
+		},
+		{
+			...MOCK_SOURCE_DOCS[1],
+			id: 'bundled-doc-2',
+			contribution_type: 'antithesis',
+			document_key: FileType.comparison_vector,
+		},
+		{
+			...MOCK_SOURCE_DOCS[0],
+			id: 'bundled-doc-3',
+			contribution_type: 'antithesis',
+			document_key: FileType.comparison_vector,
+		},
+	];
+
+	const consolidationRecipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		id: 'bundling-step-id',
+		job_type: 'EXECUTE',
+		granularity_strategy: 'per_model',
+		output_type: FileType.ReducedSynthesis,
+		inputs_required: [
+			{ type: 'document', slug: 'antithesis', document_key: FileType.comparison_vector, required: true, multiple: true },
+		],
+		inputs_relevance: [{ document_key: FileType.comparison_vector, relevance: 1.0 }],
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.ReducedSynthesis,
+				template_filename: 'reduced_synthesis.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [{
+				from_document_key: FileType.ReducedSynthesis,
+				template_filename: 'reduced_synthesis.md',
+			}],
+		},
+	};
+
+	const childPayloads = planPerModel(
+		sourceDocs,
+		MOCK_PARENT_JOB,
+		consolidationRecipeStep,
+		MOCK_PARENT_JOB.payload.user_jwt
+	);
+
+	assertEquals(childPayloads.length, 1, 'Should create exactly 1 job');
+	const payload = childPayloads[0];
+	assertExists(payload, 'Payload should exist');
+
+	if (isDialecticExecuteJobPayload(payload)) {
+		// Check that inputs contains an array of all document IDs
+		const antithesisIds = payload.inputs.antithesis_ids;
+		assert(Array.isArray(antithesisIds), 'inputs.antithesis_ids should be an array');
+		assertEquals(antithesisIds.length, 3, 'Should contain all 3 bundled document IDs');
+		assert(antithesisIds.includes('bundled-doc-1'), 'Should include bundled-doc-1');
+		assert(antithesisIds.includes('bundled-doc-2'), 'Should include bundled-doc-2');
+		assert(antithesisIds.includes('bundled-doc-3'), 'Should include bundled-doc-3');
+	} else {
+		throw new Error('Expected EXECUTE job');
+	}
+});
+
+Deno.test('96.c.iii: When selectAnchorSourceDocument returns no_anchor_required, planner sets document_relationships.source_group = null', () => {
+	// Given: A consolidation step where selectAnchorSourceDocument returns 'no_anchor_required'
+	// When: planPerModel creates the job
+	// Then: document_relationships.source_group is explicitly set to null
+
+	const consolidationDocs: SourceDocument[] = [
+		{
+			...MOCK_SOURCE_DOCS[0],
+			id: 'consolidation-input-1',
+			contribution_type: 'antithesis',
+			document_key: FileType.comparison_vector,
+		},
+	];
+
+	// Recipe step with no document inputs in inputs_relevance (triggers no_anchor_required)
+	const noAnchorRecipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		id: 'no-anchor-step-id',
+		job_type: 'EXECUTE',
+		granularity_strategy: 'per_model',
+		output_type: FileType.ReducedSynthesis,
+		inputs_required: [],
+		inputs_relevance: [],
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.ReducedSynthesis,
+				template_filename: 'reduced_synthesis.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [{
+				from_document_key: FileType.ReducedSynthesis,
+				template_filename: 'reduced_synthesis.md',
+			}],
+		},
+	};
+
+	const childPayloads = planPerModel(
+		consolidationDocs,
+		MOCK_PARENT_JOB,
+		noAnchorRecipeStep,
+		MOCK_PARENT_JOB.payload.user_jwt
+	);
+
+	assertEquals(childPayloads.length, 1, 'Should create exactly 1 job');
+	const payload = childPayloads[0];
+	assertExists(payload, 'Payload should exist');
+
+	if (isDialecticExecuteJobPayload(payload)) {
+		assertExists(payload.document_relationships, 'document_relationships should exist');
+		assertEquals(
+			payload.document_relationships.source_group,
+			null,
+			'source_group should be explicitly null when no_anchor_required (consolidation creates new lineage)'
+		);
+	} else {
+		throw new Error('Expected EXECUTE job');
+	}
+});
+
+Deno.test('96.c.iv: Consolidation job creates new lineage root (source_group = null signals producer to set self.id)', () => {
+	// Given: A consolidation step
+	// When: planPerModel creates the job
+	// Then: source_group = null indicates producer should set source_group = self.id after save
+
+	const consolidationDocs: SourceDocument[] = [
+		{
+			...MOCK_SOURCE_DOCS[0],
+			id: 'lineage-input-1',
+			contribution_type: 'antithesis',
+			document_key: FileType.comparison_vector,
+		},
+		{
+			...MOCK_SOURCE_DOCS[1],
+			id: 'lineage-input-2',
+			contribution_type: 'antithesis',
+			document_key: FileType.comparison_vector,
+		},
+	];
+
+	// Consolidation recipe step - bundles inputs into new lineage root
+	const consolidationRecipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		id: 'lineage-root-step-id',
+		job_type: 'EXECUTE',
+		granularity_strategy: 'per_model',
+		output_type: FileType.ReducedSynthesis,
+		inputs_required: [],
+		inputs_relevance: [],
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.ReducedSynthesis,
+				template_filename: 'reduced_synthesis.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [{
+				from_document_key: FileType.ReducedSynthesis,
+				template_filename: 'reduced_synthesis.md',
+			}],
+		},
+	};
+
+	const childPayloads = planPerModel(
+		consolidationDocs,
+		MOCK_PARENT_JOB,
+		consolidationRecipeStep,
+		MOCK_PARENT_JOB.payload.user_jwt
+	);
+
+	assertEquals(childPayloads.length, 1, 'Should create exactly 1 consolidation job');
+	const payload = childPayloads[0];
+	assertExists(payload, 'Payload should exist');
+
+	if (isDialecticExecuteJobPayload(payload)) {
+		assertExists(payload.document_relationships, 'document_relationships should exist for consolidation job');
+		assertEquals(
+			payload.document_relationships.source_group,
+			null,
+			'source_group must be null to signal producer should create new lineage root (set source_group = self.id after save)'
+		);
+	} else {
+		throw new Error('Expected EXECUTE job');
+	}
+});
+
+Deno.test('96.c.v: Job is assigned to correct model based on parent job model_id', () => {
+	// Given: Parent job has model_id = 'target-model-xyz'
+	// When: planPerModel creates a job
+	// Then: Child job model_id = 'target-model-xyz'
+
+	const targetModelId = 'target-model-xyz';
+
+	const parentJobWithTargetModel: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		...MOCK_PARENT_JOB,
+		payload: {
+			projectId: MOCK_PAYLOAD.projectId,
+			sessionId: MOCK_PAYLOAD.sessionId,
+			stageSlug: MOCK_PAYLOAD.stageSlug,
+			iterationNumber: MOCK_PAYLOAD.iterationNumber,
+			model_id: targetModelId,
+			walletId: MOCK_PAYLOAD.walletId,
+			user_jwt: MOCK_PAYLOAD.user_jwt,
+		},
+	};
+
+	const childPayloads = planPerModel(
+		MOCK_SOURCE_DOCS,
+		parentJobWithTargetModel,
+		MOCK_RECIPE_STEP,
+		parentJobWithTargetModel.payload.user_jwt
+	);
+
+	assertEquals(childPayloads.length, 1, 'Should create exactly 1 job');
+	const payload = childPayloads[0];
+	assertExists(payload, 'Payload should exist');
+	assertEquals(payload.model_id, targetModelId, 'Child job model_id must match parent job model_id');
+});
+
+Deno.test('planPerModel sets document_key from header_context_artifact for EXECUTE job when documents array is empty', () => {
+	const executeRecipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
+		output_type: FileType.HeaderContext,
+		outputs_required: {
+			header_context_artifact: {
+				type: 'header_context',
+				document_key: FileType.HeaderContext,
+				artifact_class: 'header_context',
+				file_type: 'json',
+			},
+			documents: [], // Empty, triggering the need for header_context_artifact fallback logic
+			assembled_json: [],
+			files_to_generate: [
+				{
+					from_document_key: FileType.HeaderContext,
+					template_filename: 'synthesis_header.md', // Dummy
+				},
+			],
+		} as unknown as DialecticStageRecipeStep['outputs_required'],
+	};
+
+	const childJobs = planPerModel(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, executeRecipeStep, MOCK_PARENT_JOB.payload.user_jwt);
+
+	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+	const job = childJobs[0];
+	assertExists(job, 'Child job should exist');
+	if (isDialecticExecuteJobPayload(job)) {
+		assertEquals(
+			job.document_key,
+			FileType.HeaderContext,
+			'document_key should be extracted from recipeStep.outputs_required.header_context_artifact.document_key',
+		);
+	} else {
+		throw new Error('Expected EXECUTE job');
+	}
 });

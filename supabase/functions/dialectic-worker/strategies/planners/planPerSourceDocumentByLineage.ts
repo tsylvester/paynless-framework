@@ -3,6 +3,9 @@ import {
     DialecticExecuteJobPayload, 
     GranularityPlannerFn, 
     ContextForDocument,
+    IPlanPerSourceDocumentByLineageDeps,
+    IPlanPerSourceDocumentByLineageFn,
+    PlanPerSourceDocumentByLineageParams,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
@@ -12,17 +15,19 @@ import {
 } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 import { isModelContributionFileType } from '../../../_shared/utils/type-guards/type_guards.file_manager.ts';
 import { selectAnchorSourceDocument } from '../helpers.ts';
+import { deconstructStoragePath } from '../../../_shared/utils/path_deconstructor.ts';
 
 /**
+ * Internal implementation of planPerSourceDocumentByLineage with dependency injection.
  * Groups source documents by their `document_relationships.source_group` property.
  * Creates one child job for each group.
+ * Exported for unit testing with mocked dependencies.
  */
-export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
-    sourceDocs,
-    parentJob,
-    recipeStep,
-    _authToken
+export const planPerSourceDocumentByLineageInternal: IPlanPerSourceDocumentByLineageFn = (
+    deps,
+    params
 ) => {
+    const { sourceDocs, parentJob, recipeStep, authToken: _authToken } = params;
     if (!recipeStep.output_type) {
         throw new Error('planPerSourceDocumentByLineage requires a recipe step with a defined output_type.');
     }
@@ -42,24 +47,113 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
         throw new Error(`planPerSourceDocumentByLineage requires job_type to be 'PLAN' or 'EXECUTE', received: ${recipeStep.job_type}`);
     }
 
-    const groups: Record<string, typeof sourceDocs> = {};
+    // Separate documents into three categories:
+    // 1. Lineage-specific docs (has source_group)
+    // 2. Global/shared docs (seed_prompt with source_group=null) - include in every lineage job
+    // 3. Net-new docs (non-seed-prompt with source_group=null) - create their own jobs
+    const globalDocs: typeof sourceDocs = [];
+    const netNewDocs: typeof sourceDocs = [];
+    const lineageGroups: Record<string, typeof sourceDocs> = {};
 
-    // 1. Group documents by their source_group
     for (const doc of sourceDocs) {
         const groupId = doc.document_relationships?.source_group;
         if (groupId) {
-            if (!groups[groupId]) {
-                groups[groupId] = [];
+            // Document belongs to a specific lineage group
+            if (!lineageGroups[groupId]) {
+                lineageGroups[groupId] = [];
             }
-            groups[groupId].push(doc);
+            lineageGroups[groupId].push(doc);
         } else {
-            // If a document is missing a source_group, treat it as the root of a new lineage.
-            // The document's own ID becomes the new group ID for this lineage.
-            const newGroupId = doc.id;
-            if (!groups[newGroupId]) {
-                groups[newGroupId] = [];
+            // Document has source_group=null
+            if (doc.contribution_type === 'seed_prompt') {
+                // Global/shared document (seed_prompt) - include in every lineage job
+                globalDocs.push(doc);
+            } else {
+                // Net-new document - create its own job (backward compatibility)
+                netNewDocs.push(doc);
             }
-            groups[newGroupId].push(doc);
+        }
+    }
+
+    // Build final groups: one per lineage + one per net-new doc + one for global-only case
+    const groups: Record<string, typeof sourceDocs> = {};
+    
+    // For each lineage group, create a combined group with lineage docs + global docs
+    for (const groupId in lineageGroups) {
+        groups[groupId] = [...lineageGroups[groupId], ...globalDocs];
+    }
+    
+    // Create one job per net-new document (each gets global docs too)
+    for (const netNewDoc of netNewDocs) {
+        groups[netNewDoc.id] = [netNewDoc, ...globalDocs];
+    }
+    
+    // If there are only global docs (no lineage groups, no net-new docs), create one job with all global docs
+    if (Object.keys(lineageGroups).length === 0 && netNewDocs.length === 0 && globalDocs.length > 0) {
+        groups[globalDocs[0].id] = [...globalDocs];
+    }
+
+    // Validate that every group has ALL required documents from recipe inputs_required
+    // This validation must happen BEFORE creating any jobs - all-or-nothing approach
+    if (recipeStep.inputs_required && recipeStep.inputs_required.length > 0) {
+        for (const groupId in groups) {
+            const groupDocs = groups[groupId];
+            
+            // For each required input, verify that at least one document in the group matches
+            for (const requiredInput of recipeStep.inputs_required) {
+                if (!requiredInput.required) {
+                    continue; // Skip non-required inputs
+                }
+                
+                // Find documents in this group that match the required input
+                const matchingDocs = groupDocs.filter(doc => {
+                    // Match type
+                    if (requiredInput.type === 'seed_prompt') {
+                        if (doc.contribution_type !== 'seed_prompt') {
+                            return false;
+                        }
+                    } else if (requiredInput.type === 'document') {
+                        // For documents, contribution_type should not be 'seed_prompt'
+                        if (doc.contribution_type === 'seed_prompt') {
+                            return false;
+                        }
+                    } else {
+                        // Unknown type
+                        return false;
+                    }
+                    
+                    // Match slug (slug maps to stage)
+                    if (requiredInput.slug && doc.stage !== requiredInput.slug) {
+                        return false;
+                    }
+                    
+                    // Match document_key if specified in required input
+                    // Extract document_key from filename (it's never set as a property)
+                    if (requiredInput.document_key && typeof requiredInput.document_key === 'string') {
+                        let docDocumentKey: string | undefined;
+                        if (doc.file_name && doc.storage_path) {
+                            const pathInfo = deps.deconstructStoragePath({
+                                storageDir: doc.storage_path,
+                                fileName: doc.file_name,
+                            });
+                            docDocumentKey = pathInfo.documentKey;
+                        }
+                        
+                        // Match by extracted document_key or contribution_type
+                        if (docDocumentKey !== requiredInput.document_key && doc.contribution_type !== requiredInput.document_key) {
+                            return false;
+                        }
+                    }
+                    
+                    return true;
+                });
+                
+                // If no matching document found, throw error
+                if (matchingDocs.length === 0) {
+                    const inputDescription = `type='${requiredInput.type}', slug='${requiredInput.slug || 'any'}', document_key='${requiredInput.document_key || 'any'}'`;
+                    throw new Error(`missing required document in lineage group '${groupId}': ${inputDescription}`);
+                }
+            }
         }
     }
 
@@ -146,17 +240,26 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
             const groupDocs = groups[groupId];
             if (groupDocs.length === 0) continue;
 
+            // Check if recipe step requires any document inputs (not just seed_prompt)
+            const hasDocumentInputs = recipeStep.inputs_required?.some(
+                input => input.type === 'document'
+            ) ?? false;
+
             // Use universal selector for canonical path params
-            const anchorResult = selectAnchorSourceDocument(recipeStep, groupDocs);
-            if (anchorResult.status === 'anchor_not_found') {
-                throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
+            // Only call selectAnchorSourceDocument if document inputs are required
+            let anchorForCanonicalPathParams: typeof sourceDocs[0] | null = null;
+            if (hasDocumentInputs) {
+                const anchorResult = deps.selectAnchorSourceDocument(recipeStep, groupDocs);
+                if (anchorResult.status === 'anchor_not_found') {
+                    throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
+                }
+                anchorForCanonicalPathParams = anchorResult.status === 'anchor_found' ? anchorResult.document : null;
             }
-            const anchorForCanonicalPathParams = anchorResult.status === 'anchor_found' ? anchorResult.document : null;
             
             // Use the first document as the anchor for sourceContributionId and source_group (preserves lineage)
             const anchorDoc = groupDocs[0];
             const documentIds = groupDocs.map(doc => doc.id);
-            const canonicalPathParams = createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorForCanonicalPathParams, stageSlug);
+            const canonicalPathParams = deps.createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorForCanonicalPathParams, stageSlug);
             let derivedSourceContributionId: string | null = null;
             if (anchorDoc.document_relationships?.source_group) {
                 derivedSourceContributionId = anchorDoc.id;
@@ -292,16 +395,25 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
             const groupDocs = groups[groupId];
             if (groupDocs.length === 0) continue;
 
+            // Check if recipe step requires any document inputs (not just seed_prompt)
+            const hasDocumentInputs = recipeStep.inputs_required?.some(
+                input => input.type === 'document'
+            ) ?? false;
+
             // Use universal selector for canonical path params
-            const anchorResult = selectAnchorSourceDocument(recipeStep, groupDocs);
-            if (anchorResult.status === 'anchor_not_found') {
-                throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
+            // Only call selectAnchorSourceDocument if document inputs are required
+            let anchorForCanonicalPathParams: typeof sourceDocs[0] | null = null;
+            if (hasDocumentInputs) {
+                const anchorResult = deps.selectAnchorSourceDocument(recipeStep, groupDocs);
+                if (anchorResult.status === 'anchor_not_found') {
+                    throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
+                }
+                anchorForCanonicalPathParams = anchorResult.status === 'anchor_found' ? anchorResult.document : null;
             }
-            const anchorForCanonicalPathParams = anchorResult.status === 'anchor_found' ? anchorResult.document : null;
             
             // Use the first document as the anchor for sourceContributionId and source_group (preserves lineage)
             const anchorDoc = groupDocs[0];
-            const canonicalPathParams = createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorForCanonicalPathParams, stageSlug);
+            const canonicalPathParams = deps.createCanonicalPathParams(groupDocs, recipeStep.output_type, anchorForCanonicalPathParams, stageSlug);
             let derivedSourceContributionId: string | null = null;
             if (anchorDoc.document_relationships?.source_group) {
                 derivedSourceContributionId = anchorDoc.id;
@@ -353,4 +465,31 @@ export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
     
     // This should never be reached due to job_type validation above, but TypeScript requires it
     throw new Error(`planPerSourceDocumentByLineage: unreachable code reached with job_type: ${recipeStep.job_type}`);
+};
+
+/**
+ * Public wrapper for planPerSourceDocumentByLineage that maintains GranularityPlannerFn signature.
+ * Groups source documents by their `document_relationships.source_group` property.
+ * Creates one child job for each group.
+ */
+export const planPerSourceDocumentByLineage: GranularityPlannerFn = (
+    sourceDocs,
+    parentJob,
+    recipeStep,
+    authToken
+) => {
+    const deps: IPlanPerSourceDocumentByLineageDeps = {
+        deconstructStoragePath,
+        selectAnchorSourceDocument,
+        createCanonicalPathParams,
+    };
+    
+    const params: PlanPerSourceDocumentByLineageParams = {
+        sourceDocs,
+        parentJob,
+        recipeStep,
+        authToken,
+    };
+    
+    return planPerSourceDocumentByLineageInternal(deps, params);
 };

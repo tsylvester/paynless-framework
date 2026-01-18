@@ -353,6 +353,10 @@ Deno.test("gatherInputsForStage", async (t) => {
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                
+                // Initialize spies BEFORE the action to ensure calls are tracked
+                const storageSpies = spies.storage.from("test-bucket");
+                
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
                 assertEquals(result.sourceDocuments.length, 1);
@@ -365,9 +369,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                 assertEquals(doc.metadata.displayName, mockStageDisplayName);
                 assertEquals(doc.metadata.header, "Documents from some-slug stage");
 
-                const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
-                assertEquals(downloadSpies.calls.length, 1);
-                const actualPath = downloadSpies.calls[0].args[0];
+                const downloadSpy = storageSpies.downloadSpy;
+                assertEquals(downloadSpy.calls.length, 1);
+                const actualPath = downloadSpy.calls[0].args[0];
                 const expectedJoined = join(storagePath, fileName);
                 const expectedFs = expectedJoined.replace(/\\/g, '/');
                 assert(
@@ -487,6 +491,10 @@ Deno.test("gatherInputsForStage", async (t) => {
                 };
                 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                
+                // Initialize spies BEFORE the action
+                const storageSpies = spies.storage.from("test-bucket");
+                
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
                 
                 console.log("--- TEST LOG: should fetch and format only feedback ---");
@@ -501,9 +509,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                 assertEquals(doc.metadata.displayName, mockStageDisplayName);
                 assertEquals(doc.metadata.header, undefined); // No header defined in rule
 
-                const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
-                assertEquals(downloadSpies.calls.length, 1);
-                const actualPath = downloadSpies.calls[0].args[0];
+                const downloadSpy = storageSpies.downloadSpy;
+                assertEquals(downloadSpy.calls.length, 1);
+                const actualPath = downloadSpy.calls[0].args[0];
                 const expectedFs = expectedFeedbackPath.replace(/\\/g, '/');
                 assert(
                     actualPath === expectedFeedbackPath || actualPath === expectedFs,
@@ -688,6 +696,10 @@ Deno.test("gatherInputsForStage", async (t) => {
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                
+                // Initialize spies BEFORE the action
+                const storageSpies = spies.storage.from("test-bucket");
+                
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
                 console.log("--- TEST LOG: should fetch and format both contributions and feedback ---");
@@ -713,8 +725,8 @@ Deno.test("gatherInputsForStage", async (t) => {
                 assertEquals(feedbackDoc?.metadata.header, "Feedback from feedback-slug-for-both stage");
                 assertEquals(feedbackDoc?.metadata.displayName, feedbackDisplayName);
 
-                const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
-                assertEquals(downloadSpies.calls.length, 2, "Expected two download calls");
+                const downloadSpy = storageSpies.downloadSpy;
+                assertEquals(downloadSpy.calls.length, 2, "Expected two download calls");
             } finally {
                 teardown();
             }
@@ -802,10 +814,12 @@ Deno.test("gatherInputsForStage", async (t) => {
                             const sessionFilter = state.filters.find(f => f.column === 'session_id' && f.value === sessionId);
                             const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === feedbackSlug);
                             const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === 1); // targetIteration is 1 when iteration is 1
-                            const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === 'u300');
+                            const userFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'user_id' && f.value === 'u300');
                             if (sessionFilter && stageFilter && iterFilter && userFilter) {
-                                return { data: [{ storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                                return { data: [{ id: "fb-ch", storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
                             }
+                            // Debugging fallback if filters fail
+                            // console.log("Feedback mock filters failed:", { sessionFilter, stageFilter, iterFilter, userFilter, filters: state.filters });
                             return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" };
                         }
                     }
@@ -890,6 +904,10 @@ Deno.test("gatherInputsForStage", async (t) => {
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                
+                // Initialize spies BEFORE the action
+                const storageSpies = spies.storage.from("test-bucket");
+                
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
                 console.log("--- TEST LOG: should use custom section_headers ---");
@@ -906,11 +924,12 @@ Deno.test("gatherInputsForStage", async (t) => {
                 assertEquals(contribDoc?.metadata.header, customContribHeader);
 
                 assertEquals(!!feedbackDoc, true, "Custom header feedback document not found");
+                assertEquals(feedbackDoc?.id, "fb-ch");
                 assertEquals(feedbackDoc?.content, feedbackContent);
                 assertEquals(feedbackDoc?.metadata.header, customFeedbackHeader);
 
-                const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
-                assertEquals(downloadSpies.calls.length, 2, "Expected two download calls for custom headers test");
+                const downloadSpy = storageSpies.downloadSpy;
+                assertEquals(downloadSpy.calls.length, 2, "Expected two download calls for custom headers test");
             } finally {
                 teardown();
             }
@@ -1755,6 +1774,10 @@ Deno.test("gatherInputsForStage", async (t) => {
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                
+                // Initialize spies BEFORE the action
+                const storageSpies = spies.storage.from("test-bucket");
+                
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
                 // Assert that dialectic_project_resources was queried
@@ -1770,9 +1793,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                 assertEquals(doc.metadata.displayName, mockStageDisplayName, "Expected display name to match");
 
                 // Assert that content was downloaded from resource's storage_path and file_name
-                const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
-                assertEquals(downloadSpies.calls.length, 1, "Expected one download call");
-                const actualPath = downloadSpies.calls[0].args[0];
+                const downloadSpy = storageSpies.downloadSpy;
+                assertEquals(downloadSpy.calls.length, 1, "Expected one download call");
+                const actualPath = downloadSpy.calls[0].args[0];
                 const expectedJoined = join(storagePath, fileName);
                 const expectedFs = expectedJoined.replace(/\\/g, '/');
                 assert(
@@ -2241,6 +2264,10 @@ Deno.test("gatherInputsForStage", async (t) => {
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                
+                // Initialize spies BEFORE the action
+                const storageSpies = spies.storage.from("test-bucket");
+                
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
                 // Assert that contributions were queried for header_context
@@ -2256,6 +2283,164 @@ Deno.test("gatherInputsForStage", async (t) => {
                 const doc = result.sourceDocuments[0];
                 assertEquals(doc.id, contributionId, "Expected document ID to match contribution ID");
                 assertEquals(doc.content, headerContextContent, "Expected content to match downloaded contribution content");
+
+                const downloadSpy = storageSpies.downloadSpy;
+                assertEquals(downloadSpy.calls.length, 1, "Expected one download call");
+            } finally {
+                teardown();
+            }
+        });
+
+        // Step 53.b.v: Test that queries dialectic_contributions for contribution type inputs
+        await tCtx.step("53.b.v: should query dialectic_contributions for contribution type inputs", async () => {
+            const contribStageSlug = "prev-stage-contrib";
+            const mockStageDisplayName = "Previous Contribution Stage";
+            const contribContent = "This is raw contribution content.";
+            const storagePath = "p-contrib/session_s4/iteration_1/thesis";
+            const fileName = "gpt-4-turbo_0_comparison_vector.json";
+            const contributionId = "contrib-generic";
+            const documentKey = FileType.comparison_vector;
+
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(contribStageSlug)) {
+                                return { data: [{ slug: contribStageSlug, display_name: mockStageDisplayName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_contributions': {
+                        select: async (state: MockQueryBuilderState) => {
+                            // Check for stage filter (eq)
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage' && f.value === contribStageSlug);
+                            
+                            // Check for OR filter (used for document_key in gatherInputsForStage)
+                            const orFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'or');
+                            const orMatch = orFilter && typeof orFilter.filters === 'string' && orFilter.filters.includes(documentKey);
+
+                            // Check for fallback ilike filter (if implementation changes back or for robustness)
+                            const nameFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'ilike' && f.column === 'file_name');
+                            const nameMatch = nameFilter && typeof nameFilter.value === 'string' && nameFilter.value.includes(documentKey);
+                            
+                            if (stageFilter && (orMatch || nameMatch)) {
+                                return {
+                                    data: [{
+                                        id: contributionId,
+                                        storage_path: storagePath,
+                                        file_name: fileName,
+                                        storage_bucket: "test-bucket",
+                                        model_name: "Model Contrib",
+                                        session_id: 's-contrib',
+                                        iteration_number: 1,
+                                        stage: contribStageSlug,
+                                        is_latest_edit: true,
+                                        created_at: new Date().toISOString(),
+                                        user_id: 'u-contrib',
+                                        content_type: 'application/json',
+                                        dialectic_project_id: 'p-contrib',
+                                        model_id: "model-contrib-id",
+                                        updated_at: new Date().toISOString(),
+                                        contribution_type: "model_generated",
+                                        mime_type: "application/json"
+                                    }],
+                                    error: null,
+                                    count: 1,
+                                    status: 200,
+                                    statusText: "OK"
+                                };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: {
+                    downloadResult: async (bucketId: string, path: string) => {
+                        const expectedPath = join(storagePath, fileName);
+                        const expectedPathFs = expectedPath.replace(/\\/g, '/');
+                        if (bucketId === "test-bucket" && (path === expectedPath || path === expectedPathFs)) {
+                            return { data: new Blob([contribContent]), error: null };
+                        }
+                        return { data: null, error: new Error(`Unexpected download path in mock: ${path}`) };
+                    }
+                }
+            };
+
+            const { mockSupabaseClient, spies } = setup(config);
+
+            try {
+                const project: ProjectContext = {
+                    id: "p-contrib",
+                    user_id: 'u-contrib',
+                    project_name: "Test Project Contribution",
+                    initial_user_prompt: "Initial prompt for contrib test",
+                    initial_prompt_resource_id: null,
+                    selected_domain_id: "d1-contrib",
+                    dialectic_domains: { name: "Test Domain Contrib" },
+                    process_template_id: 'pt-contrib',
+                    selected_domain_overlay_id: null,
+                    user_domain_overlay_values: null,
+                    repo_url: null,
+                    status: 'active',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                };
+                const session: SessionContext = {
+                    id: "s-contrib",
+                    project_id: "p-contrib",
+                    selected_model_ids: ["model-contrib-id"],
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    current_stage_id: 'curr-stage-contrib',
+                    iteration_count: 1,
+                    session_description: 'Session for contrib test',
+                    status: 'pending_thesis',
+                    associated_chat_id: null,
+                    user_input_reference_url: null
+                };
+                const iterationNumber = 1;
+                const stage: StageContext = {
+                    id: "stage-contrib",
+                    slug: "curr-stage-contrib",
+                    display_name: "Current Contrib Stage",
+                    description: null,
+                    system_prompts: null,
+                    domain_specific_prompt_overlays: [],
+                    created_at: new Date().toISOString(),
+                    default_system_prompt_id: null,
+                    recipe_step: createMockRecipeStep([
+                        {
+                            type: "contribution",
+                            slug: contribStageSlug,
+                            document_key: documentKey,
+                            required: true,
+                            multiple: false,
+                            section_header: "Contribution from previous stage",
+                        }
+                    ]),
+                    active_recipe_instance_id: null,
+                    recipe_template_id: null,
+                    expected_output_template_ids: [],
+                };
+
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
+
+                // Assert that contributions were queried
+                const contributionsTableSpies = spies.getHistoricQueryBuilderSpies('dialectic_contributions', 'select');
+                assert(contributionsTableSpies && contributionsTableSpies.callCount > 0, "Expected dialectic_contributions to be queried for contribution type inputs");
+
+                // Assert that content was fetched
+                assertEquals(result.sourceDocuments.length, 1, "Expected one document from contributions");
+                const doc = result.sourceDocuments[0];
+                assertEquals(doc.id, contributionId, "Expected document ID to match contribution ID");
+                assertEquals(doc.type, "contribution", "Expected document type to be 'contribution'");
+                assertEquals(doc.content, contribContent, "Expected content to match downloaded contribution content");
+                assertEquals(doc.metadata.displayName, mockStageDisplayName);
+                assertEquals(doc.metadata.header, "Contribution from previous stage");
+                
             } finally {
                 teardown();
             }

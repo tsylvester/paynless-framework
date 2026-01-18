@@ -52,6 +52,7 @@ import {
   IPlanJobContext, 
   IRenderJobContext 
 } from '../dialectic-worker/JobContext.interface.ts';
+import { DeconstructedPathInfo } from '../_shared/utils/path_deconstructor.types.ts';
 
 export type DialecticStageRecipeEdge = Database['public']['Tables']['dialectic_stage_recipe_edges']['Row'];
 export type DialecticStageRecipeInstance = Database['public']['Tables']['dialectic_stage_recipe_instances']['Row'];
@@ -1120,7 +1121,8 @@ export type SourceDocument = Omit<DialecticContributionRow, 'document_relationsh
 };
 
 export type SelectAnchorResult = 
-  | { status: 'no_document_inputs_required' } 
+  | { status: 'no_anchor_required' }
+  | { status: 'derive_from_header_context' }
   | { status: 'anchor_found'; document: SourceDocument } 
   | { status: 'anchor_not_found'; targetSlug: string; targetDocumentKey: string | undefined };
 
@@ -1204,6 +1206,48 @@ export type GranularityPlannerFn = (
 export type GranularityStrategyMap = Map<string, GranularityPlannerFn>;
 
 /**
+ * Dependencies interface for planPerSourceDocumentByLineage function.
+ * Defines the dependency functions that must be injected for dependency injection support.
+ */
+export interface IPlanPerSourceDocumentByLineageDeps {
+    readonly deconstructStoragePath: (
+        params: { storageDir: string; fileName: string; dbOriginalFileName?: string }
+    ) => DeconstructedPathInfo;
+    
+    readonly selectAnchorSourceDocument: (
+        recipeStep: DialecticRecipeStep,
+        sourceDocs: SourceDocument[]
+    ) => SelectAnchorResult;
+    
+    readonly createCanonicalPathParams: (
+        sourceDocs: SourceDocument[],
+        outputType: FileType | ContributionType,
+        anchorDoc: SourceDocument | null,
+        stage: ContributionType
+    ) => CanonicalPathParams;
+}
+
+/**
+ * Parameters interface for planPerSourceDocumentByLineage function.
+ * Bundles all input parameters for the function.
+ */
+export interface PlanPerSourceDocumentByLineageParams {
+    readonly sourceDocs: SourceDocument[];
+    readonly parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
+    readonly recipeStep: DialecticRecipeStep;
+    readonly authToken: string;
+}
+
+/**
+ * Typed function signature for planPerSourceDocumentByLineage with dependency injection.
+ * Follows the project's DI pattern by accepting dependencies as the first parameter.
+ */
+export type IPlanPerSourceDocumentByLineageFn = (
+    deps: IPlanPerSourceDocumentByLineageDeps,
+    params: PlanPerSourceDocumentByLineageParams
+) => (DialecticExecuteJobPayload | DialecticPlanJobPayload)[];
+
+/**
  * Describes a single step within a multi-step job recipe, aligning with the
  * `dialectic_recipe_template_steps` and `dialectic_stage_recipe_steps` table schemas.
  */
@@ -1214,7 +1258,7 @@ export type GranularityStrategyMap = Map<string, GranularityPlannerFn>;
  */
 export interface InputRule {
     /** The type of artifact to be used as an input. */
-    type: 'document' | 'feedback' | 'header_context' | 'seed_prompt' | 'project_resource';
+    type: 'document' | 'feedback' | 'header_context' | 'seed_prompt' | 'project_resource' | 'contribution';
     /** The slug of the stage from which to draw the artifact (e.g., 'thesis'). */
     slug: string;
     /** The specific key of the document to use. */

@@ -43,13 +43,14 @@ import { ResourceDocuments } from "../_shared/types.ts";
 import { getMaxOutputTokens } from '../_shared/utils/affordability_utils.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
 import { extractSourceGroupFragment } from '../_shared/utils/path_utils.ts';
-import { Database, Tables, TablesInsert } from '../types_db.ts';
+import { TablesInsert } from '../types_db.ts';
 import { sanitizeJsonContent } from '../_shared/utils/jsonSanitizer.ts';
 import { isJsonSanitizationResult } from '../_shared/utils/type-guards/type_guards.jsonSanitizer.ts';
 import { JsonSanitizationResult } from '../_shared/types/jsonSanitizer.interface.ts';
 import { 
     isDocumentKey, 
-    isFileType 
+    isFileType,
+    isDocumentRelated
 } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
 
 export async function executeModelCallAndSave(
@@ -1201,7 +1202,7 @@ export async function executeModelCallAndSave(
     }
 
     // Validate ALL required values for document file types BEFORE constructing pathContext
-    if (isDocumentKey(fileType)) {
+    if (isDocumentRelated(fileType)) {
         const missingValues: string[] = [];
         
         if (!job.payload.projectId || typeof job.payload.projectId !== 'string' || job.payload.projectId.trim() === '') {
@@ -1238,7 +1239,7 @@ export async function executeModelCallAndSave(
     // For document file types, document_key is guaranteed to be present after validation
     // Store it for use in pathContext and RENDER job payload
     let validatedDocumentKey: string | undefined = undefined;
-    if (isDocumentKey(fileType)) {
+    if (isDocumentRelated(fileType)) {
         const dk = job.payload.document_key;
         if (typeof dk === 'string' && dk.trim() !== '') {
             validatedDocumentKey = dk;
@@ -1255,7 +1256,7 @@ export async function executeModelCallAndSave(
     // Fragment is extracted from document_relationships.source_group UUID (first 8 chars after hyphen removal)
     // source_group is required for document outputs to enable filename disambiguation
     const sourceGroup = job.payload.document_relationships?.source_group ?? undefined;
-    if (isDocumentKey(fileType) && !sourceGroup) {
+    if (isDocumentRelated(fileType) && !sourceGroup) {
         throw new Error('source_group is required for document outputs');
     }
     const sourceGroupFragment = extractSourceGroupFragment(sourceGroup);
@@ -1421,7 +1422,7 @@ export async function executeModelCallAndSave(
         : undefined;
 
     if (
-        isDocumentKey(fileType) &&
+        isDocumentRelated(fileType) &&
         (
             typeof stageRelationshipForStage !== 'string' ||
             stageRelationshipForStage.trim() === ''
@@ -1700,7 +1701,7 @@ export async function executeModelCallAndSave(
     }
 
     // Emit chunk completion for continuation jobs immediately after save
-    if (projectOwnerUserId && isContinuationForStorage && isDocumentKey(fileType)) {
+    if (projectOwnerUserId && isContinuationForStorage && isDocumentRelated(fileType)) {
         if (!job.payload.document_key || typeof job.payload.document_key !== 'string') {
             throw new Error('document_key is required for document_chunk_completed notification but is missing or invalid');
         }
@@ -1758,7 +1759,7 @@ export async function executeModelCallAndSave(
 
     if (isFinalChunk) {
         // Emit document_completed for final chunk
-        if (projectOwnerUserId && isDocumentKey(fileType)) {
+        if (projectOwnerUserId && isDocumentRelated(fileType)) {
             if (!job.payload.document_key || typeof job.payload.document_key !== 'string') {
                 throw new Error('document_key is required for document_completed notification but is missing or invalid');
             }

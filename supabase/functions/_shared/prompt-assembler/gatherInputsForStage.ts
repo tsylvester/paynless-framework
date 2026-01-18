@@ -59,8 +59,8 @@ export async function gatherInputsForStage(
 
   const stageSpecificRules = rules.filter(
     (rule: InputRule): rule is Extract<InputRule, {
-      type: "document" | "feedback" | "header_context";
-    }> => rule.type === "document" || rule.type === "feedback" || rule.type === "header_context",
+      type: "document" | "feedback" | "header_context" | "contribution";
+    }> => rule.type === "document" || rule.type === "feedback" || rule.type === "header_context" || rule.type === "contribution",
   );
 
   const stageSlugsForDisplayName = stageSpecificRules
@@ -93,7 +93,7 @@ export async function gatherInputsForStage(
   for (const rule of rules) {
     if (criticalError) break;
 
-    if (rule.type === "document" || rule.type === "feedback" || rule.type === "header_context") {
+    if (rule.type === "document" || rule.type === "feedback" || rule.type === "header_context" || rule.type === "contribution") {
       if (!rule.slug) {
         console.warn("[gatherInputsForStage] Skipping rule due to missing slug:", rule);
         continue;
@@ -404,9 +404,123 @@ export async function gatherInputsForStage(
             { stage: rule.slug, session_id: session.id, iteration_number: iterationNumber },
           );
 
+            if (rule.required !== false) {
+              criticalError = new Error(
+                `Required header_context for stage '${displayName}' was not found in dialectic_contributions. This indicates the header_context was not generated or the generation step failed.`,
+              );
+              break;
+            }
+          }
+          if (criticalError) break;
+        } else if (rule.type === "contribution") {
+        // Query dialectic_contributions for generic contribution type inputs
+        console.info(
+          `[gatherInputsForStage] Querying dialectic_contributions for contribution`,
+          { stage: rule.slug, session_id: session.id, iteration_number: iterationNumber },
+        );
+
+        let contributionQuery = dbClient
+          .from("dialectic_contributions")
+          .select("*")
+          .eq("session_id", session.id)
+          .eq("iteration_number", iterationNumber)
+          .eq("is_latest_edit", true);
+
+        if (rule.slug) {
+          contributionQuery = contributionQuery.eq("stage", rule.slug);
+        }
+
+        if (rule.document_key) {
+          contributionQuery = contributionQuery.or(`file_name.ilike.%${rule.document_key}%,contribution_type.eq.${rule.document_key}`);
+        }
+
+        const { data: contributions, error: contributionsError } = await contributionQuery;
+
+        if (contributionsError) {
+          console.error(
+            `[gatherInputsForStage] Failed to query dialectic_contributions for contribution.`,
+            { error: contributionsError, rule, projectId: project.id },
+          );
           if (rule.required !== false) {
             criticalError = new Error(
-              `Required header_context for stage '${displayName}' was not found in dialectic_contributions. This indicates the header_context was not generated or the generation step failed.`,
+              `Failed to query REQUIRED contribution from dialectic_contributions for stage '${displayName}'. Database query failed: ${contributionsError.message}`,
+            );
+            break;
+          }
+          continue;
+        }
+
+        if (contributions && contributions.length > 0) {
+          // Use the latest version (sort by updated_at descending, take first)
+          const latestContribution = contributions.sort((a, b) => {
+            const aTime = new Date(a.updated_at).getTime();
+            const bTime = new Date(b.updated_at).getTime();
+            return bTime - aTime;
+          })[0];
+
+          console.info(
+            `[gatherInputsForStage] Found contribution in dialectic_contributions`,
+            { contribution_id: latestContribution.id, file_name: latestContribution.file_name, stage: rule.slug },
+          );
+
+          if (latestContribution.storage_path && latestContribution.storage_bucket && latestContribution.file_name) {
+            const pathToDownload = `${latestContribution.storage_path}/${latestContribution.file_name}`;
+            const { data: content, error: downloadError } =
+              await downloadFromStorageFn(latestContribution.storage_bucket, pathToDownload);
+
+            if (content && !downloadError) {
+              const decodedContent = new TextDecoder("utf-8").decode(content);
+              const metadata: {
+                displayName: string;
+                header?: string;
+                modelName?: string;
+              } = {
+                displayName: displayName,
+                header: rule.section_header,
+              };
+              if (latestContribution.model_name && typeof latestContribution.model_name === "string") {
+                metadata.modelName = latestContribution.model_name;
+              }
+              gatheredContext.sourceDocuments.push({
+                id: latestContribution.id,
+                type: "contribution",
+                content: decodedContent,
+                metadata,
+              });
+            } else {
+              console.error(
+                `[gatherInputsForStage] Failed to download contribution from contributions.`,
+                { path: pathToDownload, error: downloadError, contribution_id: latestContribution.id },
+              );
+              if (rule.required !== false) {
+                criticalError = new Error(
+                  `Failed to download REQUIRED contribution ${latestContribution.id} from stage '${displayName}'.`,
+                );
+                break;
+              }
+            }
+          } else {
+            console.error(
+              `[gatherInputsForStage] Contribution ${latestContribution.id} is missing storage details.`,
+              { contribution: latestContribution },
+            );
+            if (rule.required !== false) {
+              criticalError = new Error(
+                `REQUIRED Contribution ${latestContribution.id} from stage '${displayName}' is missing storage details.`,
+              );
+              break;
+            }
+          }
+        } else {
+          // No contributions found
+          console.warn(
+            `[gatherInputsForStage] No contribution found in dialectic_contributions`,
+            { stage: rule.slug, session_id: session.id, iteration_number: iterationNumber },
+          );
+
+          if (rule.required !== false) {
+            criticalError = new Error(
+              `Required contribution for stage '${displayName}' was not found in dialectic_contributions.`,
             );
             break;
           }

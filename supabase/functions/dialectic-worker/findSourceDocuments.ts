@@ -217,21 +217,14 @@ function getRecordUniqueKey(record: SourceRecord): string {
 
 function selectRecordsForRule(
     records: SourceRecord[],
-    allowMultiple: boolean,
-    usedRecordKeys: Set<string>,
+    _allowMultiple: boolean,
+    _usedRecordKeys: Set<string>,
 ): SourceRecord[] {
-    if (allowMultiple) {
-        return records;
-    }
-
-    for (const record of records) {
-        const key = getRecordUniqueKey(record);
-        if (!usedRecordKeys.has(key)) {
-            return [record];
-        }
-    }
-
-    return [];
+    // Always return all records without filtering.
+    // The planner is responsible for grouping by lineage, model filtering, etc.
+    // Deduplication happens at the end via seenDocumentPaths, so multiple rules
+    // can request the same document without causing "not found" errors.
+    return records;
 }
 
 export async function findSourceDocuments(
@@ -333,12 +326,14 @@ export async function findSourceDocuments(
                 break;
             }
             case 'header_context': {
+                const parentModelId = parentJob.payload.model_id;
                 let contributionQuery = dbClient.from('dialectic_contributions')
                     .select('*')
                     .eq('session_id', sessionId)
                     .eq('iteration_number', normalizedIterationNumber)
                     .eq('is_latest_edit', true)
-                    .eq('contribution_type', 'header_context');
+                    .eq('contribution_type', 'header_context')
+                    .eq('model_id', parentModelId);
 
                 if (shouldFilterByStage) {
                     contributionQuery = contributionQuery.eq('stage', stageSlugCandidate);
@@ -367,6 +362,41 @@ export async function findSourceDocuments(
                 const dedupedHeaderContributions = dedupeByFileName(headerCandidates);
                 sourceRecords = selectRecordsForRule(
                     dedupedHeaderContributions,
+                    allowMultipleMatches,
+                    usedRecordKeys,
+                );
+                break;
+            }
+            case 'contribution': {
+                let contributionQuery = dbClient.from('dialectic_contributions')
+                    .select('*')
+                    .eq('session_id', sessionId)
+                    .eq('iteration_number', normalizedIterationNumber)
+                    .eq('is_latest_edit', true);
+
+                if (shouldFilterByStage) {
+                    contributionQuery = contributionQuery.eq('stage', stageSlugCandidate);
+                }
+
+                if (rule.document_key) {
+                    const key = rule.document_key;
+                    contributionQuery = contributionQuery.or(`file_name.ilike.%${key}%,contribution_type.eq.${key}`);
+                }
+
+                const { data: contribData, error: contribError } = await contributionQuery;
+                if (contribError) {
+                    throw new Error(
+                        `Failed to fetch source documents for type '${rule.type}' from contributions: ${contribError.message}`,
+                    );
+                }
+
+                const contribRecordsRaw = (contribData ?? []);
+                ensureRecordsHaveStorage(contribRecordsRaw);
+                const contribRecords = sortRecordsByRecency(contribRecordsRaw);
+                const filteredContribs = filterRecordsByDocumentKey(contribRecords, rule.document_key);
+
+                sourceRecords = selectRecordsForRule(
+                    dedupeByFileName(filteredContribs),
                     allowMultipleMatches,
                     usedRecordKeys,
                 );
@@ -438,27 +468,74 @@ export async function findSourceDocuments(
 
         ensureRecordsHaveStorage(sourceRecords);
 
+        // Collect source_contribution_ids from project resources to fetch document_relationships
+        const resourcesNeedingDocRels: DialecticProjectResourceRow[] = [];
+        for (const record of sourceRecords) {
+            if (isProjectResourceRow(record) && record.source_contribution_id) {
+                resourcesNeedingDocRels.push(record);
+            }
+        }
+
+        // Batch-fetch contributions to get document_relationships for project resources
+        const docRelsMap = new Map<string, SourceDocument['document_relationships']>();
+        if (resourcesNeedingDocRels.length > 0) {
+            const contributionIds = resourcesNeedingDocRels
+                .map(r => r.source_contribution_id)
+                .filter((id): id is string => id !== null);
+
+            console.log(`[findSourceDocuments] Fetching document_relationships for ${contributionIds.length} contribution(s): ${contributionIds.join(', ')}`);
+
+            if (contributionIds.length > 0) {
+                const { data: contributions, error: contribError } = await dbClient
+                    .from('dialectic_contributions')
+                    .select('id, document_relationships')
+                    .in('id', contributionIds);
+
+                if (contribError) {
+                    console.warn(`[findSourceDocuments] Failed to fetch document_relationships from contributions: ${contribError.message}`);
+                } else if (contributions) {
+                    console.log(`[findSourceDocuments] Fetched ${contributions.length} contribution(s) with document_relationships`);
+                    for (const contrib of contributions) {
+                        if (contrib.document_relationships && isDocumentRelationships(contrib.document_relationships)) {
+                            docRelsMap.set(contrib.id, contrib.document_relationships);
+                            console.log(`[findSourceDocuments] Mapped document_relationships for contribution ${contrib.id}: source_group=${(contrib.document_relationships as Record<string, unknown>).source_group}`);
+                        } else {
+                            console.log(`[findSourceDocuments] Contribution ${contrib.id} has no valid document_relationships: ${JSON.stringify(contrib.document_relationships)}`);
+                        }
+                    }
+                }
+            }
+        } else {
+            console.log(`[findSourceDocuments] No resources with source_contribution_id to fetch document_relationships for`);
+        }
+
         const documents = sourceRecords.map((record: SourceRecord) => {
             if (isFeedbackRow(record)) {
                 return mapFeedbackToSourceDocument(record);
             } else if (isProjectResourceRow(record)) {
-                return mapResourceToSourceDocument(record);
+                const doc = mapResourceToSourceDocument(record);
+                // Merge document_relationships from source contribution if available
+                if (record.source_contribution_id && docRelsMap.has(record.source_contribution_id)) {
+                    doc.document_relationships = docRelsMap.get(record.source_contribution_id) ?? null;
+                }
+                return doc;
             } else if (isContributionRow(record)) {
                 return mapContributionToSourceDocument(record);
             }
             return null;
         });
-        
+
         const validDocuments = documents.filter((doc): doc is SourceDocument => doc !== null);
         for (const doc of validDocuments) {
             const documentPathKey = `${doc.storage_bucket}|${doc.storage_path}|${doc.file_name}`;
             if (!seenDocumentPaths.has(documentPathKey)) {
                 seenDocumentPaths.add(documentPathKey);
                 allSourceDocuments.push(doc);
+                console.log(`[findSourceDocuments] Added document: stage=${doc.stage}, file_name=${doc.file_name}, source_group=${doc.document_relationships?.source_group ?? 'null'}`);
             }
         }
     }
-    
+
     return allSourceDocuments;
 }
 

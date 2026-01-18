@@ -143,6 +143,7 @@ interface UploadContextBase {
 export type ModelContributionFileTypes =
   | FileType.ModelContributionRawJson
   | FileType.HeaderContext
+  | FileType.AssembledDocumentJson
   | FileType.PairwiseSynthesisChunk
   | FileType.ReducedSynthesis
   | FileType.Synthesis
@@ -329,3 +330,5 @@ export interface IFileManager {
   uploadAndRegisterFile(context: UploadContext): Promise<FileManagerResponse>;
   assembleAndSaveFinalDocument(rootContributionId: string): Promise<{ finalPath: string | null; error: Error | null; }>;
 } 
+
+export type DocumentRelated = DocumentKey | FileType.AssembledDocumentJson | FileType.ModelContributionRawJson | FileType.RenderedDocument

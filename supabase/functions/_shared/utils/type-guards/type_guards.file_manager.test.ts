@@ -8,6 +8,7 @@ import {
   isResourceContext,
   isOutputType,
   isDocumentKey,
+  isDocumentRelated,
 } from './type_guards.file_manager.ts'
 import {
   CanonicalPathParams,
@@ -228,6 +229,7 @@ Deno.test('Type Guard: isResourceContext', async (t) => {
 Deno.test('Type Guard: isModelContributionFileType', async (t) => {
   await t.step('accepts model contribution file types', () => {
     assert(isModelContributionFileType(FileType.HeaderContext))
+    assert(isModelContributionFileType(FileType.AssembledDocumentJson))
     assert(isModelContributionFileType(FileType.business_case))
   })
 
@@ -330,3 +332,37 @@ Deno.test('Type Guard: isDocumentKey', async (t) => {
     assert(!isDocumentKey(FileType.RenderedDocument))
   })
 })
+
+Deno.test('Type Guard: isDocumentRelated', async (t) => {
+    await t.step('returns true for DocumentKey file types', () => {
+        assert(isDocumentRelated(FileType.business_case));
+        assert(isDocumentRelated(FileType.feature_spec));
+        assert(isDocumentRelated(FileType.technical_approach));
+    });
+
+    await t.step('returns true for AssembledDocumentJson', () => {
+        assert(isDocumentRelated(FileType.AssembledDocumentJson));
+    });
+
+    await t.step('returns true for ModelContributionRawJson', () => {
+        assert(isDocumentRelated(FileType.ModelContributionRawJson));
+    });
+
+    await t.step('returns true for RenderedDocument', () => {
+        assert(isDocumentRelated(FileType.RenderedDocument));
+    });
+
+    await t.step('returns false for HeaderContext', () => {
+        assert(!isDocumentRelated(FileType.HeaderContext));
+    });
+
+    await t.step('returns false for ProjectReadme', () => {
+        assert(!isDocumentRelated(FileType.ProjectReadme));
+    });
+
+    await t.step('returns false for null/undefined/non-strings', () => {
+        assert(!isDocumentRelated(null));
+        assert(!isDocumentRelated(undefined));
+        assert(!isDocumentRelated(123));
+    });
+});

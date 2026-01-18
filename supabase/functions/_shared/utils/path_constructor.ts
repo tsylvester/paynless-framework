@@ -193,18 +193,23 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
         throw new Error('Required context missing for header_context.');
       }
+      if (!documentKey || typeof documentKey !== 'string' || documentKey.trim() === '') {
+        throw new Error('documentKey is required for header_context file type.');
+      }
       const sanitizedFragment = extractSourceGroupFragment(sourceGroupFragment);
       const fragmentSegment = sanitizedFragment ? `_${sanitizedFragment}` : '';
+      
+      const sanitizedDocumentKey = sanitizeForPath(documentKey);
       
       // Check if antithesis pattern applies: stageSlug === 'antithesis' AND sourceAnchorModelSlug exists
       if (rawStageSlug === 'antithesis' && sourceAnchorModelSlug) {
         const sourceAnchorModelSlugSanitized = sanitizeForPath(sourceAnchorModelSlug);
-        // Antithesis pattern: {modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_header_context.json
-        const fileName = `${modelSlugSanitized}_critiquing_${sourceAnchorModelSlugSanitized}${fragmentSegment}_${attemptCount}_header_context.json`;
+        // Antithesis pattern: {modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_{documentKey}.json
+        const fileName = `${modelSlugSanitized}_critiquing_${sourceAnchorModelSlugSanitized}${fragmentSegment}_${attemptCount}_${sanitizedDocumentKey}.json`;
         return { storagePath: `${stageRootPath}/_work/context`, fileName };
       } else {
-        // Simple pattern: {modelSlug}_{attemptCount}[_{fragment}]_header_context.json
-        const fileName = `${modelSlugSanitized}_${attemptCount}${fragmentSegment}_header_context.json`;
+        // Simple pattern: {modelSlug}_{attemptCount}[_{fragment}]_{documentKey}.json
+        const fileName = `${modelSlugSanitized}_${attemptCount}${fragmentSegment}_${sanitizedDocumentKey}.json`;
         return { storagePath: `${stageRootPath}/_work/context`, fileName };
       }
     }

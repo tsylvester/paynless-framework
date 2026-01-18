@@ -805,8 +805,13 @@ Deno.test('[path_deconstructor] inverse C->D - document-centric artifacts', asyn
     },
     {
       name: 'HeaderContext',
-      context: { ...baseDocContext, fileType: FileType.HeaderContext },
-      checkFields: ['fileTypeGuess', 'modelSlug', 'attemptCount'],
+      context: { ...baseDocContext, fileType: FileType.HeaderContext, documentKey: 'header_context' },
+      checkFields: ['fileTypeGuess', 'modelSlug', 'attemptCount', 'documentKey'],
+    },
+    {
+      name: 'HeaderContext with header_context_pairwise documentKey',
+      context: { ...baseDocContext, fileType: FileType.HeaderContext, documentKey: 'header_context_pairwise' },
+      checkFields: ['fileTypeGuess', 'modelSlug', 'attemptCount', 'documentKey'],
     },
     {
       name: 'AssembledDocumentJson',

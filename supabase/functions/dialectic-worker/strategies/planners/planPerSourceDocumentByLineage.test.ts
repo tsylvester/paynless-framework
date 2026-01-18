@@ -16,8 +16,14 @@ import {
     SourceDocument, 
     ContextForDocument,
     DialecticExecuteJobPayload,
+    IPlanPerSourceDocumentByLineageDeps,
+    PlanPerSourceDocumentByLineageParams,
+    SelectAnchorResult,
+    ContributionType,
 } from '../../../dialectic-service/dialectic.interface.ts';
-import { planPerSourceDocumentByLineage } from './planPerSourceDocumentByLineage.ts';
+import { planPerSourceDocumentByLineage, planPerSourceDocumentByLineageInternal } from './planPerSourceDocumentByLineage.ts';
+import { CanonicalPathParams } from '../../../_shared/types/file_manager.types.ts';
+import { DeconstructedPathInfo } from '../../../_shared/utils/path_deconstructor.types.ts';
 import { 
     isDialecticExecuteJobPayload, 
     isDialecticPlanJobPayload 
@@ -1695,18 +1701,29 @@ Deno.test('planPerSourceDocumentByLineage EXECUTE branch must not set document_r
 });
 
 Deno.test('planPerSourceDocumentByLineage should create EXECUTE child jobs for PLAN recipe steps with header_context_artifact and context_for_documents', () => {
+    const seedPromptDoc: SourceDocument = {
+        ...getMockSourceDoc(null, 'seed-prompt-doc-id', null),
+        contribution_type: 'seed_prompt',
+        file_name: null,
+        stage: 'thesis',
+        document_key: FileType.SeedPrompt,
+    };
+
     const sourceDocs: SourceDocument[] = [
+        seedPromptDoc,
         {
             ...getMockSourceDoc('model-a-id', 'doc-a-id', 'group-a'),
             stage: 'thesis',
             contribution_type: 'thesis',
             document_key: FileType.business_case,
+            file_name: 'gpt-4_0_business_case.md',
         },
         {
             ...getMockSourceDoc('model-b-id', 'doc-b-id', 'group-b'),
             stage: 'thesis',
             contribution_type: 'thesis',
             document_key: FileType.business_case,
+            file_name: 'gpt-4_0_business_case.md',
         },
     ];
     const mockParentJob = getMockParentJob();
@@ -2373,17 +2390,18 @@ Deno.test('planPerSourceDocumentByLineage handles anchor_found by using result.d
 Deno.test('planPerSourceDocumentByLineage throws on anchor_not_found', () => {
     const mockParentJob = getMockParentJob();
     
-    // Create sourceDocs with documents that form groups, but don't match the required document_key
-    const wrongDocument: SourceDocument = {
-        ...getMockSourceDoc('model-a-id', 'wrong-doc-id', 'group-a'),
-        contribution_type: 'thesis',
-        file_name: 'gpt-4_0_feature_spec.md',
+    // Create sourceDocs with documents that pass validation (correct type, stage, and document_key)
+    // but selectAnchorSourceDocument will return anchor_not_found
+    const document: SourceDocument = {
+        ...getMockSourceDoc('model-a-id', 'doc-id', 'group-a'),
+        contribution_type: 'rendered_document', // Matches type='document' requirement
+        file_name: 'gpt-4_0_business_case.md', // Correct document_key - recipe requires business_case
         storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
-        stage: 'thesis',
-        document_key: FileType.feature_spec, // Wrong document_key - recipe requires business_case
+        stage: 'thesis', // Matches slug='thesis' requirement
+        document_key: FileType.business_case, // Correct document_key - recipe requires business_case
     };
 
-    const sourceDocs: SourceDocument[] = [wrongDocument];
+    const sourceDocs: SourceDocument[] = [document];
 
     const executeRecipeStep: DialecticRecipeStep = {
         id: 'execute-step-id',
@@ -2431,13 +2449,544 @@ Deno.test('planPerSourceDocumentByLineage throws on anchor_not_found', () => {
         },
     };
 
-    // Should throw error when anchor document not found (recipe requires business_case but sourceDocs only has feature_spec)
+    // Mock dependencies for unit test
+    const mockDeps: IPlanPerSourceDocumentByLineageDeps = {
+        deconstructStoragePath: (params: { storageDir: string; fileName: string; dbOriginalFileName?: string }): DeconstructedPathInfo => {
+            // Extract document_key from filename to pass validation
+            const documentKey = params.fileName.replace(/^[^_]+_\d+_/, '').replace(/\.md$/, '');
+            return {
+                documentKey: documentKey,
+            };
+        },
+        selectAnchorSourceDocument: (_recipeStep: DialecticRecipeStep, _sourceDocs: SourceDocument[]): SelectAnchorResult => {
+            // Return anchor_not_found to test error handling
+            return {
+                status: 'anchor_not_found',
+                targetSlug: 'thesis',
+                targetDocumentKey: FileType.business_case,
+            };
+        },
+        createCanonicalPathParams: (_sourceDocs: SourceDocument[], _outputType: FileType | ContributionType, _anchorDoc: SourceDocument | null, _stage: ContributionType): CanonicalPathParams => {
+            // This should never be called because selectAnchorSourceDocument returns anchor_not_found
+            throw new Error('createCanonicalPathParams should not be called when anchor is not found');
+        },
+    };
+
+    const params: PlanPerSourceDocumentByLineageParams = {
+        sourceDocs,
+        parentJob: mockParentJob,
+        recipeStep: executeRecipeStep,
+        authToken: 'user-jwt-123',
+    };
+
+    // Should throw error when anchor document not found (selectAnchorSourceDocument returns anchor_not_found)
     assertThrows(
         () => {
-            planPerSourceDocumentByLineage(sourceDocs, mockParentJob, executeRecipeStep, 'user-jwt-123');
+            planPerSourceDocumentByLineageInternal(mockDeps, params);
         },
         Error,
         'Anchor document not found',
         'Should throw error when anchor document not found in sourceDocs'
+    );
+});
+
+Deno.test('planPerSourceDocumentByLineage includes shared global documents (seed_prompt) in every lineage job instead of creating separate group', () => {
+    // REAL DATA from test.log lines 3734-3754:
+    // - seed_prompt.md (source_group=null)
+    // - 4 thesis documents with source_group=c1f4cdf1-a136-46b7-bbb6-87a9c4627dbb
+    // Recipe step 'prepare-proposal-review-plan' requires ALL of these documents
+    // The planner must create ONE job for the lineage group that includes ALL 5 documents
+    
+    const seedPromptDoc: SourceDocument = {
+        id: 'seed-prompt-resource-id',
+        session_id: '002cc438-cba1-4b2c-9199-b949e8fcfd28',
+        user_id: 'd4cb91eb-a4c4-464e-b7b4-91c30bc7a154',
+        stage: 'thesis',
+        iteration_number: 1,
+        contribution_type: 'seed_prompt',
+        file_name: 'seed_prompt.md',
+        storage_bucket: 'dialectic-contributions',
+        storage_path: '97cea5c4-9bf8-49e3-8d2a-7229ed9bc05c/session_002cc438/iteration_1/1_thesis',
+        size_bytes: 100,
+        mime_type: 'text/markdown',
+        content: '',
+        model_id: null,
+        model_name: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        target_contribution_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
+        processing_time_ms: null,
+        error: null,
+        citations: null,
+        document_relationships: null, // source_group=null (global/shared document)
+        is_header: false,
+        source_prompt_resource_id: null,
+        attempt_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        document_key: FileType.SeedPrompt,
+    };
+
+    const thesisBusinessCaseDoc: SourceDocument = {
+        id: 'business-case-contrib-id',
+        session_id: '002cc438-cba1-4b2c-9199-b949e8fcfd28',
+        user_id: 'd4cb91eb-a4c4-464e-b7b4-91c30bc7a154',
+        stage: 'thesis',
+        iteration_number: 1,
+        contribution_type: 'rendered_document',
+        file_name: 'full-dag-test-model-c_0_business_case_c1f4cdf1.md',
+        storage_bucket: 'dialectic-contributions',
+        storage_path: '97cea5c4-9bf8-49e3-8d2a-7229ed9bc05c/session_002cc438/iteration_1/1_thesis/documents',
+        size_bytes: 100,
+        mime_type: 'text/markdown',
+        content: '',
+        model_id: '93213c06-7de0-4575-aa2c-7ede1a00bef6',
+        model_name: 'Full DAG Test Model C',
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        target_contribution_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
+        processing_time_ms: null,
+        error: null,
+        citations: null,
+        document_relationships: { source_group: 'c1f4cdf1-a136-46b7-bbb6-87a9c4627dbb' },
+        is_header: false,
+        source_prompt_resource_id: null,
+        attempt_count: 0,
+        document_key: FileType.business_case,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    const thesisFeatureSpecDoc: SourceDocument = {
+        ...thesisBusinessCaseDoc,
+        id: 'feature-spec-contrib-id',
+        file_name: 'full-dag-test-model-c_0_feature_spec_c1f4cdf1.md',
+        document_key: FileType.feature_spec,
+    };
+
+    const thesisTechnicalApproachDoc: SourceDocument = {
+        ...thesisBusinessCaseDoc,
+        id: 'technical-approach-contrib-id',
+        file_name: 'full-dag-test-model-c_0_technical_approach_c1f4cdf1.md',
+        document_key: FileType.technical_approach,
+    };
+
+    const thesisSuccessMetricsDoc: SourceDocument = {
+        ...thesisBusinessCaseDoc,
+        id: 'success-metrics-contrib-id',
+        file_name: 'full-dag-test-model-c_0_success_metrics_c1f4cdf1.md',
+        document_key: FileType.success_metrics,
+    };
+
+    const sourceDocs: SourceDocument[] = [
+        seedPromptDoc,
+        thesisBusinessCaseDoc,
+        thesisFeatureSpecDoc,
+        thesisTechnicalApproachDoc,
+        thesisSuccessMetricsDoc,
+    ];
+
+    const mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        id: 'parent-plan-job-id',
+        created_at: new Date().toISOString(),
+        status: 'in_progress',
+        user_id: 'd4cb91eb-a4c4-464e-b7b4-91c30bc7a154',
+        session_id: '002cc438-cba1-4b2c-9199-b949e8fcfd28',
+        iteration_number: 1,
+        parent_job_id: null,
+        attempt_count: 1,
+        max_retries: 3,
+        completed_at: null,
+        error_details: null,
+        prerequisite_job_id: null,
+        results: null,
+        stage_slug: 'antithesis',
+        started_at: new Date().toISOString(),
+        target_contribution_id: null,
+        payload: {
+            projectId: '97cea5c4-9bf8-49e3-8d2a-7229ed9bc05c',
+            sessionId: '002cc438-cba1-4b2c-9199-b949e8fcfd28',
+            stageSlug: 'antithesis',
+            iterationNumber: 1,
+            job_type: 'PLAN',
+            model_id: '93213c06-7de0-4575-aa2c-7ede1a00bef6',
+            model_slug: 'Full DAG Test Model C',
+            walletId: '5a5f8d55-582a-4ebb-89f9-c36aabff93bf',
+            user_jwt: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+        },
+        is_test_job: false,
+        job_type: 'PLAN',
+    };
+
+    // REAL recipe step from antithesis_stage.sql migration
+    const planRecipeStep: DialecticStageRecipeStep = {
+        id: '8d1930b2-40ca-453a-b489-2f42a09884de',
+        instance_id: 'instance-id-antithesis',
+        template_step_id: 'template-step-id-antithesis',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        step_key: 'antithesis_prepare_proposal_review_plan',
+        step_slug: 'prepare-proposal-review-plan',
+        step_description: 'Generate HeaderContext JSON that orchestrates per-proposal Antithesis review documents.',
+        step_name: 'Prepare Proposal Review Plan',
+        prompt_template_id: 'template-planner-prompt-id-antithesis',
+        output_type: FileType.HeaderContext,
+        granularity_strategy: 'per_source_document_by_lineage',
+        inputs_required: [
+            { type: 'seed_prompt', slug: 'thesis', document_key: FileType.SeedPrompt, required: true },
+            { type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true },
+            { type: 'document', slug: 'thesis', document_key: FileType.feature_spec, required: true },
+            { type: 'document', slug: 'thesis', document_key: FileType.technical_approach, required: true },
+            { type: 'document', slug: 'thesis', document_key: FileType.success_metrics, required: true },
+        ],
+        inputs_relevance: [
+            { document_key: FileType.SeedPrompt, relevance: 1.0 },
+            { document_key: FileType.business_case, relevance: 1.0 },
+            { document_key: FileType.feature_spec, relevance: 0.9 },
+            { document_key: FileType.technical_approach, relevance: 0.9 },
+            { document_key: FileType.success_metrics, relevance: 0.8 },
+        ],
+        job_type: 'PLAN',
+        prompt_type: 'Planner',
+        branch_key: null,
+        parallel_group: null,
+        config_override: {},
+        is_skipped: false,
+        object_filter: {},
+        output_overrides: {},
+        execution_order: 1,
+        outputs_required: {
+            system_materials: {
+                executive_summary: '',
+                input_artifacts_summary: '',
+                stage_rationale: '',
+            },
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [
+                {
+                    document_key: FileType.business_case,
+                    content_to_include: {
+                        notes: [],
+                    },
+                },
+            ],
+        },
+    };
+
+    const childJobs = planPerSourceDocumentByLineage(sourceDocs, mockParentJob, planRecipeStep, mockParentJob.payload.user_jwt);
+
+    // Should create ONE job for the lineage group (not two: one for seed_prompt, one for thesis docs)
+    assertEquals(childJobs.length, 1, 'Should create exactly ONE job for the lineage group, not separate jobs for seed_prompt and thesis docs');
+
+    const job = childJobs[0];
+    assertExists(job, 'Child job should exist');
+    assertEquals(isDialecticExecuteJobPayload(job), true, 'PLAN recipe steps should create EXECUTE child jobs');
+
+    if (isDialecticExecuteJobPayload(job)) {
+        const executePayload: DialecticExecuteJobPayload = job;
+        
+        // The job should have the lineage source_group (not the seed_prompt's ID)
+        assertExists(executePayload.document_relationships, 'EXECUTE job should have document_relationships');
+        assertEquals(
+            executePayload.document_relationships?.source_group,
+            'c1f4cdf1-a136-46b7-bbb6-87a9c4627dbb',
+            'source_group should be the thesis lineage group, not seed_prompt ID'
+        );
+
+        // The inputs should include ALL documents: seed_prompt + all 4 thesis docs
+        assertExists(executePayload.inputs, 'EXECUTE job should include inputs');
+        assertExists(executePayload.inputs.document_ids, 'PLAN job inputs should include document_ids array');
+        
+        const documentIds = executePayload.inputs.document_ids;
+        assert(Array.isArray(documentIds), 'document_ids should be an array');
+        
+        // Verify all 5 documents are included in the job
+        const expectedIds = [
+            seedPromptDoc.id,
+            thesisBusinessCaseDoc.id,
+            thesisFeatureSpecDoc.id,
+            thesisTechnicalApproachDoc.id,
+            thesisSuccessMetricsDoc.id,
+        ].sort();
+        const actualIds = documentIds.sort();
+        assertEquals(
+            actualIds,
+            expectedIds,
+            'Job inputs should include ALL 5 documents: seed_prompt + 4 thesis docs. seed_prompt must not be isolated in its own group.'
+        );
+
+        // Verify selectAnchorSourceDocument was called with ALL documents, not just seed_prompt
+        // This is proven by the job existing (would have thrown "Anchor document not found" if only seed_prompt was passed)
+        assertExists(
+            executePayload.canonicalPathParams,
+            'canonicalPathParams should exist (proves selectAnchorSourceDocument succeeded with full document set)'
+        );
+    } else {
+        throw new Error('Expected EXECUTE job');
+    }
+});
+
+Deno.test('planPerSourceDocumentByLineage throws error when any lineage group is missing any required document from recipe', () => {
+    // REAL SCENARIO from test.log lines 3734-3913:
+    // findSourceDocuments returns documents from multiple lineages:
+    // - seed_prompt (global, source_group=null)
+    // - Lineage 3ff65066: business_case, success_metrics
+    // - Lineage 79367c3c: feature_spec, technical_approach
+    // Recipe requires ALL: seed_prompt + business_case + feature_spec + technical_approach + success_metrics
+    // After grouping: Lineage 3ff65066 has business_case + success_metrics + seed_prompt (MISSING feature_spec, technical_approach)
+    //                 Lineage 79367c3c has feature_spec + technical_approach + seed_prompt (MISSING business_case, success_metrics)
+    // Result: Should throw error because no lineage group has all required documents
+
+    const seedPromptDoc: SourceDocument = {
+        id: 'seed-prompt-resource-id',
+        session_id: '002cc438-cba1-4b2c-9199-b949e8fcfd28',
+        user_id: 'd4cb91eb-a4c4-464e-b7b4-91c30bc7a154',
+        stage: 'thesis',
+        iteration_number: 1,
+        contribution_type: 'seed_prompt',
+        file_name: 'seed_prompt.md',
+        storage_bucket: 'dialectic-contributions',
+        storage_path: '97cea5c4-9bf8-49e3-8d2a-7229ed9bc05c/session_002cc438/iteration_1/1_thesis',
+        size_bytes: 100,
+        mime_type: 'text/markdown',
+        content: '',
+        model_id: null,
+        model_name: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        target_contribution_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
+        processing_time_ms: null,
+        error: null,
+        citations: null,
+        document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+        attempt_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        document_key: FileType.SeedPrompt,
+    };
+
+    // Lineage 3ff65066 documents
+    const businessCaseDoc: SourceDocument = {
+        id: 'business-case-3ff65066-id',
+        session_id: '002cc438-cba1-4b2c-9199-b949e8fcfd28',
+        user_id: 'd4cb91eb-a4c4-464e-b7b4-91c30bc7a154',
+        stage: 'thesis',
+        iteration_number: 1,
+        contribution_type: 'rendered_document',
+        file_name: 'full-dag-test-model-a_0_business_case_3ff65066.md',
+        storage_bucket: 'dialectic-contributions',
+        storage_path: '97cea5c4-9bf8-49e3-8d2a-7229ed9bc05c/session_002cc438/iteration_1/1_thesis/documents',
+        size_bytes: 100,
+        mime_type: 'text/markdown',
+        content: '',
+        model_id: '93213c06-7de0-4575-aa2c-7ede1a00bef6',
+        model_name: 'Full DAG Test Model A',
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        target_contribution_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
+        processing_time_ms: null,
+        error: null,
+        citations: null,
+        document_relationships: { source_group: '3ff65066-900f-4939-95a0-ea317841e6e8' },
+        is_header: false,
+        source_prompt_resource_id: null,
+        attempt_count: 0,
+        document_key: FileType.business_case,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    const successMetricsDoc: SourceDocument = {
+        ...businessCaseDoc,
+        id: 'success-metrics-3ff65066-id',
+        file_name: 'full-dag-test-model-a_0_success_metrics_3ff65066.md',
+        document_key: FileType.success_metrics,
+    };
+
+    // Lineage 79367c3c documents
+    const featureSpecDoc: SourceDocument = {
+        id: 'feature-spec-79367c3c-id',
+        session_id: '002cc438-cba1-4b2c-9199-b949e8fcfd28',
+        user_id: 'd4cb91eb-a4c4-464e-b7b4-91c30bc7a154',
+        stage: 'thesis',
+        iteration_number: 1,
+        contribution_type: 'rendered_document',
+        file_name: 'full-dag-test-model-b_0_feature_spec_79367c3c.md',
+        storage_bucket: 'dialectic-contributions',
+        storage_path: '97cea5c4-9bf8-49e3-8d2a-7229ed9bc05c/session_002cc438/iteration_1/1_thesis/documents',
+        size_bytes: 100,
+        mime_type: 'text/markdown',
+        content: '',
+        model_id: '93213c06-7de0-4575-aa2c-7ede1a00bef6',
+        model_name: 'Full DAG Test Model B',
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        target_contribution_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
+        processing_time_ms: null,
+        error: null,
+        citations: null,
+        document_relationships: { source_group: '79367c3c-e244-40cf-8cce-4c52ecda40d3' },
+        is_header: false,
+        source_prompt_resource_id: null,
+        attempt_count: 0,
+        document_key: FileType.feature_spec,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    const technicalApproachDoc: SourceDocument = {
+        ...featureSpecDoc,
+        id: 'technical-approach-79367c3c-id',
+        file_name: 'full-dag-test-model-b_0_technical_approach_79367c3c.md',
+        document_key: FileType.technical_approach,
+    };
+
+    const sourceDocs: SourceDocument[] = [
+        seedPromptDoc,
+        businessCaseDoc,
+        successMetricsDoc,
+        featureSpecDoc,
+        technicalApproachDoc,
+    ];
+
+    const mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        id: 'parent-plan-job-id',
+        created_at: new Date().toISOString(),
+        status: 'in_progress',
+        user_id: 'd4cb91eb-a4c4-464e-b7b4-91c30bc7a154',
+        session_id: '002cc438-cba1-4b2c-9199-b949e8fcfd28',
+        iteration_number: 1,
+        parent_job_id: null,
+        attempt_count: 1,
+        max_retries: 3,
+        completed_at: null,
+        error_details: null,
+        prerequisite_job_id: null,
+        results: null,
+        stage_slug: 'antithesis',
+        started_at: new Date().toISOString(),
+        target_contribution_id: null,
+        payload: {
+            projectId: '97cea5c4-9bf8-49e3-8d2a-7229ed9bc05c',
+            sessionId: '002cc438-cba1-4b2c-9199-b949e8fcfd28',
+            stageSlug: 'antithesis',
+            iterationNumber: 1,
+            job_type: 'PLAN',
+            model_id: '93213c06-7de0-4575-aa2c-7ede1a00bef6',
+            model_slug: 'Full DAG Test Model C',
+            walletId: '5a5f8d55-582a-4ebb-89f9-c36aabff93bf',
+            user_jwt: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+        },
+        is_test_job: false,
+        job_type: 'PLAN',
+    };
+
+    const planRecipeStep: DialecticStageRecipeStep = {
+        id: '8d1930b2-40ca-453a-b489-2f42a09884de',
+        instance_id: 'instance-id-antithesis',
+        template_step_id: 'template-step-id-antithesis',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        step_key: 'antithesis_prepare_proposal_review_plan',
+        step_slug: 'prepare-proposal-review-plan',
+        step_description: 'Generate HeaderContext JSON that orchestrates per-proposal Antithesis review documents.',
+        step_name: 'Prepare Proposal Review Plan',
+        prompt_template_id: 'template-planner-prompt-id-antithesis',
+        output_type: FileType.HeaderContext,
+        granularity_strategy: 'per_source_document_by_lineage',
+        inputs_required: [
+            { type: 'seed_prompt', slug: 'thesis', document_key: FileType.SeedPrompt, required: true },
+            { type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true },
+            { type: 'document', slug: 'thesis', document_key: FileType.feature_spec, required: true },
+            { type: 'document', slug: 'thesis', document_key: FileType.technical_approach, required: true },
+            { type: 'document', slug: 'thesis', document_key: FileType.success_metrics, required: true },
+        ],
+        inputs_relevance: [
+            { document_key: FileType.SeedPrompt, relevance: 1.0 },
+            { document_key: FileType.business_case, relevance: 1.0 },
+            { document_key: FileType.feature_spec, relevance: 0.9 },
+            { document_key: FileType.technical_approach, relevance: 0.9 },
+            { document_key: FileType.success_metrics, relevance: 0.8 },
+        ],
+        job_type: 'PLAN',
+        prompt_type: 'Planner',
+        branch_key: null,
+        parallel_group: null,
+        config_override: {},
+        is_skipped: false,
+        object_filter: {},
+        output_overrides: {},
+        execution_order: 1,
+        outputs_required: {
+            system_materials: {
+                executive_summary: '',
+                input_artifacts_summary: '',
+                stage_rationale: '',
+            },
+            header_context_artifact: {
+                type: 'header_context',
+                document_key: 'header_context',
+                artifact_class: 'header_context',
+                file_type: 'json',
+            },
+            context_for_documents: [
+                {
+                    document_key: FileType.business_case,
+                    content_to_include: {
+                        notes: [],
+                    },
+                },
+            ],
+        },
+    };
+
+    // Should throw error because:
+    // - Lineage 3ff65066 group will have: business_case + success_metrics + seed_prompt (MISSING feature_spec, technical_approach)
+    // - Lineage 79367c3c group will have: feature_spec + technical_approach + seed_prompt (MISSING business_case, success_metrics)
+    // Recipe requires ALL 5 documents, but no single group has all of them
+    assertThrows(
+        () => {
+            planPerSourceDocumentByLineage(sourceDocs, mockParentJob, planRecipeStep, mockParentJob.payload.user_jwt);
+        },
+        Error,
+        'missing required document',
+        'Should throw error when any lineage group is missing any required document from recipe inputs_required'
     );
 });
