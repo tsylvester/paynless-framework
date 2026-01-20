@@ -1167,3 +1167,74 @@ BEGIN
         updated_at = now()
     WHERE step_key = 'synthesis_prepare_pairwise_header';
 END $$;
+
+-- ---------------------------------------------------------------------------
+-- Synthesis consolidation step input type fix
+-- Corrects input type for 'synthesis_pairwise_*' from 'document' to 'contribution'
+-- in Synthesis consolidation steps (synthesis-document-*), as these intermediate
+-- pairwise synthesis outputs are assembled_document_json contributions stored in
+-- dialectic_contributions, not rendered documents in dialectic_project_resources.
+-- ---------------------------------------------------------------------------
+
+DO $$
+DECLARE
+  v_step_keys text[] := ARRAY[
+    'synthesis_document_business_case',
+    'synthesis_document_feature_spec',
+    'synthesis_document_technical_approach',
+    'synthesis_document_success_metrics'
+  ];
+  v_step_key text;
+  v_document_key_pattern text;
+BEGIN
+  FOREACH v_step_key IN ARRAY v_step_keys
+  LOOP
+    -- Determine the corresponding pairwise document_key pattern for this consolidation step
+    -- e.g., 'synthesis_document_business_case' -> 'synthesis_pairwise_business_case'
+    v_document_key_pattern := REPLACE(v_step_key, 'synthesis_document_', 'synthesis_pairwise_');
+    
+    -- Update template steps
+    UPDATE public.dialectic_recipe_template_steps
+    SET inputs_required = (
+      SELECT jsonb_agg(
+        CASE
+          WHEN elem->>'document_key' = v_document_key_pattern AND elem->>'type' = 'document'
+          THEN jsonb_set(elem, '{type}', '"contribution"'::jsonb)
+          ELSE elem
+        END
+        ORDER BY ord
+      )
+      FROM jsonb_array_elements(inputs_required) WITH ORDINALITY AS t(elem, ord)
+    ),
+    updated_at = now()
+    WHERE step_key = v_step_key
+      AND inputs_required IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM jsonb_array_elements(inputs_required) elem
+        WHERE elem->>'document_key' = v_document_key_pattern
+          AND elem->>'type' = 'document'
+      );
+
+    -- Update instance steps
+    UPDATE public.dialectic_stage_recipe_steps
+    SET inputs_required = (
+      SELECT jsonb_agg(
+        CASE
+          WHEN elem->>'document_key' = v_document_key_pattern AND elem->>'type' = 'document'
+          THEN jsonb_set(elem, '{type}', '"contribution"'::jsonb)
+          ELSE elem
+        END
+        ORDER BY ord
+      )
+      FROM jsonb_array_elements(inputs_required) WITH ORDINALITY AS t(elem, ord)
+    ),
+    updated_at = now()
+    WHERE step_key = v_step_key
+      AND inputs_required IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM jsonb_array_elements(inputs_required) elem
+        WHERE elem->>'document_key' = v_document_key_pattern
+          AND elem->>'type' = 'document'
+      );
+  END LOOP;
+END $$;

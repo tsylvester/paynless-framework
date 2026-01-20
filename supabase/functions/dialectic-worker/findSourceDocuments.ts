@@ -26,7 +26,7 @@ function mapContributionToSourceDocument(row: DialecticContributionRow): SourceD
     const { document_relationships, ...rest } = row;
     const docRels = document_relationships && isDocumentRelationships(document_relationships) ? document_relationships : null;
     const deconstructedPath = deconstructStoragePath({ storageDir: row.storage_path!, fileName: row.file_name! });
-    return { ...rest, content: '', document_relationships: docRels, attempt_count: deconstructedPath.attemptCount ?? 1 };
+    return { ...rest, content: '', document_relationships: docRels, attempt_count: deconstructedPath.attemptCount ?? 1, document_key: deconstructedPath.documentKey };
 }
 
 // Note: content is set to empty string because planners only need metadata, not content. Content is fetched later in executeModelCallAndSave.gatherArtifacts() when constructing the API call.

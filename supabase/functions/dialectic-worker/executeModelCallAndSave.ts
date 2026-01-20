@@ -1272,6 +1272,10 @@ export async function executeModelCallAndSave(
         });
     }
 
+    const documentKey = job.payload.document_key;
+    if (!documentKey) {
+        throw new Error('document_key is required');
+    }
     const uploadContext: ModelContributionUploadContext = {
         pathContext: {
             projectId: job.payload.projectId,
@@ -1281,7 +1285,7 @@ export async function executeModelCallAndSave(
             modelSlug: providerDetails.api_identifier,
             attemptCount: job.attempt_count,
             ...restOfCanonicalPathParams,
-            ...(validatedDocumentKey ? { documentKey: validatedDocumentKey } : {}),
+            documentKey: documentKey,
             contributionType,
             isContinuation: isContinuationForStorage,
             turnIndex: isContinuationForStorage ? job.payload.continuation_count : undefined,

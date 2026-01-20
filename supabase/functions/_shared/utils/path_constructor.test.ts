@@ -1369,7 +1369,7 @@ Deno.test('constructStoragePath', async (t) => {
       );
     });
 
-    await t.step('40.b.iii: does NOT throw error for non-document file type without documentKey', () => {
+    await t.step('40.b.iii: HeaderContext requires documentKey', () => {
       const nonDocumentFileType = FileType.HeaderContext;
       const nonDocumentContext: PathContext = {
         projectId,
@@ -1388,7 +1388,25 @@ Deno.test('constructStoragePath', async (t) => {
       assertEquals(fileName, expectedNonDocFileName);
     });
 
-    await t.step('40.b.iv: verifies document file types require documentKey but non-document types do not', () => {
+    await t.step('40.b.iii.b: HeaderContext throws error when documentKey is missing', () => {
+      const nonDocumentContext: PathContext = {
+        projectId,
+        fileType: FileType.HeaderContext,
+        sessionId,
+        iteration,
+        stageSlug,
+        modelSlug,
+        attemptCount,
+        documentKey: undefined,
+      };
+      assertThrows(
+        () => constructStoragePath(nonDocumentContext),
+        Error,
+        'documentKey is required for header_context file type',
+      );
+    });
+
+    await t.step('40.b.iv: verifies document file types and HeaderContext require documentKey', () => {
       const documentContext: PathContext = {
         projectId,
         fileType: FileType.business_case,
@@ -1430,8 +1448,24 @@ Deno.test('constructStoragePath', async (t) => {
         documentKey: 'header_context',
       };
       const { storagePath: nonDocPath, fileName: nonDocFileName } = constructStoragePath(nonDocumentContext);
-      assert(nonDocPath.includes('_work/context'), 'Non-document file type should work with documentKey');
-      assert(nonDocFileName.includes('header_context'), 'Non-document file type should work with documentKey');
+      assert(nonDocPath.includes('_work/context'), 'HeaderContext should work with documentKey');
+      assert(nonDocFileName.includes('header_context'), 'HeaderContext should include documentKey in filename');
+
+      const nonDocumentContextMissingKey: PathContext = {
+        projectId,
+        fileType: FileType.HeaderContext,
+        sessionId,
+        iteration,
+        stageSlug,
+        modelSlug,
+        attemptCount,
+        documentKey: undefined,
+      };
+      assertThrows(
+        () => constructStoragePath(nonDocumentContextMissingKey),
+        Error,
+        'documentKey is required for header_context file type',
+      );
     });
   });
 
@@ -1631,7 +1665,7 @@ Deno.test('constructStoragePath', async (t) => {
       );
     });
 
-    await t.step('40.f.iii: does NOT throw error for non-document file type without documentKey', () => {
+    await t.step('40.f.iii: HeaderContext requires documentKey', () => {
       const nonDocumentContext: PathContext = {
         projectId: 'project-123',
         fileType: FileType.HeaderContext,
@@ -1643,11 +1677,29 @@ Deno.test('constructStoragePath', async (t) => {
         documentKey: 'header_context',
       };
       const { storagePath, fileName } = constructStoragePath(nonDocumentContext);
-      assert(storagePath.includes('_work/context'), 'Non-document file type should work with documentKey');
-      assert(fileName.includes('header_context'), 'Non-document file type should work with documentKey');
+      assert(storagePath.includes('_work/context'), 'HeaderContext should work with documentKey');
+      assert(fileName.includes('header_context'), 'HeaderContext should include documentKey in filename');
     });
 
-    await t.step('40.f.iv: verifies document file types require ALL values but non-document types do not', () => {
+    await t.step('40.f.iii.b: HeaderContext throws error when documentKey is missing', () => {
+      const nonDocumentContext: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.HeaderContext,
+        sessionId: 'session-123',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-opus',
+        attemptCount: 0,
+        documentKey: undefined,
+      };
+      assertThrows(
+        () => constructStoragePath(nonDocumentContext),
+        Error,
+        'documentKey is required for header_context file type',
+      );
+    });
+
+    await t.step('40.f.iv: verifies document file types and HeaderContext require ALL required values', () => {
       // (1) Call with ALL required values present, assert it succeeds
       const documentContext: PathContext = {
         projectId: 'project-123',
@@ -1680,7 +1732,7 @@ Deno.test('constructStoragePath', async (t) => {
         'documentKey',
       );
 
-      // (3) Call with non-document file type with documentKey, assert it does NOT throw an error
+      // (3) Call with HeaderContext and documentKey, assert it does NOT throw an error
       const nonDocumentContext: PathContext = {
         projectId: 'project-123',
         fileType: FileType.HeaderContext,
@@ -1692,8 +1744,25 @@ Deno.test('constructStoragePath', async (t) => {
         documentKey: 'header_context',
       };
       const { storagePath: nonDocPath, fileName: nonDocFileName } = constructStoragePath(nonDocumentContext);
-      assert(nonDocPath.includes('_work/context'), 'Non-document file type should work with documentKey');
-      assert(nonDocFileName.includes('header_context'), 'Non-document file type should work with documentKey');
+      assert(nonDocPath.includes('_work/context'), 'HeaderContext should work with documentKey');
+      assert(nonDocFileName.includes('header_context'), 'HeaderContext should include documentKey in filename');
+
+      // (4) Call with HeaderContext without documentKey, assert it DOES throw an error
+      const nonDocumentContextMissingKey: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.HeaderContext,
+        sessionId: 'session-123',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-opus',
+        attemptCount: 0,
+        documentKey: undefined,
+      };
+      assertThrows(
+        () => constructStoragePath(nonDocumentContextMissingKey),
+        Error,
+        'documentKey is required for header_context file type',
+      );
     });
   });
 

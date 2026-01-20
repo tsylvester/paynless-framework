@@ -155,24 +155,28 @@ describe("Dialectic Full DAG Traversal Integration Tests (Step 99.b)", () => {
 
         const isCloned = instanceRow.is_cloned === true;
         let outputsRequired: unknown;
+        let stepSlug: string | undefined;
+
         if (isCloned) {
           const { data: stepRow, error: stepError } = await adminClient
             .from("dialectic_stage_recipe_steps")
-            .select("outputs_required")
+            .select("outputs_required, step_slug")
             .eq("instance_id", instanceRow.id)
             .eq("id", recipeStepId)
             .single();
           assert(!stepError, `Failed to load stage recipe step ${recipeStepId}: ${stepError?.message}`);
           outputsRequired = stepRow?.outputs_required;
+          stepSlug = stepRow?.step_slug;
         } else {
           const { data: stepRow, error: stepError } = await adminClient
             .from("dialectic_recipe_template_steps")
-            .select("outputs_required")
+            .select("outputs_required, step_slug")
             .eq("template_id", instanceRow.template_id)
             .eq("id", recipeStepId)
             .single();
           assert(!stepError, `Failed to load template recipe step ${recipeStepId}: ${stepError?.message}`);
           outputsRequired = stepRow?.outputs_required;
+          stepSlug = stepRow?.step_slug;
         }
 
         if (!isOutputRule(outputsRequired)) {
@@ -183,6 +187,22 @@ describe("Dialectic Full DAG Traversal Integration Tests (Step 99.b)", () => {
         if (!isContextForDocumentArray(contextForDocuments) || contextForDocuments.length === 0) {
           throw new Error(`Recipe step ${recipeStepId} outputs_required.context_for_documents must be a non-empty ContextForDocument[] for HeaderContext generation`);
         }
+
+        // Dynamically determine the correct document_key for the header context
+        // This is crucial for distinguishing between 'header_context' (default) and 'header_context_pairwise'
+        let documentKey: HeaderContextArtifact['document_key'] = 'header_context';
+        if (stepSlug === 'prepare-pairwise-synthesis-header') {
+          documentKey = 'header_context_pairwise';
+        } else if (stepSlug === 'generate-final-synthesis-header') {
+          documentKey = 'header_context'; // Explicitly default, though 'header_context' is already set
+        }
+
+        const headerContextArtifact: HeaderContextArtifact = {
+          type: "header_context",
+          document_key: documentKey,
+          artifact_class: "header_context",
+          file_type: "json",
+        };
 
         const headerContext: HeaderContext = {
           system_materials: systemMaterials,

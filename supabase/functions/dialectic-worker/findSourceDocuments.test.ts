@@ -2811,4 +2811,143 @@ describe('findSourceDocuments', () => {
             'Each document should have a distinct lineage (source_group)'
         );
     });
+
+    it("returns SourceDocument with document_key populated when mapping header_context contributions from dialectic_contributions", async () => {
+        // Mock mirrors DialecticContributionRow from dialectic_contributions table with contribution_type 'header_context'
+        // Real values from integration test failure: contributionId 91155b5f-d710-4325-9ee3-836a385d09f9
+        // for model_id 77afe5e0-a0d8-4a01-974f-f74f9f89a4ef (full-dag-test-model-b)
+        const rule: InputRule[] = [{
+            type: 'header_context',
+            slug: 'synthesis',
+            document_key: FileType.header_context_pairwise,
+            required: true,
+        }];
+
+        const mockHeaderContextContribution: DialecticContributionRow = {
+            id: '91155b5f-d710-4325-9ee3-836a385d09f9',
+            session_id: '30e8c9f9-8264-40aa-a66f-a8d12553ba70',
+            user_id: '5bb9ec3e-2e8d-43d9-9d98-3a6029ea9168',
+            stage: 'synthesis',
+            iteration_number: 1,
+            model_id: '77afe5e0-a0d8-4a01-974f-f74f9f89a4ef',
+            model_name: 'Full DAG Test Model B',
+            prompt_template_id_used: 'prompt-1',
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 100,
+            tokens_used_output: 200,
+            processing_time_ms: 500,
+            error: null,
+            citations: null,
+            created_at: '2026-01-19T22:44:07.900Z',
+            updated_at: '2026-01-19T22:44:07.900Z',
+            contribution_type: 'header_context',
+            file_name: 'full-dag-test-model-b_0_0b39478c_header_context_pairwise.json',
+            storage_bucket: 'dialectic-project-resources',
+            storage_path: '2afbba8d-80e9-4c87-82bb-582cb51ef7dc/session_30e8c9f9/iteration_1/3_synthesis/_work/context',
+            size_bytes: 2271,
+            mime_type: 'application/json',
+            document_relationships: { source_group: '0b39478c-5936-4f93-b176-842b642b56ac' },
+            is_header: false,
+            source_prompt_resource_id: null,
+        };
+
+        const parentJobWithModelB: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+            id: 'parent-job-123',
+            status: 'pending',
+            payload: {
+                job_type: 'PLAN',
+                model_id: '77afe5e0-a0d8-4a01-974f-f74f9f89a4ef',
+                projectId: '2afbba8d-80e9-4c87-82bb-582cb51ef7dc',
+                sessionId: '30e8c9f9-8264-40aa-a66f-a8d12553ba70',
+                stageSlug: 'synthesis',
+                iterationNumber: 1,
+                walletId: 'wallet-1',
+                continueUntilComplete: false,
+                maxRetries: 3,
+                continuation_count: 0,
+                user_jwt: 'parent-jwt-default',
+            },
+            created_at: new Date().toISOString(),
+            user_id: 'user-123',
+            attempt_count: 0,
+            max_retries: 3,
+            completed_at: null,
+            error_details: null,
+            iteration_number: 1,
+            parent_job_id: null,
+            prerequisite_job_id: null,
+            results: null,
+            session_id: '30e8c9f9-8264-40aa-a66f-a8d12553ba70',
+            started_at: null,
+            stage_slug: 'synthesis',
+            target_contribution_id: null,
+            is_test_job: false,
+            job_type: 'PLAN',
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasContributionTypeFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'contribution_type' &&
+                                filter.value === 'header_context',
+                        );
+                        if (!hasContributionTypeFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('header_context queries must filter by contribution_type'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing contribution_type filter',
+                            });
+                        }
+
+                        const hasModelIdFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'model_id' &&
+                                filter.value === '77afe5e0-a0d8-4a01-974f-f74f9f89a4ef',
+                        );
+                        if (!hasModelIdFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('header_context queries must filter by model_id'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing model_id filter',
+                            });
+                        }
+
+                        return Promise.resolve({
+                            data: [mockHeaderContextContribution],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            parentJobWithModelB,
+            rule,
+        );
+
+        assertEquals(documents.length, 1, 'Should return one header_context document');
+        assertEquals(documents[0].id, '91155b5f-d710-4325-9ee3-836a385d09f9', 'Should return the correct header_context contribution');
+        assertEquals(documents[0].model_id, '77afe5e0-a0d8-4a01-974f-f74f9f89a4ef', 'Should have correct model_id');
+        assertEquals(documents[0].contribution_type, 'header_context', 'Should have correct contribution_type');
+        assertEquals(documents[0].document_key, 'header_context_pairwise', 'Should have document_key extracted from filename by deconstructStoragePath');
+    });
 });

@@ -11,6 +11,7 @@ import { groupSourceDocumentsByType, selectAnchorSourceDocument } from '../helpe
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
 import { isContributionType, isContentToInclude } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 import { isModelContributionFileType } from '../../../_shared/utils/type-guards/type_guards.file_manager.ts';
+import { deconstructStoragePath } from '../../../_shared/utils/path_deconstructor.ts';
 
 export const planPairwiseByOrigin: GranularityPlannerFn = (
 	sourceDocs,
@@ -58,32 +59,167 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 		);
 	}
 
-	// Identify anchor documents (documents that are referenced by others via source_group)
-	// and paired documents (documents that reference anchors)
-	const anchorDocuments: SourceDocument[] = [];
-	const pairedDocumentsByAnchorId: Record<string, SourceDocument[]> = {};
-
-	// First pass: collect all documents that reference other documents (have source_group)
-	for (const doc of sourceDocs) {
-		const sourceGroupId = doc.document_relationships?.source_group;
-		if (sourceGroupId) {
-			if (!pairedDocumentsByAnchorId[sourceGroupId]) {
-				pairedDocumentsByAnchorId[sourceGroupId] = [];
-			}
-			pairedDocumentsByAnchorId[sourceGroupId].push(doc);
+	// Extract stage slugs from inputs_required to identify anchor vs paired stages
+	// The first document-type input is the "anchor" stage (e.g., thesis)
+	// The second document-type input is the "paired" stage (e.g., antithesis)
+	const inputsRequired = recipeStep.inputs_required ?? [];
+	const stageSlugsByOrder: string[] = [];
+	for (const input of inputsRequired) {
+		if (input.type === 'document' && input.slug && !stageSlugsByOrder.includes(input.slug)) {
+			stageSlugsByOrder.push(input.slug);
 		}
 	}
 
-	// Second pass: identify anchor documents (documents whose IDs appear as source_group)
-	for (const doc of sourceDocs) {
-		if (pairedDocumentsByAnchorId[doc.id] && pairedDocumentsByAnchorId[doc.id].length > 0) {
-			anchorDocuments.push(doc);
+	if (stageSlugsByOrder.length < 2) {
+		throw new Error(
+			`planPairwiseByOrigin requires inputs_required with at least two different stage slugs for document inputs, but found: ${stageSlugsByOrder.length}`
+		);
+	}
+
+	// Use the first two document stages for pairing
+	const anchorStageSlug = stageSlugsByOrder[0];
+	const pairedStageSlug = stageSlugsByOrder[1];
+
+	// Get required document_key values for the paired stage (antithesis) from inputs_required
+	const requiredPairedDocumentKeys = new Set<string>();
+	for (const input of recipeStep.inputs_required || []) {
+		if (input.type === 'document' && input.slug === pairedStageSlug && input.document_key) {
+			requiredPairedDocumentKeys.add(input.document_key);
+		}
+	}
+
+	// Separate all documents by stage across the entire sourceDocs array
+	// Pairing works based on filename patterns, not source_group values
+	const anchorStageDocs = sourceDocs.filter(doc => doc.stage === anchorStageSlug);
+	const pairedStageDocs = sourceDocs.filter(doc => doc.stage === pairedStageSlug);
+
+	if (anchorStageDocs.length === 0) {
+		throw new Error(
+			`planPairwiseByOrigin requires anchor documents from stage '${anchorStageSlug}', but none were found`
+		);
+	}
+
+	if (pairedStageDocs.length === 0) {
+		throw new Error(
+			`planPairwiseByOrigin requires paired documents from stage '${pairedStageSlug}', but none were found`
+		);
+	}
+
+	// Group documents by (thesis model, antithesis model) and filter by required document_key values
+	// Structure: pairedDocumentsByPairingKey[`${thesisDocId}:${antithesisModelSlug}`] = [antithesis docs with required document_keys]
+	type PairingKey = string; // Format: `${thesisDocId}:${antithesisModelSlug}`
+	const anchorDocuments: SourceDocument[] = [];
+	const pairedDocumentsByPairingKey: Record<PairingKey, SourceDocument[]> = {};
+
+	// For each anchor document (thesis), extract thesis model
+	for (const anchorDoc of anchorStageDocs) {
+		if (!anchorDoc.id) continue;
+
+		// Extract thesis model from anchor document
+		let thesisModelSlug: string | undefined = anchorDoc.model_name || anchorDoc.model_id || undefined;
+		if (!thesisModelSlug && anchorDoc.storage_path && anchorDoc.file_name) {
+			// Fallback: extract from filename using deconstructStoragePath
+			try {
+				const deconstructed = deconstructStoragePath({
+					storageDir: anchorDoc.storage_path,
+					fileName: anchorDoc.file_name
+				});
+				thesisModelSlug = deconstructed.modelSlug;
+			} catch (error) {
+				// If deconstruction fails, skip this anchor document
+				console.warn(`[planPairwiseByOrigin] Failed to extract thesis model from anchor document ${anchorDoc.id}: ${error instanceof Error ? error.message : String(error)}`);
+				continue;
+			}
+		}
+
+		if (!thesisModelSlug) {
+			console.warn(`[planPairwiseByOrigin] Cannot extract thesis model from anchor document ${anchorDoc.id}, skipping`);
+			continue;
+		}
+
+		// Track this anchor document
+		if (!anchorDocuments.find(doc => doc.id === anchorDoc.id)) {
+			anchorDocuments.push(anchorDoc);
+		}
+
+		// For each paired document (antithesis) across ALL documents, extract antithesis model and critiqued thesis model
+		// Match based on filename patterns, not source_group values
+		for (const pairedDoc of pairedStageDocs) {
+			if (!pairedDoc.storage_path || !pairedDoc.file_name) {
+				console.warn(`[planPairwiseByOrigin] Paired document ${pairedDoc.id} missing storage_path or file_name, skipping`);
+				continue;
+			}
+
+			// Extract pairing information from filename using deconstructStoragePath
+			let antithesisModelSlug: string | undefined;
+			let critiquedThesisModelSlug: string | undefined;
+			let pairedDocumentKey: string | undefined;
+
+			try {
+				const deconstructed = deconstructStoragePath({
+					storageDir: pairedDoc.storage_path,
+					fileName: pairedDoc.file_name
+				});
+
+				antithesisModelSlug = deconstructed.modelSlug;
+				// For antithesis documents, sourceModelSlug is the critiqued thesis model
+				critiquedThesisModelSlug = deconstructed.sourceModelSlug || deconstructed.sourceAnchorModelSlug;
+				pairedDocumentKey = deconstructed.documentKey;
+			} catch (error) {
+				console.warn(`[planPairwiseByOrigin] Failed to deconstruct paired document ${pairedDoc.id}: ${error instanceof Error ? error.message : String(error)}`);
+				continue;
+			}
+
+			if (!antithesisModelSlug) {
+				console.warn(`[planPairwiseByOrigin] Cannot extract antithesis model from paired document ${pairedDoc.id}, skipping`);
+				continue;
+			}
+
+			// Verify that this antithesis document critiques this thesis document
+			// Match by comparing thesis model with critiqued thesis model from filename pattern
+			if (critiquedThesisModelSlug && critiquedThesisModelSlug !== thesisModelSlug) {
+				// This antithesis document critiques a different thesis, skip it
+				continue;
+			}
+
+			// Filter by required document_key values
+			if (requiredPairedDocumentKeys.size > 0) {
+				const docKey = pairedDocumentKey || pairedDoc.document_key;
+				if (!docKey || !requiredPairedDocumentKeys.has(docKey)) {
+					// This document doesn't match any required document_key, skip it
+					continue;
+				}
+			}
+
+			// Group by (thesis document ID, antithesis model slug)
+			const pairingKey: PairingKey = `${anchorDoc.id}:${antithesisModelSlug}`;
+			if (!pairedDocumentsByPairingKey[pairingKey]) {
+				pairedDocumentsByPairingKey[pairingKey] = [];
+			}
+			pairedDocumentsByPairingKey[pairingKey].push(pairedDoc);
 		}
 	}
 
 	if (anchorDocuments.length === 0) {
 		throw new Error(
-			`planPairwiseByOrigin requires documents with pairwise relationships (source_group references), but none were found`
+			`planPairwiseByOrigin requires anchor documents from stage '${anchorStageSlug}', but none were found`
+		);
+	}
+
+	// Validate that all required anchors can be found
+	// If no pairing keys were created, this means no antithesis documents critique any thesis documents
+	// This is an error condition - we should fail fast rather than silently returning no jobs
+	const hasPairingKeys = Object.keys(pairedDocumentsByPairingKey).length > 0;
+	if (!hasPairingKeys) {
+		// Check if we can find required anchors - if not, throw anchor_not_found error
+		const anchorResult = selectAnchorSourceDocument(recipeStep, sourceDocs);
+		if (anchorResult.status === 'anchor_not_found') {
+			throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
+		}
+		// If anchors exist but no pairing keys, it means no antithesis documents match any thesis documents
+		throw new Error(
+			`planPairwiseByOrigin could not create any pairs: no antithesis documents from stage '${pairedStageSlug}' critique any thesis documents from stage '${anchorStageSlug}'. ` +
+			`Found ${anchorStageDocs.length} anchor document(s) and ${pairedStageDocs.length} paired document(s), but no matches based on filename patterns.`
 		);
 	}
 
@@ -135,14 +271,26 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 	// Type assertion after validation: contextForDocuments is now confirmed to be ContextForDocument[]
 	const validatedContextForDocuments: ContextForDocument[] = contextForDocuments;
 	
-	// Create PLAN job payloads (one per pair)
+	// Create PLAN job payloads (one per thesis-antithesis model pair, bundling all required antithesis documents)
 	const childPayloads: DialecticPlanJobPayload[] = [];
 		
 		for (const anchorDoc of anchorDocuments) {
-			const pairedDocs = pairedDocumentsByAnchorId[anchorDoc.id] || [];
+			// Find all pairing keys that start with this anchor document ID
+			const pairingKeys = Object.keys(pairedDocumentsByPairingKey).filter(key => key.startsWith(`${anchorDoc.id}:`));
 
-			for (const pairedDoc of pairedDocs) {
-				if (!pairedDoc.id) {
+			for (const pairingKey of pairingKeys) {
+				const pairedDocs = pairedDocumentsByPairingKey[pairingKey] || [];
+				if (pairedDocs.length === 0) continue;
+
+				// Extract antithesis model slug from pairing key
+				const antithesisModelSlug = pairingKey.split(':')[1];
+				if (!antithesisModelSlug) continue;
+
+				// Use the first paired document as the anchor for canonical path params
+				// (all paired documents in this group have the same antithesis model)
+				const anchorPairedDoc = pairedDocs[0];
+
+				if (!anchorPairedDoc.id) {
 					throw new Error(
 						`planPairwiseByOrigin requires each paired document to have an id`
 					);
@@ -257,20 +405,59 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 		}
 		// If the step does not output documents, documentKey remains undefined
 
+		// If this step requires a header_context input, ensure we can supply header_context_id in payload.inputs.
+		const requiresHeaderContext = Array.isArray(recipeStep.inputs_required)
+			&& recipeStep.inputs_required.some((rule) => rule?.type === 'header_context');
+		
+		// Extract the document_key if specified in the header_context rule
+		const headerContextRule = requiresHeaderContext
+			? recipeStep.inputs_required.find((rule) => rule?.type === 'header_context')
+			: null;
+		const requiredHeaderContextKey = headerContextRule?.document_key;
+		
+		// Find the header_context document matching the parent job's model_id (the executing model)
+		const headerContextId = requiresHeaderContext
+			? sourceDocs.find((d: SourceDocument) => 
+				d.contribution_type === 'header_context' &&
+				d.model_id === parentJob.payload.model_id &&
+				(!requiredHeaderContextKey || d.document_key === requiredHeaderContextKey)
+			)?.id
+			: undefined;
+		
+		if (requiresHeaderContext && (typeof headerContextId !== 'string' || headerContextId.length === 0)) {
+			throw new Error(
+				`planPairwiseByOrigin requires a sourceDoc with contribution_type 'header_context' ` +
+				`and model_id '${parentJob.payload.model_id}' when recipeStep.inputs_required includes header_context`
+			);
+		}
+
 		const childPayloads: DialecticExecuteJobPayload[] = [];
 
 		for (const anchorDoc of anchorDocuments) {
-			const pairedDocs = pairedDocumentsByAnchorId[anchorDoc.id] || [];
+			// Find all pairing keys that start with this anchor document ID
+			const pairingKeys = Object.keys(pairedDocumentsByPairingKey).filter(key => key.startsWith(`${anchorDoc.id}:`));
 
-			for (const pairedDoc of pairedDocs) {
-				if (!pairedDoc.id) {
+			for (const pairingKey of pairingKeys) {
+				const pairedDocs = pairedDocumentsByPairingKey[pairingKey] || [];
+				if (pairedDocs.length === 0) continue;
+
+				// Extract antithesis model slug from pairing key
+				const antithesisModelSlug = pairingKey.split(':')[1];
+				if (!antithesisModelSlug) continue;
+
+				// Use the first paired document as the anchor for canonical path params
+				// (all paired documents in this group have the same antithesis model)
+				const anchorPairedDoc = pairedDocs[0];
+
+				if (!anchorPairedDoc.id) {
 					throw new Error(
 						`planPairwiseByOrigin requires each paired document to have an id`
 					);
 				}
 
 				// Step 7.a.ii: Call the canonical context builder
-				const pair: SourceDocument[] = [anchorDoc, pairedDoc];
+				// Create pair array: thesis document + all antithesis documents from this antithesis model
+				const pair: SourceDocument[] = [anchorDoc, ...pairedDocs];
 				// Select canonical anchor from pair based on recipe relevance, not structural anchor
 				const anchorResult: SelectAnchorResult = selectAnchorSourceDocument(recipeStep, pair);
 				if (anchorResult.status === 'anchor_not_found') {
@@ -289,17 +476,38 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 				);
 
 				// Step 7.a.iii: Dynamically create inputs and relationships
-				const inputs: Record<string, string> = {};
+				const inputs: Record<string, string | string[]> = {};
 				const document_relationships: Record<string, string> = {};
 
-				for (const doc of pair) {
-					if (doc.contribution_type) {
-						inputs[`${doc.contribution_type}_id`] = doc.id;
-						document_relationships[doc.contribution_type] = doc.id;
+				// Add thesis document
+				if (anchorDoc.contribution_type) {
+					inputs[`${anchorDoc.contribution_type}_id`] = anchorDoc.id;
+					document_relationships[anchorDoc.contribution_type] = anchorDoc.id;
+				}
+
+				// Add all paired antithesis documents as an array
+				// Bundle ALL required antithesis documents from the same antithesis model
+				if (pairedDocs.length > 0 && anchorPairedDoc.contribution_type) {
+					const pairedContributionType = anchorPairedDoc.contribution_type;
+					const pairedKey = `${pairedContributionType}_ids`;
+					const pairedIds = pairedDocs
+						.filter((doc: SourceDocument) => doc.id && doc.contribution_type === pairedContributionType)
+						.map((doc: SourceDocument) => doc.id!);
+					
+					if (pairedIds.length > 0) {
+						inputs[pairedKey] = pairedIds;
 					}
+
+					// Use the anchor paired document for document_relationships (first one)
+					document_relationships[pairedContributionType] = anchorPairedDoc.id;
 				}
 				// Ensure source_group is correctly populated
 				document_relationships.source_group = anchorDoc.id;
+
+				// Add header_context_id if required
+				if (requiresHeaderContext && headerContextId) {
+					inputs.header_context_id = headerContextId;
+				}
 
 				const newPayload: DialecticExecuteJobPayload = {
 					// Inherit ALL fields from parent payload first (defensive programming)
@@ -328,7 +536,7 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 					document_relationships,
 					inputs,
 					isIntermediate: true,
-					sourceContributionId: pairedDoc.id,
+					sourceContributionId: anchorPairedDoc.id,
 					planner_metadata: { recipe_step_id: recipeStep.id },
 					document_key: documentKey,
 				};

@@ -439,6 +439,7 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
         user_jwt: 'jwt.token.here',
         prompt_template_id: 'test-prompt',
         output_type: FileType.HeaderContext,
+        document_key: 'header_context',
         inputs: {},
         canonicalPathParams: {
           contributionType: contributionType,

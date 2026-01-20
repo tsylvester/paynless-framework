@@ -97,6 +97,7 @@ function createMockHeaderContextJobPayload(overrides: Partial<DialecticExecuteJo
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.HeaderContext,
+        document_key: 'header_context',
         projectId: 'project-abc',
         sessionId: 'session-456',
         stageSlug: 'thesis',

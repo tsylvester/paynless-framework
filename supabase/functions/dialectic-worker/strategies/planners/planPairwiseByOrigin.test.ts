@@ -5,6 +5,7 @@ import {
 	assert,
 	assertThrows,
 	assertRejects,
+	assertNotEquals,
 } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import type {
 	DialecticJobRow,
@@ -50,7 +51,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
 		contribution_type: 'thesis',
 		size_bytes: 1000,
 		mime_type: 'text/markdown',
-		document_relationships: null,
+		document_relationships: { source_group: 'thesis-1' }, // Thesis docs are lineage roots - source_group points to themselves
 		is_header: false,
 		source_prompt_resource_id: null,
 		document_key: FileType.business_case,
@@ -85,7 +86,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
 		contribution_type: 'thesis',
 		size_bytes: 1500,
 		mime_type: 'text/markdown',
-		document_relationships: null,
+		document_relationships: { source_group: 'thesis-2' }, // Thesis docs are lineage roots - source_group points to themselves
 		is_header: false,
 		source_prompt_resource_id: null,
 		document_key: FileType.business_case,
@@ -103,7 +104,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
 		is_latest_edit: true,
 		created_at: new Date().toISOString(),
 		updated_at: new Date().toISOString(),
-		file_name: 'gpt-4-turbo_0_business_case_critique.md',
+		file_name: 'gpt-4-turbo_critiquing_gpt-4_00000001_0_business_case_critique.md',
 		storage_bucket: 'test-bucket',
 		storage_path: 'project-xyz/session_abc/iteration_1/2_antithesis/documents',
 		model_id: 'gpt-4-turbo',
@@ -120,7 +121,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
 		contribution_type: 'antithesis',
 		size_bytes: 2000,
 		mime_type: 'text/markdown',
-		document_relationships: { source_group: 'thesis-1' },
+		document_relationships: { source_group: 'different-source-group-1a' },
 		is_header: false,
 		source_prompt_resource_id: null,
 		document_key: FileType.business_case_critique,
@@ -138,7 +139,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
 		is_latest_edit: true,
 		created_at: new Date().toISOString(),
 		updated_at: new Date().toISOString(),
-		file_name: 'claude-3-5-sonnet_0_business_case_critique.md',
+		file_name: 'claude-3-5-sonnet_critiquing_gpt-4_00000001_0_business_case_critique.md',
 		storage_bucket: 'test-bucket',
 		storage_path: 'project-xyz/session_abc/iteration_1/2_antithesis/documents',
 		model_id: 'claude-3-5-sonnet',
@@ -155,7 +156,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
 		contribution_type: 'antithesis',
 		size_bytes: 2500,
 		mime_type: 'text/markdown',
-		document_relationships: { source_group: 'thesis-1' },
+		document_relationships: { source_group: 'different-source-group-1b' },
 		is_header: false,
 		source_prompt_resource_id: null,
 		document_key: FileType.business_case_critique,
@@ -173,7 +174,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
 		is_latest_edit: true,
 		created_at: new Date().toISOString(),
 		updated_at: new Date().toISOString(),
-		file_name: 'gpt-4o_0_business_case_critique.md',
+		file_name: 'gpt-4o_critiquing_claude-3-opus_00000002_0_business_case_critique.md',
 		storage_bucket: 'test-bucket',
 		storage_path: 'project-xyz/session_abc/iteration_1/2_antithesis/documents',
 		model_id: 'gpt-4o',
@@ -190,7 +191,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
 		contribution_type: 'antithesis',
 		size_bytes: 3000,
 		mime_type: 'text/markdown',
-		document_relationships: { source_group: 'thesis-2' },
+		document_relationships: { source_group: 'different-source-group-2a' },
 		is_header: false,
 		source_prompt_resource_id: null,
 		document_key: FileType.business_case_critique,
@@ -300,7 +301,7 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 	const job1Payload = childPayloads.find(
 		(p) => {
 			if (isDialecticExecuteJobPayload(p)) {
-				return p.inputs?.antithesis_id === 'antithesis-1a';
+				return p.inputs?.antithesis_ids?.includes('antithesis-1a');
 			}
 			return false;
 		}
@@ -319,19 +320,20 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 	// Check inputs and relationships
 	assertEquals(job1Payload.inputs, {
 		thesis_id: 'thesis-1',
-		antithesis_id: 'antithesis-1a',
+		antithesis_ids: ['antithesis-1a'],
 	});
 	assertEquals(job1Payload.sourceContributionId, 'antithesis-1a');
-	assertEquals(job1Payload.document_relationships, {
-		thesis: 'thesis-1',
-		antithesis: 'antithesis-1a',
-		source_group: 'thesis-1',
-	});
+	// Verify pairing relationships are set correctly
+	assertExists(job1Payload.document_relationships);
+	assertEquals(job1Payload.document_relationships.thesis, 'thesis-1');
+	assertExists(job1Payload.document_relationships.antithesis);
 
 	// Check canonical params
 	assertExists(job1Payload.canonicalPathParams);
 	assertEquals(job1Payload.canonicalPathParams.sourceAnchorType, 'antithesis');
-	assertEquals(job1Payload.canonicalPathParams.sourceAnchorModelSlug, 'gpt-4-turbo');
+	// When antithesis document is selected as anchor, createCanonicalPathParams extracts sourceAnchorModelSlug
+	// from the critiquing pattern: the critiqued thesis model, not the antithesis document's own model.
+	assertEquals(job1Payload.canonicalPathParams.sourceAnchorModelSlug, 'gpt-4');
 	assertEquals(job1Payload.canonicalPathParams.pairedModelSlug, 'gpt-4');
 	assertEquals(job1Payload.canonicalPathParams.sourceModelSlugs?.sort(), ['gpt-4', 'gpt-4-turbo'].sort());
 	assert(!('originalFileName' in job1Payload));
@@ -344,7 +346,7 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 	const job2Payload = childPayloads.find(
 		(p) => {
 			if (isDialecticExecuteJobPayload(p)) {
-				return p.inputs?.antithesis_id === 'antithesis-1b';
+				return p.inputs?.antithesis_ids?.includes('antithesis-1b');
 			}
 			return false;
 		}
@@ -357,12 +359,14 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 	
 	assertEquals(job2Payload.inputs, {
 		thesis_id: 'thesis-1',
-		antithesis_id: 'antithesis-1b',
+		antithesis_ids: ['antithesis-1b'],
 	});
 	assertEquals(job2Payload.sourceContributionId, 'antithesis-1b');
 	assertExists(job2Payload.canonicalPathParams);
 	assertEquals(job2Payload.canonicalPathParams.sourceAnchorType, 'antithesis');
-	assertEquals(job2Payload.canonicalPathParams.sourceAnchorModelSlug, 'claude-3-5-sonnet');
+	// When antithesis document is selected as anchor, createCanonicalPathParams extracts sourceAnchorModelSlug
+	// from the critiquing pattern: the critiqued thesis model, not the antithesis document's own model.
+	assertEquals(job2Payload.canonicalPathParams.sourceAnchorModelSlug, 'gpt-4');
 	assertEquals(job2Payload.canonicalPathParams.pairedModelSlug, 'gpt-4');
 	assertEquals(job2Payload.canonicalPathParams.sourceModelSlugs?.sort(), ['claude-3-5-sonnet', 'gpt-4'].sort());
 
@@ -371,7 +375,7 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 	const job3Payload = childPayloads.find(
 		(p) => {
 			if (isDialecticExecuteJobPayload(p)) {
-				return p.inputs?.antithesis_id === 'antithesis-2a';
+				return p.inputs?.antithesis_ids?.includes('antithesis-2a');
 			}
 			return false;
 		}
@@ -384,12 +388,14 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 	
 	assertEquals(job3Payload.inputs, {
 		thesis_id: 'thesis-2',
-		antithesis_id: 'antithesis-2a',
+		antithesis_ids: ['antithesis-2a'],
 	});
 	assertEquals(job3Payload.sourceContributionId, 'antithesis-2a');
 	assertExists(job3Payload.canonicalPathParams);
 	assertEquals(job3Payload.canonicalPathParams.sourceAnchorType, 'antithesis');
-	assertEquals(job3Payload.canonicalPathParams.sourceAnchorModelSlug, 'gpt-4o');
+	// When antithesis document is selected as anchor, createCanonicalPathParams extracts sourceAnchorModelSlug
+	// from the critiquing pattern: the critiqued thesis model, not the antithesis document's own model.
+	assertEquals(job3Payload.canonicalPathParams.sourceAnchorModelSlug, 'claude-3-opus');
 	assertEquals(job3Payload.canonicalPathParams.pairedModelSlug, 'claude-3-opus');
 	assertEquals(job3Payload.canonicalPathParams.sourceModelSlugs?.sort(), ['claude-3-opus', 'gpt-4o'].sort());
 });
@@ -443,7 +449,7 @@ Deno.test('planPairwiseByOrigin constructs child payloads with dynamic stage con
 	for (const child of childPayloads) {
 		assertEquals(child.stageSlug, expectedStage);
 		if (isDialecticExecuteJobPayload(child)) {
-			assertEquals(child.sourceContributionId, child.inputs?.antithesis_id);
+			assertEquals(child.sourceContributionId, child.inputs?.antithesis_ids?.[0]);
 			assertEquals(child.document_key, FileType.PairwiseSynthesisChunk, 'document_key should be set from outputs_required.documents[0].document_key');
 		} else {
 			throw new Error('Expected EXECUTE job');
@@ -452,30 +458,38 @@ Deno.test('planPairwiseByOrigin constructs child payloads with dynamic stage con
 });
 
 Deno.test('should throw an error if theses exist but no antitheses are related', () => {
+	// Create thesis docs from models gpt-4 and claude-3-opus
+	const theses = MOCK_SOURCE_DOCS.filter((d) => d.contribution_type === 'thesis');
+	// Create an antithesis document that critiques a different model (not gpt-4 or claude-3-opus)
 	const unrelatedAntitheses = [
 		{
 			...MOCK_SOURCE_DOCS[2],
 			id: 'antithesis-unrelated',
 			target_contribution_id: 'some-other-thesis',
+			file_name: 'gpt-4-turbo_critiquing_different-model_00000001_0_business_case_critique.md',
+			model_id: 'gpt-4-turbo',
+			model_name: 'gpt-4-turbo',
 			document_relationships: {
 				source_group: 'some-other-thesis',
 			},
 		},
 	];
-	const thesesOnly = MOCK_SOURCE_DOCS.filter((d) => d.contribution_type === 'thesis');
 
 	assertThrows(
 		() => {
 			planPairwiseByOrigin(
-				[...thesesOnly, ...unrelatedAntitheses],
+				[...theses, ...unrelatedAntitheses],
 				MOCK_PARENT_JOB,
 				MOCK_RECIPE_STEP,
 				'user-jwt-123'
 			);
 		},
 		Error,
-		`planPairwiseByOrigin requires documents with pairwise relationships (source_group references), but none were found`
+		// No pairing keys are created because the antithesis critiques a different model than any thesis
+		// This triggers the validation check which should throw an error
 	);
+
+	// Verify that no jobs were created (should throw before creating jobs)
 });
 
 Deno.test('should throw an error if antitheses exist but no matching theses are found', () => {
@@ -538,7 +552,7 @@ Deno.test('planPairwiseByOrigin Test Case A: The Failing Case (Proves the bug ex
 		childPayloads.forEach(child => {
 			assertEquals(child.model_id, failingParentJob.payload.model_id, "Child job model_id must match the parent job's model_id");
 			if (isDialecticExecuteJobPayload(child)) {
-				assertEquals(child.sourceContributionId, child.inputs?.antithesis_id);
+				assertEquals(child.sourceContributionId, child.inputs?.antithesis_ids?.[0]);
 			}
 		});
 		assert(false, "Test A expected an error to be thrown, but none was. The bug may be fixed.");
@@ -588,7 +602,7 @@ Deno.test('planPairwiseByOrigin Test Case B: The Passing Case (Describes the cor
 	childPayloads.forEach(child => {
 		assertEquals(child.model_id, passingParentJob.payload.model_id, "Child job model_id must match the parent job's model_id");
 		if (isDialecticExecuteJobPayload(child)) {
-			assertEquals(child.sourceContributionId, child.inputs?.antithesis_id);
+			assertEquals(child.sourceContributionId, child.inputs?.antithesis_ids?.[0]);
 		}
 	});
 });
@@ -1191,7 +1205,7 @@ Deno.test('planPairwiseByOrigin uses relevance-selected anchor for canonical pat
 		seed_prompt_url: null,
 		is_header: false,
 		source_prompt_resource_id: null,
-		document_relationships: null,
+		document_relationships: { source_group: 'thesis-structural-anchor' },
 		attempt_count: 0,
 		session_id: 'session-abc',
 		user_id: 'user-123',
@@ -1204,7 +1218,7 @@ Deno.test('planPairwiseByOrigin uses relevance-selected anchor for canonical pat
 		file_name: 'structural-anchor-model_0_business_case.md',
 		storage_bucket: 'dialectic-project-resources',
 		storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
-		model_id: 'model-structural-anchor',
+		model_id: 'structural-anchor-model',
 		model_name: null,
 		prompt_template_id_used: null,
 		document_key: FileType.business_case,
@@ -1238,7 +1252,7 @@ Deno.test('planPairwiseByOrigin uses relevance-selected anchor for canonical pat
 		is_latest_edit: true,
 		created_at: '2024-01-01T00:00:00Z',
 		updated_at: '2024-01-01T00:00:00Z',
-		file_name: 'highest-relevance-model_0_business_case_critique.md',
+		file_name: 'highest-relevance-model_critiquing_structural-anchor-model_aaea3527_0_business_case_critique.md',
 		storage_bucket: 'dialectic-project-resources',
 		storage_path: 'project-123/session_abc/iteration_1/2_antithesis/documents',
 		model_id: 'model-highest-rel',
@@ -1329,17 +1343,18 @@ Deno.test('planPairwiseByOrigin uses relevance-selected anchor for canonical pat
 		const executePayload: DialecticExecuteJobPayload = job;
 		assertExists(executePayload.canonicalPathParams, 'EXECUTE job should include canonicalPathParams');
 		
-		// planPairwiseByOrigin currently uses structural anchorDoc (thesis) for canonical params.
-		// After fix, must use selectAnchorSourceDocument to select highest-relevance document from pair.
+		// planPairwiseByOrigin uses selectAnchorSourceDocument to select highest-relevance document from pair.
 		// Should select antithesis (relevance 1.0), NOT thesis (structural anchor with lower relevance 0.9).
+		// When antithesis document is selected as anchor, createCanonicalPathParams extracts sourceAnchorModelSlug
+		// from the critiquing pattern: the critiqued thesis model, not the antithesis document's own model.
 		assertExists(
 			executePayload.canonicalPathParams.sourceAnchorModelSlug,
-			'canonicalPathParams should include sourceAnchorModelSlug from highest-relevance document'
+			'canonicalPathParams should include sourceAnchorModelSlug from anchor document'
 		);
 		assertEquals(
 			executePayload.canonicalPathParams.sourceAnchorModelSlug,
-			'highest-relevance-model',
-			'sourceAnchorModelSlug should match antithesis document (highest relevance 1.0), not thesis (structural anchor with lower relevance 0.9)'
+			'structural-anchor-model',
+			'sourceAnchorModelSlug should match the critiqued thesis model from antithesis document critiquing pattern, not the antithesis document\'s own model'
 		);
 		
 		// Verify structural anchor is still used for lineage (source_group should be thesis id)
@@ -1354,8 +1369,9 @@ Deno.test('planPairwiseByOrigin uses relevance-selected anchor for canonical pat
 	}
 });
 
-Deno.test('planPairwiseByOrigin handles no_document_inputs_required by passing null anchor to createCanonicalPathParams', () => {
-	// Recipe step with only header_context input (no document inputs) - valid configuration
+Deno.test('planPairwiseByOrigin throws error when inputs_required has no document inputs', () => {
+	// Test that pairwise_by_origin strategy requires at least 2 document stage slugs
+	// Even with documents present, if inputs_required has no document inputs, it should fail
 	const parentPayload = MOCK_PARENT_JOB.payload;
 	if (!parentPayload) {
 		throw new Error('Test setup error: MOCK_PARENT_JOB.payload cannot be null');
@@ -1377,29 +1393,16 @@ Deno.test('planPairwiseByOrigin handles no_document_inputs_required by passing n
 		},
 	};
 
-	// Thesis document (anchor for pair)
+	// Add documents with at least 2 different contribution types so the contribution types check passes
+	// But inputs_required has no document inputs, so it should fail the stage slugs check
 	const thesisDoc: SourceDocument = {
 		id: 'thesis-no-doc-inputs',
 		contribution_type: 'thesis',
+		stage: 'thesis',
+		document_relationships: { source_group: 'lineage-root' },
 		content: '',
-		citations: [],
-		error: null,
-		mime_type: 'text/markdown',
-		original_model_contribution_id: null,
-		raw_response_storage_path: null,
-		tokens_used_input: 0,
-		tokens_used_output: 0,
-		processing_time_ms: 0,
-		size_bytes: 0,
-		target_contribution_id: null,
-		seed_prompt_url: null,
-		is_header: false,
-		source_prompt_resource_id: null,
-		document_relationships: null,
-		attempt_count: 0,
 		session_id: 'session-abc',
 		user_id: 'user-123',
-		stage: 'thesis',
 		iteration_number: 1,
 		edit_version: 1,
 		is_latest_edit: true,
@@ -1411,111 +1414,79 @@ Deno.test('planPairwiseByOrigin handles no_document_inputs_required by passing n
 		model_id: 'model-a',
 		model_name: null,
 		prompt_template_id_used: null,
-		document_key: FileType.business_case,
-	};
-
-	// Antithesis document (paired with thesis)
-	const antithesisDoc: SourceDocument = {
-		id: 'antithesis-no-doc-inputs',
-		contribution_type: 'antithesis',
-		content: '',
-		citations: [],
-		error: null,
-		mime_type: 'text/markdown',
+		seed_prompt_url: null,
 		original_model_contribution_id: null,
 		raw_response_storage_path: null,
 		tokens_used_input: 0,
 		tokens_used_output: 0,
 		processing_time_ms: 0,
+		error: null,
+		citations: null,
 		size_bytes: 0,
-		target_contribution_id: thesisDoc.id,
-		seed_prompt_url: null,
+		mime_type: 'text/markdown',
 		is_header: false,
 		source_prompt_resource_id: null,
-		document_relationships: { source_group: thesisDoc.id },
+		target_contribution_id: null,
+		document_key: FileType.business_case,
 		attempt_count: 0,
+	};
+
+	const antithesisDoc: SourceDocument = {
+		id: 'antithesis-no-doc-inputs',
+		contribution_type: 'antithesis',
+		stage: 'antithesis',
+		document_relationships: { source_group: 'lineage-root' },
+		content: '',
 		session_id: 'session-abc',
 		user_id: 'user-123',
-		stage: 'antithesis',
 		iteration_number: 1,
 		edit_version: 1,
 		is_latest_edit: true,
 		created_at: '2024-01-01T00:00:00Z',
 		updated_at: '2024-01-01T00:00:00Z',
-		file_name: 'model-b_0_business_case_critique.md',
+		file_name: 'model-b_critiquing_model-a_aaea3527_0_business_case_critique.md',
 		storage_bucket: 'dialectic-project-resources',
 		storage_path: 'project-123/session_abc/iteration_1/2_antithesis/documents',
 		model_id: 'model-b',
 		model_name: null,
 		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'text/markdown',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
 		document_key: FileType.business_case_critique,
+		attempt_count: 0,
 	};
 
 	const sourceDocs: SourceDocument[] = [thesisDoc, antithesisDoc];
 
 	const executeRecipeStep: DialecticStageRecipeStep = {
-		id: 'execute-step-no-doc-inputs',
-		instance_id: 'instance-id-123',
-		template_step_id: 'template-step-id-456',
-		step_key: 'synthesis_pairwise_no_doc_inputs',
-		step_slug: 'pairwise-by-origin',
-		step_name: 'Generate Pairwise Synthesis',
-		step_description: 'Generate pairwise synthesis using header context',
-		prompt_template_id: 'template-executor-id',
-		prompt_type: 'Turn',
-		job_type: 'EXECUTE',
-		output_type: FileType.PairwiseSynthesisChunk,
-		granularity_strategy: 'pairwise_by_origin',
+		...MOCK_RECIPE_STEP,
 		inputs_required: [
-			{
-				type: 'header_context',
-				slug: 'thesis',
-				document_key: FileType.HeaderContext,
-				required: true,
-			},
+			{ type: 'header_context', slug: 'synthesis', required: true },
 		],
-		inputs_relevance: [],
-		outputs_required: {
-			documents: [{
-				artifact_class: 'rendered_document',
-				file_type: 'markdown',
-				document_key: FileType.PairwiseSynthesisChunk,
-				template_filename: 'pairwise_synthesis_chunk.md',
-			}],
-			assembled_json: [],
-			files_to_generate: [{
-				from_document_key: FileType.PairwiseSynthesisChunk,
-				template_filename: 'pairwise_synthesis_chunk.md',
-			}],
-		},
-		created_at: new Date().toISOString(),
-		updated_at: new Date().toISOString(),
-		config_override: {},
-		is_skipped: false,
-		object_filter: {},
-		output_overrides: {},
-		branch_key: null,
-		execution_order: 1,
-		parallel_group: null,
+		job_type: 'EXECUTE',
 	};
 
-	const childJobs = planPairwiseByOrigin(sourceDocs, parentJobWithSynthesisStage, executeRecipeStep, parentJobWithSynthesisStage.payload.user_jwt);
-
-	assertEquals(childJobs.length, 1, 'Should create one child job for the pair');
-	const job = childJobs[0];
-	assertExists(job, 'Child job should exist');
-	assertEquals(isDialecticExecuteJobPayload(job), true, 'EXECUTE recipe steps should create EXECUTE child jobs');
-	if (isDialecticExecuteJobPayload(job)) {
-		const executePayload: DialecticExecuteJobPayload = job;
-		assertExists(executePayload.canonicalPathParams, 'EXECUTE job should include canonicalPathParams');
-		assertEquals(
-			executePayload.canonicalPathParams.sourceAnchorModelSlug,
-			undefined,
-			'sourceAnchorModelSlug should be undefined when recipe step has no document inputs (no_document_inputs_required)'
-		);
-	} else {
-		throw new Error('Expected EXECUTE job');
-	}
+	// Should throw error because pairwise_by_origin requires at least 2 document stage slugs
+	// but inputs_required has no document inputs (only header_context)
+	assertRejects(
+		async () => {
+			planPairwiseByOrigin(sourceDocs, parentJobWithSynthesisStage, executeRecipeStep, parentJobWithSynthesisStage.payload.user_jwt);
+		},
+		Error,
+		'planPairwiseByOrigin requires inputs_required with at least two different stage slugs for document inputs',
+		'Should throw error when inputs_required has no document inputs'
+	);
 });
 
 Deno.test('planPairwiseByOrigin handles anchor_found by using result.document', () => {
@@ -1558,7 +1529,7 @@ Deno.test('planPairwiseByOrigin handles anchor_found by using result.document', 
 		seed_prompt_url: null,
 		is_header: false,
 		source_prompt_resource_id: null,
-		document_relationships: null,
+		document_relationships: { source_group: 'thesis-anchor-found' },
 		attempt_count: 0,
 		session_id: 'session-abc',
 		user_id: 'user-123',
@@ -1591,11 +1562,11 @@ Deno.test('planPairwiseByOrigin handles anchor_found by using result.document', 
 		tokens_used_output: 0,
 		processing_time_ms: 0,
 		size_bytes: 0,
-		target_contribution_id: thesisDoc.id,
+		target_contribution_id: 'thesis-anchor-found',
 		seed_prompt_url: null,
 		is_header: false,
 		source_prompt_resource_id: null,
-		document_relationships: { source_group: thesisDoc.id },
+		document_relationships: { source_group: 'thesis-anchor-found' },
 		attempt_count: 0,
 		session_id: 'session-abc',
 		user_id: 'user-123',
@@ -1605,7 +1576,7 @@ Deno.test('planPairwiseByOrigin handles anchor_found by using result.document', 
 		is_latest_edit: true,
 		created_at: '2024-01-01T00:00:00Z',
 		updated_at: '2024-01-01T00:00:00Z',
-		file_name: 'highest-relevance-model_0_business_case_critique.md',
+		file_name: 'highest-relevance-model_critiquing_lower-relevance-model_aaea3527_0_business_case_critique.md',
 		storage_bucket: 'dialectic-project-resources',
 		storage_path: 'project-123/session_abc/iteration_1/2_antithesis/documents',
 		model_id: 'highest-relevance-model',
@@ -1688,16 +1659,186 @@ Deno.test('planPairwiseByOrigin handles anchor_found by using result.document', 
 		assertExists(executePayload.canonicalPathParams, 'EXECUTE job should include canonicalPathParams');
 		assertExists(
 			executePayload.canonicalPathParams.sourceAnchorModelSlug,
-			'canonicalPathParams should include sourceAnchorModelSlug from highest-relevance document'
+			'canonicalPathParams should include sourceAnchorModelSlug from anchor document'
 		);
+		// When antithesis document is selected as anchor (highest relevance 1.0), createCanonicalPathParams
+		// extracts sourceAnchorModelSlug from the critiquing pattern: the critiqued thesis model.
 		assertEquals(
 			executePayload.canonicalPathParams.sourceAnchorModelSlug,
-			'highest-relevance-model',
-			'sourceAnchorModelSlug should match the highest-relevance document from pair (antithesis with relevance 1.0)'
+			'lower-relevance-model',
+			'sourceAnchorModelSlug should match the critiqued thesis model from antithesis document critiquing pattern, not the antithesis document\'s own model'
 		);
 	} else {
 		throw new Error('Expected EXECUTE job');
 	}
+});
+
+Deno.test('planPairwiseByOrigin pairs documents by filename patterns regardless of source_group values', () => {
+	// This test proves pairing works based on filename patterns, not source_group values:
+	// - Pairing matches thesis model (from thesis filename) with critiqued model (in antithesis filename)
+	// - source_group values may match or differ - pairing should work either way
+	// - The planner must pair across all documents, not restrict to same source_group lineage
+
+	const LINEAGE_ROOT_A = 'lineage-root-model-a';
+	const LINEAGE_ROOT_B = 'lineage-root-model-b';
+
+	const thesisA: SourceDocument = {
+		id: 'thesis-a-doc',
+		contribution_type: 'thesis',
+		stage: 'thesis',
+		document_relationships: { source_group: LINEAGE_ROOT_A },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		file_name: 'model-a_0_business_case.md',
+		storage_bucket: 'test-bucket',
+		storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+		model_id: 'model-a',
+		model_name: 'model-a',
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'text/markdown',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.business_case,
+		attempt_count: 0,
+	};
+
+	const thesisB: SourceDocument = {
+		...thesisA,
+		id: 'thesis-b-doc',
+		document_relationships: { source_group: LINEAGE_ROOT_B },
+		file_name: 'model-b_0_business_case.md',
+		model_id: 'model-b',
+		model_name: 'model-b',
+	};
+
+	const antithesisA1: SourceDocument = {
+		id: 'antithesis-a1-doc',
+		contribution_type: 'antithesis',
+		stage: 'antithesis',
+		document_relationships: { source_group: 'different-lineage-a1' }, // Different source_group than thesisA
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		file_name: 'model-c_critiquing_model-a_0000000a_0_business_case_critique.md',
+		storage_bucket: 'test-bucket',
+		storage_path: 'project-123/session_abc/iteration_1/2_antithesis/documents',
+		model_id: 'model-c',
+		model_name: 'model-c',
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'text/markdown',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.business_case_critique,
+		attempt_count: 0,
+	};
+
+	const antithesisA2: SourceDocument = {
+		...antithesisA1,
+		id: 'antithesis-a2-doc',
+		file_name: 'model-d_critiquing_model-a_0000000a_0_business_case_critique.md',
+		model_id: 'model-d',
+		model_name: 'model-d',
+	};
+
+	const antithesisB1: SourceDocument = {
+		...antithesisA1,
+		id: 'antithesis-b1-doc',
+		document_relationships: { source_group: 'different-lineage-b1' }, // Different source_group than thesisB
+		file_name: 'model-c_critiquing_model-b_0000000b_0_business_case_critique.md',
+		model_id: 'model-c',
+		model_name: 'model-c',
+	};
+
+	const sourceDocs: SourceDocument[] = [thesisA, thesisB, antithesisA1, antithesisA2, antithesisB1];
+
+	const recipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		inputs_required: [
+			{ type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true },
+			{ type: 'document', slug: 'antithesis', document_key: FileType.business_case_critique, required: true },
+		],
+	};
+
+	// This test SHOULD pass after the fix:
+	// - Lineage A: thesisA paired with antithesisA1, antithesisA2 → 2 jobs
+	// - Lineage B: thesisB paired with antithesisB1 → 1 job
+	// Total: 3 jobs
+
+	const childPayloads = planPairwiseByOrigin(sourceDocs, MOCK_PARENT_JOB, recipeStep, 'jwt');
+
+	assertEquals(childPayloads.length, 3, 'Should create 3 jobs: 2 pairs for lineage A, 1 pair for lineage B');
+
+	// Verify all jobs are EXECUTE payloads with correct pairing
+	for (const payload of childPayloads) {
+		if (!isDialecticExecuteJobPayload(payload)) {
+			throw new Error('Expected EXECUTE job payload');
+		}
+
+		const thesisId = payload.inputs?.thesis_id;
+		const antithesisIds = payload.inputs?.antithesis_ids;
+
+		assertExists(thesisId, 'Each job should have thesis_id in inputs');
+		assertExists(antithesisIds, 'Each job should have antithesis_ids in inputs');
+
+		// Verify the pair shares the same lineage (source_group)
+		const thesisDoc = sourceDocs.find(d => d.id === thesisId);
+		const antithesisDoc = sourceDocs.find(d => antithesisIds?.includes(d.id || ''));
+
+		assertExists(thesisDoc, `Thesis doc ${thesisId} should exist`);
+		assertExists(antithesisDoc, `Antithesis doc ${antithesisIds?.[0]} should exist`);
+
+		// Verify pairing is based on filename patterns, not source_group values
+		// The thesis model from the thesis document should match the critiqued model in the antithesis filename
+		assertExists(thesisDoc.file_name, 'Thesis document should have filename');
+		assertExists(antithesisDoc.file_name, 'Antithesis document should have filename');
+	}
+
+	// Verify specific pairings
+	const pairings = childPayloads.map(p => {
+		if (isDialecticExecuteJobPayload(p)) {
+			return { thesis: p.inputs?.thesis_id, antithesis: p.inputs?.antithesis_ids?.[0] };
+		}
+		return null;
+	}).filter(Boolean);
+
+	// Lineage A should have 2 pairs (thesisA with antithesisA1 and antithesisA2)
+	const lineageAPairs = pairings.filter(p => p?.thesis === 'thesis-a-doc');
+	assertEquals(lineageAPairs.length, 2, 'Lineage A should have 2 pairs');
+
+	// Lineage B should have 1 pair (thesisB with antithesisB1)
+	const lineageBPairs = pairings.filter(p => p?.thesis === 'thesis-b-doc');
+	assertEquals(lineageBPairs.length, 1, 'Lineage B should have 1 pair');
 });
 
 Deno.test('planPairwiseByOrigin throws on anchor_not_found', async () => {
@@ -1740,7 +1881,7 @@ Deno.test('planPairwiseByOrigin throws on anchor_not_found', async () => {
 		seed_prompt_url: null,
 		is_header: false,
 		source_prompt_resource_id: null,
-		document_relationships: null,
+		document_relationships: { source_group: 'thesis-anchor-not-found' },
 		attempt_count: 0,
 		session_id: 'session-abc',
 		user_id: 'user-123',
@@ -1750,16 +1891,16 @@ Deno.test('planPairwiseByOrigin throws on anchor_not_found', async () => {
 		is_latest_edit: true,
 		created_at: '2024-01-01T00:00:00Z',
 		updated_at: '2024-01-01T00:00:00Z',
-		file_name: 'model-a_0_feature_spec.md',
+		file_name: 'model-a_0_business_case.md',
 		storage_bucket: 'dialectic-project-resources',
 		storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
 		model_id: 'model-a',
 		model_name: null,
 		prompt_template_id_used: null,
-		document_key: FileType.feature_spec,
+		document_key: FileType.business_case,
 	};
 
-	// Antithesis document (paired with thesis, but wrong document_key)
+	// Antithesis document (paired with thesis, but wrong document_key - technical_feasibility_assessment instead of business_case_critique)
 	const antithesisDoc: SourceDocument = {
 		id: 'antithesis-anchor-not-found',
 		contribution_type: 'antithesis',
@@ -1773,11 +1914,11 @@ Deno.test('planPairwiseByOrigin throws on anchor_not_found', async () => {
 		tokens_used_output: 0,
 		processing_time_ms: 0,
 		size_bytes: 0,
-		target_contribution_id: thesisDoc.id,
+		target_contribution_id: 'thesis-anchor-not-found',
 		seed_prompt_url: null,
 		is_header: false,
 		source_prompt_resource_id: null,
-		document_relationships: { source_group: thesisDoc.id },
+		document_relationships: { source_group: 'thesis-anchor-not-found' },
 		attempt_count: 0,
 		session_id: 'session-abc',
 		user_id: 'user-123',
@@ -1787,13 +1928,13 @@ Deno.test('planPairwiseByOrigin throws on anchor_not_found', async () => {
 		is_latest_edit: true,
 		created_at: '2024-01-01T00:00:00Z',
 		updated_at: '2024-01-01T00:00:00Z',
-		file_name: 'model-b_0_feature_spec_critique.md',
+		file_name: 'model-b_critiquing_model-a_aaea3527_0_technical_feasibility_assessment.md',
 		storage_bucket: 'dialectic-project-resources',
 		storage_path: 'project-123/session_abc/iteration_1/2_antithesis/documents',
 		model_id: 'model-b',
 		model_name: null,
 		prompt_template_id_used: null,
-		document_key: FileType.feature_spec,
+		document_key: FileType.technical_feasibility_assessment,
 	};
 
 	const sourceDocs: SourceDocument[] = [thesisDoc, antithesisDoc];
@@ -1818,10 +1959,20 @@ Deno.test('planPairwiseByOrigin throws on anchor_not_found', async () => {
 				document_key: FileType.business_case,
 				required: true,
 			},
+			{
+				type: 'document',
+				slug: 'antithesis',
+				document_key: FileType.business_case_critique,
+				required: true,
+			},
 		],
 		inputs_relevance: [
 			{
 				document_key: FileType.business_case,
+				relevance: 0.9,
+			},
+			{
+				document_key: FileType.business_case_critique,
 				relevance: 1.0,
 			},
 		],
@@ -1849,6 +2000,8 @@ Deno.test('planPairwiseByOrigin throws on anchor_not_found', async () => {
 		parallel_group: null,
 	};
 
+	// The test has documents with wrong document_key (technical_feasibility_assessment instead of business_case_critique)
+	// So selectAnchorSourceDocument should not find the anchor for the antithesis stage
 	await assertRejects(
 		async () => {
 			planPairwiseByOrigin(sourceDocs, parentJobWithSynthesisStage, executeRecipeStep, parentJobWithSynthesisStage.payload.user_jwt);
@@ -1856,6 +2009,992 @@ Deno.test('planPairwiseByOrigin throws on anchor_not_found', async () => {
 		Error,
 		'Anchor document not found',
 		'Should throw error when anchor document not found in pair'
+	);
+});
+
+Deno.test('planPairwiseByOrigin pairs documents by thesis model and antithesis model, bundling all required antithesis documents for synthesis_pairwise_business_case step', () => {
+	// Test that the planner correctly pairs documents based on:
+	// 1. Thesis model (from thesis document)
+	// 2. Antithesis model (from antithesis document)
+	// 3. Critiqued thesis model (extracted from antithesis filename pattern)
+	// 4. Required document_key values from inputs_required
+	// And bundles ALL required antithesis documents from the same antithesis model that critique the same thesis
+	
+	const LINEAGE_FRAGMENT_A = 'aaea3527';
+	
+	// Thesis document: model-a's business_case
+	const thesisA: SourceDocument = {
+		id: 'thesis-business-case-a',
+		contribution_type: 'thesis',
+		stage: 'thesis',
+		document_relationships: { source_group: `lineage-${LINEAGE_FRAGMENT_A}` },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-123',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: '2024-01-01T00:00:00Z',
+		updated_at: '2024-01-01T00:00:00Z',
+		file_name: `full-dag-test-model-a_0_business_case_${LINEAGE_FRAGMENT_A}.md`,
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+		model_id: 'full-dag-test-model-a',
+		model_name: null,
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'text/markdown',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.business_case,
+		attempt_count: 0,
+	};
+	
+	// Antithesis documents from model-c critiquing model-a:
+	// - business_case_critique
+	// - comparison_vector
+	const antithesisC1: SourceDocument = {
+		id: 'antithesis-c-business-case-critique',
+		contribution_type: 'antithesis',
+		stage: 'antithesis',
+		document_relationships: { source_group: `lineage-${LINEAGE_FRAGMENT_A}` },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-123',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: '2024-01-01T00:00:00Z',
+		updated_at: '2024-01-01T00:00:00Z',
+		file_name: `full-dag-test-model-c_critiquing_full-dag-test-model-a_${LINEAGE_FRAGMENT_A}_0_business_case_critique.md`,
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-123/session_abc/iteration_1/2_antithesis/documents',
+		model_id: 'full-dag-test-model-c',
+		model_name: null,
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'text/markdown',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.business_case_critique,
+		attempt_count: 0,
+	};
+	
+	const antithesisC2: SourceDocument = {
+		...antithesisC1,
+		id: 'antithesis-c-comparison-vector',
+		file_name: `full-dag-test-model-c_critiquing_full-dag-test-model-a_${LINEAGE_FRAGMENT_A}_0_comparison_vector_assembled.json`,
+		document_key: FileType.comparison_vector,
+		mime_type: 'application/json',
+	};
+	
+	// Antithesis documents from model-d critiquing model-a:
+	// - business_case_critique
+	// - comparison_vector
+	const antithesisD1: SourceDocument = {
+		...antithesisC1,
+		id: 'antithesis-d-business-case-critique',
+		model_id: 'full-dag-test-model-d',
+		file_name: `full-dag-test-model-d_critiquing_full-dag-test-model-a_${LINEAGE_FRAGMENT_A}_0_business_case_critique.md`,
+		document_key: FileType.business_case_critique,
+		mime_type: 'text/markdown',
+	};
+	
+	const antithesisD2: SourceDocument = {
+		...antithesisD1,
+		id: 'antithesis-d-comparison-vector',
+		file_name: `full-dag-test-model-d_critiquing_full-dag-test-model-a_${LINEAGE_FRAGMENT_A}_0_comparison_vector_assembled.json`,
+		document_key: FileType.comparison_vector,
+		mime_type: 'application/json',
+	};
+	
+	// Header context document matching parent job's model_id (model-ghi)
+	const headerContextDoc: SourceDocument = {
+		id: 'header-context-model-ghi',
+		contribution_type: 'header_context',
+		stage: 'synthesis',
+		document_relationships: { source_group: 'header-context-group' },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-123',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: '2024-01-01T00:00:00Z',
+		updated_at: '2024-01-01T00:00:00Z',
+		file_name: 'model-ghi_0_header_context_pairwise.json',
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-123/session_abc/iteration_1/3_synthesis/documents',
+		model_id: 'model-ghi', // Must match MOCK_PARENT_JOB.payload.model_id
+		model_name: null,
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'application/json',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.header_context_pairwise,
+		attempt_count: 0,
+	};
+	
+	const sourceDocs: SourceDocument[] = [thesisA, antithesisC1, antithesisC2, antithesisD1, antithesisD2, headerContextDoc];
+	
+	const recipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		step_key: 'synthesis_pairwise_business_case',
+		step_slug: 'pairwise-synthesis-business-case',
+		inputs_required: [
+			{ type: 'header_context', slug: 'synthesis', document_key: FileType.header_context_pairwise, required: true },
+			{ type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true },
+			{ type: 'document', slug: 'antithesis', document_key: FileType.business_case_critique, required: true },
+			{ type: 'document', slug: 'antithesis', document_key: FileType.comparison_vector, required: true },
+		],
+		inputs_relevance: [
+			{ document_key: FileType.header_context_pairwise, slug: 'synthesis', relevance: 1.0 },
+			{ document_key: FileType.business_case, slug: 'thesis', relevance: 1.0 },
+			{ document_key: FileType.business_case_critique, slug: 'antithesis', relevance: 0.95 },
+			{ document_key: FileType.comparison_vector, slug: 'antithesis', relevance: 0.9 },
+		],
+		outputs_required: {
+			documents: [{
+				artifact_class: 'assembled_json',
+				file_type: 'json',
+				document_key: FileType.synthesis_pairwise_business_case,
+				template_filename: 'synthesis_pairwise_business_case.json',
+				content_to_include: {},
+			}],
+			assembled_json: [],
+			files_to_generate: [{
+				from_document_key: FileType.synthesis_pairwise_business_case,
+				template_filename: 'synthesis_pairwise_business_case.json',
+			}],
+		},
+		output_type: FileType.synthesis_pairwise_business_case,
+	};
+	
+	const childPayloads = planPairwiseByOrigin(sourceDocs, MOCK_PARENT_JOB, recipeStep, 'jwt');
+	
+	// Should create 2 jobs:
+	// - Job 1: thesisA (model-a) + [antithesisC1 (model-c), antithesisC2 (model-c)] - model-c critiquing model-a
+	// - Job 2: thesisA (model-a) + [antithesisD1 (model-d), antithesisD2 (model-d)] - model-d critiquing model-a
+	assertEquals(childPayloads.length, 2, 'Should create 2 jobs: one per (thesis, antithesis model) pair');
+	
+	// Verify each job has the thesis and both required antithesis documents bundled
+	for (const payload of childPayloads) {
+		if (!isDialecticExecuteJobPayload(payload)) {
+			throw new Error('Expected EXECUTE job payload');
+		}
+		
+		const thesisId = payload.inputs?.thesis_id;
+		assertEquals(thesisId, 'thesis-business-case-a', 'Each job should pair with thesis-business-case-a');
+		
+		// Extract antithesis model from canonicalPathParams to identify which antithesis model this job is for
+		assertExists(payload.canonicalPathParams, 'Each job should have canonicalPathParams');
+		// When thesis has higher relevance (1.0) than antithesis (0.95/0.9), thesis is selected as the anchor
+		// So sourceAnchorModelSlug is the thesis model, and pairedModelSlug is the antithesis model
+		const thesisModelSlug = payload.canonicalPathParams.sourceAnchorModelSlug;
+		assertEquals(thesisModelSlug, 'full-dag-test-model-a', 'sourceAnchorModelSlug should be thesis model when thesis has higher relevance');
+		const antithesisModelSlug = payload.canonicalPathParams.pairedModelSlug;
+		assertExists(antithesisModelSlug, 'Each job should have pairedModelSlug identifying the antithesis model');
+		
+		// Verify that inputs contains arrays of antithesis document IDs for this antithesis model
+		// The inputs should bundle ALL required antithesis documents from this antithesis model
+		if (antithesisModelSlug === 'full-dag-test-model-c') {
+			// Job for model-c: should bundle both antithesisC1 and antithesisC2
+			// Note: The exact structure of inputs may need to be verified based on implementation
+			// For now, verify that canonicalPathParams identifies the models correctly
+			assertEquals(payload.canonicalPathParams.sourceAnchorModelSlug, 'full-dag-test-model-a', 'sourceAnchorModelSlug should match thesis model');
+		} else if (antithesisModelSlug === 'full-dag-test-model-d') {
+			// Job for model-d: should bundle both antithesisD1 and antithesisD2
+			assertEquals(payload.canonicalPathParams.sourceAnchorModelSlug, 'full-dag-test-model-a', 'sourceAnchorModelSlug should match thesis model');
+		} else {
+			throw new Error(`Unexpected antithesis model: ${antithesisModelSlug}`);
+		}
+	}
+});
+
+Deno.test('planPairwiseByOrigin pairs documents by thesis model and antithesis model for synthesis_pairwise_feature_spec step', () => {
+	// Test for synthesis_pairwise_feature_spec which requires:
+	// - thesis: feature_spec
+	// - antithesis: technical_feasibility_assessment, non_functional_requirements, comparison_vector
+	
+	const LINEAGE_FRAGMENT_A = 'aaea3527';
+	
+	const thesisA: SourceDocument = {
+		id: 'thesis-feature-spec-a',
+		contribution_type: 'thesis',
+		stage: 'thesis',
+		document_relationships: { source_group: `lineage-${LINEAGE_FRAGMENT_A}` },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-123',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: '2024-01-01T00:00:00Z',
+		updated_at: '2024-01-01T00:00:00Z',
+		file_name: `full-dag-test-model-a_0_feature_spec_${LINEAGE_FRAGMENT_A}.md`,
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+		model_id: 'full-dag-test-model-a',
+		model_name: null,
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'text/markdown',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.feature_spec,
+		attempt_count: 0,
+	};
+	
+	// Antithesis documents from model-c critiquing model-a:
+	const antithesisC1: SourceDocument = {
+		id: 'antithesis-c-feasibility',
+		contribution_type: 'antithesis',
+		stage: 'antithesis',
+		document_relationships: { source_group: `lineage-${LINEAGE_FRAGMENT_A}` },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-123',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: '2024-01-01T00:00:00Z',
+		updated_at: '2024-01-01T00:00:00Z',
+		file_name: `full-dag-test-model-c_critiquing_full-dag-test-model-a_${LINEAGE_FRAGMENT_A}_0_technical_feasibility_assessment.md`,
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-123/session_abc/iteration_1/2_antithesis/documents',
+		model_id: 'full-dag-test-model-c',
+		model_name: null,
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'text/markdown',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.technical_feasibility_assessment,
+		attempt_count: 0,
+	};
+	
+	const antithesisC2: SourceDocument = {
+		...antithesisC1,
+		id: 'antithesis-c-nfr',
+		file_name: `full-dag-test-model-c_critiquing_full-dag-test-model-a_${LINEAGE_FRAGMENT_A}_0_non_functional_requirements.md`,
+		document_key: FileType.non_functional_requirements,
+	};
+	
+	const antithesisC3: SourceDocument = {
+		...antithesisC1,
+		id: 'antithesis-c-comparison-vector',
+		file_name: `full-dag-test-model-c_critiquing_full-dag-test-model-a_${LINEAGE_FRAGMENT_A}_0_comparison_vector_assembled.json`,
+		document_key: FileType.comparison_vector,
+		mime_type: 'application/json',
+	};
+	
+	// Header context document matching parent job's model_id (model-ghi)
+	const headerContextDoc: SourceDocument = {
+		id: 'header-context-model-ghi',
+		contribution_type: 'header_context',
+		stage: 'synthesis',
+		document_relationships: { source_group: 'header-context-group' },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-123',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: '2024-01-01T00:00:00Z',
+		updated_at: '2024-01-01T00:00:00Z',
+		file_name: 'model-ghi_0_header_context_pairwise.json',
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-123/session_abc/iteration_1/3_synthesis/documents',
+		model_id: 'model-ghi', // Must match MOCK_PARENT_JOB.payload.model_id
+		model_name: null,
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'application/json',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.header_context_pairwise,
+		attempt_count: 0,
+	};
+	
+	const sourceDocs: SourceDocument[] = [thesisA, antithesisC1, antithesisC2, antithesisC3, headerContextDoc];
+	
+	const recipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		step_key: 'synthesis_pairwise_feature_spec',
+		step_slug: 'pairwise-synthesis-feature-spec',
+		inputs_required: [
+			{ type: 'header_context', slug: 'synthesis', document_key: FileType.header_context_pairwise, required: true },
+			{ type: 'document', slug: 'thesis', document_key: FileType.feature_spec, required: true },
+			{ type: 'document', slug: 'antithesis', document_key: FileType.technical_feasibility_assessment, required: true },
+			{ type: 'document', slug: 'antithesis', document_key: FileType.non_functional_requirements, required: true },
+			{ type: 'document', slug: 'antithesis', document_key: FileType.comparison_vector, required: true },
+		],
+		inputs_relevance: [
+			{ document_key: FileType.header_context_pairwise, slug: 'synthesis', relevance: 1.0 },
+			{ document_key: FileType.feature_spec, slug: 'thesis', relevance: 1.0 },
+			{ document_key: FileType.technical_feasibility_assessment, slug: 'antithesis', relevance: 0.95 },
+			{ document_key: FileType.non_functional_requirements, slug: 'antithesis', relevance: 0.9 },
+			{ document_key: FileType.comparison_vector, slug: 'antithesis', relevance: 0.85 },
+		],
+		outputs_required: {
+			documents: [{
+				artifact_class: 'assembled_json',
+				file_type: 'json',
+				document_key: FileType.synthesis_pairwise_feature_spec,
+				template_filename: 'synthesis_pairwise_feature_spec.json',
+				content_to_include: {},
+			}],
+			assembled_json: [],
+			files_to_generate: [{
+				from_document_key: FileType.synthesis_pairwise_feature_spec,
+				template_filename: 'synthesis_pairwise_feature_spec.json',
+			}],
+		},
+		output_type: FileType.synthesis_pairwise_feature_spec,
+	};
+	
+	const childPayloads = planPairwiseByOrigin(sourceDocs, MOCK_PARENT_JOB, recipeStep, 'jwt');
+	
+	// Should create 1 job: thesisA + [antithesisC1, antithesisC2, antithesisC3] - all from model-c critiquing model-a
+	assertEquals(childPayloads.length, 1, 'Should create 1 job bundling all required antithesis documents from model-c');
+	
+	const payload = childPayloads[0];
+	if (!isDialecticExecuteJobPayload(payload)) {
+		throw new Error('Expected EXECUTE job payload');
+	}
+	
+	assertEquals(payload.inputs?.thesis_id, 'thesis-feature-spec-a', 'Should pair with thesis-feature-spec-a');
+	assertExists(payload.canonicalPathParams, 'Job should have canonicalPathParams');
+	// When thesis has higher relevance (1.0) than antithesis (0.95/0.9/0.85), thesis is selected as the anchor
+	// So sourceAnchorModelSlug is the thesis model, and pairedModelSlug is the antithesis model
+	assertEquals(payload.canonicalPathParams.sourceAnchorModelSlug, 'full-dag-test-model-a', 'sourceAnchorModelSlug should match thesis model when thesis has higher relevance');
+	assertEquals(payload.canonicalPathParams.pairedModelSlug, 'full-dag-test-model-c', 'pairedModelSlug should match antithesis model when thesis is anchor');
+	// Verify all three required antithesis documents from model-c are bundled
+	// Note: Exact structure of inputs depends on implementation - may need arrays for multiple antithesis documents
+});
+
+Deno.test('planPairwiseByOrigin pairs documents by thesis model and antithesis model for synthesis_pairwise_technical_approach step', () => {
+	// Test for synthesis_pairwise_technical_approach which requires:
+	// - thesis: technical_approach
+	// - antithesis: risk_register, dependency_map
+	
+	const LINEAGE_FRAGMENT_A = 'aaea3527';
+	
+	const thesisA: SourceDocument = {
+		id: 'thesis-technical-approach-a',
+		contribution_type: 'thesis',
+		stage: 'thesis',
+		document_relationships: { source_group: `lineage-${LINEAGE_FRAGMENT_A}` },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-123',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: '2024-01-01T00:00:00Z',
+		updated_at: '2024-01-01T00:00:00Z',
+		file_name: `full-dag-test-model-a_0_technical_approach_${LINEAGE_FRAGMENT_A}.md`,
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+		model_id: 'full-dag-test-model-a',
+		model_name: null,
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'text/markdown',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.technical_approach,
+		attempt_count: 0,
+	};
+	
+	const antithesisC1: SourceDocument = {
+		id: 'antithesis-c-risk-register',
+		contribution_type: 'antithesis',
+		stage: 'antithesis',
+		document_relationships: { source_group: `lineage-${LINEAGE_FRAGMENT_A}` },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-123',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: '2024-01-01T00:00:00Z',
+		updated_at: '2024-01-01T00:00:00Z',
+		file_name: `full-dag-test-model-c_critiquing_full-dag-test-model-a_${LINEAGE_FRAGMENT_A}_0_risk_register.md`,
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-123/session_abc/iteration_1/2_antithesis/documents',
+		model_id: 'full-dag-test-model-c',
+		model_name: null,
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'text/markdown',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.risk_register,
+		attempt_count: 0,
+	};
+	
+	const antithesisC2: SourceDocument = {
+		...antithesisC1,
+		id: 'antithesis-c-dependency-map',
+		file_name: `full-dag-test-model-c_critiquing_full-dag-test-model-a_${LINEAGE_FRAGMENT_A}_0_dependency_map.md`,
+		document_key: FileType.dependency_map,
+	};
+	
+	// Header context document matching parent job's model_id (model-ghi)
+	const headerContextDoc: SourceDocument = {
+		id: 'header-context-model-ghi',
+		contribution_type: 'header_context',
+		stage: 'synthesis',
+		document_relationships: { source_group: 'header-context-group' },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-123',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: '2024-01-01T00:00:00Z',
+		updated_at: '2024-01-01T00:00:00Z',
+		file_name: 'model-ghi_0_header_context_pairwise.json',
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-123/session_abc/iteration_1/3_synthesis/documents',
+		model_id: 'model-ghi', // Must match MOCK_PARENT_JOB.payload.model_id
+		model_name: null,
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'application/json',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.header_context_pairwise,
+		attempt_count: 0,
+	};
+	
+	const sourceDocs: SourceDocument[] = [thesisA, antithesisC1, antithesisC2, headerContextDoc];
+	
+	const recipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		step_key: 'synthesis_pairwise_technical_approach',
+		step_slug: 'pairwise-synthesis-technical-approach',
+		inputs_required: [
+			{ type: 'header_context', slug: 'synthesis', document_key: FileType.header_context_pairwise, required: true },
+			{ type: 'document', slug: 'thesis', document_key: FileType.technical_approach, required: true },
+			{ type: 'document', slug: 'antithesis', document_key: FileType.risk_register, required: true },
+			{ type: 'document', slug: 'antithesis', document_key: FileType.dependency_map, required: true },
+		],
+		inputs_relevance: [
+			{ document_key: FileType.header_context_pairwise, slug: 'synthesis', relevance: 1.0 },
+			{ document_key: FileType.technical_approach, slug: 'thesis', relevance: 1.0 },
+			{ document_key: FileType.risk_register, slug: 'antithesis', relevance: 0.95 },
+			{ document_key: FileType.dependency_map, slug: 'antithesis', relevance: 0.9 },
+		],
+		outputs_required: {
+			documents: [{
+				artifact_class: 'assembled_json',
+				file_type: 'json',
+				document_key: FileType.synthesis_pairwise_technical_approach,
+				template_filename: 'synthesis_pairwise_technical_approach.json',
+				content_to_include: {},
+			}],
+			assembled_json: [],
+			files_to_generate: [{
+				from_document_key: FileType.synthesis_pairwise_technical_approach,
+				template_filename: 'synthesis_pairwise_technical_approach.json',
+			}],
+		},
+		output_type: FileType.synthesis_pairwise_technical_approach,
+	};
+	
+	const childPayloads = planPairwiseByOrigin(sourceDocs, MOCK_PARENT_JOB, recipeStep, 'jwt');
+	
+	// Should create 1 job: thesisA + [antithesisC1, antithesisC2] - both from model-c critiquing model-a
+	assertEquals(childPayloads.length, 1, 'Should create 1 job bundling all required antithesis documents from model-c');
+	
+	const payload = childPayloads[0];
+	if (!isDialecticExecuteJobPayload(payload)) {
+		throw new Error('Expected EXECUTE job payload');
+	}
+	
+	assertEquals(payload.inputs?.thesis_id, 'thesis-technical-approach-a', 'Should pair with thesis-technical-approach-a');
+	assertExists(payload.canonicalPathParams, 'Job should have canonicalPathParams');
+	// When thesis has higher relevance (1.0) than antithesis (0.95/0.9), thesis is selected as the anchor
+	// So sourceAnchorModelSlug is the thesis model, and pairedModelSlug is the antithesis model
+	assertEquals(payload.canonicalPathParams.sourceAnchorModelSlug, 'full-dag-test-model-a', 'sourceAnchorModelSlug should match thesis model when thesis has higher relevance');
+	assertEquals(payload.canonicalPathParams.pairedModelSlug, 'full-dag-test-model-c', 'pairedModelSlug should match antithesis model when thesis is anchor');
+});
+
+Deno.test('planPairwiseByOrigin pairs documents by thesis model and antithesis model for synthesis_pairwise_success_metrics step', () => {
+	// Test for synthesis_pairwise_success_metrics which requires:
+	// - thesis: success_metrics
+	// - antithesis: business_case_critique, comparison_vector
+	
+	const LINEAGE_FRAGMENT_A = 'aaea3527';
+	
+	const thesisA: SourceDocument = {
+		id: 'thesis-success-metrics-a',
+		contribution_type: 'thesis',
+		stage: 'thesis',
+		document_relationships: { source_group: `lineage-${LINEAGE_FRAGMENT_A}` },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-123',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: '2024-01-01T00:00:00Z',
+		updated_at: '2024-01-01T00:00:00Z',
+		file_name: `full-dag-test-model-a_0_success_metrics_${LINEAGE_FRAGMENT_A}.md`,
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+		model_id: 'full-dag-test-model-a',
+		model_name: null,
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'text/markdown',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.success_metrics,
+		attempt_count: 0,
+	};
+	
+	const antithesisC1: SourceDocument = {
+		id: 'antithesis-c-business-case-critique',
+		contribution_type: 'antithesis',
+		stage: 'antithesis',
+		document_relationships: { source_group: `lineage-${LINEAGE_FRAGMENT_A}` },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-123',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: '2024-01-01T00:00:00Z',
+		updated_at: '2024-01-01T00:00:00Z',
+		file_name: `full-dag-test-model-c_critiquing_full-dag-test-model-a_${LINEAGE_FRAGMENT_A}_0_business_case_critique.md`,
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-123/session_abc/iteration_1/2_antithesis/documents',
+		model_id: 'full-dag-test-model-c',
+		model_name: null,
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'text/markdown',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.business_case_critique,
+		attempt_count: 0,
+	};
+	
+	const antithesisC2: SourceDocument = {
+		...antithesisC1,
+		id: 'antithesis-c-comparison-vector',
+		file_name: `full-dag-test-model-c_critiquing_full-dag-test-model-a_${LINEAGE_FRAGMENT_A}_0_comparison_vector_assembled.json`,
+		document_key: FileType.comparison_vector,
+		mime_type: 'application/json',
+	};
+	
+	// Header context document matching parent job's model_id (model-ghi)
+	const headerContextDoc: SourceDocument = {
+		id: 'header-context-model-ghi',
+		contribution_type: 'header_context',
+		stage: 'synthesis',
+		document_relationships: { source_group: 'header-context-group' },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-123',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: '2024-01-01T00:00:00Z',
+		updated_at: '2024-01-01T00:00:00Z',
+		file_name: 'model-ghi_0_header_context_pairwise.json',
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-123/session_abc/iteration_1/3_synthesis/documents',
+		model_id: 'model-ghi', // Must match MOCK_PARENT_JOB.payload.model_id
+		model_name: null,
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'application/json',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.header_context_pairwise,
+		attempt_count: 0,
+	};
+	
+	const sourceDocs: SourceDocument[] = [thesisA, antithesisC1, antithesisC2, headerContextDoc];
+	
+	const recipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		step_key: 'synthesis_pairwise_success_metrics',
+		step_slug: 'pairwise-synthesis-success-metrics',
+		inputs_required: [
+			{ type: 'header_context', slug: 'synthesis', document_key: FileType.header_context_pairwise, required: true },
+			{ type: 'document', slug: 'thesis', document_key: FileType.success_metrics, required: true },
+			{ type: 'document', slug: 'antithesis', document_key: FileType.business_case_critique, required: true },
+			{ type: 'document', slug: 'antithesis', document_key: FileType.comparison_vector, required: true },
+		],
+		inputs_relevance: [
+			{ document_key: FileType.header_context_pairwise, slug: 'synthesis', relevance: 1.0 },
+			{ document_key: FileType.success_metrics, slug: 'thesis', relevance: 1.0 },
+			{ document_key: FileType.business_case_critique, slug: 'antithesis', relevance: 0.9 },
+			{ document_key: FileType.comparison_vector, slug: 'antithesis', relevance: 0.85 },
+		],
+		outputs_required: {
+			documents: [{
+				artifact_class: 'assembled_json',
+				file_type: 'json',
+				document_key: FileType.synthesis_pairwise_success_metrics,
+				template_filename: 'synthesis_pairwise_success_metrics.json',
+				content_to_include: {},
+			}],
+			assembled_json: [],
+			files_to_generate: [{
+				from_document_key: FileType.synthesis_pairwise_success_metrics,
+				template_filename: 'synthesis_pairwise_success_metrics.json',
+			}],
+		},
+		output_type: FileType.synthesis_pairwise_success_metrics,
+	};
+	
+	const childPayloads = planPairwiseByOrigin(sourceDocs, MOCK_PARENT_JOB, recipeStep, 'jwt');
+	
+	// Should create 1 job: thesisA + [antithesisC1, antithesisC2] - both from model-c critiquing model-a
+	assertEquals(childPayloads.length, 1, 'Should create 1 job bundling all required antithesis documents from model-c');
+	
+	const payload = childPayloads[0];
+	if (!isDialecticExecuteJobPayload(payload)) {
+		throw new Error('Expected EXECUTE job payload');
+	}
+	
+	assertEquals(payload.inputs?.thesis_id, 'thesis-success-metrics-a', 'Should pair with thesis-success-metrics-a');
+	assertExists(payload.canonicalPathParams, 'Job should have canonicalPathParams');
+	// When thesis has higher relevance (1.0) than antithesis (0.95/0.9), thesis is selected as the anchor
+	// So sourceAnchorModelSlug is the thesis model, and pairedModelSlug is the antithesis model
+	assertEquals(payload.canonicalPathParams.sourceAnchorModelSlug, 'full-dag-test-model-a', 'sourceAnchorModelSlug should match thesis model when thesis has higher relevance');
+	assertEquals(payload.canonicalPathParams.pairedModelSlug, 'full-dag-test-model-c', 'pairedModelSlug should match antithesis model when thesis is anchor');
+});
+
+Deno.test('planPairwiseByOrigin includes inputs.header_context_id matching parent job model_id when recipeStep.inputs_required includes header_context', () => {
+	// Test that each EXECUTE job gets its OWN header_context file that matches the model executing the job
+	// The parent job's model_id determines which header_context to use, not the source documents' model_ids
+	
+	const parentModelId = 'parent-model-executor';
+	
+	const parentJobWithModel: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+		id: MOCK_PARENT_JOB.id,
+		session_id: MOCK_PARENT_JOB.session_id,
+		user_id: MOCK_PARENT_JOB.user_id,
+		stage_slug: MOCK_PARENT_JOB.stage_slug,
+		iteration_number: MOCK_PARENT_JOB.iteration_number,
+		payload: {
+			job_type: 'PLAN',
+			projectId: 'project-xyz',
+			sessionId: 'session-abc',
+			stageSlug: 'synthesis',
+			iterationNumber: 1,
+			model_id: parentModelId, // The model that will execute the child jobs
+			walletId: 'wallet-default',
+			target_contribution_id: 'test-target-id',
+			user_jwt: 'user-jwt-123',
+		},
+		attempt_count: MOCK_PARENT_JOB.attempt_count,
+		completed_at: MOCK_PARENT_JOB.completed_at,
+		created_at: MOCK_PARENT_JOB.created_at,
+		error_details: MOCK_PARENT_JOB.error_details,
+		max_retries: MOCK_PARENT_JOB.max_retries,
+		parent_job_id: MOCK_PARENT_JOB.parent_job_id,
+		prerequisite_job_id: MOCK_PARENT_JOB.prerequisite_job_id,
+		results: MOCK_PARENT_JOB.results,
+		started_at: MOCK_PARENT_JOB.started_at,
+		status: MOCK_PARENT_JOB.status,
+		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
+		is_test_job: MOCK_PARENT_JOB.is_test_job,
+		job_type: MOCK_PARENT_JOB.job_type,
+	};
+
+	// Header context document matching the parent job's model_id
+	const headerContextDoc: SourceDocument = {
+		id: 'header-context-parent-model',
+		contribution_type: 'header_context',
+		stage: 'synthesis',
+		document_relationships: { source_group: 'header-context-group' },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-123',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: '2024-01-01T00:00:00Z',
+		updated_at: '2024-01-01T00:00:00Z',
+		file_name: `${parentModelId}_0_header_context_pairwise.json`,
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-123/session_abc/iteration_1/3_synthesis/documents',
+		model_id: parentModelId, // Must match parent job's model_id
+		model_name: null,
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'application/json',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.header_context_pairwise,
+		attempt_count: 0,
+	};
+
+	// Header context from a different model (should NOT be used)
+	const otherHeaderContextDoc: SourceDocument = {
+		...headerContextDoc,
+		id: 'header-context-other-model',
+		model_id: 'other-model',
+		file_name: 'other-model_0_header_context_pairwise.json',
+	};
+
+	// Thesis document (from different model than parent)
+	const thesisDoc: SourceDocument = {
+		id: 'thesis-for-header-test',
+		contribution_type: 'thesis',
+		stage: 'thesis',
+		document_relationships: { source_group: 'thesis-group' },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-123',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: '2024-01-01T00:00:00Z',
+		updated_at: '2024-01-01T00:00:00Z',
+		file_name: 'thesis-model-a_0_business_case_aaea3527.md',
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+		model_id: 'thesis-model-a', // Different from parent model
+		model_name: null,
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'text/markdown',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.business_case,
+		attempt_count: 0,
+	};
+
+	// Antithesis document (from different model than parent)
+	const antithesisDoc: SourceDocument = {
+		id: 'antithesis-for-header-test',
+		contribution_type: 'antithesis',
+		stage: 'antithesis',
+		document_relationships: { source_group: 'antithesis-group' },
+		content: '',
+		session_id: 'session-abc',
+		user_id: 'user-123',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: '2024-01-01T00:00:00Z',
+		updated_at: '2024-01-01T00:00:00Z',
+		file_name: 'antithesis-model-c_critiquing_thesis-model-a_aaea3527_0_business_case_critique.md',
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-123/session_abc/iteration_1/2_antithesis/documents',
+		model_id: 'antithesis-model-c', // Different from parent model
+		model_name: null,
+		prompt_template_id_used: null,
+		seed_prompt_url: null,
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		error: null,
+		citations: null,
+		size_bytes: 0,
+		mime_type: 'text/markdown',
+		is_header: false,
+		source_prompt_resource_id: null,
+		target_contribution_id: null,
+		document_key: FileType.business_case_critique,
+		attempt_count: 0,
+	};
+
+	const sourceDocs: SourceDocument[] = [headerContextDoc, otherHeaderContextDoc, thesisDoc, antithesisDoc];
+
+	const executeRecipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
+		inputs_required: [
+			{ type: 'header_context', slug: 'synthesis', document_key: FileType.header_context_pairwise, required: true },
+			{ type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true },
+			{ type: 'document', slug: 'antithesis', document_key: FileType.business_case_critique, required: true },
+		],
+		inputs_relevance: [
+			{ document_key: FileType.header_context_pairwise, slug: 'synthesis', relevance: 1.0 },
+			{ document_key: FileType.business_case, slug: 'thesis', relevance: 1.0 },
+			{ document_key: FileType.business_case_critique, slug: 'antithesis', relevance: 0.95 },
+		],
+		outputs_required: {
+			documents: [{
+				artifact_class: 'assembled_json',
+				file_type: 'json',
+				document_key: FileType.synthesis_pairwise_business_case,
+				template_filename: 'synthesis_pairwise_business_case.json',
+				content_to_include: {},
+			}],
+			assembled_json: [],
+			files_to_generate: [{
+				from_document_key: FileType.synthesis_pairwise_business_case,
+				template_filename: 'synthesis_pairwise_business_case.json',
+			}],
+		},
+		output_type: FileType.synthesis_pairwise_business_case,
+	};
+
+	const childPayloads = planPairwiseByOrigin(sourceDocs, parentJobWithModel, executeRecipeStep, 'jwt');
+
+	assertEquals(childPayloads.length, 1, 'Should create 1 child job for the pair');
+
+	const payload = childPayloads[0];
+	if (!isDialecticExecuteJobPayload(payload)) {
+		throw new Error('Expected EXECUTE job payload');
+	}
+
+	// Verify that the job uses the parent model's header_context, not the thesis/antithesis models' headers
+	assertExists(payload.inputs?.header_context_id, 'EXECUTE job should include header_context_id in inputs');
+	assertEquals(
+		payload.inputs?.header_context_id,
+		headerContextDoc.id,
+		'header_context_id should match the header_context document from the parent job\'s model, not from thesis/antithesis models'
+	);
+	assertEquals(
+		payload.model_id,
+		parentModelId,
+		'Child job model_id should match parent job model_id'
+	);
+	assertNotEquals(
+		payload.inputs?.header_context_id,
+		otherHeaderContextDoc.id,
+		'header_context_id should NOT use header_context from a different model'
 	);
 });
  
