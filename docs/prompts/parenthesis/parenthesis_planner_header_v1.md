@@ -82,7 +82,6 @@
         "apis": [{"name": "", "description": "", "contracts": []}],
         "schemas": [{"name": "", "columns": [], "indexes": [], "rls": []}],
         "proposed_file_tree": "",
-        "architecture": "",
         "delta_summary": "",
         "iteration_notes": "",
         "feature_scope": [],
@@ -110,6 +109,9 @@
         "security_tooling": {},
         "shared_libraries": [],
         "third_party_services": [],
+        "architecture": "",
+        "architecture_overview": "",
+        "architecture_summary": "",
         "executive_summary": ""
       }
     },
@@ -121,15 +123,24 @@
           {
             "name": "",
             "objective": "",
+            "technical_context": "",
+            "implementation_strategy": "",
             "milestones": [
               {
                 "id": "",
                 "title": "",
                 "objective": "",
+                "description": "",
+                "technical_complexity": "",
+                "effort_estimate": "",
+                "implementation_approach": "",
+                "test_strategy": "",
+                "component_labels": [],
                 "inputs": [],
                 "outputs": [],
                 "dependencies": [],
                 "acceptance_criteria": [],
+                "validation": [],
                 "status": "[ ]",
                 "coverage_notes": "",
                 "iteration_delta": ""
@@ -158,6 +169,11 @@
         "mvp_description": "",
         "market_opportunity": "",
         "competitive_analysis": "",
+        "technical_context": "",
+        "implementation_context": "",
+        "test_framework": "",
+        "component_mapping": "",
+        "architecture_summary": "",
         "architecture": "",
         "services": [],
         "components": [],
@@ -238,7 +254,9 @@
         "dependency_resolution": [],
         "component_details": [],
         "integration_requirements": [],
-        "migration_context": []
+        "migration_context": [],
+        "architecture_summary": "",
+        "executive_summary": ""
       }
     }
   ]

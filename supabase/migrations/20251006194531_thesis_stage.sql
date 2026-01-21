@@ -305,10 +305,6 @@ BEGIN
             updated_at = now()
     RETURNING id INTO v_business_doc_template_id;
 
-    UPDATE public.system_prompts
-    SET document_template_id = v_business_doc_template_id
-    WHERE id = v_business_prompt_id;
-
     INSERT INTO public.dialectic_recipe_template_steps (
         id,
         template_id,
@@ -468,10 +464,6 @@ BEGIN
             updated_at = now()
     RETURNING id INTO v_feature_doc_template_id;
 
-    UPDATE public.system_prompts
-    SET document_template_id = v_feature_doc_template_id
-    WHERE id = v_feature_prompt_id;
-
     INSERT INTO public.dialectic_recipe_template_steps (
         id,
         template_id,
@@ -628,10 +620,6 @@ BEGIN
             updated_at = now()
     RETURNING id INTO v_technical_doc_template_id;
 
-    UPDATE public.system_prompts
-    SET document_template_id = v_technical_doc_template_id
-    WHERE id = v_technical_prompt_id;
-
     INSERT INTO public.dialectic_recipe_template_steps (
         id,
         template_id,
@@ -784,10 +772,6 @@ BEGIN
             file_name = EXCLUDED.file_name,
             updated_at = now()
     RETURNING id INTO v_success_doc_template_id;
-
-    UPDATE public.system_prompts
-    SET document_template_id = v_success_doc_template_id
-    WHERE id = v_success_prompt_id;
 
     INSERT INTO public.dialectic_recipe_template_steps (
         id,

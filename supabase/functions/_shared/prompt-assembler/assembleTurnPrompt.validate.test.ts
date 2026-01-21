@@ -8,6 +8,7 @@ import {
   SessionContext,
   StageContext,
   AssembleTurnPromptDeps,
+  AssembleTurnPromptParams,
 } from "./prompt-assembler.interface.ts";
 import {
   createMockSupabaseClient,
@@ -25,6 +26,7 @@ import {
 } from "../../dialectic-service/dialectic.interface.ts";
 import { isRecord } from "../utils/type_guards.ts";
 import { GatherContextFn } from "./gatherContext.ts";
+import { createMockDownloadFromStorage } from "../supabase_storage_utils.mock.ts";
 
 const STAGE_SLUG = "synthesis";
 const BUSINESS_CASE_DOCUMENT_KEY = FileType.business_case;
@@ -224,17 +226,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+          const mockDownloadFromStorage = createMockDownloadFromStorage({ mode: 'error', error: new Error("Storage Error") });
           const deps: AssembleTurnPromptDeps = {
             dbClient: client,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+            downloadFromStorage: mockDownloadFromStorage,
+          };
+          const params: AssembleTurnPromptParams = {
             job: jobWithMissingInputs,
             project: defaultProject,
             session: defaultSession,
             stage: defaultStage,
-            gatherContext: mockGatherContext,
-            render: mockRender,
-            fileManager: mockFileManager,
           };
-          await assembleTurnPrompt(deps);
+          await assembleTurnPrompt(deps, params);
         },
         Error,
         "PRECONDITION_FAILED: Job payload inputs is missing 'header_context_id'."
@@ -281,17 +287,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+          const mockDownloadFromStorage = createMockDownloadFromStorage({ mode: 'error', error: new Error("Storage Error") });
           const deps: AssembleTurnPromptDeps = {
             dbClient: client,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+            downloadFromStorage: mockDownloadFromStorage,
+          };
+          const params: AssembleTurnPromptParams = {
             job: jobWithInvalidContributionId,
             project: defaultProject,
             session: defaultSession,
             stage: defaultStage,
-            gatherContext: mockGatherContext,
-            render: mockRender,
-            fileManager: mockFileManager,
           };
-          await assembleTurnPrompt(deps);
+          await assembleTurnPrompt(deps, params);
         },
         Error,
         `Header context contribution with id '${contributionId}' not found in database.`
@@ -382,17 +392,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+          const mockDownloadFromStorage = createMockDownloadFromStorage({ mode: 'error', error: new Error("Storage Error") });
           const deps: AssembleTurnPromptDeps = {
             dbClient: client,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+            downloadFromStorage: mockDownloadFromStorage,
+          };
+          const params: AssembleTurnPromptParams = {
             job: jobWithInvalidContribution,
             project: defaultProject,
             session: defaultSession,
             stage: defaultStage,
-            gatherContext: mockGatherContext,
-            render: mockRender,
-            fileManager: mockFileManager,
           };
-          await assembleTurnPrompt(deps);
+          await assembleTurnPrompt(deps, params);
         },
         Error,
         `Header context contribution '${contributionId}' is missing required storage_bucket.`
@@ -483,17 +497,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+          const mockDownloadFromStorage = createMockDownloadFromStorage({ mode: 'error', error: new Error("Storage Error") });
           const deps: AssembleTurnPromptDeps = {
             dbClient: client,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+            downloadFromStorage: mockDownloadFromStorage,
+          };
+          const params: AssembleTurnPromptParams = {
             job: jobWithInvalidContribution,
             project: defaultProject,
             session: defaultSession,
             stage: defaultStage,
-            gatherContext: mockGatherContext,
-            render: mockRender,
-            fileManager: mockFileManager,
           };
-          await assembleTurnPrompt(deps);
+          await assembleTurnPrompt(deps, params);
         },
         Error,
         `Header context contribution '${contributionId}' is missing required storage_path.`
@@ -584,17 +602,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+          const mockDownloadFromStorage = createMockDownloadFromStorage({ mode: 'error', error: new Error("Storage Error") });
           const deps: AssembleTurnPromptDeps = {
             dbClient: client,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+            downloadFromStorage: mockDownloadFromStorage,
+          };
+          const params: AssembleTurnPromptParams = {
             job: jobWithInvalidContribution,
             project: defaultProject,
             session: defaultSession,
             stage: defaultStage,
-            gatherContext: mockGatherContext,
-            render: mockRender,
-            fileManager: mockFileManager,
           };
-          await assembleTurnPrompt(deps);
+          await assembleTurnPrompt(deps, params);
         },
         Error,
         `Header context contribution '${contributionId}' is missing required file_name.`

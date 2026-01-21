@@ -52,7 +52,6 @@ Replace the placeholder structure in the JSON snippet below with fully written J
     {
       "document_key": "product_requirements",
       "content_to_include": {
-        "executive_summary": "",
         "mvp_description": "",
         "user_problem_validation": "",
         "market_opportunity": "",
@@ -96,13 +95,13 @@ Replace the placeholder structure in the JSON snippet below with fully written J
         "assumptions": [],
         "open_decisions": [],
         "implementation_risks": [],
-        "stakeholder_communications": []
+        "stakeholder_communications": [],
+        "executive_summary": "",
       }
     },
     {
       "document_key": "system_architecture",
       "content_to_include": {
-        "architecture_summary": "",
         "architecture": "",
         "services": [],
         "components": [],
@@ -119,7 +118,9 @@ Replace the placeholder structure in the JSON snippet below with fully written J
         "scalability_plan": [],
         "resilience_strategy": [],
         "compliance_controls": [],
-        "open_questions": []
+        "open_questions": [],
+        "rationale": "",
+        "architecture_summary": "",
       }
     },
     {

@@ -238,6 +238,42 @@ This checklist addresses the known issues preventing the dialectic system from c
 
 ---
 
+*   `[ ]` 102. **assembleTurnPrompt.ts** Fix DI violations and use injected dependencies
+    *   `[ ]` 102.a. [DEPS] Dependencies and signature
+        *   `[ ]` 102.a.i. `assembleTurnPrompt(deps: AssembleTurnPromptDeps, params: AssembleTurnPromptParams)` in `assembleTurnPrompt.ts`
+        *   `[ ]` 102.a.ii. Deps interface (line 21-27): `dbClient`, `fileManager`, `gatherContext`, `render`, `downloadFromStorage`
+        *   `[ ]` 102.a.iii. Params interface (line 29-35): `job`, `project`, `session`, `stage`, `sourceContributionId`
+        *   `[ ]` 102.a.iv. `RenderFn` signature expects `(renderPromptFn, stage, context: DynamicContextVariables, userProjectOverlayValues)`
+    *   `[ ]` 102.b. [TYPES] Verify existing types are sufficient
+        *   `[ ]` 102.b.i. `AssembleTurnPromptDeps` already defined at line 21-27
+        *   `[ ]` 102.b.ii. `AssembleTurnPromptParams` already defined at line 29-35
+        *   `[ ]` 102.b.iii. `DynamicContextVariables` already defined at line 115-127
+        *   `[ ]` 102.b.iv. `RenderFn` already defined at line 14-19
+    *   `[ ]` 102.c. [TEST-UNIT] Existing test at `assembleTurnPrompt.rendering.test.ts` proves the flaw (RED state)
+        *   `[ ]` 102.c.i. Test passes `render` and `gatherContext` as DI deps (lines 466-472)
+        *   `[ ]` 102.c.ii. Test expects `EXPECTED_RENDERED_CONTENT` with filled placeholders (lines 288-299)
+        *   `[ ]` 102.c.iii. Current implementation ignores DI deps, causing test to fail
+    *   `[ ]` 102.d. [BE] Fix `assembleTurnPrompt` to use injected dependencies
+        *   `[ ]` 102.d.i. Update function signature from `({ dbClient, fileManager, job, ... })` to `(deps, params)` pattern
+        *   `[ ]` 102.d.ii. Replace direct `downloadFromStorage()` calls with `deps.downloadFromStorage()`
+        *   `[ ]` 102.d.iii. Call `deps.gatherContext()` to build proper `DynamicContextVariables`
+        *   `[ ]` 102.d.iv. Replace direct `renderPrompt()` call with `deps.render(renderPrompt, stage, dynamicContext, project.user_domain_overlay_values)`
+        *   `[ ]` 102.d.v. Remove direct imports of `downloadFromStorage` and `renderPrompt`
+    *   `[ ]` 102.e. [TEST-UNIT] Rerun `assembleTurnPrompt.rendering.test.ts` and verify GREEN state
+        *   `[ ]` 102.e.i. Assert rendered prompt includes `role` value
+        *   `[ ]` 102.e.ii. Assert rendered prompt includes `style_guide_markdown` value
+        *   `[ ]` 102.e.iii. Assert rendered prompt includes `header_context` JSON
+        *   `[ ]` 102.e.iv. Assert `result.promptContent` equals `EXPECTED_RENDERED_CONTENT`
+    *   `[ ]` 102.f. [CRITERIA] Acceptance criteria
+        *   `[ ]` 102.f.i. Function signature matches `(deps: AssembleTurnPromptDeps, params: AssembleTurnPromptParams)`
+        *   `[ ]` 102.f.ii. All storage downloads use `deps.downloadFromStorage`
+        *   `[ ]` 102.f.iii. Context gathering uses `deps.gatherContext`
+        *   `[ ]` 102.f.iv. Rendering uses `deps.render` with proper overlay layering
+        *   `[ ]` 102.f.v. No direct imports of functions that should be injected
+    *   `[ ]` 102.g. [COMMIT] `fix(be): assembleTurnPrompt uses DI for downloadFromStorage, gatherContext, and render`
+
+---
+
 ## Summary
 
 | Step | File | Primary Fix |

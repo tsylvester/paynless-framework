@@ -1,25 +1,22 @@
 import {
   AssembledPrompt,
   AssembleTurnPromptDeps,
+  AssembleTurnPromptParams,
 } from "./prompt-assembler.interface.ts";
 import { isRecord } from "../utils/type_guards.ts";
 import { FileManagerResponse, FileType } from "../types/file_manager.types.ts";
-import { downloadFromStorage } from "../supabase_storage_utils.ts";
-import { renderPrompt } from "../prompt-renderer.ts";
 import { HeaderContext, OutputRule } from "../../dialectic-service/dialectic.interface.ts";
 import { isHeaderContext, isContentToInclude, isOutputRule } from "../utils/type-guards/type_guards.dialectic.ts";
-import type { Database } from "../../types_db.ts";
+import { Database } from "../../types_db.ts";
+import { gatherInputsForStage } from "./gatherInputsForStage.ts";
+import { renderPrompt } from "../prompt-renderer.ts";
 
 export async function assembleTurnPrompt(
-  {
-    dbClient,
-    fileManager,
-    job,
-    project,
-    session,
-    stage,
-  }: AssembleTurnPromptDeps,
+  deps: AssembleTurnPromptDeps,
+  params: AssembleTurnPromptParams,
 ): Promise<AssembledPrompt> {
+  const { dbClient, fileManager } = deps;
+  const { job, project, session, stage } = params;
   // 1. Precondition Guards
   if (!session.selected_model_ids || session.selected_model_ids.length === 0) {
     throw new Error(
@@ -117,7 +114,7 @@ export async function assembleTurnPrompt(
     ? `${headerContrib.storage_path}/${fileName}`
     : headerContrib.storage_path;
 
-  const { data: headerBlob, error: headerError } = await downloadFromStorage(
+  const { data: headerBlob, error: headerError } = await deps.downloadFromStorage(
     dbClient,
     headerContrib.storage_bucket,
     pathToDownload,
@@ -327,7 +324,7 @@ export async function assembleTurnPrompt(
   const fullTemplatePath =
     `${templateStoragePath.replace(/\/$/, "")}/${templateFile.replace(/^\//, "")}`;
 
-  const { data: templateBlob, error: templateError } = await downloadFromStorage(
+  const { data: templateBlob, error: templateError } = await deps.downloadFromStorage(
     dbClient,
     templateBucket,
     fullTemplatePath,
@@ -347,24 +344,46 @@ export async function assembleTurnPrompt(
     throw new Error("Invalid format for document template file.");
   }
 
-  // 6. Render the Prompt
+  // 6. Gather Context and Render the Prompt
   const documentSpecificData = isRecord(job.payload.document_specific_data)
     ? job.payload.document_specific_data
     : {};
-  
-  // Merge alignment details from context_for_documents into renderContext
-  // Merge order: system_materials -> alignment -> user_domain_overlay_values -> document_specific_data
-  // User domain overlay values override alignment details, and document-specific data overrides everything
-  const renderContext = {
+
+  // Call gatherContext to build base DynamicContextVariables
+  const dynamicContext = await deps.gatherContext(
+    dbClient,
+    (bucket, path) => deps.downloadFromStorage(dbClient, bucket, path),
+    gatherInputsForStage,
+    project,
+    session,
+    stage,
+    project.initial_user_prompt,
+    session.iteration_count,
+  );
+
+  // Merge header context data into dynamic context
+  // Merge order: system_materials -> alignment -> document_specific_data
+  // Note: user_domain_overlay_values is passed separately to deps.render for proper overlay layering
+  const mergedContext = {
+    ...dynamicContext,
     ...headerContext.system_materials,
     ...contextForDoc.content_to_include,
-    ...(isRecord(project.user_domain_overlay_values)
-      ? project.user_domain_overlay_values
-      : {}),
     ...documentSpecificData,
   };
 
-  const renderedPrompt = renderPrompt(documentTemplateContent, renderContext);
+  // Create stage with template content for deps.render
+  const stageWithTemplate = {
+    ...stage,
+    system_prompts: { prompt_text: documentTemplateContent },
+  };
+
+  // Use deps.render with proper overlay layering
+  const renderedPrompt = deps.render(
+    renderPrompt,
+    stageWithTemplate,
+    mergedContext,
+    project.user_domain_overlay_values,
+  );
 
   if (typeof job.payload.model_slug !== "string") {
     throw new Error("PRECONDITION_FAILED: Job payload is missing 'model_slug'.");

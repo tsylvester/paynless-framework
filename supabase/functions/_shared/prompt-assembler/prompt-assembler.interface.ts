@@ -6,7 +6,7 @@ import {
 import { GatherContextFn } from "./gatherContext.ts";
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { IFileManager } from "../types/file_manager.types.ts";
-import { DownloadStorageResult } from "../supabase_storage_utils.ts";
+import { DownloadStorageResult, DownloadFromStorageFn } from "../supabase_storage_utils.ts";
 import { GatherInputsForStageFn } from "./gatherInputsForStage.ts";
 import { Json } from "../../types_db.ts";
 import { InputRule } from "../../dialectic-service/dialectic.interface.ts";
@@ -21,12 +21,16 @@ export type RenderFn = (
 export interface AssembleTurnPromptDeps {
   dbClient: SupabaseClient<Database>;
   fileManager: IFileManager;
+  gatherContext: GatherContextFn;
+  render: RenderFn;
+  downloadFromStorage: DownloadFromStorageFn;
+}
+
+export interface AssembleTurnPromptParams {
   job: DialecticJobRow;
   project: ProjectContext;
   session: SessionContext;
   stage: StageContext;
-  gatherContext: GatherContextFn;
-  render: RenderFn;
   sourceContributionId?: string | null;
 }
 
@@ -85,6 +89,7 @@ export interface IPromptAssembler {
     ): Promise<AssembledPrompt>;
     assembleTurnPrompt(
         deps: AssembleTurnPromptDeps,
+        params: AssembleTurnPromptParams,
     ): Promise<AssembledPrompt>;
     assembleContinuationPrompt(
         deps: AssembleContinuationPromptDeps,

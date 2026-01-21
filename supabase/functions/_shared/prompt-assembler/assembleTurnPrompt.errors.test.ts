@@ -9,6 +9,7 @@ import {
   StageContext,
   AssembledPrompt,
   AssembleTurnPromptDeps,
+  AssembleTurnPromptParams,
   RenderFn,
 } from "./prompt-assembler.interface.ts";
 import {
@@ -28,6 +29,8 @@ import {
 } from "../../dialectic-service/dialectic.interface.ts";
 import { isRecord } from "../utils/type_guards.ts";
 import { GatherContextFn } from "./gatherContext.ts";
+import { createMockDownloadFromStorage } from "../supabase_storage_utils.mock.ts";
+import { DownloadFromStorageFn, DownloadStorageResult } from "../supabase_storage_utils.ts";
 
 const STAGE_SLUG = "synthesis";
 const BUSINESS_CASE_DOCUMENT_KEY = FileType.business_case;
@@ -138,17 +141,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
   const mockGatherContext: GatherContextFn = spy(async () => { return { 
     user_objective: "mock user objective", 
     domain: "Software Development", 
-    agent_count: 1, 
     context_description: "A test context", 
     original_user_request: "The original request", 
-    prior_stage_ai_outputs: "", 
-    prior_stage_user_feedback: "", 
-    deployment_context: undefined, 
-    reference_documents: undefined, 
-    constraint_boundaries: undefined, 
-    stakeholder_considerations: undefined, 
-    deliverable_format: undefined,
     recipeStep: defaultRecipeStep,
+    sourceDocuments: [],
   } });
   const mockRender = spy(() => "rendered turn prompt");
   const mockFileManager = createMockFileManagerService();
@@ -469,6 +465,38 @@ Deno.test("assembleTurnPrompt", async (t) => {
   const documentTemplateContent = "## {title}\n\nCover these points: {points_to_cover}";
   const designTemplateContent = "Design Style: {custom_style}";
 
+  const createConditionalDownloadMock = (
+    headerContextShouldSucceed: boolean,
+    templateShouldSucceed: boolean,
+    customHeaderContent?: unknown,
+    customTemplateContent?: string,
+  ): DownloadFromStorageFn => {
+    return async (_supabase: unknown, bucket: string, path: string): Promise<DownloadStorageResult> => {
+      const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+      const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+
+      if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
+        if (headerContextShouldSucceed) {
+          const content = customHeaderContent ?? headerContextContent;
+          const blob = new Blob([JSON.stringify(content)], { type: 'application/json' });
+          return { data: await blob.arrayBuffer(), error: null };
+        }
+        return { data: null, error: new Error("Storage Error") };
+      }
+
+      if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
+        if (templateShouldSucceed) {
+          const content = customTemplateContent ?? documentTemplateContent;
+          const blob = new Blob([content], { type: 'text/markdown' });
+          return { data: await blob.arrayBuffer(), error: null };
+        }
+        return { data: null, error: new Error("Template Not Found") };
+      }
+
+      return { data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) };
+    };
+  };
+
   await t.step("should throw an error if the header context cannot be fetched", async () => {
     const config: MockSupabaseDataConfig = {
         genericMockResults: {
@@ -487,21 +515,25 @@ Deno.test("assembleTurnPrompt", async (t) => {
       };
 
     const { client } = setup(config);
+    const mockDownloadFromStorage = createConditionalDownloadMock(false, false);
     
     try {
       await assertRejects(
         async () => {
             const deps: AssembleTurnPromptDeps = {
               dbClient: client,
+              gatherContext: mockGatherContext,
+              render: mockRender,
+              fileManager: mockFileManager,
+              downloadFromStorage: mockDownloadFromStorage,
+            };
+            const params: AssembleTurnPromptParams = {
               job: mockTurnJob,
               project: defaultProject,
               session: defaultSession,
               stage: defaultStage,
-              gatherContext: mockGatherContext,
-              render: mockRender,
-              fileManager: mockFileManager,
             };
-            await assembleTurnPrompt(deps);
+            await assembleTurnPrompt(deps, params);
         },
         Error,
         "Failed to download header context file from storage: Storage Error"
@@ -541,21 +573,25 @@ Deno.test("assembleTurnPrompt", async (t) => {
       };
 
     const { client } = setup(config);
+    const mockDownloadFromStorage = createConditionalDownloadMock(true, false);
     
     try {
       await assertRejects(
         async () => {
             const deps: AssembleTurnPromptDeps = {
               dbClient: client,
+              gatherContext: mockGatherContext,
+              render: mockRender,
+              fileManager: mockFileManager,
+              downloadFromStorage: mockDownloadFromStorage,
+            };
+            const params: AssembleTurnPromptParams = {
               job: mockTurnJob,
               project: defaultProject,
               session: defaultSession,
               stage: defaultStage,
-              gatherContext: mockGatherContext,
-              render: mockRender,
-              fileManager: mockFileManager,
             };
-            await assembleTurnPrompt(deps);
+            await assembleTurnPrompt(deps, params);
         },
         Error,
         `Failed to download turn prompt template '${getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY)}' from bucket '${TEMPLATE_STORAGE_BUCKET}': Template Not Found`
@@ -575,17 +611,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+            const mockDownloadFromStorage = createConditionalDownloadMock(false, false);
             const deps: AssembleTurnPromptDeps = {
                 dbClient: client,
+                gatherContext: mockGatherContext,
+                render: mockRender,
+                fileManager: mockFileManager,
+                downloadFromStorage: mockDownloadFromStorage,
+            };
+            const params: AssembleTurnPromptParams = {
                 job: mockTurnJob,
                 project: defaultProject,
                 session: sessionWithNoModels,
                 stage: defaultStage,
-                gatherContext: mockGatherContext,
-                render: mockRender,
-                fileManager: mockFileManager,
             };
-            await assembleTurnPrompt(deps);
+            await assembleTurnPrompt(deps, params);
         },
         Error,
         "PRECONDITION_FAILED: Session must have at least one selected model.",
@@ -629,17 +669,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+            const mockDownloadFromStorage = createConditionalDownloadMock(true, true);
             const deps: AssembleTurnPromptDeps = {
               dbClient: client,
+              gatherContext: mockGatherContext,
+              render: mockRender,
+              fileManager: mockFileManager,
+              downloadFromStorage: mockDownloadFromStorage,
+            };
+            const params: AssembleTurnPromptParams = {
               job: mockTurnJob,
               project: defaultProject,
               session: defaultSession,
               stage: defaultStage,
-              gatherContext: mockGatherContext,
-              render: mockRender,
-              fileManager: mockFileManager,
             };
-            await assembleTurnPrompt(deps);
+            await assembleTurnPrompt(deps, params);
         },
         Error,
         "Failed to save turn prompt: Upload failed"
@@ -671,17 +715,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
       // This test ensures that the function validates the structure of the critical HeaderContext.
       const thrownError = await assertRejects(
         async () => {
+            const mockDownloadFromStorage = createConditionalDownloadMock(true, false, "{ not json }");
             const deps: AssembleTurnPromptDeps = {
               dbClient: client,
+              gatherContext: mockGatherContext,
+              render: mockRender,
+              fileManager: mockFileManager,
+              downloadFromStorage: mockDownloadFromStorage,
+            };
+            const params: AssembleTurnPromptParams = {
               job: mockTurnJob,
               project: defaultProject,
               session: defaultSession,
               stage: defaultStage,
-              gatherContext: mockGatherContext,
-              render: mockRender,
-              fileManager: mockFileManager,
             };
-            await assembleTurnPrompt(deps);
+            await assembleTurnPrompt(deps, params);
         },
       );
       assert(
@@ -732,17 +780,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
       // This test validates that the job's requested document is actually part of the stage's plan.
       await assertRejects(
         async () => {
+            const mockDownloadFromStorage = createConditionalDownloadMock(true, false);
             const deps: AssembleTurnPromptDeps = {
               dbClient: client,
+              gatherContext: mockGatherContext,
+              render: mockRender,
+              fileManager: mockFileManager,
+              downloadFromStorage: mockDownloadFromStorage,
+            };
+            const params: AssembleTurnPromptParams = {
               job: jobWithInvalidDocKey,
               project: defaultProject,
               session: defaultSession,
               stage: defaultStage,
-              gatherContext: mockGatherContext,
-              render: mockRender,
-              fileManager: mockFileManager,
             };
-            await assembleTurnPrompt(deps);
+            await assembleTurnPrompt(deps, params);
         },
         Error,
         "No files_to_generate entry found with from_document_key 'non_existent_key' in recipe step."
@@ -763,17 +815,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
       // This test uses a typecast, as permitted by the rules for testing error handling of malformed inputs.
       await assertRejects(
         async () => {
+            const mockDownloadFromStorage = createConditionalDownloadMock(false, false);
             const deps: AssembleTurnPromptDeps = {
                 dbClient: client,
+                gatherContext: mockGatherContext,
+                render: mockRender,
+                fileManager: mockFileManager,
+                downloadFromStorage: mockDownloadFromStorage,
+            };
+            const params: AssembleTurnPromptParams = {
                 job: jobWithNullPayload as DialecticJobRow,
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
-                gatherContext: mockGatherContext,
-                render: mockRender,
-                fileManager: mockFileManager,
             };
-            await assembleTurnPrompt(deps);
+            await assembleTurnPrompt(deps, params);
         },
         Error,
         "PRECONDITION_FAILED: Job payload is missing or not a valid record."
@@ -799,17 +855,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
       // This test ensures the job provides the essential key for identifying which document to generate.
       await assertRejects(
         async () => {
+            const mockDownloadFromStorage = createConditionalDownloadMock(false, false);
             const deps: AssembleTurnPromptDeps = {
                 dbClient: client,
+                gatherContext: mockGatherContext,
+                render: mockRender,
+                fileManager: mockFileManager,
+                downloadFromStorage: mockDownloadFromStorage,
+            };
+            const params: AssembleTurnPromptParams = {
                 job: jobWithMissingDocKey,
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
-                gatherContext: mockGatherContext,
-                render: mockRender,
-                fileManager: mockFileManager,
             };
-            await assembleTurnPrompt(deps);
+            await assembleTurnPrompt(deps, params);
         },
         Error,
         "PRECONDITION_FAILED: Job payload is missing 'document_key'."
@@ -837,17 +897,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
       // This test validates that the job provides the link to its "blueprints".
       await assertRejects(
         async () => {
+            const mockDownloadFromStorage = createConditionalDownloadMock(false, false);
             const deps: AssembleTurnPromptDeps = {
                 dbClient: client,
+                gatherContext: mockGatherContext,
+                render: mockRender,
+                fileManager: mockFileManager,
+                downloadFromStorage: mockDownloadFromStorage,
+            };
+            const params: AssembleTurnPromptParams = {
                 job: jobWithMissingHeaderId,
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
-                gatherContext: mockGatherContext,
-                render: mockRender,
-                fileManager: mockFileManager,
             };
-            await assembleTurnPrompt(deps);
+            await assembleTurnPrompt(deps, params);
         },
         Error,
         "PRECONDITION_FAILED: Job payload inputs is missing 'header_context_id'."
@@ -873,17 +937,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+          const mockDownloadFromStorage = createConditionalDownloadMock(false, false);
           const deps: AssembleTurnPromptDeps = {
             dbClient: client,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+            downloadFromStorage: mockDownloadFromStorage,
+          };
+          const params: AssembleTurnPromptParams = {
             job: jobWithStepInfo,
             project: defaultProject,
             session: defaultSession,
             stage: defaultStage,
-            gatherContext: mockGatherContext,
-            render: mockRender,
-            fileManager: mockFileManager,
           };
-          await assembleTurnPrompt(deps);
+          await assembleTurnPrompt(deps, params);
         },
         Error,
         "PRECONDITION_FAILED: Legacy 'step_info' object found in job payload.",
@@ -928,17 +996,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+            const mockDownloadFromStorage = createConditionalDownloadMock(false, false);
             const deps: AssembleTurnPromptDeps = {
                 dbClient: client,
+                gatherContext: mockGatherContext,
+                render: mockRender,
+                fileManager: mockFileManager,
+                downloadFromStorage: mockDownloadFromStorage,
+            };
+            const params: AssembleTurnPromptParams = {
                 job: jobWithMissingModelSlug,
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
-                gatherContext: mockGatherContext,
-                render: mockRender,
-                fileManager: mockFileManager,
             };
-            await assembleTurnPrompt(deps);
+            await assembleTurnPrompt(deps, params);
         },
         Error,
         "PRECONDITION_FAILED: Job payload is missing 'model_id'."
@@ -983,17 +1055,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+            const mockDownloadFromStorage = createConditionalDownloadMock(false, false);
             const deps: AssembleTurnPromptDeps = {
                 dbClient: client,
+                gatherContext: mockGatherContext,
+                render: mockRender,
+                fileManager: mockFileManager,
+                downloadFromStorage: mockDownloadFromStorage,
+            };
+            const params: AssembleTurnPromptParams = {
                 job: jobWithMissingModelSlug,
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
-                gatherContext: mockGatherContext,
-                render: mockRender,
-                fileManager: mockFileManager,
             };
-            await assembleTurnPrompt(deps);
+            await assembleTurnPrompt(deps, params);
         },
         Error,
         "PRECONDITION_FAILED: Job payload is missing 'model_id'."
@@ -1037,17 +1113,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+            const mockDownloadFromStorage = createConditionalDownloadMock(false, false);
             const deps: AssembleTurnPromptDeps = {
                 dbClient: client,
+                gatherContext: mockGatherContext,
+                render: mockRender,
+                fileManager: mockFileManager,
+                downloadFromStorage: mockDownloadFromStorage,
+            };
+            const params: AssembleTurnPromptParams = {
                 job: jobWithInputs,
                 project: defaultProject,
                 session: defaultSession,
                 stage: stageWithoutRecipe,
-                gatherContext: mockGatherContext,
-                render: mockRender,
-                fileManager: mockFileManager,
             };
-            await assembleTurnPrompt(deps);
+            await assembleTurnPrompt(deps, params);
         },
         Error,
         "PRECONDITION_FAILED: Stage context is missing recipe_step."
@@ -1109,17 +1189,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+            const mockDownloadFromStorage = createConditionalDownloadMock(true, false);
             const deps: AssembleTurnPromptDeps = {
-                dbClient: client,
+              dbClient: client,
+              gatherContext: mockGatherContext,
+              render: mockRender,
+              fileManager: mockFileManager,
+              downloadFromStorage: mockDownloadFromStorage,
+            };
+            const params: AssembleTurnPromptParams = {
                 job: jobWithInputs,
                 project: defaultProject,
                 session: defaultSession,
                 stage: stageWithMissingTemplate,
-                gatherContext: mockGatherContext,
-                render: mockRender,
-                fileManager: mockFileManager,
             };
-            await assembleTurnPrompt(deps);
+            await assembleTurnPrompt(deps, params);
         },
         Error,
         "Failed to load system_prompts row for prompt_template_id 'non-existent-template': Query returned no rows"
@@ -1154,17 +1238,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+          const mockDownloadFromStorage = createConditionalDownloadMock(false, false);
           const deps: AssembleTurnPromptDeps = {
             dbClient: client,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+            downloadFromStorage: mockDownloadFromStorage,
+          };
+          const params: AssembleTurnPromptParams = {
             job: jobWithStepInfo,
             project: defaultProject,
             session: defaultSession,
             stage: defaultStage,
-            gatherContext: mockGatherContext,
-            render: mockRender,
-            fileManager: mockFileManager,
           };
-          await assembleTurnPrompt(deps);
+          await assembleTurnPrompt(deps, params);
         },
         Error,
         "PRECONDITION_FAILED: Legacy 'step_info' object found in job payload.",
@@ -1254,17 +1342,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+          const mockDownloadFromStorage = createConditionalDownloadMock(true, false, headerContextContent);
           const deps: AssembleTurnPromptDeps = {
             dbClient: client,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+            downloadFromStorage: mockDownloadFromStorage,
+          };
+          const params: AssembleTurnPromptParams = {
             job: jobWithBusinessCase,
             project: defaultProject,
             session: defaultSession,
             stage: stageWithRecipeStep,
-            gatherContext: mockGatherContext,
-            render: mockRender,
-            fileManager: mockFileManager,
           };
-          await assembleTurnPrompt(deps);
+          await assembleTurnPrompt(deps, params);
         },
         Error,
         "files_to_generate"
@@ -1348,17 +1440,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+          const mockDownloadFromStorage = createConditionalDownloadMock(true, false, headerContextWithoutContextForDocs);
           const deps: AssembleTurnPromptDeps = {
             dbClient: client,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+            downloadFromStorage: mockDownloadFromStorage,
+          };
+          const params: AssembleTurnPromptParams = {
             job: jobWithBusinessCase,
             project: defaultProject,
             session: defaultSession,
             stage: stageWithRecipeStep,
-            gatherContext: mockGatherContext,
-            render: mockRender,
-            fileManager: mockFileManager,
           };
-          await assembleTurnPrompt(deps);
+          await assembleTurnPrompt(deps, params);
         },
         Error,
         "context_for_documents"
@@ -1448,17 +1544,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+          const mockDownloadFromStorage = createConditionalDownloadMock(true, false, headerContextWithMismatch);
           const deps: AssembleTurnPromptDeps = {
             dbClient: client,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+            downloadFromStorage: mockDownloadFromStorage,
+          };
+          const params: AssembleTurnPromptParams = {
             job: jobWithBusinessCase,
             project: defaultProject,
             session: defaultSession,
             stage: stageWithRecipeStep,
-            gatherContext: mockGatherContext,
-            render: mockRender,
-            fileManager: mockFileManager,
           };
-          await assembleTurnPrompt(deps);
+          await assembleTurnPrompt(deps, params);
         },
         Error,
         BUSINESS_CASE_DOCUMENT_KEY
@@ -1546,17 +1646,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+          const mockDownloadFromStorage = createConditionalDownloadMock(true, false, headerContextWithEmptyContent);
           const deps: AssembleTurnPromptDeps = {
             dbClient: client,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+            downloadFromStorage: mockDownloadFromStorage,
+          };
+          const params: AssembleTurnPromptParams = {
             job: jobWithBusinessCase,
             project: defaultProject,
             session: defaultSession,
             stage: stageWithRecipeStep,
-            gatherContext: mockGatherContext,
-            render: mockRender,
-            fileManager: mockFileManager,
           };
-          await assembleTurnPrompt(deps);
+          await assembleTurnPrompt(deps, params);
         },
         Error,
         "content_to_include"
@@ -1641,17 +1745,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+          const mockDownloadFromStorage = createConditionalDownloadMock(true, false, headerContextWithInvalidContent);
           const deps: AssembleTurnPromptDeps = {
             dbClient: client,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+            downloadFromStorage: mockDownloadFromStorage,
+          };
+          const params: AssembleTurnPromptParams = {
             job: jobWithBusinessCase,
             project: defaultProject,
             session: defaultSession,
             stage: stageWithRecipeStep,
-            gatherContext: mockGatherContext,
-            render: mockRender,
-            fileManager: mockFileManager,
           };
-          await assembleTurnPrompt(deps);
+          await assembleTurnPrompt(deps, params);
         },
         Error
       );
@@ -1755,17 +1863,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     try {
       await assertRejects(
         async () => {
+          const mockDownloadFromStorage = createConditionalDownloadMock(true, false, headerContextWithMissingKeys);
           const deps: AssembleTurnPromptDeps = {
             dbClient: client,
+            gatherContext: mockGatherContext,
+            render: mockRender,
+            fileManager: mockFileManager,
+            downloadFromStorage: mockDownloadFromStorage,
+          };
+          const params: AssembleTurnPromptParams = {
             job: jobWithBusinessCase,
             project: defaultProject,
             session: defaultSession,
             stage: stageWithRecipeStep,
-            gatherContext: mockGatherContext,
-            render: mockRender,
-            fileManager: mockFileManager,
           };
-          await assembleTurnPrompt(deps);
+          await assembleTurnPrompt(deps, params);
         },
         Error,
         "missing required keys" // Updated error message expectation to focus on missing keys

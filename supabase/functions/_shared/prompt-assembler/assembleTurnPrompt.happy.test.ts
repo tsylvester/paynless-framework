@@ -9,6 +9,7 @@ import {
   StageContext,
   AssembledPrompt,
   AssembleTurnPromptDeps,
+  AssembleTurnPromptParams,
   RenderFn,
 } from "./prompt-assembler.interface.ts";
 import {
@@ -28,6 +29,8 @@ import {
 } from "../../dialectic-service/dialectic.interface.ts";
 import { isRecord } from "../utils/type_guards.ts";
 import { GatherContextFn } from "./gatherContext.ts";
+import { createMockDownloadFromStorage } from "../supabase_storage_utils.mock.ts";
+import { DownloadFromStorageFn, DownloadStorageResult } from "../supabase_storage_utils.ts";
 
 const STAGE_SLUG = "synthesis";
 const BUSINESS_CASE_DOCUMENT_KEY = FileType.business_case;
@@ -138,17 +141,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
   const mockGatherContext: GatherContextFn = spy(async () => { return { 
     user_objective: "mock user objective", 
     domain: "Software Development", 
-    agent_count: 1, 
     context_description: "A test context", 
     original_user_request: "The original request", 
-    prior_stage_ai_outputs: "", 
-    prior_stage_user_feedback: "", 
-    deployment_context: undefined, 
-    reference_documents: undefined, 
-    constraint_boundaries: undefined, 
-    stakeholder_considerations: undefined, 
-    deliverable_format: undefined,
     recipeStep: defaultRecipeStep,
+    sourceDocuments: [],
   } });
   const mockRender = spy(() => "rendered turn prompt");
   const mockFileManager = createMockFileManagerService();
@@ -468,6 +464,37 @@ Deno.test("assembleTurnPrompt", async (t) => {
   const documentTemplateContent = "## {title}\n\nCover these points: {points_to_cover}";
   const designTemplateContent = "Design Style: {custom_style}";
 
+  const createConditionalDownloadMock = (
+    customHeaderContent?: unknown,
+    customTemplateContent?: string,
+    customDesignTemplateContent?: string,
+  ): DownloadFromStorageFn => {
+    return async (_supabase: unknown, bucket: string, path: string): Promise<DownloadStorageResult> => {
+      const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+      const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+      const fullDesignPath = getPromptFilePath(STAGE_SLUG, TECHNICAL_DESIGN_DOCUMENT_KEY);
+
+      if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
+        const content = customHeaderContent ?? headerContextContent;
+        const blob = new Blob([JSON.stringify(content)], { type: 'application/json' });
+        return { data: await blob.arrayBuffer(), error: null };
+      }
+
+      if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
+        const content = customTemplateContent ?? documentTemplateContent;
+        const blob = new Blob([content], { type: 'text/markdown' });
+        return { data: await blob.arrayBuffer(), error: null };
+      }
+
+      if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullDesignPath) {
+        const content = customDesignTemplateContent ?? designTemplateContent;
+        const blob = new Blob([content], { type: 'text/markdown' });
+        return { data: await blob.arrayBuffer(), error: null };
+      }
+
+      return { data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) };
+    };
+  };
 
   await t.step("should correctly assemble and persist a turn prompt", async () => {
       const mockFileRecord: FileRecord = {
@@ -523,27 +550,29 @@ Deno.test("assembleTurnPrompt", async (t) => {
       mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
 
       try {
+        const mockDownloadFromStorage = createConditionalDownloadMock();
         const deps: AssembleTurnPromptDeps = {
           dbClient: client,
+          gatherContext: mockGatherContext,
+          render: mockRender,
+          fileManager: mockFileManager,
+          downloadFromStorage: mockDownloadFromStorage,
+        };
+        const params: AssembleTurnPromptParams = {
           job: mockTurnJob,
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
-          gatherContext: mockGatherContext,
-          render: mockRender,
-          fileManager: mockFileManager,
         };
-        const result: AssembledPrompt = await assembleTurnPrompt(deps);
-
-        const expectedPromptContent = "## Project Executive Summary\n\nCover these points: Problem, Solution, Market";
+        const result: AssembledPrompt = await assembleTurnPrompt(deps, params);
         
-        assertEquals(result.promptContent, expectedPromptContent);
+        assertEquals(result.promptContent, "rendered turn prompt");
         assertEquals(result.source_prompt_resource_id, mockFileRecord.id);
         
         assert(mockFileManager.uploadAndRegisterFile.calls.length === 1, "uploadAndRegisterFile should be called once");
         const uploadContext = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
         assertEquals(uploadContext.pathContext.fileType, FileType.TurnPrompt);
-        assertEquals(uploadContext.fileContent, expectedPromptContent);
+        assertEquals(uploadContext.fileContent, "rendered turn prompt");
       } finally {
         teardown();
       }
@@ -624,17 +653,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
 
     try {
+      const mockDownloadFromStorage = createConditionalDownloadMock();
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
         job: continuationJob,
         project: defaultProject,
         session: defaultSession,
         stage: defaultStage,
-        gatherContext: mockGatherContext,
-        render: mockRender,
-        fileManager: mockFileManager,
       };
-      await assembleTurnPrompt(deps);
+      await assembleTurnPrompt(deps, params);
 
       assert(
         mockFileManager.uploadAndRegisterFile.calls.length === 1,
@@ -741,19 +774,23 @@ Deno.test("assembleTurnPrompt", async (t) => {
     mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
 
     try {
+      const mockDownloadFromStorage = createConditionalDownloadMock(undefined, undefined, designTemplateContent);
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
         job: jobForDesignDoc,
         project: projectWithUserOverlay,
         session: defaultSession,
         stage: stageWithDesignRecipeStep,
-        gatherContext: mockGatherContext,
-        render: mockRender,
-        fileManager: mockFileManager,
       };
-      const result = await assembleTurnPrompt(deps);
+      const result = await assembleTurnPrompt(deps, params);
 
-      assertEquals(result.promptContent, "Design Style: formal");
+      assertEquals(result.promptContent, "rendered turn prompt");
     } finally {
       teardown();
     }
@@ -845,20 +882,23 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
 
     try {
+      const mockDownloadFromStorage = createConditionalDownloadMock(undefined, undefined, designTemplateContent);
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
         job: jobForDesignDoc,
         project: defaultProject,
         session: defaultSession,
         stage: stageWithDesignRecipeStep,
-        gatherContext: mockGatherContext,
-        render: mockRender,
-        fileManager: mockFileManager,
       };
-      const result: AssembledPrompt = await assembleTurnPrompt(deps);
+      const result: AssembledPrompt = await assembleTurnPrompt(deps, params);
   
-      const expectedPromptContent = "Design Style: minimalist";
-      assertEquals(result.promptContent, expectedPromptContent);
+      assertEquals(result.promptContent, "rendered turn prompt");
       assertEquals(result.source_prompt_resource_id, mockFileRecord.id);
     } finally {
       teardown();
@@ -951,25 +991,28 @@ Deno.test("assembleTurnPrompt", async (t) => {
       };
   
       try {
+        const mockDownloadFromStorage = createConditionalDownloadMock(undefined, undefined, designTemplateContent);
         const deps: AssembleTurnPromptDeps = {
           dbClient: client,
+          gatherContext: mockGatherContext,
+          render: mockRender,
+          fileManager: mockFileManager,
+          downloadFromStorage: mockDownloadFromStorage,
+        };
+        const params: AssembleTurnPromptParams = {
           job: jobForDesignDoc,
           project: defaultProject,
           session: defaultSession,
           stage: stageWithDesignRecipeStep2,
-          gatherContext: mockGatherContext,
-          render: mockRender,
-          fileManager: mockFileManager,
         };
-        const result: AssembledPrompt = await assembleTurnPrompt(deps);
+        const result: AssembledPrompt = await assembleTurnPrompt(deps, params);
     
-        const expectedPromptContent = "Design Style: brutalist";
-        assertEquals(result.promptContent, expectedPromptContent);
+        assertEquals(result.promptContent, "rendered turn prompt");
         assertEquals(result.source_prompt_resource_id, mockFileRecord.id);
       } finally {
         teardown();
       }
-  });
+    });
 
   await t.step("should handle a recipe step that requires no additional source documents beyond the HeaderContext", async () => {
     const mockFileRecord: FileRecord = {
@@ -1043,20 +1086,23 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
 
     try {
+      const mockDownloadFromStorage = createConditionalDownloadMock();
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
         job: jobWithInputs,
         project: defaultProject,
         session: defaultSession,
         stage: stageWithNoExtraInputs,
-        gatherContext: mockGatherContext,
-        render: mockRender,
-        fileManager: mockFileManager,
       };
-      const result: AssembledPrompt = await assembleTurnPrompt(deps);
+      const result: AssembledPrompt = await assembleTurnPrompt(deps, params);
   
-      const expectedPromptContent = "## Project Executive Summary\n\nCover these points: Problem, Solution, Market";
-      assertEquals(result.promptContent, expectedPromptContent);
+      assertEquals(result.promptContent, "rendered turn prompt");
       assertEquals(result.source_prompt_resource_id, mockFileRecord.id);
     } finally {
       teardown();
@@ -1134,17 +1180,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
 
     try {
+      const mockDownloadFromStorage = createConditionalDownloadMock();
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
         job: jobWithInputs,
         project: defaultProject,
         session: defaultSession,
         stage: stageWithNoStepName,
-        gatherContext: mockGatherContext,
-        render: mockRender,
-        fileManager: mockFileManager,
       };
-      await assembleTurnPrompt(deps);
+      await assembleTurnPrompt(deps, params);
 
       assert(mockFileManager.uploadAndRegisterFile.calls.length === 1, "uploadAndRegisterFile should be called once");
       const uploadContext = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
@@ -1232,17 +1282,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
 
     try {
+      const mockDownloadFromStorage = createConditionalDownloadMock();
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
         job: jobWithInputs,
         project: defaultProject,
         session: defaultSession,
         stage: stageWithBranchingInfo,
-        gatherContext: mockGatherContext,
-        render: mockRender,
-        fileManager: mockFileManager,
       };
-      await assembleTurnPrompt(deps);
+      await assembleTurnPrompt(deps, params);
 
       assert(mockFileManager.uploadAndRegisterFile.calls.length === 1, "uploadAndRegisterFile should have been called once.");
       const uploadContext = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
@@ -1375,20 +1429,29 @@ Deno.test("assembleTurnPrompt", async (t) => {
     delete (jobWithInputs.payload as any).header_context_resource_id;
 
     try {
+      const mockDownloadFromStorage: DownloadFromStorageFn = async (_supabase, bucket, path) => {
+        const result = await downloadSpy(bucket, path);
+        if (result.data instanceof Blob) {
+          return { data: await result.data.arrayBuffer(), error: result.error };
+        }
+        return { data: null, error: result.error };
+      };
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
         job: jobWithInputs,
         project: defaultProject,
         session: defaultSession,
         stage: defaultStage,
-        gatherContext: mockGatherContext,
-        render: mockRender,
-        fileManager: mockFileManager,
       };
-      const result: AssembledPrompt = await assembleTurnPrompt(deps);
+      const result: AssembledPrompt = await assembleTurnPrompt(deps, params);
 
-      const expectedPromptContent = "## Project Executive Summary\n\nCover these points: Problem, Solution, Market";
-      assertEquals(result.promptContent, expectedPromptContent);
+      assertEquals(result.promptContent, "rendered turn prompt");
       assertEquals(result.source_prompt_resource_id, mockFileRecord.id);
 
       assert(downloadSpy.calls.length >= 1, "downloadFromStorage should be called at least once");
@@ -1509,20 +1572,23 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
 
     try {
+      const mockDownloadFromStorage = createConditionalDownloadMock();
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
         job: jobWithBusinessCase,
         project: defaultProject,
         session: defaultSession,
         stage: stageWithRecipeStep,
-        gatherContext: mockGatherContext,
-        render: mockRender,
-        fileManager: mockFileManager,
       };
-      const result: AssembledPrompt = await assembleTurnPrompt(deps);
+      const result: AssembledPrompt = await assembleTurnPrompt(deps, params);
 
-      const expectedPromptContent = "Template with value1 and value2";
-      assertEquals(result.promptContent, expectedPromptContent);
+      assertEquals(result.promptContent, "rendered turn prompt");
       assertEquals(result.source_prompt_resource_id, mockFileRecord.id);
     } finally {
       teardown();
@@ -1638,17 +1704,27 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
 
     try {
+      const mockDownloadFromStorage: DownloadFromStorageFn = async (_supabase, bucket, path) => {
+        const result = await downloadSpy(bucket, path);
+        if (result.data instanceof Blob) {
+          return { data: await result.data.arrayBuffer(), error: result.error };
+        }
+        return { data: null, error: result.error };
+      };
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
         job: jobWithBusinessCase,
         project: defaultProject,
         session: defaultSession,
         stage: stageWithRecipeStep,
-        gatherContext: mockGatherContext,
-        render: mockRender,
-        fileManager: mockFileManager,
       };
-      await assembleTurnPrompt(deps);
+      await assembleTurnPrompt(deps, params);
 
       assert(downloadSpy.calls.length >= 2, "downloadFromStorage should be called at least twice (header context and template)");
       const templateDownloadCall = downloadSpy.calls.find((call: any) => 
@@ -1778,17 +1854,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
 
     try {
+      const mockDownloadFromStorage = createConditionalDownloadMock(headerContextWithCompatibleTypes, "Template content");
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
         job: jobWithBusinessCase,
         project: defaultProject,
         session: defaultSession,
         stage: stageWithRecipeStep,
-        gatherContext: mockGatherContext,
-        render: mockRender,
-        fileManager: mockFileManager,
       };
-      const result = await assembleTurnPrompt(deps);
+      const result = await assembleTurnPrompt(deps, params);
       assert(result, "assembleTurnPrompt should succeed with compatible types");
       assert(result.promptContent, "assembleTurnPrompt should return prompt content");
     } finally {
@@ -1910,17 +1990,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
 
     try {
+      const mockDownloadFromStorage = createConditionalDownloadMock(headerContextWithObject, "Template content");
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
         job: jobWithBusinessCase,
         project: defaultProject,
         session: defaultSession,
         stage: stageWithRecipeStep,
-        gatherContext: mockGatherContext,
-        render: mockRender,
-        fileManager: mockFileManager,
       };
-      const result = await assembleTurnPrompt(deps);
+      const result = await assembleTurnPrompt(deps, params);
       assert(result, "assembleTurnPrompt should succeed when object is provided instead of string");
       assert(result.promptContent, "assembleTurnPrompt should return prompt content");
     } finally {
@@ -2042,17 +2126,21 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
 
     try {
+      const mockDownloadFromStorage = createConditionalDownloadMock(headerContextWithArray, "Template content");
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
         job: jobWithBusinessCase,
         project: defaultProject,
         session: defaultSession,
         stage: stageWithRecipeStep,
-        gatherContext: mockGatherContext,
-        render: mockRender,
-        fileManager: mockFileManager,
       };
-      const result = await assembleTurnPrompt(deps);
+      const result = await assembleTurnPrompt(deps, params);
       assert(result, "assembleTurnPrompt should succeed when array is provided instead of string");
       assert(result.promptContent, "assembleTurnPrompt should return prompt content");
     } finally {
@@ -2169,21 +2257,42 @@ Deno.test("assembleTurnPrompt", async (t) => {
     };
 
     try {
+      const mockDownloadFromStorage = createConditionalDownloadMock(headerContextWithAlignment, templateContent);
+      const renderSpy = spy((_renderPromptFn: unknown, _stage: unknown, context: unknown, _overlay: unknown) => {
+        if (!isRecord(context)) {
+          return "rendered turn prompt";
+        }
+        if (("alignment_key" in context && context.alignment_key === "alignment_value_from_context") ||
+            ("another_alignment" in context && context.another_alignment === "another_value")) {
+          return "rendered turn prompt with alignment";
+        }
+        return "rendered turn prompt";
+      });
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
+        gatherContext: mockGatherContext,
+        render: renderSpy,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
         job: jobWithBusinessCase,
         project: defaultProject,
         session: defaultSession,
         stage: stageWithRecipeStep,
-        gatherContext: mockGatherContext,
-        render: mockRender,
-        fileManager: mockFileManager,
       };
-      const result: AssembledPrompt = await assembleTurnPrompt(deps);
+      const result: AssembledPrompt = await assembleTurnPrompt(deps, params);
 
+      assert(renderSpy.calls.length === 1, "render should be called once");
+      const renderCall = renderSpy.calls[0];
+      const contextArg = renderCall.args[2];
+      if (!isRecord(contextArg)) {
+        throw new Error("render context must be a record");
+      }
       assert(
-        result.promptContent.includes("alignment_value_from_context") || result.promptContent.includes("another_value"),
-        "Prompt content should include alignment values from context_for_documents.content_to_include when merged into renderContext"
+        "alignment_key" in contextArg && contextArg.alignment_key === "alignment_value_from_context" &&
+        "another_alignment" in contextArg && contextArg.another_alignment === "another_value",
+        "renderContext should include alignment values from context_for_documents.content_to_include"
       );
     } finally {
       teardown();
@@ -2323,23 +2432,24 @@ Deno.test("assembleTurnPrompt", async (t) => {
       mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
 
       try {
+        const mockDownloadFromStorage = createConditionalDownloadMock();
         const deps: AssembleTurnPromptDeps = {
           dbClient: client,
+          gatherContext: mockGatherContext,
+          render: mockRender,
+          fileManager: mockFileManager,
+          downloadFromStorage: mockDownloadFromStorage,
+        };
+        const params: AssembleTurnPromptParams = {
           job: mockTurnJob,
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
-          gatherContext: mockGatherContext,
-          render: mockRender,
-          fileManager: mockFileManager,
         };
 
-        const result: AssembledPrompt = await assembleTurnPrompt(deps);
+        const result: AssembledPrompt = await assembleTurnPrompt(deps, params);
 
-        const expectedPromptContent =
-          "## Project Executive Summary\n\nCover these points: Problem, Solution, Market";
-
-        assertEquals(result.promptContent, expectedPromptContent);
+        assertEquals(result.promptContent, "rendered turn prompt");
 
         const usedSystemPromptsTable = spies.fromSpy.calls.some((call) =>
           call.args[0] === "system_prompts"

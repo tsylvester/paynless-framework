@@ -46,8 +46,7 @@
       "non_functional_requirements",
       "dependency_alignment",
       "stakeholder_objectives"
-    ],
-    "continuation_policy": "If a pairwise synthesis turn truncates, resume at the last unresolved section using the continuation prompt pattern."
+    ]
   },
   "header_context_artifact": {
     "type": "header_context",
@@ -62,7 +61,6 @@
         "thesis_document": "business_case",
         "critique_document": "business_case_critique",
         "comparison_signal": "comparison_vector",
-        "executive_summary": "",
         "user_problem_validation": "",
         "market_opportunity": "",
         "competitive_analysis": "",
@@ -72,10 +70,12 @@
         "weaknesses": [],
         "opportunities": [],
         "threats": [],
+        "critique_alignment": "",
         "next_steps": "",
         "proposal_references": [],
         "resolved_positions": [],
-        "open_questions": []
+        "open_questions": [],
+        "executive_summary": "",
       }
     },
     {
@@ -115,6 +115,7 @@
         "data": "",
         "deployment": "",
         "sequencing": "",
+        "architecture_alignment": [],
         "risk_mitigations": [],
         "dependency_resolution": [],
         "open_questions": []

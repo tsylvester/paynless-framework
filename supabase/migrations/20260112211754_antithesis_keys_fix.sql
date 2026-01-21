@@ -1238,3 +1238,104 @@ BEGIN
       );
   END LOOP;
 END $$;
+
+-- ---------------------------------------------------------------------------
+-- Paralysis executor step content_to_include expansion
+-- Expands executor step definitions for updated_master_plan and advisor_recommendations
+-- to include the full structure from their turn templates, not just the minimal instruction fields.
+-- ---------------------------------------------------------------------------
+
+DO $$
+DECLARE
+  v_recipe_name text := 'paralysis_v1';
+  v_recipe_version integer := 1;
+  v_stage_slug text := 'paralysis';
+  v_template_id uuid;
+  v_instance_id uuid;
+  v_updated_master_plan_full_content jsonb := '{"index":[],"executive_summary":"","phases":[{"name":"","objective":"","technical_context":"","implementation_strategy":"","milestones":[{"id":"","title":"","status":"[ ]","objective":"","description":"","technical_complexity":"","effort_estimate":"","implementation_approach":"","test_strategy":"","component_labels":[],"inputs":[],"outputs":[],"validation":[],"dependencies":[],"coverage_notes":"","iteration_delta":"","acceptance_criteria":[]}]}],"status_summary":{"completed":[],"in_progress":[],"up_next":[]},"status_markers":{"unstarted":"[ ]","in_progress":"[🚧]","completed":"[✅]"},"dependency_rules":[],"generation_limits":{"max_steps":200,"target_steps":"120-180","max_output_lines":"600-800"},"feature_scope":[],"features":[],"mvp_description":"","market_opportunity":"","competitive_analysis":"","technical_context":"","implementation_context":"","test_framework":"","component_mapping":"","architecture_summary":"","architecture":"","services":[],"components":[],"integration_points":[],"dependency_resolution":[],"frontend_stack":{},"backend_stack":{},"data_platform":{},"devops_tooling":{},"security_tooling":{},"shared_libraries":[],"third_party_services":[],"preserve_completed":true,"set_in_progress":"[🚧]","future_status":"[ ]","capture_iteration_delta":true}';
+  v_advisor_recommendations_full_content jsonb := '{"comparison_matrix":[{"id":"Option identifier (e.g., Option A)","scores":[{"dimension":"alignment_with_constraints","weight":0.1,"value":0.0,"rationale":""},{"dimension":"completeness","weight":0.1,"value":0.0,"rationale":""},{"dimension":"feasibility","weight":0.1,"value":0.0,"rationale":""},{"dimension":"risk_mitigation","weight":0.1,"value":0.0,"rationale":""},{"dimension":"iteration_fit","weight":0.1,"value":0.0,"rationale":""},{"dimension":"strengths","weight":0.1,"value":0.0,"rationale":""},{"dimension":"weaknesses","weight":0.1,"value":0.0,"rationale":""},{"dimension":"opportunities","weight":0.1,"value":0.0,"rationale":""},{"dimension":"threats","weight":0.1,"value":0.0,"rationale":""},{"dimension":"dealer'\''s choice","weight":0.1,"value":0.0,"rationale":""}],"preferred":false}],"analysis":{"summary":"Comprehensive summary of tradeoffs between options, highlighting key differences and implications","tradeoffs":[],"consensus":[]},"recommendation":{"rankings":[{"rank":1,"option_id":"","why":"","when_to_choose":""}],"tie_breakers":[]},"require_comparison_matrix":true,"summarize_tradeoffs":true,"capture_final_recommendation":true,"tie_breaker_guidance":true}';
+BEGIN
+  -- -------------------------
+  -- Template recipe steps
+  -- -------------------------
+  SELECT rt.id
+  INTO v_template_id
+  FROM public.dialectic_recipe_templates rt
+  WHERE rt.recipe_name = v_recipe_name
+    AND rt.recipe_version = v_recipe_version
+  LIMIT 1;
+
+  IF v_template_id IS NULL THEN
+    RAISE EXCEPTION 'Missing recipe template with recipe_name=% recipe_version=%', v_recipe_name, v_recipe_version;
+  END IF;
+
+  -- Update updated_master_plan executor step
+  UPDATE public.dialectic_recipe_template_steps
+  SET outputs_required = jsonb_set(
+        outputs_required,
+        '{documents,0,content_to_include}',
+        v_updated_master_plan_full_content,
+        true
+      ),
+      updated_at = now()
+  WHERE template_id = v_template_id
+    AND step_key = 'generate-updated-master-plan'
+    AND (outputs_required ? 'documents')
+    AND jsonb_array_length(outputs_required->'documents') > 0
+    AND (outputs_required->'documents'->0->>'document_key') = 'updated_master_plan';
+
+  -- Update advisor_recommendations executor step
+  UPDATE public.dialectic_recipe_template_steps
+  SET outputs_required = jsonb_set(
+        outputs_required,
+        '{documents,0,content_to_include}',
+        v_advisor_recommendations_full_content,
+        true
+      ),
+      updated_at = now()
+  WHERE template_id = v_template_id
+    AND step_key = 'generate-advisor-recommendations'
+    AND (outputs_required ? 'documents')
+    AND jsonb_array_length(outputs_required->'documents') > 0
+    AND (outputs_required->'documents'->0->>'document_key') = 'advisor_recommendations';
+
+  -- -------------------------
+  -- Stage recipe instance steps
+  -- -------------------------
+  FOR v_instance_id IN
+    SELECT i.id
+    FROM public.dialectic_stage_recipe_instances i
+    JOIN public.dialectic_stages s ON s.id = i.stage_id
+    WHERE s.slug = v_stage_slug
+  LOOP
+    -- Update updated_master_plan executor step
+    UPDATE public.dialectic_stage_recipe_steps
+    SET outputs_required = jsonb_set(
+          outputs_required,
+          '{documents,0,content_to_include}',
+          v_updated_master_plan_full_content,
+          true
+        ),
+        updated_at = now()
+    WHERE instance_id = v_instance_id
+      AND step_key = 'generate-updated-master-plan'
+      AND (outputs_required ? 'documents')
+      AND jsonb_array_length(outputs_required->'documents') > 0
+      AND (outputs_required->'documents'->0->>'document_key') = 'updated_master_plan';
+
+    -- Update advisor_recommendations executor step
+    UPDATE public.dialectic_stage_recipe_steps
+    SET outputs_required = jsonb_set(
+          outputs_required,
+          '{documents,0,content_to_include}',
+          v_advisor_recommendations_full_content,
+          true
+        ),
+        updated_at = now()
+    WHERE instance_id = v_instance_id
+      AND step_key = 'generate-advisor-recommendations'
+      AND (outputs_required ? 'documents')
+      AND jsonb_array_length(outputs_required->'documents') > 0
+      AND (outputs_required->'documents'->0->>'document_key') = 'advisor_recommendations';
+  END LOOP;
+END $$;

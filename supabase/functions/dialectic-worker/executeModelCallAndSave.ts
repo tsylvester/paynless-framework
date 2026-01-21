@@ -1236,16 +1236,6 @@ export async function executeModelCallAndSave(
         }
     }
 
-    // For document file types, document_key is guaranteed to be present after validation
-    // Store it for use in pathContext and RENDER job payload
-    let validatedDocumentKey: string | undefined = undefined;
-    if (isDocumentRelated(fileType)) {
-        const dk = job.payload.document_key;
-        if (typeof dk === 'string' && dk.trim() !== '') {
-            validatedDocumentKey = dk;
-        }
-    }
-
     // For document outputs, use FileType.ModelContributionRawJson to save to raw_responses/ folder
     // For non-document outputs (e.g., header_context), use the original fileType
     const storageFileType = isDocumentKey(fileType) 
@@ -1315,7 +1305,7 @@ export async function executeModelCallAndSave(
 
     deps.logger.info('[executeModelCallAndSave] Saving validated JSON to raw file', { 
         jobId, 
-        documentKey: validatedDocumentKey, 
+        documentKey: documentKey, 
         fileType: storageFileType 
     });
 
@@ -1461,7 +1451,7 @@ export async function executeModelCallAndSave(
             output_type,
             fileType,
             storageFileType,
-            validatedDocumentKey,
+            documentKey,
         });
         // Extract documentIdentity from document_relationships[stageSlug] specifically (must be persisted by now)
         const documentIdentityValue = stageRelationshipForStage;
@@ -1471,19 +1461,19 @@ export async function executeModelCallAndSave(
         const documentIdentity: string = documentIdentityValue;
 
         // Validate required fields before creating RENDER job payload
-        if (!validatedDocumentKey || typeof validatedDocumentKey !== 'string' || validatedDocumentKey.trim() === '') {
-            deps.logger.error('[executeModelCallAndSave] Cannot enqueue RENDER job: validatedDocumentKey is missing or invalid', {
+        if (!documentKey || typeof documentKey !== 'string' || documentKey.trim() === '') {
+            deps.logger.error('[executeModelCallAndSave] Cannot enqueue RENDER job: documentKey is missing or invalid', {
                 jobId,
                 fileType,
-                validatedDocumentKey
+                documentKey
             });
-            throw new RenderJobValidationError('validatedDocumentKey is required for RENDER job but is missing or invalid');
+            throw new RenderJobValidationError('documentKey is required for RENDER job but is missing or invalid');
         }
-        const validatedDocumentKeyStrict: string = validatedDocumentKey;
-        if (!isFileType(validatedDocumentKeyStrict)) {
-            throw new RenderJobValidationError('validatedDocumentKey is not a valid FileType');
+        const documentKeyStrict: string = documentKey;
+        if (!isFileType(documentKeyStrict)) {
+            throw new RenderJobValidationError('documentKey is not a valid FileType');
         }
-        const validatedDocumentKeyAsFileType: FileType = validatedDocumentKeyStrict;
+        const documentKeyAsFileType: FileType = documentKeyStrict;
 
         if (!documentIdentity || typeof documentIdentity !== 'string' || documentIdentity.trim() === '') {
             deps.logger.error('[executeModelCallAndSave] Cannot enqueue RENDER job: documentIdentity is missing or invalid', {
@@ -1579,20 +1569,20 @@ export async function executeModelCallAndSave(
                 throw new RenderJobValidationError(`Recipe step with output_type '${output_type}' has missing or empty files_to_generate array`);
             }
 
-            // Find the entry where from_document_key matches validatedDocumentKeyAsFileType
+            // Find the entry where from_document_key matches documentKeyAsFileType
             const matchingFileEntry = filesToGenerate.find((entry) => {
                 if (!isRecord(entry)) return false;
-                return entry.from_document_key === validatedDocumentKeyAsFileType;
+                return entry.from_document_key === documentKeyAsFileType;
             });
 
             if (!matchingFileEntry || !isRecord(matchingFileEntry)) {
-                throw new RenderJobValidationError(`No files_to_generate entry found with from_document_key '${validatedDocumentKeyAsFileType}' in recipe step with output_type '${output_type}'`);
+                throw new RenderJobValidationError(`No files_to_generate entry found with from_document_key '${documentKeyAsFileType}' in recipe step with output_type '${output_type}'`);
             }
 
             // 6. Extract and validate template_filename
             const extractedTemplateFilename = matchingFileEntry.template_filename;
             if (typeof extractedTemplateFilename !== 'string' || extractedTemplateFilename.trim() === '') {
-                throw new RenderJobValidationError(`template_filename is missing or invalid in files_to_generate entry for from_document_key '${validatedDocumentKeyAsFileType}'`);
+                throw new RenderJobValidationError(`template_filename is missing or invalid in files_to_generate entry for from_document_key '${documentKeyAsFileType}'`);
             }
 
             templateFilename = extractedTemplateFilename.trim();
@@ -1614,7 +1604,7 @@ export async function executeModelCallAndSave(
             iterationNumber,
             stageSlug,
             documentIdentity: documentIdentityStrict,
-            documentKey: validatedDocumentKeyAsFileType,
+            documentKey: documentKeyAsFileType,
             sourceContributionId: sourceContributionIdStrict,
             template_filename: templateFilename,
             user_jwt: userAuthTokenStrict,
