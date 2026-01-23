@@ -98,7 +98,7 @@ describe("Dialectic Full DAG Traversal Integration Tests (Step 99.b)", () => {
     };
 
     const documentStub: Record<string, unknown> = {
-      content: `# ${outputType ?? "document"}\n\nThis is an integration test stub document body.`,
+      content: { content: `# ${outputType}\n\nThis is an integration test stub document body.` },
     };
 
     const shouldReturnHeaderContext =
@@ -782,5 +782,181 @@ describe("Dialectic Full DAG Traversal Integration Tests (Step 99.b)", () => {
 
     const expectedPairwiseCount = n * n * n * 4; // n^3 * 4
     assertEquals(actualPairwiseDocs.length, expectedPairwiseCount, `Should have ${expectedPairwiseCount} pairwise documents (${n}^3 pairs × 4 types). Found ${actualPairwiseDocs.length}.`);
+  });
+
+  it("99.b.iv: Synthesis consolidation produces n×4 consolidated documents with new lineage", async () => {
+    const n = testModelIds.length;
+    assertEquals(n, 3, "Test requires exactly 3 models");
+    assertExists(testSessionId, "Test session must exist from previous test");
+
+    // Consolidation document keys
+    const consolidationKeys = [
+      'synthesis_document_business_case',
+      'synthesis_document_feature_spec',
+      'synthesis_document_technical_approach',
+      'synthesis_document_success_metrics'
+    ];
+
+    // Query for consolidation outputs (assembled_document_json contributions)
+    const { data: allSynthesisContributions } = await adminClient
+      .from('dialectic_contributions')
+      .select('*')
+      .eq('session_id', testSessionId)
+      .eq('stage', 'synthesis')
+      .eq('iteration_number', 1)
+      .in('contribution_type', ['synthesis', 'assembled_document_json', 'model_contribution_raw_json']);
+
+    assertExists(allSynthesisContributions, "Synthesis contributions should exist");
+
+    // Filter for consolidation documents by document_key
+    const consolidationDocs = allSynthesisContributions.filter(doc => {
+      if (!doc.file_name || !doc.storage_path) return false;
+      try {
+        const info = deconstructStoragePath({
+          storageDir: doc.storage_path,
+          fileName: doc.file_name,
+        });
+        return info.documentKey && consolidationKeys.includes(info.documentKey);
+      } catch {
+        return false;
+      }
+    });
+
+    const expectedConsolidationCount = n * 4; // n models × 4 document types
+    assertEquals(
+      consolidationDocs.length,
+      expectedConsolidationCount,
+      `Should have ${expectedConsolidationCount} consolidation documents (${n} models × 4 types). Found ${consolidationDocs.length}.`
+    );
+
+    // Verify each model has 4 consolidation documents
+    const docsByModelId = new Map<string, number>();
+    for (const doc of consolidationDocs) {
+      if (doc.model_id) {
+        const count = docsByModelId.get(doc.model_id) || 0;
+        docsByModelId.set(doc.model_id, count + 1);
+      }
+    }
+
+    for (const modelId of testModelIds) {
+      const docCount = docsByModelId.get(modelId) || 0;
+      assertEquals(docCount, 4, `Model ${modelId} should have exactly 4 consolidation documents`);
+    }
+
+    // Verify new lineage: consolidation documents should have source_group = self.id (new lineage root)
+    for (const doc of consolidationDocs) {
+      const docRelationships = doc.document_relationships;
+      if (docRelationships && typeof docRelationships === 'object' && !Array.isArray(docRelationships)) {
+        const sourceGroup = isRecord(docRelationships) && typeof docRelationships.source_group === 'string'
+          ? docRelationships.source_group
+          : null;
+        // For consolidation jobs, source_group should equal the contribution's own ID (new lineage root)
+        assertEquals(
+          sourceGroup,
+          doc.id,
+          `Consolidation document ${doc.id} should have source_group = self.id (${doc.id}) for new lineage root`
+        );
+      } else {
+        throw new Error(`Consolidation document ${doc.id} must have document_relationships with source_group`);
+      }
+    }
+
+    // Verify each document type appears n times (once per model)
+    const docsByKey = new Map<string, number>();
+    for (const doc of consolidationDocs) {
+      if (doc.file_name && doc.storage_path) {
+        try {
+          const info = deconstructStoragePath({
+            storageDir: doc.storage_path,
+            fileName: doc.file_name,
+          });
+          if (info.documentKey) {
+            const count = docsByKey.get(info.documentKey) || 0;
+            docsByKey.set(info.documentKey, count + 1);
+          }
+        } catch {
+          // Skip if deconstruction fails
+        }
+      }
+    }
+
+    for (const key of consolidationKeys) {
+      const keyCount = docsByKey.get(key) || 0;
+      assertEquals(keyCount, n, `Should have ${n} consolidation documents with document_key '${key}' (${n} models)`);
+    }
+  });
+
+  it("99.b.v: Synthesis final produces n×3 deliverables", async () => {
+    const n = testModelIds.length;
+    assertEquals(n, 3, "Test requires exactly 3 models");
+    assertExists(testSessionId, "Test session must exist from previous test");
+
+    // Final deliverable document keys
+    const deliverableKeys = [
+      'product_requirements',
+      'system_architecture',
+      'tech_stack'
+    ];
+
+    // Query for final deliverables (rendered documents in dialectic_project_resources)
+    // Only get rendered markdown documents, not JSON files (which are in dialectic_contributions)
+    const { data: allSynthesisResources } = await adminClient
+      .from('dialectic_project_resources')
+      .select('*')
+      .eq('project_id', testProject.id)
+      .eq('stage_slug', 'synthesis')
+      .eq('iteration_number', 1)
+      .eq('resource_type', 'rendered_document');
+
+    assertExists(allSynthesisResources, "Synthesis resources should exist");
+
+    // Filter for deliverable documents by document_key
+    // Exclude JSON files (only count .md files which are the rendered final deliverables)
+    const actualDeliverables = allSynthesisResources.filter(doc => {
+      if (!doc.file_name || !doc.storage_path) return false;
+      // Only count markdown files, not JSON files
+      if (!doc.file_name.endsWith('.md')) return false;
+      try {
+        const info = deconstructStoragePath({
+          storageDir: doc.storage_path,
+          fileName: doc.file_name,
+        });
+        return info.documentKey && deliverableKeys.includes(info.documentKey);
+      } catch {
+        return false;
+      }
+    });
+
+    // Each model (agent) produces 3 final documents: product_requirements, system_architecture, and tech_stack
+    const expectedDeliverableCount = n * 3; // n models × 3 document types
+    assertEquals(
+      actualDeliverables.length,
+      expectedDeliverableCount,
+      `Should have ${expectedDeliverableCount} final deliverables (${n} models × 3 types). Found ${actualDeliverables.length}.`
+    );
+
+    // Verify each document type appears n times (once per model)
+    const deliverablesByKey = new Map<string, number>();
+    for (const doc of actualDeliverables) {
+      if (doc.file_name && doc.storage_path) {
+        try {
+          const info = deconstructStoragePath({
+            storageDir: doc.storage_path,
+            fileName: doc.file_name,
+          });
+          if (info.documentKey) {
+            const count = deliverablesByKey.get(info.documentKey) || 0;
+            deliverablesByKey.set(info.documentKey, count + 1);
+          }
+        } catch {
+          // Skip if deconstruction fails
+        }
+      }
+    }
+
+    for (const key of deliverableKeys) {
+      const keyCount = deliverablesByKey.get(key) || 0;
+      assertEquals(keyCount, n, `Should have ${n} final deliverables with document_key '${key}' (${n} models)`);
+    }
   });
 });

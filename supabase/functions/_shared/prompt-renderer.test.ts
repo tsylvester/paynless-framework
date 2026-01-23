@@ -323,4 +323,50 @@ Deno.test("Prompt Rendering Utility", async (t) => {
     const expectedOutput = "Double: architect. Single: establish baseline. Both: Create app and Software Development.";
     assertEquals(result, expectedOutput);
   });
+
+  await t.step("should preserve {{handlebars}} inside substituted content", () => {
+    const basePromptText = `HeaderContext: {{header_context}}`;
+    const headerContextContent = `{"some_key": "{{some_template_value}}"}`;
+    
+    const renderContext = {
+      ...mockBaseRenderContext,
+      header_context: headerContextContent
+    };
+
+    const result = renderPrompt(
+      basePromptText,
+      renderContext,
+      null,
+      null
+    );
+
+    const expectedOutput = `HeaderContext: ${headerContextContent}`;
+    assertEquals(result, expectedOutput);
+  });
+
+  await t.step("should handle section tags with special characters like &", () => {
+    const basePromptText = `Start
+{{#section:differentiation_&_value_proposition}}
+This content should be kept.
+{{/section:differentiation_&_value_proposition}}
+End`;
+
+    const renderContext = {
+      ...mockBaseRenderContext,
+      "differentiation_&_value_proposition": "true" 
+    };
+
+    const result = renderPrompt(
+      basePromptText,
+      renderContext,
+      null,
+      null
+    );
+
+    const expectedOutput = `Start
+This content should be kept.
+End`;
+    
+    assertEquals(result.replace(/\n+/g, '\n').trim(), expectedOutput.replace(/\n+/g, '\n').trim());
+  });
 }); 

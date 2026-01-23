@@ -38,6 +38,8 @@ import {
 import { isDialecticStageRecipeStep } from '../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
 import { createMockSupabaseClient, MockQueryBuilderState } from '../_shared/supabase.mock.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
+import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
+import { generateShortId } from '../_shared/utils/path_constructor.ts';
 
 describe('planComplexStage', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
@@ -552,40 +554,245 @@ describe('planComplexStage', () => {
             // Purpose: Simulates a fork in the recipe graph. This test ensures that when planning for a step
             // in one branch, it correctly fetches only the input designated for that branch
             // via a specific document_key in its inputs_required rule.
+            // Uses the actual synthesis_document_business_case recipe step structure from the database.
+            // 
+            // This test verifies that when multiple documents match an input rule:
+            // 1. Documents are filtered by matching source_group (lineage) first
+            // 2. Then the most recent document (by created_at) is selected from the matching lineage
+            // This ensures we select from the correct document lineage, not just any matching document.
     
             // Arrange:
-            // 1. Seed project resources with two rendered documents that both match the column predicates.
-            const branchAResource: DialecticProjectResourceRow = {
-                ...mockProjectResources[0],
-                id: 'resource-A',
-                resource_type: 'rendered_document',
-                session_id: 'sess-1',
-                stage_slug: 'thesis',
-                file_name: 'sess-1_thesis_business_case_branchA.md',
+            // 1. Update parent job to be in synthesis stage to match the recipe step.
+            mockParentJob.payload.stageSlug = 'synthesis';
+            mockParentJob.stage_slug = 'synthesis';
+            
+            // 2. Define a source_group UUID to represent a specific document lineage.
+            // This simulates documents that belong to the same lineage branch.
+            const targetLineageSourceGroup = 'lineage-uuid-target-branch';
+            const otherLineageSourceGroup = 'lineage-uuid-other-branch';
+            
+            // 3. Seed project_resources with three rendered_document files from synthesis stage.
+            // findSourceDocuments for type 'document' queries dialectic_project_resources for rendered_document.
+            // Use constructStoragePath to generate valid file paths that match the application's actual behavior.
+            //    - Two documents from the target lineage (one older, one newer - we want the newer)
+            //    - One document from a different lineage (should be filtered out)
+            
+            const projectId = 'proj-1';
+            const sessionId = 'sess-1';
+            const iteration = 1;
+            const stageSlug = 'synthesis';
+            
+            // Generate paths for rendered_document files using constructStoragePath
+            const olderPath = constructStoragePath({
+                projectId,
+                fileType: FileType.RenderedDocument,
+                sessionId,
+                iteration,
+                stageSlug,
+                modelSlug: 'gpt-4-turbo',
+                attemptCount: 0,
+                documentKey: FileType.synthesis_pairwise_business_case,
+            });
+            
+            const newerPath = constructStoragePath({
+                projectId,
+                fileType: FileType.RenderedDocument,
+                sessionId,
+                iteration,
+                stageSlug,
+                modelSlug: 'claude-3-opus',
+                attemptCount: 0,
+                documentKey: FileType.synthesis_pairwise_business_case,
+            });
+            
+            const differentLineagePath = constructStoragePath({
+                projectId,
+                fileType: FileType.RenderedDocument,
+                sessionId,
+                iteration,
+                stageSlug,
+                modelSlug: 'gemini-pro',
+                attemptCount: 0,
+                documentKey: FileType.synthesis_pairwise_business_case,
+            });
+            
+            // Create corresponding contributions that these rendered documents are linked to
+            const olderContributionId = 'contrib-older-same-lineage';
+            const newerContributionId = 'contrib-newer-same-lineage';
+            const differentLineageContributionId = 'contrib-different-lineage';
+            
+            const olderResource: DialecticProjectResourceRow = {
+                id: 'resource-older-same-lineage',
+                project_id: projectId,
+                user_id: 'user-123',
+                file_name: olderPath.fileName,
+                storage_bucket: 'test-bucket',
+                storage_path: olderPath.storagePath,
+                mime_type: 'text/markdown',
+                size_bytes: 123,
                 resource_description: {
-                    description: 'Branch A resource',
+                    description: 'Older pairwise business case (target lineage)',
                     type: 'rendered_document',
-                    document_key: FileType.business_case,
+                    document_key: FileType.synthesis_pairwise_business_case,
                 },
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                iteration_number: iteration,
+                resource_type: 'rendered_document',
+                session_id: sessionId,
+                source_contribution_id: olderContributionId,
+                stage_slug: stageSlug,
             };
             const targetResource: DialecticProjectResourceRow = {
-                ...branchAResource,
-                id: 'resource-B',
-                file_name: 'sess-1_thesis_business_case_branchB.md',
-                resource_description: {
-                    description: 'Branch B resource',
-                    type: 'rendered_document',
-                    document_key: FileType.business_case,
-                },
+                ...olderResource,
+                id: 'resource-newer-same-lineage',
+                file_name: newerPath.fileName,
+                storage_path: newerPath.storagePath,
+                source_contribution_id: newerContributionId,
                 created_at: new Date(Date.now() + 10).toISOString(),
                 updated_at: new Date(Date.now() + 10).toISOString(),
             };
-            mockProjectResources = [branchAResource, targetResource];
-            // 2. The recipe will explicitly ask for only this new resource.
-            mockRecipeStep.inputs_required = [{ type: 'document', document_key: FileType.business_case, slug: 'any' }];
-            // 3. Set up a planner spy to capture the source documents it receives.
+            const resourceDifferentLineage: DialecticProjectResourceRow = {
+                ...olderResource,
+                id: 'resource-different-lineage',
+                file_name: differentLineagePath.fileName,
+                storage_path: differentLineagePath.storagePath,
+                source_contribution_id: differentLineageContributionId,
+                created_at: new Date(Date.now() + 20).toISOString(),
+                updated_at: new Date(Date.now() + 20).toISOString(),
+            };
+            mockProjectResources = [olderResource, targetResource, resourceDifferentLineage];
+            
+            // Also create the corresponding contributions so document_relationships can be fetched
+            mockContributions = [
+                {
+                    id: olderContributionId,
+                    session_id: sessionId,
+                    user_id: 'user-123',
+                    stage: stageSlug,
+                    iteration_number: iteration,
+                    model_id: 'model-1',
+                    model_name: 'Model A',
+                    prompt_template_id_used: 'prompt-1',
+                    seed_prompt_url: null,
+                    edit_version: 1,
+                    is_latest_edit: true,
+                    original_model_contribution_id: null,
+                    raw_response_storage_path: null,
+                    target_contribution_id: null,
+                    tokens_used_input: 10,
+                    tokens_used_output: 20,
+                    processing_time_ms: 100,
+                    error: null,
+                    citations: null,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    contribution_type: 'synthesis',
+                    file_name: olderPath.fileName,
+                    storage_bucket: 'test-bucket',
+                    storage_path: olderPath.storagePath,
+                    size_bytes: 123,
+                    mime_type: 'application/json',
+                    document_relationships: {
+                        source_group: targetLineageSourceGroup,
+                    },
+                    is_header: false,
+                    source_prompt_resource_id: null,
+                },
+                {
+                    id: newerContributionId,
+                    session_id: sessionId,
+                    user_id: 'user-123',
+                    stage: stageSlug,
+                    iteration_number: iteration,
+                    model_id: 'model-2',
+                    model_name: 'Model B',
+                    prompt_template_id_used: 'prompt-1',
+                    seed_prompt_url: null,
+                    edit_version: 1,
+                    is_latest_edit: true,
+                    original_model_contribution_id: null,
+                    raw_response_storage_path: null,
+                    target_contribution_id: null,
+                    tokens_used_input: 10,
+                    tokens_used_output: 20,
+                    processing_time_ms: 100,
+                    error: null,
+                    citations: null,
+                    created_at: new Date(Date.now() + 10).toISOString(),
+                    updated_at: new Date(Date.now() + 10).toISOString(),
+                    contribution_type: 'synthesis',
+                    file_name: newerPath.fileName,
+                    storage_bucket: 'test-bucket',
+                    storage_path: newerPath.storagePath,
+                    size_bytes: 123,
+                    mime_type: 'application/json',
+                    document_relationships: {
+                        source_group: targetLineageSourceGroup,
+                    },
+                    is_header: false,
+                    source_prompt_resource_id: null,
+                },
+                {
+                    id: differentLineageContributionId,
+                    session_id: sessionId,
+                    user_id: 'user-123',
+                    stage: stageSlug,
+                    iteration_number: iteration,
+                    model_id: 'model-3',
+                    model_name: 'Model C',
+                    prompt_template_id_used: 'prompt-1',
+                    seed_prompt_url: null,
+                    edit_version: 1,
+                    is_latest_edit: true,
+                    original_model_contribution_id: null,
+                    raw_response_storage_path: null,
+                    target_contribution_id: null,
+                    tokens_used_input: 10,
+                    tokens_used_output: 20,
+                    processing_time_ms: 100,
+                    error: null,
+                    citations: null,
+                    created_at: new Date(Date.now() + 20).toISOString(),
+                    updated_at: new Date(Date.now() + 20).toISOString(),
+                    contribution_type: 'synthesis',
+                    file_name: differentLineagePath.fileName,
+                    storage_bucket: 'test-bucket',
+                    storage_path: differentLineagePath.storagePath,
+                    size_bytes: 123,
+                    mime_type: 'application/json',
+                    document_relationships: {
+                        source_group: otherLineageSourceGroup,
+                    },
+                    is_header: false,
+                    source_prompt_resource_id: null,
+                },
+            ];
+            
+            // 4. Set up parent job with document_relationships.source_group to filter by lineage.
+            // This simulates a parent job that is part of a specific lineage branch.
+            (mockParentJob.payload as any).document_relationships = {
+                source_group: targetLineageSourceGroup,
+            };
+            
+            // 5. Use the actual synthesis_document_business_case recipe step structure from migrations.
+            // This step is in parallel_group 3 with branch_key 'synthesis_document_business_case'.
+            mockRecipeStep = {
+                ...mockRecipeStep,
+                step_key: 'synthesis_document_business_case',
+                step_slug: 'synthesis-document-business-case',
+                step_name: 'Synthesize Business Case Across Models',
+                job_type: 'EXECUTE',
+                prompt_type: 'Turn',
+                granularity_strategy: 'all_to_one',
+                parallel_group: 3,
+                branch_key: 'synthesis_document_business_case',
+                inputs_required: [
+                    { type: 'document', slug: 'synthesis', document_key: FileType.synthesis_pairwise_business_case, required: true, multiple: true }
+                ],
+            };
+            
+            // 6. Set up a planner spy to capture the source documents it receives.
             let receivedDocs: SourceDocument[] = [];
             const plannerFn: GranularityPlannerFn = (sourceDocs) => {
                 receivedDocs = sourceDocs;
@@ -599,9 +806,16 @@ describe('planComplexStage', () => {
     
             // Assert:
             // 1. The planner should have received exactly one document.
-            assertEquals(receivedDocs.length, 1);
-            // 2. The received document must be the one specified in the rule.
-            assertEquals(receivedDocs[0].id, 'resource-B');
+            //    The function should filter by source_group first (matching targetLineageSourceGroup),
+            //    then select the most recent document from that lineage.
+            assertEquals(receivedDocs.length, 1, 'Should receive exactly one document after filtering by source_group and selecting most recent');
+            // 2. The received document must be from the target lineage and be the most recent one.
+            assertEquals(receivedDocs[0].id, 'resource-newer-same-lineage', 'Should select the most recent document from the matching lineage');
+            assertEquals(
+                receivedDocs[0].document_relationships?.source_group,
+                targetLineageSourceGroup,
+                'Selected document must belong to the target lineage'
+            );
         });
     
         it('should fetch only the documents from a specific contribution_type', async () => {
@@ -712,37 +926,296 @@ describe('planComplexStage', () => {
         });
     
         it('should throw if a required input for a join step is missing', async () => {
-            // Purpose: Proves the function correctly enforces the data contract for a join step. If a preceding
-            // parallel branch has not yet produced its output, the function must fail loudly.
+            // Purpose: Proves the function correctly enforces the data contract for a complex join step using the
+            // actual synthesis planner recipe step. This test validates both positive filtering (correctly selects
+            // matching documents) and negative filtering (correctly rejects wrong documents) before failing on
+            // the missing required input.
     
             // Arrange:
-            // 1. Seed the database with a single rendered document for the first requirement.
-            const existingRenderedDoc: DialecticProjectResourceRow = {
-                ...mockProjectResources[0],
-                id: 'doc-join-existing',
-                file_name: 'test-stage_rendered_document_join.md',
-                resource_type: 'rendered_document',
-                session_id: 'sess-1',
-                stage_slug: null,
-                resource_description: { "description": "Existing join document", "type": "document", "document_key": FileType.RenderedDocument },
-                created_at: new Date(Date.now() + 40).toISOString(),
-                updated_at: new Date(Date.now() + 40).toISOString(),
-            };
-            mockProjectResources = [existingRenderedDoc];
-            // 2. The recipe requires two documents, but only the first exists.
+            // 1. Use the actual synthesis planner recipe step structure from the database migrations.
+            //    This step requires multiple distinct documents from different stages.
             mockRecipeStep.inputs_required = [
-                { type: 'document', document_key: FileType.RenderedDocument, slug: 'any' }, // This one exists
-                { type: 'document', document_key: FileType.RenderedDocument, slug: 'any' } // This one does not
+                { type: 'seed_prompt', slug: 'synthesis', document_key: FileType.SeedPrompt, required: true },
+                { type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true, multiple: true },
+                { type: 'document', slug: 'thesis', document_key: FileType.feature_spec, required: true, multiple: true },
+                { type: 'document', slug: 'thesis', document_key: FileType.technical_approach, required: true, multiple: true },
+                { type: 'document', slug: 'thesis', document_key: FileType.success_metrics, required: true, multiple: true },
+                { type: 'document', slug: 'antithesis', document_key: FileType.business_case_critique, required: true, multiple: true },
+                { type: 'document', slug: 'antithesis', document_key: FileType.technical_feasibility_assessment, required: true, multiple: true },
+                { type: 'document', slug: 'antithesis', document_key: FileType.non_functional_requirements, required: true, multiple: true },
+                { type: 'document', slug: 'antithesis', document_key: FileType.risk_register, required: true, multiple: true }, // This one is MISSING
+                { type: 'document', slug: 'antithesis', document_key: FileType.dependency_map, required: true, multiple: true },
+                { type: 'document', slug: 'antithesis', document_key: FileType.comparison_vector, required: true, multiple: true },
             ];
+            
+            // 2. Update parent job to be in synthesis stage
+            mockParentJob.payload.stageSlug = 'synthesis';
+            mockParentJob.stage_slug = 'synthesis';
+            
+            // 3. Create comprehensive mock data that includes:
+            //    - Correct documents that match the rules (positive case)
+            //    - Wrong documents (wrong stage, wrong document_key) that should be filtered out (negative case)
+            //    - One required document missing (risk_register from antithesis)
+            
+            const correctDocuments: DialecticProjectResourceRow[] = [
+                // Seed prompt from synthesis (correct)
+                {
+                    id: 'seed-prompt-synthesis',
+                    project_id: 'proj-1',
+                    user_id: 'user-123',
+                    file_name: 'synthesis_seed_prompt.md',
+                    storage_bucket: 'test-bucket',
+                    storage_path: 'projects/proj-1/resources',
+                    mime_type: 'text/plain',
+                    size_bytes: 456,
+                    resource_description: { description: 'Synthesis seed prompt', type: 'seed_prompt' },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    iteration_number: 1,
+                    resource_type: 'seed_prompt',
+                    session_id: 'sess-1',
+                    source_contribution_id: null,
+                    stage_slug: 'synthesis',
+                },
+                // Thesis documents (correct)
+                {
+                    id: 'thesis-business-case',
+                    project_id: 'proj-1',
+                    user_id: 'user-123',
+                    file_name: 'sess-1_thesis_business_case.md',
+                    storage_bucket: 'test-bucket',
+                    storage_path: 'projects/proj-1/resources',
+                    mime_type: 'text/plain',
+                    size_bytes: 456,
+                    resource_description: { description: 'Thesis business case', type: 'document', document_key: FileType.business_case },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    iteration_number: 1,
+                    resource_type: 'rendered_document',
+                    session_id: 'sess-1',
+                    source_contribution_id: null,
+                    stage_slug: 'thesis',
+                },
+                {
+                    id: 'thesis-feature-spec',
+                    project_id: 'proj-1',
+                    user_id: 'user-123',
+                    file_name: 'sess-1_thesis_feature_spec.md',
+                    storage_bucket: 'test-bucket',
+                    storage_path: 'projects/proj-1/resources',
+                    mime_type: 'text/plain',
+                    size_bytes: 456,
+                    resource_description: { description: 'Thesis feature spec', type: 'document', document_key: FileType.feature_spec },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    iteration_number: 1,
+                    resource_type: 'rendered_document',
+                    session_id: 'sess-1',
+                    source_contribution_id: null,
+                    stage_slug: 'thesis',
+                },
+                {
+                    id: 'thesis-technical-approach',
+                    project_id: 'proj-1',
+                    user_id: 'user-123',
+                    file_name: 'sess-1_thesis_technical_approach.md',
+                    storage_bucket: 'test-bucket',
+                    storage_path: 'projects/proj-1/resources',
+                    mime_type: 'text/plain',
+                    size_bytes: 456,
+                    resource_description: { description: 'Thesis technical approach', type: 'document', document_key: FileType.technical_approach },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    iteration_number: 1,
+                    resource_type: 'rendered_document',
+                    session_id: 'sess-1',
+                    source_contribution_id: null,
+                    stage_slug: 'thesis',
+                },
+                {
+                    id: 'thesis-success-metrics',
+                    project_id: 'proj-1',
+                    user_id: 'user-123',
+                    file_name: 'sess-1_thesis_success_metrics.md',
+                    storage_bucket: 'test-bucket',
+                    storage_path: 'projects/proj-1/resources',
+                    mime_type: 'text/plain',
+                    size_bytes: 456,
+                    resource_description: { description: 'Thesis success metrics', type: 'document', document_key: FileType.success_metrics },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    iteration_number: 1,
+                    resource_type: 'rendered_document',
+                    session_id: 'sess-1',
+                    source_contribution_id: null,
+                    stage_slug: 'thesis',
+                },
+                // Antithesis documents (correct, but risk_register is missing)
+                {
+                    id: 'antithesis-business-case-critique',
+                    project_id: 'proj-1',
+                    user_id: 'user-123',
+                    file_name: 'sess-1_antithesis_business_case_critique.md',
+                    storage_bucket: 'test-bucket',
+                    storage_path: 'projects/proj-1/resources',
+                    mime_type: 'text/plain',
+                    size_bytes: 456,
+                    resource_description: { description: 'Antithesis business case critique', type: 'document', document_key: FileType.business_case_critique },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    iteration_number: 1,
+                    resource_type: 'rendered_document',
+                    session_id: 'sess-1',
+                    source_contribution_id: null,
+                    stage_slug: 'antithesis',
+                },
+                {
+                    id: 'antithesis-technical-feasibility',
+                    project_id: 'proj-1',
+                    user_id: 'user-123',
+                    file_name: 'sess-1_antithesis_technical_feasibility_assessment.md',
+                    storage_bucket: 'test-bucket',
+                    storage_path: 'projects/proj-1/resources',
+                    mime_type: 'text/plain',
+                    size_bytes: 456,
+                    resource_description: { description: 'Antithesis technical feasibility', type: 'document', document_key: FileType.technical_feasibility_assessment },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    iteration_number: 1,
+                    resource_type: 'rendered_document',
+                    session_id: 'sess-1',
+                    source_contribution_id: null,
+                    stage_slug: 'antithesis',
+                },
+                {
+                    id: 'antithesis-non-functional',
+                    project_id: 'proj-1',
+                    user_id: 'user-123',
+                    file_name: 'sess-1_antithesis_non_functional_requirements.md',
+                    storage_bucket: 'test-bucket',
+                    storage_path: 'projects/proj-1/resources',
+                    mime_type: 'text/plain',
+                    size_bytes: 456,
+                    resource_description: { description: 'Antithesis non-functional requirements', type: 'document', document_key: FileType.non_functional_requirements },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    iteration_number: 1,
+                    resource_type: 'rendered_document',
+                    session_id: 'sess-1',
+                    source_contribution_id: null,
+                    stage_slug: 'antithesis',
+                },
+                // NOTE: risk_register is intentionally MISSING to trigger the error
+                {
+                    id: 'antithesis-dependency-map',
+                    project_id: 'proj-1',
+                    user_id: 'user-123',
+                    file_name: 'sess-1_antithesis_dependency_map.md',
+                    storage_bucket: 'test-bucket',
+                    storage_path: 'projects/proj-1/resources',
+                    mime_type: 'text/plain',
+                    size_bytes: 456,
+                    resource_description: { description: 'Antithesis dependency map', type: 'document', document_key: FileType.dependency_map },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    iteration_number: 1,
+                    resource_type: 'rendered_document',
+                    session_id: 'sess-1',
+                    source_contribution_id: null,
+                    stage_slug: 'antithesis',
+                },
+                {
+                    id: 'antithesis-comparison-vector',
+                    project_id: 'proj-1',
+                    user_id: 'user-123',
+                    file_name: 'sess-1_antithesis_comparison_vector.md',
+                    storage_bucket: 'test-bucket',
+                    storage_path: 'projects/proj-1/resources',
+                    mime_type: 'text/plain',
+                    size_bytes: 456,
+                    resource_description: { description: 'Antithesis comparison vector', type: 'document', document_key: FileType.comparison_vector },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    iteration_number: 1,
+                    resource_type: 'rendered_document',
+                    session_id: 'sess-1',
+                    source_contribution_id: null,
+                    stage_slug: 'antithesis',
+                },
+            ];
+            
+            // 4. Add wrong documents that should be filtered out (negative case validation)
+            const wrongDocuments: DialecticProjectResourceRow[] = [
+                // Wrong stage: business_case from synthesis (should be from thesis)
+                {
+                    id: 'wrong-stage-business-case',
+                    project_id: 'proj-1',
+                    user_id: 'user-123',
+                    file_name: 'sess-1_synthesis_business_case.md',
+                    storage_bucket: 'test-bucket',
+                    storage_path: 'projects/proj-1/resources',
+                    mime_type: 'text/plain',
+                    size_bytes: 456,
+                    resource_description: { description: 'Wrong stage business case', type: 'document', document_key: FileType.business_case },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    iteration_number: 1,
+                    resource_type: 'rendered_document',
+                    session_id: 'sess-1',
+                    source_contribution_id: null,
+                    stage_slug: 'synthesis', // Wrong stage
+                },
+                // Wrong document_key: thesis document with wrong key
+                {
+                    id: 'wrong-key-thesis',
+                    project_id: 'proj-1',
+                    user_id: 'user-123',
+                    file_name: 'sess-1_thesis_wrong_document.md',
+                    storage_bucket: 'test-bucket',
+                    storage_path: 'projects/proj-1/resources',
+                    mime_type: 'text/plain',
+                    size_bytes: 456,
+                    resource_description: { description: 'Wrong document key', type: 'document', document_key: FileType.product_requirements }, // Wrong key
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    iteration_number: 1,
+                    resource_type: 'rendered_document',
+                    session_id: 'sess-1',
+                    source_contribution_id: null,
+                    stage_slug: 'thesis',
+                },
+                // Wrong type: seed_prompt from wrong stage
+                {
+                    id: 'wrong-stage-seed-prompt',
+                    project_id: 'proj-1',
+                    user_id: 'user-123',
+                    file_name: 'thesis_seed_prompt.md',
+                    storage_bucket: 'test-bucket',
+                    storage_path: 'projects/proj-1/resources',
+                    mime_type: 'text/plain',
+                    size_bytes: 456,
+                    resource_description: { description: 'Wrong stage seed prompt', type: 'seed_prompt' },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    iteration_number: 1,
+                    resource_type: 'seed_prompt',
+                    session_id: 'sess-1',
+                    source_contribution_id: null,
+                    stage_slug: 'thesis', // Wrong stage, should be synthesis
+                },
+            ];
+            
+            mockProjectResources = [...correctDocuments, ...wrongDocuments];
             
             // Act & Assert:
             // 1. The call must be rejected with an error indicating a required input was not found.
-            //    Note: The error comes from planComplexStage validation after findSourceDocuments,
-            //    not directly from findSourceDocuments itself.
+            //    The function should correctly filter out wrong documents (negative case) and identify
+            //    that risk_register from antithesis is missing (positive case failure).
+            //    The error comes from findSourceDocuments when it cannot find a required rendered document.
             await assertRejects(
                 () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, makePlanCtx(), mockRecipeStep, 'user-jwt-123'),
                 Error,
-                "A required input of type 'document' was not found for the current job."
+                "Required rendered document for input rule type 'document' with stage 'antithesis' and document_key 'risk_register' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed."
             );
         });
     });

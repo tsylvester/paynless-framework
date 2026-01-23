@@ -227,11 +227,19 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
         // Antithesis pattern: {modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_{documentKey}_assembled.json
         const fileName = `${modelSlugSanitized}_critiquing_${sourceAnchorModelSlugSanitized}${fragmentSegment}_${attemptCount}_${sanitizedDocumentKey}_assembled.json`;
         return { storagePath: `${stageRootPath}/_work/assembled_json`, fileName };
-      } else {
-        // Simple pattern: {modelSlug}_{attemptCount}_{documentKey}[_{fragment}]_assembled.json
-        const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizedDocumentKey}${fragmentSegment}_assembled.json`;
+      }
+      // Check if synthesis pairwise pattern applies: stageSlug === 'synthesis' AND pairedModelSlug exists (same pattern as PairwiseSynthesisChunk)
+      if (rawStageSlug === 'synthesis' && pairedModelSlug && sourceAnchorModelSlug && sourceAnchorType) {
+        const sourceAnchorModelSlugSanitized = sanitizeForPath(sourceAnchorModelSlug);
+        const pairedModelSlugSanitized = sanitizeForPath(pairedModelSlug);
+        const sourceAnchorTypeSanitized = sanitizeForPath(sourceAnchorType);
+        // Pairwise pattern: {modelSlug}_synthesizing_{sourceAnchorModelSlug}_with_{pairedModelSlug}_on_{sourceAnchorType}_{attemptCount}_{documentKey}_assembled.json
+        const fileName = `${modelSlugSanitized}_synthesizing_${sourceAnchorModelSlugSanitized}_with_${pairedModelSlugSanitized}_on_${sourceAnchorTypeSanitized}_${attemptCount}_${sanitizedDocumentKey}_assembled.json`;
         return { storagePath: `${stageRootPath}/_work/assembled_json`, fileName };
       }
+      // Simple pattern: {modelSlug}_{attemptCount}_{documentKey}[_{fragment}]_assembled.json
+      const fileName = `${modelSlugSanitized}_${attemptCount}_${sanitizedDocumentKey}${fragmentSegment}_assembled.json`;
+      return { storagePath: `${stageRootPath}/_work/assembled_json`, fileName };
     }
     case FileType.RenderedDocument: {
       if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined || !documentKey) {

@@ -141,7 +141,14 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     granularity_strategy: "all_to_one",
     inputs_required: [],
     inputs_relevance: [],
-    outputs_required: {},
+    outputs_required: {
+      context_for_documents: [
+        {
+          document_key: FileType.business_case,
+          content_to_include: {},
+        },
+      ],
+    },
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     parallel_group: null,
@@ -229,7 +236,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
           system_prompts: {
-            select: { data: [{ prompt_text: plannerPromptText }], error: null },
+            select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
           },
           ai_providers: {
             select: {
@@ -299,7 +306,20 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           stageArgForRender.system_prompts!.prompt_text,
           plannerPromptText,
         );
-        assertEquals(renderCallArgs[2], mockDynamicContext);
+        // assemblePlannerPrompt adds context_for_documents to the context before rendering
+        const expectedContext = {
+          ...mockDynamicContext,
+          context_for_documents: {
+            _instructions: "You must fill in the content_to_include objects in the context_for_documents array with specific alignment values. These alignment details ensure cross-document coordination:\n\n1. Fill in each content_to_include object with shared terminology, consistent values, and coordinated decisions that will be used across all documents in this step group.\n2. Produce a header_context artifact with completed content_to_include objects containing these alignment values.\n3. Ensure all documents in the step group will use these alignment details when they are generated.\n\nThe context_for_documents array below contains empty content_to_include object models that you must fill in with specific alignment values.",
+            documents: [
+              {
+                document_key: FileType.business_case,
+                content_to_include: {},
+              },
+            ],
+          },
+        };
+        assertEquals(renderCallArgs[2], expectedContext);
         assertEquals(
           renderCallArgs[3],
           defaultProject.user_domain_overlay_values,
@@ -352,7 +372,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
           system_prompts: {
-            select: { data: [{ prompt_text: plannerPromptText }], error: null },
+            select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
           },
           ai_providers: {
             select: {
@@ -429,7 +449,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       const { client, fileManager, renderFn, gatherContextFn } = setup({
         genericMockResults: {
           system_prompts: {
-            select: { data: [{ prompt_text: "any text" }], error: null },
+            select: { data: [{ prompt_text: "any text", document_template_id: null }], error: null },
           },
           ai_providers: {
             select: {
@@ -494,7 +514,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
           system_prompts: {
-            select: { data: [{ prompt_text: "special text" }], error: null },
+            select: { data: [{ prompt_text: "special text", document_template_id: null }], error: null },
           },
           ai_providers: {
             select: {
@@ -664,7 +684,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
           system_prompts: {
-            select: { data: [{ prompt_text: plannerPromptText }], error: null }
+            select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null }
           },
           ai_providers: {
             select: {
@@ -713,7 +733,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       const { client, fileManager } = setup({
         genericMockResults: {
           system_prompts: {
-            select: { data: [{ prompt_text: "any text" }], error: null },
+            select: { data: [{ prompt_text: "any text", document_template_id: null }], error: null },
           },
           ai_providers: {
             select: {
@@ -751,7 +771,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     const { client, fileManager } = setup({
       genericMockResults: {
         system_prompts: {
-          select: { data: [{ prompt_text: "any text" }], error: null },
+          select: { data: [{ prompt_text: "any text", document_template_id: null }], error: null },
         },
         ai_providers: {
           select: {
@@ -890,7 +910,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       const { client, fileManager } = setup({
         genericMockResults: {
           system_prompts: {
-            select: { data: [{ prompt_text: "any text" }], error: null },
+            select: { data: [{ prompt_text: "any text", document_template_id: null }], error: null },
           },
           ai_providers: {
             select: {
@@ -956,7 +976,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     const { client, fileManager } = setup({
       genericMockResults: {
         system_prompts: {
-          select: { data: [{ prompt_text: "any text" }], error: null },
+          select: { data: [{ prompt_text: "any text", document_template_id: null }], error: null },
         },
         ai_providers: {
           select: {
@@ -1141,7 +1161,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     const config: MockSupabaseDataConfig = {
       genericMockResults: {
         system_prompts: {
-          select: { data: [{ prompt_text: plannerPromptText }], error: null },
+          select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
         },
         ai_providers: {
           select: {
@@ -1254,7 +1274,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     const config: MockSupabaseDataConfig = {
       genericMockResults: {
         system_prompts: {
-          select: { data: [{ prompt_text: plannerPromptText }], error: null },
+          select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
         },
         ai_providers: {
           select: {
@@ -1395,6 +1415,10 @@ Deno.test("assemblePlannerPrompt", async (t) => {
 
     fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
 
+    // Access storage spy before the call so it tracks calls correctly
+    const storageBucketApi = mockSupabaseSetup!.spies.storage.from(storageBucket);
+    const downloadSpy = storageBucketApi.downloadSpy;
+
     try {
       await         assemblePlannerPrompt({
           dbClient: client,
@@ -1409,7 +1433,6 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         });
 
       // Assert storage download was called with correct parameters via the Supabase client
-      const downloadSpy = mockSupabaseSetup!.spies.storage.from(storageBucket).downloadSpy;
       assertSpyCalls(downloadSpy, 1);
       assertSpyCall(downloadSpy, 0, {
         args: [fullPath],
@@ -1454,6 +1477,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           select: {
             data: [{
               prompt_text: inlineTemplateContent,
+              document_template_id: null,
             }],
             error: null,
           },
@@ -1685,7 +1709,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     const config: MockSupabaseDataConfig = {
       genericMockResults: {
         system_prompts: {
-          select: { data: [{ prompt_text: plannerPromptText }], error: null },
+          select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
         },
         ai_providers: {
           select: {
@@ -1780,7 +1804,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     const config: MockSupabaseDataConfig = {
       genericMockResults: {
         system_prompts: {
-          select: { data: [{ prompt_text: plannerPromptText }], error: null },
+          select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
         },
         ai_providers: {
           select: {
@@ -1871,7 +1895,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     const config: MockSupabaseDataConfig = {
       genericMockResults: {
         system_prompts: {
-          select: { data: [{ prompt_text: plannerPromptText }], error: null },
+          select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
         },
         ai_providers: {
           select: {

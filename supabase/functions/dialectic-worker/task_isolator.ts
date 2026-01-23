@@ -83,6 +83,41 @@ export async function planComplexStage(
         return [];
     }
 
+    // 1.5. Filter by source_group if parent job has document_relationships.source_group set.
+    // This ensures we select documents from the correct lineage branch when multiple documents match.
+    // First filter by matching source_group, then select the most recent document from that lineage.
+    const parentPayload = parentJob.payload;
+    const parentSourceGroup = (parentPayload as { document_relationships?: { source_group?: string | null } | null }).document_relationships?.source_group;
+    
+    if (typeof parentSourceGroup === 'string' && parentSourceGroup.length > 0) {
+        // Filter documents to only those matching the parent's source_group
+        const matchingLineageDocs = sourceDocuments.filter((doc) => {
+            const docSourceGroup = doc.document_relationships?.source_group;
+            return typeof docSourceGroup === 'string' && docSourceGroup === parentSourceGroup;
+        });
+
+        if (matchingLineageDocs.length > 0) {
+            // Select the most recent document from the matching lineage (by created_at, then updated_at)
+            const sortedByRecency = [...matchingLineageDocs].sort((a, b) => {
+                const aUpdated = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+                const bUpdated = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+                if (bUpdated !== aUpdated) {
+                    return bUpdated - aUpdated;
+                }
+                const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
+                const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+                return bCreated - aCreated;
+            });
+            
+            sourceDocuments = [sortedByRecency[0]];
+            ctx.logger.info(`[planComplexStage] Filtered by source_group '${parentSourceGroup}': ${matchingLineageDocs.length} matching document(s), selected most recent: ${sourceDocuments[0]?.id}`);
+        } else {
+            // No documents match the parent's source_group - this might be an error condition
+            // but we'll let it proceed and let downstream logic handle it
+            ctx.logger.warn(`[planComplexStage] Parent job has source_group '${parentSourceGroup}' but no source documents match this lineage. Proceeding with all ${sourceDocuments.length} document(s).`);
+        }
+    }
+
     // 2. Filter out completed source documents if completedSourceDocumentIds is provided.
     if (completedSourceDocumentIds && completedSourceDocumentIds.size > 0) {
         const sourceDocumentsBeforeFiltering = sourceDocuments.length;

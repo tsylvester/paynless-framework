@@ -40,11 +40,6 @@ export async function assembleTurnPrompt(
       "PRECONDITION_FAILED: Job payload inputs is missing or not a valid record.",
     );
   }
-  if (typeof job.payload.inputs.header_context_id !== "string") {
-    throw new Error(
-      "PRECONDITION_FAILED: Job payload inputs is missing 'header_context_id'.",
-    );
-  }
   if (typeof job.payload.document_key !== "string") {
     throw new Error("PRECONDITION_FAILED: Job payload is missing 'document_key'.");
   }
@@ -53,6 +48,19 @@ export async function assembleTurnPrompt(
   }
   if (!stage.recipe_step) {
     throw new Error("PRECONDITION_FAILED: Stage context is missing recipe_step.");
+  }
+
+  // Check if this recipe step requires a header_context input
+  const requiresHeaderContext = Array.isArray(stage.recipe_step.inputs_required)
+    && stage.recipe_step.inputs_required.some((rule) => rule?.type === 'header_context');
+
+  // Only validate header_context_id if the recipe step requires it
+  if (requiresHeaderContext) {
+    if (typeof job.payload.inputs.header_context_id !== "string") {
+      throw new Error(
+        "PRECONDITION_FAILED: Job payload inputs is missing 'header_context_id'.",
+      );
+    }
   }
 
   // 2. Fetch Model Details
@@ -70,84 +78,91 @@ export async function assembleTurnPrompt(
     );
   }
 
-  // 3. Fetch Header Context Contribution from Database
-  const headerContextId = job.payload.inputs.header_context_id;
-  const { data: headerContrib, error: contribError } = await dbClient
-    .from("dialectic_contributions")
-    .select("id, storage_bucket, storage_path, file_name, contribution_type")
-    .eq("id", headerContextId)
-    .single();
-
-  if (contribError || !headerContrib) {
-    throw new Error(
-      `Header context contribution with id '${headerContextId}' not found in database.`,
-    );
-  }
-
-  if (headerContrib.contribution_type !== "header_context") {
-    throw new Error(
-      `Contribution '${headerContextId}' is not a header_context contribution (found '${headerContrib.contribution_type}').`,
-    );
-  }
-
-  if (typeof headerContrib.storage_bucket !== "string" || !headerContrib.storage_bucket) {
-    throw new Error(
-      `Header context contribution '${headerContextId}' is missing required storage_bucket.`,
-    );
-  }
-
-  if (typeof headerContrib.storage_path !== "string" || !headerContrib.storage_path) {
-    throw new Error(
-      `Header context contribution '${headerContextId}' is missing required storage_path.`,
-    );
-  }
-
-  if (typeof headerContrib.file_name !== "string" || !headerContrib.file_name) {
-    throw new Error(
-      `Header context contribution '${headerContextId}' is missing required file_name.`,
-    );
-  }
-
-  // 4. Construct Storage Path and Download Header Context
-  const fileName = headerContrib.file_name || "";
-  const pathToDownload = fileName
-    ? `${headerContrib.storage_path}/${fileName}`
-    : headerContrib.storage_path;
-
-  const { data: headerBlob, error: headerError } = await deps.downloadFromStorage(
-    dbClient,
-    headerContrib.storage_bucket,
-    pathToDownload,
-  );
-  if (headerError || !headerBlob) {
-    throw new Error(
-      `Failed to download header context file from storage: ${headerError?.message}`,
-    );
-  }
-
-  let headerContext: HeaderContext;
-  try {
-    let headerContent: string;
-    if (headerBlob instanceof Blob) {
-      headerContent = await headerBlob.text();
-    } else if (headerBlob instanceof ArrayBuffer) {
-      headerContent = new TextDecoder().decode(headerBlob);
-    } else {
-      throw new Error("Invalid format for header context file.");
+  // 3. Fetch Header Context Contribution from Database (only if required)
+  let headerContext: HeaderContext | undefined;
+  if (requiresHeaderContext) {
+    const headerContextId = job.payload.inputs.header_context_id;
+    if (typeof headerContextId !== "string") {
+      throw new Error(
+        "PRECONDITION_FAILED: Job payload inputs is missing 'header_context_id'.",
+      );
     }
-    const parsedContext = JSON.parse(headerContent);
-    if (!isHeaderContext(parsedContext)) {
-      throw new Error("Parsed header context does not conform to HeaderContext interface structure.");
+    const { data: headerContrib, error: contribError } = await dbClient
+      .from("dialectic_contributions")
+      .select("id, storage_bucket, storage_path, file_name, contribution_type")
+      .eq("id", headerContextId)
+      .single();
+
+    if (contribError || !headerContrib) {
+      throw new Error(
+        `Header context contribution with id '${headerContextId}' not found in database.`,
+      );
     }
-    headerContext = parsedContext;
-  } catch (e: unknown) {
-    let errorMessage = "An unknown error occurred while parsing JSON.";
-    if (e instanceof Error) {
-      errorMessage = e.message;
+
+    if (headerContrib.contribution_type !== "header_context") {
+      throw new Error(
+        `Contribution '${headerContextId}' is not a header_context contribution (found '${headerContrib.contribution_type}').`,
+      );
     }
-    throw new Error(
-      `Failed to parse header context content as JSON: ${errorMessage}`,
+
+    if (typeof headerContrib.storage_bucket !== "string" || !headerContrib.storage_bucket) {
+      throw new Error(
+        `Header context contribution '${headerContextId}' is missing required storage_bucket.`,
+      );
+    }
+
+    if (typeof headerContrib.storage_path !== "string" || !headerContrib.storage_path) {
+      throw new Error(
+        `Header context contribution '${headerContextId}' is missing required storage_path.`,
+      );
+    }
+
+    if (typeof headerContrib.file_name !== "string" || !headerContrib.file_name) {
+      throw new Error(
+        `Header context contribution '${headerContextId}' is missing required file_name.`,
+      );
+    }
+
+    // 4. Construct Storage Path and Download Header Context
+    const fileName = headerContrib.file_name || "";
+    const pathToDownload = fileName
+      ? `${headerContrib.storage_path}/${fileName}`
+      : headerContrib.storage_path;
+
+    const { data: headerBlob, error: headerError } = await deps.downloadFromStorage(
+      dbClient,
+      headerContrib.storage_bucket,
+      pathToDownload,
     );
+    if (headerError || !headerBlob) {
+      throw new Error(
+        `Failed to download header context file from storage: ${headerError?.message}`,
+      );
+    }
+
+    try {
+      let headerContent: string;
+      if (headerBlob instanceof Blob) {
+        headerContent = await headerBlob.text();
+      } else if (headerBlob instanceof ArrayBuffer) {
+        headerContent = new TextDecoder().decode(headerBlob);
+      } else {
+        throw new Error("Invalid format for header context file.");
+      }
+      const parsedContext = JSON.parse(headerContent);
+      if (!isHeaderContext(parsedContext)) {
+        throw new Error("Parsed header context does not conform to HeaderContext interface structure.");
+      }
+      headerContext = parsedContext;
+    } catch (e: unknown) {
+      let errorMessage = "An unknown error occurred while parsing JSON.";
+      if (e instanceof Error) {
+        errorMessage = e.message;
+      }
+      throw new Error(
+        `Failed to parse header context content as JSON: ${errorMessage}`,
+      );
+    }
   }
 
   // 5. Get files_to_generate from Recipe Step and Find Document Template
@@ -187,70 +202,73 @@ export async function assembleTurnPrompt(
     );
   }
 
-  // Get alignment details from header_context (filled by PLAN job)
-  if (!headerContext.context_for_documents || !Array.isArray(headerContext.context_for_documents) || headerContext.context_for_documents.length === 0) {
-    throw new Error(
-      `Header context is missing context_for_documents array. Header context must include context_for_documents with alignment details.`,
-    );
-  }
+  // Get alignment details from header_context (filled by PLAN job) - only if header_context is required
+  let contextForDoc: { document_key: string; content_to_include: unknown } | undefined;
+  if (requiresHeaderContext && headerContext) {
+    if (!headerContext.context_for_documents || !Array.isArray(headerContext.context_for_documents) || headerContext.context_for_documents.length === 0) {
+      throw new Error(
+        `Header context is missing context_for_documents array. Header context must include context_for_documents with alignment details.`,
+      );
+    }
 
-  const contextForDoc = headerContext.context_for_documents.find(
-    (d) => d.document_key === documentKey,
-  );
-  if (!contextForDoc) {
-    throw new Error(
-      `No context_for_documents entry found for document_key '${documentKey}' in header_context. The PLAN job must generate alignment details for all documents in files_to_generate.`,
+    contextForDoc = headerContext.context_for_documents.find(
+      (d) => d.document_key === documentKey,
     );
-  }
+    if (!contextForDoc) {
+      throw new Error(
+        `No context_for_documents entry found for document_key '${documentKey}' in header_context. The PLAN job must generate alignment details for all documents in files_to_generate.`,
+      );
+    }
 
-  // Validate that files_to_generate[].from_document_key matches context_for_documents[].document_key
-  if (docInfo.from_document_key !== contextForDoc.document_key) {
-    throw new Error(
-      `PLAN ↔ EXECUTE structure mapping violation: files_to_generate[].from_document_key '${docInfo.from_document_key}' does not match context_for_documents[].document_key '${contextForDoc.document_key}'.`,
-    );
-  }
+    // Validate that files_to_generate[].from_document_key matches context_for_documents[].document_key
+    if (docInfo.from_document_key !== contextForDoc.document_key) {
+      throw new Error(
+        `PLAN ↔ EXECUTE structure mapping violation: files_to_generate[].from_document_key '${docInfo.from_document_key}' does not match context_for_documents[].document_key '${contextForDoc.document_key}'.`,
+      );
+    }
 
-  // Validate content_to_include structure conforms to ContentToInclude type
-  if (!isContentToInclude(contextForDoc.content_to_include)) {
-    throw new Error(
-      `content_to_include structure for document_key '${documentKey}' does not conform to ContentToInclude type. Content must be an object (not array at top level) with values of type string, string[], boolean, number, or nested ContentToInclude structures.`,
-    );
-  }
+    // Validate content_to_include structure conforms to ContentToInclude type
+    if (!isContentToInclude(contextForDoc.content_to_include)) {
+      throw new Error(
+        `content_to_include structure for document_key '${documentKey}' does not conform to ContentToInclude type. Content must be an object (not array at top level) with values of type string, string[], boolean, number, or nested ContentToInclude structures.`,
+      );
+    }
 
-  // Validate key existence: Verify all required keys from recipe step's content_to_include exist in header_context
-  if (outputsRequired.documents && Array.isArray(outputsRequired.documents)) {
-    const recipeDoc = outputsRequired.documents.find(
-      (d) => d.document_key === documentKey && 'content_to_include' in d
-    );
-    
-    if (recipeDoc && 'content_to_include' in recipeDoc && recipeDoc.content_to_include) {
-      const recipeContentToInclude = recipeDoc.content_to_include;
-      const contextContentToInclude = contextForDoc.content_to_include;
+    // Validate key existence: Verify all required keys from recipe step's content_to_include exist in header_context
+    if (outputsRequired.documents && Array.isArray(outputsRequired.documents)) {
+      const recipeDoc = outputsRequired.documents.find(
+        (d) => d.document_key === documentKey && 'content_to_include' in d
+      );
       
-      // Check that all required keys from recipe step exist in header_context (without type checking)
-      const requiredKeys = Object.keys(recipeContentToInclude);
-      const actualKeys = Object.keys(contextContentToInclude);
-      const missingKeys = requiredKeys.filter(key => !actualKeys.includes(key));
-      
-      if (missingKeys.length > 0) {
-        throw new Error(
-          `content_to_include for document_key '${documentKey}' is missing required keys from recipe step: ${missingKeys.join(', ')}. ` +
-          `Required keys: ${requiredKeys.join(', ')}, but header_context has keys: ${actualKeys.join(', ')}.`
-        );
+      if (recipeDoc && 'content_to_include' in recipeDoc && recipeDoc.content_to_include) {
+        const recipeContentToInclude = recipeDoc.content_to_include;
+        const contextContentToInclude = contextForDoc.content_to_include;
+        
+        // Check that all required keys from recipe step exist in header_context (without type checking)
+        const requiredKeys = Object.keys(recipeContentToInclude);
+        const actualKeys = Object.keys(contextContentToInclude);
+        const missingKeys = requiredKeys.filter(key => !actualKeys.includes(key));
+        
+        if (missingKeys.length > 0) {
+          throw new Error(
+            `content_to_include for document_key '${documentKey}' is missing required keys from recipe step: ${missingKeys.join(', ')}. ` +
+            `Required keys: ${requiredKeys.join(', ')}, but header_context has keys: ${actualKeys.join(', ')}.`
+          );
+        }
       }
     }
-  }
 
-  // Validate that content_to_include has been filled in (not empty model)
-  if (
-    !contextForDoc.content_to_include ||
-    (typeof contextForDoc.content_to_include === "object" &&
-      !Array.isArray(contextForDoc.content_to_include) &&
-      Object.keys(contextForDoc.content_to_include).length === 0)
-  ) {
-    throw new Error(
-      `content_to_include not filled in for document_key '${documentKey}' in header_context. The PLAN job must populate alignment details in context_for_documents before EXECUTE jobs can use them.`,
-    );
+    // Validate that content_to_include has been filled in (not empty model)
+    if (
+      !contextForDoc.content_to_include ||
+      (typeof contextForDoc.content_to_include === "object" &&
+        !Array.isArray(contextForDoc.content_to_include) &&
+        Object.keys(contextForDoc.content_to_include).length === 0)
+    ) {
+      throw new Error(
+        `content_to_include not filled in for document_key '${documentKey}' in header_context. The PLAN job must populate alignment details in context_for_documents before EXECUTE jobs can use them.`,
+      );
+    }
   }
 
   // 5.b Resolve Turn prompt template via recipe_step.prompt_template_id (authoritative, no fallbacks)
@@ -361,13 +379,13 @@ export async function assembleTurnPrompt(
     session.iteration_count,
   );
 
-  // Merge header context data into dynamic context
+  // Merge header context data into dynamic context (only if header_context is required)
   // Merge order: system_materials -> alignment -> document_specific_data
   // Note: user_domain_overlay_values is passed separately to deps.render for proper overlay layering
   const mergedContext = {
     ...dynamicContext,
-    ...headerContext.system_materials,
-    ...contextForDoc.content_to_include,
+    ...(requiresHeaderContext && headerContext ? headerContext.system_materials : {}),
+    ...(requiresHeaderContext && contextForDoc && isContentToInclude(contextForDoc.content_to_include) ? contextForDoc.content_to_include : {}),
     ...documentSpecificData,
   };
 

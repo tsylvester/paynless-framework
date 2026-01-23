@@ -138,7 +138,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       executive_summary: "chunk-one executive summary content",
       market_opportunity: "chunk-one market opportunity content"
     };
-    const agentResponse = { content: JSON.stringify(structuredData) };
+    const agentResponse = { content: structuredData };
 
     const { dbClient, spies, clearAllStubs } = setup({
       genericMockResults: {
@@ -287,11 +287,11 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         downloadResult: async (_bucketId: string, path: string) => {
           if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
             const structuredData1 = { executive_summary: "A1 executive summary", market_opportunity: "A1 market opportunity" };
-            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData1) })], { type: "application/json" }), error: null };
+            return { data: new Blob([JSON.stringify({ content: structuredData1 })], { type: "application/json" }), error: null };
           }
           if (path.endsWith("gpt-4o-mini_1_business_case_raw.json")) {
             const structuredData2 = { executive_summary: "A2 executive summary", market_opportunity: "A2 market opportunity" };
-            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData2) })], { type: "application/json" }), error: null };
+            return { data: new Blob([JSON.stringify({ content: structuredData2 })], { type: "application/json" }), error: null };
           }
           return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
         },
@@ -398,11 +398,11 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         downloadResult: async (_bucketId: string, path: string) => {
           if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
             const structuredData1 = { executive_summary: "B1 executive summary", market_opportunity: "B1 market opportunity" };
-            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData1) })], { type: "application/json" }), error: null };
+            return { data: new Blob([JSON.stringify({ content: structuredData1 })], { type: "application/json" }), error: null };
           }
           if (path.endsWith("gpt-4o-mini_1_business_case_raw.json")) {
             const structuredData2 = { executive_summary: "B2 executive summary", market_opportunity: "B2 market opportunity" };
-            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData2) })], { type: "application/json" }), error: null };
+            return { data: new Blob([JSON.stringify({ content: structuredData2 })], { type: "application/json" }), error: null };
           }
           return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
         },
@@ -472,7 +472,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     const contributions: ContributionRowMinimal[] = [root];
 
     const structuredData = { executive_summary: "render-body executive summary", market_opportunity: "render-body market opportunity" };
-    const agentResponse = { content: JSON.stringify(structuredData) };
+    const agentResponse = { content: structuredData };
     const chunkBody = "render-body executive summary";
 
     const { dbClient, clearAllStubs } = setup({
@@ -617,7 +617,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         downloadResult: async (_bucketId: string, path: string) => {
           if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
             const structuredData = { executive_summary: "test content executive summary", market_opportunity: "test content market opportunity" };
-            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData) })], { type: "application/json" }), error: null };
+            return { data: new Blob([JSON.stringify({ content: structuredData })], { type: "application/json" }), error: null };
           }
           return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
         }
@@ -716,7 +716,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
           const name = path.substring(path.lastIndexOf("/") + 1);
           const isChunk = name in bodies;
           if (isChunk) {
-            const jsonContent = JSON.stringify({ content: JSON.stringify(bodies[name]) });
+            const jsonContent = JSON.stringify({ content: bodies[name] });
             return { data: new Blob([jsonContent], { type: "application/json" }), error: null };
           }
           return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
@@ -825,7 +825,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
           const name = path.substring(path.lastIndexOf("/") + 1);
           const isChunk = name in bodies;
           if (isChunk) {
-            const jsonContent = JSON.stringify({ content: JSON.stringify(bodies[name]) });
+            const jsonContent = JSON.stringify({ content: bodies[name] });
             return { data: new Blob([jsonContent], { type: "application/json" }), error: null };
           }
           return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
@@ -901,7 +901,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
           if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
             // Since userEdit is latest, return USER content
             const structuredData = { executive_summary: "USER executive summary", market_opportunity: "USER market opportunity" };
-            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData) })], { type: "application/json" }), error: null };
+            return { data: new Blob([JSON.stringify({ content: structuredData })], { type: "application/json" }), error: null };
           }
           // Otherwise this is the template fetch
           return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
@@ -985,7 +985,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         downloadResult: async (_bucketId: string, path: string) => {
           if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
             const structuredData = { executive_summary: "filtered content executive summary", market_opportunity: "filtered content market opportunity" };
-            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData) })], { type: "application/json" }), error: null };
+            return { data: new Blob([JSON.stringify({ content: structuredData })], { type: "application/json" }), error: null };
           }
           return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
         },
@@ -1084,7 +1084,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     ];
 
     const structuredData = { executive_summary: "source-body executive summary", market_opportunity: "source-body market opportunity" };
-    const agentResponse = { content: JSON.stringify(structuredData) };
+    const agentResponse = { content: structuredData };
     const chunkBody = "source-body executive summary";
 
     const { dbClient, clearAllStubs } = setup({
@@ -1175,7 +1175,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     const stageSlug = "thesis";
     const rawJsonPath = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
     const structuredData = { executive_summary: "This is the executive summary content.", market_opportunity: "This is the market opportunity content." };
-    const jsonContent = JSON.stringify({ content: JSON.stringify(structuredData) });
+    const jsonContent = JSON.stringify({ content: structuredData });
     const expectedExtractedContent = "This is the executive summary content.";
 
     const contributions: ContributionRowMinimal[] = [
@@ -1298,7 +1298,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     const stageSlug = "thesis";
     const rawJsonPath = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
     const structuredData = { executive_summary: 'Title\n\nQuote: "text"\nBackslash: \\path', market_opportunity: "Market opportunity content" };
-    const jsonContent = JSON.stringify({ content: JSON.stringify(structuredData) });
+    const jsonContent = JSON.stringify({ content: structuredData });
     const expectedExtractedContent = 'Title\n\nQuote: "text"\nBackslash: \\path';
 
     const contributions: ContributionRowMinimal[] = [
@@ -1531,7 +1531,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     const stageSlug = "thesis";
     const rawJsonPath1 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
     const structuredData1 = { executive_summary: "First Chunk\n\nThis is from JSON.", market_opportunity: "First chunk market opportunity" };
-    const jsonContent1 = JSON.stringify({ content: JSON.stringify(structuredData1) });
+    const jsonContent1 = JSON.stringify({ content: structuredData1 });
     const expectedExtracted1 = "First Chunk\n\nThis is from JSON.";
     const markdownPath2 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_1_business_case.md";
     const markdownContent2 = "# Second Chunk\n\nThis is markdown.";
@@ -1690,7 +1690,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     ];
 
     const structuredData = { executive_summary: "This is the business case executive summary content.", market_opportunity: "This is the business case market opportunity content." };
-    const agentResponse = { content: JSON.stringify(structuredData) };
+    const agentResponse = { content: structuredData };
     const chunkContent = "This is the business case executive summary content.";
 
     // Create a template record that matches the actual database schema
@@ -1865,8 +1865,8 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
       storageMock: {
         downloadResult: async (_bucketId: string, path: string) => {
           if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
-            // The agent returns JSON where content field is a JSON string containing structured data
-            const jsonContent = JSON.stringify({ content: JSON.stringify(structuredContent) });
+            // The agent returns JSON where content field is an object containing structured data
+            const jsonContent = JSON.stringify({ content: structuredContent });
             return { data: new Blob([jsonContent], { type: "application/json" }), error: null };
           }
           if (path === "docs/templates/thesis/thesis_business_case.md") {
@@ -1947,7 +1947,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     ];
 
     const structuredData = { executive_summary: "This is the business case executive summary content.", market_opportunity: "This is the business case market opportunity content." };
-    const agentResponse = { content: JSON.stringify(structuredData) };
+    const agentResponse = { content: structuredData };
     const chunkContent = "This is the business case executive summary content.";
 
     const templateRecord: Database['public']['Tables']['dialectic_document_templates']['Row'] = {
@@ -2077,7 +2077,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     
     // Agent returns JSON where content is a JSON STRING
     const agentResponse = {
-      content: JSON.stringify(structuredData)
+      content: structuredData
     };
 
     const { dbClient, clearAllStubs } = setup({
@@ -2159,7 +2159,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     const stageSlug = "thesis";
     const rawJsonPath = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
     const structuredData = { executive_summary: "Content with trailing whitespace test", market_opportunity: "Market opportunity content" };
-    const jsonContent = JSON.stringify({ content: JSON.stringify(structuredData) });
+    const jsonContent = JSON.stringify({ content: structuredData });
     // Add trailing whitespace and newlines to simulate real-world file storage behavior
     const jsonContentWithTrailingWhitespace = jsonContent + "\n\n  \t  \n";
 
@@ -2308,7 +2308,7 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
       executive_summary: "Root chunk executive summary content",
       market_opportunity: "Root chunk market opportunity content",
     };
-    const agentResponse = { content: JSON.stringify(structuredData) };
+    const agentResponse = { content: structuredData };
 
     const { dbClient, spies, clearAllStubs } = setup({
       genericMockResults: {
@@ -2488,11 +2488,11 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
         downloadResult: async (_bucketId: string, path: string) => {
           if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
             const structuredData1 = { executive_summary: "Root chunk content", market_opportunity: "Root market opportunity" };
-            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData1) })], { type: "application/json" }), error: null };
+            return { data: new Blob([JSON.stringify({ content: structuredData1 })], { type: "application/json" }), error: null };
           }
           if (path.endsWith("gpt-4o-mini_1_business_case_raw.json")) {
             const structuredData2 = { executive_summary: "Continuation chunk content", market_opportunity: "Continuation market opportunity" };
-            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData2) })], { type: "application/json" }), error: null };
+            return { data: new Blob([JSON.stringify({ content: structuredData2 })], { type: "application/json" }), error: null };
           }
           return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
         },
@@ -2665,15 +2665,15 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
         downloadResult: async (_bucketId: string, path: string) => {
           if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
             const structuredData1 = { executive_summary: "Root content", market_opportunity: "Root market" };
-            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData1) })], { type: "application/json" }), error: null };
+            return { data: new Blob([JSON.stringify({ content: structuredData1 })], { type: "application/json" }), error: null };
           }
           if (path.endsWith("gpt-4o-mini_1_business_case_raw.json")) {
             const structuredData2 = { executive_summary: "Cont1 content", market_opportunity: "Cont1 market" };
-            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData2) })], { type: "application/json" }), error: null };
+            return { data: new Blob([JSON.stringify({ content: structuredData2 })], { type: "application/json" }), error: null };
           }
           if (path.endsWith("gpt-4o-mini_2_business_case_raw.json")) {
             const structuredData3 = { executive_summary: "Cont2 content", market_opportunity: "Cont2 market" };
-            return { data: new Blob([JSON.stringify({ content: JSON.stringify(structuredData3) })], { type: "application/json" }), error: null };
+            return { data: new Blob([JSON.stringify({ content: structuredData3 })], { type: "application/json" }), error: null };
           }
           return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
         },
@@ -2780,7 +2780,7 @@ Deno.test("DocumentRenderer - correctly calls FileManagerService to save the ren
         ];
 
         const structuredData = { executive_summary: "Test save content" };
-        const agentResponse = { content: JSON.stringify(structuredData) };
+        const agentResponse = { content: structuredData };
 
         const { dbClient, clearAllStubs } = setup({
             genericMockResults: {
@@ -2890,7 +2890,7 @@ Deno.test("DocumentRenderer - PathContext includes sourceGroupFragment when base
         ];
 
         const structuredData = { executive_summary: "Test content" };
-        const agentResponse = { content: JSON.stringify(structuredData) };
+        const agentResponse = { content: structuredData };
 
         const { dbClient, clearAllStubs } = setup({
             genericMockResults: {
@@ -2990,7 +2990,7 @@ Deno.test("DocumentRenderer - fragment extraction handles UUID with hyphens corr
         ];
 
         const structuredData = { executive_summary: "Test content" };
-        const agentResponse = { content: JSON.stringify(structuredData) };
+        const agentResponse = { content: structuredData };
 
         const { dbClient, clearAllStubs } = setup({
             genericMockResults: {
@@ -3088,7 +3088,7 @@ Deno.test("DocumentRenderer - PathContext works without source_group", async (t)
         ];
 
         const structuredData = { executive_summary: "Test content" };
-        const agentResponse = { content: JSON.stringify(structuredData) };
+        const agentResponse = { content: structuredData };
 
         const { dbClient, clearAllStubs } = setup({
             genericMockResults: {
@@ -3188,7 +3188,7 @@ Deno.test("DocumentRenderer - fragment extraction handles missing document_relat
         ];
 
         const structuredData = { executive_summary: "Test content" };
-        const agentResponse = { content: JSON.stringify(structuredData) };
+        const agentResponse = { content: structuredData };
 
         const { dbClient, clearAllStubs } = setup({
             genericMockResults: {
@@ -3287,7 +3287,7 @@ Deno.test("DocumentRenderer - uses template_filename from RenderDocumentParams t
         ];
 
         const structuredData = { executive_summary: "Test template filename content" };
-        const agentResponse = { content: JSON.stringify(structuredData) };
+        const agentResponse = { content: structuredData };
 
         const { dbClient, spies, clearAllStubs } = setup({
             genericMockResults: {
@@ -3391,7 +3391,7 @@ Deno.test("DocumentRenderer - successfully finds template when template_filename
         ];
 
         const structuredData = { executive_summary: "Test content for md extension mismatch" };
-        const agentResponse = { content: JSON.stringify(structuredData) };
+        const agentResponse = { content: structuredData };
 
         const { dbClient, spies, clearAllStubs } = setup({
             genericMockResults: {
@@ -3452,6 +3452,156 @@ Deno.test("DocumentRenderer - successfully finds template when template_filename
         assertEquals(actualNameQuery, templateNameInDatabase, `renderDocument should query by name='${templateNameInDatabase}' (without .md) to match the database, not '${templateFilenameWithExtension}' (with .md). Got: '${actualNameQuery}'`);
 
         assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "renderDocument should successfully render and upload the document");
+
+        clearAllStubs?.();
+    });
+
+    await t.step("accepts content as object (not stringified JSON) and populates template sections correctly", async () => {
+        // This test proves the renderer accepts the exact structure from thesis_business_case_turn_v1.md:
+        // { "content": { "market_opportunity": "...", "executive_summary": "...", ... } }
+        // where content is an OBJECT, not a stringified JSON string.
+        //
+        // The prompt template instructs the agent to return this structure.
+        // The document template (thesis_business_case.md) has section placeholders matching these keys.
+        // The renderer must accept content as an object and populate all sections.
+
+        const rootId = "root-object-content-test";
+        const sessionId = "session_object_content";
+        const stageSlug = "thesis";
+
+        const contributions: ContributionRowMinimal[] = [
+            {
+                id: rootId,
+                session_id: sessionId,
+                stage: "THESIS",
+                iteration_number: 1,
+                storage_bucket: "content",
+                storage_path: "proj_x/session_s/iteration_1/thesis/documents",
+                file_name: "gpt-4o-mini_0_business_case.md",
+                raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
+                mime_type: "text/markdown",
+                document_relationships: { thesis: rootId },
+                created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+                target_contribution_id: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                user_id: "user_123",
+            },
+        ];
+
+        // This is the EXACT structure from thesis_business_case_turn_v1.md prompt template:
+        // The agent returns { "content": { key: value, ... } } where content is an OBJECT
+        const agentResponseWithObjectContent = {
+            content: {
+                market_opportunity: "The target market consists of enterprise customers seeking advanced analytics solutions with projected growth of 25% annually.",
+                user_problem_validation: "User research confirms that 78% of enterprises struggle with data processing latency exceeding acceptable thresholds.",
+                competitive_analysis: "Compared to legacy solutions, our approach offers 3x performance improvement while maintaining compatibility with existing infrastructure.",
+                "differentiation_&_value_proposition": "Our unique value lies in the proprietary algorithm that reduces processing time by 60% without sacrificing accuracy.",
+                "risks_&_mitigation": "Primary risks include market adoption timing and technical scalability, mitigated through phased rollout and cloud-native architecture.",
+                strengths: "Strong technical team, proven prototype, and early customer validation with three pilot partners.",
+                weaknesses: "Limited brand recognition and dependency on third-party cloud infrastructure.",
+                opportunities: "Growing market demand and regulatory changes favoring data sovereignty solutions.",
+                threats: "Well-funded competitors and potential economic downturn affecting enterprise IT budgets.",
+                next_steps: "Complete Series A funding, expand pilot program, and finalize enterprise partnership agreements.",
+                proposal_references: "Internal market research Q4 2024, Customer interviews Dec 2024, Competitive analysis report Jan 2025",
+                executive_summary: "This proposal outlines a strategic initiative to capture the enterprise analytics market through innovative technology and strong execution.",
+            },
+        };
+
+        const { dbClient, clearAllStubs } = setup({
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_projects: {
+                    select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+                },
+                dialectic_document_templates: {
+                    select: { data: [
+                        { id: "template-1", created_at: "2025-01-01T00:00:00Z", description: null, domain_id: "domain-1", file_name: "thesis_business_case.md", is_active: true, name: "thesis_business_case", storage_bucket: "prompt-templates", storage_path: "templates/thesis", updated_at: "2025-01-01T00:00:00Z" }
+                    ], error: null, count: null, status: 200, statusText: "OK" }
+                },
+            },
+            storageMock: {
+                downloadResult: async (_bucketId: string, path: string) => {
+                    if (path.endsWith("gpt-4o-mini_0_business_case_raw.json")) {
+                        // Return agent response where content is an OBJECT (not a string)
+                        const jsonContent = JSON.stringify(agentResponseWithObjectContent);
+                        return { data: new Blob([jsonContent], { type: "application/json" }), error: null };
+                    }
+                    // Return the real template
+                    return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
+                },
+            },
+        });
+
+        const params: RenderDocumentParams = {
+            projectId: "project_123",
+            sessionId,
+            iterationNumber: 1,
+            stageSlug,
+            documentIdentity: rootId,
+            documentKey: FileType.business_case,
+            sourceContributionId: rootId,
+            template_filename: "thesis_business_case.md",
+        };
+
+        const mockFileManager = new MockFileManagerService();
+        mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+        const result: RenderDocumentResult = await renderDocument(
+            dbClient,
+            {
+                downloadFromStorage,
+                fileManager: mockFileManager,
+                notificationService: mockNotificationService,
+                notifyUserId: "user_123",
+                logger: logger,
+            },
+            params,
+        );
+
+        const rendered = new TextDecoder().decode(result.renderedBytes);
+
+        // Assert ALL sections are populated (not stripped)
+        assert(rendered.includes("# Executive Summary"), "rendered document should contain Executive Summary header");
+        assert(rendered.includes("This proposal outlines a strategic initiative"), "rendered document should contain executive_summary content");
+
+        assert(rendered.includes("# Market Opportunity"), "rendered document should contain Market Opportunity header");
+        assert(rendered.includes("enterprise customers seeking advanced analytics"), "rendered document should contain market_opportunity content");
+
+        assert(rendered.includes("# User Problem Validation"), "rendered document should contain User Problem Validation header");
+        assert(rendered.includes("78% of enterprises struggle"), "rendered document should contain user_problem_validation content");
+
+        assert(rendered.includes("# Competitive Analysis"), "rendered document should contain Competitive Analysis header");
+        assert(rendered.includes("3x performance improvement"), "rendered document should contain competitive_analysis content");
+
+        assert(rendered.includes("# Differentiation & Value Proposition"), "rendered document should contain Differentiation header");
+        assert(rendered.includes("proprietary algorithm that reduces processing time"), "rendered document should contain differentiation content");
+
+        assert(rendered.includes("# Risks & Mitigation"), "rendered document should contain Risks header");
+        assert(rendered.includes("market adoption timing"), "rendered document should contain risks content");
+
+        assert(rendered.includes("## Strengths"), "rendered document should contain Strengths header");
+        assert(rendered.includes("Strong technical team"), "rendered document should contain strengths content");
+
+        assert(rendered.includes("## Weaknesses"), "rendered document should contain Weaknesses header");
+        assert(rendered.includes("Limited brand recognition"), "rendered document should contain weaknesses content");
+
+        assert(rendered.includes("## Opportunities"), "rendered document should contain Opportunities header");
+        assert(rendered.includes("Growing market demand"), "rendered document should contain opportunities content");
+
+        assert(rendered.includes("## Threats"), "rendered document should contain Threats header");
+        assert(rendered.includes("Well-funded competitors"), "rendered document should contain threats content");
+
+        assert(rendered.includes("# Next Steps"), "rendered document should contain Next Steps header");
+        assert(rendered.includes("Complete Series A funding"), "rendered document should contain next_steps content");
+
+        assert(rendered.includes("# References"), "rendered document should contain References header");
+        assert(rendered.includes("Internal market research Q4 2024"), "rendered document should contain proposal_references content");
+
+        // Assert _extra_content section is NOT populated (all content should be in proper sections)
+        assert(!rendered.includes("# Additional Content"), "rendered document should NOT have Additional Content section when all keys match");
 
         clearAllStubs?.();
     });

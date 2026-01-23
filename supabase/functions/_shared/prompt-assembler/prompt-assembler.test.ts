@@ -17,6 +17,7 @@ import {
   type AssemblePlannerPromptDeps,
   type AssembleSeedPromptDeps,
   type AssembleTurnPromptDeps,
+  type AssembleTurnPromptParams,
   type AssembleContinuationPromptDeps,
   type ProjectContext,
   type SessionContext,
@@ -57,6 +58,7 @@ const mockAssemblePlannerPrompt = (
   });
 const mockAssembleTurnPrompt = (
   _deps: AssembleTurnPromptDeps,
+  _params: AssembleTurnPromptParams,
 ): Promise<AssembledPrompt> =>
   Promise.resolve({
     promptContent: "turn",
@@ -196,7 +198,7 @@ Deno.test("PromptAssembler", async (t) => {
     
     let fileManager: IFileManager | null = null;
     try {
-      fileManager = new FileManagerService(client, { constructStoragePath: () => ({ storagePath: '', fileName: '' }) });
+      fileManager = new FileManagerService(client, { constructStoragePath: () => ({ storagePath: '', fileName: '' }), logger: console });
     } catch (e) {
       // Allow setup to proceed without a file manager if the env var is not set, 
       // so that the constructor test can fail gracefully.
@@ -222,6 +224,7 @@ Deno.test("PromptAssembler", async (t) => {
           () =>
             new FileManagerService(client, {
               constructStoragePath: () => ({ storagePath: "", fileName: "" }),
+              logger: console,
             }),
           Error,
           "SB_CONTENT_STORAGE_BUCKET environment variable is not set.",
@@ -323,18 +326,23 @@ Deno.test("PromptAssembler", async (t) => {
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
         fileManager: fileManager!,
+        gatherContext: assembler["gatherContextFn"],
+        render: mockRenderFn,
+        downloadFromStorage: async (_supabase, _bucket, _path) => ({ data: null, error: null }),
+      };
+
+      const params: AssembleTurnPromptParams = {
         job: { ...mockJob, job_type: "EXECUTE" },
         project: mockProject,
         session: mockSession,
         stage: mockStage,
-        gatherContext: assembler["gatherContextFn"],
-        render: mockRenderFn,
       };
 
-      await assembler.assembleTurnPrompt(deps);
+      await assembler.assembleTurnPrompt(deps, params);
 
       assertSpyCalls(assembleTurnSpy, 1);
       assertEquals(assembleTurnSpy.calls[0].args[0], deps);
+      assertEquals(assembleTurnSpy.calls[0].args[1], params);
     } finally {
       teardown();
     }

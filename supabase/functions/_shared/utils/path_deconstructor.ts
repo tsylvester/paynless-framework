@@ -68,8 +68,9 @@ export function deconstructStoragePath(
   // documentKey can be any value like 'header_context', 'header_context_pairwise', etc.
   const headerContextAntithesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+?)_critiquing_(.+?)(?:_([a-f0-9]{8}))?_(\\d+)_(.+)\\.json$";
   const headerContextPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+)_(\\d+)(?:_([a-f0-9]{8}))?_(.+)\\.json$";
-  // AssembledDocumentJson patterns: antithesis pattern must be checked before simple pattern
-  // Model slugs can contain hyphens, so use (.+?) non-greedy to stop at '_critiquing_'
+  // AssembledDocumentJson patterns: check in order of specificity (pairwise > antithesis > simple)
+  // Model slugs can contain hyphens, so use (.+?) non-greedy to stop at pattern keywords
+  const assembledJsonPairwisePatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/assembled_json/(.+?)_synthesizing_(.+?)_with_(.+?)_on_(.+?)_(\\d+)_(.+)_assembled\\.json$";
   const assembledJsonAntithesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/assembled_json/(.+?)_critiquing_(.+?)(?:_([a-f0-9]{8}))?_(\\d+)_(.+)_assembled\\.json$";
   const assembledJsonPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/assembled_json/(.+)_(\\d+)_(.+?)(?:_([a-f0-9]{8}))?_assembled\\.json$";
   // RenderedDocument patterns: antithesis pattern must be checked before simple pattern
@@ -298,6 +299,24 @@ export function deconstructStoragePath(
     info.documentKey = matches[8]; // Extract documentKey from filename
     info.contributionType = 'header_context';
     info.fileTypeGuess = FileType.HeaderContext;
+    return info;
+  }
+
+  // Path: .../_work/assembled_json/{modelSlug}_synthesizing_{sourceAnchorModelSlug}_with_{pairedModelSlug}_on_{sourceAnchorType}_{attemptCount}_{documentKey}_assembled.json
+  matches = fullPath.match(new RegExp(assembledJsonPairwisePatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.sourceAnchorModelSlug = matches[6];
+    info.pairedModelSlug = matches[7];
+    info.sourceAnchorType = matches[8];
+    info.attemptCount = parseInt(matches[9], 10);
+    info.documentKey = matches[10];
+    info.fileTypeGuess = FileType.AssembledDocumentJson;
     return info;
   }
 

@@ -4,6 +4,7 @@ import { createCanonicalPathParams } from "../canonical_context_builder.ts";
 import { isContributionType, isContentToInclude } from "../../../_shared/utils/type-guards/type_guards.dialectic.ts";
 import { isModelContributionFileType } from "../../../_shared/utils/type-guards/type_guards.file_manager.ts";
 import { selectAnchorSourceDocument } from "../helpers.ts";
+import { selectAnchorForCanonicalPathParams } from "../selectAnchorForCanonicalPathParams.ts";
 
 export const planAllToOne: GranularityPlannerFn = (
     sourceDocs,
@@ -47,6 +48,9 @@ export const planAllToOne: GranularityPlannerFn = (
     if (recipeStep.job_type !== 'PLAN' && recipeStep.job_type !== 'EXECUTE') {
         throw new Error(`planAllToOne requires job_type to be 'PLAN' or 'EXECUTE', received: ${recipeStep.job_type}`);
     }
+
+    const hasDocumentInputs = recipeStep.inputs_required?.some(input => input.type === 'document');
+    const hasRelevanceMetadata = recipeStep.inputs_relevance && recipeStep.inputs_relevance.length > 0;
 
     // Handle PLAN and EXECUTE jobs separately
     if (recipeStep.job_type === 'PLAN') {
@@ -123,10 +127,26 @@ export const planAllToOne: GranularityPlannerFn = (
         
         // Use universal selector for canonical path params
         const anchorResult = selectAnchorSourceDocument(recipeStep, sourceDocs);
-        if (anchorResult.status === 'anchor_not_found') {
-            throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
+        let anchorForCanonicalPathParams = null;
+        if (anchorResult.status === 'anchor_found') {
+            anchorForCanonicalPathParams = anchorResult.document;
+        } else if (anchorResult.status === 'anchor_not_found') {
+            // When anchor_not_found but inputs_relevance exists, try selectAnchorForCanonicalPathParams
+            // This allows canonical path params to be selected even when lineage anchor is not found
+            if (hasRelevanceMetadata) {
+                anchorForCanonicalPathParams = selectAnchorForCanonicalPathParams(recipeStep, sourceDocs);
+            } else {
+                // Only throw if no relevance metadata exists to fall back on
+                throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
+            }
+        } else if (anchorResult.status === 'no_anchor_required') {
+            if (hasDocumentInputs && !hasRelevanceMetadata) {
+                throw new Error('planAllToOne: Recipe step has document inputs but is missing inputs_relevance metadata, preventing anchor selection for canonical path params.');
+            }
+            if (hasRelevanceMetadata) {
+                anchorForCanonicalPathParams = selectAnchorForCanonicalPathParams(recipeStep, sourceDocs);
+            }
         }
-        const anchorForCanonicalPathParams = anchorResult.status === 'anchor_found' ? anchorResult.document : null;
         
         // Create EXECUTE job payload for PLAN recipe step (will execute Planner prompt to generate HeaderContext)
         const executePayload: DialecticExecuteJobPayload = {
@@ -260,10 +280,49 @@ export const planAllToOne: GranularityPlannerFn = (
 
         // Use universal selector for canonical path params
         const anchorResult = selectAnchorSourceDocument(recipeStep, sourceDocs);
-        if (anchorResult.status === 'anchor_not_found') {
-            throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
+        let anchorForCanonicalPathParams = null;
+        if (anchorResult.status === 'anchor_found') {
+            anchorForCanonicalPathParams = anchorResult.document;
+        } else if (anchorResult.status === 'anchor_not_found') {
+            // When anchor_not_found but inputs_relevance exists, try selectAnchorForCanonicalPathParams
+            // This allows canonical path params to be selected even when lineage anchor is not found
+            if (hasRelevanceMetadata) {
+                anchorForCanonicalPathParams = selectAnchorForCanonicalPathParams(recipeStep, sourceDocs);
+            } else {
+                // Only throw if no relevance metadata exists to fall back on
+                throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
+            }
+        } else if (anchorResult.status === 'no_anchor_required') {
+            if (hasDocumentInputs && !hasRelevanceMetadata) {
+                throw new Error('planAllToOne: Recipe step has document inputs but is missing inputs_relevance metadata, preventing anchor selection for canonical path params.');
+            }
+            if (hasRelevanceMetadata) {
+                anchorForCanonicalPathParams = selectAnchorForCanonicalPathParams(recipeStep, sourceDocs);
+            }
         }
-        const anchorForCanonicalPathParams = anchorResult.status === 'anchor_found' ? anchorResult.document : null;
+
+        // Check if this step requires a header_context input
+        const requiresHeaderContext = Array.isArray(recipeStep.inputs_required)
+            && recipeStep.inputs_required.some((rule) => rule?.type === 'header_context');
+        
+        // Find the header_context document matching the parent job's model_id
+        const headerContextId = requiresHeaderContext
+            ? sourceDocs.find((d) => 
+                d.contribution_type === 'header_context' &&
+                d.model_id === parentJob.payload.model_id
+            )?.id
+            : undefined;
+        
+        if (requiresHeaderContext && (typeof headerContextId !== 'string' || headerContextId.length === 0)) {
+            throw new Error('planAllToOne requires a sourceDoc with contribution_type \'header_context\' and matching model_id when recipeStep.inputs_required includes header_context');
+        }
+
+        const inputs: Record<string, string | string[]> = {
+            document_ids: documentIds,
+        };
+        if (requiresHeaderContext && headerContextId) {
+            inputs.header_context_id = headerContextId;
+        }
 
         const executePayload: DialecticExecuteJobPayload = {
             // Inherit ALL fields from parent job payload (defensive programming)
@@ -287,9 +346,7 @@ export const planAllToOne: GranularityPlannerFn = (
             prompt_template_id: recipeStep.prompt_template_id,
             output_type: recipeStep.output_type,
             canonicalPathParams: createCanonicalPathParams(sourceDocs, recipeStep.output_type, anchorForCanonicalPathParams, stageSlug),
-            inputs: {
-                document_ids: documentIds,
-            },
+            inputs: inputs,
             document_relationships: { source_group: anchorDocument.id },
             planner_metadata: { recipe_step_id: recipeStep.id },
             document_key: documentKey,
@@ -305,4 +362,3 @@ export const planAllToOne: GranularityPlannerFn = (
     // This should never be reached due to job_type validation above, but TypeScript requires it
     throw new Error(`planAllToOne: unreachable code reached with job_type: ${recipeStep.job_type}`);
 }; 
-

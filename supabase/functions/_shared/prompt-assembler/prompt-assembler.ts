@@ -13,6 +13,7 @@ import {
     AssembleSeedPromptDeps,
     AssemblePlannerPromptDeps,
     AssembleTurnPromptDeps,
+    AssembleTurnPromptParams,
     AssembleContinuationPromptDeps
 } from "./prompt-assembler.interface.ts";
 import type { DownloadStorageResult } from "../supabase_storage_utils.ts";
@@ -28,6 +29,7 @@ import { assembleContinuationPrompt } from "./assembleContinuationPrompt.ts";
 import { IFileManager } from "../types/file_manager.types.ts";
 import { isRecord } from "../utils/type_guards.ts";
 import { RenderFn } from "./prompt-assembler.interface.ts";
+import { render } from "./render.ts";
 
 export class PromptAssembler implements IPromptAssembler {
     private dbClient: SupabaseClient<Database>;
@@ -37,7 +39,7 @@ export class PromptAssembler implements IPromptAssembler {
     private downloadFromStorageFn: (bucket: string, path: string) => Promise<DownloadStorageResult>;
     private assembleSeedPromptFn: (deps: AssembleSeedPromptDeps) => Promise<AssembledPrompt>;
     private assemblePlannerPromptFn: (deps: AssemblePlannerPromptDeps) => Promise<AssembledPrompt>;
-    private assembleTurnPromptFn: (deps: AssembleTurnPromptDeps) => Promise<AssembledPrompt>;
+    private assembleTurnPromptFn: (deps: AssembleTurnPromptDeps, params: AssembleTurnPromptParams) => Promise<AssembledPrompt>;
     private assembleContinuationPromptFn: (deps: AssembleContinuationPromptDeps) => Promise<AssembledPrompt>;
     private gatherContextFn: GatherContextFn;
     private renderFn: RenderFn;
@@ -51,7 +53,7 @@ export class PromptAssembler implements IPromptAssembler {
         renderPromptFn?: RenderPromptFunctionType,
         assembleSeedPromptFn?: (deps: AssembleSeedPromptDeps) => Promise<AssembledPrompt>,
         assemblePlannerPromptFn?: (deps: AssemblePlannerPromptDeps) => Promise<AssembledPrompt>,
-        assembleTurnPromptFn?: (deps: AssembleTurnPromptDeps) => Promise<AssembledPrompt>,
+        assembleTurnPromptFn?: (deps: AssembleTurnPromptDeps, params: AssembleTurnPromptParams) => Promise<AssembledPrompt>,
         assembleContinuationPromptFn?: (deps: AssembleContinuationPromptDeps) => Promise<AssembledPrompt>,
         gatherContextFn?: GatherContextFn,
         renderFn?: RenderFn,
@@ -67,7 +69,7 @@ export class PromptAssembler implements IPromptAssembler {
         this.assembleTurnPromptFn = assembleTurnPromptFn || assembleTurnPrompt;
         this.assembleContinuationPromptFn = assembleContinuationPromptFn || assembleContinuationPrompt;
         this.gatherContextFn = gatherContextFn || gatherContext;
-        this.renderFn = renderFn || ((renderPromptFn: RenderPromptFunctionType, stage: StageContext, context: DynamicContextVariables, userProjectOverlayValues: Json | null) => renderPromptFn(stage.system_prompts!.prompt_text, context, stage.domain_specific_prompt_overlays[0]?.overlay_values, userProjectOverlayValues));
+        this.renderFn = renderFn || render;
         this.gatherInputsForStageFn = gatherInputsForStageFn || ((dbClient: SupabaseClient<Database>, downloadFromStorageFn: (bucket: string, path: string) => Promise<DownloadStorageResult>, stage: StageContext, project: ProjectContext, session: SessionContext, iterationNumber: number) => gatherInputsForStage(dbClient, downloadFromStorageFn, stage, project, session, iterationNumber));
         this.gatherContinuationInputsFn = gatherContinuationInputsFn || gatherContinuationInputs;
 
@@ -110,17 +112,22 @@ export class PromptAssembler implements IPromptAssembler {
                     sourceContributionId
                 });
             } else {
-                return this.assembleTurnPrompt({
-                    dbClient: this.dbClient,
-                    fileManager: this.fileManager,
-                    job: options.job,
-                    project: options.project,
-                    session: options.session,
-                    stage: options.stage,
-                    gatherContext: this.gatherContextFn,
-                    render: this.renderFn,
-                    sourceContributionId
-                });
+                return this.assembleTurnPrompt(
+                    {
+                        dbClient: this.dbClient,
+                        fileManager: this.fileManager,
+                        gatherContext: this.gatherContextFn,
+                        render: this.renderFn,
+                        downloadFromStorage: (supabase, bucket, path) => downloadFromStorage(supabase, bucket, path),
+                    },
+                    {
+                        job: options.job!,
+                        project: options.project,
+                        session: options.session,
+                        stage: options.stage,
+                        sourceContributionId,
+                    }
+                );
             }
         } else {
             return this.assembleSeedPrompt({
@@ -152,9 +159,10 @@ export class PromptAssembler implements IPromptAssembler {
     }
 
     assembleTurnPrompt(
-        deps: AssembleTurnPromptDeps
+        deps: AssembleTurnPromptDeps,
+        params: AssembleTurnPromptParams
     ): Promise<AssembledPrompt> {
-        return this.assembleTurnPromptFn(deps);
+        return this.assembleTurnPromptFn(deps, params);
     }
 
     assembleContinuationPrompt(

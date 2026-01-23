@@ -278,23 +278,23 @@ export async function handleJob(
   //console.log(`[handleJob] payload check PASSED for job: ${jobId}`);
   // --- End of Validation Block ---
 
-  // consider wrapping the entire try block in a transaction so that nothing else can touch the job while it is being processed
-
   try {
-    // check that the job is not processing before sending it processing
-    const { data: jobData, error: jobError } = await adminClient.from('dialectic_generation_jobs').select('*').eq('id', jobId).single();
-    if (jobError || !jobData || jobData.status === 'processing') {
-      throw new Error(`Job ${jobId} is already processing.`);
-    }
-
-    // console.log(`[handleJob] Validation passed. Entering TRY block for job: ${jobId}`);
-    // Update job status to 'processing'
-    //console.log(`[handleJob] Updating job ${jobId} status to 'processing'...`);
-    await adminClient.from('dialectic_generation_jobs').update({
+    // Atomic check-and-update: only update if status is NOT 'processing'
+    // This prevents race conditions where multiple concurrent calls could both pass the check
+    const { data: updatedJob, error: updateError } = await adminClient
+      .from('dialectic_generation_jobs')
+      .update({
         status: 'processing',
         started_at: new Date().toISOString(),
-    }).eq('id', jobId);
-    //console.log(`[handleJob] Job ${jobId} status successfully updated to 'processing'.`);
+      })
+      .eq('id', jobId)
+      .neq('status', 'processing')
+      .select()
+      .single();
+
+    if (updateError || !updatedJob) {
+      throw new Error(`Job ${jobId} is already processing or could not be updated.`);
+    }
 
     // Notify user that the job has started
     if (projectOwnerUserId) {

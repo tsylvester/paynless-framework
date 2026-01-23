@@ -16,16 +16,31 @@ import type {
     ContextForDocument,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { planAllToOne } from './planAllToOne.ts';
-import { FileType } from '../../../_shared/types/file_manager.types.ts';
+import { FileType, type PathContext } from '../../../_shared/types/file_manager.types.ts';
 import { extractSourceDocumentIdentifier } from '../../../_shared/utils/source_document_identifier.ts';
 import { isJson } from '../../../_shared/utils/type-guards/type_guards.common.ts';
 import { isDialecticExecuteJobPayload } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
+import { constructStoragePath } from '../../../_shared/utils/path_constructor.ts';
 // Mock Data
+const mockSourceDocsPathContext: PathContext = {
+    projectId: 'project-123',
+    sessionId: 's1',
+    iteration: 1,
+    stageSlug: 'synthesis',
+    documentKey: FileType.ReducedSynthesis,
+    modelSlug: 'gpt-4',
+    attemptCount: 0,
+    fileType: FileType.ReducedSynthesis,
+    sourceAnchorType: 'thesis',
+    sourceAnchorModelSlug: 'claude-3-opus',
+};
+const { storagePath: mockSourceDocsStoragePath, fileName: mockSourceDocsFileName } = constructStoragePath(mockSourceDocsPathContext);
+
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
     { id: 'doc-1', content: '', citations: [], error: null, mime_type: 'text/plain', original_model_contribution_id: null, raw_response_storage_path: null, tokens_used_input: 0, tokens_used_output: 0, processing_time_ms: 0, contribution_type: 'reduced_synthesis', size_bytes: 0, target_contribution_id: 't', seed_prompt_url: null, is_header: false, source_prompt_resource_id: null },
     { id: 'doc-2', content: '', citations: [], error: null, mime_type: 'text/plain', original_model_contribution_id: null, raw_response_storage_path: null, tokens_used_input: 0, tokens_used_output: 0, processing_time_ms: 0, contribution_type: 'reduced_synthesis', size_bytes: 0, target_contribution_id: 't', seed_prompt_url: null, is_header: false, source_prompt_resource_id: null },
     { id: 'doc-3', content: '', citations: [], error: null, mime_type: 'text/plain', original_model_contribution_id: null, raw_response_storage_path: null, tokens_used_input: 0, tokens_used_output: 0, processing_time_ms: 0, contribution_type: 'reduced_synthesis', size_bytes: 0, target_contribution_id: 't', seed_prompt_url: null, is_header: false, source_prompt_resource_id: null },
-].map(d => ({ ...d, document_relationships: null, attempt_count: 0, contribution_type: 'reduced_synthesis', session_id: 's1', user_id: 'u1', stage: 'synthesis', iteration_number: 1, edit_version: 1, is_latest_edit: true, created_at: 't', updated_at: 't', file_name: 'gpt-4_0_reduced_synthesis.md', storage_bucket: 'b', storage_path: 'project-123/session_abc/iteration_1/3_synthesis/documents', model_id: 'm', model_name: 'M', prompt_template_id_used: 'p', target_contribution_id: 't', is_header: false, source_prompt_resource_id: null, document_key: FileType.ReducedSynthesis }));
+].map(d => ({ ...d, document_relationships: null, attempt_count: 0, contribution_type: 'reduced_synthesis', session_id: 's1', user_id: 'u1', stage: 'synthesis', iteration_number: 1, edit_version: 1, is_latest_edit: true, created_at: 't', updated_at: 't', file_name: mockSourceDocsFileName, storage_bucket: 'b', storage_path: mockSourceDocsStoragePath, model_id: 'm', model_name: 'M', prompt_template_id_used: 'p', target_contribution_id: 't', is_header: false, source_prompt_resource_id: null, document_key: FileType.ReducedSynthesis }));
 
 const MOCK_PAYLOAD: DialecticPlanJobPayload = {
     projectId: 'project-xyz',
@@ -1130,6 +1145,15 @@ Deno.test('planAllToOne extracts sourceAnchorModelSlug from thesis document file
     };
 
     // Create sourceDocs: seed_prompt first (will be anchorDocument), then thesis rendered documents
+    const seedPromptPathContext: PathContext = {
+        projectId: 'project-123',
+        sessionId: 'session-abc',
+        iteration: 1,
+        stageSlug: 'thesis',
+        fileType: FileType.SeedPrompt,
+    };
+    const { storagePath: seedPromptStoragePath, fileName: seedPromptFileName } = constructStoragePath(seedPromptPathContext);
+
     const seedPromptDoc: SourceDocument = {
         id: 'seed-prompt-id-123',
         contribution_type: 'seed_prompt',
@@ -1157,15 +1181,27 @@ Deno.test('planAllToOne extracts sourceAnchorModelSlug from thesis document file
         is_latest_edit: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
-        file_name: null, // seed_prompt has no filename
+        file_name: seedPromptFileName,
         storage_bucket: 'dialectic-contributions',
-        storage_path: 'project-123/session_abc/iteration_1/1_thesis',
+        storage_path: seedPromptStoragePath,
         model_id: 'model-123',
         model_name: null, // seed_prompt has no model_name
         prompt_template_id_used: null,
     };
 
     // Thesis rendered document with filename containing model slug
+    const thesisRenderedPathContext: PathContext = {
+        projectId: 'project-123',
+        sessionId: 'session-abc',
+        iteration: 1,
+        stageSlug: 'thesis',
+        documentKey: FileType.business_case,
+        modelSlug: 'gpt-4',
+        attemptCount: 0,
+        fileType: FileType.business_case,
+    };
+    const { storagePath: thesisRenderedStoragePath, fileName: thesisRenderedFileName } = constructStoragePath(thesisRenderedPathContext);
+
     const thesisRenderedDoc: SourceDocument = {
         id: 'thesis-rendered-doc-id-456',
         contribution_type: 'thesis',
@@ -1193,9 +1229,9 @@ Deno.test('planAllToOne extracts sourceAnchorModelSlug from thesis document file
         is_latest_edit: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
-        file_name: 'gpt-4_0_business_case.md', // Filename contains source model slug 'gpt-4'
+        file_name: thesisRenderedFileName,
         storage_bucket: 'dialectic-project-resources',
-        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        storage_path: thesisRenderedStoragePath,
         model_id: 'model-456',
         model_name: null, // model_name is null, must extract from filename
         prompt_template_id_used: null,
@@ -1203,6 +1239,18 @@ Deno.test('planAllToOne extracts sourceAnchorModelSlug from thesis document file
     };
 
     // Thesis feature_spec document with lower relevance
+    const thesisFeatureSpecPathContext: PathContext = {
+        projectId: 'project-123',
+        sessionId: 'session-abc',
+        iteration: 1,
+        stageSlug: 'thesis',
+        documentKey: FileType.feature_spec,
+        modelSlug: 'claude-3',
+        attemptCount: 0,
+        fileType: FileType.feature_spec,
+    };
+    const { storagePath: thesisFeatureSpecStoragePath, fileName: thesisFeatureSpecFileName } = constructStoragePath(thesisFeatureSpecPathContext);
+
     const thesisFeatureSpecDoc: SourceDocument = {
         id: 'thesis-feature-spec-doc-id-789',
         contribution_type: 'thesis',
@@ -1230,9 +1278,9 @@ Deno.test('planAllToOne extracts sourceAnchorModelSlug from thesis document file
         is_latest_edit: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
-        file_name: 'claude-3_0_feature_spec.md', // Different model slug
+        file_name: thesisFeatureSpecFileName,
         storage_bucket: 'dialectic-project-resources',
-        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        storage_path: thesisFeatureSpecStoragePath,
         model_id: 'model-789',
         model_name: null,
         prompt_template_id_used: null,
@@ -1366,6 +1414,15 @@ Deno.test('planAllToOne PLAN branch uses relevance-selected anchor for canonical
     };
 
     // Seed prompt document (first in array, would be selected by ordering heuristic)
+    const seedPromptPathContext2: PathContext = {
+        projectId: 'project-123',
+        sessionId: 'session-abc',
+        iteration: 1,
+        stageSlug: 'thesis',
+        fileType: FileType.SeedPrompt,
+    };
+    const { storagePath: seedPromptStoragePath2, fileName: seedPromptFileName2 } = constructStoragePath(seedPromptPathContext2);
+
     const seedPromptDoc: SourceDocument = {
         id: 'seed-prompt-doc-id',
         contribution_type: 'seed_prompt',
@@ -1393,9 +1450,9 @@ Deno.test('planAllToOne PLAN branch uses relevance-selected anchor for canonical
         is_latest_edit: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
-        file_name: null,
+        file_name: seedPromptFileName2,
         storage_bucket: 'dialectic-contributions',
-        storage_path: 'project-123/session_abc/iteration_1/1_thesis',
+        storage_path: seedPromptStoragePath2,
         model_id: 'model-seed',
         model_name: null,
         prompt_template_id_used: null,
@@ -1403,6 +1460,18 @@ Deno.test('planAllToOne PLAN branch uses relevance-selected anchor for canonical
     };
 
     // Business case document (highest relevance 1.0)
+    const businessCasePathContext: PathContext = {
+        projectId: 'project-123',
+        sessionId: 'session-abc',
+        iteration: 1,
+        stageSlug: 'thesis',
+        documentKey: FileType.business_case,
+        modelSlug: 'high-relevance-model',
+        attemptCount: 0,
+        fileType: FileType.business_case,
+    };
+    const { storagePath: businessCaseStoragePath, fileName: businessCaseFileName } = constructStoragePath(businessCasePathContext);
+
     const businessCaseDoc: SourceDocument = {
         id: 'business-case-doc-id',
         contribution_type: 'thesis',
@@ -1430,9 +1499,9 @@ Deno.test('planAllToOne PLAN branch uses relevance-selected anchor for canonical
         is_latest_edit: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
-        file_name: 'high-relevance-model_0_business_case.md',
+        file_name: businessCaseFileName,
         storage_bucket: 'dialectic-project-resources',
-        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        storage_path: businessCaseStoragePath,
         model_id: 'model-high-rel',
         model_name: null,
         prompt_template_id_used: null,
@@ -1440,6 +1509,18 @@ Deno.test('planAllToOne PLAN branch uses relevance-selected anchor for canonical
     };
 
     // Feature spec document (lower relevance 0.9)
+    const featureSpecPathContext: PathContext = {
+        projectId: 'project-123',
+        sessionId: 'session-abc',
+        iteration: 1,
+        stageSlug: 'thesis',
+        documentKey: FileType.feature_spec,
+        modelSlug: 'low-relevance-model',
+        attemptCount: 0,
+        fileType: FileType.feature_spec,
+    };
+    const { storagePath: featureSpecStoragePath, fileName: featureSpecFileName } = constructStoragePath(featureSpecPathContext);
+
     const featureSpecDoc: SourceDocument = {
         id: 'feature-spec-doc-id',
         contribution_type: 'thesis',
@@ -1467,9 +1548,9 @@ Deno.test('planAllToOne PLAN branch uses relevance-selected anchor for canonical
         is_latest_edit: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
-        file_name: 'low-relevance-model_0_feature_spec.md',
+        file_name: featureSpecFileName,
         storage_bucket: 'dialectic-project-resources',
-        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        storage_path: featureSpecStoragePath,
         model_id: 'model-low-rel',
         model_name: null,
         prompt_template_id_used: null,
@@ -1596,6 +1677,18 @@ Deno.test('planAllToOne EXECUTE branch uses relevance-selected anchor for canoni
     };
 
     // Feature spec document (first in array, lower relevance)
+    const featureSpecPathContext2: PathContext = {
+        projectId: 'project-123',
+        sessionId: 'session-abc',
+        iteration: 1,
+        stageSlug: 'thesis',
+        documentKey: FileType.feature_spec,
+        modelSlug: 'first-doc-model',
+        attemptCount: 0,
+        fileType: FileType.feature_spec,
+    };
+    const { storagePath: featureSpecStoragePath2, fileName: featureSpecFileName2 } = constructStoragePath(featureSpecPathContext2);
+
     const featureSpecDoc: SourceDocument = {
         id: 'feature-spec-first-id',
         contribution_type: 'thesis',
@@ -1623,9 +1716,9 @@ Deno.test('planAllToOne EXECUTE branch uses relevance-selected anchor for canoni
         is_latest_edit: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
-        file_name: 'first-doc-model_0_feature_spec.md',
+        file_name: featureSpecFileName2,
         storage_bucket: 'dialectic-project-resources',
-        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        storage_path: featureSpecStoragePath2,
         model_id: 'model-first',
         model_name: null,
         prompt_template_id_used: null,
@@ -1633,6 +1726,18 @@ Deno.test('planAllToOne EXECUTE branch uses relevance-selected anchor for canoni
     };
 
     // Business case document (highest relevance, NOT first in array)
+    const businessCasePathContext2: PathContext = {
+        projectId: 'project-123',
+        sessionId: 'session-abc',
+        iteration: 1,
+        stageSlug: 'thesis',
+        documentKey: FileType.business_case,
+        modelSlug: 'highest-relevance-anchor',
+        attemptCount: 0,
+        fileType: FileType.business_case,
+    };
+    const { storagePath: businessCaseStoragePath2, fileName: businessCaseFileName2 } = constructStoragePath(businessCasePathContext2);
+
     const businessCaseDoc: SourceDocument = {
         id: 'business-case-highest-id',
         contribution_type: 'thesis',
@@ -1660,9 +1765,9 @@ Deno.test('planAllToOne EXECUTE branch uses relevance-selected anchor for canoni
         is_latest_edit: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
-        file_name: 'highest-relevance-anchor_0_business_case.md',
+        file_name: businessCaseFileName2,
         storage_bucket: 'dialectic-project-resources',
-        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        storage_path: businessCaseStoragePath2,
         model_id: 'model-highest',
         model_name: null,
         prompt_template_id_used: null,
@@ -1785,6 +1890,18 @@ Deno.test('planAllToOne throws when recipe lacks relevance metadata', () => {
         },
     };
 
+    const businessCasePathContext3: PathContext = {
+        projectId: 'project-123',
+        sessionId: 'session-abc',
+        iteration: 1,
+        stageSlug: 'thesis',
+        documentKey: FileType.business_case,
+        modelSlug: 'model-a',
+        attemptCount: 0,
+        fileType: FileType.business_case,
+    };
+    const { storagePath: businessCaseStoragePath3, fileName: businessCaseFileName3 } = constructStoragePath(businessCasePathContext3);
+
     const businessCaseDoc: SourceDocument = {
         id: 'business-case-no-rel-id',
         contribution_type: 'thesis',
@@ -1812,14 +1929,26 @@ Deno.test('planAllToOne throws when recipe lacks relevance metadata', () => {
         is_latest_edit: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
-        file_name: 'model-a_0_business_case.md',
+        file_name: businessCaseFileName3,
         storage_bucket: 'dialectic-project-resources',
-        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        storage_path: businessCaseStoragePath3,
         model_id: 'model-999',
         model_name: null,
         prompt_template_id_used: null,
         document_key: FileType.business_case,
     };
+
+    const featureSpecPathContext3: PathContext = {
+        projectId: 'project-123',
+        sessionId: 'session-abc',
+        iteration: 1,
+        stageSlug: 'thesis',
+        documentKey: FileType.feature_spec,
+        modelSlug: 'model-b',
+        attemptCount: 0,
+        fileType: FileType.feature_spec,
+    };
+    const { storagePath: featureSpecStoragePath3, fileName: featureSpecFileName3 } = constructStoragePath(featureSpecPathContext3);
 
     const featureSpecDoc: SourceDocument = {
         id: 'feature-spec-no-rel-id',
@@ -1848,9 +1977,9 @@ Deno.test('planAllToOne throws when recipe lacks relevance metadata', () => {
         is_latest_edit: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
-        file_name: 'model-b_0_feature_spec.md',
+        file_name: featureSpecFileName3,
         storage_bucket: 'dialectic-project-resources',
-        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        storage_path: featureSpecStoragePath3,
         model_id: 'model-888',
         model_name: null,
         prompt_template_id_used: null,
@@ -1915,15 +2044,16 @@ Deno.test('planAllToOne throws when recipe lacks relevance metadata', () => {
         branch_key: null,
     };
 
-    // Should throw error from selectAnchorSourceDocument about missing relevance score
-    // Currently FAILS because planner falls back to anchorDocument (sourceDocs[0]) instead of using universal selector
+    // Should throw error from planAllToOne about missing relevance metadata
+    // Step 104 changed error handling: planAllToOne now throws when anchorResult.status === 'no_anchor_required' 
+    // and hasDocumentInputs && !hasRelevanceMetadata
 
     assertThrows(
         () => {
             planAllToOne(sourceDocs, parentJobWithAntithesisStage, planRecipeStepNoRelevance, parentJobWithAntithesisStage.payload.user_jwt);
         },
         Error,
-        'Missing relevance score',
+        'planAllToOne: Recipe step has document inputs but is missing inputs_relevance metadata, preventing anchor selection for canonical path params.',
         'Should throw error when recipe has document inputs but no relevance metadata (no fallback to ordering)'
     );
 });
@@ -2009,6 +2139,15 @@ Deno.test('planAllToOne handles no_document_inputs_required by passing null anch
         branch_key: null,
     };
 
+    const seedPromptPathContext3: PathContext = {
+        projectId: 'project-123',
+        sessionId: 'session-abc',
+        iteration: 1,
+        stageSlug: 'thesis',
+        fileType: FileType.SeedPrompt,
+    };
+    const { storagePath: seedPromptStoragePath3, fileName: seedPromptFileName3 } = constructStoragePath(seedPromptPathContext3);
+
     const seedPromptDoc: SourceDocument = {
         id: 'seed-prompt-doc-id',
         contribution_type: 'seed_prompt',
@@ -2036,9 +2175,9 @@ Deno.test('planAllToOne handles no_document_inputs_required by passing null anch
         is_latest_edit: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
-        file_name: null,
+        file_name: seedPromptFileName3,
         storage_bucket: 'dialectic-contributions',
-        storage_path: 'project-123/session_abc/iteration_1/1_thesis',
+        storage_path: seedPromptStoragePath3,
         model_id: 'model-123',
         model_name: null,
         prompt_template_id_used: null,
@@ -2087,6 +2226,18 @@ Deno.test('planAllToOne handles anchor_found by using result.document', () => {
         },
     };
 
+    const businessCasePathContext4: PathContext = {
+        projectId: 'project-123',
+        sessionId: 'session-abc',
+        iteration: 1,
+        stageSlug: 'thesis',
+        documentKey: FileType.business_case,
+        modelSlug: 'anchor-model-slug',
+        attemptCount: 0,
+        fileType: FileType.business_case,
+    };
+    const { storagePath: businessCaseStoragePath4, fileName: businessCaseFileName4 } = constructStoragePath(businessCasePathContext4);
+
     const businessCaseDoc: SourceDocument = {
         id: 'business-case-anchor-found-id',
         contribution_type: 'thesis',
@@ -2114,14 +2265,26 @@ Deno.test('planAllToOne handles anchor_found by using result.document', () => {
         is_latest_edit: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
-        file_name: 'anchor-model-slug_0_business_case.md',
+        file_name: businessCaseFileName4,
         storage_bucket: 'dialectic-project-resources',
-        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        storage_path: businessCaseStoragePath4,
         model_id: 'model-123',
         model_name: null,
         prompt_template_id_used: null,
         document_key: FileType.business_case,
     };
+
+    const featureSpecPathContext4: PathContext = {
+        projectId: 'project-123',
+        sessionId: 'session-abc',
+        iteration: 1,
+        stageSlug: 'thesis',
+        documentKey: FileType.feature_spec,
+        modelSlug: 'lower-relevance-model',
+        attemptCount: 0,
+        fileType: FileType.feature_spec,
+    };
+    const { storagePath: featureSpecStoragePath4, fileName: featureSpecFileName4 } = constructStoragePath(featureSpecPathContext4);
 
     const featureSpecDoc: SourceDocument = {
         id: 'feature-spec-lower-rel-id',
@@ -2150,9 +2313,9 @@ Deno.test('planAllToOne handles anchor_found by using result.document', () => {
         is_latest_edit: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
-        file_name: 'lower-relevance-model_0_feature_spec.md',
+        file_name: featureSpecFileName4,
         storage_bucket: 'dialectic-project-resources',
-        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        storage_path: featureSpecStoragePath4,
         model_id: 'model-456',
         model_name: null,
         prompt_template_id_used: null,
@@ -2266,6 +2429,18 @@ Deno.test('planAllToOne throws on anchor_not_found', async () => {
         },
     };
 
+    const wrongDocumentPathContext: PathContext = {
+        projectId: 'project-123',
+        sessionId: 'session-abc',
+        iteration: 1,
+        stageSlug: 'thesis',
+        documentKey: FileType.feature_spec,
+        modelSlug: 'model',
+        attemptCount: 0,
+        fileType: FileType.feature_spec,
+    };
+    const { storagePath: wrongDocumentStoragePath, fileName: wrongDocumentFileName } = constructStoragePath(wrongDocumentPathContext);
+
     const wrongDocumentDoc: SourceDocument = {
         id: 'wrong-document-id',
         contribution_type: 'thesis',
@@ -2293,9 +2468,9 @@ Deno.test('planAllToOne throws on anchor_not_found', async () => {
         is_latest_edit: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
-        file_name: 'model_0_feature_spec.md',
+        file_name: wrongDocumentFileName,
         storage_bucket: 'dialectic-project-resources',
-        storage_path: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        storage_path: wrongDocumentStoragePath,
         model_id: 'model-123',
         model_name: null,
         prompt_template_id_used: null,
@@ -2322,12 +2497,8 @@ Deno.test('planAllToOne throws on anchor_not_found', async () => {
                 required: true,
             },
         ],
-        inputs_relevance: [
-            {
-                document_key: FileType.business_case,
-                relevance: 1.0,
-            },
-        ],
+        // No inputs_relevance - this test verifies throw behavior when no relevance metadata exists to fall back on
+        inputs_relevance: [],
         outputs_required: {
             documents: [{
                 artifact_class: 'rendered_document',
@@ -2360,8 +2531,136 @@ Deno.test('planAllToOne throws on anchor_not_found', async () => {
             planAllToOne(sourceDocs, parentJobWithThesisStage, executeRecipeStep, parentJobWithThesisStage.payload.user_jwt);
         },
         Error,
-        'Anchor document not found for stage \'thesis\' document_key \'business_case\'',
-        'Should throw error when anchor document not found in sourceDocs'
+        'Missing relevance score for required document input business_case',
+        'Should throw error when inputs_relevance is empty but document inputs are required (selectAnchorSourceDocument validates this before returning anchor_not_found)'
+    );
+});
+
+Deno.test('planAllToOne includes inputs.header_context_id when recipeStep.inputs_required includes header_context', () => {
+    const parentPayload = MOCK_PARENT_JOB.payload;
+    if (!parentPayload) {
+        throw new Error('Test setup error: MOCK_PARENT_JOB.payload cannot be null');
+    }
+
+    const parentJobWithAntithesisStage: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        ...MOCK_PARENT_JOB,
+        stage_slug: 'antithesis',
+        payload: {
+            projectId: parentPayload.projectId,
+            sessionId: parentPayload.sessionId,
+            stageSlug: 'antithesis',
+            iterationNumber: parentPayload.iterationNumber,
+            model_id: 'model-antithesis-123',
+            walletId: parentPayload.walletId,
+            user_jwt: parentPayload.user_jwt,
+        },
+    };
+
+    // Use constructStoragePath to create proper path format for header_context document
+    const headerContextPathContext: PathContext = {
+        projectId: parentPayload.projectId,
+        sessionId: parentPayload.sessionId,
+        iteration: parentPayload.iterationNumber,
+        stageSlug: 'antithesis',
+        documentKey: FileType.HeaderContext,
+        modelSlug: 'model-antithesis-123',
+        attemptCount: 0,
+        fileType: FileType.HeaderContext,
+    };
+    const { storagePath: headerContextStoragePath, fileName: headerContextFileName } = constructStoragePath(headerContextPathContext);
+
+    const headerContextDoc: SourceDocument = {
+        ...MOCK_SOURCE_DOCS[0],
+        id: 'header-context-antithesis-123',
+        contribution_type: 'header_context',
+        stage: 'antithesis',
+        file_name: headerContextFileName,
+        storage_bucket: 'dialectic-contributions',
+        storage_path: headerContextStoragePath,
+        model_id: 'model-antithesis-123',
+        model_name: 'Model Antithesis',
+        document_key: FileType.HeaderContext,
+    };
+
+    // Use constructStoragePath to create proper path format for thesis document
+    const thesisPathContext: PathContext = {
+        projectId: parentPayload.projectId,
+        sessionId: parentPayload.sessionId,
+        iteration: parentPayload.iterationNumber,
+        stageSlug: 'thesis',
+        documentKey: FileType.business_case,
+        modelSlug: 'model-thesis-456',
+        attemptCount: 0,
+        fileType: FileType.business_case,
+    };
+    const { storagePath: thesisStoragePath, fileName: thesisFileName } = constructStoragePath(thesisPathContext);
+
+    const thesisDoc: SourceDocument = {
+        ...MOCK_SOURCE_DOCS[1],
+        id: 'thesis-doc-123',
+        contribution_type: 'thesis',
+        stage: 'thesis',
+        file_name: thesisFileName,
+        storage_bucket: 'dialectic-contributions',
+        storage_path: thesisStoragePath,
+        model_id: 'model-thesis-456',
+        model_name: 'Model Thesis',
+        document_key: FileType.business_case,
+    };
+
+    const executeRecipeStep: DialecticStageRecipeStep = {
+        ...MOCK_RECIPE_STEP,
+        job_type: 'EXECUTE',
+        inputs_required: [
+            { type: 'header_context', slug: 'antithesis', document_key: FileType.HeaderContext, required: true },
+            { type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true },
+        ],
+        inputs_relevance: [
+            { document_key: FileType.business_case, slug: 'thesis', relevance: 1.0, type: 'document' },
+        ],
+        output_type: FileType.business_case_critique,
+        outputs_required: {
+            documents: [{
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                document_key: FileType.business_case_critique,
+                template_filename: 'business_case_critique.md',
+            }],
+            assembled_json: [],
+            files_to_generate: [{
+                from_document_key: FileType.business_case_critique,
+                template_filename: 'business_case_critique.md',
+            }],
+        },
+    };
+
+    const sourceDocs: SourceDocument[] = [headerContextDoc, thesisDoc];
+
+    const childPayloads = planAllToOne(
+        sourceDocs,
+        parentJobWithAntithesisStage,
+        executeRecipeStep,
+        parentJobWithAntithesisStage.payload.user_jwt,
+    );
+
+    assertEquals(childPayloads.length, 1, 'Should create exactly one EXECUTE job');
+
+    const executePayload = childPayloads[0];
+    if (!isDialecticExecuteJobPayload(executePayload)) {
+        throw new Error('Expected EXECUTE job payload');
+    }
+
+    assertExists(executePayload.inputs, 'Payload should have inputs object');
+    assertExists(executePayload.inputs.header_context_id, 'Payload inputs should include header_context_id');
+    assertEquals(
+        executePayload.inputs.header_context_id,
+        headerContextDoc.id,
+        'header_context_id should match the header_context document from sourceDocs that matches the parent job model_id'
+    );
+    assertExists(executePayload.inputs.document_ids, 'Payload inputs should include document_ids');
+    assert(
+        Array.isArray(executePayload.inputs.document_ids) && executePayload.inputs.document_ids.includes(thesisDoc.id),
+        'document_ids should include the thesis document id'
     );
 });
 

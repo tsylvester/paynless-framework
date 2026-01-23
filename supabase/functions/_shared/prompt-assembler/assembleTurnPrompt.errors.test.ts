@@ -1887,4 +1887,217 @@ Deno.test("assembleTurnPrompt", async (t) => {
     }
   });
 
+  await t.step("should NOT require header_context_id when recipe step inputs_required does not include header_context (using real synthesis_document_business_case step)", async () => {
+    // Build a recipe step that matches the real synthesis_document_business_case step from migrations
+    // This step does NOT require header_context - it only requires synthesis_pairwise_business_case documents
+    const recipeStepWithoutHeaderContext: DialecticStageRecipeStep = buildRecipeStep({
+      step_key: "synthesis_document_business_case",
+      step_slug: "synthesis-document-business-case",
+      step_name: "Synthesize Business Case Across Models",
+      step_description: "Synthesize the final business case from pairwise outputs.",
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      output_type: FileType.AssembledDocumentJson,
+      granularity_strategy: "all_to_one",
+      inputs_required: [
+        {
+          type: "document",
+          slug: "synthesis",
+          document_key: FileType.synthesis_pairwise_business_case,
+          required: true,
+          multiple: true,
+        },
+      ],
+      inputs_relevance: [
+        { document_key: FileType.synthesis_pairwise_business_case, slug: "synthesis", relevance: 1.0 },
+      ],
+      outputs_required: {
+        documents: [
+          {
+            document_key: FileType.synthesis_document_business_case,
+            template_filename: "synthesis_document_business_case.json",
+            artifact_class: "assembled_json",
+            file_type: "json",
+            content_to_include: {
+              executive_summary: "",
+              user_problem_validation: "",
+              market_opportunity: "",
+            },
+          },
+        ],
+        files_to_generate: [
+          {
+            template_filename: "synthesis_document_business_case.json",
+            from_document_key: FileType.synthesis_document_business_case,
+          },
+        ],
+      },
+      prompt_template_id: "pt-turn-synthesis_document_business_case",
+      branch_key: FileType.synthesis_document_business_case,
+    });
+
+    const stageWithoutHeaderContextRequirement: StageContext = {
+      ...defaultStage,
+      recipe_step: recipeStepWithoutHeaderContext,
+    };
+
+    // Create a job payload WITHOUT header_context_id
+    const jobWithoutHeaderContext: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        job_type: "EXECUTE",
+        model_id: "model-123",
+        model_slug: "test-model",
+        projectId: defaultProject.id,
+        sessionId: defaultSession.id,
+        stageSlug: defaultStage.slug,
+        iterationNumber: 1,
+        walletId: "wallet-123",
+        inputs: {
+          document_ids: ["doc-1", "doc-2"],
+          // NO header_context_id - this should be OK because the recipe step doesn't require it
+        },
+        document_key: FileType.synthesis_document_business_case,
+        document_specific_data: {},
+      },
+    };
+
+    // Mock the system_prompts and document_templates queries
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          },
+        },
+        system_prompts: {
+          select: async (state: MockQueryBuilderState) => {
+            const idFilter = state.filters.find((f) =>
+              f.type === "eq" && f.column === "id" && typeof f.value === "string"
+            );
+            if (idFilter && typeof idFilter.value === "string" && idFilter.value === "pt-turn-synthesis_document_business_case") {
+              return {
+                data: [{
+                  id: "pt-turn-synthesis_document_business_case",
+                  document_template_id: "doc-template-turn-synthesis_document_business_case",
+                }],
+                error: null,
+                count: 1,
+                status: 200,
+                statusText: "OK",
+              };
+            }
+            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+          },
+        },
+        dialectic_document_templates: {
+          select: async (state: MockQueryBuilderState) => {
+            const idFilter = state.filters.find((f) =>
+              f.type === "eq" && f.column === "id" && typeof f.value === "string"
+            );
+            if (idFilter && typeof idFilter.value === "string" && idFilter.value === "doc-template-turn-synthesis_document_business_case") {
+              return {
+                data: [{
+                  id: "doc-template-turn-synthesis_document_business_case",
+                  domain_id: "domain-123",
+                  name: "synthesis_document_business_case_turn_v1",
+                  description: "Template for synthesis document business case",
+                  file_name: "synthesis_document_business_case_turn_v1.md",
+                  storage_bucket: TEMPLATE_STORAGE_BUCKET,
+                  storage_path: PROMPT_STORAGE_PATH,
+                  is_active: true,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                }],
+                error: null,
+                count: 1,
+                status: 200,
+                statusText: "OK",
+              };
+            }
+            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+          },
+        },
+      },
+    };
+    const { client } = setup(config);
+
+    // Mock downloadFromStorage to return template content (but NOT header_context since it's not required)
+    const mockDownloadFromStorage = async (_supabase: unknown, bucket: string, path: string): Promise<DownloadStorageResult> => {
+      // This step doesn't require header_context, so we should only get template download requests
+      const fullPromptPath = `${PROMPT_STORAGE_PATH}/synthesis_document_business_case_turn_v1.md`;
+      if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
+        const content = "# Template Content\n\nThis is the template.";
+        const blob = new Blob([content], { type: "text/markdown" });
+        return { data: await blob.arrayBuffer(), error: null };
+      }
+      return { data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) };
+    };
+
+    // Configure mockFileManager to return a successful response
+    const mockFileRecord: FileRecord = {
+      id: "mock-contribution-id",
+      session_id: defaultSession.id,
+      stage: defaultStage.slug,
+      storage_bucket: "dialectic_contributions",
+      storage_path: "mock/path",
+      mime_type: "text/markdown",
+      iteration_number: 1,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      edit_version: 1,
+      is_latest_edit: true,
+      // All nullable fields
+      citations: null,
+      contribution_type: "turn_prompt",
+      document_relationships: null,
+      error: null,
+      file_name: "turn_prompt.md",
+      model_id: "model-123",
+      model_name: "Test Model",
+      original_model_contribution_id: null,
+      processing_time_ms: null,
+      prompt_template_id_used: null,
+      raw_response_storage_path: null,
+      seed_prompt_url: null,
+      size_bytes: 100,
+      source_prompt_resource_id: null,
+      target_contribution_id: null,
+      tokens_used_input: null,
+      tokens_used_output: null,
+      user_id: defaultProject.user_id,
+      is_header: false,
+    } as FileRecord;
+    mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    try {
+      // This should NOT throw an error about missing header_context_id
+      // because the recipe step does not require it
+      const deps: AssembleTurnPromptDeps = {
+        dbClient: client,
+        gatherContext: mockGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
+        job: jobWithoutHeaderContext,
+        project: defaultProject,
+        session: defaultSession,
+        stage: stageWithoutHeaderContextRequirement,
+      };
+      
+      // This should succeed - assembleTurnPrompt should NOT require header_context_id
+      // when the recipe step doesn't require it
+      const result = await assembleTurnPrompt(deps, params);
+      
+      assert(result, "assembleTurnPrompt should succeed without header_context_id when recipe step doesn't require it");
+      assert(result.promptContent, "assembleTurnPrompt should return prompt content");
+    } finally {
+      teardown();
+    }
+  });
+
 });

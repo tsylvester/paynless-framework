@@ -1245,9 +1245,48 @@ export async function executeModelCallAndSave(
     // Extract source_group fragment for filename disambiguation
     // Fragment is extracted from document_relationships.source_group UUID (first 8 chars after hyphen removal)
     // source_group is required for document outputs to enable filename disambiguation
+    // Exception: consolidation jobs (per_model granularity) use source_group = null to signal new lineage root
     const sourceGroup = job.payload.document_relationships?.source_group ?? undefined;
+    const sourceGroupIsNull = job.payload.document_relationships?.source_group === null;
+    
     if (isDocumentRelated(fileType) && !sourceGroup) {
-        throw new Error('source_group is required for document outputs');
+        // Check if this is a consolidation job (per_model granularity) that allows source_group = null
+        if (sourceGroupIsNull && job.payload.planner_metadata?.recipe_step_id) {
+            const recipeStepId = job.payload.planner_metadata.recipe_step_id;
+            
+            // Look up the recipe step to check granularity_strategy
+            // Try dialectic_stage_recipe_steps first (cloned instances)
+            let recipeStep: unknown = null;
+            const { data: clonedStep, error: clonedError } = await dbClient
+                .from('dialectic_stage_recipe_steps')
+                .select('granularity_strategy')
+                .eq('id', recipeStepId)
+                .maybeSingle();
+            
+            if (!clonedError && clonedStep && isRecord(clonedStep)) {
+                recipeStep = clonedStep;
+            } else {
+                // Try dialectic_recipe_template_steps (template instances)
+                const { data: templateStep, error: templateError } = await dbClient
+                    .from('dialectic_recipe_template_steps')
+                    .select('granularity_strategy')
+                    .eq('id', recipeStepId)
+                    .maybeSingle();
+                
+                if (!templateError && templateStep && isRecord(templateStep)) {
+                    recipeStep = templateStep;
+                }
+            }
+            
+            // If recipe step found and granularity_strategy is 'per_model', allow null source_group
+            if (recipeStep && isRecord(recipeStep) && typeof recipeStep.granularity_strategy === 'string' && recipeStep.granularity_strategy === 'per_model') {
+                // Consolidation job: source_group = null is allowed, will be set to self.id after save
+            } else {
+                throw new Error('source_group is required for document outputs');
+            }
+        } else {
+            throw new Error('source_group is required for document outputs');
+        }
     }
     const sourceGroupFragment = extractSourceGroupFragment(sourceGroup);
 
@@ -1371,6 +1410,13 @@ export async function executeModelCallAndSave(
                         }
                     }
                 }
+            }
+            
+            // For consolidation jobs (per_model granularity), if source_group was null in payload, set it to self.id
+            const payloadSourceGroup = job.payload.document_relationships?.source_group;
+            if (payloadSourceGroup === null) {
+                // Consolidation job: set source_group to contribution's own ID (new lineage root)
+                merged.source_group = contribution.id;
             }
             
             // Validate stageSlug is a valid ContributionType, then set it

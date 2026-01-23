@@ -61,7 +61,7 @@ export async function startSession(
     // If a stageSlug is provided, use it. Otherwise, find the template's entry point.
     let initialStageId: string | undefined;
     let initialStageName: string | undefined;
-    let defaultSystemPrompt: { id: string, prompt_text: string } | undefined;
+    let defaultSystemPrompt: { id: string, prompt_text: string | null } | undefined;
 
     if (payload.stageSlug) {
         log.info(`[startSession] Attempting to find initial stage using provided slug: '${payload.stageSlug}'`);

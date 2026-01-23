@@ -253,56 +253,34 @@ export async function renderDocument(
           throw new Error(`JSON content field is missing for contribution ${chunk.id} (path: ${rawJsonPath})`);
         }
         const extractedContent = parsed.content;
-        if (typeof extractedContent !== 'string') {
-          throw new Error(`JSON content field is not a string for contribution ${chunk.id} (path: ${rawJsonPath}), received type: ${typeof extractedContent}`);
+
+        // Content must be an object with keys matching template placeholders
+        // Structure from prompt templates: { "content": { "market_opportunity": "...", ... } }
+        if (!isRecord(extractedContent)) {
+          throw new Error(`JSON content field must be an object for contribution ${chunk.id} (path: ${rawJsonPath}), received type: ${typeof extractedContent}`);
         }
-        
-        // Parse the content JSON string to get structured data
-        try {
-          const structuredData = JSON.parse(extractedContent);
-          if (typeof structuredData === 'object' && structuredData !== null && !Array.isArray(structuredData)) {
-            // Merge structured data from this chunk into the merged data
-            // For string values, concatenate them to preserve order from multiple chunks
-            // For other types, later chunks override earlier chunks
-            for (const key in structuredData) {
-              if (Object.prototype.hasOwnProperty.call(structuredData, key)) {
-                const value = structuredData[key];
-                if (typeof value === 'string' && key in mergedStructuredData && typeof mergedStructuredData[key] === 'string') {
-                  // Concatenate string values to preserve order
-                  mergedStructuredData[key] = (mergedStructuredData[key]) + '\n\n' + value;
-                } else {
-                  // Override for non-strings or new keys
-                  mergedStructuredData[key] = value;
-                }
-              }
+
+        const structuredData = extractedContent;
+
+        // Merge structured data from this chunk into the merged data
+        // For string values, concatenate them to preserve order from multiple chunks
+        for (const key in structuredData) {
+          if (Object.prototype.hasOwnProperty.call(structuredData, key)) {
+            const value = structuredData[key];
+            if (typeof value === 'string' && key in mergedStructuredData && typeof mergedStructuredData[key] === 'string') {
+              // Concatenate string values to preserve order
+              mergedStructuredData[key] = (mergedStructuredData[key]) + '\n\n' + value;
+            } else {
+              // New keys are added
+              mergedStructuredData[key] = value;
             }
-            deps.logger?.info?.('[renderDocument] Parsed JSON and extracted structured data', { 
-              chunkId: chunk.id, 
-              rawJsonPath, 
-              dataKeys: Object.keys(structuredData),
-              extractedContentLength: extractedContent.length 
-            });
-          } else {
-            // If content is not a structured object, treat it as plain text
-            // Append to _extra_content section if it exists in template, otherwise store as _raw_content
-            const extraContentKey = '_extra_content';
-            if (!mergedStructuredData[extraContentKey]) {
-              mergedStructuredData[extraContentKey] = [];
-            }
-            const contentArray = Array.isArray(mergedStructuredData[extraContentKey]) ? mergedStructuredData[extraContentKey] : [];
-            contentArray.push(extractedContent.replace(/\\n/g, '\n'));
-            mergedStructuredData[extraContentKey] = contentArray;
           }
-        } catch (parseError) {
-          // If content is not valid JSON, treat it as plain text
-          const extraContentKey = '_extra_content';
-          if (!mergedStructuredData[extraContentKey]) {
-            mergedStructuredData[extraContentKey] = [];
-          }
-          const contentArray = Array.isArray(mergedStructuredData[extraContentKey]) ? mergedStructuredData[extraContentKey] : [];
-          contentArray.push(extractedContent.replace(/\\n/g, '\n'));
-          mergedStructuredData[extraContentKey] = contentArray;
         }
+        deps.logger?.info?.('[renderDocument] Extracted structured data from content object', {
+          chunkId: chunk.id,
+          rawJsonPath,
+          dataKeys: Object.keys(structuredData),
+        });
       } catch (e) {
         if (e instanceof Error && e.message.includes('contribution')) {
           throw e;

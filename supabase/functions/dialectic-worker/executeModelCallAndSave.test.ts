@@ -30,13 +30,15 @@ import { isModelContributionContext } from '../_shared/utils/type-guards/type_gu
     PromptConstructionPayload,
     SourceDocument,
     DocumentRelationships,
+    UnifiedAIResponse,
   } from '../dialectic-service/dialectic.interface.ts';
 import { 
   FileType, 
   DialecticStageSlug 
 } from '../_shared/types/file_manager.types.ts';
-import { LogMetadata } from '../_shared/types.ts';
+import { LogMetadata, FinishReason } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
+import { isDocumentRelationships } from '../_shared/utils/type_guards.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
@@ -686,6 +688,154 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
     clearAllStubs?.();
 });
 
+Deno.test('executeModelCallAndSave - source_group validation is planner-aware: consolidation jobs (per_model) allow source_group = null', async () => {
+    // Consolidation jobs with per_model granularity strategy use source_group = null to signal creation of a new lineage root.
+    // The validation should check the recipe step's granularity_strategy and allow null for per_model jobs.
+
+    const mockStage = {
+        id: 'stage-1',
+        slug: 'synthesis',
+        display_name: 'Synthesis',
+        description: null,
+        default_system_prompt_id: null,
+        recipe_template_id: 'template-1',
+        active_recipe_instance_id: 'instance-1',
+        expected_output_template_ids: [],
+        created_at: new Date().toISOString(),
+    };
+
+    const mockInstance = {
+        id: 'instance-1',
+        stage_id: 'stage-1',
+        template_id: 'template-1',
+        is_cloned: false,
+        cloned_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    const mockRecipeStep = {
+        id: 'recipe-step-1',
+        template_id: 'template-1',
+        step_number: 3,
+        parallel_group: 3,
+        branch_key: 'synthesis_document_feature_spec',
+        step_key: 'synthesis_document_feature_spec',
+        step_slug: 'synthesis-document-feature-spec',
+        step_name: 'Synthesize Feature Spec Across Models',
+        step_description: 'Synthesize the final feature spec from pairwise outputs.',
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        prompt_template_id: 'prompt-template-1',
+        output_type: 'assembled_document_json',
+        granularity_strategy: 'per_model',
+        inputs_required: [],
+        inputs_relevance: [],
+        outputs_required: {
+            documents: [{
+                document_key: 'synthesis_document_feature_spec',
+                template_filename: 'synthesis_document_feature_spec.json',
+                artifact_class: 'assembled_json',
+                file_type: 'json',
+            }],
+            files_to_generate: [{
+                template_filename: 'synthesis_document_feature_spec.json',
+                from_document_key: 'synthesis_document_feature_spec',
+            }],
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        },
+        'dialectic_stages': {
+            select: { data: [mockStage], error: null }
+        },
+        'dialectic_stage_recipe_instances': {
+            select: { data: [mockInstance], error: null }
+        },
+        'dialectic_recipe_template_steps': {
+            select: { data: [mockRecipeStep], error: null }
+        },
+    });
+
+    const fileManager = new MockFileManagerService();
+    const savedContribution: DialecticContributionRow = {
+        ...mockContribution,
+        id: 'consolidation-contrib-1',
+    };
+    fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
+    const deps: IExecuteJobContext = getMockDeps({ fileManager });
+
+    const mockAiResponse: UnifiedAIResponse = {
+        content: '{"content": "consolidation document"}',
+        contentType: 'application/json',
+        inputTokens: 100,
+        outputTokens: 200,
+        processingTimeMs: 500,
+        rawProviderResponse: { finish_reason: 'stop' },
+        finish_reason: 'stop',
+    };
+
+    stub(deps, 'callUnifiedAIModel', () => Promise.resolve(mockAiResponse));
+
+    const consolidationPayload: DialecticExecuteJobPayload = {
+        ...testPayload,
+        output_type: FileType.AssembledDocumentJson,
+        document_key: 'synthesis_document_feature_spec',
+        stageSlug: 'synthesis',
+        document_relationships: {
+            source_group: null,
+        },
+        planner_metadata: {
+            recipe_step_id: 'recipe-step-1',
+        },
+    };
+
+    const params: ExecuteModelCallAndSaveParams = {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        deps,
+        authToken: 'auth-token',
+        job: createMockJob(consolidationPayload),
+        projectOwnerUserId: 'user-789',
+        providerDetails: mockProviderData,
+        promptConstructionPayload: {
+            systemInstruction: 'System instruction',
+            conversationHistory: [],
+            resourceDocuments: [],
+            currentUserPrompt: 'User prompt',
+        },
+        sessionData: mockSessionData,
+        compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
+    };
+
+    await executeModelCallAndSave(params);
+
+    assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'FileManager.uploadAndRegisterFile should be called');
+    
+    const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+    assert(isModelContributionContext(uploadContext));
+    assertExists(uploadContext.contributionMetadata, "Contribution metadata should exist");
+    
+    const docRelationships = uploadContext.contributionMetadata.document_relationships;
+    assert(
+        isDocumentRelationships(docRelationships),
+        "document_relationships should be a valid DocumentRelationships object"
+    );
+    // Consolidation jobs with per_model granularity strategy have source_group = null in the payload.
+    assertEquals(
+        docRelationships.source_group, 
+        null, 
+        "source_group should be null for consolidation jobs with per_model granularity strategy"
+    );
+
+    clearAllStubs?.();
+});
+
 Deno.test('executeModelCallAndSave - Document Relationships - should pass document_relationships to the fileManager', async () => {
     const { client: dbClient, spies, clearAllStubs } = setupMockClient({
         'ai_providers': {
@@ -882,6 +1032,8 @@ Deno.test('executeModelCallAndSave - includes rendered template as first user me
 });
 
 Deno.test('executeModelCallAndSave - emits document_completed when finish_reason is stop', async () => {
+  resetMockNotificationService();
+  
   const { client: dbClient, clearAllStubs } = setupMockClient({
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
   });
@@ -889,14 +1041,16 @@ Deno.test('executeModelCallAndSave - emits document_completed when finish_reason
   const deps = getMockDeps();
 
   // Stub call to return finish_reason: stop
-  const callUnifiedAISpy = stub(deps, 'callUnifiedAIModel', async () => ({
+  const mockAiResponse: UnifiedAIResponse = {
     content: '{"ok": true}',
     contentType: 'application/json',
     inputTokens: 10,
     outputTokens: 5,
     processingTimeMs: 50,
+    finish_reason: 'stop',
     rawProviderResponse: { finish_reason: 'stop' },
-  }));
+  };
+  const callUnifiedAISpy = stub(deps, 'callUnifiedAIModel', () => Promise.resolve(mockAiResponse));
 
   // Use a document file type with document_key
   const documentPayload: DialecticExecuteJobPayload = {

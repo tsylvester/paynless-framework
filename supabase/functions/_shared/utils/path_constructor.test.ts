@@ -1150,6 +1150,25 @@ Deno.test('constructStoragePath', async (t) => {
       assertEquals(storagePath, expectedPath);
       assertEquals(fileName, expectedFileName);
     });
+    
+    await t.step('constructs path for AssembledDocumentJson with synthesis_pairwise documentKey uses pairwise pattern', () => {
+      const pairwiseAssembledContext: PathContext = {
+        ...baseContext,
+        fileType: FileType.AssembledDocumentJson,
+        stageSlug: 'synthesis',
+        sourceAnchorType: 'thesis',
+        sourceAnchorModelSlug: 'claude-3-opus',
+        pairedModelSlug: 'gemini-1.5-pro',
+        attemptCount: 0,
+        documentKey: 'synthesis_pairwise_technical_approach',
+      };
+      const { storagePath, fileName } = constructStoragePath(pairwiseAssembledContext);
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/assembled_json`;
+      // Should match PairwiseSynthesisChunk pattern: ${modelSlug}_synthesizing_${sourceAnchorModelSlug}_with_${pairedModelSlug}_on_${sourceAnchorType}_${attemptCount}_${documentKey}_assembled.json
+      const expectedFileName = `${modelSlug}_synthesizing_claude-3-opus_with_gemini-1.5-pro_on_thesis_0_synthesis_pairwise_technical_approach_assembled.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+    });
 
     await t.step('constructs path for RenderedDocument', () => {
       const { storagePath, fileName } = constructStoragePath({ ...docContext, fileType: FileType.RenderedDocument });

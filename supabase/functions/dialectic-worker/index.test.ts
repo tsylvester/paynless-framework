@@ -9,7 +9,7 @@ import {
     Database, 
     Json 
 } from '../types_db.ts';
-import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
+import { createMockSupabaseClient, type MockQueryBuilderState } from '../_shared/supabase.mock.ts';
 import { 
     handleJob, 
     createDialecticWorkerDeps 
@@ -909,4 +909,239 @@ Deno.test('handleJob - RENDER routes via provided processors and propagates args
 Deno.test('createDialecticWorkerDeps: returns IJobContext including findSourceDocuments', async () => {
     const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
     assertEquals(typeof Reflect.get(deps, 'findSourceDocuments'), 'function');
+});
+
+Deno.test('handleJob - prevents concurrent processing of the same job atomically', async () => {
+    // Arrange: Create a job that will be processed concurrently
+    // This test proves the race condition flaw: the check-then-update pattern is not atomic
+    const concurrentJobId = 'job-concurrent-race';
+    const mockJobConcurrent: MockJob = {
+        id: concurrentJobId,
+        user_id: 'user-id',
+        session_id: 'session-id',
+        stage_slug: 'thesis',
+        payload: {
+            job_type: 'PLAN',
+            sessionId: 'session-id',
+            projectId: 'project-id',
+            stageSlug: 'thesis',
+            model_id: 'model-id',
+            continueUntilComplete: false,
+            user_jwt: 'jwt.token.here',
+        },
+        iteration_number: 1,
+        status: 'pending_next_step',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'PLAN',
+    };
+
+    // Track database state to simulate race condition
+    // Both concurrent calls will see the same initial state before either updates
+    let currentJobStatus = 'pending_next_step';
+    const updateAttempts: Array<{ statusAtAttempt: string; succeeded: boolean }> = [];
+    const statusUpdates: string[] = [];
+
+    // Create a mock that simulates the atomic update behavior
+    // The atomic update pattern checks and updates in a single operation
+    const mockSupabaseConcurrent = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': {
+                update: async (state: MockQueryBuilderState) => {
+                    // Record the status at the time of this update attempt
+                    const statusAtAttempt = currentJobStatus;
+                    
+                    // Extract status from update payload to check if this is a status update attempt
+                    let newStatus: string | undefined;
+                    let isProcessingUpdate = false;
+                    if (state.updateData && typeof state.updateData === 'object' && 'status' in state.updateData) {
+                        const statusValue = state.updateData.status;
+                        if (typeof statusValue === 'string') {
+                            newStatus = statusValue;
+                            isProcessingUpdate = statusValue === 'processing';
+                        }
+                    }
+                    
+                    // Check if there's a .neq('status', 'processing') filter
+                    // This simulates the atomic update behavior where the update only succeeds if status is NOT 'processing'
+                    const neqFilter = state.filters?.find(f => f.column === 'status' && f.type === 'neq' && f.value === 'processing');
+                    
+                    // If this is an attempt to update to 'processing', record it
+                    if (isProcessingUpdate) {
+                        // If status is already 'processing' and there's a neq filter, the update should fail (no rows matched)
+                        // This is the atomic check: the database won't update rows where status = 'processing' when we use .neq('status', 'processing')
+                        if (neqFilter && currentJobStatus === 'processing') {
+                            // Atomic update failed: status is already 'processing', so .neq() prevents update
+                            // Record the failed attempt
+                            updateAttempts.push({ statusAtAttempt, succeeded: false });
+                            // Return null data with error to indicate no rows were updated
+                            return Promise.resolve({
+                                data: null,
+                                error: { name: 'PostgresError', message: 'Query returned no rows', code: 'PGRST116' },
+                                count: 0,
+                                status: 406,
+                                statusText: 'OK',
+                            });
+                        }
+                        
+                        // Record the successful attempt (will succeed since we passed the check above)
+                        updateAttempts.push({ statusAtAttempt, succeeded: true });
+                        if (newStatus) {
+                            statusUpdates.push(newStatus);
+                            // Simulate the update happening atomically
+                            // This happens AFTER the check, so the second concurrent call will see 'processing'
+                            currentJobStatus = newStatus;
+                        }
+                    }
+                    
+                    const updateResult: Record<string, unknown> = { id: concurrentJobId };
+                    if (state.updateData && typeof state.updateData === 'object') {
+                        Object.assign(updateResult, state.updateData);
+                    }
+                    
+                    return Promise.resolve({
+                        data: [updateResult],
+                        error: null,
+                        count: 1,
+                        status: 200,
+                        statusText: 'OK',
+                    });
+                },
+            },
+            'dialectic_stages': {
+                select: {
+                    data: [{
+                        id: 1,
+                        slug: 'thesis',
+                        name: 'Thesis',
+                        display_name: 'Thesis',
+                        input_artifact_rules: {
+                            steps: [{
+                                step: 1,
+                                prompt_template_name: 'test-prompt',
+                                granularity_strategy: 'full_text',
+                                output_type: 'test-output',
+                                inputs_required: [],
+                            }],
+                            sources: [],
+                        },
+                    }],
+                    error: null,
+                },
+            },
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        id: 'session-id',
+                        project_id: 'project-id',
+                        associated_chat_id: null,
+                    }],
+                    error: null,
+                },
+            },
+        },
+        rpcResults: {
+            'create_notification_for_user': { data: null, error: null },
+        },
+    });
+
+    const { processors } = createMockJobProcessors();
+    processors.processComplexJob = async (dbClient, job) => {
+        await (dbClient as unknown as SupabaseClient<Database>)
+            .from('dialectic_generation_jobs')
+            .update({ status: 'completed', completed_at: new Date().toISOString() })
+            .eq('id', job.id);
+    };
+
+    const testDepsConcurrent = createJobContext(createMockJobContextParams({
+        ...createMockJobContextParams(),
+        logger: mockLogger,
+        fileManager: new MockFileManagerService(),
+        notificationService: new NotificationService(mockSupabaseConcurrent.client as unknown as SupabaseClient<Database>),
+    }));
+
+    // Act: Make two concurrent calls to handleJob with the same job
+    // Both will check status, both will see 'pending_next_step', both will try to update
+    const call1 = handleJob(
+        mockSupabaseConcurrent.client as unknown as SupabaseClient<Database>,
+        mockJobConcurrent,
+        testDepsConcurrent,
+        'mock-token',
+        processors,
+    );
+
+    const call2 = handleJob(
+        mockSupabaseConcurrent.client as unknown as SupabaseClient<Database>,
+        mockJobConcurrent,
+        testDepsConcurrent,
+        'mock-token',
+        processors,
+    );
+
+    const results = await Promise.allSettled([call1, call2]);
+
+    // Assert: The desired behavior is that concurrent processing is prevented atomically
+    // Only one call should successfully update the job to 'processing'
+    // The second call should be prevented from processing (either by failing the check or by atomic update)
+    
+    // Count how many calls successfully updated to 'processing'
+    const processingUpdates = statusUpdates.filter(s => s === 'processing');
+    
+    // Assert: Exactly one update to 'processing' should occur (atomic behavior)
+    // This proves the atomic update pattern works: only one call can successfully update
+    assertEquals(
+        processingUpdates.length,
+        1,
+        'Only one concurrent call should successfully update job status to "processing". The atomic update pattern prevents both calls from updating concurrently.'
+    );
+
+    // Assert: Both calls attempted the atomic update (proving both tried to process)
+    assertEquals(
+        updateAttempts.length,
+        2,
+        'Both concurrent calls should have attempted the atomic update, demonstrating that both tried to process the same job.'
+    );
+
+    // Assert: First attempt saw 'pending_next_step' and succeeded (proving the race condition window)
+    const firstAttempt = updateAttempts[0];
+    assertEquals(
+        firstAttempt?.statusAtAttempt,
+        'pending_next_step',
+        'The first concurrent call should have seen "pending_next_step" status when attempting the update, proving the race condition window exists.'
+    );
+    assertEquals(
+        firstAttempt?.succeeded,
+        true,
+        'The first concurrent call should succeed in updating the status to "processing".'
+    );
+
+    // Assert: Second attempt saw 'processing' and failed (proving atomic protection)
+    const secondAttempt = updateAttempts[1];
+    assertEquals(
+        secondAttempt?.statusAtAttempt,
+        'processing',
+        'The second concurrent call should have seen "processing" status (updated by the first call), proving the atomic update prevented concurrent processing.'
+    );
+    assertEquals(
+        secondAttempt?.succeeded,
+        false,
+        'The second concurrent call should fail because the atomic update pattern prevents it when status is already "processing".'
+    );
+
+    // Assert: Only one update attempt succeeded
+    const successfulAttempts = updateAttempts.filter(a => a.succeeded);
+    assertEquals(
+        successfulAttempts.length,
+        1,
+        'Only one update attempt should succeed. The atomic update pattern ensures the second call fails when status is already "processing".'
+    );
 });

@@ -266,6 +266,10 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
           const partialContent = "This is the partial markdown content.";
 
+          // Access storage spy before the call so it tracks calls correctly
+          const downloadSpy =
+            mockSupabaseSetup!.spies.storage.from(HEADER_CONTEXT_STORAGE_BUCKET).downloadSpy;
+
           try {
         // 2. Execute:
         //    - Call assembleContinuationPrompt with the mock 'Turn' job and a partial markdown string.
@@ -293,8 +297,6 @@ Deno.test("assembleContinuationPrompt", async (t) => {
 
         // 3. Assert:
         //    - Verify the storage download was called for the header context contribution.
-            const downloadSpy =
-              mockSupabaseSetup!.spies.storage.from(HEADER_CONTEXT_STORAGE_BUCKET).downloadSpy;
             assertSpyCall(downloadSpy, 0);
             assertEquals(downloadSpy.calls[0].args[0], fullHeaderPath);
 
@@ -2049,6 +2051,10 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
           const partialContent = "This is the partial markdown content.";
 
+          // Access storage spy before the call so it tracks calls correctly
+          const downloadSpy =
+            mockSupabaseSetup!.spies.storage.from(HEADER_CONTEXT_STORAGE_BUCKET).downloadSpy;
+
           try {
             const result = await assembleContinuationPrompt({
               dbClient: client,
@@ -2072,8 +2078,6 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               }}),
             });
 
-            const downloadSpy =
-              mockSupabaseSetup!.spies.storage.from(HEADER_CONTEXT_STORAGE_BUCKET).downloadSpy;
             assertSpyCall(downloadSpy, 0);
             assertEquals(downloadSpy.calls[0].args[0], fullHeaderPath);
 
@@ -2320,6 +2324,10 @@ Deno.test("assembleContinuationPrompt", async (t) => {
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
           const partialContent = "This is the partial markdown content.";
 
+          // Access storage spy before the call so it tracks calls correctly
+          const downloadSpy =
+            mockSupabaseSetup!.spies.storage.from(CUSTOM_BUCKET).downloadSpy;
+
           try {
             const result = await assembleContinuationPrompt({
               dbClient: client,
@@ -2343,8 +2351,6 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               }}),
             });
 
-            const downloadSpy =
-              mockSupabaseSetup!.spies.storage.from(CUSTOM_BUCKET).downloadSpy;
             assertSpyCall(downloadSpy, 0);
             assertEquals(downloadSpy.calls[0].args[0], fullHeaderPath);
 

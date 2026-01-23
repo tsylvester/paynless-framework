@@ -289,7 +289,7 @@ Deno.test("assembleSeedPrompt", async (t) => {
           user_objective: "Test Project Objective",
           domain: "Software Development Domain",
           context_description: "This is the initial user prompt content.",
-          original_user_request: "",
+          original_user_request: "This is the initial user prompt content.",
           recipeStep: defaultStage.recipe_step,
           sourceDocuments: [],
         };

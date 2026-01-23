@@ -819,6 +819,19 @@ Deno.test('[path_deconstructor] inverse C->D - document-centric artifacts', asyn
       checkFields: ['fileTypeGuess', 'documentKey', 'modelSlug', 'attemptCount'],
     },
     {
+      name: 'AssembledDocumentJson with synthesis_pairwise documentKey uses pairwise pattern',
+      context: {
+        ...baseDocContext,
+        fileType: FileType.AssembledDocumentJson,
+        stageSlug: 'synthesis',
+        sourceAnchorType: 'thesis',
+        sourceAnchorModelSlug: 'claude-3-opus',
+        pairedModelSlug: 'gemini-1.5-pro',
+        documentKey: 'synthesis_pairwise_technical_approach',
+      },
+      checkFields: ['fileTypeGuess', 'documentKey', 'modelSlug', 'attemptCount', 'sourceAnchorModelSlug', 'pairedModelSlug', 'sourceAnchorType'],
+    },
+    {
       name: 'RenderedDocument',
       context: { ...baseDocContext, fileType: FileType.RenderedDocument },
       checkFields: ['fileTypeGuess', 'documentKey', 'modelSlug', 'attemptCount'],
@@ -862,6 +875,9 @@ Deno.test('[path_deconstructor] inverse C->D - document-centric artifacts', asyn
           case 'stepName':
           case 'isContinuation':
           case 'turnIndex':
+          case 'sourceAnchorModelSlug':
+          case 'pairedModelSlug':
+          case 'sourceAnchorType':
             expectedValue = tc.context[field];
             break;
           default:
