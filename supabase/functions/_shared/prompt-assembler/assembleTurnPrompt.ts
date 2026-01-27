@@ -5,7 +5,7 @@ import {
 } from "./prompt-assembler.interface.ts";
 import { isRecord } from "../utils/type_guards.ts";
 import { FileManagerResponse, FileType } from "../types/file_manager.types.ts";
-import { HeaderContext, OutputRule } from "../../dialectic-service/dialectic.interface.ts";
+import { ContentToInclude, HeaderContext, OutputRule } from "../../dialectic-service/dialectic.interface.ts";
 import { isHeaderContext, isContentToInclude, isOutputRule } from "../utils/type-guards/type_guards.dialectic.ts";
 import { Database } from "../../types_db.ts";
 import { gatherInputsForStage } from "./gatherInputsForStage.ts";
@@ -204,6 +204,7 @@ export async function assembleTurnPrompt(
 
   // Get alignment details from header_context (filled by PLAN job) - only if header_context is required
   let contextForDoc: { document_key: string; content_to_include: unknown } | undefined;
+  let validatedContentToInclude: ContentToInclude | undefined;
   if (requiresHeaderContext && headerContext) {
     if (!headerContext.context_for_documents || !Array.isArray(headerContext.context_for_documents) || headerContext.context_for_documents.length === 0) {
       throw new Error(
@@ -269,6 +270,8 @@ export async function assembleTurnPrompt(
         `content_to_include not filled in for document_key '${documentKey}' in header_context. The PLAN job must populate alignment details in context_for_documents before EXECUTE jobs can use them.`,
       );
     }
+    // Capture validated content for use in merge (TypeScript doesn't track narrowing across scopes)
+    validatedContentToInclude = contextForDoc.content_to_include;
   }
 
   // 5.b Resolve Turn prompt template via recipe_step.prompt_template_id (authoritative, no fallbacks)
@@ -379,15 +382,18 @@ export async function assembleTurnPrompt(
     session.iteration_count,
   );
 
-  // Merge header context data into dynamic context (only if header_context is required)
-  // Merge order: system_materials -> alignment -> document_specific_data
+  // Merge context for prompt rendering
+  // Merge order: dynamicContext -> content_to_include (alignment) -> documentSpecificData -> header_context
   // Note: user_domain_overlay_values is passed separately to deps.render for proper overlay layering
-  const mergedContext = {
+  // When requiresHeaderContext is true, validatedContentToInclude and headerContext are guaranteed by validation above
+  const baseContext = {
     ...dynamicContext,
-    ...(requiresHeaderContext && headerContext ? headerContext.system_materials : {}),
-    ...(requiresHeaderContext && contextForDoc && isContentToInclude(contextForDoc.content_to_include) ? contextForDoc.content_to_include : {}),
     ...documentSpecificData,
   };
+
+  const mergedContext = requiresHeaderContext
+    ? { ...baseContext, ...validatedContentToInclude, header_context: headerContext }
+    : baseContext;
 
   // Create stage with template content for deps.render
   const stageWithTemplate = {

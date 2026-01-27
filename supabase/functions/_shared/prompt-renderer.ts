@@ -10,6 +10,32 @@ function escapeRegExp(text: string): string {
 }
 
 /**
+ * Finds all code block ranges in the text.
+ * Returns an array of [start, end] tuples representing protected regions.
+ */
+function findCodeBlockRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  const codeBlockRegex = /```[\s\S]*?```/g;
+  let match;
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    ranges.push([match.index, match.index + match[0].length]);
+  }
+  return ranges;
+}
+
+/**
+ * Checks if a position is inside any of the protected code block ranges.
+ */
+function isInsideCodeBlock(position: number, ranges: Array<[number, number]>): boolean {
+  for (const [start, end] of ranges) {
+    if (position >= start && position < end) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Renders a prompt template by first merging overlay values and then substituting variables.
  *
  * Merge Logic:
@@ -67,11 +93,15 @@ export function renderPrompt(
   // This prevents cleanup from accidentally deleting lines where a substituted value
   // contains text that looks like a placeholder (e.g. {{template}} in a JSON object).
   
+  // Find code block ranges to protect from placeholder processing
+  const codeBlockRanges = findCodeBlockRanges(renderedText);
+  
   // We use new RegExp objects with 'g' flag for exec loops
   // Capture content inside braces non-greedily
   const doubleBraceScanRegex = /{{([\s\S]*?)}}/g;
   // Use lookarounds to ensure we don't match double braces as single braces
-  const singleBraceScanRegex = /(?<!{){(?!{)([\s\S]*?)(?<!})}(?!})/g;
+  // Also exclude {" which indicates JSON structure, not a placeholder
+  const singleBraceScanRegex = /(?<!{){(?!{)(?!")([\s\S]*?)(?<!})}(?!})/g;
   
   // We need to identify which placeholders in the text are NOT covered by mergedVariables.
   // Since keys in mergedVariables can have whitespace and be matched by regexes in step 5,
@@ -110,36 +140,44 @@ export function renderPrompt(
   const unknownSinglePlaceholders = new Set<string>();
 
   let match;
-  // Scan for double braces
+  // Scan for double braces, skip matches inside code blocks
   while ((match = doubleBraceScanRegex.exec(renderedText)) !== null) {
+      if (isInsideCodeBlock(match.index, codeBlockRanges)) continue;
       // match[1] is the content inside {{...}}
       if (!isKnownPlaceholder(match[1], true)) {
           unknownDoublePlaceholders.add(match[1]);
       }
   }
   
-  // Scan for single braces
+  // Scan for single braces, skip matches inside code blocks
   while ((match = singleBraceScanRegex.exec(renderedText)) !== null) {
+      if (isInsideCodeBlock(match.index, codeBlockRanges)) continue;
       // match[1] is the content inside {...}
       if (!isKnownPlaceholder(match[1], false)) {
           unknownSinglePlaceholders.add(match[1]);
       }
   }
   
-  // Remove lines for unknown double braces
+  // Remove lines for unknown double braces, but skip lines inside code blocks
   for (const tag of unknownDoublePlaceholders) {
       const escapedTag = escapeRegExp(tag);
       const dbLineRegex = new RegExp(`^.*{{${escapedTag}}}.*$\\n?`, "gm");
-      renderedText = renderedText.replace(dbLineRegex, '');
+      renderedText = renderedText.replace(dbLineRegex, (match, offset) => {
+          if (isInsideCodeBlock(offset, codeBlockRanges)) return match;
+          return '';
+      });
   }
 
-  // Remove lines for unknown single braces
+  // Remove lines for unknown single braces, but skip lines inside code blocks
   for (const tag of unknownSinglePlaceholders) {
       const escapedTag = escapeRegExp(tag);
       // We must match the tag exactly as it appeared in the text (including whitespace if any)
       // The tag variable holds the exact captured content.
       const sbLineRegex = new RegExp(`^.*{${escapedTag}}.*$\\n?`, "gm");
-      renderedText = renderedText.replace(sbLineRegex, '');
+      renderedText = renderedText.replace(sbLineRegex, (match, offset) => {
+          if (isInsideCodeBlock(offset, codeBlockRanges)) return match;
+          return '';
+      });
   }
 
   // 5. Substitute remaining variables in the processed text

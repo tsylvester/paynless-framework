@@ -2299,6 +2299,120 @@ Deno.test("assembleTurnPrompt", async (t) => {
     }
   });
 
+  await t.step("should include full header_context object in render context when requiresHeaderContext is true", async () => {
+    const mockFileRecord: FileRecord = {
+      id: "mock-turn-resource-id-header-context-object",
+      project_id: defaultProject.id,
+      file_name: "turn_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/turn_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock turn prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "turn_prompt",
+      source_contribution_id: null,
+      feedback_type: "test",
+      target_contribution_id: null,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          }
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
+      },
+      storageMock: {
+        downloadResult: (bucket, path) => {
+          const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+          if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
+            return Promise.resolve({ data: new Blob([JSON.stringify(headerContextContent)]), error: null });
+          }
+          const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+          if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
+            return Promise.resolve({ data: new Blob([documentTemplateContent]), error: null });
+          }
+          return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
+        },
+      }
+    };
+
+    const { client } = setup(config);
+    mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    // Create a render spy that captures the context and verifies header_context is present
+    const renderSpy = spy((_renderPromptFn: unknown, _stage: unknown, context: unknown, _overlay: unknown) => {
+      return "rendered turn prompt";
+    });
+
+    try {
+      const mockDownloadFromStorage = createConditionalDownloadMock();
+      const deps: AssembleTurnPromptDeps = {
+        dbClient: client,
+        gatherContext: mockGatherContext,
+        render: renderSpy,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
+        job: mockTurnJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+      };
+      await assembleTurnPrompt(deps, params);
+
+      // Verify render was called
+      assert(renderSpy.calls.length === 1, "render should be called once");
+      
+      // Get the context argument passed to render (3rd argument, index 2)
+      const renderCall = renderSpy.calls[0];
+      const contextArg = renderCall.args[2];
+      
+      if (!isRecord(contextArg)) {
+        throw new Error("render context must be a record");
+      }
+
+      // Assert that header_context is present as a full object
+      assert(
+        "header_context" in contextArg,
+        "renderContext must include 'header_context' as a named property for {{header_context}} substitution"
+      );
+
+      const headerContextInContext = contextArg.header_context;
+      if (!isRecord(headerContextInContext)) {
+        throw new Error("header_context in context must be an object");
+      }
+
+      // Verify the header_context object contains the expected structure
+      assert(
+        "system_materials" in headerContextInContext,
+        "header_context must include system_materials"
+      );
+      assert(
+        "header_context_artifact" in headerContextInContext,
+        "header_context must include header_context_artifact"
+      );
+      assert(
+        "context_for_documents" in headerContextInContext,
+        "header_context must include context_for_documents"
+      );
+    } finally {
+      teardown();
+    }
+  });
+
   await t.step(
     "should resolve the prompt template via recipe_step.prompt_template_id → system_prompts.document_template_id → dialectic_document_templates.id (no heuristic template lookup)",
     async () => {

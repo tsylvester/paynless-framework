@@ -369,4 +369,176 @@ End`;
     
     assertEquals(result.replace(/\n+/g, '\n').trim(), expectedOutput.replace(/\n+/g, '\n').trim());
   });
+
+  await t.step("should preserve JSON structure inside markdown code blocks", () => {
+    const basePromptText = `## HeaderContext Schema
+
+Generate a JSON object with this exact structure:
+
+\`\`\`json
+{
+  "system_materials": {
+    "executive_summary": "REQUIRED: Generate an outline",
+    "stage_rationale": "REQUIRED: Explain why"
+  },
+  "header_context_artifact": {
+    "type": "header_context",
+    "document_key": "header_context"
+  },
+  "context_for_documents": []
+}
+\`\`\`
+
+Begin your response with \`{\` immediately.`;
+
+    const renderContext = {
+      ...mockBaseRenderContext,
+    };
+
+    const result = renderPrompt(
+      basePromptText,
+      renderContext,
+      null,
+      null
+    );
+
+    // The JSON code block should be preserved intact
+    assertEquals(result.includes('"system_materials": {'), true, "system_materials key should be preserved");
+    assertEquals(result.includes('"executive_summary": "REQUIRED: Generate an outline"'), true, "executive_summary should be preserved");
+    assertEquals(result.includes('"header_context_artifact": {'), true, "header_context_artifact key should be preserved");
+    assertEquals(result.includes('"type": "header_context"'), true, "type field should be preserved");
+    assertEquals(result.includes('"context_for_documents": []'), true, "context_for_documents should be preserved");
+  });
+
+  await t.step("should preserve nested JSON objects inside code blocks", () => {
+    const jsonBlock = `\`\`\`json
+{
+  "outer": {
+    "inner": {
+      "deep": "value"
+    }
+  }
+}
+\`\`\``;
+
+    const basePromptText = `Instructions:
+
+${jsonBlock}
+
+End.`;
+
+    const renderContext = {
+      ...mockBaseRenderContext,
+    };
+
+    const result = renderPrompt(
+      basePromptText,
+      renderContext,
+      null,
+      null
+    );
+
+    // All nested structure should be preserved
+    assertEquals(result.includes('"outer": {'), true, "outer key should be preserved");
+    assertEquals(result.includes('"inner": {'), true, "inner key should be preserved");
+    assertEquals(result.includes('"deep": "value"'), true, "deep value should be preserved");
+  });
+
+  await t.step("should still substitute placeholders outside code blocks while preserving code blocks", () => {
+    const basePromptText = `User objective: {{user_objective}}
+
+\`\`\`json
+{
+  "schema_example": {
+    "field": "value"
+  }
+}
+\`\`\`
+
+Domain: {domain}`;
+
+    const renderContext = {
+      ...mockBaseRenderContext,
+      user_objective: "Build an app",
+      domain: "Software",
+    };
+
+    const result = renderPrompt(
+      basePromptText,
+      renderContext,
+      null,
+      null
+    );
+
+    // Placeholders outside code block should be substituted
+    assertEquals(result.includes("User objective: Build an app"), true, "user_objective should be substituted");
+    assertEquals(result.includes("Domain: Software"), true, "domain should be substituted");
+    
+    // JSON inside code block should be preserved
+    assertEquals(result.includes('"schema_example": {'), true, "JSON structure should be preserved");
+    assertEquals(result.includes('"field": "value"'), true, "JSON content should be preserved");
+  });
+
+  await t.step("should preserve JSON with nested arrays outside code blocks (feature_spec pattern)", () => {
+    // This is the exact pattern from thesis_feature_spec_turn_v1.md that was being stripped
+    // The }]}} ending pattern was triggering the single-brace regex incorrectly
+    const basePromptText = `Replace the placeholder value for each key of the JSON object below:
+
+{"content":{"features":[{"feature_name":"Provide the name of the feature.","feature_objective":"Describe the objective.","user_stories":["List each user story."],"acceptance_criteria":["List each criterion."],"dependencies":["List each dependency."],"success_metrics":["List each metric."]}]}}
+
+Return only the JSON object shown above.`;
+
+    const result = renderPrompt(
+      basePromptText,
+      mockBaseRenderContext,
+      null,
+      null
+    );
+
+    // The entire JSON template line must be preserved - this was the bug
+    assertEquals(
+      result.includes('{"content":{"features":[{"feature_name":"Provide the name of the feature."'),
+      true,
+      "JSON with nested arrays should NOT be stripped"
+    );
+    assertEquals(
+      result.includes('"user_stories":["List each user story."]'),
+      true,
+      "Nested arrays in JSON should be preserved"
+    );
+    assertEquals(
+      result.includes('}]}}'),
+      true,
+      "The }]}} ending pattern should be preserved"
+    );
+  });
+
+  await t.step("should preserve flat JSON outside code blocks (technical_approach pattern)", () => {
+    // This pattern from thesis_technical_approach_turn_v1.md was NOT being stripped
+    // Included as a control to ensure the fix doesn't break working patterns
+    const basePromptText = `Replace the placeholder value for each key of the JSON object below:
+
+{"content":{"architecture":"Describe the architecture.","components":"Detail the components.","data":"Explain data models.","deployment":"Outline deployment.","sequencing":"Provide sequencing.","risk_mitigation":"Summarize risks.","open_questions":"List questions."}}
+
+Return only the JSON object shown above.`;
+
+    const result = renderPrompt(
+      basePromptText,
+      mockBaseRenderContext,
+      null,
+      null
+    );
+
+    // The flat JSON template should remain preserved
+    assertEquals(
+      result.includes('{"content":{"architecture":"Describe the architecture."'),
+      true,
+      "Flat JSON should be preserved"
+    );
+    assertEquals(
+      result.includes('"open_questions":"List questions."}}'),
+      true,
+      "The }} ending pattern should be preserved"
+    );
+  });
 }); 
