@@ -66,54 +66,6 @@
     *   `[ ]` 31.h. `[COMMIT]` Provide a commit message for this change.
         *   `[ ]` 31.h.i. `fix(BE): Correct stage completion logic in processComplexJob`
 
-*   `[ ]` 32. **`[DB]` [REFACTOR] Implement a Unified, Recipe-Driven State Management Trigger**
-    *   `[ ]` 32.a. [DEPS] The system's state management will be consolidated into a single, unified state management trigger (`on_job_state_propagation`) that executes the function `manage_dialectic_state()`. This new function will manage state based on the stage's recipe, which defines a full Directed Acyclic Graph (DAG) of job dependencies via the `dialectic_stage_recipe_edges` table.
-        *   `[ ]` 32.a.i. **Architectural Note:** The existing `on_job_status_change` trigger and its `invoke_worker_on_status_change` function (asynchronous worker invocation) are a separate concern and will be preserved. The `manage_dialectic_state` function handles only synchronous, in-database state changes.
-    *   `[ ]` 32.b. [LOGIC] The `manage_dialectic_state()` function must be a comprehensive state machine, executing the following four parts sequentially:
-        *   `[ ]` 32.b.i. **Part 1: Immediate Parent Failure Propagation:** If the updated job (`NEW`) has a `parent_job_id` and has entered a terminal failure state (`failed` or `retry_loop_failed`), the function must immediately `UPDATE` the parent job's status to `failed`. This action must take precedence over all other logic.
-        *   `[ ]` 32.b.ii. **Part 2: Parent/Child Completion Orchestration:** If the updated job (`NEW`) has a `parent_job_id` and has entered a terminal state, the function must query for all its siblings. If all siblings are now in a terminal state, the function determines the parent's final status: if any sibling has failed, the parent is marked `failed`; if all siblings have `completed`, the parent is marked `completed`.
-        *   `[ ]` 32.b.iii. **Part 3: Job-to-Job State Propagation (DAG-Aware):** This part uses the recipe's `dialectic_stage_recipe_edges` table as the source of truth for the stage's DAG.
-            *   `[ ]` 32.b.iii.i. **Fan-out Failure Logic:** If any job enters a terminal failure state, the failure propagates through the entire downstream dependency chain. The function must find all jobs that depend on the failed job and mark them as `failed`.
-            *   `[ ]` 32.b.iii.ii. **Fan-in Success Logic:** When a job enters `completed` status, the function iterates through its dependent jobs. For each dependent job, it checks if *all* of its prerequisite jobs are `completed`. If so, its status is updated from `waiting_for_prerequisite` to `pending`.
-        *   `[ ]` 32.b.iv. **Part 4: Session-Level State Projection:** The function dynamically loads the active recipe for the stage and compares the set of completed jobs against the required steps to correctly update `dialectic_sessions.status` to `generating_[stage_slug]`, `[stage_slug]_generation_failed`, or `[stage_slug]_generation_complete`.
-    *   `[ ]` 32.c. [TEST-INT] The test suite `supabase/integration_tests/triggers/manage_dialectic_state.trigger.test.ts` must contain the following test cases to prove all functionality:
-        *   `[ ]` 32.c.i. **Test Case (Immediate Parent Failure):**
-            *   `[ ]` 32.c.i.i. **Arrange**: Create a `PLAN` job with several child `EXECUTE` jobs.
-            *   `[ ]` 32.c.i.ii. **Act**: `UPDATE` one of the child jobs to `failed`.
-            *   `[ ]` 32.c.i.iii. **Assert**: The trigger immediately marks the parent `PLAN` job as `failed`.
-        *   `[ ]` 32.c.ii. **Test Case (Parent/Child Completion - Success):**
-            *   `[ ]` 32.c.ii.i. **Arrange**: Create a `PLAN` job with two child `EXECUTE` jobs.
-            *   `[ ]` 32.c.ii.ii. **Act**: `UPDATE` the first child job to `completed`, then `UPDATE` the second child job to `completed`.
-            *   `[ ]` 32.c.ii.iii. **Assert**: After the first update, the parent `PLAN` job's status is unchanged. After the second update, the trigger automatically updates the parent `PLAN` job to `completed`.
-        *   `[ ]` 32.c.iii. **Test Case (Parent/Child Completion - Failure):**
-            *   `[ ]` 32.c.iii.i. **Arrange**: Create a `PLAN` job with two child `EXECUTE` jobs.
-            *   `[ ]` 32.c.iii.ii. **Act**: `UPDATE` the first child job to `completed`, then `UPDATE` the second child job to `failed`.
-            *   `[ ]` 32.c.iii.iii. **Assert**: After the second update, the trigger automatically updates the parent `PLAN` job to `failed`.
-        *   `[ ]` 32.c.iv. **Test Case (Full DAG Failure Propagation):**
-            *   `[ ]` 32.c.iv.i. **Arrange**: Set up jobs for a multi-step dependency chain (A -> B -> C).
-            *   `[ ]` 32.c.iv.ii. **Act**: `UPDATE` job A to `failed`.
-            *   `[ ]` 32.c.iv.iii. **Assert**: The trigger propagates failure, marking both job B and job C as `failed`.
-        *   `[ ]` 32.c.v. **Test Case (Handling `retry_loop_failed`):**
-            *   `[ ]` 32.c.v.i. **Arrange**: Create a `PLAN` job with a child `EXECUTE` job.
-            *   `[ ]` 32.c.v.ii. **Act**: `UPDATE` the child job to `retry_loop_failed`.
-            *   `[ ]` 32.c.v.iii. **Assert**: The trigger immediately marks the parent `PLAN` job as `failed`.
-        *   `[ ]` 32.c.vi. **Test Case (DAG Fan-in Success - Many-to-One):**
-            *   `[ ]` 32.c.vi.i. **Arrange**: Create a job C that depends on two prerequisite jobs (A and B).
-            *   `[ ]` 32.c.vi.ii. **Act**: `UPDATE` job A to `completed`.
-            *   `[ ]` 32.c.vi.iii. **Assert**: Job C remains `waiting_for_prerequisite`.
-            *   `[ ]` 32.c.vi.iv. **Act**: `UPDATE` job B to `completed`.
-            *   `[ ]` 32.c.vi.v. **Assert**: The trigger updates job C's status to `pending`.
-        *   `[ ]` 32.c.vii. **Test Case (Full Lifecycle and Session Completion):**
-            *   `[ ]` 32.c.vii.i. **Arrange**: Set up the full parent `PLAN` and child `EXECUTE` job structure for a stage.
-            *   `[ ]` 32.c.vii.ii. **Act**: Sequentially `UPDATE` all child `EXECUTE` jobs to `completed`.
-            *   `[ ]` 32.c.vii.iii. **Assert**: After the final child job is completed, the trigger first updates the parent `PLAN` job to `completed`. Subsequently, the trigger recognizes the stage is complete and updates the `dialectic_sessions.status` to `[stage_slug]_generation_complete`.
-    *   `[ ]` 32.d. [DB] The migration `<timestamp>_implement_unified_state_trigger.sql` will perform the following actions:
-        *   `[ ]` 32.d.i. Create the `manage_dialectic_state()` function containing all logic from 32.b.
-        *   `[ ]` 32.d.ii. Create the `on_job_state_propagation` trigger on `dialectic_generation_jobs` that executes the function.
-        *   `[ ]` 32.d.iii. `DROP` the obsolete triggers: `trigger_handle_job_completion_on_update` and `trigger_handle_job_completion_on_insert`.
-        *   `[ ]` 32.d.iv. `DROP` the obsolete function: `handle_job_completion()`.
-    *   `[ ]` 32.e. [CRITERIA] The system is fixed when the trigger correctly manages all parent/child relationships, all job-to-job dependencies according to the recipe's DAG, correctly propagates all terminal statuses, and the `dialectic_sessions.status` is accurately projected.
-
 *   `[ ]` 36. **`[BE]` Fix Try-Catch Swallowing Exceptions in executeModelCallAndSave RENDER Job Enqueueing**
     *   `[ ]` 36.a. `[DEPS]` The `executeModelCallAndSave` function in `supabase/functions/dialectic-worker/executeModelCallAndSave.ts` (lines 1328-1425) contains a try-catch block that swallows ALL exceptions during RENDER job enqueueing, preventing error propagation to the caller (`processSimpleJob`). The function has three distinct failure points: (Point A, line 1331) `shouldEnqueueRenderJob()` database queries can fail, (Point B, lines 1336-1396) payload validation throws for missing/invalid fields, and (Point C, lines 1410-1421) database insert can fail for RLS/FK violations. **CRITICAL UNDERSTANDING:** EXECUTE and RENDER jobs share the same recipe step which is already validated before EXECUTE job creation. Therefore, validation at lines 1336-1396 checks that OUR CODE correctly extracted/passed data from the already-valid recipe step (not validating the recipe step itself). The current error handling is inconsistent: validation logic (Point B) throws exceptions for code bugs but the try-catch at lines 1423-1425 catches them all and only logs, lines 1416-1421 check `renderInsertError` but only log without throwing, and the function continues to line 1427+ as if RENDER job succeeded, with no error propagation to `processSimpleJob` which expects exceptions per its try-catch at lines 302-309. The `Promise<void>` return type forces exception-based error handling, but swallowing exceptions breaks this contract—the caller assumes success when the promise resolves. This makes debugging impossible: EXECUTE jobs complete successfully while RENDER jobs silently fail to be created, and errors are logged but hidden from job status. The fix requires: (1) removing the try-catch at lines 1423-1425 that swallows all errors, (2) categorizing database insert errors at lines 1416-1421: throw immediately for programmer errors (FK violations, constraint violations), implement retry or throw for transient errors (connection timeouts), (3) keeping validation exactly where it is (lines 1336-1396) since it checks code correctness, not recipe validity, (4) letting validation exceptions propagate naturally—if validation fails, it's a code bug that should fail EXECUTE to force developer to fix.
     *   `[ ]` 36.b. `[TYPES]` No TypeScript type changes required. The function already returns `Promise<void>` and uses strict typing for `renderPayload` with `isDialecticRenderJobPayload()` and `isJson()` type guards. The fix is purely about restructuring error handling flow, not changing types.
@@ -178,73 +130,6 @@
         *   `[ ]` 37.f.iii. Assert: Rendered markdown file exists in storage with correct path
     *   `[ ]`   37.g. [CRITERIA] validatedDocumentKey is always correctly populated for document outputs, RENDER jobs are created with correct documentKey, no scope-related failures occur
     *   `[ ]`   37.h. [COMMIT] Fix validatedDocumentKey scope bug - use output_type instead of fileType
-
-*   `[ ]` 38. **[RESEARCH]** Design unified state management replacing handle_job_completion with manage_dialectic_state
-    *   `[ ]`   38.a. [DEPS] Map complete state machine and identify conflicts
-        *   `[ ]` 38.a.i. Current Triggers:
-            *   `on_job_state_propagation` (from 20251217224555_implement_unified_state_trigger.sql) - Fires on INSERT or UPDATE of status, calls `manage_dialectic_state()`
-            *   `on_job_status_change` (from 20251119160820_retrying_trigger.sql) - Fires on UPDATE to pending/retrying/pending_next_step/pending_continuation, calls `invoke_worker_on_status_change()`
-            *   `on_job_terminal_state` (dropped by 20251217224555) - Previously fired on terminal states, called `handle_job_completion()` (now dropped)
-        *   `[ ]` 38.a.ii. Current Functions:
-            *   `manage_dialectic_state()` - Part 1: DAG-based job-to-job propagation, Part 2: Session-level completion detection
-            *   `invoke_worker_on_status_change()` - HTTP POST to dialectic-worker when job reaches processable status
-            *   `handle_job_completion()` (NOT dropped, still exists!) - Manages parent_job_id and prerequisite_job_id relationships, counts siblings, excludes RENDER jobs
-        *   `[ ]` 38.a.iii. Application Functions:
-            *   `processComplexJob()` - Lines 183-382: Tracks in-progress jobs, completed source documents, determines ready steps, plans child jobs
-            *   `executeModelCallAndSave()` - Lines 1536-1544: Marks EXECUTE job as completed, updates attempt_count
-        *   `[ ]` 38.a.iv. **CONFLICT IDENTIFIED**: `manage_dialectic_state()` Part 1 (lines 36-97) handles DAG edges but ignores `parent_job_id` and `prerequisite_job_id`
-        *   `[ ]` 38.a.v. **CONFLICT IDENTIFIED**: `handle_job_completion()` lines 388-406 manages parent-child and sibling completion, but `manage_dialectic_state()` doesn't replicate this logic
-        *   `[ ]` 38.a.vi. **CONFLICT IDENTIFIED**: `processComplexJob()` lines 282-285 excludes steps with ONLY completed jobs from re-planning, but `manage_dialectic_state()` Part 2 (lines 110-116) counts DISTINCT step_slugs without checking for mixed states
-        *   `[ ]` 38.a.vii. **CONFLICT IDENTIFIED**: Step 32 migration drops `on_job_terminal_state` trigger but does NOT drop `handle_job_completion()` function - if trigger still exists from older migration, both triggers will fire
-        *   `[ ]` 38.a.viii. **STATE TABLE**: Draw a current state table and a target state table that describes every table, row, trigger, and state required for the state machine to operate, showing the required state management, and the existing state management to prove every gap in the current system. The diff between current and target proves the gap. 
-        *   `[ ]` 38.a.ix. **MERMAID DIAGRAM**: Draw a Mermaid diagram that graphs the flow and logic for all the state transitions, identifying the specific table, row, trigger, and conditions to change its state. 
-        *   `[ ]` 38.a.x. **TRIGGER STATE MAP**: Draw a Mermaid diagram that graphs the flow and logic for all the state transitions, identifying the specific table, row, trigger, and conditions to change its state. The state map will define the logic for a new trigger or set of triggers that ensure all states are reachable and have the required logic. 
-    *   `[ ]`   38.b. [TYPES] Define complete state transition table
-        *   `[ ]` 38.b.i. Research Task: Document ALL possible job status values and transitions
-        *   `[ ]` 38.b.ii. Research Task: Map which statuses require worker invocation vs. trigger-only state changes
-        *   `[ ]` 38.b.iii. Research Task: Define terminal states, in-progress states, waiting states
-        *   `[ ]` 38.b.iv. Research Task: Document relationship between job_type (PLAN/EXECUTE/RENDER) and status transitions
-        *   `[ ]` 38.b.v. Research Task: Define when parent jobs transition based on child completion
-        *   `[ ]` 38.b.vi. Research Task: Define when session status changes based on job completion
-    *   `[ ]`   38.c. [TYPES] Define step completion tracking requirements
-        *   `[ ]` 38.c.i. Problem: Recipe step may spawn N jobs (M models × P source documents × Q continuation chunks)
-        *   `[ ]` 38.c.ii. Problem: Counting DISTINCT step_slug with status='completed' doesn't account for partial completion (some jobs complete, others pending)
-        *   `[ ]` 38.c.iii. Problem: `processComplexJob` filters out steps with in-progress jobs (line 285), but trigger doesn't have this logic
-        *   `[ ]` 38.c.iv. Research Task: Should trigger count (completed_jobs_for_step / total_jobs_for_step) per step, or rely on application to mark steps complete?
-        *   `[ ]` 38.c.v. Research Task: Should we add `step_completion_status` table that `processComplexJob` updates, and trigger queries?
-        *   `[ ]` 38.c.vi. Research Task: How do RENDER jobs (which are side-effects) factor into step completion? Currently excluded by `handle_job_completion` line 362
-    *   `[ ]`   38.d. [RESEARCH] Investigate current production failures and looping
-        *   `[ ]` 38.d.i. Research Task: Query production logs for `[processComplexJob]` entries showing repeated planning for same step_slug
-        *   `[ ]` 38.d.ii. Research Task: Check if `completedStepSlugs.has(slug)` check (processComplexJob.ts:282) is preventing re-planning correctly
-        *   `[ ]` 38.d.iii. Research Task: Verify trigger query `SELECT count(DISTINCT step_slug) ... WHERE status = 'completed'` is counting correctly
-        *   `[ ]` 38.d.iv. Research Task: Check if session status is being set to `*_generation_complete` prematurely (trigger line 134)
-        *   `[ ]` 38.d.v. Research Task: Verify `v_required_steps_count` (line 105-108) matches actual recipe step requirements
-        *   `[ ]` 38.d.vi. Research Task: Check if in-progress RENDER jobs are preventing stage completion
-    *   `[ ]`   38.e. [RESEARCH] Design single source of truth for state management
-        *   `[ ]` 38.e.i. Option A: Triggers handle ALL state transitions, application functions are passive observers
-        *   `[ ]` 38.e.ii. Option B: Application functions handle state transitions, triggers only invoke worker
-        *   `[ ]` 38.e.iii. Option C: Hybrid - triggers handle prerequisite unblocking, application handles step/session completion
-        *   `[ ]` 38.e.iv. Research Task: Evaluate which option aligns with current architecture (job-driven vs. event-driven)
-        *   `[ ]` 38.e.v. Research Task: Consider transaction boundaries - can trigger and application update same job without conflicts?
-        *   `[ ]` 38.e.vi. Research Task: Consider testing complexity - triggers are harder to test than application functions
-    *   `[ ]`   38.f. [RESEARCH] Reconcile DAG edges with parent_job_id and prerequisite_job_id
-        *   `[ ]` 38.f.i. Research Task: Are DAG edges (dialectic_stage_recipe_edges) and parent_job_id representing the same relationships?
-        *   `[ ]` 38.f.ii. Research Task: When should prerequisite_job_id be used vs. DAG edge dependencies?
-        *   `[ ]` 38.f.iii. Research Task: Can we eliminate parent_job_id in favor of DAG edges, or do they serve different purposes?
-        *   `[ ]` 38.f.iv. Research Task: RENDER jobs have parent_job_id pointing to EXECUTE job - how does this fit into DAG model?
-        *   `[ ]` 38.f.v. Research Task: Continuation jobs have target_contribution_id - is this a prerequisite_job_id relationship?
-    *   `[ ]`   38.g. [CRITERIA] Complete state machine documented, conflicts identified, design decision made on single source of truth, integration plan created
-    *   `[ ]`   38.h. **[HOLD]** Cannot proceed to implementation until research complete and design approved
-
-*   `[ ]` 39. **[IMPLEMENTATION]** Implement unified state management solution
-    *   `[ ]`   39.a. [DEPS] **TO BE DEFINED** - Based on Step 35 research findings
-    *   `[ ]`   39.b. [TYPES] **TO BE DEFINED** - Based on Step 35 design decisions
-    *   `[ ]`   39.c. [TEST-UNIT] **TO BE DEFINED** - Based on Step 35 requirements
-    *   `[ ]`   39.d. [IMPLEMENTATION] **TO BE DEFINED** - Based on Step 35 approved design
-    *   `[ ]`   39.e. [TEST-UNIT] **TO BE DEFINED** - Based on Step 35 success criteria
-    *   `[ ]`   39.f. [TEST-INT] **TO BE DEFINED** - Based on Step 35 integration requirements
-    *   `[ ]`   39.g. [CRITERIA] **TO BE DEFINED** - Based on Step 35 acceptance criteria
-    *   `[ ]`   39.h. [COMMIT] **TO BE DEFINED** - Based on Step 35 scope
 
 *   `[✅]` 46. **`[TYPES]` Define Job Context Interfaces**
     *   `[✅]` 46.a. `[DEPS]` Base context interfaces are the foundation of the hierarchical context system. They represent minimal, composable units of dependencies that can be combined into larger contexts. These interfaces have zero dependencies and are pure type definitions, making them the lowest layer in the dependency graph. Each base context represents a single concern: logging, file operations, AI model calls, RAG operations, token wallet, or notifications. Higher-level composed contexts will extend these base interfaces to create function-specific dependency bundles. This step creates a single file `supabase/functions/dialectic-worker/JobContext.interface.ts` that defines all six base context interfaces.
@@ -1173,22 +1058,6 @@
     *   `[✅]` 66.e. `[LINT]` Run linter/SQL validator for the migration file and resolve any errors.
     *   `[✅]` 66.f. `[CRITERIA]` All requirements met: (1) When a root PLAN job (`parent_job_id IS NULL`, `job_type = 'PLAN'`) enters `completed` status, Part 3 checks if stage is complete, (2) Stage completion requires ALL root PLAN jobs to be `completed` (handles multi-PLAN stages like synthesis), (3) RENDER jobs are excluded from completion checks (never block progression), (4) Jobs in `waiting_for_prerequisite` status are excluded from completion checks, (5) Jobs in terminal failure states (`failed`, `retry_loop_failed`) do not trigger session advancement (stage failed, not complete), (6) Next stage is determined from `dialectic_stage_transitions` using `source_stage_id` and `process_template_id`, (7) Terminal stages (no next stage) set status to `iteration_complete_pending_review`, (8) Identifiers extracted from job table columns, not payload, (9) Row locking (`FOR UPDATE`) prevents race conditions, (10) All updates happen in same transaction (atomic), (11) All integration tests pass, (12) Migration is lint-clean.
     *   `[✅]` 66.g. `[COMMIT]` `fix(db): add session completion check (Part 3) to handle_job_completion`
-
-*   `[ ]` 67. **`[TEST-INT]` Prove Complete State Management Flow Works End-to-End**
-    *   `[ ]` 67.a. `[DEPS]` Steps 65 and 66 fix the individual functions. This step proves the complete state management flow works correctly from session creation through stage progression to iteration completion. The test exercises both triggers working together: `on_job_status_change` → `invoke_worker_on_status_change()` for `running_{stage}` and `on_job_terminal_state` → `handle_job_completion()` for stage completion.
-        *   `[ ]` 67.a.i. `invoke_worker_on_status_change()` sets `running_{stage}` when root PLAN job starts processing.
-        *   `[ ]` 67.a.ii. `handle_job_completion()` advances session to `pending_{next_stage}` when all root PLAN jobs complete.
-        *   `[ ]` 67.a.iii. Both functions use job table columns (`session_id`, `stage_slug`, `iteration_number`), not payload.
-    *   `[ ]` 67.b. `[TEST-INT]` In `supabase/integration_tests/triggers/state_management_flow.integration.test.ts` (new file), add comprehensive end-to-end tests:
-        *   `[ ]` 67.b.i. Add test "should progress session through complete thesis stage lifecycle: pending_thesis → running_thesis → pending_antithesis" that: (1) creates session with `status = 'pending_thesis'`, project with thesis→antithesis transition, (2) creates root PLAN job with `status = 'pending'`, (3) updates PLAN job to `status = 'processing'`, (4) asserts session status is `'running_thesis'`, (5) creates child EXECUTE jobs, marks them `completed`, (6) marks PLAN job as `completed`, (7) asserts session status is `'pending_antithesis'`. This proves both triggers work together.
-        *   `[ ]` 67.b.ii. Add test "should progress session through multi-stage flow: thesis → antithesis → synthesis" that: exercises the full transition chain, creating and completing PLAN jobs for each stage, asserting session status transitions correctly at each step.
-        *   `[ ]` 67.b.iii. Add test "should handle synthesis stage with multiple PLAN jobs correctly" that: (1) creates synthesis stage with two PLAN jobs (pairwise and final), (2) processes first PLAN job through lifecycle, (3) asserts session stays in `running_synthesis`, (4) processes second PLAN job through lifecycle, (5) asserts session advances to next stage.
-        *   `[ ]` 67.b.iv. Add test "should reach iteration_complete_pending_review after paralysis stage" that: (1) creates session at paralysis stage (terminal), (2) processes all paralysis jobs, (3) asserts session status is `'iteration_complete_pending_review'`.
-        *   `[ ]` 67.b.v. Add test "should handle failed PLAN job correctly (stage fails, no advancement)" that: (1) creates session with PLAN job, (2) marks PLAN job as `failed`, (3) asserts session status does NOT advance (stays at `running_{stage}`).
-        *   `[ ]` 67.b.vi. Add test "should handle retry_loop_failed PLAN job correctly (stage fails, no advancement)" that: same as 67.b.v but with `retry_loop_failed` status.
-        *   `[ ]` 67.b.vii. Add test "transaction safety: job status and session status updated atomically" that: verifies that when PLAN job is marked `completed`, both the job update and session status update succeed or fail together (no partial state).
-    *   `[ ]` 67.c. `[CRITERIA]` All requirements met: (1) Complete state management flow works from `pending_thesis` through to `iteration_complete_pending_review`, (2) Both triggers work together correctly, (3) Multi-PLAN stages handled correctly, (4) Terminal stages handled correctly, (5) Failed stages do not advance, (6) Transaction safety verified, (7) All integration tests pass.
-    *   `[ ]` 67.d. `[COMMIT]` `test(int): add comprehensive state management flow integration tests`
 
 *   `[✅]` 68. **`[BE]` Create extractSourceGroupFragment Helper Function** Extract and sanitize source_group UUID fragment for filename disambiguation
     *   `[✅]` 68.a. `[DEPS]` The `extractSourceGroupFragment` helper function is a pure utility function with no dependencies. It takes a UUID string (with or without hyphens) from `document_relationships.source_group` and extracts the first 8 characters after removing hyphens, converting to lowercase, for use in filename construction. This helper will be used by `path_constructor.ts`, `executeModelCallAndSave.ts`, and `document_renderer.ts` to ensure consistent fragment extraction. The function must handle undefined, null, and empty string inputs gracefully by returning undefined.

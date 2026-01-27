@@ -89,7 +89,7 @@ describe("executeModelCallAndSave Fragment Propagation Integration Tests (Step 7
     };
 
     const documentStub: Record<string, unknown> = {
-      content: `# ${outputType ?? "document"}\n\nThis is an integration test stub document body.`,
+      content: { content: `# ${outputType}\n\nThis is an integration test stub document body.` },
     };
 
     const shouldReturnHeaderContext =
