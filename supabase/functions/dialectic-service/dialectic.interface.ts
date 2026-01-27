@@ -729,6 +729,18 @@ export interface DialecticPlanJobPayload extends DialecticBaseJobPayload {
     context_for_documents?: ContextForDocument[];
 }
 
+export interface DialecticSkeletonJobPayload extends DialecticPlanJobPayload {
+    projectId: string;
+    sessionId: string;
+    model_id: string;
+    walletId: string;
+    user_jwt: string;
+    stageSlug: DialecticStage['slug'];
+    iterationNumber: number;
+    planner_metadata: DialecticStepPlannerMetadata;
+    step_info: Json;
+}
+
 /**
  * Defines the possible roles a related document can have in a relationship.
  * This extends the ContributionType to also include abstract roles.
@@ -777,7 +789,57 @@ export interface DialecticRenderJobPayload extends DialecticBaseJobPayload {
 export type DialecticJobPayload =
     | DialecticSimpleJobPayload // Assuming this exists for non-complex jobs
     | DialecticPlanJobPayload
+    | DialecticSkeletonJobPayload
     | DialecticExecuteJobPayload
+
+/**
+ * PathContext-inspired identity for required artifacts.
+ * Carries only what we reliably know at scheduling time (stable/idempotent).
+ * This is NOT the same as PathContext - PathContext includes fields like fileType/attemptCount
+ * for constructing concrete storage paths, while this is for artifact identification only.
+ */
+export interface RequiredArtifactIdentity {
+    projectId: string;
+    sessionId: string;
+    stageSlug: string;
+    iterationNumber: number;
+    model_id: string; 
+    documentKey: string; // FileType as string
+    branchKey?: string | null; // Optional for lineage disambiguation
+    parallelGroup?: number | null; // Optional for parallel branches
+    sourceGroupFragment?: string | null; // Optional for source group disambiguation
+}
+
+/**
+ * Dependencies for resolveNextBlocker function.
+ */
+export interface ResolveNextBlockerDeps {
+    dbClient: SupabaseClient<Database>;
+    logger: ILogger;
+    getRecipeStep?: (stepId: string) => Promise<DialecticRecipeStep | null>; // For PLAN job matching
+}
+
+/**
+ * Parameters for resolveNextBlocker function.
+ */
+export interface ResolveNextBlockerParams {
+    projectId: string;
+    sessionId: string;
+    stageSlug: string;
+    iterationNumber: number;
+    model_id: string;
+    requiredArtifactIdentity: RequiredArtifactIdentity;
+}
+
+/**
+ * Result from resolveNextBlocker function.
+ * Represents the job that will produce the required artifact.
+ */
+export interface ResolveNextBlockerResult {
+    id: string;
+    job_type: JobType;
+    status: string;
+}
 
 export interface PromptConstructionPayload {
   systemInstruction?: SystemInstruction;

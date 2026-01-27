@@ -628,7 +628,7 @@ describe('planComplexStage', () => {
         await assertRejects(
             () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, planCtx, mockRecipeStep, 'user-jwt-123'),
             Error,
-            "Required rendered document for input rule type 'document' with stage 'non_existent_type' and document_key 'unspecified' was not found in dialectic_project_resources"
+            "Required rendered document for input rule type 'document' with stage 'non_existent_type' and document_key 'undefined' was not found in dialectic_project_resources"
         );
     });
 

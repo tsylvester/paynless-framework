@@ -8,6 +8,7 @@ import {
     JobResultsWithModelProcessing,
     ModelProcessingResult,
     DialecticPlanJobPayload,
+    DialecticSkeletonJobPayload,
     DialecticExecuteJobPayload,
     DialecticRenderJobPayload,
     ContributionType,
@@ -1048,6 +1049,8 @@ export function isDialecticPlanJobPayload(payload: unknown): payload is Dialecti
     if (!('walletId' in payload) || typeof payload.walletId !== 'string') return false;
     if (!('user_jwt' in payload) || typeof payload.user_jwt !== 'string' || payload.user_jwt.length === 0) return false;
 
+    if ('planner_metadata' in payload) return false;
+
     // Validate optional fields
     if ('stageSlug' in payload && typeof payload.stageSlug !== 'string') return false;
     if ('iterationNumber' in payload && typeof payload.iterationNumber !== 'number') return false;
@@ -1059,6 +1062,26 @@ export function isDialecticPlanJobPayload(payload: unknown): payload is Dialecti
     if ('is_test_job' in payload && typeof payload.is_test_job !== 'boolean') return false;
     if ('sourceContributionId' in payload && payload.sourceContributionId !== null && typeof payload.sourceContributionId !== 'string') return false;
     if ('context_for_documents' in payload && payload.context_for_documents !== undefined && !isContextForDocumentArray(payload.context_for_documents)) return false;
+
+    return true;
+}
+
+export function isDialecticSkeletonJobPayload(payload: unknown): payload is DialecticSkeletonJobPayload {
+    if (!isRecord(payload)) return false;
+
+    if (!('projectId' in payload) || typeof payload.projectId !== 'string') return false;
+    if (!('sessionId' in payload) || typeof payload.sessionId !== 'string') return false;
+    if (!('model_id' in payload) || typeof payload.model_id !== 'string') return false;
+    if (!('walletId' in payload) || typeof payload.walletId !== 'string') return false;
+    if (!('user_jwt' in payload) || typeof payload.user_jwt !== 'string' || payload.user_jwt.length === 0) return false;
+    if (!('stageSlug' in payload) || typeof payload.stageSlug !== 'string') return false;
+    if (!('iterationNumber' in payload) || typeof payload.iterationNumber !== 'number') return false;
+
+    if (!('planner_metadata' in payload) || !isRecord(payload.planner_metadata)) return false;
+    if (!('recipe_step_id' in payload.planner_metadata) || typeof payload.planner_metadata.recipe_step_id !== 'string') return false;
+    if (payload.planner_metadata.recipe_step_id.trim().length === 0) return false;
+
+    if (!('step_info' in payload) || !isRecord(payload.step_info)) return false;
 
     return true;
 }

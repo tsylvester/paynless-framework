@@ -514,3 +514,77 @@ Deno.test('gatherArtifacts - continues to query contributions for intermediate a
     }
 });
 
+Deno.test('gatherArtifacts - skips optional document input when not found in resources', async () => {
+    const { client: dbClient, spies } = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'ai_providers': {
+                select: {
+                    data: [mockFullProviderData],
+                    error: null,
+                },
+            },
+            'dialectic_project_resources': {
+                select: () => {
+                    return Promise.resolve({ data: [], error: null });
+                },
+            },
+            'dialectic_contributions': {
+                select: () => {
+                    return Promise.resolve({ data: [], error: null });
+                },
+            },
+        },
+    });
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    const deps: IExecuteJobContext = getMockDeps({ fileManager, countTokens: countTokensTen });
+
+    const params: ExecuteModelCallAndSaveParams = {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        deps,
+        authToken: 'auth-token',
+        job: createMockJob({
+            ...testPayload,
+            stageSlug: 'parenthesis',
+        }),
+        projectOwnerUserId: 'user-789',
+        providerDetails: mockProviderData,
+        sessionData: {
+            id: 'session-456',
+            project_id: 'project-abc',
+            session_description: 'A mock session',
+            user_input_reference_url: null,
+            iteration_count: 1,
+            selected_model_ids: ['model-def'],
+            status: 'in-progress',
+            associated_chat_id: 'chat-789',
+            current_stage_id: 'stage-1',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        },
+        promptConstructionPayload: {
+            systemInstruction: undefined,
+            conversationHistory: [],
+            resourceDocuments: [],
+            currentUserPrompt: 'Test prompt',
+        },
+        compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
+        inputsRequired: [
+            {
+                type: 'document',
+                document_key: FileType.master_plan,
+                required: false,
+                slug: 'parenthesis',
+            },
+        ],
+    };
+
+    await executeModelCallAndSave(params);
+
+    const resourcesSpies = spies.getLatestQueryBuilderSpies('dialectic_project_resources');
+    assertExists(resourcesSpies?.select, 'Resources select should be called');
+    assert(resourcesSpies.select.calls.length > 0, 'Resources should be queried for optional document input');
+});
+

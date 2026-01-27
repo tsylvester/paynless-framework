@@ -313,15 +313,21 @@ export async function findSourceDocuments(
                 // Check if resources were found
                 if (resourceCandidates.length > 0) {
                     // Resources found: use them exclusively, skip contributions query
-                    console.log(`[findSourceDocuments] Found ${resourceCandidates.length} rendered document(s) in dialectic_project_resources for document_key '${rule.document_key || 'unspecified'}' and stage '${stageSlugCandidate}'. Using resources exclusively.`);
+                    console.log(`[findSourceDocuments] Found ${resourceCandidates.length} rendered document(s) in dialectic_project_resources for document_key '${rule.document_key}' and stage '${stageSlugCandidate}'. Using resources exclusively.`);
                     const dedupedResources = dedupeByFileName(resourceCandidates);
                     sourceRecords = selectRecordsForRule(dedupedResources, allowMultipleMatches, usedRecordKeys);
                 } else {
-                    // No resources found: throw error immediately (fail loud and hard - no fallbacks)
-                    console.log(`[findSourceDocuments] No rendered documents found in dialectic_project_resources for input rule type 'document' with stage '${stageSlugCandidate}' and document_key '${rule.document_key || 'unspecified'}'. This indicates the document was not rendered or the rendering step failed.`);
-                    throw new Error(
-                        `Required rendered document for input rule type 'document' with stage '${stageSlugCandidate}' and document_key '${rule.document_key || 'unspecified'}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`,
-                    );
+                    // No resources found: check if this input is optional
+                    if (rule.required === false) {
+                        console.log(`[findSourceDocuments] No rendered documents found for optional input rule type 'document' with stage '${stageSlugCandidate}' and document_key '${rule.document_key}'. Skipping optional input.`);
+                        // Optional input - skip without error
+                    } else {
+                        // Required input (default) - throw error immediately (fail loud and hard - no fallbacks)
+                        console.log(`[findSourceDocuments] No rendered documents found in dialectic_project_resources for input rule type 'document' with stage '${stageSlugCandidate}' and document_key '${rule.document_key}'. This indicates the document was not rendered or the rendering step failed.`);
+                        throw new Error(
+                            `Required rendered document for input rule type 'document' with stage '${stageSlugCandidate}' and document_key '${rule.document_key}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`,
+                        );
+                    }
                 }
                 break;
             }
@@ -404,22 +410,32 @@ export async function findSourceDocuments(
             }
             case 'seed_prompt':
             case 'project_resource': {
+                // NOTE: seed_prompt and project_resource types are user-provided inputs
+                // (initial prompt, reference documents) that exist at the project level.
+                // They should NOT be filtered by model_id, stage_slug, or iteration_number
+                // since they are project-wide constants available to all stages and iterations.
+                // This is intentionally different from 'rendered_document' type which IS
+                // filtered by those fields.
+                const hasDocumentKey = typeof rule.document_key === 'string' && rule.document_key.length > 0;
+                const isInitialUserPromptProjectResource =
+                    rule.type === 'project_resource' &&
+                    hasDocumentKey &&
+                    rule.document_key === 'initial_user_prompt';
+
+                const resourceTypeForQuery = isInitialUserPromptProjectResource
+                    ? 'initial_user_prompt'
+                    : rule.type;
+
                 let resourceQuery = dbClient.from('dialectic_project_resources')
                     .select('*')
                     .eq('project_id', projectId)
-                    .eq('resource_type', rule.type);
+                    .eq('resource_type', resourceTypeForQuery);
 
-                if (sessionId) {
-                    resourceQuery = resourceQuery.eq('session_id', sessionId);
-                }
+                // NOTE: Intentionally NOT filtering by session_id, stage_slug, model_id,
+                // or iteration_number for project_resource/seed_prompt types.
+                // These are project-wide resources accessible from any context.
 
-                if (shouldFilterByStage) {
-                    resourceQuery = resourceQuery.eq('stage_slug', stageSlugCandidate);
-                }
-
-                resourceQuery = resourceQuery.eq('iteration_number', normalizedIterationNumber);
-
-                if (rule.document_key) {
+                if (!isInitialUserPromptProjectResource && rule.document_key) {
                     const documentKey = rule.document_key;
                     resourceQuery = resourceQuery.ilike('file_name', `%${documentKey}%`);
                 }
@@ -434,7 +450,6 @@ export async function findSourceDocuments(
                 ensureRecordsHaveStorage(resourceRecordsRaw);
                 const resourceRecords = sortRecordsByRecency(resourceRecordsRaw);
                 const filteredResources = filterRecordsByDocumentKey(resourceRecords, rule.document_key);
-                const hasDocumentKey = typeof rule.document_key === 'string' && rule.document_key.length > 0;
                 const resourceCandidates = hasDocumentKey && filteredResources.length === 0
                     ? resourceRecords
                     : (filteredResources.length > 0 ? filteredResources : resourceRecords);

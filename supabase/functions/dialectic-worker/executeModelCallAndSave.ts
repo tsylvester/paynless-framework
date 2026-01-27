@@ -237,6 +237,7 @@ export async function executeModelCallAndSave(
             const rType = isRecord(ru) && typeof ru['type'] === 'string' ? ru['type'] : undefined; // 'document' | 'feedback'
             const rStage = isRecord(ru) && typeof ru['slug'] === 'string' ? ru['slug'] : undefined;
             const rKey = isRecord(ru) && typeof ru['document_key'] === 'string' ? ru['document_key'] : undefined;
+            const rRequired = isRecord(ru) && typeof ru['required'] === 'boolean' ? ru['required'] : true; // Default to required if not specified
             if (!rType || !rStage || !rKey) continue;
 
             try {
@@ -253,10 +254,18 @@ export async function executeModelCallAndSave(
                         .eq('resource_type', 'rendered_document');
                     if (error) {
                         deps.logger.error(`[gatherArtifacts] Error querying dialectic_project_resources for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`, { error });
+                        if (rRequired === false) {
+                            deps.logger.info(`[gatherArtifacts] Error querying optional document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'. Skipping optional input.`);
+                            continue;
+                        }
                         throw new Error(`Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`);
                     }
                     if (!Array.isArray(data) || data.length === 0) {
                         deps.logger.warn(`[gatherArtifacts] No resources found in dialectic_project_resources for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`);
+                        if (rRequired === false) {
+                            deps.logger.info(`[gatherArtifacts] No rendered documents found for optional input rule type 'document' with stage '${rStage}' and document_key '${rKey}'. Skipping optional input.`);
+                            continue;
+                        }
                         throw new Error(`Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`);
                     }
                     const filtered = (data).filter((row) => {
@@ -283,10 +292,18 @@ export async function executeModelCallAndSave(
                             gathered.push({ id, content, document_key: docKeyEff, stage_slug: stageSlugEff, type: 'document' });
                         } else {
                             deps.logger.warn(`[gatherArtifacts] Resource found but missing required fields: id='${id}', stageSlugEff='${stageSlugEff}', docKeyEff='${docKeyEff}'`);
+                            if (rRequired === false) {
+                                deps.logger.info(`[gatherArtifacts] Resource found but missing required fields for optional input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'. Skipping optional input.`);
+                                continue;
+                            }
                             throw new Error(`Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`);
                         }
                     } else {
                         deps.logger.warn(`[gatherArtifacts] No matching resource found after filtering for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`);
+                        if (rRequired === false) {
+                            deps.logger.info(`[gatherArtifacts] No matching resource found after filtering for optional input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'. Skipping optional input.`);
+                            continue;
+                        }
                         throw new Error(`Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`);
                     }
                 }

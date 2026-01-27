@@ -235,6 +235,22 @@ export const planPerModel: GranularityPlannerFn = (
 		}
 	}
 
+	// If this step requires a header_context input, ensure we can supply header_context_id in payload.inputs.
+	const requiresHeaderContext = Array.isArray(recipeStep.inputs_required)
+		&& recipeStep.inputs_required.some((rule) => rule?.type === 'header_context');
+	const headerContextId = requiresHeaderContext
+		? sourceDocs.find((d) => 
+			d.contribution_type === 'header_context' &&
+			d.model_id === modelId
+		)?.id
+		: undefined;
+	if (requiresHeaderContext && (typeof headerContextId !== 'string' || headerContextId.length === 0)) {
+		throw new Error('planPerModel requires a sourceDoc with contribution_type \'header_context\' and matching model_id when recipeStep.inputs_required includes header_context');
+	}
+	if (requiresHeaderContext && headerContextId) {
+		inputs.header_context_id = headerContextId;
+	}
+
 		// Extract and validate document_key
 		// Priority:
 		// 1. outputs_required.documents[0].document_key

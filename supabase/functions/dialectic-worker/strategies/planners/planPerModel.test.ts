@@ -1032,7 +1032,7 @@ Deno.test('planPerModel handles no_document_inputs_required by passing null anch
 	// Source document (header context document, not a document-type input)
 	const headerContextDoc: SourceDocument = {
 		id: 'header-context-doc-id',
-		contribution_type: 'thesis',
+		contribution_type: 'header_context',
 		content: '',
 		citations: [],
 		error: null,
@@ -1060,7 +1060,7 @@ Deno.test('planPerModel handles no_document_inputs_required by passing null anch
 		file_name: null,
 		storage_bucket: 'dialectic-contributions',
 		storage_path: 'project-123/session_abc/iteration_1/1_thesis',
-		model_id: 'model-123',
+		model_id: parentPayload.model_id,
 		model_name: null,
 		prompt_template_id_used: null,
 		document_key: FileType.HeaderContext,
@@ -1822,6 +1822,140 @@ Deno.test('planPerModel sets document_key from header_context_artifact for EXECU
 			job.document_key,
 			FileType.HeaderContext,
 			'document_key should be extracted from recipeStep.outputs_required.header_context_artifact.document_key',
+		);
+	} else {
+		throw new Error('Expected EXECUTE job');
+	}
+});
+
+Deno.test('planPerModel adds header_context_id to inputs when recipe step requires header_context', () => {
+	const headerContextDoc: SourceDocument = {
+		id: 'header-context-id-123',
+		contribution_type: 'header_context',
+		content: '',
+		citations: null,
+		error: null,
+		mime_type: 'application/json',
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		size_bytes: 0,
+		target_contribution_id: null,
+		seed_prompt_url: null,
+		is_header: false,
+		source_prompt_resource_id: null,
+		document_relationships: null,
+		attempt_count: 0,
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		stage: 'parenthesis',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		file_name: 'model-parent_0_header_context.json',
+		storage_bucket: 'dialectic-contributions',
+		storage_path: 'project-xyz/session_abc/iteration_1/4_parenthesis',
+		model_id: 'model-parent',
+		model_name: null,
+		prompt_template_id_used: null,
+		document_key: FileType.HeaderContext,
+	};
+
+	const documentDoc: SourceDocument = {
+		id: 'document-doc-1',
+		contribution_type: 'synthesis',
+		content: 'Document content',
+		citations: null,
+		error: null,
+		mime_type: 'text/markdown',
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		size_bytes: 0,
+		target_contribution_id: null,
+		seed_prompt_url: null,
+		is_header: false,
+		source_prompt_resource_id: null,
+		document_relationships: null,
+		attempt_count: 0,
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		stage: 'synthesis',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		file_name: 'model-parent_0_system_architecture.md',
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-xyz/session_abc/iteration_1/3_synthesis/documents',
+		model_id: 'model-parent',
+		model_name: null,
+		prompt_template_id_used: null,
+		document_key: FileType.system_architecture,
+	};
+
+	const sourceDocsWithHeaderContext: SourceDocument[] = [headerContextDoc, documentDoc];
+
+	const recipeStepRequiringHeaderContext: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
+		inputs_required: [
+			{
+				type: 'header_context',
+				slug: 'parenthesis',
+				document_key: FileType.HeaderContext,
+				required: true,
+			},
+			{
+				type: 'document',
+				slug: 'synthesis',
+				document_key: FileType.system_architecture,
+				required: true,
+			},
+		],
+		outputs_required: {
+			documents: [{
+				artifact_class: 'rendered_document',
+				file_type: 'markdown',
+				document_key: FileType.technical_requirements,
+				template_filename: 'technical_requirements.md',
+			}],
+			assembled_json: [],
+			files_to_generate: [{
+				from_document_key: FileType.technical_requirements,
+				template_filename: 'technical_requirements.md',
+			}],
+		},
+	};
+
+	const childJobs = planPerModel(
+		sourceDocsWithHeaderContext,
+		MOCK_PARENT_JOB,
+		recipeStepRequiringHeaderContext,
+		MOCK_PARENT_JOB.payload.user_jwt
+	);
+
+	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+	const job = childJobs[0];
+	assertExists(job, 'Child job should exist');
+	if (isDialecticExecuteJobPayload(job)) {
+		const executePayload: DialecticExecuteJobPayload = job;
+		assertExists(executePayload.inputs, 'EXECUTE job payload should include inputs');
+		assertExists(
+			executePayload.inputs.header_context_id,
+			'inputs should include header_context_id when recipe step requires header_context'
+		);
+		assertEquals(
+			executePayload.inputs.header_context_id,
+			'header-context-id-123',
+			'header_context_id should match the header_context document id with matching model_id'
 		);
 	} else {
 		throw new Error('Expected EXECUTE job');

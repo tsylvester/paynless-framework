@@ -16,6 +16,7 @@ import {
     isModelProcessingResult,
     validatePayload,
     isDialecticPlanJobPayload,
+    isDialecticSkeletonJobPayload,
     isDialecticExecuteJobPayload,
     isDialecticRenderJobPayload,
     isContinuablePayload,
@@ -77,6 +78,7 @@ import {
     AssembledJsonArtifact,
     EditedDocumentResource,
     DialecticPlanJobPayload,
+    DialecticSkeletonJobPayload,
     DialecticRenderJobPayload,
     SelectAnchorResult,
     SourceDocument,
@@ -1188,21 +1190,46 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
 Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
     await t.step('should return true for a valid plan job payload', () => {
         const payload: DialecticPlanJobPayload = {
-            user_jwt: 'test-jwt',
-            model_id: 'model-123',
+            // Properties from GenerateContributionsPayload
             sessionId: 'test-session',
             projectId: 'test-project',
-            walletId: 'wallet-abc',
             stageSlug: 'thesis',
             iterationNumber: 1,
+            walletId: 'wallet-abc',
             continueUntilComplete: true,
             maxRetries: 3,
             continuation_count: 1,
             target_contribution_id: 'target-id',
+            user_jwt: 'test-jwt',
             is_test_job: false,
+            model_slug: 'test-model-slug',
+
+            // Properties from DialecticBaseJobPayload
+            model_id: 'model-123',
             sourceContributionId: 'source-id',
+
+            // Properties from DialecticPlanJobPayload
+            context_for_documents: [{
+                document_key: FileType.business_case,
+                content_to_include: { "field1": "value1" }
+            }],
         };
         assert(isDialecticPlanJobPayload(payload));
+    });
+    await t.step('should return false when planner_metadata is present on plan job payload', () => {
+        const payload: Record<string, unknown> = {
+            sessionId: 'test-session',
+            projectId: 'test-project',
+            stageSlug: 'thesis',
+            iterationNumber: 1,
+            walletId: 'wallet-abc',
+            user_jwt: 'test-jwt',
+            model_id: 'model-123',
+            planner_metadata: {
+                recipe_step_id: 'step-123',
+            },
+        };
+        assert(!isDialecticPlanJobPayload(payload));
     });
     await t.step('should return true for a valid plan job payload with base payload fields including model_slug', () => {
         const payload: DialecticPlanJobPayload = {
@@ -1253,6 +1280,64 @@ Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
             user_jwt: '',
         };
         assert(!isDialecticPlanJobPayload(payload));
+    });
+});
+
+Deno.test('Type Guard: isDialecticSkeletonJobPayload', async (t) => {
+    await t.step('should return true when step_info is present and planner_metadata.recipe_step_id is a non-empty string', () => {
+        const payload: DialecticSkeletonJobPayload = {
+            projectId: 'test-project',
+            sessionId: 'test-session',
+            model_id: 'model-123',
+            walletId: 'wallet-abc',
+            user_jwt: 'test-jwt',
+            stageSlug: 'thesis',
+            iterationNumber: 1,
+            planner_metadata: {
+                recipe_step_id: 'step-123',
+            },
+            step_info: {
+                current_step: 1,
+                total_steps: 1,
+            },
+        };
+        assert(isDialecticSkeletonJobPayload(payload));
+    });
+
+    await t.step('should return false when step_info is missing', () => {
+        const payload: Record<string, unknown> = {
+            projectId: 'test-project',
+            sessionId: 'test-session',
+            model_id: 'model-123',
+            walletId: 'wallet-abc',
+            user_jwt: 'test-jwt',
+            stageSlug: 'thesis',
+            iterationNumber: 1,
+            planner_metadata: {
+                recipe_step_id: 'step-123',
+            },
+        };
+        assert(!isDialecticSkeletonJobPayload(payload));
+    });
+
+    await t.step('should return false when planner_metadata.recipe_step_id is an empty string', () => {
+        const payload: Record<string, unknown> = {
+            projectId: 'test-project',
+            sessionId: 'test-session',
+            model_id: 'model-123',
+            walletId: 'wallet-abc',
+            user_jwt: 'test-jwt',
+            stageSlug: 'thesis',
+            iterationNumber: 1,
+            planner_metadata: {
+                recipe_step_id: '',
+            },
+            step_info: {
+                current_step: 1,
+                total_steps: 1,
+            },
+        };
+        assert(!isDialecticSkeletonJobPayload(payload));
     });
 });
 

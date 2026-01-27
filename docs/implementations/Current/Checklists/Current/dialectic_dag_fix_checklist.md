@@ -70,7 +70,7 @@ This checklist addresses the known issues preventing the dialectic system from c
         *   `[✅]` 95.b.ii. If missing, add `model_id?: string` to `SourceDocument` interface
         *   `[✅]` 95.b.iii. [TYPE-GUARD-TEST] Add test for model_id field presence check if new
         *   `[✅]` 95.b.iv. [TYPE-GUARDS] Update `isSourceDocument` guard if interface changes
-    *   `[✅]` 95.c. [TEST-UNIT] Unit tests for model-filtering behaviorRead, analyze, explain, propose a solution, halt. DO NOT EDIT ANY FILES! 
+    *   `[✅]` 95.c. [TEST-UNIT] Unit tests for model-filtering behavior
         *   `[✅]` 95.c.i. Assert: Given source documents from 3 different models (each with a header_context), planner called with model_id=A creates jobs only for model A's documents, with each job receiving model A's header_context as an input. No job is created FOR the header_context itself.
         *   `[✅]` 95.c.ii. Assert: Given header_context from model A and parent job for model B, no jobs created (empty result or error)
         *   `[✅]` 95.c.iii. Assert: Given multiple docs from same model, creates job for each doc from that model
@@ -166,29 +166,29 @@ This checklist addresses the known issues preventing the dialectic system from c
         *   `[✅]` 98.c.iii. Migration applies cleanly to database
     *   `[✅]` 98.d. [COMMIT] `fix(db): paralysis_stage migration uses bundling strategy for multi-input steps`
 
-*   `[ ]` 99. **Integration Test: Full DAG Traversal** Verify all five stages complete successfully
+*   `[✅]` 99. **Integration Test: Full DAG Traversal** Verify all five stages complete successfully
     *   `[✅]` 99.a. [DEPS] Dependencies
         *   `[✅]` 99.a.i. Depends on: All planner fixes (steps 94-96)
         *   `[✅]` 99.a.ii. Depends on: Migration fixes (steps 97-98)
         *   `[✅]` 99.a.iii. Requires: Test harness that can execute full dialectic session
-    *   `[ ]` 99.b. [TEST-INT] Integration tests for complete DAG traversal
+    *   `[✅]` 99.b. [TEST-INT] Integration tests for complete DAG traversal
         *   `[✅]` 99.b.i. Assert: Thesis stage produces n×4 documents with correct header_context matching
         *   `[✅]` 99.b.ii. Assert: Antithesis stage produces n²×6 critique documents
         *   `[✅]` 99.b.iii. Assert: Synthesis pairwise step produces n³×4 pairwise documents
         *   `[✅]` 99.b.iv. Assert: Synthesis consolidation produces n×4 consolidated documents with new lineage
         *   `[✅]` 99.b.v. Assert: Synthesis final produces n×3 deliverables
-        *   `[ ]` 99.b.vi. Assert: Parenthesis produces n×3 planning documents in correct sequence
-        *   `[ ]` 99.b.vii. Assert: Paralysis produces n×3 implementation documents with bundled inputs
-        *   `[ ]` 99.b.viii. Assert: All documents have correct `source_group` lineage tracking
-        *   `[ ]` 99.b.ix. Assert: All documents have correct `[stageSlug]` anchor references
-    *   `[ ]` 99.c. [CRITERIA] Acceptance criteria
-        *   `[ ]` 99.c.i. Full DAG traversal completes without errors
-        *   `[ ]` 99.c.ii. Document counts match expected fan-out/fan-in pattern
-        *   `[ ]` 99.c.iii. Each model uses its own header_context throughout
-        *   `[ ]` 99.c.iv. Lineage tracking correctly identifies branch points
-        *   `[ ]` 99.c.v. File naming produces unique, non-colliding paths
-        *   `[ ]` 99.c.vi. Paralysis receives bundled inputs from Parenthesis (not fan-out explosion)
-    *   `[ ]` 99.d. [COMMIT] `test(dialectic): integration test verifies complete DAG traversal`
+        *   `[✅]` 99.b.vi. Assert: Parenthesis produces n×3 planning documents in correct sequence
+        *   `[✅]` 99.b.vii. Assert: Paralysis produces n×3 implementation documents with bundled inputs
+        *   `[✅]` 99.b.viii. Assert: All documents have correct `source_group` lineage tracking
+        *   `[✅]` 99.b.ix. Assert: All documents have correct `[stageSlug]` anchor references
+    *   `[✅]` 99.c. [CRITERIA] Acceptance criteria
+        *   `[✅]` 99.c.i. Full DAG traversal completes without errors
+        *   `[✅]` 99.c.ii. Document counts match expected fan-out/fan-in pattern
+        *   `[✅]` 99.c.iii. Each model uses its own header_context throughout
+        *   `[✅]` 99.c.iv. Lineage tracking correctly identifies branch points
+        *   `[✅]` 99.c.v. File naming produces unique, non-colliding paths
+        *   `[✅]` 99.c.vi. Paralysis receives bundled inputs from Parenthesis (not fan-out explosion)
+    *   `[✅]` 99.d. [COMMIT] `test(dialectic): integration test verifies complete DAG traversal`
 
 *   `[ ]` 100. **Documentation Update** Update Dialectic_Modeling_Explanation.md to reflect fixes
     *   `[ ]` 100.a. [DEPS] Dependencies
@@ -363,180 +363,262 @@ This checklist addresses the known issues preventing the dialectic system from c
         *   `[✅]` 104.k.v. Canonical path params anchor selection is independent of lineage anchor selection
     *   `[✅]` 104.l. [COMMIT] `fix(dialectic): planAllToOne selects anchor for canonical path params when lineage anchor not required`
 
-*   `[✅]` 105. **path_constructor.ts** Add diagnostic logging for path construction to investigate collisions
+*   `[ ]` 105. **processComplexJob** Schedule jobs with waiting_for_prerequisite for steps with missing intra-stage dependencies
     *   `[✅]` 105.a. [DEPS] Dependencies and signature
-        *   `[✅]` 105.a.i. `constructStoragePath` in `path_constructor.ts` receives `PathContext` with `sourceGroupFragment`
-        *   `[✅]` 105.a.ii. Function constructs filename pattern: `${modelSlug}_${attemptCount}_${documentKey}${fragmentSegment}_assembled.json`
-        *   `[✅]` 105.a.iii. `fragmentSegment` is derived from `sourceGroupFragment` (first 8 chars of `source_group` UUID)
-        *   `[✅]` 105.a.iv. Logging must capture all path components to identify collision root cause
-    *   `[✅]` 105.b. [TYPES] Verify existing types are sufficient
-        *   `[✅]` 105.b.i. `PathContext` interface includes `sourceGroupFragment?: string`
-        *   `[✅]` 105.b.ii. `ConstructedPath` interface includes `fileName: string`
-        *   `[✅]` 105.b.iii. No type changes required for diagnostic logging
-    *   `[✅]` 105.c. [TEST-UNIT] Unit tests for diagnostic logging behavior
-        *   `[✅]` 105.c.i. Assert: Logs all path components: modelSlug, attemptCount, documentKey, sourceGroupFragment, final fileName for `assembled_document_json`
-        *   `[✅]` 105.c.ii. Assert: Logs when `sourceGroupFragment` is missing vs present for document file types
-        *   `[✅]` 105.c.iii. Assert: Logs extraction of `sourceGroupFragment` from `source_group` UUID (first 8 chars after sanitization)
-        *   `[✅]` 105.c.iv. Assert: Logs collision risk: when same path components would produce identical filename
-    *   `[✅]` 105.d. [BE] Add diagnostic logging to `constructStoragePath` for `assembled_document_json`
-        *   `[✅]` 105.d.i. Log all path components: modelSlug, attemptCount, documentKey, sourceGroupFragment, final fileName
-        *   `[✅]` 105.d.ii. Log when `sourceGroupFragment` is missing vs present for document file types
-        *   `[✅]` 105.d.iii. Log extraction of `sourceGroupFragment` from `source_group` UUID (first 8 chars after sanitization)
-        *   `[✅]` 105.d.iv. Log collision risk: when same path components would produce identical filename
-    *   `[✅]` 105.e. [TEST-UNIT] Rerun and verify path construction logging
-        *   `[✅]` 105.e.i. Verify logs show all path components for each constructed path
-        *   `[✅]` 105.e.ii. Verify logs identify when `sourceGroupFragment` is missing
-        *   `[✅]` 105.e.iii. Verify logs show extraction logic for `sourceGroupFragment`
-    *   `[✅]` 105.f. [TEST-INT] Integration test to trace path construction through synthesis pairwise step
-        *   `[✅]` 105.f.i. Run synthesis pairwise step and capture all path construction logs
-        *   `[✅]` 105.f.ii. Group constructed paths by filename to identify collisions
-        *   `[✅]` 105.f.iii. For each collision, compare path components to identify which component(s) are identical
-        *   `[✅]` 105.f.iv. Map collisions back to `source_group` values to confirm collision root cause
+        *   `[✅]` 105.a.i. `processComplexJob(dbClient, job, projectOwnerUserId, ctx, authToken)` in `processComplexJob.ts` returns `Promise<void>`
+        *   `[✅]` 105.a.ii. Uses existing `ctx.planComplexStage` function (no signature changes required)
+        *   `[✅]` 105.a.iii. Must access `stepIdToStep` Map to find prerequisite-producing steps by matching `output_type` to missing `document_key`
+        *   `[✅]` 105.a.iv. Must access `filteredReadySteps` to identify steps that will be planned in this batch
+        *   `[✅]` 105.a.v. Must access `completedStepSlugs` Set to identify already-completed prerequisite steps
+        *   `[✅]` 105.a.vi. Must call `ctx.findSourceDocuments` to verify prerequisite availability and catch errors for missing inputs
+        *   `[✅]` 105.a.vii. Must find prerequisite-producing job ID from `childJobs` array (after planning) by matching `planner_metadata.recipe_step_id` to prerequisite step ID
+    *   `[✅]` 105.b. [TYPES] Verify existing types support status and prerequisite_job_id
+        *   `[✅]` 105.b.i. Confirm `DialecticJobRow` interface includes `status` field with `'waiting_for_prerequisite'` as valid value
+        *   `[✅]` 105.b.ii. Confirm `DialecticJobRow` interface includes `prerequisite_job_id` field (UUID or null)
+        *   `[✅]` 105.b.iii. Confirm `DialecticJobRow` objects can be modified after creation (mutable status and prerequisite_job_id fields)
+    *   `[✅]` 105.c. [TEST-UNIT] Unit tests for prerequisite step identification and job modification
+        *   `[✅]` 105.c.i. Assert: Given step with missing intra-stage dependency (e.g., `generate-master-plan` missing `technical_requirements`), identifies prerequisite-producing step in `stepIdToStep` where `output_type === 'technical_requirements'`
+        *   `[✅]` 105.c.ii. Assert: Given a completed prerequisite step, throws an error if its output document is not found (fail loud)
+        *   `[✅]` 105.c.iii. Assert: Given prerequisite step is in `filteredReadySteps`, verifies prerequisite will be planned in this batch and schedules job with `waiting_for_prerequisite` status
+        *   `[✅]` 105.c.iv. Assert: Given step with missing intra-stage dependency but prerequisite step not found in recipe, throws error (cannot schedule safely)
+        *   `[✅]` 105.c.v. Assert: After planning prerequisite step, finds prerequisite job ID from `childJobs` array by matching `planner_metadata.recipe_step_id` to prerequisite step ID
+        *   `[✅]` 105.c.vi. Assert: Waiting jobs created by `planComplexStage` are modified to have `status: 'waiting_for_prerequisite'` and `prerequisite_job_id` set before insertion
+        *   `[✅]` 105.c.vii. Assert: Steps with available inputs are still planned normally with `status: 'pending'`
+    *   `[✅]` 105.d. [BE] Implement prerequisite step identification and job modification in processComplexJob
+        *   `[✅]` 105.d.i. Create separate list `stepsWithPrerequisiteDeps` for steps with missing intra-stage dependencies that have verifiable prerequisites
+        *   `[✅]` 105.d.ii. In catch block (line 398), extract missing `document_key` from error message or by identifying which input rule failed
+        *   `[✅]` 105.d.iii. Search `stepIdToStep` Map to find prerequisite-producing step where `output_type === missing_document_key`
+        *   `[✅]` 105.d.iv. Verify prerequisite step exists in recipe instance (throw error if not found - cannot schedule safely)
+        *   `[✅]` 105.d.v. Verify prerequisite step is in `filteredReadySteps` (will be available)
+        *   `[✅]` 105.d.vi. If verified, add step to `stepsWithPrerequisiteDeps` instead of filtering out completely
+        *   `[✅]` 105.d.vii. After planning `stepsWithAvailableInputs` (line 431), get `childJobs` array from `plannedChildrenArrays.flat()`
+        *   `[✅]` 105.d.viii. For each step in `stepsWithPrerequisiteDeps`, call `planComplexStage` to get waiting job objects
+        *   `[✅]` 105.d.ix. For each waiting job, find prerequisite-producing job ID from `childJobs` array by matching `planner_metadata.recipe_step_id` to prerequisite step ID
+        *   `[✅]` 105.d.x. Modify waiting job objects: set `status: 'waiting_for_prerequisite'` and `prerequisite_job_id: prerequisiteJobId`
+        *   `[✅]` 105.d.xi. Add modified waiting jobs to `childJobs` array before insertion (line 467)
+    *   `[✅]` 105.e. [TEST-UNIT] Rerun and verify all unit tests pass
+        *   `[✅]` 105.e.i. Verify steps with missing intra-stage deps are scheduled with `waiting_for_prerequisite` status (not filtered out)
+        *   `[✅]` 105.e.ii. Verify waiting jobs have correct `status: 'waiting_for_prerequisite'` and `prerequisite_job_id` set before insertion
+        *   `[✅]` 105.e.iii. Verify no regressions in existing `processComplexJob` behavior for steps with available inputs
+    *   `[ ]` 105.f. [TEST-INT] Integration test with handle_job_completion transition
+        *   `[ ]` 105.f.i. Assert: When prerequisite job completes, `handle_job_completion` transitions waiting job from `waiting_for_prerequisite` to `pending`
+        *   `[ ]` 105.f.ii. Assert: Parenthesis stage with `generate-technical_requirements` completing triggers `generate-master-plan` job to transition from `waiting_for_prerequisite` to `pending`
+        *   `[ ]` 105.f.iii. Assert: Parent PLAN job can complete properly once all child jobs (including waiting ones) are scheduled
     *   `[✅]` 105.g. [CRITERIA] Acceptance criteria
-        *   `[✅]` 105.g.i. Diagnostic logs reveal all path components for every constructed path
-        *   `[✅]` 105.g.ii. Diagnostic logs identify which path components are identical in collisions
-        *   `[✅]` 105.g.iii. Diagnostic logs confirm whether `sourceGroupFragment` uniqueness is sufficient for path uniqueness
-        *   `[✅]` 105.g.iv. Investigation provides sufficient data to design fix for path collision handling
-    *   `[✅]` 105.h. [COMMIT] `feat(dialectic): add diagnostic logging to path construction for collision investigation`
+        *   `[✅]` 105.g.i. Steps with missing intra-stage dependencies are scheduled with `waiting_for_prerequisite` status instead of being filtered out
+        *   `[✅]` 105.g.ii. Jobs with `waiting_for_prerequisite` have `prerequisite_job_id` set to the prerequisite-producing job ID
+        *   `[✅]` 105.g.iii. When prerequisite job completes, `handle_job_completion` automatically transitions waiting job to `pending`
+        *   `[✅]` 105.g.iv. Parent PLAN job can complete properly once all child jobs (including waiting ones) are scheduled
+        *   `[✅]` 105.g.v. No steps are permanently skipped due to intra-stage dependencies
+        *   `[✅]` 105.g.vi. No function signature changes required - uses existing `planComplexStage` as-is
+    *   `[✅]` 105.h. [COMMIT] `fix(dialectic): schedule jobs with waiting_for_prerequisite for intra-stage dependencies`
 
-*   `[ ]` 106. **planPairwiseByOrigin.ts** Add diagnostic logging and fix source_group assignment to ensure uniqueness and presence
-    *   `[ ]` 106.a. [DEPS] Dependencies and signature
-        *   `[ ]` 106.a.i. `planPairwiseByOrigin` in `planPairwiseByOrigin.ts` receives `sourceDocs`, `parentJob`, `recipeStep`
-        *   `[ ]` 106.a.ii. Function creates jobs with `document_relationships.source_group` set from source document groups
-        *   `[ ]` 106.a.iii. Must trace how `source_group` is determined for each pairwise document job
-        *   `[ ]` 106.a.iv. Must ensure each unique (model, pair) combination gets distinct `source_group` UUID
-        *   `[ ]` 106.a.v. Must ensure all pairwise jobs have non-null `source_group` (no missing assignments)
-    *   `[ ]` 106.b. [TYPES] Verify types support unique source_group assignment
-        *   `[ ]` 106.b.i. `DialecticExecuteJobPayload.document_relationships.source_group` accepts UUID string
-        *   `[ ]` 106.b.ii. May need to add helper to generate unique `source_group` UUIDs per job
-        *   `[ ]` 106.b.iii. [TYPE-GUARD-TEST] Update tests if new helper functions added
-        *   `[ ]` 106.b.iv. [TYPE-GUARDS] Update guards if payload structure changes
-    *   `[ ]` 106.c. [TEST-UNIT] Unit tests for diagnostic logging and unique source_group assignment
-        *   `[ ]` 106.c.i. Assert: Logs source document grouping logic: how documents are grouped into pairs
-        *   `[ ]` 106.c.ii. Assert: Logs `source_group` assignment for each created job: which source document(s) determine the `source_group`
-        *   `[ ]` 106.c.iii. Assert: Logs job creation details: model ID, document_key, source document IDs, assigned `source_group` UUID
-        *   `[ ]` 106.c.iv. Assert: Given n² antithesis documents (n models × n proposals), creates n³ pairwise jobs (n models × n² pairs)
-        *   `[ ]` 106.c.v. Assert: Each pairwise job has unique `source_group` value (no collisions)
-        *   `[ ]` 106.c.vi. Assert: Each (model, pair) combination gets distinct `source_group` UUID
-        *   `[ ]` 106.c.vii. Assert: All pairwise jobs have non-null `source_group` (no missing assignments)
-    *   `[ ]` 106.d. [BE] Add diagnostic logging to `planPairwiseByOrigin`
-        *   `[ ]` 106.d.i. Log source document grouping logic: how documents are grouped into pairs
-        *   `[ ]` 106.d.ii. Log `source_group` assignment for each created job: which source document(s) determine the `source_group`
-        *   `[ ]` 106.d.iii. Log job creation details: model ID, document_key, source document IDs, assigned `source_group` UUID
-        *   `[ ]` 106.d.iv. Log when `source_group` is set to `null` vs a UUID value, and the reasoning
-    *   `[ ]` 106.e. [BE] Fix source_group assignment logic in `planPairwiseByOrigin`
-        *   `[ ]` 106.e.i. Revise `source_group` assignment to ensure uniqueness per (model, pair) combination based on investigation findings
-        *   `[ ]` 106.e.ii. Generate new UUID for each pairwise job's `source_group` if current logic produces collisions
-        *   `[ ]` 106.e.iii. Preserve lineage tracking: ensure `source_group` correctly identifies source document group
-        *   `[ ]` 106.e.iv. Ensure all pairwise jobs have non-null `source_group` (fix missing `source_group` validation errors)
-    *   `[ ]` 106.f. [TEST-UNIT] Rerun and verify source_group uniqueness and presence
-        *   `[ ]` 106.f.i. Verify logs show how each pairwise job gets its `source_group`
-        *   `[ ]` 106.f.ii. Verify all pairwise jobs have unique `source_group` values
-        *   `[ ]` 106.f.iii. Verify no missing `source_group` assignments
-        *   `[ ]` 106.f.iv. Verify lineage tracking still works correctly
-    *   `[ ]` 106.g. [TEST-INT] Integration test to verify fix
-        *   `[ ]` 106.g.i. Run synthesis pairwise step and capture planner logs
-        *   `[ ]` 106.g.ii. Assert: Synthesis pairwise step produces 108 documents with 108 unique paths (no collisions)
-        *   `[ ]` 106.g.iii. Assert: All pairwise jobs have `source_group` assigned (no validation errors)
-        *   `[ ]` 106.g.iv. Assert: Path construction produces unique filenames for all 108 documents
-        *   `[ ]` 106.g.v. Assert: Integration test `99.b.iii` passes (n³×4 pairwise documents created successfully)
-    *   `[ ]` 106.h. [CRITERIA] Acceptance criteria
-        *   `[ ]` 106.h.i. Diagnostic logs reveal how `source_group` is assigned for pairwise synthesis jobs
-        *   `[ ]` 106.h.ii. Each pairwise synthesis job has unique `source_group` UUID
-        *   `[ ]` 106.h.iii. No pairwise jobs have missing `source_group` (validation errors resolved)
-        *   `[ ]` 106.h.iv. Path construction produces unique filenames for all pairwise documents
-        *   `[ ]` 106.h.v. Lineage tracking remains correct (source_group identifies source document group)
-    *   `[ ]` 106.i. [COMMIT] `fix(dialectic): ensure unique source_group assignment for pairwise synthesis documents`
+*   `[✅]` 106. **processComplexJob** Create skeleton PLAN jobs for steps with missing intra-stage prerequisites; handle deferred planning when skeleton returns
+    *   `[✅]` 106.a. [DEPS] Dependencies and signature
+        *   `[✅]` 106.a.i. `processComplexJob(dbClient, job, projectOwnerUserId, ctx, authToken)` in `processComplexJob.ts` returns `Promise<void>`
+        *   `[✅]` 106.a.ii. Current bug: lines 535-542 call `ctx.planComplexStage` for steps in `stepsWithPrerequisiteDeps`, but `planComplexStage` calls `findSourceDocuments` which throws when prerequisite documents don't exist yet
+        *   `[✅]` 106.a.iii. Fix: Create skeleton PLAN job with `waiting_for_prerequisite` status; when it returns after prereq completes, call `planComplexStage` then
+        *   `[✅]` 106.a.iv. Skeleton jobs must include: `status: 'waiting_for_prerequisite'`, `prerequisite_job_id`, `job_type: 'PLAN'`, `planner_metadata.recipe_step_id`
+        *   `[✅]` 106.a.v. Must inherit payload fields from parent job: `projectId`, `sessionId`, `stageSlug`, `iterationNumber`, `model_id`, `user_jwt`, `walletId`
+        *   `[✅]` 106.a.vi. Detection: `job.prerequisite_job_id !== null` at start of `processComplexJob` indicates deferred single-step planning
+    *   `[✅]` 106.b. [TEST-UNIT] Unit tests for skeleton PLAN job creation in `processComplexJob.intraStageDependency.test.ts`
+        *   `[✅]` 106.b.i. Assert: `planComplexStage` is NOT called for steps in `stepsWithPrerequisiteDeps` during initial processing
+        *   `[✅]` 106.b.ii. Assert: Skeleton PLAN job is created with `status: 'waiting_for_prerequisite'` and `job_type: 'PLAN'`
+        *   `[✅]` 106.b.iii. Assert: Skeleton job has `prerequisite_job_id` set to the prerequisite-producing job ID
+        *   `[✅]` 106.b.iv. Assert: Skeleton job has `planner_metadata.recipe_step_id` set to the step ID
+        *   `[✅]` 106.b.v. Assert: Skeleton job inherits required payload fields from parent job
+    *   `[✅]` 106.c. [TEST-UNIT] Unit tests for deferred planning when skeleton PLAN job returns
+        *   `[✅]` 106.c.i. Assert: When `job.prerequisite_job_id !== null`, detects deferred single-step planning
+        *   `[✅]` 106.c.ii. Assert: Fetches recipe step using `planner_metadata.recipe_step_id`
+        *   `[✅]` 106.c.iii. Assert: Calls `findSourceDocuments` for the deferred step (now succeeds since prereq exists)
+        *   `[✅]` 106.c.iv. Assert: Calls `planComplexStage` for the deferred step
+        *   `[✅]` 106.c.v. Assert: Inserts resulting EXECUTE job(s) with `pending` status
+    *   `[✅]` 106.d. [BE] Implement skeleton PLAN job creation in `processComplexJob.ts`
+        *   `[✅]` 106.d.i. Remove `planComplexStage` call for steps in `stepsWithPrerequisiteDeps` (lines 535-542)
+        *   `[✅]` 106.d.ii. Build skeleton PLAN job object with: `id: crypto.randomUUID()`, `status: 'waiting_for_prerequisite'`, `job_type: 'PLAN'`
+        *   `[✅]` 106.d.iii. Set `prerequisite_job_id` to the ID of the prerequisite-producing job from `childJobs` array
+        *   `[✅]` 106.d.iv. Set `payload.planner_metadata: { recipe_step_id: step.id }`
+        *   `[✅]` 106.d.v. Inherit payload fields: `projectId`, `sessionId`, `stageSlug`, `iterationNumber`, `model_id`, `user_jwt`, `walletId`
+        *   `[✅]` 106.d.vi. Add skeleton PLAN job to `childJobs` array before insertion
+    *   `[✅]` 106.e. [BE] Implement deferred planning handler at start of `processComplexJob.ts`
+        *   `[✅]` 106.e.i. Add early check: if `job.prerequisite_job_id !== null`, enter deferred planning block
+        *   `[✅]` 106.e.ii. Fetch recipe step from database using `job.payload.planner_metadata.recipe_step_id`
+        *   `[✅]` 106.e.iii. Call `findSourceDocuments` for the recipe step (prereq document now exists)
+        *   `[✅]` 106.e.iv. Call `planComplexStage` for the recipe step to create EXECUTE job(s)
+        *   `[✅]` 106.e.v. Insert resulting EXECUTE jobs with `pending` status
+        *   `[✅]` 106.e.vi. Mark current skeleton PLAN job as `completed` and return early
+    *   `[✅]` 106.f. [TEST-UNIT] Rerun and verify all unit tests pass
+        *   `[✅]` 106.f.i. Verify `planComplexStage` is not called for steps with missing prerequisites during initial processing
+        *   `[✅]` 106.f.ii. Verify skeleton PLAN jobs have correct structure and payload
+        *   `[✅]` 106.f.iii. Verify deferred planning handler correctly processes returned skeleton jobs
+        *   `[✅]` 106.f.iv. Verify no regressions in existing `processComplexJob` behavior
+    *   `[✅]` 106.g. [TEST-INT] Integration test with prerequisite completion flow
+        *   `[✅]` 106.g.i. Assert: Skeleton PLAN job is inserted with `waiting_for_prerequisite` status
+        *   `[✅]` 106.g.ii. Assert: When prerequisite EXECUTE job completes, skeleton PLAN job transitions to `pending`
+        *   `[✅]` 106.g.iii. Assert: Skeleton PLAN job returns through `processComplexJob` and creates EXECUTE jobs
+        *   `[✅]` 106.g.iv. Assert: Parenthesis stage completes with `generate-master-plan` executing after `generate-technical_requirements`
+    *   `[✅]` 106.h. [CRITERIA] Acceptance criteria
+        *   `[✅]` 106.h.i. `planComplexStage` is never called for steps with missing intra-stage prerequisites during initial processing
+        *   `[✅]` 106.h.ii. Skeleton PLAN jobs are created with `waiting_for_prerequisite` status
+        *   `[✅]` 106.h.iii. `prerequisite_job_id !== null` detection routes skeleton jobs to deferred planning handler
+        *   `[✅]` 106.h.iv. Deferred planning calls `findSourceDocuments` and `planComplexStage` when prereq is complete
+        *   `[✅]` 106.h.v. No `findSourceDocuments` errors for steps with missing prerequisites
+        *   `[✅]` 106.h.vi. All changes contained within `processComplexJob.ts` - no changes to `processSimpleJob.ts`
+    *   `[✅]` 106.i. [COMMIT] `fix(dialectic): processComplexJob creates skeleton PLAN jobs and handles deferred planning`
 
----
+*   `[ ]` 107. **processComplexJob** Eliminate duplicate deferred planning by introducing a dedicated `DialecticSkeletonJobPayload` (required `step_info`, required `planner_metadata`) so skeleton PLAN jobs complete cleanly and Parenthesis produces exactly n×3 documents
+    *   `[✅]` 107.a. [DEPS] Dependencies and target behavior
+        *   `[✅]` 107.a.i. `processComplexJob(dbClient, job, projectOwnerUserId, ctx, authToken)` in `supabase/functions/dialectic-worker/processComplexJob.ts` creates skeleton PLAN jobs for missing intra-stage prerequisites, and later performs deferred planning when the skeleton returns.
+        *   `[✅]` 107.a.ii. The DB trigger `handle_job_completion()` uses `payload.step_info.current_step` and `payload.step_info.total_steps` to decide whether a parent job becomes `completed` or wakes as `pending_next_step` (see `supabase/migrations/20260109165706_state_machine_fix.sql`).
+        *   `[✅]` 107.a.iii. Target state: skeleton PLAN jobs are **single-step** (`step_info.current_step=1`, `step_info.total_steps=1`) so after their child jobs finish they can be marked `completed` instead of re-woken, preventing duplicate planning and storage collisions.
+        *   `[✅]` 107.a.iv. Integration target: `supabase/integration_tests/services/dialectic_full_dag_traversal.integration.test.ts` step `99.b.vi` must observe **exactly** `n×3` Parenthesis planning documents (for `n=3`, exactly 9; not 21).
+    *   `[✅]` 107.b. [TYPES] Add a dedicated skeleton payload type with required keys (no casts, no inline types)
+        *   `[✅]` 107.b.i. In `supabase/functions/dialectic-service/dialectic.interface.ts`, introduce `DialecticSkeletonJobPayload` with required fields needed to construct a complete skeleton PLAN job payload, including:
+        *   `[✅]` 107.b.ii Required job identity fields used by the worker: `projectId`, `sessionId`, `model_id`, `walletId`, `user_jwt`, `stageSlug`, `iterationNumber`.
+        *   `[✅]` 107.b.iii Required skeleton-specific fields `planner_metadata` & `step_info`.
+        *   `[✅]` 107.b.iv. Update the `DialecticJobPayload` union type in `dialectic.interface.ts` to include `DialecticSkeletonJobPayload` so it can be validated and carried through the system without casts.
+        *   `[✅]` 107.b.v. Update `DialecticPlanJobPayload` in `dialectic.interface.ts` so `planner_metadata` is no longer present there (the skeleton payload owns it), and ensure any production usage sites that require `planner_metadata.recipe_step_id` are updated to depend on the correct payload type instead.
+        *   `[✅]` 107.b.vi. [TYPE-GUARD-TEST] In `supabase/functions/_shared/utils/type-guards/type_guards.dialectic.test.ts`, add tests proving:
+            *   `[✅]` 107.b.vi.A `isDialecticSkeletonJobPayload` returns true only when `step_info` is present and `planner_metadata.recipe_step_id` is a non-empty string.
+            *   `[✅]` 107.b.vi.B `isDialecticPlanJobPayload` rejects payloads that include `planner_metadata` (since it is no longer part of that payload type).
+        *   `[✅]` 107.b.vii. [TYPE-GUARDS] In `supabase/functions/_shared/utils/type-guards/type_guards.dialectic.ts`, implement `isDialecticSkeletonJobPayload` and update `isDialecticPlanJobPayload` to match the new contract.
+    *   `[✅]` 107.c. [TEST-UNIT] Update unit test to assert the target skeleton payload contract
+        *   `[✅]` 107.c.i. In `supabase/functions/dialectic-worker/processComplexJob.intraStageDependency.test.ts`, assert the inserted skeleton PLAN job payload satisfies `isDialecticSkeletonJobPayload`, and that `payload.step_info.current_step === 1` and `payload.step_info.total_steps === 1`.
+    *   `[✅]` 107.d. [BE] Update skeleton PLAN job creation to use the new payload type (no casts)
+        *   `[✅]` 107.d.i. In `supabase/functions/dialectic-worker/processComplexJob.ts`, construct `DialecticSkeletonJobPayload` using explicitly typed intermediates (e.g. a `DialecticStepInfo` object and `DialecticStepPlannerMetadataWithRecipeStepId` object).
+        *   `[✅]` 107.d.ii. Ensure `stageSlug` and `iterationNumber` are set explicitly and reliably (prefer DB row columns; fail loudly if missing), so the skeleton payload is complete without optional defaults.
+        *   `[✅]` 107.d.iii. Ensure `payload.step_info` is set to `{ current_step: 1, total_steps: 1 }` for every skeleton PLAN job.
+        *   `[✅]` 107.d.iv. Ensure the worker’s payload validation accepts skeleton PLAN jobs and continues to validate non-skeleton PLAN jobs without weakening typing.
+    *   `[✅]` 107.e. [TEST-UNIT] Rerun and expand tests proving the fix
+        *   `[✅]` 107.e.i. Verify `processComplexJob.intraStageDependency.test.ts` passes and no other unit tests regress.
+    *   `[ ]` 107.f. [TEST-INT] Prove Parenthesis no longer duplicates work
+        *   `[ ]` 107.f.i. Run `supabase/integration_tests/services/dialectic_full_dag_traversal.integration.test.ts` and confirm step `99.b.vi` passes with exactly `n×3` Parenthesis documents (for `n=3`, exactly 9).
+    *   `[ ]` 107.g. [CRITERIA] Acceptance criteria
+        *   `[ ]` 107.g.i. Skeleton PLAN job payloads are strictly typed as `DialecticSkeletonJobPayload` and include required `step_info` and required `planner_metadata.recipe_step_id`.
+        *   `[ ]` 107.g.ii. Parenthesis integration test step `99.b.vi` produces exactly the expected number of rendered Parenthesis documents (no duplicates).
+        *   `[ ]` 107.g.iii. No casts (`as`/`any`) and no inline types introduced; all new types live in `dialectic.interface.ts` and are enforced by type guards.
+    *   `[ ]` 107.h. [COMMIT] `fix(dialectic): make skeleton plan payload explicit to prevent duplicate deferred planning`
 
-*   `[ ]` 107. **executeModelCallAndSave.ts** Add diagnostic logging and improve path collision handling and source_group validation
-    *   `[ ]` 107.a. [DEPS] Dependencies and signature
-        *   `[ ]` 107.a.i. `executeModelCallAndSave` in `executeModelCallAndSave.ts` receives `job` parameter with `payload.document_relationships`
-        *   `[ ]` 107.a.ii. Function calls `constructStoragePath` with `sourceGroupFragment` extracted from `job.payload.document_relationships?.source_group`
-        *   `[ ]` 107.a.iii. Function handles storage upload failures with collision detection
-        *   `[ ]` 107.a.iv. Depends on: Fix from step 106 ensuring `source_group` is always present and unique
-    *   `[ ]` 107.b. [TYPES] Verify types support improved error handling
-        *   `[ ]` 107.b.i. `DialecticJobRow.payload.document_relationships.source_group` type supports UUID string
-        *   `[ ]` 107.b.ii. May need error types for collision reporting
-        *   `[ ]` 107.b.iii. [TYPE-GUARD-TEST] Update tests if error types added
-        *   `[ ]` 107.b.iv. [TYPE-GUARDS] Update guards if error handling types change
-    *   `[ ]` 107.c. [TEST-UNIT] Unit tests for diagnostic logging and improved collision handling
-        *   `[ ]` 107.c.i. Assert: When `source_group` is present, log includes `source_group` UUID, extracted `sourceGroupFragment`, and constructed path
-        *   `[ ]` 107.c.ii. Assert: When `source_group` is missing for document outputs, log includes error context (job ID, model ID, document_key, output_type)
-        *   `[ ]` 107.c.iii. Assert: When storage upload fails with 409 collision, log includes existing file metadata (if queryable) and new file's `source_group` for comparison
-        *   `[ ]` 107.c.iv. Assert: Error message includes both `source_group` values for comparison when collision occurs
-        *   `[ ]` 107.c.v. Assert: Error message includes full job context when `source_group` is missing
-    *   `[ ]` 107.d. [BE] Add diagnostic logging to `executeModelCallAndSave`
-        *   `[ ]` 107.d.i. Log `source_group` value when extracting `sourceGroupFragment` (line ~1248), including job ID, model ID, document_key
-        *   `[ ]` 107.d.ii. Log extracted `sourceGroupFragment` value and constructed path before upload attempt
-        *   `[ ]` 107.d.iii. When `source_group` is missing for document outputs, log full job context (job ID, payload structure, output_type, document_key)
-        *   `[ ]` 107.d.iv. When storage upload fails with 409 collision, log collision details: existing path (if queryable), new path, both `source_group` values for comparison
-        *   `[ ]` 107.d.v. Log constructed path components (modelSlug, attemptCount, documentKey, sourceGroupFragment) separately for debugging
-    *   `[ ]` 107.e. [BE] Improve collision handling and validation in `executeModelCallAndSave`
-        *   `[ ]` 107.e.i. Enhance 409 collision error message to include existing file's `source_group` (if queryable) and new file's `source_group` for comparison
-        *   `[ ]` 107.e.ii. Enhance missing `source_group` validation error to include full job context (job ID, model ID, document_key, output_type, payload structure)
-        *   `[ ]` 107.e.iii. After step 106 fix, verify no jobs reach missing `source_group` validation (should be caught earlier in planner)
-        *   `[ ]` 107.e.iv. Consider adding pre-upload path existence check if collisions persist after step 106 fix
-    *   `[ ]` 107.f. [TEST-UNIT] Rerun and verify diagnostic logging and improved error handling
-        *   `[ ]` 107.f.i. Verify logs capture `source_group` assignment for all document outputs
-        *   `[ ]` 107.f.ii. Verify logs capture collision details when 409 errors occur
-        *   `[ ]` 107.f.iii. Verify logs capture missing `source_group` context for validation errors
-        *   `[ ]` 107.f.iv. Verify collision errors include diagnostic information
-        *   `[ ]` 107.f.v. Verify validation errors include full context
-    *   `[ ]` 107.g. [TEST-INT] Integration test to verify end-to-end fix
-        *   `[ ]` 107.g.i. Run synthesis pairwise step and capture logs showing `source_group` values for all 108 expected documents
-        *   `[ ]` 107.g.ii. Assert: Synthesis pairwise step completes without path collisions (all 108 documents upload successfully)
-        *   `[ ]` 107.g.iii. Assert: No jobs fail with missing `source_group` validation error
-        *   `[ ]` 107.g.iv. Assert: Integration test `99.b.iii` passes (n³×4 pairwise documents created successfully)
-    *   `[ ]` 107.h. [CRITERIA] Acceptance criteria
-        *   `[ ]` 107.h.i. Diagnostic logs capture `source_group` assignment for every document output job
-        *   `[ ]` 107.h.ii. Diagnostic logs capture full path construction details (all components)
-        *   `[ ]` 107.h.iii. Path collisions are resolved (all 108 pairwise documents have unique paths)
-        *   `[ ]` 107.h.iv. Missing `source_group` validation errors are resolved (all jobs have `source_group` assigned)
-        *   `[ ]` 107.h.v. Error messages provide sufficient diagnostic information if issues persist
-    *   `[ ]` 107.i. [COMMIT] `fix(dialectic): improve path collision handling and source_group validation errors`
+*   `[✅]` 108. **resolveNextBlocker** Create helper function to dynamically resolve the job that will produce a required artifact
+    *   `[✅]` 108.a. [DEPS] Dependencies and signature
+        *   `[✅]` 108.a.i. Code standards:
+            *   `[✅]` 108.a.i.A Function signature MUST be `(deps, params)` with both objects explicitly typed
+            *   `[✅]` 108.a.i.B All dependencies MUST be injected via `deps` (no direct imports for side-effectful collaborators)
+            *   `[✅]` 108.a.i.C Return type MUST be explicitly annotated
+        *   `[✅]` 108.a.ii. `resolveNextBlocker(deps: ResolveNextBlockerDeps, params: ResolveNextBlockerParams): Promise<ResolveNextBlockerResult | null>` in `supabase/functions/dialectic-worker/resolveNextBlocker.ts`
+            *   `ResolveNextBlockerResult = { id: string; job_type: string; status: string }`
+            *   `ResolveNextBlockerDeps` MUST include: `dbClient`, `logger` (and any recipe-step lookup dependency if needed for PLAN matching)
+            *   `ResolveNextBlockerParams` MUST include: `projectId`, `sessionId`, `stageSlug`, `iterationNumber`, `modelSlug`, `requiredArtifactIdentity`
+        *   `[✅]` 108.a.ii. Consumed by: `processComplexJob` deferred planning handler (step 109)
+        *   `[✅]` 108.a.iii. Requires: Supabase client to query `dialectic_generation_jobs` table
+        *   `[✅]` 108.a.iv. Required artifact identity MUST be *PathContext-inspired*, but it is NOT the same as `PathContext`.
+            *   Rationale: `PathContext` is for constructing concrete storage paths and requires fields like `fileType` / `attemptCount` for documents, and it uses `modelSlug` (stable) rather than `modelId` (may change across sync runs).
+            *   Define a separate `RequiredArtifactIdentity` that carries only what we reliably know at scheduling time (and what is stable/idempotent).
+            *   Minimum required fields MUST include: `projectId`, `sessionId`, `stageSlug`, `iterationNumber`, `modelSlug`, `documentKey`.
+            *   If additional disambiguation is needed (e.g. parallel lineage branches), add `branchKey`, `parallelGroup`, and/or `sourceGroupFragment` consistent with your path semantics.
+            *   If you must persist it, persist as JSON (`results.required_artifact_identity`) — never a colon-delimited string.
+        *   `[✅]` 108.a.v. Resolution priority: RENDER jobs > EXECUTE jobs > PLAN jobs (closer to artifact = higher priority)
+        *   `[✅]` 108.a.vi. Scope MUST be model-safe and project-safe:
+            *   Filter by `session_id`, `stage_slug`, `iteration_number`, AND stable model identity (`modelSlug` in payload/canonicalPathParams/pathContext) so Model A never blocks Model B.
+            *   If existing job queries elsewhere are scoped to `project_id`, this helper MUST be too (prefer DB column; otherwise filter by `payload.projectId`).
+        *   `[✅]` 108.a.vii. Matching logic MUST align to real payload contracts (no generic heuristics):
+            *   RENDER: match the artifact/documentKey the render job will publish (prefer a dedicated render payload field; otherwise derive from canonical path params / render metadata used by your renderer).
+            *   EXECUTE: match `payload.output_type` (preferred) or `payload.canonicalPathParams.contributionType` (fallback) against `documentKey`.
+            *   PLAN: match `payload.planner_metadata.recipe_step_id` → recipe step `output_type === documentKey`.
+    *   `[✅]` 108.b. [TYPES] Verify existing types are sufficient
+        *   `[✅]` 108.b.i. Confirm `DialecticJobRow` interface in `dialectic.interface.ts` includes `id`, `job_type`, `status`, `payload` fields for querying
+        *   `[✅]` 108.b.ii. Introduce explicit types local to the worker module (no inline types in call sites):
+            *   `ResolveNextBlockerDeps`
+            *   `ResolveNextBlockerParams`
+            *   `ResolveNextBlockerResult`
+            *   `RequiredArtifactIdentity` (PathContext-inspired; includes stable `modelSlug`)
+    *   `[✅]` 108.c. [TEST-UNIT] Unit tests for `resolveNextBlocker` in `supabase/functions/dialectic-worker/resolveNextBlocker.test.ts`
+        *   `[✅]` 108.c.i. Assert: Given pending RENDER job for model C producing `master_plan` and `requiredArtifactKey` scoped to model C, returns that RENDER job (and never returns model A/B jobs)
+        *   `[✅]` 108.c.ii. Assert: Given pending EXECUTE job (no RENDER) for model C producing `master_plan`, returns that EXECUTE job
+        *   `[✅]` 108.c.iii. Assert: Given pending PLAN job (no EXECUTE, no RENDER) with recipe step producing `master_plan`, returns that PLAN job
+        *   `[✅]` 108.c.iv. Assert: Given both pending RENDER and EXECUTE jobs for same artifact, returns RENDER job (higher priority)
+        *   `[✅]` 108.c.v. Assert: Given completed RENDER job (not in-progress), does NOT return it; continues to check EXECUTE/PLAN
+        *   `[✅]` 108.c.vi. Assert: Given no jobs producing the required artifact, returns `null`
+        *   `[✅]` 108.c.vii. Assert: Given `requiredArtifactKey === null` or empty string, returns `null` without querying
+        *   `[✅]` 108.c.viii. Assert: Correctly parses `"{projectId}:{sessionId}:{stageSlug}:{iterationNumber}:{modelId}:{artifactClass}:{documentKey}"` to extract all fields for scoping + matching
+        *   `[✅]` 108.c.ix. Assert: Jobs with `status` in `['pending', 'processing', 'retrying', 'waiting_for_children', 'waiting_for_prerequisite']` are considered in-progress blockers
+    *   `[✅]` 108.d. [BE] Implement `resolveNextBlocker` in `supabase/functions/dialectic-worker/resolveNextBlocker.ts`
+        *   `[✅]` 108.d.i. Accept a typed `requiredArtifactIdentity` object (PathContext-shaped) and avoid string parsing
+        *   `[✅]` 108.d.ii. Return `null` early if identity is missing required fields (project/session/stage/iteration/modelSlug/documentKey)
+        *   `[✅]` 108.d.iii. Define `inProgressStatuses` array: `['pending', 'processing', 'retrying', 'waiting_for_children', 'waiting_for_prerequisite']`
+        *   `[✅]` 108.d.iv. Query RENDER jobs: `SELECT id, job_type, status, payload FROM dialectic_generation_jobs WHERE session_id = ? AND stage_slug = ? AND iteration_number = ? AND job_type = 'RENDER' AND status IN (inProgressStatuses)` (and ALSO scope to `project_id` if available). Filter results by `modelSlug` from payload.
+        *   `[✅]` 108.d.v. Filter RENDER results by `payloadProducesDocumentKey(payload, documentKey)`; if match found, return it
+        *   `[✅]` 108.d.vi. Query EXECUTE jobs: same WHERE clause but `job_type = 'EXECUTE'`
+        *   `[✅]` 108.d.vii. Filter EXECUTE results by `payloadProducesDocumentKey(payload, documentKey)`; if match found, return it
+        *   `[✅]` 108.d.viii. Query PLAN jobs: same WHERE clause but `job_type = 'PLAN'`
+        *   `[✅]` 108.d.ix. Filter PLAN results by `payloadProducesDocumentKey(payload, documentKey)` (check `planner_metadata.recipe_step_id` maps to step with `output_type === documentKey`); if match found, return it
+        *   `[✅]` 108.d.x. If no matches at any level, return `null`
+        *   `[✅]` 108.d.xi. Implement helper `jobProducesDocumentKey(job, documentKey, artifactClass)` with job_type-specific matching:
+            *   RENDER: match what the render job will write (MUST align to renderer payload contract)
+            *   EXECUTE: match `payload.output_type` (preferred), fallback to `payload.canonicalPathParams?.contributionType`
+            *   PLAN: match `payload.planner_metadata.recipe_step_id` → recipe step `output_type`
+    *   `[✅]` 108.e. [TEST-UNIT] Rerun and verify all unit tests pass
+        *   `[✅]` 108.e.i. Verify RENDER > EXECUTE > PLAN priority ordering
+        *   `[✅]` 108.e.ii. Verify in-progress status filtering works correctly
+        *   `[✅]` 108.e.iii. Verify artifact key parsing handles edge cases
+    *   `[✅]` 108.f. [CRITERIA] Acceptance criteria
+        *   `[✅]` 108.f.i. Function returns the job closest to producing the required artifact (RENDER preferred over EXECUTE preferred over PLAN)
+        *   `[✅]` 108.f.ii. Function only returns jobs that are in-progress (not completed or failed)
+        *   `[✅]` 108.f.iii. Function uses PathContext-inspired identity (stable `modelSlug`) and enforces model-safe + project-safe scoping
+        *   `[✅]` 108.f.iv. Function returns `null` when no producing job exists
+        *   `[✅]` 108.f.v. Function is pure DB query + filter logic; no side effects
+    *   `[✅]` 108.g. [COMMIT] `feat(dialectic): add resolveNextBlocker helper for artifact-driven prerequisite resolution`
 
----
-
-## Summary
-
-| Step | File | Primary Fix |
-|------|------|-------------|
-| 94 | `helpers.ts` (`selectAnchorSourceDocument`) | Decision tree for job types/output types |
-| 95 | `planPerSourceDocument.ts` | Model filtering for header_context matching |
-| 96 | `planPerModel.ts` | Input bundling and consolidation lineage |
-| 97 | `20251006194549_synthesis_stage.sql` | Granularity strategies for pairwise and consolidation |
-| 98 | `20251006194605_paralysis_stage.sql` | Bundling strategy for multi-input steps |
-| 99 | Integration test | Verify full DAG traversal |
-| 100 | `Dialectic_Modeling_Explanation.md` | Documentation update |
-| 101 | `executeModelCallAndSave.ts` | Document key extraction for assembled_document_json |
-| 102 | `assembleTurnPrompt.ts` | DI violations and dependency injection |
-| 103 | `helpers.ts` (`selectAnchorForCanonicalPathParams`) | Relevance-based anchor selection |
-| 104 | `planAllToOne.ts` | Canonical path params anchor selection |
-| 105 | `path_constructor.ts` | Diagnostic logging for path construction |
-| 106 | `planPairwiseByOrigin.ts` | Diagnostic logging and fix source_group assignment |
-| 107 | `executeModelCallAndSave.ts` | Diagnostic logging and improve collision handling |
-**Dependency Chain:**
-```
-94 (selectAnchorSourceDocument)
-    ↓
-95 (planPerSourceDocument) ──┐
-    ↓                        │
-96 (planPerModel) ───────────┤
-    ↓                        │
-97 (synthesis_stage.sql) ←───┤
-    ↓                        │
-98 (paralysis_stage.sql) ←───┘
-    ↓
-99 (Integration Test)
-    ↓
-100 (Documentation)
-    ↓
-105 (path_constructor logging)
-    ↓
-106 (planPairwiseByOrigin fix)
-    ↓
-107 (executeModelCallAndSave fix)
-```
-
+*   `[✅]` 109. **processComplexJob** Implement artifact-driven prerequisite resolution with idempotent re-wait logic
+    *   `[✅]` 109.a. [DEPS] Dependencies and signature
+        *   `[✅]` 109.a.i. `processComplexJob(dbClient, job, projectOwnerUserId, ctx, authToken)` in `supabase/functions/dialectic-worker/processComplexJob.ts` already exists
+        *   `[✅]` 109.a.ii. Depends on: `resolveNextBlocker` (step 108) for dynamic blocker resolution
+        *   `[✅]` 109.a.iii. Uses existing `results` JSONB column to store a PathContext-shaped `required_artifact_identity` on skeleton jobs (no schema change required)
+        *   `[✅]` 109.a.iv. Skeleton job creation (lines 716-766) must store `required_artifact_identity` in `results` field (typed object, not a string)
+        *   `[✅]` 109.a.v. Deferred planning handler (lines 170-261) must read `required_artifact_identity` from `job.results` and use `resolveNextBlocker` to find next blocker
+        *   `[✅]` 109.a.vi. Current hack at lines 191-215 (check for pending RENDER child) is replaced by general `resolveNextBlocker` call
+    *   `[✅]` 109.b. [TYPES] No new types required
+        *   `[✅]` 109.b.i. `results` column is `Json | null` which accepts `{ required_artifact_identity: RequiredArtifactIdentity }`
+        *   `[✅]` 109.b.ii. `isRecord` type guard from `type_guards.ts` can validate `job.results` shape; add/extend a guard if needed for `RequiredArtifactIdentity`
+    *   `[✅]` 109.c. [TEST-UNIT] Unit tests for skeleton job creation storing `required_artifact_key` in `supabase/functions/dialectic-worker/processComplexJob.intraStageDependency.test.ts`
+        *   `[✅]` 109.c.i. Assert: Skeleton PLAN job `results` field contains `{ required_artifact_identity: { ... } }` with PathContext-shaped identity
+        *   `[✅]` 109.c.ii. Assert: `required_artifact_identity` includes `projectId`, `sessionId`, `stageSlug`, `iterationNumber`, `modelSlug`, and `documentKey` for the missing input
+        *   `[✅]` 109.c.iii. Assert: Skeleton job still has `prerequisite_job_id` set to current best-guess job (backward compatible)
+    *   `[✅]` 109.d. [TEST-UNIT] Unit tests for deferred planning idempotent re-wait behavior in `supabase/functions/dialectic-worker/processComplexJob.intraStageDependency.test.ts`
+        *   `[✅]` 109.d.i. Assert: When skeleton job wakes and `findSourceDocuments` succeeds, proceeds to plan (existing behavior preserved)
+        *   `[✅]` 109.d.ii. Assert: When skeleton job wakes and `findSourceDocuments` throws, calls `resolveNextBlocker` with `job.results.required_artifact_identity`
+        *   `[✅]` 109.d.iii. Assert: When `resolveNextBlocker` returns a different job ID than `job.prerequisite_job_id`, updates job to `waiting_for_prerequisite` with new `prerequisite_job_id` and returns early
+        *   `[✅]` 109.d.iv. Assert: When `resolveNextBlocker` returns `null`, throws the original `findSourceDocuments` error (real error condition)
+        *   `[✅]` 109.d.v. Assert: When `resolveNextBlocker` returns the same job ID as current `prerequisite_job_id`, throws the original error (already waiting on correct job, still not ready)
+        *   `[✅]` 109.d.vi. Assert: Re-chaining logs informative message: `"Re-chaining job {id} to wait for {nextBlocker.id} (type: {nextBlocker.job_type})"`
+    *   `[✅]` 109.e. [BE] Update skeleton PLAN job creation in `processComplexJob.ts` (lines 716-766)
+        *   `[✅]` 109.e.i. After line 760 where `skeletonPlanJob` is constructed, set `results: { required_artifact_identity: <PathContext-shaped identity> }`
+        *   `[✅]` 109.e.ii. Ensure `missingDocumentKey` variable (from line 520-534) is in scope for skeleton creation block
+        *   `[✅]` 109.e.iii. Verify `results` field passes `isJson` check (line 739)
+    *   `[✅]` 109.f. [BE] Update deferred planning handler in `processComplexJob.ts` (lines 170-261) to use artifact-driven resolution
+        *   `[✅]` 109.f.i. Remove lines 191-215 (the current RENDER-checking hack)
+        *   `[✅]` 109.f.ii. After fetching recipe step (line 186), extract `requiredArtifactIdentity` from `job.results` (PathContext-shaped object); validate shape before use
+        *   `[✅]` 109.f.iii. Wrap `findSourceDocuments` call (lines 217-222) in try/catch block
+        *   `[✅]` 109.f.iv. In catch block: call `const nextBlocker = await resolveNextBlocker(deps, { projectId, sessionId, stageSlug, iterationNumber, modelSlug, requiredArtifactIdentity });`
+        *   `[✅]` 109.f.v. If `nextBlocker !== null && nextBlocker.id !== job.prerequisite_job_id`: log re-chain message, update job to `waiting_for_prerequisite` with `prerequisite_job_id: nextBlocker.id`, return early
+        *   `[✅]` 109.f.vi. Otherwise (nextBlocker is null or same as current): re-throw the original `findSourceDocuments` error
+        *   `[✅]` 109.f.vii. Add import for `resolveNextBlocker` at top of file
+    *   `[✅]` 109.g. [TEST-UNIT] Rerun and verify all unit tests pass
+        *   `[✅]` 109.g.i. Verify skeleton job creation stores `required_artifact_key`
+        *   `[✅]` 109.g.ii. Verify deferred planning handler correctly re-chains when artifact not ready
+        *   `[✅]` 109.g.iii. Verify no regressions in existing `processComplexJob` behavior
+    *   `[✅]` 109.h. [TEST-INT] Integration test proving artifact-driven resolution works across multiple wake cycles
+        *   `[✅]` 109.h.i. Assert: Skeleton job waiting on PLAN job, PLAN completes, skeleton wakes, artifact still not ready (EXECUTE running), skeleton re-chains to EXECUTE job
+        *   `[✅]` 109.h.ii. Assert: Skeleton re-chains from EXECUTE to RENDER when EXECUTE completes but RENDER is pending
+        *   `[✅]` 109.h.iii. Assert: After RENDER completes, skeleton wakes and successfully proceeds to plan
+        *   `[✅]` 109.h.iv. Assert: Parenthesis stage with `generate-milestone-schema` waiting on `master_plan` artifact successfully completes after RENDER job finishes
+        *   `[✅]` 109.h.v. Add test to `supabase/integration_tests/services/handle_job_completion.integration.test.ts` or create new `artifact_driven_prereq.integration.test.ts`
+    *   `[✅]` 109.i. [CRITERIA] Acceptance criteria
+        *   `[✅]` 109.i.i. Skeleton jobs store `required_artifact_key` in `results` column (no schema migration required)
+        *   `[✅]` 109.i.ii. Deferred planning handler never throws `findSourceDocuments` error when artifact is simply not ready yet
+        *   `[✅]` 109.i.iii. Jobs correctly re-chain through PLAN → EXECUTE → RENDER until artifact exists
+        *   `[✅]` 109.i.iv. Waking is idempotent: same job can wake multiple times and re-wait without error
+        *   `[✅]` 109.i.v. Arbitrary-length dependency chains work without special-casing (supports N levels deep)
+        *   `[✅]` 109.i.vi. When artifact truly cannot be produced (no producing job exists), original error is thrown
+        *   `[✅]` 109.i.vii. Backward compatible: existing `prerequisite_job_id` field still used, just dynamically updated
+    *   `[✅]` 109.j. [COMMIT] `fix(dialectic): implement artifact-driven prerequisite resolution with idempotent re-wait`

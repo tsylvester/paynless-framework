@@ -140,20 +140,20 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
-                        const expectedStageSlug = rule[0].slug;
+                        // Assert that seed_prompt queries do NOT filter by stage_slug
+                        // (project-level resources are available across all stages)
                         const hasStageFilter = state.filters.some(
                             (filter) =>
                                 filter.type === 'eq' &&
-                                filter.column === 'stage_slug' &&
-                                filter.value === expectedStageSlug,
+                                filter.column === 'stage_slug',
                         );
-                        if (!hasStageFilter) {
+                        if (hasStageFilter) {
                             return Promise.resolve({
                                 data: null,
-                                error: new Error('seed_prompt queries must filter by rule.slug'),
+                                error: new Error('seed_prompt queries must NOT filter by stage_slug (project-level resource)'),
                                 count: 0,
                                 status: 400,
-                                statusText: 'Missing stage_slug filter',
+                                statusText: 'Unexpected stage_slug filter',
                             });
                         }
 
@@ -839,40 +839,25 @@ describe('findSourceDocuments', () => {
         assertEquals(ids, ['header-context-contribution-1', 'header-context-contribution-2']);
     });
 
-    it("filters seed_prompt resources by iteration_number", async () => {
+    it("does NOT filter seed_prompt resources by iteration_number (session-level constant)", async () => {
+        // seed_prompt resources are created at session start and should be available
+        // across all iterations. They should NOT be filtered by iteration_number.
         const rule: InputRule[] = [{ type: 'seed_prompt', slug: 'test-stage' }];
-        const iteration1SeedPrompt: DialecticProjectResourceRow = {
-            id: 'seed-prompt-iter-1',
+
+        // Seed prompt created at iteration 0 (session start)
+        const seedPromptAtStart: DialecticProjectResourceRow = {
+            id: 'seed-prompt-iter-0',
             project_id: 'proj-1',
             user_id: 'user-123',
-            file_name: 'seed-iter-1.txt',
+            file_name: 'seed-iter-0.txt',
             storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/resources',
             mime_type: 'text/plain',
             size_bytes: 123,
-            resource_description: { "description": "Seed prompt iteration 1", type: 'seed_prompt' },
+            resource_description: { "description": "Seed prompt at session start", type: 'seed_prompt' },
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            iteration_number: 1,
-            resource_type: 'seed_prompt',
-            session_id: 'sess-1',
-            source_contribution_id: null,
-            stage_slug: 'test-stage',
-        };
-
-        const iteration2SeedPrompt: DialecticProjectResourceRow = {
-            id: 'seed-prompt-iter-2',
-            project_id: 'proj-1',
-            user_id: 'user-123',
-            file_name: 'seed-iter-2.txt',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/plain',
-            size_bytes: 124,
-            resource_description: { "description": "Seed prompt iteration 2", type: 'seed_prompt' },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            iteration_number: 2,
+            iteration_number: 0,
             resource_type: 'seed_prompt',
             session_id: 'sess-1',
             source_contribution_id: null,
@@ -883,24 +868,24 @@ describe('findSourceDocuments', () => {
             genericMockResults: {
                 dialectic_project_resources: {
                     select: (state: MockQueryBuilderState) => {
+                        // Assert that NO iteration_number filter is applied for seed_prompt
                         const hasIterationFilter = state.filters.some(
                             (filter) =>
                                 filter.type === 'eq' &&
-                                filter.column === 'iteration_number' &&
-                                filter.value === 1,
+                                filter.column === 'iteration_number',
                         );
-                        if (!hasIterationFilter) {
+                        if (hasIterationFilter) {
                             return Promise.resolve({
-                                data: [iteration1SeedPrompt, iteration2SeedPrompt],
-                                error: null,
-                                count: 2,
-                                status: 200,
-                                statusText: 'OK',
+                                data: null,
+                                error: new Error('seed_prompt queries must NOT filter by iteration_number'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Unexpected iteration_number filter',
                             });
                         }
 
                         return Promise.resolve({
-                            data: [iteration1SeedPrompt],
+                            data: [seedPromptAtStart],
                             error: null,
                             count: 1,
                             status: 200,
@@ -911,6 +896,10 @@ describe('findSourceDocuments', () => {
             },
         });
 
+        // Parent job is at iteration 1, but should still find seed_prompt from iteration 0
+        mockParentJob.payload.iterationNumber = 1;
+        mockParentJob.iteration_number = 1;
+
         const documents = await findSourceDocuments(
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
@@ -918,9 +907,7 @@ describe('findSourceDocuments', () => {
         );
 
         assertEquals(documents.length, 1);
-        assertEquals(documents[0].id, 'seed-prompt-iter-1');
-        assertEquals(documents[0].iteration_number, 1);
-        assertEquals(documents.some((doc) => doc.id === 'seed-prompt-iter-2'), false);
+        assertEquals(documents[0].id, 'seed-prompt-iter-0');
     });
 
     it("filters header_context contributions by iteration_number", async () => {
@@ -1045,13 +1032,17 @@ describe('findSourceDocuments', () => {
         assertEquals(documents.some((doc) => doc.id === 'header-context-iter-2'), false);
     });
 
-    it("filters project_resource resources by iteration_number", async () => {
+    it("does NOT filter project_resource resources by iteration_number (project-level constant)", async () => {
+        // project_resource resources are user-provided inputs that exist at project level
+        // and should be available across all iterations. They should NOT be filtered by iteration_number.
         const rule: InputRule[] = [{ type: 'project_resource', slug: 'test-stage', document_key: FileType.GeneralResource }];
-        const iteration1ProjectResource: DialecticProjectResourceRow = {
-            id: 'project-resource-iter-1',
+
+        // Project resource created before dialectic starts (iteration null or 0)
+        const projectResourceAtStart: DialecticProjectResourceRow = {
+            id: 'project-resource-iter-null',
             project_id: 'proj-1',
             user_id: 'user-123',
-            file_name: 'resource-iter-1.md',
+            file_name: 'initial_user_prompt.md',
             storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/resources',
             mime_type: 'text/markdown',
@@ -1059,28 +1050,9 @@ describe('findSourceDocuments', () => {
             resource_description: { type: 'project_resource', document_key: FileType.GeneralResource },
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            iteration_number: 1,
+            iteration_number: null,
             resource_type: 'project_resource',
-            session_id: 'sess-1',
-            source_contribution_id: null,
-            stage_slug: 'test-stage',
-        };
-
-        const iteration2ProjectResource: DialecticProjectResourceRow = {
-            id: 'project-resource-iter-2',
-            project_id: 'proj-1',
-            user_id: 'user-123',
-            file_name: 'resource-iter-2.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
-            size_bytes: 3073,
-            resource_description: { type: 'project_resource', document_key: FileType.GeneralResource },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            iteration_number: 2,
-            resource_type: 'project_resource',
-            session_id: 'sess-1',
+            session_id: null,
             source_contribution_id: null,
             stage_slug: 'test-stage',
         };
@@ -1089,24 +1061,24 @@ describe('findSourceDocuments', () => {
             genericMockResults: {
                 dialectic_project_resources: {
                     select: (state: MockQueryBuilderState) => {
+                        // Assert that NO iteration_number filter is applied for project_resource
                         const hasIterationFilter = state.filters.some(
                             (filter) =>
                                 filter.type === 'eq' &&
-                                filter.column === 'iteration_number' &&
-                                filter.value === 1,
+                                filter.column === 'iteration_number',
                         );
-                        if (!hasIterationFilter) {
+                        if (hasIterationFilter) {
                             return Promise.resolve({
-                                data: [iteration1ProjectResource, iteration2ProjectResource],
-                                error: null,
-                                count: 2,
-                                status: 200,
-                                statusText: 'OK',
+                                data: null,
+                                error: new Error('project_resource queries must NOT filter by iteration_number'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Unexpected iteration_number filter',
                             });
                         }
 
                         return Promise.resolve({
-                            data: [iteration1ProjectResource],
+                            data: [projectResourceAtStart],
                             error: null,
                             count: 1,
                             status: 200,
@@ -1117,6 +1089,10 @@ describe('findSourceDocuments', () => {
             },
         });
 
+        // Parent job is at iteration 1, but should still find project_resource with null iteration
+        mockParentJob.payload.iterationNumber = 1;
+        mockParentJob.iteration_number = 1;
+
         const documents = await findSourceDocuments(
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
@@ -1124,9 +1100,7 @@ describe('findSourceDocuments', () => {
         );
 
         assertEquals(documents.length, 1);
-        assertEquals(documents[0].id, 'project-resource-iter-1');
-        assertEquals(documents[0].iteration_number, 1);
-        assertEquals(documents.some((doc) => doc.id === 'project-resource-iter-2'), false);
+        assertEquals(documents[0].id, 'project-resource-iter-null');
     });
 
     it("returns the expected 'project_resource' row when available", async () => {
@@ -1187,20 +1161,20 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
-                        const expectedStageSlug = rules[0].slug;
+                        // Assert that project_resource queries do NOT filter by stage_slug
+                        // (project-level resources are available across all stages)
                         const hasStageFilter = state.filters.some(
                             (filter) =>
                                 filter.type === 'eq' &&
-                                filter.column === 'stage_slug' &&
-                                filter.value === expectedStageSlug,
+                                filter.column === 'stage_slug',
                         );
-                        if (!hasStageFilter) {
+                        if (hasStageFilter) {
                             return Promise.resolve({
                                 data: null,
-                                error: new Error('project_resource queries must filter by rule.slug'),
+                                error: new Error('project_resource queries must NOT filter by stage_slug (project-level resource)'),
                                 count: 0,
                                 status: 400,
-                                statusText: 'Missing stage_slug filter',
+                                statusText: 'Unexpected stage_slug filter',
                             });
                         }
 
@@ -2949,5 +2923,213 @@ describe('findSourceDocuments', () => {
         assertEquals(documents[0].model_id, '77afe5e0-a0d8-4a01-974f-f74f9f89a4ef', 'Should have correct model_id');
         assertEquals(documents[0].contribution_type, 'header_context', 'Should have correct contribution_type');
         assertEquals(documents[0].document_key, 'header_context_pairwise', 'Should have document_key extracted from filename by deconstructStoragePath');
+    });
+
+    it('should allow optional documents to be missing without throwing an error', async () => {
+        // When an input rule has required: false and no matching documents exist,
+        // findSourceDocuments should skip that rule and return successfully.
+        // Example: Parenthesis stage has master_plan with required: false because
+        // master_plan only exists on iteration > 1.
+        const rules: InputRule[] = [
+            {
+                type: 'document',
+                slug: 'parenthesis',
+                document_key: FileType.master_plan,
+                required: false
+            },
+        ];
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () =>
+                        Promise.resolve({
+                            data: [], // No master_plan exists on iteration 1
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        }),
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rules,
+        );
+
+        assertEquals(documents.length, 0, 'Should return empty array when optional document is missing');
+    });
+
+    it("selects initial_user_prompt project resource by resource_type (NOT by file_name)", async () => {
+        // Integration reality:
+        // - The recipe uses type 'project_resource' with document_key 'initial_user_prompt'
+        // - The user-controlled filename may be something like 'initial_prompt_1.md' and will NOT contain 'initial_user_prompt'
+        // So this MUST be found via dialectic_project_resources.resource_type === 'initial_user_prompt', not via file_name ILIKE.
+        const rule: InputRule[] = [{ type: 'project_resource', slug: 'project', document_key: FileType.InitialUserPrompt }];
+
+        const projectWideResource: DialecticProjectResourceRow = {
+            id: 'initial-user-prompt-id',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'initial_prompt_1.md',
+            storage_bucket: 'test-bucket',
+            // FileManagerService stores InitialUserPrompt at the project root (storage_path === projectId)
+            storage_path: 'proj-1',
+            mime_type: 'text/markdown',
+            size_bytes: 2048,
+            resource_description: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: null,
+            resource_type: FileType.InitialUserPrompt,
+            session_id: null,
+            source_contribution_id: null,
+            stage_slug: null,
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: (state: MockQueryBuilderState) => {
+                        // Assert required filters ARE present
+                        const hasProjectFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'project_id' &&
+                                filter.value === 'proj-1',
+                        );
+                        if (!hasProjectFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('project_resource queries must scope by project_id'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing project_id filter',
+                            });
+                        }
+
+                        const hasResourceTypeFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'resource_type' &&
+                                filter.value === FileType.InitialUserPrompt,
+                        );
+                        if (!hasResourceTypeFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('initial_user_prompt project resource queries must filter by resource_type=initial_user_prompt'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing resource_type filter',
+                            });
+                        }
+
+                        // Assert FORBIDDEN filters are NOT present
+                        const hasStageFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'stage_slug',
+                        );
+                        if (hasStageFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('project_resource queries must NOT filter by stage_slug'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Unexpected stage_slug filter',
+                            });
+                        }
+
+                        const hasIterationFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'iteration_number',
+                        );
+                        if (hasIterationFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('project_resource queries must NOT filter by iteration_number'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Unexpected iteration_number filter',
+                            });
+                        }
+
+                        const hasModelFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'model_id',
+                        );
+                        if (hasModelFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('project_resource queries must NOT filter by model_id'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Unexpected model_id filter',
+                            });
+                        }
+
+                        const hasSessionFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'session_id',
+                        );
+                        if (hasSessionFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('project_resource queries must NOT filter by session_id'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Unexpected session_id filter',
+                            });
+                        }
+
+                        const hasFileNameIlikeFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'ilike' &&
+                                filter.column === 'file_name',
+                        );
+                        if (hasFileNameIlikeFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('initial_user_prompt project resource queries must NOT filter by file_name'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Unexpected file_name ilike filter',
+                            });
+                        }
+
+                        return Promise.resolve({
+                            data: [projectWideResource],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        // Parent job is deep in the workflow with a specific model/iteration/stage,
+        // but should still find the project-level initial prompt.
+        mockParentJob.payload.iterationNumber = 2;
+        mockParentJob.iteration_number = 2;
+        mockParentJob.payload.stageSlug = 'paralysis';
+        mockParentJob.stage_slug = 'paralysis';
+        mockParentJob.payload.model_id = 'model-xyz';
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(documents.length, 1, 'Should find project-level resource regardless of job context');
+        assertEquals(documents[0].id, 'initial-user-prompt-id', 'Should return the correct project resource');
     });
 });

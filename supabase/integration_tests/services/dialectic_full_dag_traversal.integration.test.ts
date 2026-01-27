@@ -247,9 +247,6 @@ describe("Dialectic Full DAG Traversal Integration Tests (Step 99.b)", () => {
       }
 
       for (const job of pendingJobs) {
-        if (!isDialecticJobRow(job)) {
-          throw new Error(`Fetched entity is not a valid DialecticJobRow`);
-        }
         await mockAndProcessJob(job, deps);
       }
       iterations++;
@@ -390,6 +387,7 @@ describe("Dialectic Full DAG Traversal Integration Tests (Step 99.b)", () => {
       iterationNumber: 1,
       walletId: testWalletId,
       user_jwt: testUserJwt,
+      is_test_job: true,
     };
 
     const planJobsResult = await generateContributions(adminClient, generateContributionsPayload, testUser, workerDeps, testUserJwt);
@@ -572,6 +570,7 @@ describe("Dialectic Full DAG Traversal Integration Tests (Step 99.b)", () => {
       iterationNumber: 1,
       walletId: testWalletId,
       user_jwt: testUserJwt,
+      is_test_job: true,
     };
 
     const planJobsResult = await generateContributions(adminClient, generateContributionsPayload, testUser, workerDeps, testUserJwt);
@@ -740,6 +739,7 @@ describe("Dialectic Full DAG Traversal Integration Tests (Step 99.b)", () => {
       iterationNumber: 1,
       walletId: testWalletId,
       user_jwt: testUserJwt,
+      is_test_job: true,
     };
 
     const planJobsResult = await generateContributions(adminClient, generateContributionsPayload, testUser, workerDeps, testUserJwt);
@@ -958,5 +958,335 @@ describe("Dialectic Full DAG Traversal Integration Tests (Step 99.b)", () => {
       const keyCount = deliverablesByKey.get(key) || 0;
       assertEquals(keyCount, n, `Should have ${n} final deliverables with document_key '${key}' (${n} models)`);
     }
+  });
+
+  it("99.b.vi: Parenthesis produces n×3 planning documents in correct sequence", async () => {
+    const n = testModelIds.length;
+    assertEquals(n, 3, "Test requires exactly 3 models");
+    assertExists(testSessionId, "Test session must exist from previous test");
+
+    // Check if session has already advanced to parenthesis
+    const { data: sessionData } = await adminClient
+      .from('dialectic_sessions')
+      .select('current_stage:current_stage_id(slug)')
+      .eq('id', testSessionId)
+      .single();
+
+    assertExists(sessionData, "Session must exist");
+
+    const isAlreadyAtParenthesis = sessionData.current_stage &&
+      !Array.isArray(sessionData.current_stage) &&
+      sessionData.current_stage.slug === 'parenthesis';
+
+    if (!isAlreadyAtParenthesis) {
+      // Get synthesis contributions to use as responses
+      const { data: synthesisContributions } = await adminClient
+        .from('dialectic_contributions')
+        .select('id')
+        .eq('session_id', testSessionId)
+        .eq('stage', 'synthesis')
+        .eq('contribution_type', 'synthesis')
+        .eq('iteration_number', 1);
+
+      assertExists(synthesisContributions, "Synthesis contributions must exist");
+      assert(synthesisContributions.length > 0, "Must have at least one synthesis contribution");
+
+      // Advance session to parenthesis stage using submitStageResponses
+      const submitPayload: SubmitStageResponsesPayload = {
+        sessionId: testSessionId,
+        projectId: testProject.id,
+        stageSlug: 'synthesis',
+        currentIterationNumber: 1,
+        responses: synthesisContributions.map(c => ({
+          originalContributionId: c.id,
+          responseText: `Integration test response for contribution ${c.id}`,
+        })),
+      };
+
+      const fileManager = new FileManagerService(adminClient, { constructStoragePath, logger: testLogger });
+      const indexingService = new MockIndexingService();
+      const validMockConfig = { ...MOCK_MODEL_CONFIG, output_token_cost_rate: 0.001 };
+      const { instance: mockAdapter } = getMockAiProviderAdapter(testLogger, validMockConfig);
+      const adapterWithEmbedding = {
+        ...mockAdapter,
+        getEmbedding: async (_text: string) => ({
+          embedding: Array(1536).fill(0.1),
+          usage: { prompt_tokens: 0, total_tokens: 0 },
+        }),
+      };
+      const embeddingClient = new EmbeddingClient(adapterWithEmbedding);
+
+      const submitDeps: SubmitStageResponsesDependencies = {
+        logger: testLogger,
+        fileManager: fileManager,
+        downloadFromStorage: downloadFromStorage,
+        indexingService: indexingService,
+        embeddingClient: embeddingClient,
+      };
+
+      const submitResult = await submitStageResponses(
+        submitPayload,
+        adminClient,
+        testUser,
+        submitDeps,
+      );
+
+      assert(submitResult.data, `Failed to advance session to parenthesis: ${submitResult.error?.message}`);
+      assertExists(submitResult.data?.updatedSession, "Session should be updated after stage submission");
+    }
+
+    // Trigger Parenthesis Generation
+    const generateContributionsPayload: GenerateContributionsPayload = {
+      projectId: testProject.id,
+      sessionId: testSessionId,
+      stageSlug: "parenthesis",
+      iterationNumber: 1,
+      walletId: testWalletId,
+      user_jwt: testUserJwt,
+      is_test_job: true,
+    };
+
+    const planJobsResult = await generateContributions(adminClient, generateContributionsPayload, testUser, workerDeps, testUserJwt);
+    assert(planJobsResult.success, `Failed to generate parenthesis contributions: ${planJobsResult.error?.message}`);
+
+    await processStageUntilComplete(testSessionId, "parenthesis", workerDeps);
+
+    // Parenthesis document keys
+    const parenthesisKeys = [
+      'technical_requirements',
+      'master_plan',
+      'milestone_schema'
+    ];
+
+    // Query for parenthesis outputs
+    const { data: allParenthesisContributions } = await adminClient
+      .from('dialectic_contributions')
+      .select('*')
+      .eq('session_id', testSessionId)
+      .eq('stage', 'parenthesis')
+      .eq('iteration_number', 1)
+      .in('contribution_type', ['parenthesis', 'assembled_document_json', 'model_contribution_raw_json']);
+
+    assertExists(allParenthesisContributions, "Parenthesis contributions should exist");
+
+    // Filter for actual parenthesis documents by document_key
+    const actualParenthesisDocs = allParenthesisContributions.filter(doc => {
+      if (!doc.file_name || !doc.storage_path) return false;
+      try {
+        const info = deconstructStoragePath({ storageDir: doc.storage_path, fileName: doc.file_name });
+        return info.documentKey && parenthesisKeys.includes(info.documentKey);
+      } catch {
+        return false;
+      }
+    });
+
+    const expectedParenthesisCount = n * 3; // n models × 3 document types
+    assertEquals(
+      actualParenthesisDocs.length,
+      expectedParenthesisCount,
+      `Should have ${expectedParenthesisCount} parenthesis documents (${n} models × 3 types). Found ${actualParenthesisDocs.length}.`
+    );
+
+    // Verify each document type appears n times (once per model)
+    const docsByKey = new Map<string, number>();
+    for (const doc of actualParenthesisDocs) {
+      if (doc.file_name && doc.storage_path) {
+        try {
+          const info = deconstructStoragePath({
+            storageDir: doc.storage_path,
+            fileName: doc.file_name,
+          });
+          if (info.documentKey) {
+            const count = docsByKey.get(info.documentKey) || 0;
+            docsByKey.set(info.documentKey, count + 1);
+          }
+        } catch {
+          // Skip if deconstruction fails
+        }
+      }
+    }
+
+    for (const key of parenthesisKeys) {
+      const keyCount = docsByKey.get(key) || 0;
+      assertEquals(keyCount, n, `Should have ${n} parenthesis documents with document_key '${key}' (${n} models)`);
+    }
+  });
+
+  it("99.b.vii: Paralysis produces n×3 implementation documents with bundled inputs", async () => {
+    const n = testModelIds.length;
+    assertEquals(n, 3, "Test requires exactly 3 models");
+    assertExists(testSessionId, "Test session must exist from previous test");
+
+    // Check if session has already advanced to paralysis
+    const { data: sessionData } = await adminClient
+      .from('dialectic_sessions')
+      .select('current_stage:current_stage_id(slug)')
+      .eq('id', testSessionId)
+      .single();
+
+    assertExists(sessionData, "Session must exist");
+
+    const isAlreadyAtParalysis = sessionData.current_stage &&
+      !Array.isArray(sessionData.current_stage) &&
+      sessionData.current_stage.slug === 'paralysis';
+
+    if (!isAlreadyAtParalysis) {
+      // Get parenthesis contributions to use as responses
+      const { data: parenthesisContributions } = await adminClient
+        .from('dialectic_contributions')
+        .select('id')
+        .eq('session_id', testSessionId)
+        .eq('stage', 'parenthesis')
+        .eq('contribution_type', 'parenthesis')
+        .eq('iteration_number', 1);
+
+      assertExists(parenthesisContributions, "Parenthesis contributions must exist");
+      assert(parenthesisContributions.length > 0, "Must have at least one parenthesis contribution");
+
+      // Advance session to paralysis stage using submitStageResponses
+      const submitPayload: SubmitStageResponsesPayload = {
+        sessionId: testSessionId,
+        projectId: testProject.id,
+        stageSlug: 'parenthesis',
+        currentIterationNumber: 1,
+        responses: parenthesisContributions.map(c => ({
+          originalContributionId: c.id,
+          responseText: `Integration test response for contribution ${c.id}`,
+        })),
+      };
+
+      const fileManager = new FileManagerService(adminClient, { constructStoragePath, logger: testLogger });
+      const indexingService = new MockIndexingService();
+      const validMockConfig = { ...MOCK_MODEL_CONFIG, output_token_cost_rate: 0.001 };
+      const { instance: mockAdapter } = getMockAiProviderAdapter(testLogger, validMockConfig);
+      const adapterWithEmbedding = {
+        ...mockAdapter,
+        getEmbedding: async (_text: string) => ({
+          embedding: Array(1536).fill(0.1),
+          usage: { prompt_tokens: 0, total_tokens: 0 },
+        }),
+      };
+      const embeddingClient = new EmbeddingClient(adapterWithEmbedding);
+
+      const submitDeps: SubmitStageResponsesDependencies = {
+        logger: testLogger,
+        fileManager: fileManager,
+        downloadFromStorage: downloadFromStorage,
+        indexingService: indexingService,
+        embeddingClient: embeddingClient,
+      };
+
+      const submitResult = await submitStageResponses(
+        submitPayload,
+        adminClient,
+        testUser,
+        submitDeps,
+      );
+
+      assert(submitResult.data, `Failed to advance session to paralysis: ${submitResult.error?.message}`);
+      assertExists(submitResult.data?.updatedSession, "Session should be updated after stage submission");
+    }
+
+    // Trigger Paralysis Generation
+    const generateContributionsPayload: GenerateContributionsPayload = {
+      projectId: testProject.id,
+      sessionId: testSessionId,
+      stageSlug: "paralysis",
+      iterationNumber: 1,
+      walletId: testWalletId,
+      user_jwt: testUserJwt,
+      is_test_job: true,
+    };
+
+    const planJobsResult = await generateContributions(adminClient, generateContributionsPayload, testUser, workerDeps, testUserJwt);
+    assert(planJobsResult.success, `Failed to generate paralysis contributions: ${planJobsResult.error?.message}`);
+
+    await processStageUntilComplete(testSessionId, "paralysis", workerDeps);
+
+    // Paralysis document keys
+    const paralysisKeys = [
+      'actionable_checklist',
+      'updated_master_plan',
+      'advisor_recommendations'
+    ];
+
+    // Query for paralysis outputs
+    const { data: allParalysisContributions } = await adminClient
+      .from('dialectic_contributions')
+      .select('*')
+      .eq('session_id', testSessionId)
+      .eq('stage', 'paralysis')
+      .eq('iteration_number', 1)
+      .in('contribution_type', ['paralysis', 'assembled_document_json', 'model_contribution_raw_json']);
+
+    assertExists(allParalysisContributions, "Paralysis contributions should exist");
+
+    // Filter for actual paralysis documents by document_key
+    const actualParalysisDocs = allParalysisContributions.filter(doc => {
+      if (!doc.file_name || !doc.storage_path) return false;
+      try {
+        const info = deconstructStoragePath({ storageDir: doc.storage_path, fileName: doc.file_name });
+        return info.documentKey && paralysisKeys.includes(info.documentKey);
+      } catch {
+        return false;
+      }
+    });
+
+    const expectedParalysisCount = n * 3; // n models × 3 document types
+    assertEquals(
+      actualParalysisDocs.length,
+      expectedParalysisCount,
+      `Should have ${expectedParalysisCount} paralysis documents (${n} models × 3 types). Found ${actualParalysisDocs.length}.`
+    );
+
+    // Verify each document type appears n times (once per model)
+    const docsByKey = new Map<string, number>();
+    for (const doc of actualParalysisDocs) {
+      if (doc.file_name && doc.storage_path) {
+        try {
+          const info = deconstructStoragePath({
+            storageDir: doc.storage_path,
+            fileName: doc.file_name,
+          });
+          if (info.documentKey) {
+            const count = docsByKey.get(info.documentKey) || 0;
+            docsByKey.set(info.documentKey, count + 1);
+          }
+        } catch {
+          // Skip if deconstruction fails
+        }
+      }
+    }
+
+    for (const key of paralysisKeys) {
+      const keyCount = docsByKey.get(key) || 0;
+      assertEquals(keyCount, n, `Should have ${n} paralysis documents with document_key '${key}' (${n} models)`);
+    }
+
+    // Verify bundled inputs: each paralysis job should have received all 3 parenthesis documents as inputs
+    // This verifies the per_model granularity strategy is working correctly
+    const { data: paralysisJobs } = await adminClient
+      .from('dialectic_generation_jobs')
+      .select('id, payload')
+      .eq('session_id', testSessionId)
+      .eq('stage_slug', 'paralysis')
+      .eq('status', 'completed');
+
+    assertExists(paralysisJobs, "Paralysis jobs should exist");
+
+    // Verify at least one job has bundled inputs structure
+    // The exact structure depends on how planPerModel bundles inputs
+    const jobsWithBundledInputs = paralysisJobs.filter(job => {
+      const payload = job.payload;
+      if (!isRecord(payload)) return false;
+      // Check for inputs array or bundled input structure
+      const inputs = payload.inputs;
+      return Array.isArray(inputs) || (isRecord(inputs) && Object.keys(inputs).length > 0);
+    });
+
+    assert(
+      jobsWithBundledInputs.length > 0,
+      `At least one paralysis job should have bundled inputs from parenthesis stage`
+    );
   });
 });

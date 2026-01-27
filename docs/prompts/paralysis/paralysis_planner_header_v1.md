@@ -112,6 +112,75 @@
     {
       "document_key": "updated_master_plan",
       "content_to_include": {
+        "index": [],
+        "executive_summary": "",
+        "phases": [
+          {
+            "name": "",
+            "objective": "",
+            "technical_context": "",
+            "implementation_strategy": "",
+            "milestones": [
+              {
+                "id": "",
+                "title": "",
+                "status": "[ ]",
+                "objective": "",
+                "description": "",
+                "technical_complexity": "",
+                "effort_estimate": "",
+                "implementation_approach": "",
+                "test_strategy": "",
+                "component_labels": [],
+                "inputs": [],
+                "outputs": [],
+                "validation": [],
+                "dependencies": [],
+                "coverage_notes": "",
+                "iteration_delta": "",
+                "acceptance_criteria": []
+              }
+            ]
+          }
+        ],
+        "status_summary": {
+          "completed": [],
+          "in_progress": [],
+          "up_next": []
+        },
+        "status_markers": {
+          "unstarted": "[ ]",
+          "in_progress": "[🚧]",
+          "completed": "[✅]"
+        },
+        "dependency_rules": [],
+        "generation_limits": {
+          "max_steps": 200,
+          "target_steps": "120-180",
+          "max_output_lines": "600-800"
+        },
+        "feature_scope": [],
+        "features": [],
+        "mvp_description": "",
+        "market_opportunity": "",
+        "competitive_analysis": "",
+        "technical_context": "",
+        "implementation_context": "",
+        "test_framework": "",
+        "component_mapping": "",
+        "architecture_summary": "",
+        "architecture": "",
+        "services": [],
+        "components": [],
+        "integration_points": [],
+        "dependency_resolution": [],
+        "frontend_stack": {},
+        "backend_stack": {},
+        "data_platform": {},
+        "devops_tooling": {},
+        "security_tooling": {},
+        "shared_libraries": [],
+        "third_party_services": [],
         "preserve_completed": true,
         "set_in_progress": "[🚧]",
         "future_status": "[ ]",

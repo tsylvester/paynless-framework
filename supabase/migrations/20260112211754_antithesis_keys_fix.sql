@@ -1014,6 +1014,51 @@ BEGIN
 END $$;
 
 -- ---------------------------------------------------------------------------
+-- Parenthesis final documents granularity_strategy fix
+-- Updates all three Parenthesis final document steps to use 'per_model' instead of 'per_source_document'
+-- Each model should receive all inputs and produce a single document, not one per source document
+-- Affects: generate-technical_requirements, generate-master-plan, generate-milestone-schema
+-- ---------------------------------------------------------------------------
+
+DO $$
+DECLARE
+  v_parenthesis_step_keys text[] := ARRAY[
+    'generate-technical_requirements',
+    'generate-master-plan',
+    'generate-milestone-schema'
+  ];
+  v_step_key text;
+BEGIN
+  -- Update template steps
+  FOREACH v_step_key IN ARRAY v_parenthesis_step_keys
+  LOOP
+    UPDATE public.dialectic_recipe_template_steps
+    SET granularity_strategy = 'per_model',
+        updated_at = now()
+    WHERE step_key = v_step_key
+      AND granularity_strategy = 'per_source_document';
+    
+    IF NOT FOUND THEN
+      RAISE WARNING 'Template step with step_key=% not found or already updated', v_step_key;
+    END IF;
+  END LOOP;
+
+  -- Update instance steps
+  FOREACH v_step_key IN ARRAY v_parenthesis_step_keys
+  LOOP
+    UPDATE public.dialectic_stage_recipe_steps
+    SET granularity_strategy = 'per_model',
+        updated_at = now()
+    WHERE step_key = v_step_key
+      AND granularity_strategy = 'per_source_document';
+
+    IF NOT FOUND THEN
+      RAISE WARNING 'Instance step with step_key=% not found or already updated', v_step_key;
+    END IF;
+  END LOOP;
+END $$;
+
+-- ---------------------------------------------------------------------------
 -- Antithesis inputs_relevance tie-breaker fix
 -- Fixes tied relevance scores (0.95) for business_case and feature_spec.
 -- For comparison/evaluation of technical proposals, feature_spec (what they're
@@ -1337,6 +1382,173 @@ BEGIN
       AND (outputs_required ? 'documents')
       AND jsonb_array_length(outputs_required->'documents') > 0
       AND (outputs_required->'documents'->0->>'document_key') = 'advisor_recommendations';
+  END LOOP;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Paralysis keys union fix - SECOND PASS
+-- Re-run the merge AFTER executor content_to_include is fully expanded
+-- This ensures planner context_for_documents includes all executor keys
+-- ---------------------------------------------------------------------------
+
+DO $$
+DECLARE
+  v_recipe_name text := 'paralysis_v1';
+  v_recipe_version integer := 1;
+  v_stage_slug text := 'paralysis';
+  v_planner_step_key text := 'build-implementation-header';
+  v_template_id uuid;
+  v_instance_id uuid;
+  v_planner_step_id uuid;
+BEGIN
+  -- -------------------------
+  -- Template recipe (paralysis_v1)
+  -- -------------------------
+  SELECT rt.id
+  INTO v_template_id
+  FROM public.dialectic_recipe_templates rt
+  WHERE rt.recipe_name = v_recipe_name
+    AND rt.recipe_version = v_recipe_version
+  LIMIT 1;
+
+  IF v_template_id IS NULL THEN
+    RAISE EXCEPTION 'Missing recipe template with recipe_name=% recipe_version=%', v_recipe_name, v_recipe_version;
+  END IF;
+
+  SELECT s.id
+  INTO v_planner_step_id
+  FROM public.dialectic_recipe_template_steps s
+  WHERE s.template_id = v_template_id
+    AND s.step_key = v_planner_step_key
+    AND s.job_type = 'PLAN'
+    AND s.prompt_type = 'Planner'
+    AND s.output_type = 'header_context'
+  LIMIT 1;
+
+  IF v_planner_step_id IS NULL THEN
+    RAISE EXCEPTION 'Missing paralysis template planner step: recipe_name=% recipe_version=% step_key=%', v_recipe_name, v_recipe_version, v_planner_step_key;
+  END IF;
+
+  -- 1) Expand planner context_for_documents to include executor keys (within same template_id)
+  -- This is a second pass after executor content_to_include has been fully expanded
+  WITH planner AS (
+    SELECT id, template_id, outputs_required
+    FROM public.dialectic_recipe_template_steps
+    WHERE id = v_planner_step_id
+  ),
+  expanded AS (
+    SELECT
+      p.id AS planner_id,
+      jsonb_agg(
+        jsonb_set(
+          ctx.ctx,
+          '{content_to_include}',
+          (
+            ctx.ctx->'content_to_include'
+            ||
+            COALESCE(exec.exec_content_to_include, '{}'::jsonb)
+          ),
+          true
+        )
+        ORDER BY ctx.ord
+      ) AS new_context_for_documents
+    FROM planner p
+      CROSS JOIN LATERAL jsonb_array_elements(p.outputs_required->'context_for_documents') WITH ORDINALITY AS ctx(ctx, ord)
+      LEFT JOIN LATERAL (
+        SELECT doc->'content_to_include' AS exec_content_to_include
+        FROM public.dialectic_recipe_template_steps e
+          CROSS JOIN LATERAL jsonb_array_elements(e.outputs_required->'documents') AS doc
+        WHERE e.template_id = p.template_id
+          AND e.id <> p.id
+          AND (e.outputs_required ? 'documents')
+          AND doc->>'document_key' = ctx.ctx->>'document_key'
+          AND (doc ? 'content_to_include')
+        LIMIT 1
+      ) exec ON true
+    GROUP BY p.id
+  )
+  UPDATE public.dialectic_recipe_template_steps p
+  SET outputs_required = jsonb_set(
+        p.outputs_required,
+        '{context_for_documents}',
+        e.new_context_for_documents,
+        true
+      ),
+      updated_at = now()
+  FROM expanded e
+  WHERE p.id = e.planner_id;
+
+  -- -------------------------
+  -- Stage recipe instances (paralysis)
+  -- -------------------------
+  FOR v_instance_id IN
+    SELECT i.id
+    FROM public.dialectic_stage_recipe_instances i
+    JOIN public.dialectic_stages s ON s.id = i.stage_id
+    WHERE s.slug = v_stage_slug
+  LOOP
+    SELECT st.id
+    INTO v_planner_step_id
+    FROM public.dialectic_stage_recipe_steps st
+    WHERE st.instance_id = v_instance_id
+      AND st.step_key = v_planner_step_key
+      AND st.job_type = 'PLAN'
+      AND st.prompt_type = 'Planner'
+      AND st.output_type = 'header_context'
+    LIMIT 1;
+
+    IF v_planner_step_id IS NULL THEN
+      RAISE EXCEPTION 'Missing paralysis stage planner step: stage_slug=% instance_id=% step_key=%', v_stage_slug, v_instance_id, v_planner_step_key;
+    END IF;
+
+    -- 1) Expand stage planner context_for_documents to include executor keys (within same instance_id)
+    -- This is a second pass after executor content_to_include has been fully expanded
+    WITH planner AS (
+      SELECT id, instance_id, outputs_required
+      FROM public.dialectic_stage_recipe_steps
+      WHERE id = v_planner_step_id
+    ),
+    expanded AS (
+      SELECT
+        p.id AS planner_id,
+        jsonb_agg(
+          jsonb_set(
+            ctx.ctx,
+            '{content_to_include}',
+            (
+              ctx.ctx->'content_to_include'
+              ||
+              COALESCE(exec.exec_content_to_include, '{}'::jsonb)
+            ),
+            true
+          )
+          ORDER BY ctx.ord
+        ) AS new_context_for_documents
+      FROM planner p
+        CROSS JOIN LATERAL jsonb_array_elements(p.outputs_required->'context_for_documents') WITH ORDINALITY AS ctx(ctx, ord)
+        LEFT JOIN LATERAL (
+          SELECT doc->'content_to_include' AS exec_content_to_include
+          FROM public.dialectic_stage_recipe_steps e
+            CROSS JOIN LATERAL jsonb_array_elements(e.outputs_required->'documents') AS doc
+          WHERE e.instance_id = p.instance_id
+            AND e.id <> p.id
+            AND (e.outputs_required ? 'documents')
+            AND doc->>'document_key' = ctx.ctx->>'document_key'
+            AND (doc ? 'content_to_include')
+          LIMIT 1
+        ) exec ON true
+      GROUP BY p.id
+    )
+    UPDATE public.dialectic_stage_recipe_steps p
+    SET outputs_required = jsonb_set(
+          p.outputs_required,
+          '{context_for_documents}',
+          e.new_context_for_documents,
+          true
+        ),
+        updated_at = now()
+    FROM expanded e
+    WHERE p.id = e.planner_id;
   END LOOP;
 END $$;
 
