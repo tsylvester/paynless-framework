@@ -317,7 +317,7 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 						/>
 					</InternalDropdownButton>
 				</DropdownMenuTrigger>
-				<DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-80 bg-background/95 backdrop-blur-md border shadow-lg">
+				<DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[400px] bg-background/95 backdrop-blur-md border shadow-lg">
 					{dropdownContent}
 				</DropdownMenuContent>
 			</DropdownMenu>

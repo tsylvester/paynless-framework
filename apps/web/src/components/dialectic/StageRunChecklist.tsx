@@ -26,7 +26,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
-import { XCircle } from 'lucide-react';
+import { XCircle, CheckCircle2, Loader2 } from 'lucide-react';
 
 const formatStatusLabel = (value: string): string => {
   const mapping: Record<string, string> = {
@@ -378,17 +378,29 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
                         handleDocumentKeyDown(event, entry.documentKey, documentModelId || undefined, stepKey)
                       }
                     >
-                      <div className="flex items-center gap-2">
-                        {entry.status === 'failed' ? (
+                      <span className="font-mono text-xs sm:text-sm truncate flex-1 min-w-0">{entry.documentKey}</span>
+                      <div className="shrink-0 ml-2">
+                        {entry.status === 'completed' ? (
+                          <CheckCircle2
+                            aria-label="Document completed"
+                            className="h-4 w-4 text-emerald-600 dark:text-emerald-400"
+                            data-testid="document-completed-icon"
+                          />
+                        ) : entry.status === 'failed' ? (
                           <XCircle
                             aria-label="Document failed"
                             className="h-4 w-4 text-destructive"
                             data-testid="document-failed-icon"
                           />
-                        ) : null}
-                        <span className="font-mono text-xs sm:text-sm">{entry.documentKey}</span>
-                      </div>
-                      <Badge className="shrink-0">{documentStatusLabel}</Badge>
+                        ) : entry.status === 'generating' || entry.status === 'in_progress' ? (
+                          <Loader2
+                            aria-label="Document generating"
+                            className="h-4 w-4 text-blue-600 dark:text-blue-400 animate-spin"
+                            data-testid="document-generating-icon"
+                          />
+                        ) : (
+                          <Badge variant="outline" className="text-xs px-1.5 py-0">{documentStatusLabel}</Badge>
+                        )}</div>
                     </li>
                   );
                 })}
