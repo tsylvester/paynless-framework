@@ -388,3 +388,13 @@
         *   `[✅]` 17.g.i. User can edit every document and provide feedback on every document; the two fields retain separate values.
         *   `[✅]` 17.g.ii. "Submit Responses & Advance Stage" submits both drafts when both are present; no input lost.
     *   `[✅]` 17.h. [COMMIT] `feat(ui): bind Document Content and Document Feedback to separate drafts in GeneratedContributionCard`
+
+    - Determine an index value for a full flow for 3 models and set that as the new user signup token deposit
+    - Fix the auto increment stage so that submit stage responses doesn't error 
+    - Fix the inputs required documents not being appended to the chat message 
+    - Stage progress data for future stages needs to tolerate missing inputs because they aren't generated yet, this is progress information, not an error  
+    - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
+    - Stop automatically incrementing users to the next stage tab when documents successfully generate 
+    - Progress needs to start at zero, not 20%, the stage isn't finished, and increment progress when steps are complete
+    - Each step needs to emit a completed notice so that the progress bar can track status 
+    - All stage progress needs to draw from a SSOT in the store informed by the step progress notifications 
