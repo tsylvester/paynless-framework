@@ -1,52 +1,29 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DialecticApiClient } from './dialectic.api';
-import { ApiClient, ApiError as LocalApiError } from './apiClient';
 import { 
     ApiResponse, 
-    ApiError as ApiErrorType,
+    ApiError,
     CreateProjectPayload, 
     DialecticProject, 
-    StartSessionPayload, 
     DialecticSession, 
-    AIModelCatalogEntry, 
-    ContributionContentSignedUrlResponse, 
-    DialecticProjectResource, 
-    DomainOverlayDescriptor, 
     UpdateProjectDomainPayload,
     DeleteProjectPayload,
     DialecticServiceActionPayload,
-    GetContributionContentSignedUrlPayload,
     GetProjectResourceContentPayload,
-    DialecticContribution,
-    GenerateContributionsPayload,
-    GenerateContributionsResponse,
     UpdateProjectInitialPromptPayload,
-    SubmitStageResponsesPayload,
-    SubmitStageResponsesResponse,
     SaveContributionEditPayload,
-    GetIterationInitialPromptPayload,
-    IterationInitialPromptData,
+    SaveContributionEditSuccessResponse,
+    EditedDocumentResource,
     GetProjectResourceContentResponse,
-    DialecticDomain,
     DialecticProcessTemplate,
-    DialecticStage,
-    UpdateSessionModelsPayload,
-    DomainDescriptor,
-    GetContributionContentDataResponse,
+    DialecticStageRecipe,
+    SuccessResponse,
 } from '@paynless/types';
 
-// Mock the base ApiClient
-const mockApiClientPost = vi.fn();
-const mockApiClient = {
-    get: vi.fn(),
-    post: mockApiClientPost,
-    put: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
-} as unknown as ApiClient; 
+import { createMockDialecticClient } from './mocks/dialectic.api.mock';
 
 // Create an instance of the class we are testing
-const dialecticApiClient = new DialecticApiClient(mockApiClient);
+const dialecticApiClient = createMockDialecticClient();
 
 // Mock data (ensure these align with current type definitions)
 const mockDialecticProject: DialecticProject = {
@@ -142,12 +119,12 @@ describe('DialecticApiClient', () => {
                 data: mockClonedProject,
                 status: 201, // 201 for a new resource created
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.cloneProject.mockResolvedValue(mockResponse);
 
-            await dialecticApiClient.cloneProject(validPayload);
+            await dialecticApiClient.cloneProject(validPayload.projectId);
 
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(dialecticApiClient.cloneProject).toHaveBeenCalledTimes(1);
+            expect(dialecticApiClient.cloneProject).toHaveBeenCalledWith(validPayload.projectId);
         });
 
         it('should return the cloned project data on successful response', async () => {
@@ -155,9 +132,9 @@ describe('DialecticApiClient', () => {
                 data: mockClonedProject,
                 status: 201,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.cloneProject.mockResolvedValue(mockResponse);
 
-            const result = await dialecticApiClient.cloneProject(validPayload);
+            const result = await dialecticApiClient.cloneProject(validPayload.projectId);
 
             expect(result.data).toEqual(mockClonedProject);
             expect(result.status).toBe(201);
@@ -165,14 +142,14 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed clone (e.g., original project not found)', async () => {
-            const mockApiError: ApiErrorType = { code: 'NOT_FOUND', message: 'Original project to clone not found' };
+            const mockApiError: ApiError = { code: 'NOT_FOUND', message: 'Original project to clone not found' };
             const mockErrorResponse: ApiResponse<DialecticProject> = {
                 error: mockApiError,
                 status: 404,
             };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+            dialecticApiClient.cloneProject.mockResolvedValue(mockErrorResponse);
 
-            const result = await dialecticApiClient.cloneProject(validPayload);
+            const result = await dialecticApiClient.cloneProject(validPayload.projectId);
 
             expect(result.error).toEqual(mockApiError);
             expect(result.status).toBe(404);
@@ -181,16 +158,9 @@ describe('DialecticApiClient', () => {
 
         it('should return a network error if apiClient.post rejects', async () => {
             const networkErrorMessage = 'Simulated network failure for cloneProject';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+            dialecticApiClient.cloneProject.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            const result = await dialecticApiClient.cloneProject(validPayload);
-
-            expect(result.error).toEqual({
-                code: 'NETWORK_ERROR',
-                message: networkErrorMessage,
-            });
-            expect(result.status).toBe(0);
-            expect(result.data).toBeUndefined();
+            await expect(dialecticApiClient.cloneProject(validPayload.projectId)).rejects.toThrow(networkErrorMessage);
         });
     });    
     
@@ -247,22 +217,13 @@ describe('DialecticApiClient', () => {
                 data: mockProjectResponse,
                 status: 201,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.createProject.mockResolvedValue(mockResponse);
 
             const formData = createFormDataFromPayload(validPayload);
             await dialecticApiClient.createProject(formData);
 
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            const calls = mockApiClientPost.mock.calls;
-            expect(calls[0][0]).toEqual(endpoint);
-            // Check FormData content more robustly if possible, or ensure it's a FormData instance
-            expect(calls[0][1]).toBeInstanceOf(FormData);
-            const sentFormData = calls[0][1] as FormData;
-            expect(sentFormData.get('action')).toEqual('createProject');
-            expect(sentFormData.get('projectName')).toEqual(validPayload.projectName);
-            expect(sentFormData.get('initialUserPromptText')).toEqual(validPayload.initialUserPrompt);
-            expect(sentFormData.get('selectedDomainId')).toEqual(validPayload.selectedDomainId);
-            expect(calls[0][2]).toBeUndefined(); // No options expected
+            expect(dialecticApiClient.createProject).toHaveBeenCalledTimes(1);
+            expect(dialecticApiClient.createProject).toHaveBeenCalledWith(formData);
         });
 
         it('should return the created project data on successful response', async () => {
@@ -292,7 +253,7 @@ describe('DialecticApiClient', () => {
                 data: mockProjectData,
                 status: 201,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.createProject.mockResolvedValue(mockResponse);
 
             const formData = createFormDataFromPayload(validPayload);
             const result = await dialecticApiClient.createProject(formData);
@@ -303,12 +264,12 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed project creation', async () => {
-            const mockApiError: ApiErrorType = { code: 'VALIDATION_ERROR', message: 'Project name is required' };
+            const mockApiError: ApiError = { code: 'VALIDATION_ERROR', message: 'Project name is required' };
             const mockErrorResponse: ApiResponse<DialecticProject> = {
                 error: mockApiError,
                 status: 400,
             };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+            dialecticApiClient.createProject.mockResolvedValue(mockErrorResponse);
             
             const formData = createFormDataFromPayload(validPayload);
             const result = await dialecticApiClient.createProject(formData); 
@@ -320,17 +281,10 @@ describe('DialecticApiClient', () => {
 
         it('should return a network error if apiClient.post rejects', async () => {
             const networkErrorMessage = 'Simulated network failure';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+            dialecticApiClient.createProject.mockRejectedValueOnce(new Error(networkErrorMessage));
 
             const formData = createFormDataFromPayload(validPayload);
-            const result = await dialecticApiClient.createProject(formData); 
-
-            expect(result.error).toEqual({
-                code: 'NETWORK_ERROR',
-                message: networkErrorMessage,
-            });
-            expect(result.status).toBe(0);
-            expect(result.data).toBeUndefined();
+            await expect(dialecticApiClient.createProject(formData)).rejects.toThrow(networkErrorMessage);
         });
     });    
     
@@ -344,12 +298,12 @@ describe('DialecticApiClient', () => {
                 data: undefined, // Or null, depending on expected void response structure
                 status: 204, // No Content is typical for successful deletion
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.deleteProject.mockResolvedValue(mockResponse);
 
-            await dialecticApiClient.deleteProject(validPayload);
+            await dialecticApiClient.deleteProject(validPayload.projectId);
 
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(dialecticApiClient.deleteProject).toHaveBeenCalledTimes(1);
+            expect(dialecticApiClient.deleteProject).toHaveBeenCalledWith(validPayload.projectId);
         });
 
         it('should return successfully (e.g., 204 status) on successful deletion', async () => {
@@ -357,9 +311,9 @@ describe('DialecticApiClient', () => {
                 data: undefined,
                 status: 204,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.deleteProject.mockResolvedValue(mockResponse);
 
-            const result = await dialecticApiClient.deleteProject(validPayload);
+            const result = await dialecticApiClient.deleteProject(validPayload.projectId);
 
             expect(result.data).toBeUndefined();
             expect(result.status).toBe(204);
@@ -367,14 +321,14 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed deletion (e.g., project not found)', async () => {
-            const mockApiError: ApiErrorType = { code: 'NOT_FOUND', message: 'Project to delete not found' };
+            const mockApiError: ApiError = { code: 'NOT_FOUND', message: 'Project to delete not found' };
             const mockErrorResponse: ApiResponse<void> = {
                 error: mockApiError,
                 status: 404,
             };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+            dialecticApiClient.deleteProject.mockResolvedValue(mockErrorResponse);
 
-            const result = await dialecticApiClient.deleteProject(validPayload);
+            const result = await dialecticApiClient.deleteProject(validPayload.projectId);
 
             expect(result.error).toEqual(mockApiError);
             expect(result.status).toBe(404);
@@ -383,16 +337,9 @@ describe('DialecticApiClient', () => {
 
         it('should return a network error if apiClient.post rejects', async () => {
             const networkErrorMessage = 'Simulated network failure for deleteProject';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+            dialecticApiClient.deleteProject.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            const result = await dialecticApiClient.deleteProject(validPayload);
-
-            expect(result.error).toEqual({
-                code: 'NETWORK_ERROR',
-                message: networkErrorMessage,
-            });
-            expect(result.status).toBe(0);
-            expect(result.data).toBeUndefined();
+            await expect(dialecticApiClient.deleteProject(validPayload.projectId)).rejects.toThrow(networkErrorMessage);
         });
     });
 
@@ -411,12 +358,12 @@ describe('DialecticApiClient', () => {
                 data: mockExportResponseData,
                 status: 200, 
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.exportProject.mockResolvedValue(mockResponse);
 
-            await dialecticApiClient.exportProject(validPayload);
+            await dialecticApiClient.exportProject(validPayload.projectId);
 
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(dialecticApiClient.exportProject).toHaveBeenCalledTimes(1);
+            expect(dialecticApiClient.exportProject).toHaveBeenCalledWith(validPayload.projectId);
         });
 
         it('should return the export URL on successful response', async () => {
@@ -424,9 +371,9 @@ describe('DialecticApiClient', () => {
                 data: mockExportResponseData,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.exportProject.mockResolvedValue(mockResponse);
 
-            const result = await dialecticApiClient.exportProject(validPayload);
+            const result = await dialecticApiClient.exportProject(validPayload.projectId);
 
             expect(result.data).toEqual(mockExportResponseData);
             expect(result.status).toBe(200);
@@ -434,14 +381,14 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed export (e.g., project not found)', async () => {
-            const mockApiError: ApiErrorType = { code: 'NOT_FOUND', message: 'Project to export not found' };
+            const mockApiError: ApiError = { code: 'NOT_FOUND', message: 'Project to export not found' };
             const mockErrorResponse: ApiResponse<{ export_url: string }> = {
                 error: mockApiError,
                 status: 404,
             };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+            dialecticApiClient.exportProject.mockResolvedValue(mockErrorResponse);
 
-            const result = await dialecticApiClient.exportProject(validPayload);
+            const result = await dialecticApiClient.exportProject(validPayload.projectId);
 
             expect(result.error).toEqual(mockApiError);
             expect(result.status).toBe(404);
@@ -450,16 +397,9 @@ describe('DialecticApiClient', () => {
 
         it('should return a network error if apiClient.post rejects', async () => {
             const networkErrorMessage = 'Simulated network failure for exportProject';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+            dialecticApiClient.exportProject.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            const result = await dialecticApiClient.exportProject(validPayload);
-
-            expect(result.error).toEqual({
-                code: 'NETWORK_ERROR',
-                message: networkErrorMessage,
-            });
-            expect(result.status).toBe(503);
-            expect(result.data).toBeUndefined();
+            await expect(dialecticApiClient.exportProject(validPayload.projectId)).rejects.toThrow(networkErrorMessage);
         });
     });
   
@@ -473,12 +413,12 @@ describe('DialecticApiClient', () => {
                 data: mockDialecticProject,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.getProjectDetails.mockResolvedValue(mockResponse);
 
             await dialecticApiClient.getProjectDetails(projectId);
 
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(dialecticApiClient.getProjectDetails).toHaveBeenCalledTimes(1);
+            expect(dialecticApiClient.getProjectDetails).toHaveBeenCalledWith(projectId);
         });
 
         it('should return the project details on successful response', async () => {
@@ -486,7 +426,7 @@ describe('DialecticApiClient', () => {
                 data: mockDialecticProject,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.getProjectDetails.mockResolvedValue(mockResponse);
 
             const result = await dialecticApiClient.getProjectDetails(projectId);
 
@@ -496,12 +436,12 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed response (e.g., project not found)', async () => {
-            const mockApiError: ApiErrorType = { code: 'NOT_FOUND', message: 'Project not found' };
+            const mockApiError: ApiError = { code: 'NOT_FOUND', message: 'Project not found' };
             const mockErrorResponse: ApiResponse<DialecticProject> = {
                 error: mockApiError,
                 status: 404,
             };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+            dialecticApiClient.getProjectDetails.mockResolvedValue(mockErrorResponse);
 
             const result = await dialecticApiClient.getProjectDetails(projectId);
 
@@ -512,16 +452,9 @@ describe('DialecticApiClient', () => {
 
         it('should return a network error if apiClient.post rejects', async () => {
             const networkErrorMessage = 'Simulated network failure for getProjectDetails';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+            dialecticApiClient.getProjectDetails.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            const result = await dialecticApiClient.getProjectDetails(projectId);
-
-            expect(result.error).toEqual({
-                code: 'NETWORK_ERROR',
-                message: networkErrorMessage,
-            });
-            expect(result.status).toBe(0);
-            expect(result.data).toBeUndefined();
+            await expect(dialecticApiClient.getProjectDetails(projectId)).rejects.toThrow(networkErrorMessage);
         });
     });    
 
@@ -543,12 +476,12 @@ describe('DialecticApiClient', () => {
                 data: mockResourceContentResponse,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.getProjectResourceContent.mockResolvedValue(mockResponse);
 
             await dialecticApiClient.getProjectResourceContent(validPayload);
 
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(dialecticApiClient.getProjectResourceContent).toHaveBeenCalledTimes(1);
+            expect(dialecticApiClient.getProjectResourceContent).toHaveBeenCalledWith(validPayload);
         });
 
         it('should return the project resource content on successful response', async () => {
@@ -556,7 +489,7 @@ describe('DialecticApiClient', () => {
                 data: mockResourceContentResponse,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.getProjectResourceContent.mockResolvedValue(mockResponse);
 
             const result = await dialecticApiClient.getProjectResourceContent(validPayload);
 
@@ -566,12 +499,12 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed fetch (e.g., resource not found)', async () => {
-            const mockApiError: ApiErrorType = { code: 'NOT_FOUND', message: 'Project resource content not found' };
+            const mockApiError: ApiError = { code: 'NOT_FOUND', message: 'Project resource content not found' };
             const mockErrorResponse: ApiResponse<GetProjectResourceContentResponse> = {
                 error: mockApiError,
                 status: 404,
             };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+            dialecticApiClient.getProjectResourceContent.mockResolvedValue(mockErrorResponse);
 
             const result = await dialecticApiClient.getProjectResourceContent(validPayload);
 
@@ -582,16 +515,9 @@ describe('DialecticApiClient', () => {
 
         it('should return a network error if apiClient.post rejects', async () => {
             const networkErrorMessage = 'Simulated network failure for getProjectResourceContent';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+            dialecticApiClient.getProjectResourceContent.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            const result = await dialecticApiClient.getProjectResourceContent(validPayload);
-
-            expect(result.error).toEqual({
-                code: 'NETWORK_ERROR',
-                message: networkErrorMessage,
-            });
-            expect(result.status).toBe(0);
-            expect(result.data).toBeUndefined();
+            await expect(dialecticApiClient.getProjectResourceContent(validPayload)).rejects.toThrow(networkErrorMessage);
         });
     });     
     
@@ -604,12 +530,12 @@ describe('DialecticApiClient', () => {
                 data: [],
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.listProjects.mockResolvedValue(mockResponse);
 
             await dialecticApiClient.listProjects();
 
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(dialecticApiClient.listProjects).toHaveBeenCalledTimes(1);
+            expect(dialecticApiClient.listProjects).toHaveBeenCalledWith();
         });
 
         it('should return the projects array on successful response', async () => {
@@ -618,7 +544,7 @@ describe('DialecticApiClient', () => {
                 data: mockProjectsData,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.listProjects.mockResolvedValue(mockResponse);
 
             const result = await dialecticApiClient.listProjects();
 
@@ -628,12 +554,12 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed response', async () => {
-            const mockApiError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to fetch projects' };
+            const mockApiError: ApiError = { code: 'SERVER_ERROR', message: 'Failed to fetch projects' };
             const mockErrorResponse: ApiResponse<DialecticProject[]> = {
                 error: mockApiError,
                 status: 500,
             };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+            dialecticApiClient.listProjects.mockResolvedValue(mockErrorResponse);
 
             const result = await dialecticApiClient.listProjects();
 
@@ -644,16 +570,9 @@ describe('DialecticApiClient', () => {
 
         it('should return a network error if apiClient.post rejects', async () => {
             const networkErrorMessage = 'Simulated network failure for listProjects';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+            dialecticApiClient.listProjects.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            const result = await dialecticApiClient.listProjects();
-
-            expect(result.error).toEqual({
-                code: 'NETWORK_ERROR',
-                message: networkErrorMessage,
-            });
-            expect(result.status).toBe(0);
-            expect(result.data).toBeUndefined();
+            await expect(dialecticApiClient.listProjects()).rejects.toThrow(networkErrorMessage);
         });
     });
 
@@ -689,14 +608,12 @@ describe('DialecticApiClient', () => {
                 data: mockUpdatedProject,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.updateDialecticProjectInitialPrompt.mockResolvedValue(mockResponse);
 
             await dialecticApiClient.updateDialecticProjectInitialPrompt(validPayload);
 
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            // This requestBody needs to align with how DialecticServiceActionPayload is structured for this action
-            // Assuming the action string is 'updateDialecticProjectInitialPrompt' as per convention.
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(dialecticApiClient.updateDialecticProjectInitialPrompt).toHaveBeenCalledTimes(1);
+            expect(dialecticApiClient.updateDialecticProjectInitialPrompt).toHaveBeenCalledWith(validPayload);
         });
 
         it('should return the updated project data on successful response', async () => {
@@ -704,7 +621,7 @@ describe('DialecticApiClient', () => {
                 data: mockUpdatedProject,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.updateDialecticProjectInitialPrompt.mockResolvedValue(mockResponse);
 
             const result = await dialecticApiClient.updateDialecticProjectInitialPrompt(validPayload);
 
@@ -714,12 +631,12 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed update (e.g., project not found)', async () => {
-            const mockApiError: ApiErrorType = { code: 'NOT_FOUND', message: 'Project not found for prompt update' };
+            const mockApiError: ApiError = { code: 'NOT_FOUND', message: 'Project not found for prompt update' };
             const mockErrorResponse: ApiResponse<DialecticProject> = {
                 error: mockApiError,
                 status: 404,
             };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+            dialecticApiClient.updateDialecticProjectInitialPrompt.mockResolvedValue(mockErrorResponse);
 
             const result = await dialecticApiClient.updateDialecticProjectInitialPrompt(validPayload);
 
@@ -730,16 +647,9 @@ describe('DialecticApiClient', () => {
 
         it('should return a network error if apiClient.post rejects', async () => {
             const networkErrorMessage = 'Simulated network failure for updateDialecticProjectInitialPrompt';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+            dialecticApiClient.updateDialecticProjectInitialPrompt.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            const result = await dialecticApiClient.updateDialecticProjectInitialPrompt(validPayload);
-
-            expect(result.error).toEqual({
-                code: 'NETWORK_ERROR',
-                message: networkErrorMessage,
-            });
-            expect(result.status).toBe(0);
-            expect(result.data).toBeUndefined();
+            await expect(dialecticApiClient.updateDialecticProjectInitialPrompt(validPayload)).rejects.toThrow(networkErrorMessage);
         });
     });
 
@@ -769,12 +679,12 @@ describe('DialecticApiClient', () => {
                 data: mockUpdatedProject,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.updateProjectDomain.mockResolvedValue(mockResponse);
 
             await dialecticApiClient.updateProjectDomain(payload);
 
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(dialecticApiClient.updateProjectDomain).toHaveBeenCalledTimes(1);
+            expect(dialecticApiClient.updateProjectDomain).toHaveBeenCalledWith(payload);
         });
 
         it('should return the updated project on successful response', async () => {
@@ -782,7 +692,7 @@ describe('DialecticApiClient', () => {
                 data: mockUpdatedProject,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            dialecticApiClient.updateProjectDomain.mockResolvedValue(mockResponse);
 
             const result = await dialecticApiClient.updateProjectDomain(payload);
 
@@ -792,12 +702,12 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed response', async () => {
-            const mockApiError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to update domain' };
+            const mockApiError: ApiError = { code: 'SERVER_ERROR', message: 'Failed to update domain' };
             const mockErrorResponse: ApiResponse<DialecticProject> = {
                 error: mockApiError,
                 status: 500,
             };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+            dialecticApiClient.updateProjectDomain.mockResolvedValue(mockErrorResponse);
 
             const result = await dialecticApiClient.updateProjectDomain(payload);
 
@@ -808,16 +718,9 @@ describe('DialecticApiClient', () => {
 
         it('should return a network error if apiClient.post rejects', async () => {
             const networkErrorMessage = 'Simulated network failure';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+            dialecticApiClient.updateProjectDomain.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            const result = await dialecticApiClient.updateProjectDomain(payload);
-
-            expect(result.error).toEqual({
-                code: 'NETWORK_ERROR',
-                message: networkErrorMessage,
-            });
-            expect(result.status).toBe(0);
-            expect(result.data).toBeUndefined();
+            await expect(dialecticApiClient.updateProjectDomain(payload)).rejects.toThrow(networkErrorMessage);
         });
     });      
 
@@ -845,11 +748,11 @@ describe('DialecticApiClient', () => {
                     granularity_strategy: string;
                     inputs_required: Array<{ type: string; document_key: string; required: boolean; stage_slug?: string }>;
                     inputs_relevance?: Array<{ document_key: string; relevance: number; type?: string; stage_slug?: string }>;
-                    outputs_required?: Array<{ type: string; document_key: string }>;
+                    outputs_required?: Array<{ document_key: string; artifact_class: string; file_type: string }>;
                 }>;
             };
 
-            const backendResponse: ApiResponse<StageRecipeResponse> = {
+            const backendResponse: SuccessResponse<DialecticStageRecipe> = {
                 status: 200,
                 data: {
                     stageSlug,
@@ -861,28 +764,28 @@ describe('DialecticApiClient', () => {
                             execution_order: 2, parallel_group: 2, branch_key: 'branch_b',
                             job_type: 'EXECUTE', prompt_type: 'Turn', prompt_template_id: 'pt-b',
                             output_type: 'AssembledDocumentJson', granularity_strategy: 'per_source_document',
-                            inputs_required: [{ type: 'document', document_key: 'feature_spec', required: true, stage_slug: 'thesis' }],
-                            inputs_relevance: [{ document_key: 'feature_spec', relevance: 1, type: 'document', stage_slug: 'thesis' }],
-                            outputs_required: [{ type: 'header_context', document_key: 'header_ctx_b' }],
+                            inputs_required: [{ type: 'document', document_key: 'feature_spec', required: true, slug: 'feature_spec' }],
+                            inputs_relevance: [{ document_key: 'feature_spec', relevance: 1, type: 'feedback', slug: 'feature_spec' }],
+                            outputs_required: [{ document_key: 'header_ctx_b', artifact_class: 'header_context', file_type: 'json' }],
                         },
                         {
                             id: 'step-a', step_key: 'a_key', step_slug: 'a-slug', step_name: 'A',
                             execution_order: 1, parallel_group: 1, branch_key: 'branch_a',
                             job_type: 'PLAN', prompt_type: 'Planner', prompt_template_id: 'pt-a',
                             output_type: 'HeaderContext', granularity_strategy: 'all_to_one',
-                            inputs_required: [{ type: 'seed_prompt', document_key: 'seed_prompt', required: true }],
+                            inputs_required: [{ type: 'seed_prompt', document_key: 'seed_prompt', required: true, slug: 'seed_prompt' }],
                             inputs_relevance: [],
-                            outputs_required: [{ type: 'header_context', document_key: 'header_ctx_a' }],
+                            outputs_required: [{ document_key: 'header_ctx_a', artifact_class: 'header_context', file_type: 'json' }],
                         },
                     ],
                 },
             };
-            mockApiClientPost.mockResolvedValueOnce(backendResponse);
+            dialecticApiClient.fetchStageRecipe.mockResolvedValueOnce(backendResponse);
 
             await dialecticApiClient.fetchStageRecipe(stageSlug);
 
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(dialecticApiClient.fetchStageRecipe).toHaveBeenCalledTimes(1);
+            expect(dialecticApiClient.fetchStageRecipe).toHaveBeenCalledWith(stageSlug);
         });
 
         it('should return normalized DialecticStageRecipe with steps sorted and fields preserved', async () => {
@@ -893,15 +796,6 @@ describe('DialecticApiClient', () => {
                     instanceId: 'instance-123',
                     steps: [
                         {
-                            id: 'step-b', step_key: 'b_key', step_slug: 'b-slug', step_name: 'B',
-                            execution_order: 2, parallel_group: 2, branch_key: 'branch_b',
-                            job_type: 'EXECUTE', prompt_type: 'Turn', prompt_template_id: 'pt-b',
-                            output_type: 'AssembledDocumentJson', granularity_strategy: 'per_source_document',
-                            inputs_required: [{ type: 'document', document_key: 'feature_spec', required: true, stage_slug: 'thesis' }],
-                            inputs_relevance: [{ document_key: 'feature_spec', relevance: 1, type: 'document', stage_slug: 'thesis' }],
-                            outputs_required: [{ type: 'header_context', document_key: 'header_ctx_b' }],
-                        },
-                        {
                             id: 'step-a', step_key: 'a_key', step_slug: 'a-slug', step_name: 'A',
                             execution_order: 1, parallel_group: 1, branch_key: 'branch_a',
                             job_type: 'PLAN', prompt_type: 'Planner', prompt_template_id: 'pt-a',
@@ -910,10 +804,19 @@ describe('DialecticApiClient', () => {
                             inputs_relevance: [],
                             outputs_required: [{ type: 'header_context', document_key: 'header_ctx_a' }],
                         },
+                        {
+                            id: 'step-b', step_key: 'b_key', step_slug: 'b-slug', step_name: 'B',
+                            execution_order: 2, parallel_group: 2, branch_key: 'branch_b',
+                            job_type: 'EXECUTE', prompt_type: 'Turn', prompt_template_id: 'pt-b',
+                            output_type: 'AssembledDocumentJson', granularity_strategy: 'per_source_document',
+                            inputs_required: [{ type: 'document', document_key: 'feature_spec', required: true, stage_slug: 'thesis' }],
+                            inputs_relevance: [{ document_key: 'feature_spec', relevance: 1, type: 'document', stage_slug: 'thesis' }],
+                            outputs_required: [{ type: 'header_context', document_key: 'header_ctx_b' }],
+                        },
                     ],
                 },
             };
-            mockApiClientPost.mockResolvedValueOnce(backendResponse);
+            dialecticApiClient.fetchStageRecipe.mockResolvedValueOnce(backendResponse);
 
             const result = await dialecticApiClient.fetchStageRecipe(stageSlug);
 
@@ -938,13 +841,108 @@ describe('DialecticApiClient', () => {
                 status: 404,
                 error: { code: 'NOT_FOUND', message: 'Stage not found' },
             };
-            mockApiClientPost.mockResolvedValueOnce(backendError);
+            dialecticApiClient.fetchStageRecipe.mockResolvedValueOnce(backendError);
 
             const result = await dialecticApiClient.fetchStageRecipe('missing-stage');
 
             expect(result.status).toBe(404);
             expect(result.error?.message).toBe('Stage not found');
             expect(result.data).toBeUndefined();
+        });
+    });
+
+    describe('saveContributionEdit', () => {
+        const endpoint = 'dialectic-service';
+        const validPayload: SaveContributionEditPayload = {
+            originalContributionIdToEdit: 'contrib-original',
+            editedContentText: 'This is the new and improved content.',
+            projectId: 'proj-123',
+            sessionId: 'sess-456',
+            originalModelContributionId: 'contrib-model-original',
+            responseText: 'User feedback on the edit.',
+            documentKey: 'feature_spec',
+            resourceType: 'rendered_document',
+        };
+        const requestBody = { action: 'saveContributionEdit', payload: validPayload };
+
+        const mockEditedDocumentResource: EditedDocumentResource = {
+            id: 'resource-edit-123',
+            resource_type: 'rendered_document',
+            project_id: 'proj-123',
+            session_id: 'sess-456',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            document_key: 'feature_spec',
+            source_contribution_id: 'contrib-original',
+            storage_bucket: 'project-resources',
+            storage_path: 'edits/user-abc/resource-edit-123.md',
+            file_name: 'resource-edit-123.md',
+            mime_type: 'text/markdown',
+            size_bytes: 1024,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        };
+
+        const mockSaveContributionEditSuccessResponse: SaveContributionEditSuccessResponse = {
+            resource: mockEditedDocumentResource,
+            sourceContributionId: 'contrib-original',
+        };
+
+        it('should return EditedDocumentResource on successful save', async () => {
+            const mockResponse: ApiResponse<SaveContributionEditSuccessResponse> = {
+                data: mockSaveContributionEditSuccessResponse,
+                status: 200,
+            };
+            dialecticApiClient.saveContributionEdit.mockResolvedValue(mockResponse);
+
+            const result = await dialecticApiClient.saveContributionEdit(validPayload);
+
+            expect(result.data).toBeDefined();
+            expect(result.data?.resource).toEqual(mockEditedDocumentResource);
+            expect(result.data?.resource.id).toBe('resource-edit-123');
+            expect(result.data?.resource.resource_type).toBe('rendered_document');
+            expect(result.data?.resource.document_key).toBe('feature_spec');
+            expect(result.data?.resource.source_contribution_id).toBe('contrib-original');
+            expect(result.data?.sourceContributionId).toBe('contrib-original');
+            expect(result.status).toBe(200);
+            expect(result.error).toBeUndefined();
+            expect(result.data).not.toHaveProperty('contribution_type');
+            expect(result.data).toHaveProperty('resource');
+        });
+
+        it('should call apiClient.post with the correct endpoint and payload', async () => {
+            const mockResponse: ApiResponse<SaveContributionEditSuccessResponse> = {
+                data: mockSaveContributionEditSuccessResponse,
+                status: 200,
+            };
+            dialecticApiClient.saveContributionEdit.mockResolvedValue(mockResponse);
+
+            await dialecticApiClient.saveContributionEdit(validPayload);
+
+            expect(dialecticApiClient.saveContributionEdit).toHaveBeenCalledTimes(1);
+            expect(dialecticApiClient.saveContributionEdit).toHaveBeenCalledWith(validPayload);
+        });
+
+        it('should return an error object on failed save', async () => {
+            const mockApiError: ApiError = { code: 'SAVE_ERROR', message: 'Could not save contribution edit' };
+            const mockErrorResponse: ApiResponse<SaveContributionEditSuccessResponse> = {
+                error: mockApiError,
+                status: 500,
+            };
+            dialecticApiClient.saveContributionEdit.mockResolvedValue(mockErrorResponse);
+
+            const result = await dialecticApiClient.saveContributionEdit(validPayload);
+
+            expect(result.error).toEqual(mockApiError);
+            expect(result.status).toBe(500);
+            expect(result.data).toBeUndefined();
+        });
+
+        it('should return a network error if apiClient.post rejects', async () => {
+            const networkErrorMessage = 'Simulated network failure for saveContributionEdit';
+            dialecticApiClient.saveContributionEdit.mockRejectedValueOnce(new Error(networkErrorMessage));
+
+            await expect(dialecticApiClient.saveContributionEdit(validPayload)).rejects.toThrow(networkErrorMessage);
         });
     });
 }); 

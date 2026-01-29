@@ -1869,7 +1869,7 @@ export type Database = {
           id: string
           is_active: boolean
           name: string
-          prompt_text: string
+          prompt_text: string | null
           updated_at: string
           user_selectable: boolean
           version: number
@@ -1881,7 +1881,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name: string
-          prompt_text: string
+          prompt_text?: string | null
           updated_at?: string
           user_selectable?: boolean
           version?: number
@@ -1893,7 +1893,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name?: string
-          prompt_text?: string
+          prompt_text?: string | null
           updated_at?: string
           user_selectable?: boolean
           version?: number

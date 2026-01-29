@@ -13,6 +13,7 @@ export type ContributionRowMinimal = {
     storage_bucket: string;
     storage_path: string;
     file_name: string;
+    raw_response_storage_path: string | null;
     mime_type: string;
     document_relationships: Record<string, string>;
     created_at: string;
@@ -22,18 +23,6 @@ export type ContributionRowMinimal = {
     original_model_contribution_id?: string | null;
     user_id?: string | null;
   };
-  
-  export type RendererPathContext = {
-    projectId?: string;
-    sessionId?: string;
-    iteration?: number;
-    stageSlug?: string;
-    documentKey?: string;
-    modelSlug?: string;
-  };
-  
-  export type FileManagerCall = { pathContext?: RendererPathContext; fileContent: Blob | string };
-  
 
 export type RenderDocumentParams = {
   projectId: string;
@@ -42,6 +31,8 @@ export type RenderDocumentParams = {
   stageSlug: string;
   documentIdentity: string; // true-root id for this document chain
   documentKey: FileType;
+  sourceContributionId: string;
+  template_filename: string; // canonical template filename from recipe step's outputs_required.files_to_generate[] array, matching file_name in dialectic_document_templates table
 };
 
 export type RenderDocumentResult = {

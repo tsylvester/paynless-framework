@@ -3,8 +3,20 @@ import type {
   Database,
   Json
 } from '../../types_db.ts'
-import type { ServiceError } from '../types.ts';
-import type { ContributionType } from '../../dialectic-service/dialectic.interface.ts';
+import { 
+  ServiceError,
+  ILogger
+} from '../types.ts';
+import { 
+  ContributionType, 
+  StorageError 
+} from '../../dialectic-service/dialectic.interface.ts';
+import { PostgrestError } from 'npm:@supabase/supabase-js@^2';
+
+export interface FileManagerDependencies {
+  constructStoragePath: (context: PathContext) => { storagePath: string; fileName: string; }
+  logger: ILogger
+}
 
 /**
  * A union of all possible file types the system can manage.
@@ -61,12 +73,12 @@ export enum FileType {
   synthesis_document_technical_approach = 'synthesis_document_technical_approach',
   synthesis_document_success_metrics = 'synthesis_document_success_metrics',
   SynthesisHeaderContext = 'synthesis_header_context',
-  prd = 'prd',
-  system_architecture_overview = 'system_architecture',
-  tech_stack_recommendations = 'tech_stack',
+  product_requirements = 'product_requirements',
+  system_architecture = 'system_architecture',
+  tech_stack = 'tech_stack',
 
   // Parenthesis document_keys
-  trd = 'trd',
+  technical_requirements = 'technical_requirements',
   master_plan = 'master_plan',
   milestone_schema = 'milestone_schema',
 
@@ -111,8 +123,10 @@ export interface PathContext {
   pairedModelSlug?: string;
   isContinuation?: boolean;
   turnIndex?: number;
+  sourceContributionId?: string | null;
   documentKey?: string; // e.g., 'executive_summary', 'technical_design'
   stepName?: string; // e.g., 'critique_and_improve'
+  sourceGroupFragment?: string; // First 8 characters of source_group UUID (sanitized) for filename disambiguation
 }
 
 /**
@@ -129,6 +143,7 @@ interface UploadContextBase {
 export type ModelContributionFileTypes =
   | FileType.ModelContributionRawJson
   | FileType.HeaderContext
+  | FileType.AssembledDocumentJson
   | FileType.PairwiseSynthesisChunk
   | FileType.ReducedSynthesis
   | FileType.Synthesis
@@ -152,10 +167,44 @@ export type ModelContributionFileTypes =
   | FileType.synthesis_document_technical_approach
   | FileType.synthesis_document_success_metrics
   | FileType.SynthesisHeaderContext
-  | FileType.prd
-  | FileType.system_architecture_overview
-  | FileType.tech_stack_recommendations
-  | FileType.trd
+  | FileType.product_requirements
+  | FileType.system_architecture
+  | FileType.tech_stack
+  | FileType.technical_requirements
+  | FileType.master_plan
+  | FileType.milestone_schema
+  | FileType.updated_master_plan
+  | FileType.actionable_checklist
+  | FileType.advisor_recommendations
+
+/**
+ * A union type representing FileType enum members that are valid documentKey values.
+ * These are the document file types that require documentKey to be present and non-empty
+ * when constructing storage paths.
+ */
+export type DocumentKey =
+  | FileType.business_case
+  | FileType.feature_spec
+  | FileType.technical_approach
+  | FileType.success_metrics
+  | FileType.business_case_critique
+  | FileType.technical_feasibility_assessment
+  | FileType.risk_register
+  | FileType.non_functional_requirements
+  | FileType.dependency_map
+  | FileType.comparison_vector
+  | FileType.product_requirements
+  | FileType.system_architecture
+  | FileType.tech_stack
+  | FileType.synthesis_pairwise_business_case
+  | FileType.synthesis_pairwise_feature_spec
+  | FileType.synthesis_pairwise_technical_approach
+  | FileType.synthesis_pairwise_success_metrics
+  | FileType.synthesis_document_business_case
+  | FileType.synthesis_document_feature_spec
+  | FileType.synthesis_document_technical_approach
+  | FileType.synthesis_document_success_metrics
+  | FileType.technical_requirements
   | FileType.master_plan
   | FileType.milestone_schema
   | FileType.updated_master_plan
@@ -173,6 +222,7 @@ export type ResourceFileTypes =
   | FileType.ProjectSettingsFile
   | FileType.GeneralResource
   | FileType.SeedPrompt
+  | FileType.RagContextSummary
   | FileType.ProjectExportZip
   | FileType.PlannerPrompt
   | FileType.TurnPrompt
@@ -202,9 +252,7 @@ export type ResourceUploadContext = UploadContextBase & {
     fileType: ResourceFileTypes;
   };
   resourceTypeForDb?: string; // To directly populate dialectic_project_resources.resource_type
-  contributionMetadata?: never;
-  feedbackTypeForDb?: never;
-  resourceDescriptionForDb?: never;
+  resourceDescriptionForDb?: Json | null;
 };
 
 export type UploadContext = ModelContributionUploadContext | UserFeedbackUploadContext | ResourceUploadContext;
@@ -215,12 +263,6 @@ export interface ContributionMetadata {
   modelNameDisplay: string; // For dialectic_contributions.model_name
   stageSlug: string;
   iterationNumber: number;
-
-  // For FileManagerService to upload the raw JSON response.
-  // The path for this will be derived by FileManagerService using path_constructor
-  // with fileType 'model_contribution_raw_json' and an originalFileName derived
-  // from the main contribution's originalFileName (e.g., if main is foo.md, raw is foo_raw.json).
-  rawJsonResponseContent: Json; // The actual JSON string content for the raw AI response.
 
   // ADDED: For continuation jobs, this signals to update an existing record.
   target_contribution_id?: string;
@@ -263,13 +305,6 @@ export enum DialecticStageSlug {
   Paralysis = 'paralysis',
 }
 
-export type DocumentRelationships = {
-  [K in DialecticStageSlug]?: string;
-} & {
-  isContinuation?: boolean;
-  turnIndex?: number;
-};
-
 /**
  * Represents a record in one of the file metadata tables.
  * This is a union type to allow the FileManagerService to return a record
@@ -279,12 +314,21 @@ export type FileRecord =
   | Database['public']['Tables']['dialectic_project_resources']['Row']
   | Database['public']['Tables']['dialectic_contributions']['Row'] 
   | Database['public']['Tables']['dialectic_feedback']['Row'];
+
+/**
+ * Union type representing all possible error types that FileManager can return.
+ * This allows FileManager to return specific error shapes (PostgrestError, StorageError)
+ * without losing detail or requiring casts.
+ */
+export type FileManagerError = PostgrestError | StorageError | ServiceError;
   
 export type FileManagerResponse = 
   | { record: FileRecord; error: null }
-  | { record: null; error: ServiceError };
+  | { record: null; error: FileManagerError };
   
 export interface IFileManager {
   uploadAndRegisterFile(context: UploadContext): Promise<FileManagerResponse>;
   assembleAndSaveFinalDocument(rootContributionId: string): Promise<{ finalPath: string | null; error: Error | null; }>;
 } 
+
+export type DocumentRelated = DocumentKey | FileType.AssembledDocumentJson | FileType.ModelContributionRawJson | FileType.RenderedDocument

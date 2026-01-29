@@ -26,3 +26,17 @@ export class NotImplementedError extends Error {
         this.name = 'NotImplementedError';
     }
 }
+
+export class RenderJobValidationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'RenderJobValidationError';
+    }
+}
+
+export class RenderJobEnqueueError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'RenderJobEnqueueError';
+    }
+}

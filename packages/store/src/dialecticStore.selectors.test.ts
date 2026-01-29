@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as selectorsModule from './dialecticStore.selectors';
 import {
     selectDomains,
     selectIsLoadingDomains,
@@ -44,7 +45,11 @@ import {
     selectSessionById,
     selectStageById,
     selectFeedbackForStageIteration,
-    selectSortedStages
+    selectSortedStages,
+    selectStageProgressSummary,
+    selectStageDocumentResource,
+    selectEditedDocumentByKey,
+    selectValidMarkdownDocumentKeys
 } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
 import type { 
@@ -61,7 +66,11 @@ import type {
     DialecticProjectResource,
     DialecticFeedback,
     DialecticStageTransition,
-    DialecticStageRecipe
+    DialecticStageRecipe,
+    DialecticStageRecipeStep,
+    AssembledPrompt,
+    StageDocumentContentState,
+    StageRenderedDocumentDescriptor,
 } from '@paynless/types';
 
 const mockThesisStage: DialecticStage = {
@@ -712,6 +721,454 @@ describe('Dialectic Store Selectors', () => {
         });
     });
 
+  describe('selectStageProgressSummary', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('reports failure metadata when any document has failed', () => {
+      const sessionId = 'session-progress';
+      const stageSlug = 'synthesis';
+      const iterationNumber = 1;
+
+      const recipe: DialecticStageRecipe = {
+        stageSlug,
+        instanceId: 'instance-synthesis',
+        steps: [
+          {
+            id: 'step-1',
+            step_key: 'step_outline',
+            step_slug: 'step-outline',
+            step_name: 'Outline Step',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'branch-1',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            prompt_template_id: 'prompt-1',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [
+              {
+                document_key: 'stage-outline',
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+              },
+              {
+                document_key: 'stage-draft',
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+              },
+            ],
+          },
+        ],
+      };
+
+      const progressState: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        recipesByStageSlug: {
+          [stageSlug]: recipe,
+        },
+        stageRunProgress: {
+          [`${sessionId}:${stageSlug}:${iterationNumber}`]: {
+            stepStatuses: {},
+            documents: {
+              'stage-outline': {
+                descriptorType: 'rendered',
+                status: 'completed',
+                job_id: 'job-complete',
+                latestRenderedResourceId: 'res-complete',
+                modelId: 'model-a',
+                versionHash: 'hash-complete',
+                lastRenderedResourceId: 'res-complete',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+              'stage-draft': {
+                descriptorType: 'rendered',
+                status: 'failed',
+                job_id: 'job-failed',
+                latestRenderedResourceId: 'res-failed',
+                modelId: 'model-a',
+                versionHash: 'hash-failed',
+                lastRenderedResourceId: 'res-failed',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+            },
+          },
+        },
+      };
+
+      const summary = selectStageProgressSummary(
+        progressState,
+        sessionId,
+        stageSlug,
+        iterationNumber,
+      );
+
+      expect(summary.hasFailed).toBe(true);
+      expect(summary.failedDocuments).toBe(1);
+      expect(summary.failedDocumentKeys).toEqual(['stage-draft']);
+    });
+
+    it('excludes non-document artifacts from counts and only counts valid markdown documents', () => {
+      const sessionId = 'session-filter-test';
+      const stageSlug = 'thesis';
+      const iterationNumber = 1;
+
+      const validMarkdownDocumentKey = 'draft_document_markdown';
+      const headerContextKey = 'HeaderContext';
+
+      const recipe: DialecticStageRecipe = {
+        stageSlug,
+        instanceId: 'instance-thesis',
+        steps: [
+          {
+            id: 'step-1',
+            step_key: 'markdown_step',
+            step_slug: 'markdown-step',
+            step_name: 'Markdown Step',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'branch-1',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            prompt_template_id: 'prompt-1',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [
+              {
+                document_key: validMarkdownDocumentKey,
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+              },
+            ],
+          },
+          {
+            id: 'step-2',
+            step_key: 'header_step',
+            step_slug: 'header-step',
+            step_name: 'Header Step',
+            execution_order: 2,
+            parallel_group: 2,
+            branch_key: 'branch-2',
+            job_type: 'PLAN',
+            prompt_type: 'Planner',
+            prompt_template_id: 'prompt-2',
+            output_type: 'header_context',
+            granularity_strategy: 'all_to_one',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [
+              {
+                document_key: headerContextKey,
+                artifact_class: 'header_context',
+                file_type: 'json',
+              },
+            ],
+          },
+        ],
+      };
+
+      const progressState: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        recipesByStageSlug: {
+          [stageSlug]: recipe,
+        },
+        stageRunProgress: {
+          [`${sessionId}:${stageSlug}:${iterationNumber}`]: {
+            stepStatuses: {},
+            documents: {
+              [validMarkdownDocumentKey]: {
+                descriptorType: 'rendered',
+                status: 'completed',
+                job_id: 'job-markdown',
+                latestRenderedResourceId: 'res-markdown',
+                modelId: 'model-a',
+                versionHash: 'hash-markdown',
+                lastRenderedResourceId: 'res-markdown',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+              [headerContextKey]: {
+                descriptorType: 'rendered',
+                status: 'completed',
+                job_id: 'job-header',
+                latestRenderedResourceId: 'res-header',
+                modelId: 'model-a',
+                versionHash: 'hash-header',
+                lastRenderedResourceId: 'res-header',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+            },
+          },
+        },
+      };
+
+      const summary = selectStageProgressSummary(
+        progressState,
+        sessionId,
+        stageSlug,
+        iterationNumber,
+      );
+
+      expect(summary.totalDocuments).toBe(1);
+      expect(summary.completedDocuments).toBe(1);
+      expect(summary.isComplete).toBe(true);
+      expect(summary.totalDocuments).not.toBe(2);
+    });
+
+    it('returns isComplete false when only header_context is completed but markdown documents are not', () => {
+      const sessionId = 'session-incomplete-test';
+      const stageSlug = 'thesis';
+      const iterationNumber = 1;
+
+      const validMarkdownDocumentKey = 'draft_document_markdown';
+      const headerContextKey = 'HeaderContext';
+
+      const recipe: DialecticStageRecipe = {
+        stageSlug,
+        instanceId: 'instance-thesis-incomplete',
+        steps: [
+          {
+            id: 'step-1',
+            step_key: 'markdown_step',
+            step_slug: 'markdown-step',
+            step_name: 'Markdown Step',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'branch-1',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            prompt_template_id: 'prompt-1',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [
+              {
+                document_key: validMarkdownDocumentKey,
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+              },
+            ],
+          },
+          {
+            id: 'step-2',
+            step_key: 'header_step',
+            step_slug: 'header-step',
+            step_name: 'Header Step',
+            execution_order: 2,
+            parallel_group: 2,
+            branch_key: 'branch-2',
+            job_type: 'PLAN',
+            prompt_type: 'Planner',
+            prompt_template_id: 'prompt-2',
+            output_type: 'header_context',
+            granularity_strategy: 'all_to_one',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [
+              {
+                document_key: headerContextKey,
+                artifact_class: 'header_context',
+                file_type: 'json',
+              },
+            ],
+          },
+        ],
+      };
+
+      const progressState: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        recipesByStageSlug: {
+          [stageSlug]: recipe,
+        },
+        stageRunProgress: {
+          [`${sessionId}:${stageSlug}:${iterationNumber}`]: {
+            stepStatuses: {},
+            documents: {
+              [validMarkdownDocumentKey]: {
+                descriptorType: 'rendered',
+                status: 'generating',
+                job_id: 'job-markdown',
+                latestRenderedResourceId: 'res-markdown',
+                modelId: 'model-a',
+                versionHash: 'hash-markdown',
+                lastRenderedResourceId: 'res-markdown',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+              [headerContextKey]: {
+                descriptorType: 'rendered',
+                status: 'completed',
+                job_id: 'job-header',
+                latestRenderedResourceId: 'res-header',
+                modelId: 'model-a',
+                versionHash: 'hash-header',
+                lastRenderedResourceId: 'res-header',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+            },
+          },
+        },
+      };
+
+      const summary = selectStageProgressSummary(
+        progressState,
+        sessionId,
+        stageSlug,
+        iterationNumber,
+      );
+
+      expect(summary.totalDocuments).toBe(1);
+      expect(summary.completedDocuments).toBe(0);
+      expect(summary.isComplete).toBe(false);
+    });
+
+    it('returns isComplete true only when all valid markdown documents are completed', () => {
+      const sessionId = 'session-complete-test';
+      const stageSlug = 'thesis';
+      const iterationNumber = 1;
+
+      const validMarkdownDocumentKey1 = 'draft_document_markdown';
+      const validMarkdownDocumentKey2 = 'business_case_markdown';
+      const headerContextKey = 'HeaderContext';
+
+      const recipe: DialecticStageRecipe = {
+        stageSlug,
+        instanceId: 'instance-thesis-complete',
+        steps: [
+          {
+            id: 'step-1',
+            step_key: 'markdown_step_1',
+            step_slug: 'markdown-step-1',
+            step_name: 'Markdown Step 1',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'branch-1',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            prompt_template_id: 'prompt-1',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [
+              {
+                document_key: validMarkdownDocumentKey1,
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+              },
+            ],
+          },
+          {
+            id: 'step-2',
+            step_key: 'markdown_step_2',
+            step_slug: 'markdown-step-2',
+            step_name: 'Markdown Step 2',
+            execution_order: 2,
+            parallel_group: 2,
+            branch_key: 'branch-2',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            prompt_template_id: 'prompt-2',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [
+              {
+                document_key: validMarkdownDocumentKey2,
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+              },
+            ],
+          },
+          {
+            id: 'step-3',
+            step_key: 'header_step',
+            step_slug: 'header-step',
+            step_name: 'Header Step',
+            execution_order: 3,
+            parallel_group: 3,
+            branch_key: 'branch-3',
+            job_type: 'PLAN',
+            prompt_type: 'Planner',
+            prompt_template_id: 'prompt-3',
+            output_type: 'header_context',
+            granularity_strategy: 'all_to_one',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [
+              {
+                document_key: headerContextKey,
+                artifact_class: 'header_context',
+                file_type: 'json',
+              },
+            ],
+          },
+        ],
+      };
+
+      const progressState: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        recipesByStageSlug: {
+          [stageSlug]: recipe,
+        },
+        stageRunProgress: {
+          [`${sessionId}:${stageSlug}:${iterationNumber}`]: {
+            stepStatuses: {},
+            documents: {
+              [validMarkdownDocumentKey1]: {
+                descriptorType: 'rendered',
+                status: 'completed',
+                job_id: 'job-markdown-1',
+                latestRenderedResourceId: 'res-markdown-1',
+                modelId: 'model-a',
+                versionHash: 'hash-markdown-1',
+                lastRenderedResourceId: 'res-markdown-1',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+              [validMarkdownDocumentKey2]: {
+                descriptorType: 'rendered',
+                status: 'completed',
+                job_id: 'job-markdown-2',
+                latestRenderedResourceId: 'res-markdown-2',
+                modelId: 'model-a',
+                versionHash: 'hash-markdown-2',
+                lastRenderedResourceId: 'res-markdown-2',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+              [headerContextKey]: {
+                descriptorType: 'rendered',
+                status: 'generating',
+                job_id: 'job-header',
+                latestRenderedResourceId: 'res-header',
+                modelId: 'model-a',
+                versionHash: 'hash-header',
+                lastRenderedResourceId: 'res-header',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+            },
+          },
+        },
+      };
+
+      const summary = selectStageProgressSummary(
+        progressState,
+        sessionId,
+        stageSlug,
+        iterationNumber,
+      );
+
+      expect(summary.totalDocuments).toBe(2);
+      expect(summary.completedDocuments).toBe(2);
+      expect(summary.isComplete).toBe(true);
+    });
+  });
+
     // Tests for selectFeedbackForStageIteration
     describe('selectFeedbackForStageIteration', () => {
         it('should return correct feedback for a given session, stage, and iteration', () => {
@@ -864,6 +1321,11 @@ describe('Dialectic Store Selectors', () => {
       });
 });
 
+const mockSeedPrompt: AssembledPrompt = {
+    promptContent: 'Mock seed prompt content',
+    source_prompt_resource_id: 'resource-1',
+};
+
 describe('selectIsStageReadyForSessionIteration', () => {
     const projectId = 'proj-1';
     const sessionId = 'session-1';
@@ -951,7 +1413,7 @@ describe('selectIsStageReadyForSessionIteration', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
         }],
-        resources: [mockSeedPromptResource],
+        resources: [],
         process_template_id: 'pt-1',
         dialectic_process_templates: mockProcessTemplate, // Simplified
         // Add missing DialecticProject fields
@@ -980,7 +1442,7 @@ describe('selectIsStageReadyForSessionIteration', () => {
                 job_type: 'PLAN',
                 prompt_type: 'Planner',
                 prompt_template_id: 'prompt-1',
-                output_type: 'HeaderContext',
+                output_type: 'header_context',
                 granularity_strategy: 'all_to_one',
                 inputs_required: [
                     { type: 'seed_prompt', document_key: 'seed_prompt', required: true, slug: 'seed_prompt' },
@@ -1001,7 +1463,7 @@ describe('selectIsStageReadyForSessionIteration', () => {
                 job_type: 'EXECUTE',
                 prompt_type: 'Turn',
                 prompt_template_id: 'prompt-2',
-                output_type: 'AssembledDocumentJson',
+                output_type: 'assembled_document_json',
                 granularity_strategy: 'per_source_document',
                 inputs_required: [
                     { type: 'document', document_key: 'business_case', required: true, slug: 'thesis.business_case' },
@@ -1016,14 +1478,16 @@ describe('selectIsStageReadyForSessionIteration', () => {
 
     const buildState = (overrides: Partial<DialecticStateValues> = {}): DialecticStateValues => ({
         ...initialDialecticStateValues,
-        currentProjectDetail: projectWithResource,
         currentProcessTemplate: mockProcessTemplate,
         recipesByStageSlug: { [stageSlug]: requiredSeedPromptRecipe },
         ...overrides,
     });
 
-    it('should return true if project, session, stage, and matching seed prompt resource exist', () => {
-        const state = buildState();
+    it('should return true when the recipe requires a seed prompt and a valid activeSeedPrompt exists in the state', () => {
+        const state = buildState({ 
+            currentProjectDetail: projectWithResource,
+            activeSeedPrompt: mockSeedPrompt 
+        });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(true);
     });
 
@@ -1034,120 +1498,172 @@ describe('selectIsStageReadyForSessionIteration', () => {
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
 
+    it('should return false when the recipe requires a seed prompt and activeSeedPrompt is null', () => {
+        const state = buildState({
+            currentProjectDetail: projectWithResource,
+            activeSeedPrompt: null,
+        });
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
+    });
+
     it('should return false if project.resources is null', () => {
+        const requiredHeaderContextRecipe: DialecticStageRecipe = {
+            ...requiredSeedPromptRecipe,
+            steps: [{
+                ...requiredSeedPromptRecipe.steps[0],
+                inputs_required: [
+                    { type: 'header_context', document_key: 'global_header', required: true, slug: 'thesis.header.global' },
+                ],
+            }],
+        };
         const projectWithoutResources: DialecticProject = {
             ...projectWithResource,
             resources: null as any, // Testing null case
         };
         const state = buildState({
             currentProjectDetail: projectWithoutResources,
+            recipesByStageSlug: { [stageSlug]: requiredHeaderContextRecipe },
         });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
     
     it('should return false if project.resources is empty', () => {
+        const requiredHeaderContextRecipe: DialecticStageRecipe = {
+            ...requiredSeedPromptRecipe,
+            steps: [{
+                ...requiredSeedPromptRecipe.steps[0],
+                inputs_required: [
+                    { type: 'header_context', document_key: 'global_header', required: true, slug: 'thesis.header.global' },
+                ],
+            }],
+        };
         const projectWithEmptyResources: DialecticProject = {
             ...projectWithResource,
             resources: [], 
         };
         const state = buildState({
             currentProjectDetail: projectWithEmptyResources,
-        });
-        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
-    });
-
-    it('should return false if resource_description is not parseable JSON', () => {
-        const resourceWithUnparseableDesc: DialecticProjectResource = {
-            ...mockSeedPromptResource,
-            project_id: projectId,
-            resource_description: 'not json',
-        };
-        const projectWithBadResource: DialecticProject = {
-            ...projectWithResource,
-            resources: [resourceWithUnparseableDesc],
-        };
-        const state = buildState({
-            currentProjectDetail: projectWithBadResource,
+            recipesByStageSlug: { [stageSlug]: requiredHeaderContextRecipe },
         });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
 
     it('should return false if resource_description is null', () => {
-        const resourceWithNullDesc: DialecticProjectResource = {
-            ...mockSeedPromptResource,
-            project_id: projectId,
-            resource_description: null as any,
+        const requiredHeaderContextRecipe: DialecticStageRecipe = {
+            ...requiredSeedPromptRecipe,
+            steps: [{
+                ...requiredSeedPromptRecipe.steps[0],
+                inputs_required: [
+                    { type: 'header_context', document_key: 'global_header', required: true, slug: 'thesis.header.global' },
+                ],
+            }],
         };
         const projectWithNullDescResource: DialecticProject = {
             ...projectWithResource,
-            resources: [resourceWithNullDesc],
+            resources: [{
+                ...mockHeaderContextResource,
+                resource_description: null as any,
+            }],
         };
         const state = buildState({
             currentProjectDetail: projectWithNullDescResource,
+            recipesByStageSlug: { [stageSlug]: requiredHeaderContextRecipe },
         });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
     
-    it('should return false if parsed desc.type is not "seed_prompt"', () => {
-        const resourceWithWrongType: DialecticProjectResource = {
-            ...mockSeedPromptResource,
-            project_id: projectId,
-            resource_description: JSON.stringify({ type: 'not_seed_prompt' }),
+    it('should return false if parsed desc.type does not match required type', () => {
+        const requiredHeaderContextRecipe: DialecticStageRecipe = {
+            ...requiredSeedPromptRecipe,
+            steps: [{
+                ...requiredSeedPromptRecipe.steps[0],
+                inputs_required: [
+                    { type: 'header_context', document_key: 'global_header', required: true, slug: 'thesis.header.global' },
+                ],
+            }],
         };
         const projectWithWrongTypeResource: DialecticProject = {
             ...projectWithResource,
-            resources: [resourceWithWrongType],
+            resources: [{
+                ...mockHeaderContextResource,
+                resource_description: JSON.stringify({ type: 'not_header_context' }),
+            }],
         };
         const state = buildState({
             currentProjectDetail: projectWithWrongTypeResource,
+            recipesByStageSlug: { [stageSlug]: requiredHeaderContextRecipe },
         });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
 
     it('should return false if desc.session_id does not match', () => {
-        const resourceWithWrongSession: DialecticProjectResource = {
-            ...mockSeedPromptResource,
-            project_id: projectId,
-            resource_description: JSON.stringify({ ...JSON.parse(mockSeedPromptResource.resource_description!), session_id: 'wrong-session' }),
+        const requiredHeaderContextRecipe: DialecticStageRecipe = {
+            ...requiredSeedPromptRecipe,
+            steps: [{
+                ...requiredSeedPromptRecipe.steps[0],
+                inputs_required: [
+                    { type: 'header_context', document_key: 'global_header', required: true, slug: 'thesis.header.global' },
+                ],
+            }],
         };
         const projectWithWrongSessionResource: DialecticProject = {
             ...projectWithResource,
-            resources: [resourceWithWrongSession],
+            resources: [{
+                ...mockHeaderContextResource,
+                resource_description: JSON.stringify({ ...JSON.parse(mockHeaderContextResource.resource_description!), session_id: 'wrong-session' }),
+            }],
         };
         const state = buildState({
             currentProjectDetail: projectWithWrongSessionResource,
+            recipesByStageSlug: { [stageSlug]: requiredHeaderContextRecipe },
         });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
 
     it('should return false if desc.stage_slug does not match', () => {
-        const resourceWithWrongStage: DialecticProjectResource = {
-            ...mockSeedPromptResource,
-            project_id: projectId,
-            resource_description: JSON.stringify({ ...JSON.parse(mockSeedPromptResource.resource_description!), stage_slug: 'wrong-stage' }),
+        const requiredHeaderContextRecipe: DialecticStageRecipe = {
+            ...requiredSeedPromptRecipe,
+            steps: [{
+                ...requiredSeedPromptRecipe.steps[0],
+                inputs_required: [
+                    { type: 'header_context', document_key: 'global_header', required: true, slug: 'thesis.header.global' },
+                ],
+            }],
         };
         const projectWithWrongStageResource: DialecticProject = {
             ...projectWithResource,
-            resources: [resourceWithWrongStage],
+            resources: [{
+                ...mockHeaderContextResource,
+                resource_description: JSON.stringify({ ...JSON.parse(mockHeaderContextResource.resource_description!), stage_slug: 'wrong-stage' }),
+            }],
         };
         const state = buildState({
             currentProjectDetail: projectWithWrongStageResource,
+            recipesByStageSlug: { [stageSlug]: requiredHeaderContextRecipe },
         });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
 
     it('should return false if desc.iteration does not match', () => {
-        const resourceWithWrongIteration: DialecticProjectResource = {
-            ...mockSeedPromptResource,
-            project_id: projectId,
-            resource_description: JSON.stringify({ ...JSON.parse(mockSeedPromptResource.resource_description!), iteration: iterationNumber + 1 }),
+        const requiredHeaderContextRecipe: DialecticStageRecipe = {
+            ...requiredSeedPromptRecipe,
+            steps: [{
+                ...requiredSeedPromptRecipe.steps[0],
+                inputs_required: [
+                    { type: 'header_context', document_key: 'global_header', required: true, slug: 'thesis.header.global' },
+                ],
+            }],
         };
         const projectWithWrongIterationResource: DialecticProject = {
             ...projectWithResource,
-            resources: [resourceWithWrongIteration],
+            resources: [{
+                ...mockHeaderContextResource,
+                resource_description: JSON.stringify({ ...JSON.parse(mockHeaderContextResource.resource_description!), iteration: iterationNumber + 1 }),
+            }],
         };
         const state = buildState({
             currentProjectDetail: projectWithWrongIterationResource,
+            recipesByStageSlug: { [stageSlug]: requiredHeaderContextRecipe },
         });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
@@ -1163,19 +1679,36 @@ describe('selectIsStageReadyForSessionIteration', () => {
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
 
-    it('should return true even if multiple resources exist, as long as one matches', () => {
+    it('should return true when a required header_context is satisfied by a resource', () => {
+        const requiredHeaderContextRecipe: DialecticStageRecipe = {
+            ...requiredSeedPromptRecipe,
+            steps: [{
+                ...requiredSeedPromptRecipe.steps[0],
+                inputs_required: [
+                    { type: 'header_context', document_key: 'global_header', required: true, slug: 'thesis.header.global' },
+                ],
+            }],
+        };
         const otherResource: DialecticProjectResource = {
-            ...mockSeedPromptResource,
-            project_id: projectId,
-            id: 'resource-2',
+            ...mockHeaderContextResource,
+            id: 'resource-other',
             resource_description: JSON.stringify({ type: 'other_type' }),
         };
         const projectWithMultipleResources: DialecticProject = {
             ...projectWithResource,
-            resources: [otherResource, mockSeedPromptResource],
+            resources: [otherResource, mockHeaderContextResource],
         };
         const state = buildState({
             currentProjectDetail: projectWithMultipleResources,
+            recipesByStageSlug: { [stageSlug]: requiredHeaderContextRecipe },
+            stageRunProgress: {
+                [`${sessionId}:${stageSlug}:${iterationNumber}`]: {
+                    stepStatuses: {
+                        seed_step: 'completed',
+                    },
+                    documents: {},
+                },
+            },
         });
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(true);
     });
@@ -1183,6 +1716,7 @@ describe('selectIsStageReadyForSessionIteration', () => {
     it('should return false when required document contribution is missing', () => {
         const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
         const state = buildState({
+            currentProjectDetail: projectWithResource,
             stageRunProgress: {
                 [progressKey]: {
                     stepStatuses: {
@@ -1233,10 +1767,7 @@ describe('selectIsStageReadyForSessionIteration', () => {
 
         const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
         const state = buildState({
-            currentProjectDetail: {
-                ...projectWithResource,
-                dialectic_sessions: [sessionWithDocumentOnly],
-            },
+            currentProjectDetail: projectWithResource,
             stageRunProgress: {
                 [progressKey]: {
                     stepStatuses: {
@@ -1305,11 +1836,8 @@ describe('selectIsStageReadyForSessionIteration', () => {
         const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
 
         const state = buildState({
-            currentProjectDetail: {
-                ...projectWithResource,
-                dialectic_sessions: [sessionWithDocAndFeedback],
-                resources: [mockSeedPromptResource, mockHeaderContextResource],
-            },
+            activeSeedPrompt: mockSeedPrompt, // Add this line
+            currentProjectDetail: projectWithResource,
             stageRunProgress: {
                 [progressKey]: {
                     stepStatuses: {
@@ -1378,10 +1906,11 @@ describe('selectIsStageReadyForSessionIteration', () => {
         const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
 
         const state = buildState({
+            activeSeedPrompt: mockSeedPrompt, // Add this line
             currentProjectDetail: {
                 ...projectWithResource,
+                resources: [mockHeaderContextResource],
                 dialectic_sessions: [sessionSatisfied],
-                resources: [mockSeedPromptResource, mockHeaderContextResource],
             },
             stageRunProgress: {
                 [progressKey]: {
@@ -1396,5 +1925,545 @@ describe('selectIsStageReadyForSessionIteration', () => {
 
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(true);
     });
+
+    it('should return true when required document exists in stageRunProgress.documents for the source stage', () => {
+        const sourceStageSlug = 'thesis';
+        const targetStageSlug = 'synthesis';
+        const sourceProgressKey = `${sessionId}:${sourceStageSlug}:${iterationNumber}`;
+        const targetProgressKey = `${sessionId}:${targetStageSlug}:${iterationNumber}`;
+        
+        const requiredDocument: StageRenderedDocumentDescriptor = {
+            descriptorType: 'rendered',
+            status: 'completed',
+            job_id: 'job-doc-complete',
+            latestRenderedResourceId: 'res-doc-complete',
+            modelId: 'model-1',
+            versionHash: 'hash-doc-complete',
+            lastRenderedResourceId: 'res-doc-complete',
+            lastRenderAtIso: new Date().toISOString(),
+            stepKey: 'doc_step',
+        };
+
+        const recipeRequiringDocument: DialecticStageRecipe = {
+            stageSlug: targetStageSlug,
+            instanceId: 'instance-2',
+            steps: [
+                {
+                    id: 'step-require-doc',
+                    step_key: 'require_doc_step',
+                    step_slug: 'require-doc-step',
+                    step_name: 'Require Document Step',
+                    execution_order: 1,
+                    parallel_group: 1,
+                    branch_key: 'branch-require-doc',
+                    job_type: 'EXECUTE',
+                    prompt_type: 'Turn',
+                    prompt_template_id: 'prompt-3',
+                    output_type: 'assembled_document_json',
+                    granularity_strategy: 'per_source_document',
+                    inputs_required: [
+                        { type: 'document', document_key: 'business_case', required: true, slug: `${sourceStageSlug}.business_case` },
+                    ],
+                    inputs_relevance: [],
+                    outputs_required: [],
+                },
+            ],
+        };
+
+        const targetProcessTemplate: DialecticProcessTemplate = {
+            ...mockProcessTemplate,
+            stages: [
+                ...mockProcessTemplate.stages!,
+                {
+                    id: 'stage-synthesis',
+                    slug: targetStageSlug,
+                    display_name: 'Synthesis',
+                    description: 'The synthesis stage',
+                    default_system_prompt_id: null,
+                    created_at: new Date().toISOString(),
+                    expected_output_template_ids: [],
+                    recipe_template_id: null,
+                    active_recipe_instance_id: null,
+                },
+            ],
+        };
+
+        const sessionWithoutContribution: DialecticSession = {
+            ...(projectWithResource.dialectic_sessions![0]),
+            dialectic_contributions: [],
+            feedback: [],
+        };
+
+        const state = buildState({
+            activeSeedPrompt: mockSeedPrompt,
+            currentProcessTemplate: targetProcessTemplate,
+            currentProjectDetail: {
+                ...projectWithResource,
+                dialectic_sessions: [sessionWithoutContribution],
+            },
+            recipesByStageSlug: {
+                [sourceStageSlug]: requiredSeedPromptRecipe,
+                [targetStageSlug]: recipeRequiringDocument,
+            },
+            stageRunProgress: {
+                [sourceProgressKey]: {
+                    stepStatuses: {
+                        seed_step: 'completed',
+                    },
+                    documents: {
+                        'business_case': requiredDocument,
+                    },
+                },
+                [targetProgressKey]: {
+                    stepStatuses: {
+                        require_doc_step: 'not_started',
+                    },
+                    documents: {},
+                },
+            },
+        });
+
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, targetStageSlug, iterationNumber)).toBe(true);
+    });
 }); 
+
+// These tests assert that new selectors surface edited document resources from stageDocumentContent
+// and that legacy contribution selectors no longer drive UI renders for editable documents.
+
+describe('selectStageDocumentResource and selectEditedDocumentByKey', () => {
+    const sessionId = 'session-resource-test';
+    const stageSlug = 'thesis';
+    const iterationNumber = 1;
+    const modelId = 'model-test';
+    const documentKey = 'business_case';
+    const compositeKey = `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
+
+    it('should return document resource content from stageDocumentContent with baselineMarkdown, timestamps, and resource id', () => {
+        const testContent: StageDocumentContentState = {
+            baselineMarkdown: 'Edited document content from resource',
+            currentDraftMarkdown: 'Edited document content from resource',
+            isDirty: false,
+            isLoading: false,
+            error: null,
+            lastBaselineVersion: {
+                resourceId: 'resource-123',
+                versionHash: 'hash-abc',
+                updatedAt: new Date('2024-01-01T00:00:00Z').toISOString(),
+            },
+            pendingDiff: null,
+            lastAppliedVersionHash: 'hash-abc',
+        };
+
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            stageDocumentContent: {
+                [compositeKey]: testContent,
+            },
+        };
+
+        const result = selectStageDocumentResource(state, sessionId, stageSlug, iterationNumber, modelId, documentKey);
+        
+        expect(result).toBeDefined();
+        expect(result?.baselineMarkdown).toBe('Edited document content from resource');
+        expect(result?.lastBaselineVersion?.resourceId).toBe('resource-123');
+        expect(result?.lastBaselineVersion?.updatedAt).toBe('2024-01-01T00:00:00.000Z');
+    });
+
+    it('should return edited document metadata by composite key with content and timestamps', () => {
+        const testContent: StageDocumentContentState = {
+            baselineMarkdown: 'Edited content from composite key lookup',
+            currentDraftMarkdown: 'Edited content from composite key lookup',
+            isDirty: false,
+            isLoading: false,
+            error: null,
+            lastBaselineVersion: {
+                resourceId: 'resource-456',
+                versionHash: 'hash-def',
+                updatedAt: new Date('2024-01-02T00:00:00Z').toISOString(),
+            },
+            pendingDiff: null,
+            lastAppliedVersionHash: 'hash-def',
+        };
+
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            stageDocumentContent: {
+                [compositeKey]: testContent,
+            },
+        };
+
+        const result = selectEditedDocumentByKey(state, compositeKey);
+        
+        expect(result).toBeDefined();
+        expect(result?.baselineMarkdown).toBe('Edited content from composite key lookup');
+        expect(result?.lastBaselineVersion?.resourceId).toBe('resource-456');
+        expect(result?.lastBaselineVersion?.updatedAt).toBe('2024-01-02T00:00:00.000Z');
+    });
+
+    it('should return undefined when document resource does not exist in stageDocumentContent', () => {
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            stageDocumentContent: {},
+        };
+
+        const result = selectStageDocumentResource(state, sessionId, stageSlug, iterationNumber, modelId, documentKey);
+        
+        expect(result).toBeUndefined();
+    });
+
+    it('should assert that resource selectors are authoritative source for editable documents, not dialectic_contributions', () => {
+        // This test asserts that for documents with entries in stageDocumentContent,
+        // the new resource selectors are the authoritative source, not legacy selectContributionById
+        
+        const testContent: StageDocumentContentState = {
+            baselineMarkdown: 'Resource-based content - authoritative source',
+            currentDraftMarkdown: 'Resource-based content - authoritative source',
+            isDirty: false,
+            isLoading: false,
+            error: null,
+            lastBaselineVersion: {
+                resourceId: 'resource-789',
+                versionHash: 'hash-ghi',
+                updatedAt: new Date('2024-01-03T00:00:00Z').toISOString(),
+            },
+            pendingDiff: null,
+            lastAppliedVersionHash: 'hash-ghi',
+        };
+
+        const staleContribution: DialecticContribution = {
+            id: 'contrib-stale',
+            session_id: sessionId,
+            stage: stageSlug,
+            iteration_number: iterationNumber,
+            contribution_type: documentKey,
+            is_latest_edit: true,
+            edit_version: 1,
+            created_at: new Date('2024-01-01T00:00:00Z').toISOString(),
+            updated_at: new Date('2024-01-01T00:00:00Z').toISOString(),
+            user_id: null,
+            model_id: modelId,
+            model_name: null,
+            prompt_template_id_used: null,
+            seed_prompt_url: null,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: null,
+            tokens_used_output: null,
+            processing_time_ms: null,
+            error: null,
+            citations: null,
+            file_name: null,
+            storage_bucket: null,
+            storage_path: null,
+            size_bytes: null,
+            mime_type: null,
+        };
+
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            stageDocumentContent: {
+                [compositeKey]: testContent,
+            },
+            currentProjectDetail: {
+                id: 'proj-test',
+                user_id: 'user-1',
+                project_name: 'Test Project',
+                initial_user_prompt: 'Test prompt',
+                selected_domain_id: 'dom-1',
+                dialectic_domains: { name: 'Test Domain' },
+                selected_domain_overlay_id: null,
+                repo_url: null,
+                status: 'active',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                dialectic_sessions: [{
+                    id: sessionId,
+                    project_id: 'proj-test',
+                    session_description: 'Test session',
+                    iteration_count: iterationNumber,
+                    selected_model_ids: [modelId],
+                    status: 'active',
+                    associated_chat_id: null,
+                    current_stage_id: 'stage-1',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    user_input_reference_url: null,
+                    dialectic_contributions: [staleContribution],
+                    feedback: [],
+                }],
+                resources: [],
+                process_template_id: null,
+                dialectic_process_templates: null,
+                isLoadingProcessTemplate: false,
+                processTemplateError: null,
+                contributionGenerationStatus: 'idle',
+                generateContributionsError: null,
+                isSubmittingStageResponses: false,
+                submitStageResponsesError: null,
+                isSavingContributionEdit: false,
+                saveContributionEditError: null,
+            },
+        };
+
+        // This is the authoritative source for editable documents
+        const resourceResult = selectStageDocumentResource(state, sessionId, stageSlug, iterationNumber, modelId, documentKey);
+        expect(resourceResult?.baselineMarkdown).toBe('Resource-based content - authoritative source');
+        expect(resourceResult?.lastBaselineVersion?.resourceId).toBe('resource-789');
+        
+        // Legacy selectContributionById should NOT be used for documents that have
+        // entries in stageDocumentContent. The resource selector is authoritative.
+        // Note: selectContributionById may still work for historical lookups, but
+        // it should NOT drive UI renders for editable documents when stageDocumentContent exists.
+        const legacyResult = selectContributionById(state, staleContribution.id);
+        
+        // The test documents that for editable documents, the resource selector
+        // must be used, not the legacy contribution selector
+        // UI components should prefer resourceResult over legacyResult for editable documents
+        expect(resourceResult).toBeDefined();
+        expect(resourceResult?.baselineMarkdown).not.toBe(staleContribution.contribution_type);
+    });
+
+    it('should return document resource with dirty draft state', () => {
+        const testContent: StageDocumentContentState = {
+            baselineMarkdown: 'Original baseline content',
+            currentDraftMarkdown: 'Modified draft content',
+            isDirty: true,
+            isLoading: false,
+            error: null,
+            lastBaselineVersion: {
+                resourceId: 'resource-dirty',
+                versionHash: 'hash-dirty',
+                updatedAt: new Date('2024-01-04T00:00:00Z').toISOString(),
+            },
+            pendingDiff: null,
+            lastAppliedVersionHash: 'hash-dirty',
+        };
+
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            stageDocumentContent: {
+                [compositeKey]: testContent,
+            },
+        };
+
+        const result = selectStageDocumentResource(state, sessionId, stageSlug, iterationNumber, modelId, documentKey);
+        
+        expect(result).toBeDefined();
+        expect(result?.isDirty).toBe(true);
+        expect(result?.baselineMarkdown).toBe('Original baseline content');
+        expect(result?.currentDraftMarkdown).toBe('Modified draft content');
+    });
+});
+
+describe('selectValidMarkdownDocumentKeys', () => {
+    const stageSlug = 'thesis';
+    const stageWithMixedOutputs: DialecticStageRecipe = {
+        stageSlug,
+        instanceId: 'instance-mixed',
+        steps: [
+            {
+                id: 'step-markdown-1',
+                step_key: 'markdown_step_1',
+                step_slug: 'markdown-step-1',
+                step_name: 'Markdown Step 1',
+                execution_order: 1,
+                parallel_group: 1,
+                branch_key: 'branch-1',
+                job_type: 'EXECUTE',
+                prompt_type: 'Turn',
+                prompt_template_id: 'prompt-1',
+                output_type: 'assembled_document_json',
+                granularity_strategy: 'per_source_document',
+                inputs_required: [],
+                inputs_relevance: [],
+                outputs_required: [
+                    {
+                        document_key: 'draft_document_markdown',
+                        artifact_class: 'rendered_document',
+                        file_type: 'markdown',
+                    },
+                ],
+            },
+            {
+                id: 'step-json',
+                step_key: 'json_step',
+                step_slug: 'json-step',
+                step_name: 'JSON Step',
+                execution_order: 2,
+                parallel_group: 2,
+                branch_key: 'branch-2',
+                job_type: 'PLAN',
+                prompt_type: 'Planner',
+                prompt_template_id: 'prompt-2',
+                output_type: 'header_context',
+                granularity_strategy: 'all_to_one',
+                inputs_required: [],
+                inputs_relevance: [],
+                outputs_required: [
+                    {
+                        document_key: 'HeaderContext',
+                        artifact_class: 'header_context',
+                        file_type: 'json',
+                    },
+                ],
+            },
+            {
+                id: 'step-markdown-2',
+                step_key: 'markdown_step_2',
+                step_slug: 'markdown-step-2',
+                step_name: 'Markdown Step 2',
+                execution_order: 3,
+                parallel_group: 3,
+                branch_key: 'branch-3',
+                job_type: 'EXECUTE',
+                prompt_type: 'Turn',
+                prompt_template_id: 'prompt-3',
+                output_type: 'assembled_document_json',
+                granularity_strategy: 'per_source_document',
+                inputs_required: [],
+                inputs_relevance: [],
+                outputs_required: [
+                    {
+                        document_key: 'business_case_markdown',
+                        artifact_class: 'rendered_document',
+                        file_type: 'markdown',
+                    },
+                ],
+            },
+        ],
+    };
+
+    const stageWithNoMarkdownOutputs: DialecticStageRecipe = {
+        stageSlug: 'no-markdown',
+        instanceId: 'instance-no-markdown',
+        steps: [
+            {
+                id: 'step-json-only',
+                step_key: 'json_only_step',
+                step_slug: 'json-only-step',
+                step_name: 'JSON Only Step',
+                execution_order: 1,
+                parallel_group: 1,
+                branch_key: 'branch-1',
+                job_type: 'PLAN',
+                prompt_type: 'Planner',
+                prompt_template_id: 'prompt-1',
+                output_type: 'header_context',
+                granularity_strategy: 'all_to_one',
+                inputs_required: [],
+                inputs_relevance: [],
+                outputs_required: [
+                    {
+                        document_key: 'HeaderContext',
+                        artifact_class: 'header_context',
+                        file_type: 'json',
+                    },
+                ],
+            },
+        ],
+    };
+
+    it('should return a Set containing only markdown document keys, excluding non-markdown artifacts', () => {
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: {
+                [stageSlug]: stageWithMixedOutputs,
+            },
+        };
+
+        const result = selectValidMarkdownDocumentKeys(state, stageSlug);
+
+        expect(result).toBeInstanceOf(Set);
+        expect(result.size).toBe(2);
+        expect(result.has('draft_document_markdown')).toBe(true);
+        expect(result.has('business_case_markdown')).toBe(true);
+        expect(result.has('HeaderContext')).toBe(false);
+    });
+
+    it('should return an empty Set when no markdown outputs exist for the stage', () => {
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: {
+                'no-markdown': stageWithNoMarkdownOutputs,
+            },
+        };
+
+        const result = selectValidMarkdownDocumentKeys(state, 'no-markdown');
+
+        expect(result).toBeInstanceOf(Set);
+        expect(result.size).toBe(0);
+    });
+
+    it('should return an empty Set when the stage has no recipe', () => {
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: {},
+        };
+
+        const result = selectValidMarkdownDocumentKeys(state, 'nonexistent-stage');
+
+        expect(result).toBeInstanceOf(Set);
+        expect(result.size).toBe(0);
+    });
+
+    it('should return an empty Set when the recipe has no steps', () => {
+        const stageWithNoSteps: DialecticStageRecipe = {
+            stageSlug: 'empty-stage',
+            instanceId: 'instance-empty',
+            steps: [],
+        };
+
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: {
+                'empty-stage': stageWithNoSteps,
+            },
+        };
+
+        const result = selectValidMarkdownDocumentKeys(state, 'empty-stage');
+
+        expect(result).toBeInstanceOf(Set);
+        expect(result.size).toBe(0);
+    });
+
+    it('should return an empty Set when steps have no outputs_required', () => {
+        const stageWithNoOutputs: DialecticStageRecipe = {
+            stageSlug: 'no-outputs-stage',
+            instanceId: 'instance-no-outputs',
+            steps: [
+                {
+                    id: 'step-no-outputs',
+                    step_key: 'no_outputs_step',
+                    step_slug: 'no-outputs-step',
+                    step_name: 'No Outputs Step',
+                    execution_order: 1,
+                    parallel_group: 1,
+                    branch_key: 'branch-1',
+                    job_type: 'EXECUTE',
+                    prompt_type: 'Turn',
+                    prompt_template_id: 'prompt-1',
+                    output_type: 'assembled_document_json',
+                    granularity_strategy: 'per_source_document',
+                    inputs_required: [],
+                    inputs_relevance: [],
+                    outputs_required: undefined,
+                },
+            ],
+        };
+
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: {
+                'no-outputs-stage': stageWithNoOutputs,
+            },
+        };
+
+        const result = selectValidMarkdownDocumentKeys(state, 'no-outputs-stage');
+
+        expect(result).toBeInstanceOf(Set);
+        expect(result.size).toBe(0);
+    });
+});
+
 

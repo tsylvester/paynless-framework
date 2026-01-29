@@ -11,6 +11,12 @@ import type {
     DialecticStageRecipe,
     DialecticStageRecipeStep,
     FocusedStageDocumentState,
+    StageDocumentChecklistEntry,
+    StageRunDocumentDescriptor,
+    StageRenderedDocumentDescriptor,
+    StagePlannedDocumentDescriptor,
+    StageDocumentContentState,
+    EditedDocumentResource,
 } from '@paynless/types';
 import { createSelector } from 'reselect';
 
@@ -233,12 +239,13 @@ export const selectIsStageReadyForSessionIteration = createSelector(
         (state: DialecticStateValues) => state.stageRunProgress,
         selectCurrentProjectDetail,
         selectCurrentProcessTemplate,
+        (state: DialecticStateValues) => state.activeSeedPrompt,
         (_state, projectId: string) => projectId,
         (_state, _projectId, sessionId: string) => sessionId,
         (_state, _projectId, _sessionId, stageSlug: string) => stageSlug,
         (_state, _projectId, _sessionId, _stageSlug, iterationNumber: number) => iterationNumber
     ],
-    (recipesByStageSlug, stageRunProgressMap, project, processTemplate, projectId, sessionId, stageSlug, iterationNumber): boolean => {
+    (recipesByStageSlug, stageRunProgressMap, project, processTemplate, activeSeedPrompt, projectId, sessionId, stageSlug, iterationNumber): boolean => {
         if (!project || project.id !== projectId || !processTemplate) {
             return false;
         }
@@ -329,44 +336,7 @@ export const selectIsStageReadyForSessionIteration = createSelector(
                 }
 
                 if (requirement.type === 'seed_prompt') {
-                    let hasSeedPrompt = false;
-                    for (const resource of projectResources) {
-                        let descriptorCandidate: unknown = resource.resource_description;
-                        if (typeof descriptorCandidate === 'string') {
-                            try {
-                                const parsed: unknown = JSON.parse(descriptorCandidate);
-                                descriptorCandidate = parsed;
-                            } catch {
-                                continue;
-                            }
-                        }
-                        if (typeof descriptorCandidate !== 'object' || descriptorCandidate === null) {
-                            continue;
-                        }
-                        const typeDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'type');
-                        const typeValue = typeDescriptor?.value;
-                        if (typeof typeValue !== 'string' || typeValue !== 'seed_prompt') {
-                            continue;
-                        }
-                        const sessionDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'session_id');
-                        const sessionValue = sessionDescriptor?.value;
-                        if (typeof sessionValue !== 'string' || sessionValue !== sessionId) {
-                            continue;
-                        }
-                        const stageDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'stage_slug');
-                        const stageValue = stageDescriptor?.value;
-                        if (typeof stageValue !== 'string' || stageValue !== stageSlug) {
-                            continue;
-                        }
-                        const iterationDescriptor = Object.getOwnPropertyDescriptor(descriptorCandidate, 'iteration');
-                        const iterationValue = iterationDescriptor?.value;
-                        if (typeof iterationValue !== 'number' || iterationValue !== iterationNumber) {
-                            continue;
-                        }
-                        hasSeedPrompt = true;
-                        break;
-                    }
-                    if (!hasSeedPrompt) {
+                    if (!activeSeedPrompt) {
                         return false;
                     }
                     continue;
@@ -394,10 +364,20 @@ export const selectIsStageReadyForSessionIteration = createSelector(
                 }
 
                 if (requirement.type === 'document') {
+                    const sourceStageSlug = deriveRequirementStageSlug(requirement.slug);
+                    const sourceProgressKey = `${sessionId}:${sourceStageSlug}:${iterationNumber}`;
+                    const sourceProgressEntry = stageRunProgressMap[sourceProgressKey];
+                    
+                    if (sourceProgressEntry && sourceProgressEntry.documents && requirement.document_key) {
+                        const documentDescriptor = sourceProgressEntry.documents[requirement.document_key];
+                        if (documentDescriptor && documentDescriptor.status === 'completed') {
+                            continue;
+                        }
+                    }
+                    
                     const contributions = Array.isArray(projectSession.dialectic_contributions)
                         ? projectSession.dialectic_contributions
                         : [];
-                    const sourceStageSlug = deriveRequirementStageSlug(requirement.slug);
                     const hasDocument = contributions.some((contribution) => {
                         if (contribution.iteration_number !== iterationNumber) {
                             return false;
@@ -575,6 +555,16 @@ type StepStatus = StageRunProgressEntry['stepStatuses'][string];
 type StageRunDocumentEntry = StageRunDocuments[string];
 type DocumentStatus = StageRunDocumentEntry['status'];
 
+const isPlannedDescriptor = (
+    descriptor: StageRunDocumentDescriptor | undefined,
+): descriptor is StagePlannedDocumentDescriptor =>
+    Boolean(descriptor && descriptor.descriptorType === 'planned');
+
+const isRenderedDescriptor = (
+    descriptor: StageRunDocumentDescriptor | undefined,
+): descriptor is StageRenderedDocumentDescriptor =>
+    Boolean(descriptor && descriptor.descriptorType !== 'planned');
+
 const emptyDocuments: StageRunDocuments = {};
 
 const selectRecipeSteps = (
@@ -662,7 +652,7 @@ export const selectLatestRenderedRef = (
 ): string | null | undefined => {
     const documents = selectDocumentsForStageRun(state, progressKey);
     const descriptor = documents[documentKey];
-    if (!descriptor) {
+    if (!descriptor || !isRenderedDescriptor(descriptor)) {
         return undefined;
     }
     return descriptor.latestRenderedResourceId;
@@ -679,6 +669,9 @@ export const selectStageProgressSummary = (
     totalDocuments: number;
     completedDocuments: number;
     outstandingDocuments: string[];
+    hasFailed: boolean;
+    failedDocuments: number;
+    failedDocumentKeys: string[];
 } => {
     const progress = selectStageRunProgress(state, sessionId, stageSlug, iterationNumber);
     if (!progress) {
@@ -687,19 +680,26 @@ export const selectStageProgressSummary = (
             totalDocuments: 0,
             completedDocuments: 0,
             outstandingDocuments: [],
+            hasFailed: false,
+            failedDocuments: 0,
+            failedDocumentKeys: [],
         };
     }
 
     const documentEntries = progress.documents;
 
-    const documentKeys = Object.keys(documentEntries).filter((key) => {
+    const allDocumentKeys = Object.keys(documentEntries).filter((key) => {
         if (!modelId) return true;
         const documentDescriptor = documentEntries[key];
         return documentDescriptor?.modelId === modelId;
     });
 
+    const validMarkdownKeys = selectValidMarkdownDocumentKeys(state, stageSlug);
+    const documentKeys = allDocumentKeys.filter((key) => validMarkdownKeys.has(key));
+
     let completedDocuments = 0;
     const outstandingDocuments: string[] = [];
+    const failedDocumentKeys: string[] = [];
 
     for (const key of documentKeys) {
         const documentDescriptor = documentEntries[key];
@@ -708,6 +708,11 @@ export const selectStageProgressSummary = (
         }
         if (documentDescriptor.status === 'completed') {
             completedDocuments += 1;
+            continue;
+        }
+
+        if (documentDescriptor.status === 'failed') {
+            failedDocumentKeys.push(key);
         } else {
             outstandingDocuments.push(key);
         }
@@ -717,12 +722,16 @@ export const selectStageProgressSummary = (
     const isComplete = totalDocuments > 0 && completedDocuments === totalDocuments;
 
     outstandingDocuments.sort();
+    failedDocumentKeys.sort();
 
     return {
         isComplete,
         totalDocuments,
         completedDocuments,
         outstandingDocuments,
+        hasFailed: failedDocumentKeys.length > 0,
+        failedDocuments: failedDocumentKeys.length,
+        failedDocumentKeys,
     };
 };
 
@@ -730,34 +739,41 @@ export const selectStageDocumentChecklist = (
     state: DialecticStateValues,
     progressKey: string,
     modelId: string
-): Array<{
-    documentKey: string;
-    status: DocumentStatus;
-    jobId: string;
-    latestRenderedResourceId: string;
-    modelId: string;
-}> => {
+): StageDocumentChecklistEntry[] => {
     const documents = selectDocumentsForStageRun(state, progressKey);
-    const checklist: Array<{
-        documentKey: string;
-        status: DocumentStatus;
-        jobId: string;
-        latestRenderedResourceId: string;
-        modelId: string;
-    }> = [];
+    const checklist: StageDocumentChecklistEntry[] = [];
 
     for (const documentKey of Object.keys(documents)) {
         const descriptor = documents[documentKey];
-        if (!descriptor || descriptor.modelId !== modelId) {
+        if (!descriptor) {
             continue;
         }
-        checklist.push({
-            documentKey,
-            status: descriptor.status,
-            jobId: descriptor.job_id,
-            latestRenderedResourceId: descriptor.latestRenderedResourceId,
-            modelId: descriptor.modelId,
-        });
+
+        if (descriptor.modelId !== modelId) {
+            continue;
+        }
+
+        if (isPlannedDescriptor(descriptor)) {
+            checklist.push({
+                descriptorType: 'planned',
+                documentKey,
+                status: descriptor.status,
+                jobId: null,
+                latestRenderedResourceId: null,
+                modelId: descriptor.modelId,
+                stepKey: descriptor.stepKey,
+            });
+        } else {
+            checklist.push({
+                descriptorType: 'rendered',
+                documentKey,
+                status: descriptor.status,
+                jobId: descriptor.job_id,
+                latestRenderedResourceId: descriptor.latestRenderedResourceId,
+                modelId: descriptor.modelId,
+                stepKey: descriptor.stepKey,
+            });
+        }
     }
 
     return checklist;
@@ -780,3 +796,253 @@ export const selectFocusedStageDocument = (
     }
     return entry;
 };
+
+/**
+ * Step 79: Resource-first selectors for document-centric workflows
+ * 
+ * Component mappings (79.a):
+ * - GeneratedContributionCard: Uses selectStageDocumentResource to render edited document content
+ *   from stageDocumentContent instead of relying on selectContributionById for editable documents.
+ *   Uses selectEditedDocumentByKey for quick document metadata lookups.
+ * - SessionContributionsDisplayCard: Uses selectStageDocumentResource to display document summaries
+ *   and edited document metadata, ensuring UI never relies on stale dialectic_contributions.
+ * 
+ * These selectors pull from the normalized resource state (stageDocumentContent) introduced in Step 77,
+ * guaranteeing the UI never relies on stale dialectic_contributions for editable documents.
+ */
+
+/**
+ * Selector to get document resource content from stageDocumentContent.
+ * This is the authoritative source for editable document content, replacing
+ * dialectic_contributions for document-centric workflows.
+ * 
+ * The composite key format is: `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`
+ * 
+ * @param state - The dialectic state values
+ * @param sessionId - The session identifier
+ * @param stageSlug - The stage slug
+ * @param iterationNumber - The iteration number
+ * @param modelId - The model identifier
+ * @param documentKey - The document key
+ * @returns The document resource content state, or undefined if not found
+ */
+export const selectStageDocumentResource = (
+    state: DialecticStateValues,
+    sessionId: string,
+    stageSlug: string,
+    iterationNumber: number,
+    modelId: string,
+    documentKey: string
+): StageDocumentContentState | undefined => {
+    const compositeKey = `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
+    return state.stageDocumentContent[compositeKey];
+};
+
+/**
+ * Selector to get edited document metadata by composite key.
+ * Provides quick access to document resources without requiring all key components.
+ * 
+ * The composite key format is: `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`
+ * 
+ * @param state - The dialectic state values
+ * @param compositeKey - The composite key for the document resource
+ * @returns The document resource content state, or undefined if not found
+ */
+export const selectEditedDocumentByKey = (
+    state: DialecticStateValues,
+    compositeKey: string
+): StageDocumentContentState | undefined => {
+    return state.stageDocumentContent[compositeKey];
+};
+
+/**
+ * Selector to get the complete EditedDocumentResource metadata from stageDocumentResources.
+ * This returns the full resource metadata including source_contribution_id, updated_at,
+ * resource_type, document_key, id, storage_path, mime_type, size_bytes, created_at,
+ * and all other EditedDocumentResource fields.
+ * 
+ * This is required so UI components (Steps 84-85) can display resource metadata like
+ * source_contribution_id and last modified timestamps.
+ * 
+ * The composite key format is: `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`
+ * 
+ * @param state - The dialectic state values
+ * @param sessionId - The session identifier
+ * @param stageSlug - The stage slug
+ * @param iterationNumber - The iteration number
+ * @param modelId - The model identifier
+ * @param documentKey - The document key
+ * @returns The complete EditedDocumentResource object, or undefined if not found
+ */
+export const selectStageDocumentResourceMetadata = (
+    state: DialecticStateValues,
+    sessionId: string,
+    stageSlug: string,
+    iterationNumber: number,
+    modelId: string,
+    documentKey: string
+): EditedDocumentResource | undefined => {
+    const compositeKey = `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
+    return state.stageDocumentResources[compositeKey];
+};
+
+/**
+ * Selector to get the complete EditedDocumentResource metadata by composite key.
+ * Provides quick access to document resource metadata without requiring all key components.
+ * 
+ * The composite key format is: `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`
+ * 
+ * @param state - The dialectic state values
+ * @param compositeKey - The composite key for the document resource
+ * @returns The complete EditedDocumentResource object, or undefined if not found
+ */
+export const selectStageDocumentResourceMetadataByKey = (
+    state: DialecticStateValues,
+    compositeKey: string
+): EditedDocumentResource | undefined => {
+    return state.stageDocumentResources[compositeKey];
+};
+
+/**
+ * Helper to check if a value is a plain record object
+ */
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null;
+
+/**
+ * Helper to convert a value to a plain array
+ */
+const toPlainArray = (value: unknown): unknown[] => {
+    if (Array.isArray(value)) {
+        return value;
+    }
+    if (value === null || value === undefined) {
+        return [];
+    }
+    return [value];
+};
+
+/**
+ * Helper to check if a filename is a markdown template
+ */
+const isMarkdownTemplate = (value: string): boolean => {
+    const lower = value.toLowerCase();
+    return lower.endsWith('.md') || lower.endsWith('.markdown');
+};
+
+/**
+ * Extract markdown document keys from a single rule object
+ */
+const extractMarkdownDocumentKeysFromRule = (
+    rawRule: unknown,
+    documentKeys: Set<string>
+): void => {
+    if (!isPlainRecord(rawRule)) {
+        return;
+    }
+
+    const register = (documentKey: unknown) => {
+        if (typeof documentKey === 'string' && documentKey.trim().length > 0) {
+            documentKeys.add(documentKey);
+        }
+    };
+
+    // Handle legacy document_key/file_type at root level
+    const legacyDocumentKey = rawRule['document_key'];
+    const legacyFileType = rawRule['file_type'];
+    if (legacyFileType === 'markdown') {
+        register(legacyDocumentKey);
+    }
+
+    // Helper to evaluate a document entry
+    const evaluateDocumentEntry = (entry: unknown) => {
+        if (!isPlainRecord(entry)) {
+            return;
+        }
+
+        const documentKey = entry['document_key'];
+        const fileType = entry['file_type'];
+        const templateFilename = entry['template_filename'];
+
+        if (fileType === 'markdown') {
+            register(documentKey);
+            return;
+        }
+
+        if (typeof templateFilename === 'string' && isMarkdownTemplate(templateFilename)) {
+            register(documentKey);
+        }
+    };
+
+    // Handle documents array
+    const documents = toPlainArray(rawRule['documents']);
+    documents.forEach(evaluateDocumentEntry);
+
+    // Handle assembled_json array
+    const assembledJson = toPlainArray(rawRule['assembled_json']);
+    assembledJson.forEach(evaluateDocumentEntry);
+
+    // Handle files_to_generate array
+    const filesToGenerate = toPlainArray(rawRule['files_to_generate']);
+    filesToGenerate.forEach((entry) => {
+        if (!isPlainRecord(entry)) {
+            return;
+        }
+
+        const documentKey = entry['from_document_key'];
+        const templateFilename = entry['template_filename'];
+        if (
+            typeof documentKey === 'string' &&
+            documentKey.trim().length > 0 &&
+            typeof templateFilename === 'string' &&
+            isMarkdownTemplate(templateFilename)
+        ) {
+            register(documentKey);
+        }
+    });
+};
+
+/**
+ * Selector to get valid markdown document keys for a stage.
+ * Returns a Set<string> containing all document keys that are markdown files,
+ * extracted from the stage's recipe steps outputs_required fields.
+ * 
+ * This selector filters recipe steps to identify valid markdown document keys,
+ * handling both legacy document_key/file_type patterns and modern structured outputs.
+ * 
+ * @param state - The dialectic state values
+ * @param stageSlug - The stage slug to get markdown document keys for
+ * @returns A Set<string> containing valid markdown document keys for the stage
+ */
+export const selectValidMarkdownDocumentKeys = createSelector(
+    [selectRecipeSteps],
+    (steps): Set<string> => {
+        const documentKeys = new Set<string>();
+
+        steps.forEach((step) => {
+            if (!step.outputs_required) {
+                return;
+            }
+
+            let rawOutputs: unknown = step.outputs_required;
+
+            // Handle string JSONB - parse if needed
+            if (typeof rawOutputs === 'string') {
+                try {
+                    rawOutputs = JSON.parse(rawOutputs);
+                } catch {
+                    // If parsing fails, skip this step
+                    return;
+                }
+            }
+
+            // Convert to array and process each rule
+            const rules = toPlainArray(rawOutputs);
+            rules.forEach((rule) => {
+                extractMarkdownDocumentKeysFromRule(rule, documentKeys);
+            });
+        });
+
+        return documentKeys;
+    }
+);

@@ -26,6 +26,10 @@ DECLARE
     v_doc_template_id UUID;
     v_domain_id UUID;
 BEGIN
+    -- Allow prompt_text to be NULL to support document_template_id fallback
+    ALTER TABLE public.system_prompts
+    ALTER COLUMN prompt_text DROP NOT NULL;
+    
     -- Get the domain_id for 'Software Development'
     SELECT id INTO v_domain_id FROM public.dialectic_domains WHERE name = 'Software Development' LIMIT 1;
     
@@ -48,7 +52,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'thesis_planner_header_v1',
-        $PROMPT$\path=docs/prompts/thesis/thesis_planner_header_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Planner template that assembles the Thesis HeaderContext artifact',
@@ -84,7 +88,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'thesis_business_case_turn_v1',
-        $PROMPT$\path=docs/prompts/thesis/thesis_business_case_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Thesis stage business case turn template',
@@ -160,7 +164,7 @@ BEGIN
         'PLAN',
         'Planner',
         v_plan_prompt_id,
-        'HeaderContext',
+        'header_context',
         'all_to_one',
         '[{"type":"seed_prompt","slug":"thesis","document_key":"seed_prompt","required":true}]'::jsonb,
         '[{"document_key":"seed_prompt","relevance":1.0}]'::jsonb,
@@ -207,17 +211,25 @@ BEGIN
                   "weaknesses": "",
                   "opportunities": "",
                   "threats": "",
-                  "next_steps": ""
+                  "next_steps": "",
+                  "proposal_references": [],
+                  "executive_summary": ""
                 }
               },
              {
                "document_key": "feature_spec",
-               "content_to_include": [
-                 {
-                   "feature_name": "",
-                   "user_stories": []
-                 }
-               ]
+               "content_to_include": {
+                 "features": [
+                   {
+                     "feature_name": "",
+                     "feature_objective": "",
+                     "user_stories": [],
+                     "acceptance_criteria": [],
+                     "dependencies": [],
+                     "success_metrics": []
+                   }
+                 ]
+               }
              },
              {
                "document_key": "technical_approach",
@@ -226,7 +238,9 @@ BEGIN
                 "components": "",
                 "data": "",
                 "deployment": "",
-                "sequencing": ""
+                "sequencing": "",
+                "risk_mitigation": "",
+                "open_questions": ""
               }
              },
              {
@@ -240,7 +254,11 @@ BEGIN
                 "guardrails": "",
                 "measurement_plan": "",
                 "risk_signals": "",
-                "next_steps": ""
+                "next_steps": "",
+                "data_sources": [],
+                "reporting_cadence": "",
+                "ownership": "",
+                "escalation_plan": ""
               }
              }
            ]
@@ -287,10 +305,6 @@ BEGIN
             updated_at = now()
     RETURNING id INTO v_business_doc_template_id;
 
-    UPDATE public.system_prompts
-    SET document_template_id = v_business_doc_template_id
-    WHERE id = v_business_prompt_id;
-
     INSERT INTO public.dialectic_recipe_template_steps (
         id,
         template_id,
@@ -322,7 +336,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_business_prompt_id,
-        'RenderedDocument',
+        'business_case',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.7}]'::jsonb,
@@ -334,7 +348,6 @@ BEGIN
                "artifact_class": "rendered_document",
                "file_type": "markdown",
                "content_to_include": {
-                 "executive_summary": "",
                  "market_opportunity": "",
                  "user_problem_validation": "",
                  "competitive_analysis": "",
@@ -344,7 +357,9 @@ BEGIN
                  "weaknesses": "",
                  "opportunities": "",
                  "threats": "",
-                 "next_steps": ""
+                 "next_steps": "",
+                 "proposal_references": [],
+                 "executive_summary": ""
                }
              }
            ],
@@ -373,6 +388,20 @@ BEGIN
             outputs_required = EXCLUDED.outputs_required,
             updated_at = now()
     RETURNING id INTO v_business_step_id;
+    
+    INSERT INTO public.dialectic_recipe_template_edges (
+        id,
+        template_id,
+        from_step_id,
+        to_step_id
+    ) VALUES (
+        gen_random_uuid(),
+        v_template_id,
+        v_planner_step_id,
+        v_business_step_id
+    )
+    ON CONFLICT (template_id, from_step_id, to_step_id) DO NOTHING;
+
 
     -- Upsert the document template for the feature spec prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
@@ -393,7 +422,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'thesis_feature_spec_turn_v1',
-        $PROMPT$\path=docs/prompts/thesis/thesis_feature_spec_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Thesis stage feature spec turn template',
@@ -435,10 +464,6 @@ BEGIN
             updated_at = now()
     RETURNING id INTO v_feature_doc_template_id;
 
-    UPDATE public.system_prompts
-    SET document_template_id = v_feature_doc_template_id
-    WHERE id = v_feature_prompt_id;
-
     INSERT INTO public.dialectic_recipe_template_steps (
         id,
         template_id,
@@ -470,7 +495,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_feature_prompt_id,
-        'RenderedDocument',
+        'feature_spec',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.65}]'::jsonb,
@@ -481,21 +506,23 @@ BEGIN
                "template_filename": "thesis_feature_spec.md",
                "artifact_class": "rendered_document",
                "file_type": "markdown",
-               "content_to_include": [
-                 {
-                   "feature_name": "",
-                   "feature_objective": "",
-                   "user_stories": [],
-                   "acceptance_criteria": [],
-                   "dependencies": [],
-                   "success_metrics": []
-                 }
-               ]
+               "content_to_include": {
+                 "features": [
+                   {
+                     "feature_name": "",
+                     "feature_objective": "",
+                     "user_stories": [],
+                     "acceptance_criteria": [],
+                     "dependencies": [],
+                     "success_metrics": []
+                   }
+                 ]
+               }
              }
            ],
            "files_to_generate": [
              {
-               "template_filename": "thesis_product_requirements_document.md",
+               "template_filename": "thesis_feature_spec.md",
                "from_document_key": "feature_spec"
              }
            ]
@@ -551,7 +578,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'thesis_technical_approach_turn_v1',
-        $PROMPT$\path=docs/prompts/thesis/thesis_technical_approach_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Thesis stage technical approach turn template',
@@ -593,10 +620,6 @@ BEGIN
             updated_at = now()
     RETURNING id INTO v_technical_doc_template_id;
 
-    UPDATE public.system_prompts
-    SET document_template_id = v_technical_doc_template_id
-    WHERE id = v_technical_prompt_id;
-
     INSERT INTO public.dialectic_recipe_template_steps (
         id,
         template_id,
@@ -628,7 +651,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_technical_prompt_id,
-        'RenderedDocument',
+        'technical_approach',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.6}]'::jsonb,
@@ -652,7 +675,7 @@ BEGIN
            ],
            "files_to_generate": [
              {
-               "template_filename": "thesis_implementation_plan_proposal.md",
+               "template_filename": "thesis_technical_approach.md",
                "from_document_key": "technical_approach"
              }
            ]
@@ -708,7 +731,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'thesis_success_metrics_turn_v1',
-        $PROMPT$\path=docs/prompts/thesis/thesis_success_metrics_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Thesis stage success metrics turn template',
@@ -750,10 +773,6 @@ BEGIN
             updated_at = now()
     RETURNING id INTO v_success_doc_template_id;
 
-    UPDATE public.system_prompts
-    SET document_template_id = v_success_doc_template_id
-    WHERE id = v_success_prompt_id;
-
     INSERT INTO public.dialectic_recipe_template_steps (
         id,
         template_id,
@@ -785,7 +804,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_success_prompt_id,
-        'RenderedDocument',
+        'success_metrics',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.8}]'::jsonb,
@@ -919,7 +938,7 @@ BEGIN
         'PLAN',
         'Planner',
         v_plan_prompt_id,
-        'HeaderContext',
+        'header_context',
         'all_to_one',
         '[{"type":"seed_prompt","slug":"thesis","document_key":"seed_prompt","required":true}]'::jsonb,
         '[{"document_key":"seed_prompt","relevance":1.0}]'::jsonb,
@@ -966,17 +985,25 @@ BEGIN
                   "weaknesses": "",
                   "opportunities": "",
                   "threats": "",
-                  "next_steps": ""
+                  "next_steps": "",
+                  "proposal_references": [],
+                  "executive_summary": ""
                 }
               },
              {
                "document_key": "feature_spec",
-               "content_to_include": [
-                 {
-                   "feature_name": "",
-                   "user_stories": []
-                 }
-               ]
+               "content_to_include": {
+                 "features": [
+                   {
+                     "feature_name": "",
+                     "feature_objective": "",
+                     "user_stories": [],
+                     "acceptance_criteria": [],
+                     "dependencies": [],
+                     "success_metrics": []
+                   }
+                 ]
+               }
              },
              {
                "document_key": "technical_approach",
@@ -985,7 +1012,9 @@ BEGIN
                 "components": "",
                 "data": "",
                 "deployment": "",
-                "sequencing": ""
+                "sequencing": "",
+                "risk_mitigation": "",
+                "open_questions": ""
               }
              },
              {
@@ -1001,7 +1030,9 @@ BEGIN
                 "risk_signals": "",
                 "next_steps": "",
                 "data_sources": [],
-                "reporting_cadence": ""
+                "reporting_cadence": "",
+                "ownership": "",
+                "escalation_plan": ""
               }
              }
            ]
@@ -1044,7 +1075,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_business_prompt_id,
-        'RenderedDocument',
+        'business_case',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.7}]'::jsonb,
@@ -1056,7 +1087,6 @@ BEGIN
                "artifact_class": "rendered_document",
                "file_type": "markdown",
                "content_to_include": {
-                 "executive_summary": "",
                  "market_opportunity": "",
                  "user_problem_validation": "",
                  "competitive_analysis": "",
@@ -1067,7 +1097,8 @@ BEGIN
                  "opportunities": "",
                  "threats": "",
                  "next_steps": "",
-                 "proposal_references": []
+                 "proposal_references": [],
+                 "executive_summary": ""
                }
              }
            ],
@@ -1116,7 +1147,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_feature_prompt_id,
-        'RenderedDocument',
+        'feature_spec',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.65}]'::jsonb,
@@ -1127,21 +1158,23 @@ BEGIN
                "template_filename": "thesis_feature_spec.md",
                "artifact_class": "rendered_document",
                "file_type": "markdown",
-               "content_to_include": [
-                 {
-                   "feature_name": "",
-                   "feature_objective": "",
-                   "user_stories": [],
-                   "acceptance_criteria": [],
-                   "dependencies": [],
-                   "success_metrics": []
-                 }
-               ]
+               "content_to_include": {
+                 "features": [
+                   {
+                     "feature_name": "",
+                     "feature_objective": "",
+                     "user_stories": [],
+                     "acceptance_criteria": [],
+                     "dependencies": [],
+                     "success_metrics": []
+                   }
+                 ]
+               }
              }
            ],
            "files_to_generate": [
              {
-               "template_filename": "thesis_product_requirements_document.md",
+               "template_filename": "thesis_feature_spec.md",
                "from_document_key": "feature_spec"
              }
            ]
@@ -1184,7 +1217,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_technical_prompt_id,
-        'RenderedDocument',
+        'technical_approach',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.6}]'::jsonb,
@@ -1208,7 +1241,7 @@ BEGIN
            ],
            "files_to_generate": [
              {
-               "template_filename": "thesis_implementation_plan_proposal.md",
+               "template_filename": "thesis_technical_approach.md",
                "from_document_key": "technical_approach"
              }
            ]
@@ -1251,7 +1284,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_success_prompt_id,
-        'RenderedDocument',
+        'success_metrics',
         'per_source_document',
         '[{"type":"header_context","slug":"thesis","document_key":"header_context","required":true}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"seed_prompt","relevance":0.8}]'::jsonb,

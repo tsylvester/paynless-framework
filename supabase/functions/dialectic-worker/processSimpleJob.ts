@@ -1,21 +1,22 @@
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../types_db.ts';
 import {
-  type DialecticJobPayload,
-  type SelectedAiProvider,
-  type FailedAttemptError,
-  type IDialecticJobDeps,
-  type ModelProcessingResult,
-  type Job,
-  type PromptConstructionPayload,
-  type SourceDocument,
+  DialecticJobPayload,
+  SelectedAiProvider,
+  FailedAttemptError,
+  ModelProcessingResult,
+  Job,
+  PromptConstructionPayload,
+  SourceDocument,
 } from '../dialectic-service/dialectic.interface.ts';
+import { IJobContext } from './JobContext.interface.ts';
+import { createExecuteJobContext } from './createJobContext.ts';
 import { isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
 import { isRecord } from "../_shared/utils/type_guards.ts";
 import { ContextWindowError } from '../_shared/utils/errors.ts';
-import { type Messages } from '../_shared/types.ts';
-import { type StageContext } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
-import { type DialecticRecipeStep } from '../dialectic-service/dialectic.interface.ts';
+import { Messages } from '../_shared/types.ts';
+import { StageContext, type AssemblePromptOptions } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
+import { DialecticRecipeStep } from '../dialectic-service/dialectic.interface.ts';
 import { isDialecticRecipeTemplateStep, isDialecticStageRecipeStep } from '../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
@@ -24,7 +25,7 @@ export async function processSimpleJob(
     dbClient: SupabaseClient<Database>,
     job: Job & { payload: DialecticJobPayload },
     projectOwnerUserId: string,
-    deps: IDialecticJobDeps,
+    ctx: IJobContext,
     authToken: string,
 ) {
     const { id: jobId, attempt_count: currentAttempt, max_retries } = job;
@@ -35,11 +36,11 @@ export async function processSimpleJob(
         sessionId,
     } = job.payload;
     
-    deps.logger.info(`[dialectic-worker] [processSimpleJob] Starting attempt ${currentAttempt + 1}/${max_retries + 1} for job ID: ${jobId}`);
+    ctx.logger.info(`[dialectic-worker] [processSimpleJob] Starting attempt ${currentAttempt + 1}/${max_retries + 1} for job ID: ${jobId}`);
     let providerDetails: SelectedAiProvider | undefined;
 
     // Track document key for notifications where possible
-    let notificationDocumentKey: string | undefined = undefined;
+    let notificationDocumentKey: string | undefined;
 
     try {
         if (!stageSlug) throw new Error('stageSlug is required in the payload.');
@@ -56,7 +57,7 @@ export async function processSimpleJob(
         providerDetails = providerData;
 
         if (currentAttempt === 0 && projectOwnerUserId) {
-            await deps.notificationService.sendDialecticContributionStartedEvent({
+            await ctx.notificationService.sendDialecticContributionStartedEvent({
                 sessionId,
                 modelId: providerDetails.id,
                 iterationNumber: sessionData.iteration_count,
@@ -87,38 +88,20 @@ export async function processSimpleJob(
             throw new Error(`System prompt not found for stage: ${stageData.id}`);
         }
 
-        if (!deps.promptAssembler) {
+        if (!ctx.promptAssembler) {
             throw new Error('PromptAssembler dependency is missing.');
         }
 
-        // Normalize payload to an object (Supabase rows may return JSON as string)
-        const normalizedPayloadUnknown = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
-        {
-            let hasJwtKey = false;
-            let jwtLen = 0;
-            if (isRecord(normalizedPayloadUnknown) && 'user_jwt' in normalizedPayloadUnknown) {
-                const v = normalizedPayloadUnknown['user_jwt'];
-                if (typeof v === 'string') jwtLen = v.length;
-                hasJwtKey = true;
-            }
-            deps.logger.info('[processSimpleJob] DIAGNOSTIC: normalized payload jwt presence', {
-                jobId,
-                typeofPayload: typeof normalizedPayloadUnknown,
-                hasJwtKey,
-                jwtLen,
-            });
-        }
-        // Validate user_jwt presence on payload (no healing, no substitution)
-        let hasUserJwt = false;
-        if (isRecord(normalizedPayloadUnknown) && 'user_jwt' in normalizedPayloadUnknown) {
-            const v = normalizedPayloadUnknown['user_jwt'];
-            if (typeof v === 'string' && v.trim().length > 0) {
-                hasUserJwt = true;
-            }
-        }
-        if (!hasUserJwt) {
+        const payloadUserJwt = job.payload.user_jwt;
+        if (!payloadUserJwt) {
             throw new Error('payload.user_jwt required');
         }
+        const payloadHasJwt = typeof payloadUserJwt === 'string' && payloadUserJwt.length > 0;
+        ctx.logger.info('[processSimpleJob] DIAGNOSTIC: payload jwt presence', {
+            jobId,
+            hasJwtKey: payloadHasJwt,
+            jwtLen: payloadUserJwt.length,
+        });
 
         const conversationHistory: Messages[] = [];
         const resourceDocuments: SourceDocument[] = [];
@@ -139,18 +122,25 @@ export async function processSimpleJob(
         }
 
         // Resolve the correct recipe_step for this EXECUTE job
-        const metadataUnknown = (isRecord(job.payload) && 'planner_metadata' in job.payload && isRecord(job.payload['planner_metadata']))
-            ? job.payload['planner_metadata']
-            : null;
-        const recipeStepId = metadataUnknown && typeof metadataUnknown['recipe_step_id'] === 'string'
-            ? metadataUnknown['recipe_step_id']
-            : undefined;
-        const templateIdFromMetadata = metadataUnknown && typeof metadataUnknown['recipe_template_id'] === 'string'
-            ? metadataUnknown['recipe_template_id']
-            : undefined;
-        const stepSlugInPayload = isRecord(job.payload) && typeof job.payload['step_slug'] === 'string'
-            ? job.payload['step_slug']
-            : undefined;
+        let metadataUnknown: Record<string, unknown> | null = null;
+        if (isRecord(job.payload) && 'planner_metadata' in job.payload) {
+            const metadataCandidate = job.payload['planner_metadata'];
+            if (isRecord(metadataCandidate)) {
+                metadataUnknown = metadataCandidate;
+            }
+        }
+        let recipeStepId: string | undefined;
+        if (metadataUnknown && typeof metadataUnknown['recipe_step_id'] === 'string') {
+            recipeStepId = metadataUnknown['recipe_step_id'];
+        }
+        let templateIdFromMetadata: string | undefined;
+        if (metadataUnknown && typeof metadataUnknown['recipe_template_id'] === 'string') {
+            templateIdFromMetadata = metadataUnknown['recipe_template_id'];
+        }
+        let stepSlugInPayload: string | undefined;
+        if (isRecord(job.payload) && typeof job.payload['step_slug'] === 'string') {
+            stepSlugInPayload = job.payload['step_slug'];
+        }
 
         let resolvedRecipeStep: DialecticRecipeStep | null = null;
         if (typeof recipeStepId === 'string') {
@@ -181,7 +171,10 @@ export async function processSimpleJob(
                     .select('*')
                     .eq('instance_id', stageData.active_recipe_instance_id)
                     .eq('step_slug', stepSlugInPayload);
-                const candidate = Array.isArray(bySlugInstance) && bySlugInstance.length > 0 ? bySlugInstance[0] : null;
+                let candidate: unknown = null;
+                if (Array.isArray(bySlugInstance) && bySlugInstance.length > 0) {
+                    candidate = bySlugInstance[0];
+                }
                 if (candidate && isDialecticStageRecipeStep(candidate)) {
                     resolvedRecipeStep = candidate;
                 }
@@ -194,7 +187,10 @@ export async function processSimpleJob(
                         .select('*')
                         .eq('template_id', templateId)
                         .eq('step_slug', stepSlugInPayload);
-                    const candidate = Array.isArray(bySlugTemplate) && bySlugTemplate.length > 0 ? bySlugTemplate[0] : null;
+                    let candidate: unknown = null;
+                    if (Array.isArray(bySlugTemplate) && bySlugTemplate.length > 0) {
+                        candidate = bySlugTemplate[0];
+                    }
                     if (candidate && isDialecticRecipeTemplateStep(candidate)) {
                         resolvedRecipeStep = candidate;
                     }
@@ -206,16 +202,17 @@ export async function processSimpleJob(
             throw new Error('RECIPE_STEP_RESOLUTION_FAILED');
         }
 
+        // Track document key for notifications using the recipe step value exactly as provided
+        notificationDocumentKey = resolvedRecipeStep.output_type;
+
         // Emit document_started at EXECUTE job start
         if (currentAttempt === 0 && projectOwnerUserId) {
-            const documentKey = String(resolvedRecipeStep.output_type);
-            notificationDocumentKey = documentKey;
-            await deps.notificationService.sendDocumentCentricNotification({
+            await ctx.notificationService.sendDocumentCentricNotification({
                 type: 'document_started',
                 sessionId,
                 stageSlug,
                 job_id: jobId,
-                document_key: documentKey,
+                document_key: notificationDocumentKey,
                 modelId: providerDetails.id,
                 iterationNumber: sessionData.iteration_count,
             }, projectOwnerUserId);
@@ -232,69 +229,69 @@ export async function processSimpleJob(
         const initialPromptResult = await getInitialPromptContent(
             dbClient,
             project,
-            deps.logger,
-            (_client, bucket, path) => deps.downloadFromStorage(bucket, path)
+            ctx.logger,
+            (_client, bucket, path) => ctx.downloadFromStorage(_client, bucket, path)
         );
-        const directPrompt = typeof project.initial_user_prompt === 'string' ? project.initial_user_prompt.trim() : '';
-        const loaderContent = (initialPromptResult && typeof initialPromptResult.content === 'string') ? initialPromptResult.content.trim() : '';
-        const hasLoaderSource = !!(initialPromptResult && initialPromptResult.storagePath);
-        const projectInitialUserPrompt = directPrompt ? directPrompt : (hasLoaderSource && loaderContent ? loaderContent : '');
-        if (!projectInitialUserPrompt && !job.payload.target_contribution_id) {
+        let resolvedProjectInitialUserPrompt: string | undefined;
+        if (typeof project.initial_user_prompt === 'string' && project.initial_user_prompt.length > 0) {
+            resolvedProjectInitialUserPrompt = project.initial_user_prompt;
+        } else if (
+            initialPromptResult &&
+            typeof initialPromptResult.content === 'string' &&
+            initialPromptResult.content.length > 0 &&
+            initialPromptResult.storagePath
+        ) {
+            resolvedProjectInitialUserPrompt = initialPromptResult.content;
+        }
+        if (!resolvedProjectInitialUserPrompt) {
             throw new Error('Initial prompt is required to start this stage, but none was provided.');
         }
+        const projectInitialUserPrompt = resolvedProjectInitialUserPrompt;
 
-        // Continuation-specific content
-        const continuationContent = job.payload.target_contribution_id ? 'Please continue.' : undefined;
+        // Continuation-specific metadata
+        let sourceContributionId: string | undefined;
+        if (
+            typeof job.payload.target_contribution_id === 'string' &&
+            job.payload.target_contribution_id.length > 0
+        ) {
+            sourceContributionId = job.payload.target_contribution_id;
+        }
+        let continuationContent: string | undefined;
+        if (sourceContributionId) {
+            continuationContent = 'Please continue.';
+        }
 
         // Assemble prompt using the unified facade
-        const assembled = await deps.promptAssembler.assemble({
+        const assembleOptions: AssemblePromptOptions = {
             project,
             session: sessionData,
             stage: stageContext,
             projectInitialUserPrompt,
             iterationNumber: sessionData.iteration_count,
             job,
-            ...(continuationContent ? { continuationContent } : {}),
-        });
+        };
+        if (continuationContent) {
+            assembleOptions.continuationContent = continuationContent;
+        }
+        if (sourceContributionId) {
+            assembleOptions.sourceContributionId = sourceContributionId;
+        }
+        const assembled = await ctx.promptAssembler.assemble(assembleOptions);
         
-        // Pass-through-only: include systemInstruction if an upstream value is provided in the future.
-        const maybeSystemInstruction: string | undefined = undefined;
-
         const promptConstructionPayload: PromptConstructionPayload = {
-            ...(maybeSystemInstruction !== undefined ? { systemInstruction: maybeSystemInstruction } : {}),
             conversationHistory,
             resourceDocuments,
             currentUserPrompt: assembled.promptContent,
             source_prompt_resource_id: assembled.source_prompt_resource_id,
         };
+        promptConstructionPayload.sourceContributionId = sourceContributionId;
 
-        // Ensure executor receives a normalized payload object
-        const jobForExec = {
-            ...job,
-            payload: (typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload),
-        };
-        {
-            const p = jobForExec.payload;
-            let hasJwtKey = false;
-            let jwtLen = 0;
-            if (isRecord(p) && 'user_jwt' in p) {
-                const v = p['user_jwt'];
-                if (typeof v === 'string') jwtLen = v.length;
-                hasJwtKey = true;
-            }
-            deps.logger.info('[processSimpleJob] DIAGNOSTIC: jobForExec payload jwt presence', {
-                jobId,
-                typeofPayload: typeof p,
-                hasJwtKey,
-                jwtLen,
-            });
-        }
-
-        await deps.executeModelCallAndSave({
+        const executeCtx = createExecuteJobContext(ctx);
+        await ctx.executeModelCallAndSave({
             dbClient,
-            deps,
+            deps: executeCtx,
             authToken,
-            job: jobForExec,
+            job,
             projectOwnerUserId,
             providerDetails,
             sessionData,
@@ -308,7 +305,7 @@ export async function processSimpleJob(
         const error = e instanceof Error ? e : new Error(String(e));
         
         if (e instanceof ContextWindowError) {
-            deps.logger.error(`[dialectic-worker] [processSimpleJob] ContextWindowError for job ${jobId}: ${error.message}`);
+            ctx.logger.error(`[dialectic-worker] [processSimpleJob] ContextWindowError for job ${jobId}: ${error.message}`);
             await dbClient.from('dialectic_generation_jobs').update({
                 status: 'failed',
                 completed_at: new Date().toISOString(),
@@ -316,7 +313,7 @@ export async function processSimpleJob(
             }).eq('id', jobId);
             // Emit internal failure event for UI state routing
             if (projectOwnerUserId) {
-                await deps.notificationService.sendContributionGenerationFailedEvent({
+                await ctx.notificationService.sendContributionGenerationFailedEvent({
                     type: 'other_generation_failed',
                     sessionId: sessionId,
                     job_id: jobId,
@@ -327,7 +324,7 @@ export async function processSimpleJob(
                 }, projectOwnerUserId);
 
                 // User-facing historical notification
-                await deps.notificationService.sendContributionFailedNotification({
+                await ctx.notificationService.sendContributionFailedNotification({
                     type: 'contribution_generation_failed',
                     sessionId: job.payload.sessionId ?? sessionId,
                     stageSlug: job.payload.stageSlug ?? 'unknown',
@@ -340,19 +337,18 @@ export async function processSimpleJob(
                 }, projectOwnerUserId);
 
                 // Document-centric failure event
-                const fallbackKey = (isRecord(job.payload) && typeof (job.payload)['output_type'] === 'string')
-                  ? String(job.payload['output_type'])
-                  : (notificationDocumentKey ?? 'unknown');
-                await deps.notificationService.sendDocumentCentricNotification({
-                    type: 'job_failed',
-                    sessionId: String(sessionId),
-                    stageSlug: String(stageSlug),
-                    job_id: jobId,
-                    document_key: String(fallbackKey),
-                    modelId: model_id,
-                    iterationNumber: (typeof job.iteration_number === 'number' ? job.iteration_number : 1),
-                    error: { code: 'CONTEXT_WINDOW_ERROR', message: error.message },
-                }, projectOwnerUserId);
+                if (notificationDocumentKey) {
+                    await ctx.notificationService.sendDocumentCentricNotification({
+                        type: 'job_failed',
+                        sessionId: String(sessionId),
+                        stageSlug: String(stageSlug),
+                        job_id: jobId,
+                        document_key: notificationDocumentKey,
+                        modelId: model_id,
+                        iterationNumber: job.iteration_number,
+                        error: { code: 'CONTEXT_WINDOW_ERROR', message: error.message },
+                    }, projectOwnerUserId);
+                }
             }
             return;
         }
@@ -370,7 +366,7 @@ export async function processSimpleJob(
 
             if (projectOwnerUserId) {
                 // Internal event (UI state routing)
-                await deps.notificationService.sendContributionGenerationFailedEvent({
+                await ctx.notificationService.sendContributionGenerationFailedEvent({
                     type: 'other_generation_failed',
                     sessionId: sessionId,
                     job_id: jobId,
@@ -378,7 +374,7 @@ export async function processSimpleJob(
                 }, projectOwnerUserId);
 
                 // User-facing historical notification
-                await deps.notificationService.sendContributionFailedNotification({
+                await ctx.notificationService.sendContributionFailedNotification({
                     type: 'contribution_generation_failed',
                     sessionId: job.payload.sessionId ?? 'unknown',
                     stageSlug: job.payload.stageSlug ?? 'unknown',
@@ -388,19 +384,18 @@ export async function processSimpleJob(
                 }, projectOwnerUserId);
 
                 // Document-centric failure event
-                const fallbackKey = (isRecord(job.payload) && typeof (job.payload)['output_type'] === 'string')
-                  ? String(job.payload['output_type'])
-                  : (notificationDocumentKey ?? 'unknown');
-                await deps.notificationService.sendDocumentCentricNotification({
-                    type: 'job_failed',
-                    sessionId: String(sessionId),
-                    stageSlug: String(stageSlug),
-                    job_id: jobId,
-                    document_key: String(fallbackKey),
-                    modelId: model_id,
-                    iterationNumber: (typeof job.iteration_number === 'number' ? job.iteration_number : 1),
-                    error: { code, message: userMessage },
-                }, projectOwnerUserId);
+                if (notificationDocumentKey) {
+                    await ctx.notificationService.sendDocumentCentricNotification({
+                        type: 'job_failed',
+                        sessionId: String(sessionId),
+                        stageSlug: String(stageSlug),
+                        job_id: jobId,
+                        document_key: notificationDocumentKey,
+                        modelId: model_id,
+                        iterationNumber: job.iteration_number,
+                        error: { code, message: userMessage },
+                    }, projectOwnerUserId);
+                }
             }
         };
 
@@ -497,14 +492,14 @@ export async function processSimpleJob(
             api_identifier: providerDetails?.api_identifier || 'unknown',
             error: error.message,
         };
-        deps.logger.warn(`[dialectic-worker] [processSimpleJob] Attempt ${currentAttempt + 1} failed for model ${model_id}: ${failedAttempt.error}`);
+        ctx.logger.warn(`[dialectic-worker] [processSimpleJob] Attempt ${currentAttempt + 1} failed for model ${model_id}: ${failedAttempt.error}`);
         
         if (currentAttempt < max_retries) {
-            await deps.retryJob({ logger: deps.logger, notificationService: deps.notificationService }, dbClient, job, currentAttempt + 1, [failedAttempt], projectOwnerUserId);
+            await ctx.retryJob({ logger: ctx.logger, notificationService: ctx.notificationService }, dbClient, job, currentAttempt + 1, [failedAttempt], projectOwnerUserId);
             return;
         }
 
-        deps.logger.error(`[dialectic-worker] [processSimpleJob] Final attempt failed for job ${jobId}. Exhausted all ${max_retries + 1} retries.`);
+        ctx.logger.error(`[dialectic-worker] [processSimpleJob] Final attempt failed for job ${jobId}. Exhausted all ${max_retries + 1} retries.`);
         const modelProcessingResult: ModelProcessingResult = { modelId: model_id, status: 'failed', attempts: currentAttempt + 1, error: failedAttempt.error };
         
         const { error: finalUpdateError } = await dbClient
@@ -518,12 +513,12 @@ export async function processSimpleJob(
             .eq('id', jobId);
         
         if (finalUpdateError) {
-            deps.logger.error(`[dialectic-worker] [processSimpleJob] CRITICAL: Failed to mark job as 'retry_loop_failed'.`, { finalUpdateError });
+            ctx.logger.error(`[dialectic-worker] [processSimpleJob] CRITICAL: Failed to mark job as 'retry_loop_failed'.`, { finalUpdateError });
         }
         
         if (projectOwnerUserId) {
             // User-facing notification (preserve existing behavior)
-            await deps.notificationService.sendContributionFailedNotification({
+            await ctx.notificationService.sendContributionFailedNotification({
                 type: 'contribution_generation_failed',
                 sessionId: job.payload.sessionId ?? 'unknown',
                 stageSlug: job.payload.stageSlug ?? 'unknown',
@@ -536,7 +531,7 @@ export async function processSimpleJob(
             }, projectOwnerUserId);
 
             // Internal event for UI placeholder transition to failed
-            await deps.notificationService.sendContributionGenerationFailedEvent({
+            await ctx.notificationService.sendContributionGenerationFailedEvent({
                 type: 'other_generation_failed',
                 sessionId: sessionId,
                 job_id: jobId,
@@ -547,21 +542,22 @@ export async function processSimpleJob(
             }, projectOwnerUserId);
 
             // Document-centric failure event on terminal failure
-            const fallbackKey = (isRecord(job.payload) && typeof (job.payload)['output_type'] === 'string')
-              ? String(job.payload['output_type'])
-              : (notificationDocumentKey ?? 'unknown');
-            await deps.notificationService.sendDocumentCentricNotification({
-                type: 'job_failed',
-                sessionId: String(sessionId),
-                stageSlug: String(stageSlug),
-                job_id: jobId,
-                document_key: String(fallbackKey),
-                modelId: model_id,
-                iterationNumber: (typeof job.iteration_number === 'number' ? job.iteration_number : 1),
-                error: { code: 'RETRY_LOOP_FAILED', message: failedAttempt.error },
-            }, projectOwnerUserId);
+            if (notificationDocumentKey) {
+                await ctx.notificationService.sendDocumentCentricNotification({
+                    type: 'job_failed',
+                    sessionId: String(sessionId),
+                    stageSlug: String(stageSlug),
+                    job_id: jobId,
+                    document_key: notificationDocumentKey,
+                    modelId: model_id,
+                    iterationNumber: job.iteration_number,
+                    error: { code: 'RETRY_LOOP_FAILED', message: failedAttempt.error },
+                }, projectOwnerUserId);
+            }
         }
         return;
     }
 }
+
+
 

@@ -40,7 +40,7 @@ export function isDialecticRecipeTemplateStep(step: unknown): step is DialecticR
     typeof step.granularity_strategy !== 'string' || !validGranularityStrategies.has(step.granularity_strategy) ||
     !Array.isArray(step.inputs_required) ||
     !Array.isArray(step.inputs_relevance) ||
-    !Array.isArray(step.outputs_required)
+    !isRecord(step.outputs_required)
   ) {
     return false;
   }
@@ -86,7 +86,7 @@ export function isDialecticStageRecipeStep(step: unknown): step is DialecticStag
         !isRecord(step.output_overrides) ||
         !Array.isArray(step.inputs_required) ||
         !Array.isArray(step.inputs_relevance) ||
-        !Array.isArray(step.outputs_required)
+        !isRecord(step.outputs_required)
     ) {
         return false;
     }
@@ -126,11 +126,15 @@ export function isRelevanceRule(obj: unknown): obj is RelevanceRule {
         return false;
     }
 
-    return (
-        typeof obj.document_key === 'string' &&
-        typeof obj.type === 'string' &&
-        typeof obj.relevance === 'number'
-    );
+    if (typeof obj.document_key !== 'string' || typeof obj.relevance !== 'number') {
+        return false;
+    }
+
+    if ('type' in obj && typeof obj.type !== 'string') {
+        return false;
+    }
+
+    return true;
 }
 
 export function isOutputRule(obj: unknown): obj is OutputRule {
@@ -138,8 +142,43 @@ export function isOutputRule(obj: unknown): obj is OutputRule {
         return false;
     }
 
-    return (
-        typeof obj.type === 'string' &&
-        typeof obj.document_key === 'string'
-    );
+    // Since all properties on OutputRule are optional, an empty object is valid.
+    // We only need to validate the properties if they exist.
+
+    if ('system_materials' in obj && !isRecord(obj.system_materials)) {
+        return false;
+    }
+
+    if ('header_context_artifact' in obj && !isRecord(obj.header_context_artifact)) {
+        return false;
+    }
+
+    if ('context_for_documents' in obj && !Array.isArray(obj.context_for_documents)) {
+        return false;
+    }
+
+    if ('documents' in obj && !Array.isArray(obj.documents)) {
+        return false;
+    }
+
+    if ('assembled_json' in obj && !Array.isArray(obj.assembled_json)) {
+        return false;
+    }
+
+    if ('files_to_generate' in obj) {
+        if (!Array.isArray(obj.files_to_generate)) {
+            return false;
+        }
+        for (const item of obj.files_to_generate) {
+            if (!isRecord(item) || typeof item.from_document_key !== 'string' || typeof item.template_filename !== 'string') {
+                return false;
+            }
+        }
+    }
+
+    if ('review_metadata' in obj && !isRecord(obj.review_metadata)) {
+        return false;
+    }
+
+    return true;
 }

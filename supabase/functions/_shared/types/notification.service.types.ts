@@ -164,6 +164,7 @@ export interface DocumentCompletedPayload extends DocumentPayload {
 
 export interface RenderCompletedPayload extends DocumentPayload {
   type: 'render_completed';
+  latestRenderedResourceId: string;
 }
 
 export interface JobFailedPayload extends DocumentPayload {

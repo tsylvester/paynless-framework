@@ -29,6 +29,7 @@ import {
 import {
   DialecticJobRow,
   DialecticRecipeStep,
+  ContextForDocument,
 } from "../../dialectic-service/dialectic.interface.ts";
 import { assertSpyCall, assertSpyCalls } from "jsr:@std/testing@0.225.1/mock";
 import { isRecord } from "../utils/type_guards.ts";
@@ -53,7 +54,7 @@ const defaultMockContext: DynamicContextVariables = {
     granularity_strategy: "all_to_one",
     inputs_required: [],
     inputs_relevance: [],
-    outputs_required: [],
+    outputs_required: {},
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     parallel_group: null,
@@ -140,7 +141,14 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     granularity_strategy: "all_to_one",
     inputs_required: [],
     inputs_relevance: [],
-    outputs_required: [],
+    outputs_required: {
+      context_for_documents: [
+        {
+          document_key: FileType.business_case,
+          content_to_include: {},
+        },
+      ],
+    },
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     parallel_group: null,
@@ -228,7 +236,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
           system_prompts: {
-            select: { data: [{ prompt_text: plannerPromptText }], error: null },
+            select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
           },
           ai_providers: {
             select: {
@@ -258,6 +266,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: "resolved prompt from storage",
           gatherContext: gatherContextFn,
           render: renderFn,
         });
@@ -285,7 +294,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         assertEquals(gatherArgs[3], defaultProject);
         assertEquals(gatherArgs[4], defaultSession);
         assertEquals(gatherArgs[5], defaultStage);
-        assertEquals(gatherArgs[6], defaultProject.initial_user_prompt);
+        assertEquals(gatherArgs[6], "resolved prompt from storage");
         assertEquals(gatherArgs[7], defaultSession.iteration_count);
 
         // 4. Assert rendering was performed with the overridden template and correct context
@@ -297,7 +306,20 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           stageArgForRender.system_prompts!.prompt_text,
           plannerPromptText,
         );
-        assertEquals(renderCallArgs[2], mockDynamicContext);
+        // assemblePlannerPrompt adds context_for_documents to the context before rendering
+        const expectedContext = {
+          ...mockDynamicContext,
+          context_for_documents: {
+            _instructions: "You must fill in the content_to_include objects in the context_for_documents array with specific alignment values. These alignment details ensure cross-document coordination:\n\n1. Fill in each content_to_include object with shared terminology, consistent values, and coordinated decisions that will be used across all documents in this step group.\n2. Produce a header_context artifact with completed content_to_include objects containing these alignment values.\n3. Ensure all documents in the step group will use these alignment details when they are generated.\n\nThe context_for_documents array below contains empty content_to_include object models that you must fill in with specific alignment values.",
+            documents: [
+              {
+                document_key: FileType.business_case,
+                content_to_include: {},
+              },
+            ],
+          },
+        };
+        assertEquals(renderCallArgs[2], expectedContext);
         assertEquals(
           renderCallArgs[3],
           defaultProject.user_domain_overlay_values,
@@ -319,9 +341,11 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             stageSlug: defaultStage.slug,
             fileType: FileType.PlannerPrompt,
             modelSlug: "claude-3-opus",
+            attemptCount: mockPlannerJob.attempt_count,
             stepName: "GeneratePlan",
             branchKey: null,
             parallelGroup: null,
+            sourceContributionId: null,
           },
           resourceTypeForDb: "planner_prompt",
           fileContent: "rendered planner prompt",
@@ -331,6 +355,83 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           description: `Planner prompt for stage: ${defaultStage.slug}, step: ${mockRecipeStep.step_name}`,
         };
         assertEquals(uploadSpy.calls[0].args[0], expectedUploadContext);
+      } finally {
+        teardown();
+      }
+    },
+  );
+
+  await t.step("should forward sourceContributionId when continuation exists",
+    async () => {
+      const continuationContributionId = "contrib-123";
+      const continuationJob: DialecticJobRow = {
+        ...mockPlannerJob,
+        target_contribution_id: continuationContributionId,
+      };
+
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          system_prompts: {
+            select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
+          },
+          ai_providers: {
+            select: {
+              data: [
+                { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+              ],
+            }
+          }
+        },
+      };
+
+      const {
+        client,
+        fileManager,
+        gatherContextFn,
+        renderFn,
+      } = setup(config, defaultMockContext);
+
+      const mockFileRecord: FileRecord = {
+        id: "mock-planner-resource-id-continuation",
+        project_id: defaultProject.id,
+        file_name: "claude-3-opus_1_GeneratePlan_planner_prompt.md",
+        storage_bucket: "test-bucket",
+        storage_path: "path/to/mock/planner_prompt.md",
+        mime_type: "text/markdown",
+        size_bytes: 123,
+        resource_description: "A mock planner prompt",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        user_id: defaultProject.user_id,
+        session_id: defaultSession.id,
+        stage_slug: defaultStage.slug,
+        iteration_number: 1,
+        resource_type: "planner_prompt",
+        source_contribution_id: null,
+      };
+
+      fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+      const uploadSpy = fileManager.uploadAndRegisterFile;
+
+      try {
+        await assemblePlannerPrompt({
+          dbClient: client,
+          fileManager,
+          job: continuationJob,
+          project: defaultProject,
+          session: defaultSession,
+          stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          gatherContext: gatherContextFn,
+          render: renderFn,
+        });
+
+        assertSpyCalls(uploadSpy, 1);
+        const uploadContext = uploadSpy.calls[0].args[0];
+        assertEquals(
+          uploadContext.pathContext.sourceContributionId,
+          continuationContributionId,
+        );
       } finally {
         teardown();
       }
@@ -348,7 +449,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       const { client, fileManager, renderFn, gatherContextFn } = setup({
         genericMockResults: {
           system_prompts: {
-            select: { data: [{ prompt_text: "any text" }], error: null },
+            select: { data: [{ prompt_text: "any text", document_template_id: null }], error: null },
           },
           ai_providers: {
             select: {
@@ -389,6 +490,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: stageWithOverlays,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           gatherContext: gatherContextFn,
           render: renderFn,
         });
@@ -412,7 +514,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
           system_prompts: {
-            select: { data: [{ prompt_text: "special text" }], error: null },
+            select: { data: [{ prompt_text: "special text", document_template_id: null }], error: null },
           },
           ai_providers: {
             select: {
@@ -456,6 +558,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           gatherContext: gatherContextFn,
           render: renderFn,
         });
@@ -512,6 +615,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           gatherContext: gatherContextFn,
           render: renderFn,
         });
@@ -559,6 +663,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           gatherContext: gatherContextFn,
           render: renderFn,
         });
@@ -579,7 +684,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       const config: MockSupabaseDataConfig = {
         genericMockResults: {
           system_prompts: {
-            select: { data: [{ prompt_text: plannerPromptText }], error: null }
+            select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null }
           },
           ai_providers: {
             select: {
@@ -607,6 +712,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           gatherContext: gatherContextFn,
           render: renderFn,
         });
@@ -627,7 +733,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       const { client, fileManager } = setup({
         genericMockResults: {
           system_prompts: {
-            select: { data: [{ prompt_text: "any text" }], error: null },
+            select: { data: [{ prompt_text: "any text", document_template_id: null }], error: null },
           },
           ai_providers: {
             select: {
@@ -651,6 +757,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           ...mockDeps,
         });
 
@@ -664,7 +771,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     const { client, fileManager } = setup({
       genericMockResults: {
         system_prompts: {
-          select: { data: [{ prompt_text: "any text" }], error: null },
+          select: { data: [{ prompt_text: "any text", document_template_id: null }], error: null },
         },
         ai_providers: {
           select: {
@@ -692,6 +799,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           ...mockDeps,
         }),
       Error,
@@ -731,6 +839,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: sessionWithNoModels,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           gatherContext: gatherContextFn,
           render: renderFn,
         });
@@ -778,6 +887,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             project: defaultProject,
             session: defaultSession,
             stage: defaultStage,
+            projectInitialUserPrompt: defaultProject.initial_user_prompt,
             gatherContext: gatherContextFn,
             render: renderFn,
           }),
@@ -800,7 +910,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
       const { client, fileManager } = setup({
         genericMockResults: {
           system_prompts: {
-            select: { data: [{ prompt_text: "any text" }], error: null },
+            select: { data: [{ prompt_text: "any text", document_template_id: null }], error: null },
           },
           ai_providers: {
             select: {
@@ -844,6 +954,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: stageWithOverlays,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           ...mockDeps,
         });
 
@@ -865,7 +976,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     const { client, fileManager } = setup({
       genericMockResults: {
         system_prompts: {
-          select: { data: [{ prompt_text: "any text" }], error: null },
+          select: { data: [{ prompt_text: "any text", document_template_id: null }], error: null },
         },
         ai_providers: {
           select: {
@@ -891,6 +1002,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           ...mockDeps,
         }),
       Error,
@@ -933,6 +1045,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             project: defaultProject,
             session: defaultSession,
             stage: defaultStage,
+            projectInitialUserPrompt: defaultProject.initial_user_prompt,
             ...mockDeps,
           }),
         Error,
@@ -977,6 +1090,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             project: defaultProject,
             session: defaultSession,
             stage: stageWithoutRecipe,
+            projectInitialUserPrompt: defaultProject.initial_user_prompt,
             ...mockDeps,
           }),
         Error,
@@ -1020,6 +1134,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
             project: defaultProject,
             session: defaultSession,
             stage: defaultStage,
+            projectInitialUserPrompt: defaultProject.initial_user_prompt,
             gatherContext: gatherContextFn,
             render: renderFn,
           }),
@@ -1046,7 +1161,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     const config: MockSupabaseDataConfig = {
       genericMockResults: {
         system_prompts: {
-          select: { data: [{ prompt_text: plannerPromptText }], error: null },
+          select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
         },
         ai_providers: {
           select: {
@@ -1095,6 +1210,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         project: defaultProject,
         session: defaultSession,
         stage: stageWithKeys,
+        projectInitialUserPrompt: defaultProject.initial_user_prompt,
         gatherContext: gatherContextFn,
         render: renderFn,
       });
@@ -1142,6 +1258,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           project: defaultProject,
           session: defaultSession,
           stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
           gatherContext: gatherContextFn,
           render: renderFn,
         }),
@@ -1157,7 +1274,7 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     const config: MockSupabaseDataConfig = {
       genericMockResults: {
         system_prompts: {
-          select: { data: [{ prompt_text: plannerPromptText }], error: null },
+          select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
         },
         ai_providers: {
           select: {
@@ -1195,16 +1312,17 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     }
 
     try {
-      await assemblePlannerPrompt({
-        dbClient: client,
-        fileManager,
-        job: mockPlannerJob,
-        project: defaultProject,
-        session: defaultSession,
-        stage: defaultStage,
-        gatherContext: gatherContextFn,
-        render: renderFn,
-      });
+      await         assemblePlannerPrompt({
+          dbClient: client,
+          fileManager,
+          job: mockPlannerJob,
+          project: defaultProject,
+          session: defaultSession,
+          stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          gatherContext: gatherContextFn,
+          render: renderFn,
+        });
 
       assertSpyCalls(fileManager.uploadAndRegisterFile, 1);
       const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
@@ -1216,5 +1334,605 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     } finally {
       teardown();
     }
+  });
+
+  await t.step("should fetch template from storage when prompt_text is null and document_template_id exists", async () => {
+    const templateContent = "# Template Content\n\nThis is the actual template.";
+    const templateId = "template-uuid-123";
+    const storageBucket = "prompt-templates";
+    const storagePath = "docs/prompts/thesis/";
+    const fileName = "thesis_planner_header_v1.md";
+    const fullPath = `${storagePath}${fileName}`;
+
+    // Create a Blob with the template content for the mock storage download
+    const templateBlob = new Blob([templateContent], { type: "text/markdown" });
+
+    // Mock system_prompts with null prompt_text and document_template_id
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: {
+            data: [{
+              prompt_text: null,
+              document_template_id: templateId,
+            }],
+            error: null,
+          },
+        },
+        dialectic_document_templates: {
+          select: {
+            data: [{
+              id: templateId,
+              storage_bucket: storageBucket,
+              storage_path: storagePath,
+              file_name: fileName,
+            }],
+            error: null,
+          },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          },
+        },
+      },
+      storageMock: {
+        downloadResult: async (bucketId: string, path: string) => {
+          assertEquals(bucketId, storageBucket);
+          assertEquals(path, fullPath);
+          return { data: templateBlob, error: null };
+        },
+      },
+    };
+
+    const {
+      client,
+      fileManager,
+      gatherContextFn,
+      renderFn,
+    } = setup(config, defaultMockContext);
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-planner-resource-id-storage",
+      project_id: defaultProject.id,
+      file_name: "claude-3-opus_1_GeneratePlan_planner_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/planner_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock planner prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "planner_prompt",
+      source_contribution_id: null,
+    };
+
+    fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    // Access storage spy before the call so it tracks calls correctly
+    const storageBucketApi = mockSupabaseSetup!.spies.storage.from(storageBucket);
+    const downloadSpy = storageBucketApi.downloadSpy;
+
+    try {
+      await         assemblePlannerPrompt({
+          dbClient: client,
+          fileManager,
+          job: mockPlannerJob,
+          project: defaultProject,
+          session: defaultSession,
+          stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          gatherContext: gatherContextFn,
+          render: renderFn,
+        });
+
+      // Assert storage download was called with correct parameters via the Supabase client
+      assertSpyCalls(downloadSpy, 1);
+      assertSpyCall(downloadSpy, 0, {
+        args: [fullPath],
+      });
+
+      // Assert render was called with downloaded template content, not null or path string
+      assertSpyCalls(renderFn, 1);
+      const renderCallArgs = renderFn.calls[0].args;
+      const stageArgForRender = renderCallArgs[1];
+      assertEquals(
+        stageArgForRender.system_prompts!.prompt_text,
+        templateContent,
+      );
+
+      // Assert database was queried for document_template_id
+      const dbSpies = mockSupabaseSetup!.spies.getLatestQueryBuilderSpies(
+        "system_prompts",
+      )!;
+      assertSpyCall(dbSpies.select!, 0, {
+        args: ["prompt_text, document_template_id"],
+      });
+
+      // Assert dialectic_document_templates was queried
+      const templateDbSpies = mockSupabaseSetup!.spies.getLatestQueryBuilderSpies(
+        "dialectic_document_templates",
+      )!;
+      assertSpyCalls(templateDbSpies.select!, 1);
+      assertSpyCall(templateDbSpies.eq!, 0, {
+        args: ["id", templateId],
+      });
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should use inline prompt_text when present (backward compatibility)", async () => {
+    const inlineTemplateContent = "inline template content";
+    
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: {
+            data: [{
+              prompt_text: inlineTemplateContent,
+              document_template_id: null,
+            }],
+            error: null,
+          },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          },
+        },
+      },
+    };
+
+    const {
+      client,
+      fileManager,
+      gatherContextFn,
+      renderFn,
+    } = setup(config, defaultMockContext);
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-planner-resource-id-inline",
+      project_id: defaultProject.id,
+      file_name: "claude-3-opus_1_GeneratePlan_planner_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/planner_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock planner prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "planner_prompt",
+      source_contribution_id: null,
+    };
+
+    fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    try {
+      await         assemblePlannerPrompt({
+          dbClient: client,
+          fileManager,
+          job: mockPlannerJob,
+          project: defaultProject,
+          session: defaultSession,
+          stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          gatherContext: gatherContextFn,
+          render: renderFn,
+        });
+
+      // Assert render was called with inline template content
+      assertSpyCalls(renderFn, 1);
+      const renderCallArgs = renderFn.calls[0].args;
+      const stageArgForRender = renderCallArgs[1];
+      assertEquals(
+        stageArgForRender.system_prompts!.prompt_text,
+        inlineTemplateContent,
+      );
+
+      // Assert that no template download occurred (verify no storage.from calls for template bucket)
+      // The gatherContext call may use storage, but template-specific storage should not be called
+      // We verify backward compatibility by asserting the inline content is used
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should throw error when both prompt_text and document_template_id are null", async () => {
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: {
+            data: [{
+              prompt_text: null,
+              document_template_id: null,
+            }],
+            error: null,
+          },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          },
+        },
+      },
+    };
+
+    const {
+      client,
+      fileManager,
+      gatherContextFn,
+      renderFn,
+    } = setup(config, defaultMockContext);
+
+    const assembleFn = () =>
+        assemblePlannerPrompt({
+          dbClient: client,
+          fileManager,
+          job: mockPlannerJob,
+          project: defaultProject,
+          session: defaultSession,
+          stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          gatherContext: gatherContextFn,
+          render: renderFn,
+        });
+
+    await assertRejects(
+      assembleFn,
+      Error,
+      "System prompt template is missing both prompt_text and document_template_id",
+    );
+
+    teardown();
+  });
+
+  await t.step("should throw error when template download fails", async () => {
+    const templateId = "template-uuid-123";
+    const storageBucket = "prompt-templates";
+    const storagePath = "docs/prompts/thesis/";
+    const fileName = "thesis_planner_header_v1.md";
+    const fullPath = `${storagePath}${fileName}`;
+    const downloadError = new Error("File not found");
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: {
+            data: [{
+              prompt_text: null,
+              document_template_id: templateId,
+            }],
+            error: null,
+          },
+        },
+        dialectic_document_templates: {
+          select: {
+            data: [{
+              id: templateId,
+              storage_bucket: storageBucket,
+              storage_path: storagePath,
+              file_name: fileName,
+            }],
+            error: null,
+          },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          },
+        },
+      },
+      storageMock: {
+        downloadResult: async (bucketId: string, path: string) => {
+          assertEquals(bucketId, storageBucket);
+          assertEquals(path, fullPath);
+          return { data: null, error: downloadError };
+        },
+      },
+    };
+
+    const {
+      client,
+      fileManager,
+      gatherContextFn,
+      renderFn,
+    } = setup(config, defaultMockContext);
+
+    const assembleFn = () =>
+        assemblePlannerPrompt({
+          dbClient: client,
+          fileManager,
+          job: mockPlannerJob,
+          project: defaultProject,
+          session: defaultSession,
+          stage: defaultStage,
+          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          gatherContext: gatherContextFn,
+          render: renderFn,
+        });
+
+    await assertRejects(
+      assembleFn,
+      Error,
+      "Failed to download template from storage",
+    );
+
+    teardown();
+  });
+
+  await t.step("should include context_for_documents in PLAN prompts when recipe step has context_for_documents", async () => {
+    const contextForDocuments: ContextForDocument[] = [
+      {
+        document_key: FileType.business_case,
+        content_to_include: {
+          field1: "",
+          field2: [],
+        },
+      },
+      {
+        document_key: FileType.feature_spec,
+        content_to_include: {
+          features: [{ name: "", stories: [] }],
+        },
+      },
+    ];
+
+    const recipeStepWithContext: DialecticRecipeStep = {
+      ...mockRecipeStep,
+      outputs_required: {
+        context_for_documents: contextForDocuments,
+      },
+    };
+
+    const stageWithContext: StageContext = {
+      ...defaultStage,
+      recipe_step: recipeStepWithContext,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
+      },
+    };
+
+    const {
+      client,
+      fileManager,
+      gatherContextFn,
+      renderFn,
+    } = setup(config, defaultMockContext);
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-planner-resource-id-context",
+      project_id: defaultProject.id,
+      file_name: "claude-3-opus_1_GeneratePlan_planner_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/planner_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock planner prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "planner_prompt",
+      source_contribution_id: null,
+    };
+
+    fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    try {
+      await assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: stageWithContext,
+        projectInitialUserPrompt: defaultProject.initial_user_prompt,
+        gatherContext: gatherContextFn,
+        render: renderFn,
+      });
+
+      assertSpyCalls(renderFn, 1);
+      const renderCallArgs = renderFn.calls[0].args;
+      const contextArg = renderCallArgs[2];
+      
+      assert(isRecord(contextArg), "Context argument must be a record");
+      assert('context_for_documents' in contextArg, "Context passed to render must include context_for_documents");
+      const contextForDocsValue = contextArg['context_for_documents'];
+      assert(isRecord(contextForDocsValue), "context_for_documents must be an object with _instructions and documents");
+      assert('documents' in contextForDocsValue, "context_for_documents must have documents property");
+      assert('_instructions' in contextForDocsValue, "context_for_documents must have _instructions property");
+      assertEquals(contextForDocsValue.documents, contextForDocuments);
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should include instructions telling agent to fill in content_to_include objects with alignment values", async () => {
+    const contextForDocuments: ContextForDocument[] = [
+      {
+        document_key: FileType.business_case,
+        content_to_include: {
+          field1: "",
+          field2: [],
+        },
+      },
+    ];
+
+    const recipeStepWithContext: DialecticRecipeStep = {
+      ...mockRecipeStep,
+      outputs_required: {
+        context_for_documents: contextForDocuments,
+      },
+    };
+
+    const stageWithContext: StageContext = {
+      ...defaultStage,
+      recipe_step: recipeStepWithContext,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
+      },
+    };
+
+    const {
+      client,
+      fileManager,
+      gatherContextFn,
+      renderFn,
+    } = setup(config, defaultMockContext);
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-planner-resource-id-instructions",
+      project_id: defaultProject.id,
+      file_name: "claude-3-opus_1_GeneratePlan_planner_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/planner_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock planner prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "planner_prompt",
+      source_contribution_id: null,
+    };
+
+    fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    try {
+      await assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: stageWithContext,
+        projectInitialUserPrompt: defaultProject.initial_user_prompt,
+        gatherContext: gatherContextFn,
+        render: renderFn,
+      });
+
+      assertSpyCalls(renderFn, 1);
+      const renderCallArgs = renderFn.calls[0].args;
+      const contextArg = renderCallArgs[2];
+      
+      assert(isRecord(contextArg), "Context argument must be a record");
+      assert('context_for_documents' in contextArg, "Context passed to render must include context_for_documents");
+      const contextForDocsValue = contextArg['context_for_documents'];
+      assert(isRecord(contextForDocsValue), "context_for_documents must be an object with _instructions and documents");
+      assert('_instructions' in contextForDocsValue, "context_for_documents must have _instructions property");
+      const instructionsValue = contextForDocsValue['_instructions'];
+      assert(typeof instructionsValue === 'string', "_instructions must be a string");
+      assert(
+        instructionsValue.includes('fill in') ||
+        instructionsValue.includes('alignment') ||
+        instructionsValue.includes('header_context'),
+        "Context passed to render must include instructions telling agent to fill in content_to_include objects with alignment values"
+      );
+      assert('documents' in contextForDocsValue, "context_for_documents must have documents property");
+      assertEquals(contextForDocsValue.documents, contextForDocuments);
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should throw an error when recipe_step.outputs_required is missing context_for_documents for PLAN jobs", async () => {
+    const recipeStepWithoutContext: DialecticRecipeStep = {
+      ...mockRecipeStep,
+      outputs_required: {},
+    };
+
+    const stageWithoutContext: StageContext = {
+      ...defaultStage,
+      recipe_step: recipeStepWithoutContext,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
+      },
+    };
+
+    const {
+      client,
+      fileManager,
+      gatherContextFn,
+      renderFn,
+    } = setup(config, defaultMockContext);
+
+    const assembleFn = () =>
+      assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: stageWithoutContext,
+        projectInitialUserPrompt: defaultProject.initial_user_prompt,
+        gatherContext: gatherContextFn,
+        render: renderFn,
+      });
+
+    await assertRejects(
+      assembleFn,
+      Error,
+      "PRECONDITION_FAILED: PLAN job requires context_for_documents in recipe_step.outputs_required",
+    );
+
+    teardown();
   });
 });

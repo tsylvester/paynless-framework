@@ -35,7 +35,7 @@ const mockSimpleRecipeStep: DialecticRecipeTemplateStep = {
   output_type: FileType.HeaderContext,
   inputs_required: [],
   inputs_relevance: [],
-  outputs_required: [],
+  outputs_required: {},
   parallel_group: null,
   prompt_template_id: null,
   branch_key: null,
@@ -49,7 +49,7 @@ const mockRecipeStepWithInputs: DialecticRecipeTemplateStep = {
   ...mockSimpleRecipeStep,
   id: "step-with-inputs",
   inputs_required: [
-    { type: "document", stage_slug: "failing-stage", required: true },
+    { type: "document", slug: "failing-stage", required: true },
   ],
 };
 

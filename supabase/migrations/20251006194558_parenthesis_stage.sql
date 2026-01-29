@@ -2,7 +2,7 @@
 DO $$
 DECLARE
     v_planner_prompt_id UUID;
-    v_trd_prompt_id UUID;
+    v_technical_requirements_prompt_id UUID;
     v_master_plan_prompt_id UUID;
     v_milestone_schema_prompt_id UUID;
     v_doc_template_id UUID;
@@ -11,17 +11,21 @@ DECLARE
     v_stage_id UUID;
     v_instance_id UUID;
     v_planner_step_id UUID;
-    v_trd_step_id UUID;
+    v_technical_requirements_step_id UUID;
     v_master_plan_step_id UUID;
     v_milestone_schema_step_id UUID;
     v_instance_planner_step_id UUID;
-    v_instance_trd_step_id UUID;
+    v_instance_technical_requirements_step_id UUID;
     v_instance_master_plan_step_id UUID;
     v_instance_milestone_schema_step_id UUID;
-    v_trd_doc_template_id UUID;
+    v_technical_requirements_doc_template_id UUID;
     v_master_plan_doc_template_id UUID;
     v_milestone_schema_doc_template_id UUID;
     BEGIN
+    -- Allow prompt_text to be NULL to support document_template_id fallback
+    ALTER TABLE public.system_prompts
+    ALTER COLUMN prompt_text DROP NOT NULL;
+    
     -- Get the domain_id for 'Software Development'
     SELECT id INTO v_domain_id FROM public.dialectic_domains WHERE name = 'Software Development' LIMIT 1;
 
@@ -44,7 +48,7 @@ DECLARE
     ) VALUES (
         gen_random_uuid(),
         'parenthesis_planner_header_v1',
-        $PROMPT$\path=docs/prompts/parenthesis/parenthesis_planner_header_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Planner template that assembles the Parenthesis planning HeaderContext artifact',
@@ -63,7 +67,7 @@ DECLARE
 
     -- Upsert the document template for the TRD turn prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('parenthesis_trd_turn_v1 prompt', v_domain_id, 'Source document for parenthesis_trd_turn_v1 prompt', 'prompt-templates', 'docs/prompts/parenthesis/', 'parenthesis_trd_turn_v1.md')
+    VALUES ('parenthesis_technical_requirements_turn_v1 prompt', v_domain_id, 'Source document for parenthesis_technical_requirements_turn_v1 prompt', 'prompt-templates', 'docs/prompts/parenthesis/', 'parenthesis_technical_requirements_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_doc_template_id;
 
@@ -79,8 +83,8 @@ DECLARE
         document_template_id
     ) VALUES (
         gen_random_uuid(),
-        'parenthesis_trd_turn_v1',
-        $PROMPT$\path=docs/prompts/parenthesis/parenthesis_trd_turn_v1.md$PROMPT$,
+        'parenthesis_technical_requirements_turn_v1',
+        null,
         true,
         1,
         'Parenthesis stage TRD generation turn template',
@@ -95,7 +99,7 @@ DECLARE
             user_selectable = EXCLUDED.user_selectable,
             document_template_id = EXCLUDED.document_template_id,
             updated_at = now()
-    RETURNING id INTO v_trd_prompt_id;
+    RETURNING id INTO v_technical_requirements_prompt_id;
 
     -- Upsert the document template for the master plan prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
@@ -116,7 +120,7 @@ DECLARE
     ) VALUES (
         gen_random_uuid(),
         'parenthesis_master_plan_turn_v1',
-        $PROMPT$\path=docs/prompts/parenthesis/parenthesis_master_plan_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Parenthesis stage master plan generation turn template',
@@ -152,7 +156,7 @@ DECLARE
     ) VALUES (
         gen_random_uuid(),
         'parenthesis_milestone_schema_turn_v1',
-        $PROMPT$\path=docs/prompts/parenthesis/parenthesis_milestone_schema_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Parenthesis stage milestone schema generation turn template',
@@ -240,27 +244,27 @@ DECLARE
         'PLAN',
         'Planner',
         v_planner_prompt_id,
-        'HeaderContext',
+        'header_context',
         'all_to_one',
         '[
           {"type":"seed_prompt","slug":"parenthesis","document_key":"seed_prompt","required":true},
-          {"type":"document","slug":"synthesis","document_key":"prd","required":true},
-          {"type":"document","slug":"synthesis","document_key":"system_architecture_overview","required":true},
-          {"type":"document","slug":"synthesis","document_key":"tech_stack_recommendations","required":true},
-          {"type":"feedback","slug":"synthesis","document_key":"prd","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"system_architecture_overview","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"tech_stack_recommendations","required":false},
+          {"type":"document","slug":"synthesis","document_key":"product_requirements","required":true},
+          {"type":"document","slug":"synthesis","document_key":"system_architecture","required":true},
+          {"type":"document","slug":"synthesis","document_key":"tech_stack","required":true},
+          {"type":"feedback","slug":"synthesis","document_key":"product_requirements","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"system_architecture","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"tech_stack","required":false},
           {"type":"document","slug":"parenthesis","document_key":"master_plan","required":false},
           {"type":"feedback","slug":"parenthesis","document_key":"master_plan","required":false}
         ]'::jsonb,
         '[
           {"document_key":"seed_prompt","slug":"parenthesis","relevance":0.6},
-          {"document_key":"prd","slug":"synthesis","relevance":1.0},
-          {"document_key":"system_architecture_overview","slug":"synthesis","relevance":0.95},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","relevance":0.90},
-          {"document_key":"prd","slug":"synthesis","type":"feedback","relevance":0.75},
-          {"document_key":"system_architecture_overview","slug":"synthesis","type":"feedback","relevance":0.70},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","type":"feedback","relevance":0.65},
+          {"document_key":"product_requirements","slug":"synthesis","relevance":1.0},
+          {"document_key":"system_architecture","slug":"synthesis","relevance":0.95},
+          {"document_key":"tech_stack","slug":"synthesis","relevance":0.90},
+          {"document_key":"product_requirements","slug":"synthesis","type":"feedback","relevance":0.75},
+          {"document_key":"system_architecture","slug":"synthesis","type":"feedback","relevance":0.70},
+          {"document_key":"tech_stack","slug":"synthesis","type":"feedback","relevance":0.65},
           {"document_key":"master_plan","slug":"parenthesis","relevance":0.99},
           {"document_key":"master_plan","slug":"parenthesis","type":"feedback","relevance":0.85}
         ]'::jsonb,
@@ -273,7 +277,7 @@ DECLARE
               "in_progress_status": "[🚧]",
               "unstarted_status": "[ ]"
             },
-            "trd_outline_inputs": {
+            "technical_requirements_outline_inputs": {
               "subsystems": [],
               "apis": [],
               "schemas": [],
@@ -289,13 +293,16 @@ DECLARE
           },
           "context_for_documents": [
             {
-              "document_key": "trd",
+              "document_key": "technical_requirements",
               "content_to_include": {
-                "subsystems": [],
-                "apis": [],
-                "schemas": [],
+                "index": [],
+                "subsystems": [{"name": "", "objective": "", "implementation_notes": ""}],
+                "apis": [{"name": "", "description": "", "contracts": []}],
+                "schemas": [{"name": "", "columns": [], "indexes": [], "rls": []}],
                 "proposed_file_tree": "",
                 "architecture_overview": "",
+                "delta_summary": "",
+                "iteration_notes": "",
                 "feature_scope": [],
                 "feasibility_insights": [],
                 "non_functional_alignment": [],
@@ -322,13 +329,39 @@ DECLARE
                 "devops_tooling": {},
                 "security_tooling": {},
                 "shared_libraries": [],
-                "third_party_services": []
+                "third_party_services": [],
+                "executive_summary": ""
               }
             },
             {
               "document_key": "master_plan",
               "content_to_include": {
-                "phases": [],
+                "index": [],
+                "phases": [
+                  {
+                    "name": "",
+                    "objective": "",
+                    "milestones": [
+                      {
+                        "id": "",
+                        "title": "",
+                        "objective": "",
+                        "inputs": [],
+                        "outputs": [],
+                        "dependencies": [],
+                        "acceptance_criteria": [],
+                        "status": "[ ]",
+                        "coverage_notes": "",
+                        "iteration_delta": ""
+                      }
+                    ]
+                  }
+                ],
+                "status_summary": {
+                  "completed": [],
+                  "in_progress": [],
+                  "up_next": []
+                },
                 "status_markers": {
                   "unstarted": "[ ]",
                   "in_progress": "[🚧]",
@@ -342,7 +375,6 @@ DECLARE
                 },
                 "feature_scope": [],
                 "features": [],
-                "executive_summary": "",
                 "mvp_description": "",
                 "market_opportunity": "",
                 "competitive_analysis": "",
@@ -358,21 +390,67 @@ DECLARE
                 "devops_tooling": {},
                 "security_tooling": {},
                 "shared_libraries": [],
-                "third_party_services": []
+                "third_party_services": [],
+                "executive_summary": ""
               }
             },
             {
               "document_key": "milestone_schema",
               "content_to_include": {
+                "index": [],
                 "fields": [
-                  "id",
-                  "title",
-                  "objective",
-                  "dependencies",
-                  "acceptance_criteria",
-                  "status"
+                  {
+                    "name": "id",
+                    "type": "string",
+                    "description": "Stable milestone identifier (e.g., M1, M1.a)"
+                  },
+                  {
+                    "name": "title",
+                    "type": "string",
+                    "description": "Short milestone name"
+                  },
+                  {
+                    "name": "objective",
+                    "type": "string",
+                    "description": "Narrative summary of milestone goal"
+                  },
+                  {
+                    "name": "dependencies",
+                    "type": "string[]",
+                    "description": "List of prerequisite milestone IDs"
+                  },
+                  {
+                    "name": "acceptance_criteria",
+                    "type": "string[]",
+                    "description": "Checklist of validation outcomes"
+                  },
+                  {
+                    "name": "inputs",
+                    "type": "string[]",
+                    "description": "Artifacts required before work begins"
+                  },
+                  {
+                    "name": "outputs",
+                    "type": "string[]",
+                    "description": "Artifacts produced when milestone completes"
+                  },
+                  {
+                    "name": "status",
+                    "type": "enum",
+                    "values": ["[ ]", "[🚧]", "[✅]"],
+                    "description": "Current completion status"
+                  }
                 ],
                 "style_guide_notes": "Use standardized checklist markers, component labels when relevant, and keep scope at milestone granularity; detailed steps will be generated in the next stage.",
+                "validation_rules": [
+                  "Status must be one of [ ], [🚧], [✅]",
+                  "Dependencies must reference existing milestone IDs",
+                  "Acceptance criteria must be non-empty for every milestone"
+                ],
+                "iteration_guidance": {
+                  "reuse_policy": "Carry forward schema; append new fields under migration log if expanded",
+                  "versioning": "Increment schema_version when fields change"
+                },
                 "features": [],
                 "feasibility_insights": [],
                 "non_functional_alignment": [],
@@ -382,7 +460,8 @@ DECLARE
                 "dependency_resolution": [],
                 "component_details": [],
                 "integration_requirements": [],
-                "migration_context": []
+                "migration_context": [],
+                "executive_summary": ""
               }
             }
           ]
@@ -430,27 +509,27 @@ DECLARE
         'PLAN',
         'Planner',
         v_planner_prompt_id,
-        'HeaderContext',
+        'header_context',
         'all_to_one',
         '[
           {"type":"seed_prompt","slug":"parenthesis","document_key":"seed_prompt","required":true},
-          {"type":"document","slug":"synthesis","document_key":"prd","required":true},
-          {"type":"document","slug":"synthesis","document_key":"system_architecture_overview","required":true},
-          {"type":"document","slug":"synthesis","document_key":"tech_stack_recommendations","required":true},
-          {"type":"feedback","slug":"synthesis","document_key":"prd","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"system_architecture_overview","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"tech_stack_recommendations","required":false},
+          {"type":"document","slug":"synthesis","document_key":"product_requirements","required":true},
+          {"type":"document","slug":"synthesis","document_key":"system_architecture","required":true},
+          {"type":"document","slug":"synthesis","document_key":"tech_stack","required":true},
+          {"type":"feedback","slug":"synthesis","document_key":"product_requirements","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"system_architecture","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"tech_stack","required":false},
           {"type":"document","slug":"parenthesis","document_key":"master_plan","required":false},
           {"type":"feedback","slug":"parenthesis","document_key":"master_plan","required":false}
         ]'::jsonb,
         '[
           {"document_key":"seed_prompt","slug":"parenthesis","relevance":0.6},
-          {"document_key":"prd","slug":"synthesis","relevance":1.0},
-          {"document_key":"system_architecture_overview","slug":"synthesis","relevance":0.95},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","relevance":0.90},
-          {"document_key":"prd","slug":"synthesis","type":"feedback","relevance":0.75},
-          {"document_key":"system_architecture_overview","slug":"synthesis","type":"feedback","relevance":0.70},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","type":"feedback","relevance":0.65},
+          {"document_key":"product_requirements","slug":"synthesis","relevance":1.0},
+          {"document_key":"system_architecture","slug":"synthesis","relevance":0.95},
+          {"document_key":"tech_stack","slug":"synthesis","relevance":0.90},
+          {"document_key":"product_requirements","slug":"synthesis","type":"feedback","relevance":0.75},
+          {"document_key":"system_architecture","slug":"synthesis","type":"feedback","relevance":0.70},
+          {"document_key":"tech_stack","slug":"synthesis","type":"feedback","relevance":0.65},
           {"document_key":"master_plan","slug":"parenthesis","relevance":0.99},
           {"document_key":"master_plan","slug":"parenthesis","type":"feedback","relevance":0.85}
         ]'::jsonb,
@@ -463,7 +542,7 @@ DECLARE
               "in_progress_status": "[🚧]",
               "unstarted_status": "[ ]"
             },
-            "trd_outline_inputs": {
+            "technical_requirements_outline_inputs": {
               "subsystems": [],
               "apis": [],
               "schemas": [],
@@ -479,13 +558,16 @@ DECLARE
           },
           "context_for_documents": [
             {
-              "document_key": "trd",
+              "document_key": "technical_requirements",
               "content_to_include": {
-                "subsystems": [],
-                "apis": [],
-                "schemas": [],
+                "index": [],
+                "subsystems": [{"name": "", "objective": "", "implementation_notes": ""}],
+                "apis": [{"name": "", "description": "", "contracts": []}],
+                "schemas": [{"name": "", "columns": [], "indexes": [], "rls": []}],
                 "proposed_file_tree": "",
                 "architecture_overview": "",
+                "delta_summary": "",
+                "iteration_notes": "",
                 "feature_scope": [],
                 "feasibility_insights": [],
                 "non_functional_alignment": [],
@@ -512,13 +594,39 @@ DECLARE
                 "devops_tooling": {},
                 "security_tooling": {},
                 "shared_libraries": [],
-                "third_party_services": []
+                "third_party_services": [],
+                "executive_summary": ""
               }
             },
             {
               "document_key": "master_plan",
               "content_to_include": {
-                "phases": [],
+                "index": [],
+                "phases": [
+                  {
+                    "name": "",
+                    "objective": "",
+                    "milestones": [
+                      {
+                        "id": "",
+                        "title": "",
+                        "objective": "",
+                        "inputs": [],
+                        "outputs": [],
+                        "dependencies": [],
+                        "acceptance_criteria": [],
+                        "status": "[ ]",
+                        "coverage_notes": "",
+                        "iteration_delta": ""
+                      }
+                    ]
+                  }
+                ],
+                "status_summary": {
+                  "completed": [],
+                  "in_progress": [],
+                  "up_next": []
+                },
                 "status_markers": {
                   "unstarted": "[ ]",
                   "in_progress": "[🚧]",
@@ -532,7 +640,6 @@ DECLARE
                 },
                 "feature_scope": [],
                 "features": [],
-                "executive_summary": "",
                 "mvp_description": "",
                 "market_opportunity": "",
                 "competitive_analysis": "",
@@ -548,21 +655,67 @@ DECLARE
                 "devops_tooling": {},
                 "security_tooling": {},
                 "shared_libraries": [],
-                "third_party_services": []
+                "third_party_services": [],
+                "executive_summary": ""
               }
             },
             {
               "document_key": "milestone_schema",
               "content_to_include": {
+                "index": [],
                 "fields": [
-                  "id",
-                  "title",
-                  "objective",
-                  "dependencies",
-                  "acceptance_criteria",
-                  "status"
+                  {
+                    "name": "id",
+                    "type": "string",
+                    "description": "Stable milestone identifier (e.g., M1, M1.a)"
+                  },
+                  {
+                    "name": "title",
+                    "type": "string",
+                    "description": "Short milestone name"
+                  },
+                  {
+                    "name": "objective",
+                    "type": "string",
+                    "description": "Narrative summary of milestone goal"
+                  },
+                  {
+                    "name": "dependencies",
+                    "type": "string[]",
+                    "description": "List of prerequisite milestone IDs"
+                  },
+                  {
+                    "name": "acceptance_criteria",
+                    "type": "string[]",
+                    "description": "Checklist of validation outcomes"
+                  },
+                  {
+                    "name": "inputs",
+                    "type": "string[]",
+                    "description": "Artifacts required before work begins"
+                  },
+                  {
+                    "name": "outputs",
+                    "type": "string[]",
+                    "description": "Artifacts produced when milestone completes"
+                  },
+                  {
+                    "name": "status",
+                    "type": "enum",
+                    "values": ["[ ]", "[🚧]", "[✅]"],
+                    "description": "Current completion status"
+                  }
                 ],
                 "style_guide_notes": "Use standardized checklist markers, component labels when relevant, and keep scope at milestone granularity; detailed steps will be generated in the next stage.",
+                "validation_rules": [
+                  "Status must be one of [ ], [🚧], [✅]",
+                  "Dependencies must reference existing milestone IDs",
+                  "Acceptance criteria must be non-empty for every milestone"
+                ],
+                "iteration_guidance": {
+                  "reuse_policy": "Carry forward schema; append new fields under migration log if expanded",
+                  "versioning": "Increment schema_version when fields change"
+                },
                 "features": [],
                 "feasibility_insights": [],
                 "non_functional_alignment": [],
@@ -572,7 +725,8 @@ DECLARE
                 "dependency_resolution": [],
                 "component_details": [],
                 "integration_requirements": [],
-                "migration_context": []
+                "migration_context": [],
+                "executive_summary": ""
               }
             }
           ]
@@ -609,63 +763,90 @@ DECLARE
         gen_random_uuid(),
         v_template_id,
         2,
-        'generate-trd',
-        'generate-trd',
+        'generate-technical_requirements',
+        'generate-technical_requirements',
         'Generate Technical Requirements Document',
-        'Produce the updated TRD that aligns synthesized architecture with the planner’s milestone breakdown.',
+        'Produce the updated TRD that aligns synthesized architecture with the planners milestone breakdown.',
         'EXECUTE',
         'Turn',
-        v_trd_prompt_id,
-        'RenderedDocument',
+        v_technical_requirements_prompt_id,
+        'technical_requirements',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
-          {"type":"document","slug":"synthesis","document_key":"system_architecture_overview","required":true},
-          {"type":"document","slug":"synthesis","document_key":"tech_stack_recommendations","required":true},
-          {"type":"document","slug":"synthesis","document_key":"prd","required":true},
-          {"type":"document","slug":"parenthesis","document_key":"trd","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"system_architecture_overview","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"tech_stack_recommendations","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"prd","required":false},
-          {"type":"feedback","slug":"parenthesis","document_key":"trd","required":false}
+          {"type":"document","slug":"synthesis","document_key":"system_architecture","required":true},
+          {"type":"document","slug":"synthesis","document_key":"tech_stack","required":true},
+          {"type":"document","slug":"synthesis","document_key":"product_requirements","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"technical_requirements","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"system_architecture","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"tech_stack","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"product_requirements","required":false},
+          {"type":"feedback","slug":"parenthesis","document_key":"technical_requirements","required":false}
         ]'::jsonb,
         '[
           {"document_key":"header_context","slug":"parenthesis","relevance":1.0},
-          {"document_key":"system_architecture_overview","slug":"synthesis","relevance":0.95},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","relevance":0.9},
-          {"document_key":"prd","slug":"synthesis","relevance":0.85},
-          {"document_key":"trd","slug":"parenthesis","relevance":0.99},
-          {"document_key":"system_architecture_overview","slug":"synthesis","type":"feedback","relevance":0.80},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","type":"feedback","relevance":0.75},
-          {"document_key":"prd","slug":"synthesis","type":"feedback","relevance":0.50},
-          {"document_key":"trd","slug":"parenthesis","type":"feedback","relevance":0.83}
+          {"document_key":"system_architecture","slug":"synthesis","relevance":0.95},
+          {"document_key":"tech_stack","slug":"synthesis","relevance":0.9},
+          {"document_key":"product_requirements","slug":"synthesis","relevance":0.85},
+          {"document_key":"technical_requirements","slug":"parenthesis","relevance":0.99},
+          {"document_key":"system_architecture","slug":"synthesis","type":"feedback","relevance":0.80},
+          {"document_key":"tech_stack","slug":"synthesis","type":"feedback","relevance":0.75},
+          {"document_key":"product_requirements","slug":"synthesis","type":"feedback","relevance":0.50},
+          {"document_key":"technical_requirements","slug":"parenthesis","type":"feedback","relevance":0.83}
         ]'::jsonb,
         '{
           "documents": [
             {
-              "document_key": "trd",
-              "template_filename": "parenthesis_trd.md",
+              "document_key": "technical_requirements",
+              "template_filename": "parenthesis_technical_requirements.md",
               "artifact_class": "rendered_document",
               "file_type": "markdown",
               "content_to_include": {
                 "index": [],
-                "executive_summary": "",
                 "subsystems": [{"name": "", "objective": "", "implementation_notes": ""}],
                 "apis": [{"name": "", "description": "", "contracts": []}],
                 "schemas": [{"name": "", "columns": [], "indexes": [], "rls": []}],
                 "proposed_file_tree": "",
                 "architecture_overview": "",
                 "delta_summary": "",
-                "iteration_notes": ""
+                "iteration_notes": "",
+                "feature_scope": [],
+                "feasibility_insights": [],
+                "non_functional_alignment": [],
+                "outcome_alignment": "",
+                "north_star_metric": "",
+                "primary_kpis": [],
+                "guardrails": [],
+                "measurement_plan": "",
+                "architecture_summary": "",
+                "architecture": "",
+                "services": [],
+                "components": [],
+                "data_flows": [],
+                "interfaces": [],
+                "integration_points": [],
+                "dependency_resolution": [],
+                "security_measures": [],
+                "observability_strategy": [],
+                "scalability_plan": [],
+                "resilience_strategy": [],
+                "frontend_stack": {},
+                "backend_stack": {},
+                "data_platform": {},
+                "devops_tooling": {},
+                "security_tooling": {},
+                "shared_libraries": [],
+                "third_party_services": [],
+                "executive_summary": ""
               }
             }
           ],
           "files_to_generate": [
-            {"template_filename": "parenthesis_trd.md", "from_document_key": "trd"}
+            {"template_filename": "parenthesis_technical_requirements.md", "from_document_key": "technical_requirements"}
           ],
           "assembled_json": [
             {
-              "document_key": "trd",
+              "document_key": "technical_requirements",
               "artifact_class": "assembled_document_json",
               "fields": [
                 "subsystems[].name",
@@ -728,7 +909,7 @@ DECLARE
             inputs_relevance = EXCLUDED.inputs_relevance,
             outputs_required = EXCLUDED.outputs_required,
             updated_at = now()
-    RETURNING id INTO v_trd_step_id;
+    RETURNING id INTO v_technical_requirements_step_id;
 
     INSERT INTO public.dialectic_stage_recipe_steps (
         id,
@@ -751,63 +932,90 @@ DECLARE
     ) VALUES (
         gen_random_uuid(),
         v_instance_id,
-        v_trd_step_id,
-        'generate-trd',
-        'generate-trd',
+        v_technical_requirements_step_id,
+        'generate-technical_requirements',
+        'generate-technical_requirements',
         'Generate Technical Requirements Document',
         'EXECUTE',
         'Turn',
-        v_trd_prompt_id,
-        'RenderedDocument',
+        v_technical_requirements_prompt_id,
+        'technical_requirements',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
-          {"type":"document","slug":"synthesis","document_key":"system_architecture_overview","required":true},
-          {"type":"document","slug":"synthesis","document_key":"tech_stack_recommendations","required":true},
-          {"type":"document","slug":"synthesis","document_key":"prd","required":true},
-          {"type":"document","slug":"parenthesis","document_key":"trd","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"system_architecture_overview","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"tech_stack_recommendations","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"prd","required":false},
-          {"type":"feedback","slug":"parenthesis","document_key":"trd","required":false}
+          {"type":"document","slug":"synthesis","document_key":"system_architecture","required":true},
+          {"type":"document","slug":"synthesis","document_key":"tech_stack","required":true},
+          {"type":"document","slug":"synthesis","document_key":"product_requirements","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"technical_requirements","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"system_architecture","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"tech_stack","required":false},
+          {"type":"feedback","slug":"synthesis","document_key":"product_requirements","required":false},
+          {"type":"feedback","slug":"parenthesis","document_key":"technical_requirements","required":false}
         ]'::jsonb,
         '[
           {"document_key":"header_context","slug":"parenthesis","relevance":1.0},
-          {"document_key":"system_architecture_overview","slug":"synthesis","relevance":0.95},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","relevance":0.9},
-          {"document_key":"prd","slug":"synthesis","relevance":0.85},
-          {"document_key":"trd","slug":"parenthesis","relevance":0.99},
-          {"document_key":"system_architecture_overview","slug":"synthesis","type":"feedback","relevance":0.80},
-          {"document_key":"tech_stack_recommendations","slug":"synthesis","type":"feedback","relevance":0.75},
-          {"document_key":"prd","slug":"synthesis","type":"feedback","relevance":0.50},
-          {"document_key":"trd","slug":"parenthesis","type":"feedback","relevance":0.83}
+          {"document_key":"system_architecture","slug":"synthesis","relevance":0.95},
+          {"document_key":"tech_stack","slug":"synthesis","relevance":0.9},
+          {"document_key":"product_requirements","slug":"synthesis","relevance":0.85},
+          {"document_key":"technical_requirements","slug":"parenthesis","relevance":0.99},
+          {"document_key":"system_architecture","slug":"synthesis","type":"feedback","relevance":0.80},
+          {"document_key":"tech_stack","slug":"synthesis","type":"feedback","relevance":0.75},
+          {"document_key":"product_requirements","slug":"synthesis","type":"feedback","relevance":0.50},
+          {"document_key":"technical_requirements","slug":"parenthesis","type":"feedback","relevance":0.83}
         ]'::jsonb,
         '{
           "documents": [
             {
-              "document_key": "trd",
-              "template_filename": "parenthesis_trd.md",
+              "document_key": "technical_requirements",
+              "template_filename": "parenthesis_technical_requirements.md",
               "artifact_class": "rendered_document",
               "file_type": "markdown",
               "content_to_include": {
                 "index": [],
-                "executive_summary": "",
                 "subsystems": [{"name": "", "objective": "", "implementation_notes": ""}],
                 "apis": [{"name": "", "description": "", "contracts": []}],
                 "schemas": [{"name": "", "columns": [], "indexes": [], "rls": []}],
                 "proposed_file_tree": "",
                 "architecture_overview": "",
                 "delta_summary": "",
-                "iteration_notes": ""
+                "iteration_notes": "",
+                "feature_scope": [],
+                "feasibility_insights": [],
+                "non_functional_alignment": [],
+                "outcome_alignment": "",
+                "north_star_metric": "",
+                "primary_kpis": [],
+                "guardrails": [],
+                "measurement_plan": "",
+                "architecture_summary": "",
+                "architecture": "",
+                "services": [],
+                "components": [],
+                "data_flows": [],
+                "interfaces": [],
+                "integration_points": [],
+                "dependency_resolution": [],
+                "security_measures": [],
+                "observability_strategy": [],
+                "scalability_plan": [],
+                "resilience_strategy": [],
+                "frontend_stack": {},
+                "backend_stack": {},
+                "data_platform": {},
+                "devops_tooling": {},
+                "security_tooling": {},
+                "shared_libraries": [],
+                "third_party_services": [],
+                "executive_summary": ""
               }
             }
           ],
           "files_to_generate": [
-            {"template_filename": "parenthesis_trd.md", "from_document_key": "trd"}
+            {"template_filename": "parenthesis_technical_requirements.md", "from_document_key": "technical_requirements"}
           ],
           "assembled_json": [
             {
-              "document_key": "trd",
+              "document_key": "technical_requirements",
               "artifact_class": "assembled_document_json",
               "fields": [
                 "subsystems[].name",
@@ -856,7 +1064,7 @@ DECLARE
           ]
         }'::jsonb,
         2,
-        'trd',
+        'technical_requirements',
         2
     )
     ON CONFLICT (instance_id, step_key) DO UPDATE
@@ -866,7 +1074,7 @@ DECLARE
             inputs_relevance = EXCLUDED.inputs_relevance,
             outputs_required = EXCLUDED.outputs_required,
             updated_at = now()
-    RETURNING id INTO v_instance_trd_step_id;
+    RETURNING id INTO v_instance_technical_requirements_step_id;
 
     INSERT INTO public.dialectic_recipe_template_steps (
         id,
@@ -895,25 +1103,25 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_master_plan_prompt_id,
-        'RenderedDocument',
+        'master_plan',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
-          {"type":"document","slug":"parenthesis","document_key":"trd","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"technical_requirements","required":true},
           {"type":"document","slug":"parenthesis","document_key":"master_plan","required":false},
-          {"type":"document","slug":"synthesis","document_key":"prd","required":true},
-          {"type":"feedback","slug":"parenthesis","document_key":"trd","required":false},
+          {"type":"document","slug":"synthesis","document_key":"product_requirements","required":true},
+          {"type":"feedback","slug":"parenthesis","document_key":"technical_requirements","required":false},
           {"type":"feedback","slug":"parenthesis","document_key":"master_plan","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"prd","required":false}
+          {"type":"feedback","slug":"synthesis","document_key":"product_requirements","required":false}
         ]'::jsonb,
         '[
           {"document_key":"header_context","slug":"parenthesis","relevance":1.0},
-          {"document_key":"trd","slug":"parenthesis","relevance":0.95},
+          {"document_key":"technical_requirements","slug":"parenthesis","relevance":0.95},
           {"document_key":"master_plan","slug":"parenthesis","relevance":0.99},
-          {"document_key":"prd","slug":"synthesis","relevance":0.75},
-          {"document_key":"trd","slug":"parenthesis","type":"feedback","relevance":0.85},
+          {"document_key":"product_requirements","slug":"synthesis","relevance":0.75},
+          {"document_key":"technical_requirements","slug":"parenthesis","type":"feedback","relevance":0.85},
           {"document_key":"master_plan","slug":"parenthesis","type":"feedback","relevance":0.90},
-          {"document_key":"prd","slug":"synthesis","type":"feedback","relevance":0.70}
+          {"document_key":"product_requirements","slug":"synthesis","type":"feedback","relevance":0.70}
         ]'::jsonb,
         '{
           "documents": [
@@ -924,20 +1132,28 @@ DECLARE
               "file_type": "markdown",
               "content_to_include": {
                 "index": [],
-                "executive_summary": "",
                 "phases": [
                   {
                     "name": "",
                     "objective": "",
+                    "technical_context": "",
+                    "implementation_strategy": "",
                     "milestones": [
                       {
                         "id": "",
                         "title": "",
                         "objective": "",
+                        "description": "",
+                        "technical_complexity": "",
+                        "effort_estimate": "",
+                        "implementation_approach": "",
+                        "test_strategy": "",
+                        "component_labels": [],
                         "inputs": [],
                         "outputs": [],
                         "dependencies": [],
                         "acceptance_criteria": [],
+                        "validation": [],
                         "status": "[ ]",
                         "coverage_notes": "",
                         "iteration_delta": ""
@@ -949,7 +1165,41 @@ DECLARE
                   "completed": [],
                   "in_progress": [],
                   "up_next": []
-                }
+                },
+                "status_markers": {
+                  "unstarted": "[ ]",
+                  "in_progress": "[🚧]",
+                  "completed": "[✅]"
+                },
+                "dependency_rules": [],
+                "generation_limits": {
+                  "max_steps": 200,
+                  "target_steps": "120-180",
+                  "max_output_lines": "600-800"
+                },
+                "feature_scope": [],
+                "features": [],
+                "mvp_description": "",
+                "market_opportunity": "",
+                "competitive_analysis": "",
+                "technical_context": "",
+                "implementation_context": "",
+                "test_framework": "",
+                "component_mapping": "",
+                "architecture_summary": "",
+                "architecture": "",
+                "services": [],
+                "components": [],
+                "integration_points": [],
+                "dependency_resolution": [],
+                "frontend_stack": {},
+                "backend_stack": {},
+                "data_platform": {},
+                "devops_tooling": {},
+                "security_tooling": {},
+                "shared_libraries": [],
+                "third_party_services": [],
+                "executive_summary": ""
               }
             }
           ],
@@ -1044,25 +1294,25 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_master_plan_prompt_id,
-        'RenderedDocument',
+        'master_plan',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
-          {"type":"document","slug":"parenthesis","document_key":"trd","required":true},
+          {"type":"document","slug":"parenthesis","document_key":"technical_requirements","required":true},
           {"type":"document","slug":"parenthesis","document_key":"master_plan","required":false},
-          {"type":"document","slug":"synthesis","document_key":"prd","required":true},
-          {"type":"feedback","slug":"parenthesis","document_key":"trd","required":false},
+          {"type":"document","slug":"synthesis","document_key":"product_requirements","required":true},
+          {"type":"feedback","slug":"parenthesis","document_key":"technical_requirements","required":false},
           {"type":"feedback","slug":"parenthesis","document_key":"master_plan","required":false},
-          {"type":"feedback","slug":"synthesis","document_key":"prd","required":false}
+          {"type":"feedback","slug":"synthesis","document_key":"product_requirements","required":false}
         ]'::jsonb,
         '[
           {"document_key":"header_context","slug":"parenthesis","relevance":1.0},
-          {"document_key":"trd","slug":"parenthesis","relevance":0.95},
+          {"document_key":"technical_requirements","slug":"parenthesis","relevance":0.95},
           {"document_key":"master_plan","slug":"parenthesis","relevance":0.99},
-          {"document_key":"prd","slug":"synthesis","relevance":0.75},
-          {"document_key":"trd","slug":"parenthesis","type":"feedback","relevance":0.85},
+          {"document_key":"product_requirements","slug":"synthesis","relevance":0.75},
+          {"document_key":"technical_requirements","slug":"parenthesis","type":"feedback","relevance":0.85},
           {"document_key":"master_plan","slug":"parenthesis","type":"feedback","relevance":0.90},
-          {"document_key":"prd","slug":"synthesis","type":"feedback","relevance":0.70}
+          {"document_key":"product_requirements","slug":"synthesis","type":"feedback","relevance":0.70}
         ]'::jsonb,
         '{
           "documents": [
@@ -1073,20 +1323,28 @@ DECLARE
               "file_type": "markdown",
               "content_to_include": {
                 "index": [],
-                "executive_summary": "",
                 "phases": [
                   {
                     "name": "",
                     "objective": "",
+                    "technical_context": "",
+                    "implementation_strategy": "",
                     "milestones": [
                       {
                         "id": "",
                         "title": "",
                         "objective": "",
+                        "description": "",
+                        "technical_complexity": "",
+                        "effort_estimate": "",
+                        "implementation_approach": "",
+                        "test_strategy": "",
+                        "component_labels": [],
                         "inputs": [],
                         "outputs": [],
                         "dependencies": [],
                         "acceptance_criteria": [],
+                        "validation": [],
                         "status": "[ ]",
                         "coverage_notes": "",
                         "iteration_delta": ""
@@ -1098,7 +1356,41 @@ DECLARE
                   "completed": [],
                   "in_progress": [],
                   "up_next": []
-                }
+                },
+                "status_markers": {
+                  "unstarted": "[ ]",
+                  "in_progress": "[🚧]",
+                  "completed": "[✅]"
+                },
+                "dependency_rules": [],
+                "generation_limits": {
+                  "max_steps": 200,
+                  "target_steps": "120-180",
+                  "max_output_lines": "600-800"
+                },
+                "feature_scope": [],
+                "features": [],
+                "mvp_description": "",
+                "market_opportunity": "",
+                "competitive_analysis": "",
+                "technical_context": "",
+                "implementation_context": "",
+                "test_framework": "",
+                "component_mapping": "",
+                "architecture_summary": "",
+                "architecture": "",
+                "services": [],
+                "components": [],
+                "integration_points": [],
+                "dependency_resolution": [],
+                "frontend_stack": {},
+                "backend_stack": {},
+                "data_platform": {},
+                "devops_tooling": {},
+                "security_tooling": {},
+                "shared_libraries": [],
+                "third_party_services": [],
+                "executive_summary": ""
               }
             }
           ],
@@ -1188,7 +1480,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_milestone_schema_prompt_id,
-        'RenderedDocument',
+        'milestone_schema',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
@@ -1213,7 +1505,6 @@ DECLARE
               "file_type": "markdown",
               "content_to_include": {
                 "index": [],
-                "executive_summary": "",
                 "fields": [
                   {
                     "name": "id",
@@ -1266,7 +1557,18 @@ DECLARE
                 "iteration_guidance": {
                   "reuse_policy": "Carry forward schema; append new fields under migration log if expanded",
                   "versioning": "Increment schema_version when fields change"
-                }
+                },
+                "features": [],
+                "feasibility_insights": [],
+                "non_functional_alignment": [],
+                "architecture_summary": "",
+                "services": [],
+                "components": [],
+                "dependency_resolution": [],
+                "component_details": [],
+                "integration_requirements": [],
+                "migration_context": [],
+                "executive_summary": ""
               }
             }
           ],
@@ -1345,7 +1647,7 @@ DECLARE
         'EXECUTE',
         'Turn',
         v_milestone_schema_prompt_id,
-        'RenderedDocument',
+        'milestone_schema',
         'per_source_document',
         '[
           {"type":"header_context","slug":"parenthesis","document_key":"header_context","required":true},
@@ -1370,7 +1672,6 @@ DECLARE
               "file_type": "markdown",
               "content_to_include": {
                 "index": [],
-                "executive_summary": "",
                 "fields": [
                   {
                     "name": "id",
@@ -1423,7 +1724,18 @@ DECLARE
                 "iteration_guidance": {
                   "reuse_policy": "Carry forward schema; append new fields under migration log if expanded",
                   "versioning": "Increment schema_version when fields change"
-                }
+                },
+                "features": [],
+                "feasibility_insights": [],
+                "non_functional_alignment": [],
+                "architecture_summary": "",
+                "services": [],
+                "components": [],
+                "dependency_resolution": [],
+                "component_details": [],
+                "integration_requirements": [],
+                "migration_context": [],
+                "executive_summary": ""
               }
             }
           ],
@@ -1495,7 +1807,7 @@ DECLARE
         from_step_id,
         to_step_id
     ) VALUES
-        (gen_random_uuid(), v_template_id, v_planner_step_id, v_trd_step_id),
+        (gen_random_uuid(), v_template_id, v_planner_step_id, v_technical_requirements_step_id),
         (gen_random_uuid(), v_template_id, v_planner_step_id, v_master_plan_step_id),
         (gen_random_uuid(), v_template_id, v_planner_step_id, v_milestone_schema_step_id)
     ON CONFLICT (template_id, from_step_id, to_step_id) DO NOTHING;
@@ -1506,7 +1818,7 @@ DECLARE
         from_step_id,
         to_step_id
     ) VALUES
-        (gen_random_uuid(), v_instance_id, v_instance_planner_step_id, v_instance_trd_step_id),
+        (gen_random_uuid(), v_instance_id, v_instance_planner_step_id, v_instance_technical_requirements_step_id),
         (gen_random_uuid(), v_instance_id, v_instance_planner_step_id, v_instance_master_plan_step_id),
         (gen_random_uuid(), v_instance_id, v_instance_planner_step_id, v_instance_milestone_schema_step_id)
     ON CONFLICT (instance_id, from_step_id, to_step_id) DO NOTHING;
@@ -1527,12 +1839,12 @@ DECLARE
         file_name
     ) VALUES (
         gen_random_uuid(),
-        'parenthesis_trd',
+        'parenthesis_technical_requirements',
         v_domain_id,
         'Markdown template for the Parenthesis Technical Requirements Document.',
         'prompt-templates',
         'docs/templates/parenthesis/',
-        'parenthesis_trd.md'
+        'parenthesis_technical_requirements.md'
     )
     ON CONFLICT (name, domain_id) DO UPDATE
         SET description = EXCLUDED.description,
@@ -1540,7 +1852,7 @@ DECLARE
             storage_path = EXCLUDED.storage_path,
             file_name = EXCLUDED.file_name,
             updated_at = now()
-    RETURNING id INTO v_trd_doc_template_id;
+    RETURNING id INTO v_technical_requirements_doc_template_id;
 
     INSERT INTO public.dialectic_document_templates (
         id,
@@ -1595,85 +1907,10 @@ DECLARE
     -- Step 3.b: Populate expected_output_template_ids for parenthesis stage
     UPDATE public.dialectic_stages
     SET expected_output_template_ids = ARRAY[
-        v_trd_doc_template_id,
+        v_technical_requirements_doc_template_id,
         v_master_plan_doc_template_id,
         v_milestone_schema_doc_template_id
     ]
     WHERE slug = 'parenthesis';
-
--- Step 4.a: Seed Parenthesis document templates
-INSERT INTO public.dialectic_document_templates (
-    id,
-    name,
-    domain_id,
-    description,
-    storage_bucket,
-    storage_path,
-    file_name
-) VALUES (
-    gen_random_uuid(),
-    'parenthesis_trd',
-    v_domain_id,
-    'Markdown template for the Parenthesis Technical Requirements Document.',
-    'prompt-templates',
-    'docs/templates/parenthesis/',
-    'parenthesis_trd.md'
-)
-ON CONFLICT (name, domain_id) DO UPDATE
-    SET description = EXCLUDED.description,
-        storage_bucket = EXCLUDED.storage_bucket,
-        storage_path = EXCLUDED.storage_path,
-        file_name = EXCLUDED.file_name,
-        updated_at = now();
-
-INSERT INTO public.dialectic_document_templates (
-    id,
-    name,
-    domain_id,
-    description,
-    storage_bucket,
-    storage_path,
-    file_name
-) VALUES (
-    gen_random_uuid(),
-    'parenthesis_master_plan',
-    v_domain_id,
-    'Markdown template for the Parenthesis Master Plan.',
-    'prompt-templates',
-    'docs/templates/parenthesis/',
-    'parenthesis_master_plan.md'
-)
-ON CONFLICT (name, domain_id) DO UPDATE
-    SET description = EXCLUDED.description,
-        storage_bucket = EXCLUDED.storage_bucket,
-        storage_path = EXCLUDED.storage_path,
-        file_name = EXCLUDED.file_name,
-        updated_at = now();
-
-INSERT INTO public.dialectic_document_templates (
-    id,
-    name,
-    domain_id,
-    description,
-    storage_bucket,
-    storage_path,
-    file_name
-) VALUES (
-    gen_random_uuid(),
-    'parenthesis_milestone_schema',
-    v_domain_id,
-    'Markdown template for the Parenthesis Milestone Schema.',
-    'prompt-templates',
-    'docs/templates/parenthesis/',
-    'parenthesis_milestone_schema.md'
-)
-ON CONFLICT (name, domain_id) DO UPDATE
-    SET description = EXCLUDED.description,
-        storage_bucket = EXCLUDED.storage_bucket,
-        storage_path = EXCLUDED.storage_path,
-        file_name = EXCLUDED.file_name,
-        updated_at = now();
-        
-    -- Step 3.c: Record migration provenance
-    -- Note: Migration ID 20251006194558_parenthesis_stage.sql applied to establish parenthesis_v1 recipe
-END $$;
+END;
+$$;

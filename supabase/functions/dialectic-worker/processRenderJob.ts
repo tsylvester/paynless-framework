@@ -1,64 +1,108 @@
-import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database } from '../types_db.ts';
+import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { Database } from '../types_db.ts';
 import { isRecord } from '../_shared/utils/type_guards.ts';
-import type { IRenderJobDeps } from '../dialectic-service/dialectic.interface.ts';
-import type { RenderDocumentParams, DocumentRendererDeps } from '../_shared/services/document_renderer.interface.ts';
+import { IRenderJobContext } from './JobContext.interface.ts';
+import { RenderDocumentParams, DocumentRendererDeps } from '../_shared/services/document_renderer.interface.ts';
 import { isFileType } from '../_shared/utils/type_guards.ts';
+import { isString, isNumber } from "node:util";
 
 export async function processRenderJob(
   dbClient: SupabaseClient<Database>,
   job: Database['public']['Tables']['dialectic_generation_jobs']['Row'],
   projectOwnerUserId: string,
-  deps: IRenderJobDeps,
+  ctx: IRenderJobContext,
   _authToken: string,
 ): Promise<void> {
   const { id: jobId } = job;
 
   try {
     // Normalize payload (Supabase may return JSON as string)
-    const normalizedPayload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
-    if (!isRecord(normalizedPayload)) {
+    if (!isRecord(job.payload)) {
       throw new Error('Invalid payload');
     }
 
-    const projectId = String(normalizedPayload['projectId'] ?? '');
-    const sessionId = String(normalizedPayload['sessionId'] ?? '');
-    const iterationNumberUnknown = normalizedPayload['iterationNumber'];
-    const stageSlug = String(normalizedPayload['stageSlug'] ?? '');
-    const documentIdentity = String(normalizedPayload['documentIdentity'] ?? '');
-    const documentKeyUnknown = normalizedPayload['documentKey'];
-
+    const { projectId, sessionId, iterationNumber, stageSlug, documentIdentity, documentKey, sourceContributionId, template_filename } = job.payload;
     if (!projectId || !sessionId || !stageSlug || !documentIdentity) {
       throw new Error('Missing required render parameters');
     }
-    const iterationNumber = typeof iterationNumberUnknown === 'number' ? iterationNumberUnknown : Number(iterationNumberUnknown);
-    if (!Number.isFinite(iterationNumber)) {
+
+    if (!isNumber(iterationNumber)) {
       throw new Error('iterationNumber is required');
     }
 
     // Validate documentKey
-    if (!isFileType(documentKeyUnknown)) {
+    if (!isFileType(documentKey)) {
       throw new Error('documentKey must be a valid FileType');
     }
-
+    if (!sourceContributionId) {
+      throw new Error('sourceContributionId is required');
+    }
+    if(!isString(projectId)) {
+      throw new Error('projectId must be a string');
+    }
+    if(!isString(sessionId)) {
+      throw new Error('sessionId must be a string');
+    }
+    if(!isString(stageSlug)) {
+      throw new Error('stageSlug must be a string');
+    }
+    if(!isString(documentIdentity)) {
+      throw new Error('documentIdentity must be a string');
+    }
+    if(!isString(sourceContributionId)) {
+      throw new Error('sourceContributionId must be a string');
+    }
+    if(!isString(template_filename) || template_filename.trim() === '') {
+      throw new Error('template_filename must be a non-empty string');
+    }
     const params: RenderDocumentParams = {
       projectId,
       sessionId,
       iterationNumber,
       stageSlug,
       documentIdentity,
-      documentKey: documentKeyUnknown,
+      documentKey,
+      sourceContributionId,
+      template_filename,
     };
 
     const rendererDeps: DocumentRendererDeps = {
-      downloadFromStorage: deps.downloadFromStorage,
-      fileManager: deps.fileManager,
-      notificationService: deps.notificationService,
+      downloadFromStorage: ctx.downloadFromStorage,
+      fileManager: ctx.fileManager,
+      notificationService: ctx.notificationService,
       notifyUserId: projectOwnerUserId,
-      logger: deps.logger,
+      logger: ctx.logger,
     };
 
-    const renderResult = await deps.documentRenderer.renderDocument(dbClient, rendererDeps, params);
+    ctx.logger.info('[processRenderJob] DEBUG: About to call renderDocument', { 
+      jobId, 
+      params: {
+        projectId: params.projectId,
+        sessionId: params.sessionId,
+        iterationNumber: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentIdentity: params.documentIdentity,
+        documentKey: params.documentKey,
+        sourceContributionId: params.sourceContributionId,
+        template_filename: params.template_filename,
+      }
+    });
+    
+    let renderResult;
+    try {
+      renderResult = await ctx.documentRenderer.renderDocument(dbClient, rendererDeps, params);
+      ctx.logger.info('[processRenderJob] DEBUG: renderDocument succeeded', { 
+        jobId,
+        sourceContributionId: renderResult.pathContext.sourceContributionId,
+      });
+    } catch (renderError) {
+      ctx.logger.error('[processRenderJob] DEBUG: renderDocument threw error', { 
+        jobId,
+        error: renderError instanceof Error ? renderError.message : String(renderError),
+        stack: renderError instanceof Error ? renderError.stack : undefined,
+      });
+      throw renderError;
+    }
 
     const pathContextJson = {
       projectId: renderResult.pathContext.projectId,
@@ -68,6 +112,9 @@ export async function processRenderJob(
       documentKey: renderResult.pathContext.documentKey,
       fileType: renderResult.pathContext.fileType,
       modelSlug: renderResult.pathContext.modelSlug,
+      sourceContributionId: renderResult.pathContext.sourceContributionId,
+      ...(renderResult.pathContext.sourceAnchorModelSlug ? { sourceAnchorModelSlug: renderResult.pathContext.sourceAnchorModelSlug } : {}),
+      ...(renderResult.pathContext.sourceGroupFragment ? { sourceGroupFragment: renderResult.pathContext.sourceGroupFragment } : {}),
     };
 
     await dbClient
@@ -80,7 +127,13 @@ export async function processRenderJob(
       .eq('id', jobId);
   } catch (e) {
     const err = e instanceof Error ? e : new Error(String(e));
-    deps.logger.error('[processRenderJob] failed to render document', { jobId, error: err.message });
+    ctx.logger.error('[processRenderJob] DEBUG: Caught error in processRenderJob', { 
+      jobId, 
+      error: err.message,
+      stack: err.stack,
+      errorName: err.name,
+      fullError: String(e),
+    });
 
     await dbClient
       .from('dialectic_generation_jobs')
@@ -102,8 +155,8 @@ export async function processRenderJob(
       const documentKeyVal = payloadUnknown && payloadUnknown['documentKey'];
       const documentKey = typeof documentKeyVal === 'string' ? documentKeyVal : String(documentKeyVal ?? 'unknown');
 
-      if (deps.notificationService && typeof deps.notificationService.sendDocumentCentricNotification === 'function' && projectOwnerUserId) {
-        await deps.notificationService.sendDocumentCentricNotification({
+      if (typeof ctx.notificationService.sendDocumentCentricNotification === 'function' && projectOwnerUserId) {
+        await ctx.notificationService.sendDocumentCentricNotification({
           type: 'job_failed',
           sessionId: String(sessionId),
           stageSlug: String(stageSlug),

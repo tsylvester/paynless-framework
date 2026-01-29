@@ -1,36 +1,58 @@
-import { type ChatMessage, type ILogger } from '../_shared/types.ts';
-import type { Database, Json, Tables } from '../types_db.ts';
+import { ChatMessage, ILogger } from '../_shared/types.ts';
+import { Database, Json, Tables } from '../types_db.ts';
 import {
   downloadFromStorage,
 } from '../_shared/supabase_storage_utils.ts';
-import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
-import type { Logger } from '../_shared/logger.ts';
-import type { 
+import { 
+  SupabaseClient, 
+  User 
+} from 'npm:@supabase/supabase-js@^2';
+import { Logger } from '../_shared/logger.ts';
+import { 
   IFileManager, 
   CanonicalPathParams, 
-  ModelContributionFileTypes,
+  ModelContributionFileTypes, 
+  FileType 
 } from '../_shared/types/file_manager.types.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
-import type { DeleteStorageResult, DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
-import type {
+import {
   FinishReason,
   FactoryDependencies,
   AiProviderAdapterInstance,
   AiProviderAdapter
 } from '../_shared/types.ts';
-import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
-import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
-import type { IRagService } from '../_shared/services/rag_service.interface.ts';
-import type { Messages, AiModelExtendedConfig, ChatApiRequest } from '../_shared/types.ts';
-import type { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
-import type { IPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
-import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
-import type { debitTokens } from '../chat/debitTokens.ts';
+import { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
+import { 
+  IIndexingService, 
+  IEmbeddingClient 
+} from '../_shared/services/indexing_service.interface.ts';
+import { IRagService } from '../_shared/services/rag_service.interface.ts';
+import { 
+  Messages, 
+  AiModelExtendedConfig, 
+  ChatApiRequest 
+} from '../_shared/types.ts';
+import { 
+  CountTokensDeps, 
+  CountableChatPayload 
+} from '../_shared/types/tokenizer.types.ts';
+import { 
+  IPromptAssembler, 
+  AssembledPrompt 
+} from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
+import { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
+import { debitTokens } from '../chat/debitTokens.ts';
 import { ICompressionStrategy } from '../_shared/utils/vector_utils.ts';
-import type { ServiceError } from "../_shared/types.ts";
-import type { IDocumentRenderer } from '../_shared/services/document_renderer.interface.ts';
-import type { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
+import { ServiceError } from "../_shared/types.ts";
+import { IDocumentRenderer } from '../_shared/services/document_renderer.interface.ts';
+import { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
+import { DeleteFromStorageFn } from '../_shared/supabase_storage_utils.ts';
+import { 
+  IExecuteJobContext, 
+  IPlanJobContext, 
+  IRenderJobContext 
+} from '../dialectic-worker/JobContext.interface.ts';
+import { DeconstructStoragePathFn, DeconstructedPathInfo } from '../_shared/utils/path_deconstructor.types.ts';
 
 export type DialecticStageRecipeEdge = Database['public']['Tables']['dialectic_stage_recipe_edges']['Row'];
 export type DialecticStageRecipeInstance = Database['public']['Tables']['dialectic_stage_recipe_instances']['Row'];
@@ -40,7 +62,7 @@ export type ProcessSimpleJobFn = (
   dbClient: SupabaseClient<Database>,
   job: DialecticJobRow & { payload: DialecticExecuteJobPayload },
   projectOwnerUserId: string,
-  deps: IDialecticJobDeps,
+  deps: IExecuteJobContext,
   authToken: string,
 ) => Promise<void>;
 
@@ -48,7 +70,7 @@ export type ProcessComplexJobFn = (
   dbClient: SupabaseClient<Database>,
   job: DialecticJobRow & { payload: DialecticPlanJobPayload },
   projectOwnerUserId: string,
-  deps: IDialecticJobDeps,
+  deps: IPlanJobContext,
   authToken: string,
 ) => Promise<void>;
 
@@ -56,17 +78,38 @@ export type ProcessRenderJobFn = (
   dbClient: SupabaseClient<Database>,
   job: DialecticJobRow,
   projectOwnerUserId: string,
-  deps: IDialecticJobDeps,
+  deps: IRenderJobContext,
   authToken: string,
 ) => Promise<void>;
 
 export type PlanComplexStageFn = (
   dbClient: SupabaseClient<Database>,
   parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
-  deps: IDialecticJobDeps,
+  deps: IPlanJobContext,
   recipeStep: DialecticRecipeStep,
   authToken: string,
+  completedSourceDocumentIds?: Set<string>,
 ) => Promise<DialecticJobRow[]>;
+
+export type CallUnifiedAIModelFn = (
+  chatApiRequest: ChatApiRequest,
+  authToken: string,
+  dependencies?: CallModelDependencies,
+) => Promise<UnifiedAIResponse>;
+
+export type GetAiProviderConfigFn = (
+  dbClient: SupabaseClient<Database>,
+  modelId: string
+) => Promise<AiModelExtendedConfig>;
+
+export type GetSeedPromptForStageFn = (
+  dbClient: SupabaseClient<Database>,
+  projectId: string,
+  sessionId: string,
+  stageSlug: string,
+  iterationNumber: number,
+  downloadFromStorage: DownloadFromStorageFn
+) => Promise<SeedPromptData>;
 
 export interface IJobProcessors {
   processSimpleJob: ProcessSimpleJobFn;
@@ -87,6 +130,8 @@ export type JobType = 'PLAN' | 'EXECUTE' | 'RENDER';
 export const JobTypes: readonly JobType[] = ['PLAN', 'EXECUTE', 'RENDER'];
 export type PromptType = 'Seed' | 'Planner' | 'Turn' | 'Continuation';
 export const PromptTypes: readonly PromptType[] = ['Seed', 'Planner', 'Turn', 'Continuation'];
+
+export type GetGranularityPlannerFn = (strategyId: string | null | undefined) => GranularityPlannerFn;
 
 export type GranularityStrategy =
   | 'per_source_document'
@@ -147,7 +192,7 @@ export interface StageRecipeStepDto {
   job_type: JobType;
   prompt_type: PromptType;
   prompt_template_id?: string | null;
-  output_type: OutputType; // Mapped from ModelContributionFileTypes
+  output_type: ModelContributionFileTypes; // All ModelContributionFileTypes (including backend-only types like header_context for PLAN steps)
   granularity_strategy: GranularityStrategy;
   inputs_required: InputRule[];
   inputs_relevance?: RelevanceRule[];
@@ -273,7 +318,8 @@ export type ContributionType =
   | 'paralysis'
   | 'pairwise_synthesis_chunk'
   | 'reduced_synthesis'
-  | 'rag_context_summary';
+  | 'rag_context_summary'
+  | 'header_context';
 
 
 export interface DialecticSessionModel {
@@ -351,6 +397,7 @@ type UpdateSessionModelsAction = { action: 'updateSessionModels', payload: Updat
 // Define new payload and action for getSessionDetails
 export interface GetSessionDetailsPayload { // Export if it might be used externally, otherwise keep as local type
   sessionId: string;
+  skipSeedPrompt?: boolean;
 }
 type GetSessionDetailsAction = { action: 'getSessionDetails', payload: GetSessionDetailsPayload };
 
@@ -408,6 +455,7 @@ export interface SubmitStageDocumentFeedbackPayload {
   projectId: string;
   feedbackId?: string;
   feedbackType: string;
+  sourceContributionId?: string | null;
 }
 type SubmitStageDocumentFeedbackAction = {
   action: 'submitStageDocumentFeedback';
@@ -416,15 +464,26 @@ type SubmitStageDocumentFeedbackAction = {
 
 // --- START: DTOs for listStageDocuments ---
 
+export type StageRunDocumentStatus =
+  | 'idle'
+  | 'generating'
+  | 'retrying'
+  | 'failed'
+  | 'completed'
+  | 'continuing'
+  | 'not_started';
+
 export interface StageDocumentDescriptorDto {
+  descriptorType?: 'rendered';
   documentKey: string;
+  status: StageRunDocumentStatus;
+  jobId: string;
+  latestRenderedResourceId: string;
   modelId: string;
-  lastRenderedResourceId: string | null;
+  stepKey?: string;
 }
 
-export interface ListStageDocumentsResponse {
-  documents: StageDocumentDescriptorDto[];
-}
+export type ListStageDocumentsResponse = StageDocumentDescriptorDto[];
 
 // --- END: DTOs for listStageDocuments ---
 
@@ -481,7 +540,9 @@ export interface UpdateSessionModelsPayload {
   selectedModelIds: string[];
 }
 
-export type StartSessionSuccessResponse = DialecticSession;
+export type StartSessionSuccessResponse = DialecticSession & {
+  seedPrompt: AssembledPrompt;
+};
 
 export interface CallUnifiedAIModelOptions {
   walletId?: string;
@@ -530,12 +591,12 @@ export interface GenerateContributionsDeps {
     userAuthToken: string, 
     dependencies?: CallModelDependencies,
   ) => Promise<UnifiedAIResponse>;
-  downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>;
+  downloadFromStorage: DownloadFromStorageFn;
   getExtensionFromMimeType: typeof getExtensionFromMimeType;
   logger: ILogger;
   randomUUID: () => string;
   fileManager: IFileManager;
-  deleteFromStorage: (bucket: string, paths: string[]) => Promise<DeleteStorageResult>;
+  deleteFromStorage: DeleteFromStorageFn;
 }
 export interface GenerateContributionsPayload {
   sessionId: string;
@@ -548,8 +609,9 @@ export interface GenerateContributionsPayload {
   maxRetries?: number;
   continuation_count?: number;
   target_contribution_id?: string;
-  user_jwt?: string;
+  user_jwt: string;
   is_test_job?: boolean;
+  model_slug?: string;
 }
 
 /**
@@ -575,7 +637,7 @@ export interface SystemMaterials {
   current_document?: string; // This is the current document the agent is working on.
   iteration_metadata?: { iteration_number: number }; // This is the iteration number the agent is working on.
   exhaustiveness_requirement?: string; // This is the exhaustiveness requirement the agent will use to determine which documents to generate.
-  trd_outline_inputs?: { subsystems: string[] }; // This is the list of subsystems the agent will use to generate the documents.
+  technical_requirements_outline_inputs?: { subsystems: string[] }; // This is the list of subsystems the agent will use to generate the documents.
 }
 
 export enum BranchKey {
@@ -603,12 +665,12 @@ export enum BranchKey {
   synthesis_document_feature_spec = 'synthesis_document_feature_spec',
   synthesis_document_technical_approach = 'synthesis_document_technical_approach',
   synthesis_document_success_metrics = 'synthesis_document_success_metrics',
-  prd = 'prd',
-  system_architecture_overview = 'system_architecture_overview',
-  tech_stack_recommendations = 'tech_stack_recommendations',
+  product_requirements = 'product_requirements',
+  system_architecture = 'system_architecture',
+  tech_stack = 'tech_stack',
 
   // Parenthesis
-  trd = 'trd',
+  technical_requirements = 'technical_requirements',
   master_plan = 'master_plan',
   milestone_schema = 'milestone_schema',
 
@@ -618,11 +680,30 @@ export enum BranchKey {
   advisor_recommendations = 'advisor_recommendations',
 }
 
-export enum OutputType {
-  RenderedDocument = 'RenderedDocument',
-  HeaderContext = 'HeaderContext',
-  AssembledDocumentJson = 'AssembledDocumentJson',
-}
+// OutputType represents FileTypes that become RenderedDocument (user-facing rendered documents)
+// This is a subset of ModelContributionFileTypes that excludes backend-only and intermediate types
+// Backend-only types excluded: HeaderContext, AssembledDocumentJson, ModelContributionRawJson,
+// PairwiseSynthesisChunk, ReducedSynthesis, Synthesis, header_context_pairwise, SynthesisHeaderContext
+export type OutputType =
+  | FileType.business_case
+  | FileType.feature_spec
+  | FileType.technical_approach
+  | FileType.success_metrics
+  | FileType.business_case_critique
+  | FileType.technical_feasibility_assessment
+  | FileType.risk_register
+  | FileType.non_functional_requirements
+  | FileType.dependency_map
+  | FileType.comparison_vector
+  | FileType.product_requirements
+  | FileType.system_architecture
+  | FileType.tech_stack
+  | FileType.technical_requirements
+  | FileType.master_plan
+  | FileType.milestone_schema
+  | FileType.updated_master_plan
+  | FileType.actionable_checklist
+  | FileType.advisor_recommendations;
 
 /**
  * Tracks the progress of a multi-step job.
@@ -642,6 +723,7 @@ export interface DialecticStepPlannerMetadata {
  */
 export interface DialecticBaseJobPayload extends Omit<GenerateContributionsPayload, 'selectedModelIds' | 'chatId'> {
     model_id: string; // Individual model ID for this specific job
+    sourceContributionId?: string | null;
 }
 
 /**
@@ -655,7 +737,19 @@ export interface DialecticSimpleJobPayload extends DialecticBaseJobPayload {
  * The payload for a parent job that plans steps based on a recipe.
  */
 export interface DialecticPlanJobPayload extends DialecticBaseJobPayload {
-    job_type: JobType;
+    context_for_documents?: ContextForDocument[];
+}
+
+export interface DialecticSkeletonJobPayload extends DialecticPlanJobPayload {
+    projectId: string;
+    sessionId: string;
+    model_id: string;
+    walletId: string;
+    user_jwt: string;
+    stageSlug: DialecticStage['slug'];
+    iterationNumber: number;
+    planner_metadata: DialecticStepPlannerMetadata;
+    step_info: Json;
 }
 
 /**
@@ -670,13 +764,15 @@ export type RelationshipRole = ContributionType | 'source_group';
  */
 export type DocumentRelationships = {
   [key in RelationshipRole]?: string | null;
+} & {
+  isContinuation?: boolean;
+  turnIndex?: number;
 };
 
 /**
  * The payload for a child job that executes a single model call.
  */
 export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
-    job_type: 'execute';
     prompt_template_id: string;
     output_type: ModelContributionFileTypes; // The type of artifact this job will produce
     canonicalPathParams: CanonicalPathParams; // The new formal contract for path context
@@ -690,14 +786,71 @@ export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
     planner_metadata?: DialecticStepPlannerMetadata | null;
     document_relationships?: DocumentRelationships | null;
     isIntermediate?: boolean;
-    user_jwt?: string;
+    context_for_documents?: ContextForDocument[] | null;
+}
+
+export interface DialecticRenderJobPayload extends DialecticBaseJobPayload {
+    documentIdentity: string;
+    documentKey: FileType;
+    sourceContributionId: string;
+    template_filename: string; // canonical template filename extracted from recipe step's outputs_required.files_to_generate[] array
 }
 
 // Update the main union type
 export type DialecticJobPayload =
     | DialecticSimpleJobPayload // Assuming this exists for non-complex jobs
     | DialecticPlanJobPayload
+    | DialecticSkeletonJobPayload
     | DialecticExecuteJobPayload
+
+/**
+ * PathContext-inspired identity for required artifacts.
+ * Carries only what we reliably know at scheduling time (stable/idempotent).
+ * This is NOT the same as PathContext - PathContext includes fields like fileType/attemptCount
+ * for constructing concrete storage paths, while this is for artifact identification only.
+ */
+export interface RequiredArtifactIdentity {
+    projectId: string;
+    sessionId: string;
+    stageSlug: string;
+    iterationNumber: number;
+    model_id: string; 
+    documentKey: string; // FileType as string
+    branchKey?: string | null; // Optional for lineage disambiguation
+    parallelGroup?: number | null; // Optional for parallel branches
+    sourceGroupFragment?: string | null; // Optional for source group disambiguation
+}
+
+/**
+ * Dependencies for resolveNextBlocker function.
+ */
+export interface ResolveNextBlockerDeps {
+    dbClient: SupabaseClient<Database>;
+    logger: ILogger;
+    getRecipeStep?: (stepId: string) => Promise<DialecticRecipeStep | null>; // For PLAN job matching
+}
+
+/**
+ * Parameters for resolveNextBlocker function.
+ */
+export interface ResolveNextBlockerParams {
+    projectId: string;
+    sessionId: string;
+    stageSlug: string;
+    iterationNumber: number;
+    model_id: string;
+    requiredArtifactIdentity: RequiredArtifactIdentity;
+}
+
+/**
+ * Result from resolveNextBlocker function.
+ * Represents the job that will produce the required artifact.
+ */
+export interface ResolveNextBlockerResult {
+    id: string;
+    job_type: JobType;
+    status: string;
+}
 
 export interface PromptConstructionPayload {
   systemInstruction?: SystemInstruction;
@@ -705,6 +858,7 @@ export interface PromptConstructionPayload {
   resourceDocuments: SourceDocument[];
   currentUserPrompt: Prompt;
   source_prompt_resource_id?: string;
+  sourceContributionId?: string | null;
 }
 
 export interface GenerateContributionsSuccessResponse {
@@ -791,6 +945,24 @@ export interface DialecticProjectResource {
   metadata?: Record<string, unknown> | null; // For any other structured data
 }
 
+export interface EditedDocumentResource {
+  id: string;
+  resource_type: string | null;
+  project_id: string | null;
+  session_id: string | null;
+  stage_slug: string | null;
+  iteration_number: number | null;
+  document_key: FileType | null;
+  source_contribution_id: string | null;
+  storage_bucket: string;
+  storage_path: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // --- END: Added for Project Resource Upload (1.0.B) ---
 
 export interface DomainOverlayDescriptor {
@@ -829,6 +1001,7 @@ export interface GetProjectResourceContentResponse {
   fileName: string;
   mimeType: string;
   content: string;
+  sourceContributionId: string | null;
 }
 
 // Added for 1.2.Y.2
@@ -836,7 +1009,63 @@ export interface SaveContributionEditPayload {
   originalContributionIdToEdit: string;
   editedContentText: string;
   // session_id is implied by the originalContributionIdToEdit and will be fetched
+  documentKey: FileType;
+  resourceType: string;
 }
+
+export interface SaveContributionEditSessionJoinRow {
+  project_id: string | null;
+  dialectic_projects: { user_id: string | null } | null;
+  current_stage_id: string | null;
+}
+
+export type OriginalContributionQueryResult =
+  & Pick<
+    DialecticContributionRow,
+    | 'id'
+    | 'session_id'
+    | 'stage'
+    | 'iteration_number'
+    | 'edit_version'
+    | 'original_model_contribution_id'
+    | 'target_contribution_id'
+    | 'user_id'
+    | 'model_id'
+    | 'model_name'
+    | 'storage_path'
+    | 'file_name'
+  >
+  & {
+    dialectic_sessions: SaveContributionEditSessionJoinRow | null;
+  };
+
+export interface SaveContributionEditSuccessResponse {
+  resource: EditedDocumentResource;
+  sourceContributionId: string;
+}
+
+// Dialectic action (saveContributionEdit) contract types.
+// - Uses a single context object for DI (no duplicated deps in both signature and deps object).
+// - Consumes shared utility callable types from their utility type files.
+export interface SaveContributionEditContext {
+  dbClient: SupabaseClient<Database>;
+  user: User;
+  logger: ILogger;
+  fileManager: IFileManager;
+  pathDeconstructor: DeconstructStoragePathFn;
+}
+
+export interface SaveContributionEditResult {
+  data?: SaveContributionEditSuccessResponse;
+  error?: ServiceError;
+  status?: number;
+}
+
+export type SaveContributionEditFn = (
+  payload: SaveContributionEditPayload,
+  user: User,
+  deps: SaveContributionEditContext,
+) => Promise<SaveContributionEditResult>;
 
 // Updated DialecticFeedback to match the new file-based schema
 export interface DialecticFeedback {
@@ -960,6 +1189,7 @@ export interface GetContributionContentDataResponse {
 export interface GetSessionDetailsResponse {
   session: DialecticSession;
   currentStageDetails: DialecticStage | null;
+  activeSeedPrompt: AssembledPrompt | null;
 }
 
 export interface ProgressReporting {
@@ -1012,6 +1242,12 @@ export type SourceDocument = Omit<DialecticContributionRow, 'document_relationsh
   stage_slug?: string;
 };
 
+export type SelectAnchorResult = 
+  | { status: 'no_anchor_required' }
+  | { status: 'derive_from_header_context' }
+  | { status: 'anchor_found'; document: SourceDocument } 
+  | { status: 'anchor_not_found'; targetSlug: string; targetDocumentKey: string | undefined };
+
 export type SourceFeedback = Omit<DialecticFeedback, 'resource_description'> & { 
   content: string;
   document_relationships?: DocumentRelationships | null;
@@ -1020,7 +1256,7 @@ export type SourceFeedback = Omit<DialecticFeedback, 'resource_description'> & {
 
 export interface ExecuteModelCallAndSaveParams {
   dbClient: SupabaseClient<Database>;
-  deps: IDialecticJobDeps;
+  deps: IExecuteJobContext;
   authToken: string;
   job: DialecticJobRow;
   projectOwnerUserId: string;
@@ -1087,9 +1323,51 @@ export type GranularityPlannerFn = (
     parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
     recipeStep: DialecticRecipeStep,
     authToken: string,
-) => DialecticExecuteJobPayload[];
+) => (DialecticExecuteJobPayload | DialecticPlanJobPayload)[];
 
 export type GranularityStrategyMap = Map<string, GranularityPlannerFn>;
+
+/**
+ * Dependencies interface for planPerSourceDocumentByLineage function.
+ * Defines the dependency functions that must be injected for dependency injection support.
+ */
+export interface IPlanPerSourceDocumentByLineageDeps {
+    readonly deconstructStoragePath: (
+        params: { storageDir: string; fileName: string; dbOriginalFileName?: string }
+    ) => DeconstructedPathInfo;
+    
+    readonly selectAnchorSourceDocument: (
+        recipeStep: DialecticRecipeStep,
+        sourceDocs: SourceDocument[]
+    ) => SelectAnchorResult;
+    
+    readonly createCanonicalPathParams: (
+        sourceDocs: SourceDocument[],
+        outputType: FileType | ContributionType,
+        anchorDoc: SourceDocument | null,
+        stage: ContributionType
+    ) => CanonicalPathParams;
+}
+
+/**
+ * Parameters interface for planPerSourceDocumentByLineage function.
+ * Bundles all input parameters for the function.
+ */
+export interface PlanPerSourceDocumentByLineageParams {
+    readonly sourceDocs: SourceDocument[];
+    readonly parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
+    readonly recipeStep: DialecticRecipeStep;
+    readonly authToken: string;
+}
+
+/**
+ * Typed function signature for planPerSourceDocumentByLineage with dependency injection.
+ * Follows the project's DI pattern by accepting dependencies as the first parameter.
+ */
+export type IPlanPerSourceDocumentByLineageFn = (
+    deps: IPlanPerSourceDocumentByLineageDeps,
+    params: PlanPerSourceDocumentByLineageParams
+) => (DialecticExecuteJobPayload | DialecticPlanJobPayload)[];
 
 /**
  * Describes a single step within a multi-step job recipe, aligning with the
@@ -1102,11 +1380,11 @@ export type GranularityStrategyMap = Map<string, GranularityPlannerFn>;
  */
 export interface InputRule {
     /** The type of artifact to be used as an input. */
-    type: 'document' | 'feedback' | 'header_context' | 'seed_prompt' | 'project_resource';
+    type: 'document' | 'feedback' | 'header_context' | 'seed_prompt' | 'project_resource' | 'contribution';
     /** The slug of the stage from which to draw the artifact (e.g., 'thesis'). */
     slug: string;
-    /** The specific key of the document to use, or '*' to use all documents from the specified stage. */
-    document_key?: string | '*';
+    /** The specific key of the document to use. */
+    document_key?: FileType;
     /** Whether this input is mandatory for the step to proceed. */
     required?: boolean;
     /** Whether multiple artifacts of this type can be provided. */
@@ -1121,7 +1399,7 @@ export interface InputRule {
  */
 export interface RelevanceRule {
     /** The key of the document to which this relevance score applies. */
-    document_key: string;
+    document_key: FileType;
     /** The type of the document (e.g., 'document', 'feedback'). */
     type?: string;
     /** A normalized float from 0.0 to 1.0 indicating the priority of this artifact. */
@@ -1131,7 +1409,7 @@ export interface RelevanceRule {
 
 export interface HeaderContextArtifact {
     type: 'header_context';
-    document_key: 'header_context';
+    document_key: 'header_context' | 'header_context_pairwise' | 'synthesis_header_context';
     artifact_class: 'header_context';
     file_type: 'json';
 }
@@ -1150,9 +1428,56 @@ export interface ReviewMetadata {
   };
 }
 
+/**
+ * Defines the structure for content_to_include in context_for_documents and documents.
+ * 
+ * All observed structures are objects (Record<string, ...>) where values can be:
+ * - string (empty string "" for placeholders, or filled strings)
+ * - string[] (array of strings)
+ * - boolean (for flags)
+ * - number (for scores, counts)
+ * - ContentToInclude (nested object - recursive)
+ * - ContentToInclude[] (array of nested objects for repeated sections)
+ * 
+ * Based on complete analysis of all recipe migrations:
+ * - All PLAN and EXECUTE steps use object structures (not arrays at top level)
+ * - Exception: Antithesis non_functional_requirements uses array of strings - needs migration fix
+ * 
+ * Examples from recipes:
+ * - Simple: {"field1": "", "field2": ""}
+ * - With arrays: {"field1": "", "field2": []}
+ * - With nested: {"dimensions": {"feasibility": {"score": 0, "rationale": ""}}}
+ * - With arrays of objects: {"features": [{"name": "", "stories": []}]}
+ * - With mixed: {"string_field": "", "array_field": [], "nested": {...}, "objects": [{...}]}
+ */
+export type ContentToInclude = {
+  [key: string]: 
+    | string                    // Empty string "" for placeholders, or filled strings
+    | string[]                  // Array of strings
+    | boolean                   // Boolean flags
+    | number                    // Numbers (scores, counts, etc.)
+    | ContentToInclude          // Nested object (recursive)
+    | ContentToInclude[];       // Array of nested objects (for repeated sections)
+};
+
 export interface ContextForDocument {
     document_key: FileType;
-    content_to_include: Record<string, unknown> | Record<string, unknown>[];
+    content_to_include: ContentToInclude;
+}
+
+/**
+ * Defines the structure for the header_context artifact generated by PLAN jobs.
+ * This object provides cross-document alignment details for all EXECUTE jobs in a step group.
+ * 
+ * Note: files_to_generate is NOT in header_context - it's defined in the EXECUTE recipe step's outputs_required.
+ * The context_for_documents array is filled by the PLAN job agent with alignment details.
+ * Note: review_metadata is stage-specific (only Antithesis) and is not part of the base HeaderContext interface - 
+ * it should be handled separately in stage-specific logic if needed.
+ */
+export interface HeaderContext {
+    system_materials: SystemMaterials;
+    header_context_artifact: HeaderContextArtifact;
+    context_for_documents: ContextForDocument[];
 }
 
 export interface RenderedDocumentArtifact {

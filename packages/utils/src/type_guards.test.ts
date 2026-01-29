@@ -10,6 +10,7 @@ import {
     isUserConsentRequired,
     isUserConsentRefused,
     isOrgWalletUnavailableByPolicy,
+    isAssembledPrompt,
 } from './type_guards';
 
 describe('isUserRole', () => {
@@ -143,6 +144,7 @@ describe('isDialecticLifecycleEventType', () => {
         expect(isDialecticLifecycleEventType('planner_started')).toBe(true);
         expect(isDialecticLifecycleEventType('document_started')).toBe(true);
         expect(isDialecticLifecycleEventType('document_chunk_completed')).toBe(true);
+        expect(isDialecticLifecycleEventType('document_completed')).toBe(true);
         expect(isDialecticLifecycleEventType('render_completed')).toBe(true);
         expect(isDialecticLifecycleEventType('job_failed')).toBe(true);
     });
@@ -150,7 +152,6 @@ describe('isDialecticLifecycleEventType', () => {
     it('should return false for invalid event types', () => {
         expect(isDialecticLifecycleEventType('some_other_event')).toBe(false);
         expect(isDialecticLifecycleEventType('WALLET_TRANSACTION')).toBe(false);
-        expect(isDialecticLifecycleEventType('document_completed')).toBe(false);
         expect(isDialecticLifecycleEventType('planner_finished')).toBe(false);
         expect(isDialecticLifecycleEventType('')).toBe(false);
     });
@@ -210,5 +211,44 @@ describe('isApiError', () => {
     it('should return false for non-object inputs', () => {
         expect(isApiError(null)).toBe(false);
         expect(isApiError([])).toBe(false);
+    });
+});
+
+describe('isAssembledPrompt', () => {
+    const validPrompt = {
+        promptContent: 'This is the content.',
+        source_prompt_resource_id: 'resource-123',
+    };
+
+    it('should return true for a valid AssembledPrompt object', () => {
+        expect(isAssembledPrompt(validPrompt)).toBe(true);
+    });
+
+    it('should return false if promptContent is missing', () => {
+        const invalid = { source_prompt_resource_id: 'resource-123' };
+        expect(isAssembledPrompt(invalid)).toBe(false);
+    });
+
+    it('should return false if source_prompt_resource_id is missing', () => {
+        const invalid = { promptContent: 'This is the content.' };
+        expect(isAssembledPrompt(invalid)).toBe(false);
+    });
+
+    it('should return false if promptContent is not a string', () => {
+        const invalid = { ...validPrompt, promptContent: 123 };
+        expect(isAssembledPrompt(invalid)).toBe(false);
+    });
+
+    it('should return false if source_prompt_resource_id is not a string', () => {
+        const invalid = { ...validPrompt, source_prompt_resource_id: null };
+        expect(isAssembledPrompt(invalid)).toBe(false);
+    });
+
+    it('should return false for non-object inputs', () => {
+        expect(isAssembledPrompt(null)).toBe(false);
+        expect(isAssembledPrompt('a string')).toBe(false);
+        expect(isAssembledPrompt(123)).toBe(false);
+        expect(isAssembledPrompt(undefined)).toBe(false);
+        expect(isAssembledPrompt([])).toBe(false);
     });
 });

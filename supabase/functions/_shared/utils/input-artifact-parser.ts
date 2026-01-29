@@ -1,6 +1,6 @@
 import type { InputRule } from '../../dialectic-service/dialectic.interface.ts';
 
-const validRuleTypes = new Set(['document', 'feedback', 'header_context', 'seed_prompt']);
+const validRuleTypes = new Set(['document', 'feedback', 'header_context', 'seed_prompt', 'project_resource', 'contribution']);
 
 export function parseInputArtifactRules(rules: InputRule[]): InputRule[] {
     if (!Array.isArray(rules)) {

@@ -11,7 +11,7 @@ import {
     DialecticJobRow, 
     GranularityPlannerFn, 
     DialecticPlanJobPayload, 
-    IDialecticJobDeps, 
+    DialecticExecuteJobPayload,
     UnifiedAIResponse, 
     DialecticRecipeTemplateStep,
     DialecticStageRecipeEdge,
@@ -27,7 +27,11 @@ import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts
 import { describe, it, beforeEach } from 'https://deno.land/std@0.170.0/testing/bdd.ts';
 import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
+import { isModelContributionFileType } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
 import { DialecticStageRecipeStep, IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
+import { IPlanJobContext } from './JobContext.interface.ts';
+import { createPlanJobContext, createJobContext } from './createJobContext.ts';
+import { createMockJobContextParams } from './JobContext.mock.ts';
 
 const mockClonedRecipeSteps: DialecticStageRecipeStep[] = [
     {
@@ -44,7 +48,7 @@ const mockClonedRecipeSteps: DialecticStageRecipeStep[] = [
         granularity_strategy: 'per_source_document',
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
         config_override: { "model": "super-gpt-5" },
         object_filter: {},
         output_overrides: {},
@@ -70,7 +74,7 @@ const mockClonedRecipeSteps: DialecticStageRecipeStep[] = [
         granularity_strategy: 'per_source_document',
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
         config_override: {},
         object_filter: {},
         output_overrides: {},
@@ -108,7 +112,7 @@ const mockParallelTemplateRecipeSteps: DialecticRecipeTemplateStep[] = [
         granularity_strategy: 'per_source_document',
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
         parallel_group: null,
         branch_key: null,
         step_description: 'The first sequential step',
@@ -129,7 +133,7 @@ const mockParallelTemplateRecipeSteps: DialecticRecipeTemplateStep[] = [
         granularity_strategy: 'per_source_document',
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
         parallel_group: 1,
         branch_key: BranchKey.business_case,
         step_description: 'The first parallel step',
@@ -150,7 +154,7 @@ const mockParallelTemplateRecipeSteps: DialecticRecipeTemplateStep[] = [
         granularity_strategy: 'per_source_document',
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
         parallel_group: 1,
         branch_key: BranchKey.feature_spec,
         step_description: 'The second parallel step',
@@ -171,7 +175,7 @@ const mockParallelTemplateRecipeSteps: DialecticRecipeTemplateStep[] = [
         granularity_strategy: 'per_source_document',
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
         parallel_group: null,
         branch_key: null,
         step_description: 'The final join step',
@@ -250,7 +254,7 @@ const mockInstanceRow_Cloned = {
 
 describe('processComplexJob with Cloned Recipe Instance', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
-    let mockDeps: IDialecticJobDeps;
+    let planCtx: IPlanJobContext;
     let mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
     let mockJobProcessors: IJobProcessors;
     let mockProcessorSpies: MockJobProcessorsSpies;
@@ -287,12 +291,12 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
         mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
 
         const mockPayload: DialecticPlanJobPayload = {
-            job_type: 'PLAN',
             sessionId: 'session-id-cloned',
             projectId: 'project-id-cloned',
             stageSlug: 'antithesis',
             model_id: 'model-id-cloned',
             walletId: 'wallet-id-cloned',
+            user_jwt: 'user-jwt-cloned',
         };
         if (!isJson(mockPayload)) {
             throw new Error('Test setup failed: mockPayload is not valid JSON');
@@ -320,52 +324,17 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             job_type: 'PLAN',
         };
 
-        const mockUnifiedAIResponse: UnifiedAIResponse = { content: 'mock', finish_reason: 'stop' };
-        mockDeps = {
-            logger,
+        const mockParams = {
+            ...createMockJobContextParams(),
             planComplexStage: mockProcessorSpies.planComplexStage,
-            downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({
-                data: await new Blob(['Mock content']).arrayBuffer(),
-                error: null
-            })),
-            getGranularityPlanner: spy((_strategyId: string): GranularityPlannerFn | undefined => undefined),
-            ragService: new MockRagService(),
-            fileManager: new MockFileManagerService(),
-            countTokens: spy(() => 0),
-            getAiProviderConfig: spy(async () => Promise.resolve({
-                api_identifier: 'mock-api',
-                input_token_cost_rate: 0,
-                output_token_cost_rate: 0,
-                provider_max_input_tokens: 8192,
-                tokenization_strategy: {
-                    type: 'tiktoken',
-                    tiktoken_encoding_name: 'cl100k_base',
-                    tiktoken_model_name_for_rules_fallback: 'gpt-4o',
-                    is_chatml_model: false,
-                    api_identifier_for_tokenization: 'mock-api'
-                },
-            })),
-            callUnifiedAIModel: spy(async () => mockUnifiedAIResponse),
-            getSeedPromptForStage: spy(async () => ({
-                content: 'mock',
-                fullPath: 'mock',
-                bucket: 'mock',
-                path: 'mock',
-                fileName: 'mock'
-            })),
-            continueJob: spy(async () => ({ enqueued: true })),
-            retryJob: spy(async () => ({})),
             notificationService: mockNotificationService,
-            executeModelCallAndSave: spy(async () => {}),
-            getExtensionFromMimeType: spy(() => '.txt'),
-            randomUUID: spy(() => 'mock-uuid'),
-            deleteFromStorage: spy(async () => ({ data: [], error: null })),
-            documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
         };
+        const rootCtx = createJobContext(mockParams);
+        planCtx = createPlanJobContext(rootCtx);
     });
 
     it('should fetch the CLONED recipe and plan the first step', async () => {
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
         
         const firstClonedStep = mockClonedRecipeSteps[0];
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1);
@@ -376,9 +345,36 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
         
         const firstClonedStep = mockClonedRecipeSteps[0];
+        if (!isModelContributionFileType(firstClonedStep.output_type)) {
+            throw new Error(`Test setup failed: firstClonedStep.output_type '${firstClonedStep.output_type}' is not a valid ModelContributionFileTypes`);
+        }
+        const completedChildJobForStep1Payload: DialecticExecuteJobPayload = {
+            prompt_template_id: firstClonedStep.prompt_template_id!,
+            inputs: {},
+            output_type: firstClonedStep.output_type,
+            projectId: 'project-id-cloned',
+            sessionId: 'session-id-cloned',
+            stageSlug: 'antithesis',
+            model_id: 'model-id-cloned',
+            iterationNumber: 1,
+            continueUntilComplete: false,
+            walletId: 'wallet-id-cloned',
+            user_jwt: 'user-jwt-cloned',
+            canonicalPathParams: {
+                contributionType: 'thesis',
+                stageSlug: 'antithesis',
+            },
+            planner_metadata: {
+                recipe_step_id: firstClonedStep.id,
+                recipe_template_id: undefined,
+            },
+        };
+        if (!isJson(completedChildJobForStep1Payload)) {
+            throw new Error('Test setup failed: completedChildJobForStep1Payload is not valid JSON');
+        }
         const completedChildJobForStep1: DialecticJobRow = {
             id: 'child-step-1-cloned-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-            payload: { step_slug: firstClonedStep.step_slug },
+            payload: completedChildJobForStep1Payload,
             iteration_number: 1, status: 'completed',
             attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
             completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: wakingJob.id,
@@ -407,7 +403,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             }
         });
         
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1);
         const secondClonedStep = mockClonedRecipeSteps[1];
@@ -415,16 +411,45 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
     });
 
     it('should complete the parent job after the final step of a CLONED recipe', async () => {
-        const completedChildJobsForAllSteps = mockClonedRecipeSteps.map((step) => ({
-            id: `child-${step.id}-complete`, user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-            payload: { step_slug: step.step_slug },
-            iteration_number: 1, status: 'completed',
-            attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
-            completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
-            target_contribution_id: null, prerequisite_job_id: null,
-            is_test_job: false,
-            job_type: 'EXECUTE',
-        }));
+        const completedChildJobsForAllSteps = mockClonedRecipeSteps.map((step) => {
+            if (!isModelContributionFileType(step.output_type)) {
+                throw new Error(`Test setup failed: step.output_type '${step.output_type}' is not a valid ModelContributionFileTypes`);
+            }
+            const completedPayload: DialecticExecuteJobPayload = {
+                prompt_template_id: step.prompt_template_id!,
+                inputs: {},
+                output_type: step.output_type,
+                projectId: 'project-id-cloned',
+                sessionId: 'session-id-cloned',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-cloned',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-cloned',
+                user_jwt: 'user-jwt-cloned',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: step.id,
+                    recipe_template_id: undefined,
+                },
+            };
+            if (!isJson(completedPayload)) {
+                throw new Error(`Test setup failed: completedPayload for step ${step.id} is not valid JSON`);
+            }
+            return {
+                id: `child-${step.id}-complete`, user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
+                payload: completedPayload,
+                iteration_number: 1, status: 'completed',
+                attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
+                completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
+                target_contribution_id: null, prerequisite_job_id: null,
+                is_test_job: false,
+                job_type: 'EXECUTE',
+            };
+        });
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
             ...mockSupabase,
@@ -445,7 +470,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             }
         });
 
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
 
         const updateSpy = customSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
         assertExists(updateSpy);
@@ -473,7 +498,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
         });
     
         // Act
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
         
         // Assert: The step passed to the planner contains the override.
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1, "Planner was not called");
@@ -498,7 +523,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             granularity_strategy: 'per_source_document',
             inputs_required: [],
             inputs_relevance: [],
-            outputs_required: [],
+            outputs_required: {},
             config_override: {},
             object_filter: {},
             output_overrides: {},
@@ -535,9 +560,36 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
     
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
         
+        if (!isModelContributionFileType(step1.output_type)) {
+            throw new Error(`Test setup failed: step1.output_type '${step1.output_type}' is not a valid ModelContributionFileTypes`);
+        }
+        const completedChildJobForStep1Payload: DialecticExecuteJobPayload = {
+            prompt_template_id: step1.prompt_template_id!,
+            inputs: {},
+            output_type: step1.output_type,
+            projectId: 'project-id-cloned',
+            sessionId: 'session-id-cloned',
+            stageSlug: 'antithesis',
+            model_id: 'model-id-cloned',
+            iterationNumber: 1,
+            continueUntilComplete: false,
+            walletId: 'wallet-id-cloned',
+            user_jwt: 'user-jwt-cloned',
+            canonicalPathParams: {
+                contributionType: 'thesis',
+                stageSlug: 'antithesis',
+            },
+            planner_metadata: {
+                recipe_step_id: step1.id,
+                recipe_template_id: undefined,
+            },
+        };
+        if (!isJson(completedChildJobForStep1Payload)) {
+            throw new Error('Test setup failed: completedChildJobForStep1Payload is not valid JSON');
+        }
         const completedChildJobForStep1: DialecticJobRow = {
             id: 'child-step-1-cloned-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-            payload: { step_slug: step1.step_slug },
+            payload: completedChildJobForStep1Payload,
             iteration_number: 1, status: 'completed',
             attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
             completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: wakingJob.id,
@@ -566,7 +618,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
         });
         
         // Act
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
     
         // Assert: The orchestrator should have skipped step 2 and planned step 3.
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1);
@@ -576,7 +628,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
 
 describe('processComplexJob with Parallel Recipe Graph', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
-    let mockDeps: IDialecticJobDeps;
+    let planCtx: IPlanJobContext;
     let mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
     let mockJobProcessors: IJobProcessors;
     let mockProcessorSpies: MockJobProcessorsSpies;
@@ -612,12 +664,12 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
         mockFileManager = new MockFileManagerService();
 
         const mockPayload: DialecticPlanJobPayload = {
-            job_type: 'PLAN',
             sessionId: 'session-id-parallel',
             projectId: 'project-id-parallel',
             stageSlug: 'antithesis',
             model_id: 'model-id-parallel',
             walletId: 'wallet-id-parallel',
+            user_jwt: 'user-jwt-parallel',
         };
         if (!isJson(mockPayload)) {
             throw new Error('Test setup failed: mockPayload is not valid JSON');
@@ -645,55 +697,49 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             job_type: 'PLAN',
         };
 
-        const mockUnifiedAIResponse: UnifiedAIResponse = { content: 'mock', finish_reason: 'stop' };
-        mockDeps = {
-            logger,
+        const mockParams = {
+            ...createMockJobContextParams(),
             planComplexStage: mockProcessorSpies.planComplexStage,
-            downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({
-                data: await new Blob(['Mock content']).arrayBuffer(),
-                error: null
-            })),
-            getGranularityPlanner: spy((_strategyId: string): GranularityPlannerFn | undefined => undefined),
-            ragService: new MockRagService(),
-            fileManager: mockFileManager,
-            countTokens: spy(() => 0),
-            getAiProviderConfig: spy(async () => Promise.resolve({
-                api_identifier: 'mock-api',
-                input_token_cost_rate: 0,
-                output_token_cost_rate: 0,
-                provider_max_input_tokens: 8192,
-                tokenization_strategy: {
-                    type: 'tiktoken',
-                    tiktoken_encoding_name: 'cl100k_base',
-                    tiktoken_model_name_for_rules_fallback: 'gpt-4o',
-                    is_chatml_model: false,
-                    api_identifier_for_tokenization: 'mock-api'
-                },
-            })),
-            callUnifiedAIModel: spy(async () => mockUnifiedAIResponse),
-            getSeedPromptForStage: spy(async () => ({
-                content: 'mock',
-                fullPath: 'mock',
-                bucket: 'mock',
-                path: 'mock',
-                fileName: 'mock'
-            })),
-            continueJob: spy(async () => ({ enqueued: true })),
-            retryJob: spy(async () => ({})),
             notificationService: mockNotificationService,
-            executeModelCallAndSave: spy(async () => {}),
-            getExtensionFromMimeType: spy(() => '.txt'),
-            randomUUID: spy(() => 'mock-uuid'),
-            deleteFromStorage: spy(async () => ({ data: [], error: null })),
-            documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
+            fileManager: mockFileManager,
         };
+        const rootCtx = createJobContext(mockParams);
+        planCtx = createPlanJobContext(rootCtx);
     });
 
     it('should enqueue all parallel steps when their single dependency is met (fork)', async () => {
         // Arrange: Step 1 is complete.
+        const step1 = mockParallelTemplateRecipeSteps.find(s => s.step_slug === 'step-one')!;
+        if (!isModelContributionFileType(step1.output_type)) {
+            throw new Error(`Test setup failed: step1.output_type '${step1.output_type}' is not a valid ModelContributionFileTypes`);
+        }
+        const completedChildJobForStep1Payload: DialecticExecuteJobPayload = {
+            prompt_template_id: step1.prompt_template_id!,
+            inputs: {},
+            output_type: step1.output_type,
+            projectId: 'project-id-parallel',
+            sessionId: 'session-id-parallel',
+            stageSlug: 'antithesis',
+            model_id: 'model-id-parallel',
+            iterationNumber: 1,
+            continueUntilComplete: false,
+            walletId: 'wallet-id-parallel',
+            user_jwt: 'user-jwt-parallel',
+            canonicalPathParams: {
+                contributionType: 'thesis',
+                stageSlug: 'antithesis',
+            },
+            planner_metadata: {
+                recipe_step_id: step1.id,
+                recipe_template_id: 'parallel-template-1',
+            },
+        };
+        if (!isJson(completedChildJobForStep1Payload)) {
+            throw new Error('Test setup failed: completedChildJobForStep1Payload is not valid JSON');
+        }
         const completedChildJobForStep1: DialecticJobRow = {
             id: 'child-step-1-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-            payload: { step_slug: 'step-one' },
+            payload: completedChildJobForStep1Payload,
             iteration_number: 1, status: 'completed',
             attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
             completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -708,7 +754,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
 
         // Act
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert: planner called for both parallel successors (2a, 2b). Do not assert docs; only step identity.
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 2, "Expected planning for two parallel steps");
@@ -719,10 +765,46 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
 
     it('should NOT enqueue the join step when only one of two parallel dependencies is met', async () => {
         // Arrange: Step 2a is complete, but 2b is not.
+        const step1 = mockParallelTemplateRecipeSteps.find(s => s.step_slug === 'step-one')!;
+        const step2a = mockParallelTemplateRecipeSteps.find(s => s.step_slug === 'step-two-a')!;
+        
+        const createPayload = (step: DialecticRecipeTemplateStep): DialecticExecuteJobPayload => {
+            if (!isModelContributionFileType(step.output_type)) {
+                throw new Error(`Test setup failed: step.output_type '${step.output_type}' is not a valid ModelContributionFileTypes`);
+            }
+            return {
+                prompt_template_id: step.prompt_template_id!,
+                inputs: {},
+                output_type: step.output_type,
+                projectId: 'project-id-parallel',
+                sessionId: 'session-id-parallel',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-parallel',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-parallel',
+                user_jwt: 'user-jwt-parallel',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: step.id,
+                    recipe_template_id: 'parallel-template-1',
+                },
+            };
+        };
+
+        const payload1 = createPayload(step1);
+        const payload2a = createPayload(step2a);
+        if (!isJson(payload1) || !isJson(payload2a)) {
+            throw new Error('Test setup failed: payloads are not valid JSON');
+        }
+
         const completedChildJobs: DialecticJobRow[] = [
             {
                 id: 'child-step-1-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-one' },
+                payload: payload1,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -730,7 +812,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             },
             {
                 id: 'child-step-2a-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-two-a' },
+                payload: payload2a,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -745,7 +827,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
 
         // Act
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert: The remaining parallel step (2b) should be planned, but not the join (step-three).
         const calls = mockProcessorSpies.planComplexStage.calls;
@@ -757,10 +839,48 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
 
     it('should enqueue the join step when all parallel dependencies are met (join)', async () => {
         // Arrange: Both steps 2a and 2b are complete.
+        const step1 = mockParallelTemplateRecipeSteps.find(s => s.step_slug === 'step-one')!;
+        const step2a = mockParallelTemplateRecipeSteps.find(s => s.step_slug === 'step-two-a')!;
+        const step2b = mockParallelTemplateRecipeSteps.find(s => s.step_slug === 'step-two-b')!;
+        
+        const createPayload = (step: DialecticRecipeTemplateStep): DialecticExecuteJobPayload => {
+            if (!isModelContributionFileType(step.output_type)) {
+                throw new Error(`Test setup failed: step.output_type '${step.output_type}' is not a valid ModelContributionFileTypes`);
+            }
+            return {
+                prompt_template_id: step.prompt_template_id!,
+                inputs: {},
+                output_type: step.output_type,
+                projectId: 'project-id-parallel',
+                sessionId: 'session-id-parallel',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-parallel',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-parallel',
+                user_jwt: 'user-jwt-parallel',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: step.id,
+                    recipe_template_id: 'parallel-template-1',
+                },
+            };
+        };
+
+        const payload1 = createPayload(step1);
+        const payload2a = createPayload(step2a);
+        const payload2b = createPayload(step2b);
+        if (!isJson(payload1) || !isJson(payload2a) || !isJson(payload2b)) {
+            throw new Error('Test setup failed: payloads are not valid JSON');
+        }
+
         const completedChildJobs: DialecticJobRow[] = [
              {
                 id: 'child-step-1-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-one' },
+                payload: payload1,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -768,7 +888,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             },
             {
                 id: 'child-step-2a-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-two-a' },
+                payload: payload2a,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -776,7 +896,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             },
              {
                 id: 'child-step-2b-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-two-b' },
+                payload: payload2b,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -791,7 +911,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
 
         // Act
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         // Assert: Step 3 should be planned.
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1, "Expected planning for one join step");
@@ -813,7 +933,7 @@ const mockParallelClonedRecipeSteps: DialecticStageRecipeStep[] = [
         granularity_strategy: 'per_source_document',
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
         config_override: {},
         object_filter: {},
         output_overrides: {},
@@ -839,7 +959,7 @@ const mockParallelClonedRecipeSteps: DialecticStageRecipeStep[] = [
         granularity_strategy: 'per_source_document',
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
         config_override: {},
         object_filter: {},
         output_overrides: {},
@@ -865,7 +985,7 @@ const mockParallelClonedRecipeSteps: DialecticStageRecipeStep[] = [
         granularity_strategy: 'per_source_document',
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
         config_override: {},
         object_filter: {},
         output_overrides: {},
@@ -891,7 +1011,7 @@ const mockParallelClonedRecipeSteps: DialecticStageRecipeStep[] = [
         granularity_strategy: 'per_source_document',
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
         config_override: {},
         object_filter: {},
         output_overrides: {},
@@ -940,7 +1060,7 @@ const mockParallelClonedRecipeEdges: DialecticStageRecipeEdge[] = [
 
 describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
-    let mockDeps: IDialecticJobDeps;
+    let planCtx: IPlanJobContext;
     let mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
     let mockJobProcessors: IJobProcessors;
     let mockProcessorSpies: MockJobProcessorsSpies;
@@ -988,12 +1108,12 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
         mockFileManager = new MockFileManagerService();
 
         const mockPayload: DialecticPlanJobPayload = {
-            job_type: 'PLAN',
             sessionId: 'session-id-cloned-parallel',
             projectId: 'project-id-cloned-parallel',
             stageSlug: 'antithesis',
             model_id: 'model-id-cloned-parallel',
             walletId: 'wallet-id-cloned-parallel',
+            user_jwt: 'user-jwt-cloned-parallel',
         };
         if (!isJson(mockPayload)) {
             throw new Error('Test setup failed: mockPayload is not valid JSON');
@@ -1021,54 +1141,48 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             job_type: 'PLAN',
         };
 
-        const mockUnifiedAIResponse: UnifiedAIResponse = { content: 'mock', finish_reason: 'stop' };
-        mockDeps = {
-            logger,
+        const mockParams = {
+            ...createMockJobContextParams(),
             planComplexStage: mockProcessorSpies.planComplexStage,
-            downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({
-                data: await new Blob(['Mock content']).arrayBuffer(),
-                error: null
-            })),
-            getGranularityPlanner: spy((_strategyId: string): GranularityPlannerFn | undefined => undefined),
-            ragService: new MockRagService(),
-            fileManager: mockFileManager,
-            countTokens: spy(() => 0),
-            getAiProviderConfig: spy(async () => Promise.resolve({
-                api_identifier: 'mock-api',
-                input_token_cost_rate: 0,
-                output_token_cost_rate: 0,
-                provider_max_input_tokens: 8192,
-                tokenization_strategy: {
-                    type: 'tiktoken',
-                    tiktoken_encoding_name: 'cl100k_base',
-                    tiktoken_model_name_for_rules_fallback: 'gpt-4o',
-                    is_chatml_model: false,
-                    api_identifier_for_tokenization: 'mock-api'
-                },
-            })),
-            callUnifiedAIModel: spy(async () => mockUnifiedAIResponse),
-            getSeedPromptForStage: spy(async () => ({
-                content: 'mock',
-                fullPath: 'mock',
-                bucket: 'mock',
-                path: 'mock',
-                fileName: 'mock'
-            })),
-            continueJob: spy(async () => ({ enqueued: true })),
-            retryJob: spy(async () => ({})),
             notificationService: mockNotificationService,
-            executeModelCallAndSave: spy(async () => {}),
-            getExtensionFromMimeType: spy(() => '.txt'),
-            randomUUID: spy(() => 'mock-uuid'),
-            deleteFromStorage: spy(async () => ({ data: [], error: null })),
-            documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
+            fileManager: mockFileManager,
         };
+        const rootCtx = createJobContext(mockParams);
+        planCtx = createPlanJobContext(rootCtx);
     });
 
     it('should enqueue all parallel steps when their single dependency is met (fork)', async () => {
+        const step1 = mockParallelClonedRecipeSteps.find(s => s.step_slug === 'step-one')!;
+        if (!isModelContributionFileType(step1.output_type)) {
+            throw new Error(`Test setup failed: step1.output_type '${step1.output_type}' is not a valid ModelContributionFileTypes`);
+        }
+        const completedChildJobForStep1Payload: DialecticExecuteJobPayload = {
+            prompt_template_id: step1.prompt_template_id!,
+            inputs: {},
+            output_type: step1.output_type,
+            projectId: 'project-id-cloned-parallel',
+            sessionId: 'session-id-cloned-parallel',
+            stageSlug: 'antithesis',
+            model_id: 'model-id-cloned-parallel',
+            iterationNumber: 1,
+            continueUntilComplete: false,
+            walletId: 'wallet-id-cloned-parallel',
+            user_jwt: 'user-jwt-cloned-parallel',
+            canonicalPathParams: {
+                contributionType: 'thesis',
+                stageSlug: 'antithesis',
+            },
+            planner_metadata: {
+                recipe_step_id: step1.id,
+                recipe_template_id: undefined,
+            },
+        };
+        if (!isJson(completedChildJobForStep1Payload)) {
+            throw new Error('Test setup failed: completedChildJobForStep1Payload is not valid JSON');
+        }
         const completedChildJobForStep1: DialecticJobRow = {
             id: 'child-cloned-step-1-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-            payload: { step_slug: 'step-one' },
+            payload: completedChildJobForStep1Payload,
             iteration_number: 1, status: 'completed',
             attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
             completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -1081,7 +1195,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
         };
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
 
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 2, "Expected planning for two parallel steps");
         const plannedStepSlugs = mockProcessorSpies.planComplexStage.calls.map(call => call.args[3].step_slug);
@@ -1090,10 +1204,46 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
     });
 
     it('should NOT enqueue the join step when only one of two parallel dependencies is met', async () => {
+        const step1 = mockParallelClonedRecipeSteps.find(s => s.step_slug === 'step-one')!;
+        const step2a = mockParallelClonedRecipeSteps.find(s => s.step_slug === 'step-two-a')!;
+        
+        const createPayload = (step: DialecticStageRecipeStep): DialecticExecuteJobPayload => {
+            if (!isModelContributionFileType(step.output_type)) {
+                throw new Error(`Test setup failed: step.output_type '${step.output_type}' is not a valid ModelContributionFileTypes`);
+            }
+            return {
+                prompt_template_id: step.prompt_template_id!,
+                inputs: {},
+                output_type: step.output_type,
+                projectId: 'project-id-cloned-parallel',
+                sessionId: 'session-id-cloned-parallel',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-cloned-parallel',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-cloned-parallel',
+                user_jwt: 'user-jwt-cloned-parallel',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: step.id,
+                    recipe_template_id: undefined,
+                },
+            };
+        };
+
+        const payload1 = createPayload(step1);
+        const payload2a = createPayload(step2a);
+        if (!isJson(payload1) || !isJson(payload2a)) {
+            throw new Error('Test setup failed: payloads are not valid JSON');
+        }
+
         const completedChildJobs: DialecticJobRow[] = [
             {
                 id: 'child-cloned-step-1-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-one' },
+                payload: payload1,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -1101,7 +1251,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             },
             {
                 id: 'child-cloned-step-2a-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-two-a' },
+                payload: payload2a,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -1115,7 +1265,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
         };
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
 
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         const clonedCalls = mockProcessorSpies.planComplexStage.calls;
         assertEquals(clonedCalls.length, 1, "Expected planning only the remaining parallel step");
@@ -1125,10 +1275,53 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
     });
 
     it('should enqueue the join step when all parallel dependencies are met (join)', async () => {
+        const step1 = mockParallelClonedRecipeSteps.find(s => s.step_slug === 'step-one')!;
+        const step2a = mockParallelClonedRecipeSteps.find(s => s.step_slug === 'step-two-a')!;
+        const step2b = mockParallelClonedRecipeSteps.find(s => s.step_slug === 'step-two-b')!;
+        
+        const createPayload = (step: DialecticStageRecipeStep): DialecticExecuteJobPayload => {
+            if (!isModelContributionFileType(step.output_type)) {
+                throw new Error(`Test setup failed: step.output_type '${step.output_type}' is not a valid ModelContributionFileTypes`);
+            }
+
+        const payload: DialecticExecuteJobPayload = {
+            prompt_template_id: step.prompt_template_id!,
+            inputs: {},
+            output_type: step.output_type,
+            projectId: 'project-id-cloned-parallel',
+            sessionId: 'session-id-cloned-parallel',
+            stageSlug: 'antithesis',
+            model_id: 'model-id-cloned-parallel',
+            iterationNumber: 1,
+            continueUntilComplete: false,
+            walletId: 'wallet-id-cloned-parallel',
+            user_jwt: 'user-jwt-cloned-parallel',
+            canonicalPathParams: {
+                contributionType: 'thesis',
+                stageSlug: 'antithesis',
+            },
+            planner_metadata: {
+                recipe_step_id: step.id,
+                recipe_template_id: undefined,
+            },
+        };
+        if (!isJson(payload)) {
+            throw new Error('Test setup failed: payload is not valid JSON');
+        }
+        return payload;
+        };
+
+        const payload1 = createPayload(step1);
+        const payload2a = createPayload(step2a);
+        const payload2b = createPayload(step2b);
+        if (!isJson(payload1) || !isJson(payload2a) || !isJson(payload2b)) {
+            throw new Error('Test setup failed: payloads are not valid JSON');
+        }
+
         const completedChildJobs: DialecticJobRow[] = [
              {
                 id: 'child-cloned-step-1-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-one' },
+                payload: payload1,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -1136,7 +1329,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             },
             {
                 id: 'child-cloned-step-2a-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-two-a' },
+                payload: payload2a,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -1144,7 +1337,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             },
              {
                 id: 'child-cloned-step-2b-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
-                payload: { step_slug: 'step-two-b' },
+                payload: payload2b,
                 iteration_number: 1, status: 'completed',
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
@@ -1158,7 +1351,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
         };
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
 
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, wakingJob, wakingJob.user_id, planCtx, 'user-jwt-123');
 
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1, "Expected planning for one join step");
         assertEquals(mockProcessorSpies.planComplexStage.calls[0].args[3].step_slug, 'step-three');

@@ -10,6 +10,32 @@ function escapeRegExp(text: string): string {
 }
 
 /**
+ * Finds all code block ranges in the text.
+ * Returns an array of [start, end] tuples representing protected regions.
+ */
+function findCodeBlockRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  const codeBlockRegex = /```[\s\S]*?```/g;
+  let match;
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    ranges.push([match.index, match.index + match[0].length]);
+  }
+  return ranges;
+}
+
+/**
+ * Checks if a position is inside any of the protected code block ranges.
+ */
+function isInsideCodeBlock(position: number, ranges: Array<[number, number]>): boolean {
+  for (const [start, end] of ranges) {
+    if (position >= start && position < end) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Renders a prompt template by first merging overlay values and then substituting variables.
  *
  * Merge Logic:
@@ -51,7 +77,7 @@ export function renderPrompt(
 
   // 4. Handle conditional sections first
   let renderedText = basePromptText;
-  const sectionRegex = /{{\s*#section:(\w+)\s*}}([\s\S]*?){{\s*\/section:\1\s*}}/g;
+  const sectionRegex = /{{\s*#section:([\w&]+)\s*}}([\s\S]*?){{\s*\/section:\1\s*}}/g;
 
   renderedText = renderedText.replace(sectionRegex, (match, key, content) => {
     const value = mergedVariables[key];
@@ -63,7 +89,124 @@ export function renderPrompt(
     return '';
   });
 
+  // 4.5. Pre-cleanup: Identify and remove lines with unknown variables *before* substitution
+  // This prevents cleanup from accidentally deleting lines where a substituted value
+  // contains text that looks like a placeholder (e.g. {{template}} in a JSON object).
+  
+  // Find code block ranges to protect from placeholder processing
+  const codeBlockRanges = findCodeBlockRanges(renderedText);
+  
+  // We use new RegExp objects with 'g' flag for exec loops
+  // Capture content inside braces non-greedily
+  const doubleBraceScanRegex = /{{([\s\S]*?)}}/g;
+  // Use lookarounds to ensure we don't match double braces as single braces
+  // Also exclude {" which indicates JSON structure, not a placeholder
+  const singleBraceScanRegex = /(?<!{){(?!{)(?!")([\s\S]*?)(?<!})}(?!})/g;
+  
+  // We need to identify which placeholders in the text are NOT covered by mergedVariables.
+  // Since keys in mergedVariables can have whitespace and be matched by regexes in step 5,
+  // we must simulate that matching logic to determine if a placeholder is "known".
+
+  const knownKeys = Object.keys(mergedVariables);
+  
+  // Helper to check if a placeholder string matches any known key
+  const isKnownPlaceholder = (placeholderContent: string, isDouble: boolean): boolean => {
+    // Check exact match first (optimization)
+    if (Object.prototype.hasOwnProperty.call(mergedVariables, placeholderContent)) return true;
+    
+    // Check against all keys using the same regex logic as step 5
+    for (const key of knownKeys) {
+        const escapedKey = escapeRegExp(key);
+        // Step 5 regexes:
+        // Double: {{escapedKey}}
+        // Single: {\s*escapedKey\s*}
+        
+        if (isDouble) {
+            // For double braces, step 5 uses exact match of the key inside {{...}}
+            // So {{key}} matches key.
+            // If placeholderContent is "key", and we have key "key", it matches.
+            if (placeholderContent === key) return true;
+        } else {
+            // For single braces, step 5 allows whitespace around the key.
+            // Regex: /^\s*escapedKey\s*$/
+            const matcher = new RegExp(`^\\s*${escapedKey}\\s*$`);
+            if (matcher.test(placeholderContent)) return true;
+        }
+    }
+    return false;
+  };
+
+  const unknownDoublePlaceholders = new Set<string>();
+  const unknownSinglePlaceholders = new Set<string>();
+
+  let match;
+  // Scan for double braces, skip matches inside code blocks
+  while ((match = doubleBraceScanRegex.exec(renderedText)) !== null) {
+      if (isInsideCodeBlock(match.index, codeBlockRanges)) continue;
+      // match[1] is the content inside {{...}}
+      if (!isKnownPlaceholder(match[1], true)) {
+          unknownDoublePlaceholders.add(match[1]);
+      }
+  }
+  
+  // Scan for single braces, skip matches inside code blocks
+  while ((match = singleBraceScanRegex.exec(renderedText)) !== null) {
+      if (isInsideCodeBlock(match.index, codeBlockRanges)) continue;
+      // match[1] is the content inside {...}
+      if (!isKnownPlaceholder(match[1], false)) {
+          unknownSinglePlaceholders.add(match[1]);
+      }
+  }
+  
+  // Remove lines for unknown double braces, but skip lines inside code blocks
+  for (const tag of unknownDoublePlaceholders) {
+      const escapedTag = escapeRegExp(tag);
+      const dbLineRegex = new RegExp(`^.*{{${escapedTag}}}.*$\\n?`, "gm");
+      renderedText = renderedText.replace(dbLineRegex, (match, offset) => {
+          if (isInsideCodeBlock(offset, codeBlockRanges)) return match;
+          return '';
+      });
+  }
+
+  // Remove lines for unknown single braces, but skip lines inside code blocks
+  for (const tag of unknownSinglePlaceholders) {
+      const escapedTag = escapeRegExp(tag);
+      // We must match the tag exactly as it appeared in the text (including whitespace if any)
+      // The tag variable holds the exact captured content.
+      const sbLineRegex = new RegExp(`^.*{${escapedTag}}.*$\\n?`, "gm");
+      renderedText = renderedText.replace(sbLineRegex, (match, offset) => {
+          if (isInsideCodeBlock(offset, codeBlockRanges)) return match;
+          return '';
+      });
+  }
+
   // 5. Substitute remaining variables in the processed text
+  // First pass: handle double-brace placeholders {{key}}
+  for (const key in mergedVariables) {
+    if (Object.prototype.hasOwnProperty.call(mergedVariables, key)) {
+      const value = mergedVariables[key];
+      const escapedKey = escapeRegExp(key);
+      const placeholderRegex = new RegExp(`{{${escapedKey}}}`, 'g');
+
+      if (value === null || value === undefined || value === '') {
+        // Remove lines containing double-brace placeholders when value is empty
+        const lineRemovalRegex = new RegExp(`^.*{{${escapedKey}}}.*$\\n?`, "gm");
+        renderedText = renderedText.replace(lineRemovalRegex, '');
+      } else {
+        let stringValue;
+        if (Array.isArray(value) && value.every(item => typeof item === 'string')) {
+          stringValue = value.join(", ");
+        } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          stringValue = String(value);
+        } else {
+          stringValue = JSON.stringify(value);
+        }
+        renderedText = renderedText.replace(placeholderRegex, stringValue);
+      }
+    }
+  }
+
+  // Second pass: handle single-brace placeholders {key}
   for (const key in mergedVariables) {
     if (Object.prototype.hasOwnProperty.call(mergedVariables, key)) {
       const value = mergedVariables[key];
@@ -71,8 +214,8 @@ export function renderPrompt(
       const placeholderRegex = new RegExp(`{\\s*${escapedKey}\\s*}`, 'g');
 
       if (value === null || value === undefined || value === '') {
-        // This will now primarily handle single-line placeholders like list items
-        const lineRemovalRegex = new RegExp(`^.*${placeholderRegex.source}.*$\\n?`, "gm");
+        // Remove lines containing single-brace placeholders when value is empty
+        const lineRemovalRegex = new RegExp(`^.*{\\s*${escapedKey}\\s*}.*$\\n?`, "gm");
         renderedText = renderedText.replace(lineRemovalRegex, '');
       } else {
         let stringValue;
@@ -90,11 +233,6 @@ export function renderPrompt(
 
   // 6. Final cleanup of any leftover empty lines to avoid large gaps
   renderedText = renderedText.replace(/\n{3,}/g, '\n\n');
-
-  // 7. GREEN cleanup: remove any remaining lines that still contain single-brace placeholders like {key}
-  //    This ensures unknown variables that were not supplied by overlays or dynamic context
-  //    do not leak into the final prompt text sent to the model.
-  renderedText = renderedText.replace(/^.*\{[A-Za-z0-9_]+\}.*$\n?/gm, '');
 
   // Normalize trailing whitespace
   renderedText = renderedText.replace(/\n{3,}/g, '\n\n').trimEnd();

@@ -50,12 +50,22 @@ async function collectFiles(dir: string, prefix = ''): Promise<UploadItem[]> {
 async function main() {
   console.log(`Collecting prompt templates from ${PROMPTS_ROOT}`)
   const promptFiles = await collectFiles(PROMPTS_ROOT)
+  // Prepend 'docs/prompts/' to storage paths to match migration expectations
+  const promptFilesWithPrefix = promptFiles.map(file => ({
+    ...file,
+    storagePath: `docs/prompts/${file.storagePath}`
+  }))
 
   const templatesRoot = resolve(process.cwd(), '../../docs', 'templates')
   console.log(`Collecting document templates from ${templatesRoot}`)
-  const templateFiles = await collectFiles(templatesRoot, 'templates')
+  const templateFiles = await collectFiles(templatesRoot)
+  // Prepend 'docs/templates/' to storage paths to match migration expectations
+  const templateFilesWithPrefix = templateFiles.map(file => ({
+    ...file,
+    storagePath: `docs/templates/${file.storagePath}`
+  }))
 
-  const files = [...promptFiles, ...templateFiles]
+  const files = [...promptFilesWithPrefix, ...templateFilesWithPrefix]
 
   if (files.length === 0) {
     console.warn('No files found to upload.')

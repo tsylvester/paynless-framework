@@ -1,4 +1,4 @@
-import { assertThrows, assertEquals, assert } from "jsr:@std/assert@0.225.3";
+import { assertThrows, assertEquals } from "jsr:@std/assert@0.225.3";
 import {
   spy,
   stub,
@@ -17,6 +17,7 @@ import {
   type AssemblePlannerPromptDeps,
   type AssembleSeedPromptDeps,
   type AssembleTurnPromptDeps,
+  type AssembleTurnPromptParams,
   type AssembleContinuationPromptDeps,
   type ProjectContext,
   type SessionContext,
@@ -26,12 +27,17 @@ import {
   type RenderPromptFunctionType,
   type DynamicContextVariables,
 } from "./prompt-assembler.interface.ts";
-import { IFileManager, FileType } from "../types/file_manager.types.ts";
+import {
+  IFileManager,
+  FileType,
+  UploadContext,
+} from "../types/file_manager.types.ts";
+import type { ServiceError } from "../types.ts";
 import { FileManagerService } from "../services/file_manager.ts";
 import {
   DialecticJobRow,
-  DialecticRecipeStep,
   DialecticStageRecipeStep,
+  OutputRule,
 } from "../../dialectic-service/dialectic.interface.ts";
 
 
@@ -52,6 +58,7 @@ const mockAssemblePlannerPrompt = (
   });
 const mockAssembleTurnPrompt = (
   _deps: AssembleTurnPromptDeps,
+  _params: AssembleTurnPromptParams,
 ): Promise<AssembledPrompt> =>
   Promise.resolve({
     promptContent: "turn",
@@ -103,6 +110,15 @@ const mockSession: SessionContext = {
   user_input_reference_url: null,
 };
 
+const mockOutputRule: OutputRule = {
+  documents: [{
+    artifact_class: "rendered_document",
+    file_type: "markdown",
+    document_key: FileType.HeaderContext,
+    template_filename: "template.md",
+  }],
+};
+
 const mockRecipeStep: DialecticStageRecipeStep = {
   id: "recipe-step-id",
   created_at: new Date().toISOString(),
@@ -113,7 +129,7 @@ const mockRecipeStep: DialecticStageRecipeStep = {
   granularity_strategy: "all_to_one",
   inputs_required: [],
   inputs_relevance: [],
-  outputs_required: [],
+  outputs_required: mockOutputRule,
   prompt_template_id: "prompt-template-id",
   template_step_id: "template-step-id",
   branch_key: "main",
@@ -182,7 +198,7 @@ Deno.test("PromptAssembler", async (t) => {
     
     let fileManager: IFileManager | null = null;
     try {
-      fileManager = new FileManagerService(client, { constructStoragePath: () => ({ storagePath: '', fileName: '' }) });
+      fileManager = new FileManagerService(client, { constructStoragePath: () => ({ storagePath: '', fileName: '' }), logger: console });
     } catch (e) {
       // Allow setup to proceed without a file manager if the env var is not set, 
       // so that the constructor test can fail gracefully.
@@ -208,6 +224,7 @@ Deno.test("PromptAssembler", async (t) => {
           () =>
             new FileManagerService(client, {
               constructStoragePath: () => ({ storagePath: "", fileName: "" }),
+              logger: console,
             }),
           Error,
           "SB_CONTENT_STORAGE_BUCKET environment variable is not set.",
@@ -278,6 +295,7 @@ Deno.test("PromptAssembler", async (t) => {
         stage: mockStage,
         gatherContext: assembler["gatherContextFn"],
         render: mockRenderFn,
+        projectInitialUserPrompt: "init prompt",
       };
 
       await assembler.assemblePlannerPrompt(deps);
@@ -308,18 +326,23 @@ Deno.test("PromptAssembler", async (t) => {
       const deps: AssembleTurnPromptDeps = {
         dbClient: client,
         fileManager: fileManager!,
+        gatherContext: assembler["gatherContextFn"],
+        render: mockRenderFn,
+        downloadFromStorage: async (_supabase, _bucket, _path) => ({ data: null, error: null }),
+      };
+
+      const params: AssembleTurnPromptParams = {
         job: { ...mockJob, job_type: "EXECUTE" },
         project: mockProject,
         session: mockSession,
         stage: mockStage,
-        gatherContext: assembler["gatherContextFn"],
-        render: mockRenderFn,
       };
 
-      await assembler.assembleTurnPrompt(deps);
+      await assembler.assembleTurnPrompt(deps, params);
 
       assertSpyCalls(assembleTurnSpy, 1);
       assertEquals(assembleTurnSpy.calls[0].args[0], deps);
+      assertEquals(assembleTurnSpy.calls[0].args[1], params);
     } finally {
       teardown();
     }
@@ -457,35 +480,46 @@ Deno.test("PromptAssembler", async (t) => {
   );
 
   await t.step(
-    "assemble router should delegate to assembleTurnPrompt",
+    "assemble router should delegate to assemblePlannerPrompt when recipe step is PLAN even if payload is EXECUTE",
     async () => {
       try {
         const { client, fileManager } = setup({
           "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
         });
+        const assemblePlannerSpy = spy(mockAssemblePlannerPrompt);
+        const assembleTurnSpy = spy(mockAssembleTurnPrompt);
         const assembler = new PromptAssembler(
           client,
           fileManager!,
           undefined,
           undefined,
           undefined,
-          undefined,
-          mockAssembleTurnPrompt,
+          assemblePlannerSpy,
+          assembleTurnSpy,
         );
-        const turnSpy = spy(assembler, "assembleTurnPrompt");
 
         const options: AssemblePromptOptions = {
           project: mockProject,
           session: mockSession,
-          stage: mockStage,
+          stage: mockStage, // Has recipe_step.job_type === "PLAN" (line 125)
           projectInitialUserPrompt: "init prompt",
           iterationNumber: 1,
-          job: { ...mockJob, job_type: "EXECUTE" },
+          job: {
+            ...mockJob,
+            job_type: "EXECUTE",
+            payload: {
+              model_id: "model-1",
+              job_type: "EXECUTE", // EXECUTE payload (child job from planner)
+            },
+          },
         };
 
         await assembler.assemble(options);
 
-        assertSpyCalls(turnSpy, 1);
+        // Assert: Should route to assemblePlannerPrompt (recipe_step.job_type === "PLAN")
+        assertSpyCalls(assemblePlannerSpy, 1);
+        // Assert: Should NOT route to assembleTurnPrompt
+        assertSpyCalls(assembleTurnSpy, 0);
       } finally {
         teardown();
       }
@@ -524,6 +558,156 @@ Deno.test("PromptAssembler", async (t) => {
         await assembler.assemble(options);
 
         assertSpyCalls(continuationSpy, 1);
+      } finally {
+        teardown();
+      }
+    },
+  );
+
+  await t.step("assemble should pass sourceContributionId through to upload context", async () => {
+      const expectedSourceContributionId = "source-contribution-123";
+      const uploadContext: UploadContext = {
+        fileContent: "seed prompt",
+        mimeType: "text/plain",
+        sizeBytes: 10,
+        userId: null,
+        description: "seed prompt upload",
+        pathContext: {
+          projectId: mockProject.id,
+          fileType: FileType.SeedPrompt,
+          sourceContributionId: expectedSourceContributionId,
+        },
+      };
+
+      const { client, fileManager } = setup({
+        "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+      });
+
+      const uploadSpy = stub(
+        fileManager!,
+        "uploadAndRegisterFile",
+        async () => ({
+          record: null,
+          error: { message: "test stub" },
+        }),
+      );
+
+      try {
+        const assembleSeedPromptStub = spy(
+          async (deps: AssembleSeedPromptDeps): Promise<AssembledPrompt> => {
+            const assembledUploadContext: UploadContext = {
+              fileContent: "seed prompt",
+              mimeType: "text/plain",
+              sizeBytes: 10,
+              userId: null,
+              description: "seed prompt upload",
+              pathContext: {
+                projectId: deps.project.id,
+                fileType: FileType.SeedPrompt,
+                sourceContributionId: deps.sourceContributionId ?? null,
+              },
+            };
+            await deps.fileManager.uploadAndRegisterFile(
+              assembledUploadContext,
+            );
+            return mockAssembleSeedPrompt(deps);
+          },
+        );
+
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          assembleSeedPromptStub,
+        );
+
+        const options: AssemblePromptOptions = {
+          project: mockProject,
+          session: mockSession,
+          stage: mockStage,
+          projectInitialUserPrompt: "init prompt",
+          iterationNumber: 1,
+          sourceContributionId: expectedSourceContributionId,
+        };
+
+        await assembler.assemble(options);
+
+        assertSpyCalls(assembleSeedPromptStub, 1);
+        assertSpyCalls(uploadSpy, 1);
+        const actualUploadContext = uploadSpy.calls[0].args[0];
+        assertEquals(
+          actualUploadContext.pathContext.sourceContributionId,
+          uploadContext.pathContext.sourceContributionId,
+        );
+      } finally {
+        uploadSpy.restore();
+        teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "should pass projectInitialUserPrompt from options to assemblePlannerPrompt",
+    async () => {
+      try {
+        const { client, fileManager } = setup({
+          "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+        });
+        let capturedDeps: AssemblePlannerPromptDeps | undefined;
+        const assemblePlannerPromptFn = (
+          deps: AssemblePlannerPromptDeps,
+        ): Promise<AssembledPrompt> => {
+          capturedDeps = deps;
+          return Promise.resolve({
+            promptContent: "planner",
+            source_prompt_resource_id: "planner-id",
+          });
+        };
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          undefined,
+          assemblePlannerPromptFn,
+        );
+
+        const options: AssemblePromptOptions = {
+          project: mockProject,
+          session: mockSession,
+          stage: mockStage,
+          projectInitialUserPrompt: "resolved from storage",
+          iterationNumber: 1,
+          job: {
+            id: "job-id-planner",
+            created_at: new Date().toISOString(),
+            session_id: "session-id",
+            user_id: "user-id",
+            status: "pending",
+            parent_job_id: null,
+            error_details: null,
+            completed_at: null,
+            attempt_count: 0,
+            iteration_number: 1,
+            is_test_job: false,
+            stage_slug: "test-stage",
+            target_contribution_id: null,
+            max_retries: 3,
+            prerequisite_job_id: null,
+            results: null,
+            started_at: null,
+            job_type: "PLAN",
+            payload: {
+              job_type: "PLAN",
+              header_context_resource_id: "mock-header-id",
+            },
+          },
+        };
+
+        await assembler.assemble(options);
+
+        assertEquals(capturedDeps?.projectInitialUserPrompt, "resolved from storage");
       } finally {
         teardown();
       }

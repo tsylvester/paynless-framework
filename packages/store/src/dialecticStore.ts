@@ -15,6 +15,7 @@ import {
   type SubmitStageResponsesPayload,
   type SubmitStageResponsesResponse,
   type SaveContributionEditPayload,
+  type SaveContributionEditSuccessResponse,
   type DialecticContribution,
   type DialecticDomain,
   type UpdateSessionModelsPayload,
@@ -35,6 +36,7 @@ import {
   type PlannerStartedPayload,
   type DocumentStartedPayload,
   type DocumentChunkCompletedPayload,
+	type DocumentCompletedPayload,
 	type RenderCompletedPayload,
 	type JobFailedPayload,
 	type SetFocusedStageDocumentPayload,
@@ -45,17 +47,20 @@ import {
   StageDocumentContentState,
   type SubmitStageDocumentFeedbackPayload,
   type ListStageDocumentsPayload,
+  StartSessionSuccessResponse,
+  type EditedDocumentResource,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { useWalletStore } from './walletStore';
 import { useAiStore } from './aiStore';
 import { selectActiveChatWalletInfo } from './walletStore.selectors';
-import { logger } from '@paynless/utils';
+import { isAssembledPrompt, logger } from '@paynless/utils';
 import {
 	ensureStageDocumentContentLogic,
 	flushStageDocumentDraftLogic,
 	reapplyDraftToNewBaselineLogic,
 	recordStageDocumentDraftLogic,
+	recordStageDocumentFeedbackDraftLogic,
 	upsertStageDocumentVersionLogic,
 	beginStageDocumentEditLogic,
 	updateStageDocumentDraftLogic,
@@ -65,12 +70,14 @@ import {
 	handlePlannerStartedLogic,
 	handleDocumentStartedLogic,
 	handleDocumentChunkCompletedLogic,
+	handleDocumentCompletedLogic,
 	handleRenderCompletedLogic,
 	handleJobFailedLogic,
 	fetchStageDocumentFeedbackLogic,
 	submitStageDocumentFeedbackLogic,
 	selectStageDocumentFeedbackLogic,
 	hydrateStageProgressLogic,
+	createVersionInfo,
 } from './dialecticStore.documents';
 
 type FocusedDocumentKeyParams = Pick<SetFocusedStageDocumentPayload, 'sessionId' | 'stageSlug' | 'modelId'>;
@@ -151,6 +158,8 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	activeContextStage: null,
 	activeStageSlug: null,
 
+	activeSeedPrompt: null,
+
 	// New initial states for single session fetching
 	activeSessionDetail: null,
 	isLoadingActiveSessionDetail: false,
@@ -174,6 +183,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	stageRunProgress: {},
 	focusedStageDocument: {},
 	stageDocumentContent: {},
+	stageDocumentResources: {},
 	stageDocumentVersions: {},
 	stageDocumentFeedback: {},
 	isLoadingStageDocumentFeedback: false,
@@ -231,8 +241,9 @@ export const useDialecticStore = create<DialecticStore>()(
 			key: StageDocumentCompositeKey,
 			newBaseline: string,
 			newVersion: StageDocumentVersionInfo,
+			sourceContributionId?: string | null,
 		) => {
-			reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion);
+			reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion, sourceContributionId);
 		};
 
     return {
@@ -654,7 +665,7 @@ export const useDialecticStore = create<DialecticStore>()(
 
 	startDialecticSession: async (
 		payload: StartSessionPayload,
-	): Promise<ApiResponse<DialecticSession>> => {
+	): Promise<ApiResponse<StartSessionSuccessResponse>> => {
 		set({ isStartingSession: true, startSessionError: null });
 		logger.info("[DialecticStore] Starting dialectic session...", {
 			sessionPayload: payload,
@@ -667,26 +678,55 @@ export const useDialecticStore = create<DialecticStore>()(
 				});
 				set({ isStartingSession: false, startSessionError: response.error });
 				return { error: response.error, status: response.status };
-			} else {
-				logger.info("[DialecticStore] Successfully started session:", {
-					sessionDetails: response.data,
-				});
-				set({ isStartingSession: false, startSessionError: null });
+			}
 
-				// If session start is successful, refetch project details to get updated session list
-				// or refetch the entire project list if project_id is not in the session response
-				if (response.data?.project_id) {
+			// The API response is `StartSessionSuccessResponse` which is a `DialecticSession` with an added `seedPrompt`.
+			// The `isAssembledPrompt` guard confirms the shape of the nested `seedPrompt` object.
+			if (
+				response.data &&
+				"seedPrompt" in response.data &&
+				isAssembledPrompt(response.data.seedPrompt)
+			) {
+				// Construct a new, correctly typed object to satisfy the linter.
+				const successData: StartSessionSuccessResponse = {
+					...response.data,
+					seedPrompt: response.data.seedPrompt,
+				};
+
+				logger.info("[DialecticStore] Successfully started session:", {
+					sessionDetails: successData,
+				});
+				set({
+					isStartingSession: false,
+					startSessionError: null,
+					activeSeedPrompt: successData.seedPrompt,
+				});
+
+				// Refetch project details to get updated session list.
+				if (successData.project_id) {
 					logger.info(
-						`[DialecticStore] Session started for project ${response.data.project_id}. Refetching project details.`,
+						`[DialecticStore] Session started for project ${successData.project_id}. Refetching project details.`,
 					);
-					await get().fetchDialecticProjectDetails(response.data.project_id);
+					await get().fetchDialecticProjectDetails(successData.project_id);
 				} else {
 					logger.info(
 						"[DialecticStore] Session started, but no project_id in response. Refetching project list.",
 					);
 					await get().fetchDialecticProjects();
 				}
-				return { data: response.data, status: response.status };
+				return { data: successData, status: response.status };
+			} else {
+				const error: ApiError = {
+					message:
+						"Invalid or missing seedPrompt in startSession response",
+					code: "INVALID_SEED_PROMPT",
+				};
+				logger.error("[DialecticStore] Invalid session response:", {
+					errorDetails: error,
+					responseData: response.data,
+				});
+				set({ isStartingSession: false, startSessionError: error });
+				return { error: error, status: response.status || 0 };
 			}
 		} catch (error: unknown) {
 			const networkError: ApiError = {
@@ -1294,6 +1334,15 @@ export const useDialecticStore = create<DialecticStore>()(
 		);
 	},
 
+	updateStageDocumentFeedbackDraft: (
+		key: StageDocumentCompositeKey,
+		feedbackMarkdown: string,
+	) => {
+		set((state) => {
+			recordStageDocumentFeedbackDraftLogic(state, key, feedbackMarkdown);
+		});
+	},
+
 	flushStageDocumentDraft: (key: StageDocumentCompositeKey) => {
 		flushStageDocumentDraftActionLogic(set, { flushStageDocumentDraft }, key);
 	},
@@ -1326,7 +1375,7 @@ export const useDialecticStore = create<DialecticStore>()(
 	submitStageDocumentFeedback: async (
 		payload: SubmitStageDocumentFeedbackPayload,
 	): Promise<ApiResponse<{ success: boolean }>> => {
-		return await submitStageDocumentFeedbackLogic(set, payload);
+		return await submitStageDocumentFeedbackLogic(get, set, payload);
 	},
 
 	resetSubmitStageDocumentFeedbackError: () => {
@@ -1398,6 +1447,9 @@ export const useDialecticStore = create<DialecticStore>()(
         case 'document_chunk_completed':
             handlers._handleDocumentChunkCompleted(payload);
             break;
+        case 'document_completed':
+            handlers._handleDocumentCompleted(payload);
+            break;
         case 'render_completed':
             handlers._handleRenderCompleted(payload);
             break;
@@ -1417,6 +1469,9 @@ export const useDialecticStore = create<DialecticStore>()(
 
 	_handleDocumentChunkCompleted: (event: DocumentChunkCompletedPayload) =>
 		handleDocumentChunkCompletedLogic(get, set, event),
+
+	_handleDocumentCompleted: (event: DocumentCompletedPayload) =>
+		handleDocumentCompletedLogic(get, set, event),
 
 	_handleRenderCompleted: (event: RenderCompletedPayload) =>
 		handleRenderCompletedLogic(get, set, event),
@@ -1603,8 +1658,15 @@ export const useDialecticStore = create<DialecticStore>()(
       if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
         state.activeSessionDetail = { ...session };
       }
-      // Clear tracking for this session only if the failure is catastrophic (no job_id)
-      if (!event.job_id) {
+      const sessionJobs = state.generatingSessions[event.sessionId];
+      if (event.job_id && Array.isArray(sessionJobs)) {
+        state.generatingSessions[event.sessionId] = sessionJobs.filter(jobId => jobId !== event.job_id);
+        if (state.generatingSessions[event.sessionId].length === 0) {
+          delete state.generatingSessions[event.sessionId];
+        }
+        state.contributionGenerationStatus = 'failed';
+        state.generateContributionsError = event.error || { message: 'Generation failed for this job.', code: 'JOB_FAILED' };
+      } else if (!event.job_id) {
         delete state.generatingSessions[event.sessionId];
         state.contributionGenerationStatus = 'failed';
         state.generateContributionsError = event.error || { message: 'Generation failed without a specific error.', code: 'GENERATION_FAILED' };
@@ -1821,31 +1883,76 @@ export const useDialecticStore = create<DialecticStore>()(
 			payload,
 		});
 
-		const { stageDocumentContent } = get();
-		const dirtyDocuments = Object.entries(stageDocumentContent).filter(
-			([_, content]) => content.isDirty,
+		const { stageDocumentContent, stageDocumentResources } = get();
+		const keysWithWork = Object.entries(stageDocumentContent).filter(
+			([_, content]) => content.isDirty || content.feedbackIsDirty,
 		);
 
-		if (dirtyDocuments.length > 0) {
-			logger.info(
-				`[DialecticStore] Found ${dirtyDocuments.length} unsaved document drafts. Saving before advancing stage.`,
-			);
-			const submissionPromises = dirtyDocuments.map(
-				([key, content]) => {
-					const [sessionId, stageSlug, iterationStr, modelId, documentKey] =
-						key.split(":");
-					const iterationNumber = parseInt(iterationStr, 10);
-					return get().submitStageDocumentFeedback({
-						sessionId,
-						stageSlug,
-						iterationNumber,
-						modelId,
-						documentKey,
-						feedback: content.currentDraftMarkdown,
-					});
-				},
-			);
+		const submissionPromises: Promise<
+			ApiResponse<SaveContributionEditSuccessResponse> | ApiResponse<{ success: boolean }>
+		>[] = [];
 
+		for (const [serializedKey, content] of keysWithWork) {
+			const [sessionId, stageSlug, iterationStr, modelId, documentKey] =
+				serializedKey.split(":");
+			const iterationNumber = parseInt(iterationStr, 10);
+			const resource = stageDocumentResources[serializedKey];
+
+			if (content.isDirty && content.sourceContributionId) {
+				if (!resource) {
+					logger.error(
+						'[DialecticStore] Missing stageDocumentResources entry for content edit',
+						{ serializedKey },
+					);
+					continue;
+				}
+				if (!resource.resource_type) {
+					logger.error(
+						'[DialecticStore] Missing resource_type for serializedKey',
+						{ serializedKey },
+					);
+					continue;
+				}
+				const editPayload: SaveContributionEditPayload = {
+					originalContributionIdToEdit: content.sourceContributionId,
+					editedContentText: content.currentDraftMarkdown,
+					projectId: payload.projectId,
+					sessionId,
+					originalModelContributionId: content.sourceContributionId,
+					responseText: "",
+					documentKey,
+					resourceType: resource.resource_type,
+				};
+				submissionPromises.push(get().saveContributionEdit(editPayload));
+			}
+
+			if (content.feedbackIsDirty) {
+				if (!resource) {
+					logger.error(
+						'[DialecticStore] Missing stageDocumentResources entry for feedback submit',
+						{ serializedKey },
+					);
+					continue;
+				}
+				const feedbackPayload: SubmitStageDocumentFeedbackPayload = {
+					sessionId,
+					stageSlug,
+					iterationNumber,
+					modelId,
+					documentKey,
+					feedback: content.feedbackDraftMarkdown,
+					sourceContributionId: resource.source_contribution_id,
+				};
+				submissionPromises.push(
+					get().submitStageDocumentFeedback(feedbackPayload),
+				);
+			}
+		}
+
+		if (submissionPromises.length > 0) {
+			logger.info(
+				`[DialecticStore] Found ${submissionPromises.length} unsaved item(s). Submitting before advancing stage.`,
+			);
 			try {
 				const submissionResults = await Promise.all(submissionPromises);
 				const firstErrorResult = submissionResults.find((res) => res.error);
@@ -1854,11 +1961,11 @@ export const useDialecticStore = create<DialecticStore>()(
 					const submissionError: ApiError = {
 						message:
 							firstErrorResult.error.message ||
-							"An unknown error occurred while submitting document feedback",
+							"An unknown error occurred while submitting",
 						code: firstErrorResult.error.code || "SUBMISSION_FAILED",
 					};
 					logger.error(
-						"[DialecticStore] Failed to submit one or more document drafts:",
+						"[DialecticStore] Failed to submit one or more items:",
 						{ error: submissionError },
 					);
 					set({
@@ -1868,23 +1975,23 @@ export const useDialecticStore = create<DialecticStore>()(
 					return {
 						data: undefined,
 						error: submissionError,
-						status: firstErrorResult.status || 0,
+						status: firstErrorResult.status ?? 0,
 					};
 				}
 
 				logger.info(
-					"[DialecticStore] All unsaved drafts have been successfully submitted.",
+					"[DialecticStore] All unsaved items have been successfully submitted.",
 				);
 			} catch (error: unknown) {
 				const submissionError: ApiError = {
 					message:
 						error instanceof Error
 							? error.message
-							: "An unknown network error occurred while submitting document feedback",
+							: "An unknown network error occurred while submitting",
 					code: "SUBMISSION_FAILED",
 				};
 				logger.error(
-					"[DialecticStore] A network or promise rejection error occurred while submitting document drafts:",
+					"[DialecticStore] A network or promise rejection error occurred while submitting:",
 					{ error: submissionError },
 				);
 				set({
@@ -1895,7 +2002,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			}
 		} else {
 			logger.info(
-				"[DialecticStore] No unsaved drafts found. Proceeding directly to advance stage.",
+				"[DialecticStore] No unsaved work found. Proceeding directly to advance stage.",
 			);
 		}
 
@@ -1952,7 +2059,7 @@ export const useDialecticStore = create<DialecticStore>()(
 		}
 	},
 
-  saveContributionEdit: async (payload: SaveContributionEditPayload): Promise<ApiResponse<DialecticContribution>> => {
+  saveContributionEdit: async (payload: SaveContributionEditPayload): Promise<ApiResponse<SaveContributionEditSuccessResponse>> => {
     set({ isSavingContributionEdit: true, saveContributionEditError: null });
 
     try {
@@ -1962,24 +2069,87 @@ export const useDialecticStore = create<DialecticStore>()(
         set({ isSavingContributionEdit: false, saveContributionEditError: response.error });
         return response;
       } else {
-        const updatedContribution = response.data;
-        logger.info('[DialecticStore] Successfully saved contribution edit.', { contributionId: updatedContribution?.id });
+        const responseData = response.data;
+        if (!responseData) {
+          const noDataError: ApiError = {
+            message: 'No data returned from saveContributionEdit',
+            code: 'NO_DATA_RETURNED',
+          };
+          logger.error('[DialecticStore] No data returned from saveContributionEdit');
+          set({ isSavingContributionEdit: false, saveContributionEditError: noDataError });
+          return { data: undefined, error: noDataError, status: 500 };
+        }
+
+        const { resource } = responseData;
+        logger.info('[DialecticStore] Successfully saved contribution edit.', { resourceId: resource.id });
         
         set(state => {
-          if (state.currentProjectDetail && state.currentProjectDetail.dialectic_sessions && updatedContribution) {
+          if (state.currentProjectDetail && state.currentProjectDetail.dialectic_sessions && resource) {
             const sessionIndex = state.currentProjectDetail.dialectic_sessions.findIndex(
-              session => session.id === updatedContribution.session_id
+              session => session.id === resource.session_id
             );
             if (sessionIndex !== -1) {
               const session = state.currentProjectDetail.dialectic_sessions[sessionIndex];
               if (session && session.dialectic_contributions) {
-                // Find the index of the ORIGINAL contribution that was edited
-                const contributionIndex = session.dialectic_contributions.findIndex(
+                // Find the original contribution to get modelId and toggle isLatestEdit
+                const originalContributionIndex = session.dialectic_contributions.findIndex(
                   c => c.id === payload.originalContributionIdToEdit
                 );
-                if (contributionIndex !== -1) {
-                  // Replace the old contribution object with the new one from the API
-                  session.dialectic_contributions[contributionIndex] = updatedContribution;
+                if (originalContributionIndex !== -1) {
+                  const originalContribution = session.dialectic_contributions[originalContributionIndex];
+                  // Toggle isLatestEdit flag on original contribution (don't replace it)
+                  originalContribution.is_latest_edit = false;
+                  
+                  // Composite key uses payload.documentKey (required); no fallback to resource or contribution (step 11.d.i).
+                  const documentKey = payload.documentKey;
+                  if (!documentKey) {
+                    logger.error('[DialecticStore] Cannot determine documentKey for stageDocumentContent update', { resource, payload });
+                  } else {
+                    const sessionId = resource.session_id ?? payload.sessionId;
+                    const stageSlug = resource.stage_slug ?? '';
+                    const iterationNumber = resource.iteration_number ?? 1;
+                    if (!sessionId || !stageSlug || !documentKey) {
+                      logger.error('[DialecticStore] Missing required fields for composite key', { 
+                        resource, 
+                        payload, 
+                        sessionId, 
+                        stageSlug, 
+                        documentKey 
+                      });
+                    } else {
+                      const modelId = originalContribution.model_id ?? '';
+                      if (!modelId) {
+                        logger.error('[DialecticStore] Missing modelId for composite key', { 
+                          resource, 
+                          originalContribution 
+                        });
+                      } else {
+                        const compositeKey: StageDocumentCompositeKey = {
+                          sessionId,
+                          stageSlug,
+                          iterationNumber,
+                          modelId,
+                          documentKey,
+                        };
+                        
+                        // Update stageDocumentContent with the edited markdown
+                        const versionInfo = createVersionInfo(resource.id);
+                        const documentEntry = ensureStageDocumentContent(state, compositeKey, {
+                          baselineMarkdown: payload.editedContentText,
+                          version: versionInfo,
+                        });
+                        documentEntry.currentDraftMarkdown = payload.editedContentText;
+                        documentEntry.isDirty = false;
+                        documentEntry.isLoading = false;
+                        documentEntry.error = null;
+                        
+                        // Store the complete EditedDocumentResource metadata in stageDocumentResources
+                        // This is required so UI components can access source_contribution_id and updated_at
+                        const serializedKey = getStageDocumentKey(compositeKey);
+                        state.stageDocumentResources[serializedKey] = resource;
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -2000,6 +2170,29 @@ export const useDialecticStore = create<DialecticStore>()(
     }
   },
 
+  updateStageDocumentResource: (
+    key: StageDocumentCompositeKey,
+    resource: EditedDocumentResource,
+    editedContentText: string,
+  ): void => {
+    set((state) => {
+      const versionInfo = createVersionInfo(resource.id);
+      const documentEntry = ensureStageDocumentContent(state, key, {
+        baselineMarkdown: editedContentText,
+        version: versionInfo,
+      });
+      documentEntry.currentDraftMarkdown = editedContentText;
+      documentEntry.isDirty = false;
+      documentEntry.isLoading = false;
+      documentEntry.error = null;
+      
+      // Store the complete EditedDocumentResource metadata in stageDocumentResources
+      // This is required so UI components can access source_contribution_id and updated_at
+      const serializedKey = getStageDocumentKey(key);
+      state.stageDocumentResources[serializedKey] = resource;
+    });
+  },
+
 	fetchAndSetCurrentSessionDetails: async (sessionId: string) => {
 		logger.info(
 			`[DialecticStore] Fetching and setting current session details for session ID: ${sessionId}`,
@@ -2007,7 +2200,11 @@ export const useDialecticStore = create<DialecticStore>()(
 		set({ isLoadingActiveSessionDetail: true, activeSessionDetailError: null });
 
 		try {
-			const response = await api.dialectic().getSessionDetails(sessionId); // Expects ApiResponse<GetSessionDetailsResponse>
+			// Check if we already have the seed_prompt in the store - if so, skip fetching it
+			const currentState = get();
+			const skipSeedPrompt = currentState.activeSeedPrompt !== null;
+			
+			const response = await api.dialectic().getSessionDetails(sessionId, skipSeedPrompt); // Expects ApiResponse<GetSessionDetailsResponse>
 
 			if (response.error || !response.data) {
 				logger.error("[DialecticStore] Error fetching session details:", {
@@ -2028,6 +2225,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			const {
 				session: fetchedSession,
 				currentStageDetails: fetchedStageDetails,
+				activeSeedPrompt,
 			} = response.data;
 
 			logger.info(
@@ -2040,6 +2238,9 @@ export const useDialecticStore = create<DialecticStore>()(
 			);
 
       set((state) => {
+        if (!state.activeSeedPrompt && activeSeedPrompt) {
+          state.activeSeedPrompt = activeSeedPrompt;
+        }
         let sessionWithContributions = fetchedSession; // Default to fetchedSession
 
         if (state.currentProjectDetail && state.currentProjectDetail.dialectic_sessions) {
@@ -2251,6 +2452,41 @@ export const useDialecticStore = create<DialecticStore>()(
 		const existingEntry = get().stageDocumentContent[serializedKey];
 		const initialDraft = existingEntry ? existingEntry.currentDraftMarkdown : '';
 		get().beginStageDocumentEdit(compositeKey, initialDraft);
+
+		// 2.d: Fetch content if document is loadable and not cached/stale
+		const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+		const progress = get().stageRunProgress[progressKey];
+		if (!progress) {
+			return;
+		}
+
+		const descriptor = progress.documents[documentKey];
+		if (!descriptor || descriptor.descriptorType !== 'rendered') {
+			return;
+		}
+
+		const latestRenderedResourceId = descriptor.latestRenderedResourceId;
+		if (!latestRenderedResourceId || latestRenderedResourceId.length === 0) {
+			return;
+		}
+
+		// Check if cached content matches current latestRenderedResourceId
+		const cachedContent = get().stageDocumentContent[serializedKey];
+		const cachedResourceId = cachedContent?.lastBaselineVersion?.resourceId;
+		if (cachedResourceId === latestRenderedResourceId) {
+			// Content is already cached with the same version, no fetch needed
+			return;
+		}
+
+		// Content is loadable and not cached/stale - fetch it
+		logger.info('[DialecticStore] Fetching document content on focus', {
+			sessionId,
+			stageSlug,
+			documentKey,
+			latestRenderedResourceId,
+			cachedResourceId,
+		});
+		void get().fetchStageDocumentContent(compositeKey, latestRenderedResourceId);
 	},
 
 	clearFocusedStageDocument: ({ sessionId, stageSlug, modelId }: ClearFocusedStageDocumentPayload) => {

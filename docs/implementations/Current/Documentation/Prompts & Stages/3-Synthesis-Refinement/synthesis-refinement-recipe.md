@@ -98,7 +98,7 @@
 **Document-key normalization targets (X.c.ii.b):**
 
 - `input_artifact_rules.sources[*]` need deterministic `document_key` values that match upstream Thesis and Antithesis artifacts (e.g., `business_case`, `business_case_critique`, `comparison_vector`). Today they are unlabeled, so follow-up work must align them with the document-centric namespaces defined in Thesis/Antithesis worksheets.
-- Downstream Synthesis outputs (PRD, architecture overview, tech stack recommendations) currently surface only inside the monolithic prompt. When we define `expected_output_artifacts`, adopt the canonical keys from `Prompt Templating Examples.md` (`prd`, `system_architecture_overview`, `tech_stack_recommendations`) so later stages can reference them.
+- Downstream Synthesis outputs (PRD, architecture overview, tech stack recommendations) currently surface only inside the monolithic prompt. When we define `expected_output_artifacts`, adopt the canonical keys from `Prompt Templating Examples.md` (`product_requirements`, `system_architecture`, `tech_stack`) so later stages can reference them.
 - Intermediate artifacts outlined in the target recipe (pairwise syntheses, root consolidations, global manifest, header contexts) still need to be mapped onto the conventions already spelled out in the Stage File Structure block (model slug + iterator, document_key-based filenames, `_continuation_{c}` segments, etc.). The gap isn't inventing new patterns, but ensuring every planned artifact explicitly names its `document_key` so it slots cleanly into that existing structure.
 - Any historical names embedded in existing code (e.g., `lineage_*`, `final_synthesis.md`) need to be mapped to the new document-centric identifiers to prevent orphaned references during migration.
 
@@ -117,11 +117,11 @@
 **Overlay gaps to author (X.c.iv.b):**
 
 - `synthesis_pairwise_header_planner_v1` overlay: injects pairwise header role, consolidation directives, continuation rules, and enumerates `files_to_generate` for `synthesis_pairwise_*` JSON outputs.
-- `synthesis_final_header_planner_v1` overlay: supplies global synthesis objectives, signal weighting guidance, and document directives for `prd`, `system_architecture_overview`, and `tech_stack_recommendations` turns.
+- `synthesis_final_header_planner_v1` overlay: supplies global synthesis objectives, signal weighting guidance, and document directives for `product_requirements`, `system_architecture`, and `tech_stack` turns.
 - Turn overlays:
   - Pairwise JSON turns (`synthesis_pairwise_business_case_turn_v1`, `synthesis_pairwise_feature_spec_turn_v1`, `synthesis_pairwise_technical_approach_turn_v1`, `synthesis_pairwise_success_metrics_turn_v1`).
   - Consolidation JSON turns (`synthesis_document_business_case_turn_v1`, `synthesis_document_feature_spec_turn_v1`, `synthesis_document_technical_approach_turn_v1`, `synthesis_document_success_metrics_turn_v1`).
-  - Final markdown turns (`synthesis_prd_turn_v1`, `synthesis_system_architecture_turn_v1`, `synthesis_tech_stack_turn_v1`).
+  - Final markdown turns (`synthesis_product_requirements_turn_v1`, `synthesis_system_architecture_turn_v1`, `synthesis_tech_stack_turn_v1`).
 - Continuation overlays: instructions for the pairwise/consolidation/final turns covering explicit (`reason: 'length'`) and corrective continuation messaging.
 - Shared constants: any synthesis-specific quality rubrics or scoring guidance required by the new overlays must be extracted to style-guide entries so they can be reused downstream.
 
@@ -987,7 +987,7 @@
   },
   "context_for_documents": [
     {
-      "document_key": "prd",
+      "document_key": "product_requirements",
       "content_to_include": {
         "executive_summary": "",
         "mvp_description": "",
@@ -1037,7 +1037,7 @@
       }
     },
     {
-      "document_key": "system_architecture_overview",
+      "document_key": "system_architecture",
       "content_to_include": {
         "architecture_summary": "",
         "architecture": "",
@@ -1061,7 +1061,7 @@
       }
     },
     {
-      "document_key": "tech_stack_recommendations",
+      "document_key": "tech_stack",
       "content_to_include": {
         "frontend_stack": {},
         "backend_stack": {},
@@ -1089,9 +1089,9 @@
     }
   ],
   "files_to_generate": [
-    { "template_filename": "synthesis_product_requirements_document.md", "from_document_key": "prd" },
-    { "template_filename": "synthesis_system_architecture_overview.md", "from_document_key": "system_architecture_overview" },
-    { "template_filename": "synthesis_tech_stack_recommendations.md", "from_document_key": "tech_stack_recommendations" }
+    { "template_filename": "synthesis_product_requirements_document.md", "from_document_key": "product_requirements" },
+    { "template_filename": "synthesis_system_architecture.md", "from_document_key": "system_architecture" },
+    { "template_filename": "synthesis_tech_stack.md", "from_document_key": "tech_stack" }
   ]
 }
 ```
@@ -1099,7 +1099,7 @@
 ### Step 5a: Render Final PRD
 - **Objective:** Produce the final PRD using the business-case synthesis as the primary input, with additional context provided by the other synthesized documents.
 - **Prompt Type:** `Turn`
-- **Prompt Template Name:** `synthesis_prd_turn_v1`
+- **Prompt Template Name:** `synthesis_product_requirements_turn_v1`
 - **Input Source References:**
   - `header_context` (type `header_context`, stage `synthesis`, required)
   - `synthesis_document_business_case` (type `document`, stage `synthesis`, required)
@@ -1112,12 +1112,12 @@
 ```json
 {
   "step_number": 5,
-  "step_slug": "render-prd",
+  "step_slug": "render-product_requirements",
   "parallel_group": 5,
-  "branch_key": "prd",
+  "branch_key": "product_requirements",
   "job_type": "EXECUTE",
   "name": "Render Final PRD",
-  "prompt_template_id": "<system_prompts.id for synthesis_prd_turn_v1>",
+  "prompt_template_id": "<system_prompts.id for synthesis_product_requirements_turn_v1>",
   "prompt_type": "Turn",
   "inputs_required": [
     { "type": "header_context", "stage_slug": "synthesis", "document_key": "header_context", "required": true },
@@ -1143,7 +1143,7 @@
 {
   "documents": [
     {
-      "document_key": "prd",
+      "document_key": "product_requirements",
       "template_filename": "synthesis_product_requirements_document.md",
       "artifact_class": "rendered_document",
       "file_type": "markdown",
@@ -1219,7 +1219,7 @@
   "step_number": 5,
   "step_slug": "render-system-architecture-overview",
   "parallel_group": 5,
-  "branch_key": "system_architecture_overview",
+  "branch_key": "system_architecture",
   "job_type": "EXECUTE",
   "name": "Render Final System Architecture Overview",
   "prompt_template_id": "<system_prompts.id for synthesis_system_architecture_turn_v1>",
@@ -1248,8 +1248,8 @@
 {
   "documents": [
     {
-      "document_key": "system_architecture_overview",
-      "template_filename": "synthesis_system_architecture_overview.md",
+      "document_key": "system_architecture",
+      "template_filename": "synthesis_system_architecture.md",
       "artifact_class": "rendered_document",
       "file_type": "markdown",
       "lineage_key": "<>",
@@ -1297,7 +1297,7 @@
   "step_number": 5,
   "step_slug": "render-tech-stack-recommendations",
   "parallel_group": 5,
-  "branch_key": "tech_stack_recommendations",
+  "branch_key": "tech_stack",
   "job_type": "EXECUTE",
   "name": "Render Final Tech Stack Recommendations",
   "prompt_template_id": "<system_prompts.id for synthesis_tech_stack_turn_v1>",
@@ -1326,8 +1326,8 @@
 {
   "documents": [
     {
-      "document_key": "tech_stack_recommendations",
-      "template_filename": "synthesis_tech_stack_recommendations.md",
+      "document_key": "tech_stack",
+      "template_filename": "synthesis_tech_stack.md",
       "artifact_class": "rendered_document",
       "file_type": "markdown",
       "lineage_key": "<>",
@@ -1397,17 +1397,17 @@
     *   `[✅]` 4.d. Create `dialectic_stage_recipe_edges` linking every Step 3 branch to the Step 4 planner so the orchestrator awaits all consolidations before generating the final header.
 
 *   `[ ]` 5. [PROMPT] Create final turn templates for Step 5 deliverables.
-    *   `[✅]` 5.a. Author `synthesis_prd_turn_v1.md`, `synthesis_system_architecture_turn_v1.md`, and `synthesis_tech_stack_turn_v1.md` using the Step 5 schemas (PRD, system architecture overview, tech stack recommendations).
+    *   `[✅]` 5.a. Author `synthesis_product_requirements_turn_v1.md`, `synthesis_system_architecture_turn_v1.md`, and `synthesis_tech_stack_turn_v1.md` using the Step 5 schemas (PRD, system architecture overview, tech stack recommendations).
     *   `[✅]` 5.b. Seed `system_prompts` rows for the three Step 5 turn templates.
     *   `[✅]` 5.c. Insert Step 5 `dialectic_stage_recipes` rows (`step_number=5`, `parallel_group=5`, `branch_key` per deliverable, `job_type='EXECUTE'`, `prompt_type='Turn'`, `granularity_strategy='all_to_one'`, `output_type='RenderedDocument'`) including all consolidated-document inputs and the header context.
     *   `[✅]` 5.d. Add recipe edges from the Step 4 planner to each Step 5 branch.
-    *   `[✅]` 5.e. `[PROMPT]` Create and seed the final rendered markdown templates (`synthesis_product_requirements_document.md`, `synthesis_system_architecture_overview.md`, `synthesis_tech_stack_recommendations.md`) in the repository and `dialectic_document_templates` so rendering jobs have canonical outputs. Ensure the system-architecture template exposes discrete sections for `architecture_summary`, `services`, `data_flows`, `security_measures`, `integration_points`, and `rationale` to match the updated schema.
+    *   `[✅]` 5.e. `[PROMPT]` Create and seed the final rendered markdown templates (`synthesis_product_requirements_document.md`, `synthesis_system_architecture.md`, `synthesis_tech_stack.md`) in the repository and `dialectic_document_templates` so rendering jobs have canonical outputs. Ensure the system-architecture template exposes discrete sections for `architecture_summary`, `services`, `data_flows`, `security_measures`, `integration_points`, and `rationale` to match the updated schema.
 
 *   `[ ]` 6. [DB] Update stage configuration and recipe metadata.
     *   `[✅]` 6.a. Set `dialectic_stages.recipe_name = 'synthesis_v1'` and remove the legacy monolithic `input_artifact_rules` / `expected_output_artifacts` payloads from the stage row; those contracts are now expressed through `dialectic_stage_recipes` and `dialectic_document_templates`.
     *   `[✅]` 6.b. Audit migrations/seeds and runtime lookups to ensure no code path reintroduces or depends on the removed columns; confirm every consumer now reads inputs/outputs from the recipe-driven tables.
     *   `[✅]` 6.c. Author and seed a new non-monolithic `synthesis_seed_prompt_v1` template, point `dialectic_stages.default_system_prompt_id` (and any seed-loading callers) to the new template, then remove the legacy `dialectic_synthesis_base_v1` entry once the cut-over is complete.
-    *   `[✅]` 6.d. Populate `dialectic_stages.expected_output_template_ids` with the final deliverable template ids (`prd`, `system_architecture_overview`, `tech_stack_recommendations`) so downstream stages can reference the canonical files.
+    *   `[✅]` 6.d. Populate `dialectic_stages.expected_output_template_ids` with the final deliverable template ids (`product_requirements`, `system_architecture`, `tech_stack`) so downstream stages can reference the canonical files.
 
 *   `[✅]` 7. [PROMPT] Extend overlay data for multi-step synthesis.
     *   `[✅]` 7.a. Add planner-specific overlay values (e.g., header context directives, manifest guidance) for `synthesis_pairwise_header_planner_v1` and `synthesis_final_header_planner_v1` and remove the legacy monolithic `output_format` payload so new templates are the only source of deliverable contracts. Double-check for any leftover monolithic directives or style-guide fragments that could reintroduce conflicting guidance after the new overlays land.

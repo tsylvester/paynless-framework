@@ -7,8 +7,9 @@ import {
 } from "./prompt-assembler.interface.ts";
 import { isRecord } from "../utils/type_guards.ts";
 import type { Json } from "../../types_db.ts";
-import { DialecticRecipeStep } from "../../dialectic-service/dialectic.interface.ts";
+import { DialecticRecipeStep, OutputRule, RenderedDocumentArtifact } from "../../dialectic-service/dialectic.interface.ts";
 import { FileType } from "../types/file_manager.types.ts";
+import { renderPrompt } from "../prompt-renderer.ts";
 
 // Define a type for the mock implementation of renderPrompt
 type RenderPromptMock = (
@@ -34,10 +35,14 @@ Deno.test("render", async (t) => {
     output_type: FileType.business_case,
     inputs_required: [],
     inputs_relevance: [],
-    outputs_required: [{
-      type: FileType.business_case,
-      document_key: 'business_case',
-    }],
+    outputs_required: {
+      documents: [{
+        artifact_class: 'rendered_document',
+        file_type: 'markdown',
+        document_key: FileType.business_case,
+        template_filename: 'template.md',
+      }],
+    },
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     prompt_template_id: "pt-exec-summary-123",
@@ -245,7 +250,14 @@ Deno.test("render", async (t) => {
         "Artifacts:\n{{outputs_required}}",
       ].join("\n");
 
-      const artifacts = [{ type: "document", document_key: "test_doc" }];
+      const artifacts: OutputRule = {
+        documents: [{
+          artifact_class: 'rendered_document',
+          file_type: 'markdown',
+          document_key: FileType.business_case,
+          template_filename: 'test_doc.md',
+        }],
+      };
       const stageOk: StageContext = {
         ...defaultStage,
         system_prompts: { prompt_text: basePrompt },
@@ -291,7 +303,7 @@ Deno.test("render", async (t) => {
       if (capturedOverlay && isRecord(capturedOverlay)) {
         const sg = capturedOverlay["style_guide_markdown"];
         assertEquals(typeof sg === "string" && sg.length > 0, true);
-        assertEquals(capturedOverlay["outputs_required"], artifacts);
+        assertEquals(JSON.stringify(capturedOverlay["outputs_required"]), JSON.stringify(artifacts));
       } else {
         throw new Error("system overlays missing in renderer call");
       }
@@ -303,7 +315,14 @@ Deno.test("render", async (t) => {
     async () => {
       const basePrompt =
         "Artifacts: {{#section:outputs_required_json}}{{outputs_required_json}}{{/section:outputs_required_json}}";
-      const artifacts = [{ type: "document", document_key: "test_doc" }];
+      const artifacts: OutputRule = {
+        documents: [{
+          artifact_class: 'rendered_document',
+          file_type: 'markdown',
+          document_key: FileType.business_case,
+          template_filename: 'test_doc.md',
+        }],
+      };
       const stageOk: StageContext = {
         ...defaultStage,
         system_prompts: { prompt_text: basePrompt },
@@ -343,7 +362,14 @@ Deno.test("render", async (t) => {
     "succeeds because template requires a raw object and implementation provides it",
     () => {
       const basePrompt = "Artifacts: {{outputs_required}}";
-      const artifacts = [{ type: "document", document_key: "test_doc" }];
+      const artifacts: OutputRule = {
+        documents: [{
+          artifact_class: 'rendered_document',
+          file_type: 'markdown',
+          document_key: FileType.business_case,
+          template_filename: 'test_doc.md',
+        }],
+      };
       const stageOk: StageContext = {
         ...defaultStage,
         system_prompts: { prompt_text: basePrompt },
@@ -383,7 +409,14 @@ Deno.test("render", async (t) => {
     "succeeds because implementation provides a raw object, not a string",
     () => {
       const basePrompt = "Artifacts: {{outputs_required}}";
-      const artifacts = [{ type: "document", document_key: "test_doc" }];
+      const artifacts: OutputRule = {
+        documents: [{
+          artifact_class: 'rendered_document',
+          file_type: 'markdown',
+          document_key: FileType.business_case,
+          template_filename: 'test_doc.md',
+        }],
+      };
       const stageOk: StageContext = {
         ...defaultStage,
         system_prompts: { prompt_text: basePrompt },
@@ -452,7 +485,7 @@ Deno.test("render", async (t) => {
       // Test with recipeStep but empty outputs_required
       const contextWithEmptyOutputs: DynamicContextVariables = {
         ...defaultContext,
-        recipeStep: { ...mockSimpleRecipeStep, outputs_required: [] },
+        recipeStep: { ...mockSimpleRecipeStep, outputs_required: {} },
       };
       const result2 = render(
         renderPromptMockFn,
@@ -477,7 +510,14 @@ Deno.test("render", async (t) => {
         return "ok";
       };
 
-      const mockOutputsRequired = [{ type: "document", document_key: "test_output" }];
+      const mockOutputsRequired: OutputRule = {
+        documents: [{
+          artifact_class: 'rendered_document',
+          file_type: 'markdown',
+          document_key: FileType.business_case,
+          template_filename: 'test_output.md',
+        }],
+      };
       const mockRecipeStepWithOutputs: DialecticRecipeStep = {
         ...mockSimpleRecipeStep,
         outputs_required: mockOutputsRequired,
@@ -498,7 +538,7 @@ Deno.test("render", async (t) => {
 
       if (capturedSysOverlay && isRecord(capturedSysOverlay)) {
         const val = capturedSysOverlay["outputs_required"];
-        assertEquals(val, mockOutputsRequired);
+        assertEquals(JSON.stringify(val), JSON.stringify(mockOutputsRequired));
       } else {
         throw new Error("System overlays were not provided to renderer");
       }
@@ -518,7 +558,14 @@ Deno.test("render", async (t) => {
         return "ok";
       };
 
-      const artifacts = [{ type: "document", document_key: "test_doc" }];
+      const artifacts: OutputRule = {
+        documents: [{
+          artifact_class: 'rendered_document',
+          file_type: 'markdown',
+          document_key: FileType.business_case,
+          template_filename: 'test_doc.md',
+        }],
+      };
       const stageWithOverlaysAndArtifacts: StageContext = {
         ...defaultStage,
         domain_specific_prompt_overlays: [{
@@ -543,7 +590,7 @@ Deno.test("render", async (t) => {
         assertEquals(capturedSysOverlay["role"], "tester");
         // Prove artifact value is injected
         const artifactsVal = capturedSysOverlay["outputs_required"];
-        assertEquals(artifactsVal, artifacts);
+        assertEquals(JSON.stringify(artifactsVal), JSON.stringify(artifacts));
       } else {
         throw new Error("System overlays were not provided to renderer");
       }
@@ -716,7 +763,14 @@ Deno.test("render", async (t) => {
         return "ok";
       };
 
-      const artifacts = [{ type: "document", document_key: "test_doc" }];
+      const artifacts: OutputRule = {
+        documents: [{
+          artifact_class: 'rendered_document',
+          file_type: 'markdown',
+          document_key: FileType.business_case,
+          template_filename: 'test_doc.md',
+        }],
+      };
       const stageWithNoOverlays: StageContext = {
         ...defaultStage,
         domain_specific_prompt_overlays: [], // No overlays
@@ -736,12 +790,86 @@ Deno.test("render", async (t) => {
 
       if (capturedSysOverlay && isRecord(capturedSysOverlay)) {
         const artifactsVal = capturedSysOverlay["outputs_required"];
-        assertEquals(artifactsVal, artifacts);
+        assertEquals(JSON.stringify(artifactsVal), JSON.stringify(artifacts));
         // Ensure no other keys were added
         assertEquals(Object.keys(capturedSysOverlay).length, 1);
       } else {
         throw new Error("System overlays were not provided to renderer");
       }
+    },
+  );
+
+  await t.step(
+    "should correctly render a prompt with role, style_guide_markdown, and header_context",
+    () => {
+      const HEADER_CONTEXT_CONTENT: Json = JSON.parse(`{
+        "system_materials": {
+          "executive_summary": "Test summary"
+        }
+      }`);
+
+      const TEMPLATE_CONTENT = `You are a {{role}}, act accordingly. Your response will follow this style guide: {{style_guide_markdown}}
+Here is a HeaderContext JSON object. Use it as the source of truth for this document. We are generating multiple documents using this HeaderContext, your generation must align with all of the other documents described in the HeaderContext even though you're currently generating a single document. 
+HeaderContext: {{header_context}}
+
+In this turn you are writing a business case for the user's objective. 
+
+Replace the placeholder value for each key of the JSON object below with fully written Markdown content derived from and informed by the HeaderContext. Each field should contain the markdown content for that section (paragraphs, bullet lists, etc.). For \`proposal_references\`, populate the array with strings, each representing a reference. Follow the continuation policy from the style guide by generating as much content as required to satisfy the HeaderContext: 
+
+{"content":{"market_opportunity":"Describe the target audience, market sizing, and opportunity identified in the HeaderContext.","user_problem_validation":"Summarize evidence that the problem is real and pressing, referencing user feedback, research, or data included in the HeaderContext.","competitive_analysis":"Compare the proposal against relevant alternatives, including strengths, weaknesses, and differentiators noted in the HeaderContext.","differentiation_&_value_proposition":"Highlight the unique advantages of the proposed approach and explain why it outperforms alternatives for stakeholders.","risks_&_mitigation":"List the primary risks called out in the HeaderContext and the mitigation strategies that address them.","strengths":"Capture the key strengths identified in the HeaderContext.","weaknesses":"Document the weaknesses or limitations that must be managed.","opportunities":"Outline opportunities the plan can leverage.","threats":"Note external threats or challenges to success.","next_steps":"Outline immediate actions, decisions, or follow-ups required to advance the proposal, aligned with the HeaderContext.","proposal_references":[],"executive_summary":"Provide a concise synopsis of the proposal, highlighting purpose, scope, and key insights derived from the HeaderContext."}}
+
+Return only the JSON object shown above, with every placeholder replaced with actual content. Do not add fences or commentary outside the JSON.`;
+
+      const EXPECTED_RENDERED_CONTENT = `You are a Senior Product Strategist, act accordingly. Your response will follow this style guide: Be concise and professional.
+Here is a HeaderContext JSON object. Use it as the source of truth for this document. We are generating multiple documents using this HeaderContext, your generation must align with all of the other documents described in the HeaderContext even though you're currently generating a single document. 
+HeaderContext: ${JSON.stringify(HEADER_CONTEXT_CONTENT)}
+
+In this turn you are writing a business case for the user's objective. 
+
+Replace the placeholder value for each key of the JSON object below with fully written Markdown content derived from and informed by the HeaderContext. Each field should contain the markdown content for that section (paragraphs, bullet lists, etc.). For \`proposal_references\`, populate the array with strings, each representing a reference. Follow the continuation policy from the style guide by generating as much content as required to satisfy the HeaderContext: 
+
+{"content":{"market_opportunity":"Describe the target audience, market sizing, and opportunity identified in the HeaderContext.","user_problem_validation":"Summarize evidence that the problem is real and pressing, referencing user feedback, research, or data included in the HeaderContext.","competitive_analysis":"Compare the proposal against relevant alternatives, including strengths, weaknesses, and differentiators noted in the HeaderContext.","differentiation_&_value_proposition":"Highlight the unique advantages of the proposed approach and explain why it outperforms alternatives for stakeholders.","risks_&_mitigation":"List the primary risks called out in the HeaderContext and the mitigation strategies that address them.","strengths":"Capture the key strengths identified in the HeaderContext.","weaknesses":"Document the weaknesses or limitations that must be managed.","opportunities":"Outline opportunities the plan can leverage.","threats":"Note external threats or challenges to success.","next_steps":"Outline immediate actions, decisions, or follow-ups required to advance the proposal, aligned with the HeaderContext.","proposal_references":[],"executive_summary":"Provide a concise synopsis of the proposal, highlighting purpose, scope, and key insights derived from the HeaderContext."}}
+
+Return only the JSON object shown above, with every placeholder replaced with actual content. Do not add fences or commentary outside the JSON.`;
+
+      const stage: StageContext = {
+        id: "stage-123",
+        slug: "test-stage",
+        display_name: "Test Stage",
+        description: "A stage for testing",
+        default_system_prompt_id: "sp-123",
+        recipe_step: mockSimpleRecipeStep,
+        created_at: new Date().toISOString(),
+        active_recipe_instance_id: null,
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        system_prompts: { prompt_text: TEMPLATE_CONTENT },
+        domain_specific_prompt_overlays: [{
+          overlay_values: {
+            role: "Senior Product Strategist",
+            style_guide_markdown: "Be concise and professional.",
+          },
+        }],
+      };
+
+      const context: DynamicContextVariables & { header_context: Json } = {
+        user_objective: "Test objective",
+        domain: "Test domain",
+        context_description: "Test context",
+        original_user_request: "Test request",
+        recipeStep: mockSimpleRecipeStep,
+        sourceDocuments: [],
+        header_context: HEADER_CONTEXT_CONTENT,
+      };
+
+      const result = render(
+        renderPrompt,
+        stage,
+        context,
+        null,
+      );
+
+      assertEquals(result, EXPECTED_RENDERED_CONTENT);
     },
   );
 });

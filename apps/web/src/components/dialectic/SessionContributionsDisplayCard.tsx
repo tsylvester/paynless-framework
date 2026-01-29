@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from "react";
 import {
 	useDialecticStore,
 	selectIsLoadingProjectDetail,
-	selectContributionGenerationStatus,
 	selectProjectDetailError,
 	selectFeedbackForStageIteration,
 	selectCurrentProjectDetail,
@@ -17,8 +16,6 @@ import {
 	DialecticFeedback,
 	SubmitStageResponsesPayload,
 	StageDocumentChecklistEntry,
-	StageDocumentCompositeKey,
-	StageDocumentContentState,
 } from "@paynless/types";
 import {
 	Card,
@@ -47,6 +44,7 @@ import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { cn } from "@/lib/utils";
 import { useStageRunProgressHydration } from '../../hooks/useStageRunProgressHydration';
 import { Badge } from "@/components/ui/badge";
+import { GeneratedContributionCard } from "./GeneratedContributionCard";
 
 
 const isApiError = (error: unknown): error is ApiError => {
@@ -108,9 +106,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	);
 	const sortedStages = useDialecticStore(selectSortedStages);
 	const setActiveStage = useDialecticStore((state) => state.setActiveStage);
-	const updateStageDocumentDraft = useDialecticStore((state) => state.updateStageDocumentDraft);
-	const stageDocumentContent = useDialecticStore((state) => state.stageDocumentContent);
-	const modelCatalog = useDialecticStore((state) => state.modelCatalog);
+	const focusedStageDocument = useDialecticStore((state) => state.focusedStageDocument);
 
   const activeStage = useMemo(() => {
 	return processTemplate?.stages?.find((s) => s.slug === activeStageSlug) || null;
@@ -135,9 +131,6 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	// New store states for loading and error handling
 	const isLoadingCurrentProjectDetail = useDialecticStore(
 		selectIsLoadingProjectDetail,
-	);
-	const contributionGenerationStatus = useDialecticStore(
-		selectContributionGenerationStatus,
 	);
 	const projectDetailError = useDialecticStore(selectProjectDetailError);
 	const generationError = useDialecticStore(
@@ -228,53 +221,91 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 
   const canSubmitStageResponses = stageProgressSummary?.isComplete === true;
 
-  const formatDocumentStatus = (status: string): string =>
-    status
-      .split('_')
-      .map((segment) =>
-        segment.length > 0 ? `${segment.charAt(0).toUpperCase()}${segment.slice(1)}` : segment,
-      )
-      .join(' ');
-
-  const buildCompositeKey = (modelId: string, documentKey: string): StageDocumentCompositeKey | null => {
-    if (!session || !activeStage || typeof session?.iteration_count !== 'number') {
-      return null;
+  const isLastStage = useMemo(() => {
+    // Handle edge cases: empty sortedStages or null activeStage
+    if (!sortedStages || sortedStages.length === 0) {
+      return false;
     }
-
-    return {
-      sessionId: session.id,
-      stageSlug: activeStage.slug,
-      iterationNumber: session.iteration_count,
-      modelId,
-      documentKey,
-    };
-  };
-
-  const serializeCompositeKey = (key: StageDocumentCompositeKey): string =>
-    `${key.sessionId}:${key.stageSlug}:${key.iterationNumber}:${key.modelId}:${key.documentKey}`;
-
-  const handleDocumentDraftChange = (modelId: string, documentKey: string, value: string) => {
-    const compositeKey = buildCompositeKey(modelId, documentKey);
-    if (!compositeKey) {
-      return;
+    if (!activeStage) {
+      return false;
     }
-
-    updateStageDocumentDraft(compositeKey, value);
-  };
-
-  const resolveModelName = (modelId: string): string => {
-    const catalogEntry = modelCatalog?.find((model) => model.id === modelId) ?? null;
-    return catalogEntry?.model_name ?? modelId;
-  };
+    // Check if activeStage.slug matches the last stage in sortedStages
+    const lastStage = sortedStages[sortedStages.length - 1];
+    return activeStage.slug === lastStage?.slug;
+  }, [sortedStages, activeStage]);
 
   const documentGroups = useMemo(
     () => Array.from(documentsByModel.entries()),
     [documentsByModel],
   );
 
+  const selectedDocumentKey = useMemo((): string | null => {
+    if (!focusedStageDocument || typeof focusedStageDocument !== 'object') {
+      return null;
+    }
+    const first = Object.values(focusedStageDocument).find(
+      (entry): entry is { modelId: string; documentKey: string } =>
+        entry != null && typeof entry.documentKey === 'string' && entry.documentKey.length > 0,
+    );
+    return first?.documentKey ?? null;
+  }, [focusedStageDocument]);
+
+  const entryMatchesSelectedDocument = (
+    entryDocumentKey: string,
+    modelId: string,
+    selectedKey: string,
+  ): boolean =>
+    entryDocumentKey === selectedKey ||
+    entryDocumentKey === `${selectedKey}_model_${modelId}` ||
+    entryDocumentKey === `${selectedKey}_${modelId.replace(/-/g, '_')}`;
+
+  const modelIdsForSelectedDocument = useMemo((): string[] => {
+    if (selectedDocumentKey == null || selectedDocumentKey === '') {
+      return [];
+    }
+    const key: string = selectedDocumentKey;
+    return documentGroups
+      .filter(([, entries]) =>
+        entries.some(
+          (entry) =>
+            entry.modelId != null &&
+            entryMatchesSelectedDocument(entry.documentKey, entry.modelId, key),
+        ),
+      )
+      .map(([modelId]) => modelId);
+  }, [documentGroups, selectedDocumentKey]);
+
+const failedDocumentKeys = useMemo(() => {
+  if (stageProgressSummary?.hasFailed) {
+    return stageProgressSummary.failedDocumentKeys;
+  }
+
+  const fallback = documentGroups.flatMap(([, documents]) =>
+    documents
+      .filter((document) => document.status === 'failed')
+      .map((document) => document.documentKey),
+  );
+
+  return Array.from(new Set(fallback));
+}, [documentGroups, stageProgressSummary]);
+
+const hasGeneratingDocuments = useMemo(() => {
+  // Check documentGroups (derived from selectStageDocumentChecklist via documentsByModel) for any document with status 'generating'
+  // Defensive: This check explicitly looks for 'generating' status only, which inherently excludes 'completed' documents
+  // The status check ensures we only count documents that are actively generating, not those that are completed
+  return documentGroups.some(([, documents]) =>
+    documents.some((document) => document.status === 'generating')
+  );
+}, [documentGroups]);
+
+const isGenerating = useMemo(() => {
+  // Banner is shown only when: documents are generating, no failed documents, and no generation errors
+  return hasGeneratingDocuments && failedDocumentKeys.length === 0 && !generationError;
+}, [hasGeneratingDocuments, failedDocumentKeys, generationError]);
+
   const hasDocuments = useMemo(
-    () => documentGroups.some(([, documents]) => documents.length > 0),
-    [documentGroups],
+    () => modelIdsForSelectedDocument.length > 0,
+    [modelIdsForSelectedDocument],
   );
 
 	// Select feedback metadata for the current stage and iteration
@@ -362,13 +393,15 @@ export const SessionContributionsDisplayCard: React.FC = () => {
   const renderSubmitButton = () => (
     <Button
       onClick={handleSubmitResponses}
-      disabled={isSubmitting || !canSubmitStageResponses}
-      className={cn({ 'animate-pulse': !isSubmitting && canSubmitStageResponses })}
+      disabled={isSubmitting || !canSubmitStageResponses || isLastStage}
+      className={cn({ 'animate-pulse': !isSubmitting && canSubmitStageResponses && !isLastStage })}
     >
       {isSubmitting ? (
         <>
           <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...
         </>
+      ) : isLastStage ? (
+        'Project Complete - Final Stage'
       ) : (
         'Submit Responses & Advance Stage'
       )}
@@ -439,8 +472,6 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 		);
 	}
 
-  const isGenerating = contributionGenerationStatus === "generating";
-
   return (
     <div className="space-y-8">
       <div data-testid="card-header" className="space-y-3">
@@ -448,20 +479,14 @@ export const SessionContributionsDisplayCard: React.FC = () => {
           <div className="space-y-2">
             <h2 className="text-2xl font-light tracking-tight">{getDisplayName(activeStage)}</h2>
             <p className="text-muted-foreground leading-relaxed">{activeStage.description}</p>
-            {stageProgressSummary && (
-              <div className="text-sm text-muted-foreground">
-                Completed {stageProgressSummary.completedDocuments} of{' '}
-                {stageProgressSummary.totalDocuments} documents
-                {stageProgressSummary.outstandingDocuments.length > 0 && (
-                  <div className="text-xs">
-                    Outstanding: {stageProgressSummary.outstandingDocuments.join(', ')}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
           <div className="flex flex-col items-end gap-2">
             {renderSubmitButton()}
+            {isLastStage && canSubmitStageResponses && (
+              <Badge variant="secondary" className="bg-emerald-100 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-100">
+                Project Complete - All stages finished
+              </Badge>
+            )}
             {feedbackForStageIteration && (
               <Button
                 variant="outline"
@@ -490,8 +515,11 @@ export const SessionContributionsDisplayCard: React.FC = () => {
           </div>
         </div>
       )}
-      {generationError && (
-        <div className="bg-red-50 dark:bg-red-950/20 rounded-xl px-6 py-4 border border-red-200/50 dark:border-red-800/50">
+      {(generationError || failedDocumentKeys.length > 0) && (
+        <div
+          className="bg-red-50 dark:bg-red-950/20 rounded-xl px-6 py-4 border border-red-200/50 dark:border-red-800/50"
+          data-testid="generation-error-banner"
+        >
           <div className="flex items-center gap-3">
             <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
               <div className="h-5 w-5 rounded-full bg-red-600 flex items-center justify-center">
@@ -500,7 +528,14 @@ export const SessionContributionsDisplayCard: React.FC = () => {
             </div>
             <div>
               <p className="font-medium text-red-900 dark:text-red-100">Generation Error</p>
-              <p className="text-sm text-red-700 dark:text-red-300">{generationError.message}</p>
+              {generationError?.message && (
+                <p className="text-sm text-red-700 dark:text-red-300">{generationError.message}</p>
+              )}
+              {failedDocumentKeys.length > 0 && (
+                <p className="text-xs text-red-700 dark:text-red-300">
+                  Failed documents: {failedDocumentKeys.join(', ')}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -508,85 +543,14 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 
       <div className="space-y-6">
         {hasDocuments ? (
-          documentGroups.map(([modelId, documents]) => {
-            if (!documents || documents.length === 0) {
-              return null;
-            }
-
-            const modelName = resolveModelName(modelId);
-
-            return (
-              <div key={modelId} className="space-y-4">
-                <h3 className="text-base font-semibold text-foreground">{modelName}</h3>
-                <div className="space-y-4">
-                  {documents.map((document) => {
-                    const compositeKey = buildCompositeKey(modelId, document.documentKey);
-                    const serializedKey =
-                      compositeKey !== null ? serializeCompositeKey(compositeKey) : null;
-                    const documentState: StageDocumentContentState | undefined =
-                      serializedKey !== null ? stageDocumentContent[serializedKey] : undefined;
-                    const draftValue = documentState?.currentDraftMarkdown ?? '';
-
-                    return (
-                      <Card
-                        key={`${modelId}-${document.documentKey}`}
-                        data-testid={`stage-document-card-${modelId}-${document.documentKey}`}
-                      >
-                        <CardHeader className="flex flex-col gap-3">
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="space-y-1">
-                              <p className="text-sm font-medium text-foreground">{modelName}</p>
-                              <p className="font-mono text-xs text-muted-foreground">
-                                {document.documentKey}
-                              </p>
-                            </div>
-                            <Badge>{formatDocumentStatus(document.status ?? 'not_started')}</Badge>
-                          </div>
-                          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-                            {document.jobId && (
-                              <span>
-                                Job:{' '}
-                                <span className="font-medium text-foreground">{document.jobId}</span>
-                              </span>
-                            )}
-                            {document.latestRenderedResourceId && (
-                              <span>
-                                Latest Render:{' '}
-                                <span className="font-medium text-foreground">
-                                  {document.latestRenderedResourceId}
-                                </span>
-                              </span>
-                            )}
-                          </div>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                          <label
-                            className="text-sm font-medium text-muted-foreground"
-                            htmlFor={`stage-document-feedback-${modelId}-${document.documentKey}`}
-                          >
-                            Document Feedback
-                          </label>
-                          <textarea
-                            id={`stage-document-feedback-${modelId}-${document.documentKey}`}
-                            data-testid={`stage-document-feedback-${modelId}-${document.documentKey}`}
-                            className="w-full min-h-[120px] resize-y rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                            value={draftValue}
-                            onChange={(event) =>
-                              handleDocumentDraftChange(
-                                modelId,
-                                document.documentKey,
-                                event.target.value,
-                              )
-                            }
-                          />
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })
+          modelIdsForSelectedDocument.map((modelId) => (
+            <div
+              key={modelId}
+              data-testid={`generated-contribution-card-${modelId}`}
+            >
+              <GeneratedContributionCard modelId={modelId} />
+            </div>
+          ))
         ) : (
           <p className="text-sm text-muted-foreground">No documents generated yet.</p>
         )}
@@ -594,6 +558,11 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 
       <div data-testid="card-footer" className="space-y-4">
         {renderSubmitButton()}
+        {isLastStage && canSubmitStageResponses && (
+          <Badge variant="secondary" className="bg-emerald-100 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-100">
+            Project Complete - All stages finished
+          </Badge>
+        )}
         {(submissionSuccessMessage || submissionError) && (
           <div className="space-y-4">
             {submissionSuccessMessage && (

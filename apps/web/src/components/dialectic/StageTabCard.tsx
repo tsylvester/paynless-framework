@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import type {
 	DialecticStage,
 	FocusedStageDocumentState,
@@ -55,8 +55,7 @@ const StageCard: React.FC<StageCardProps> = ({
 	checklist,
 }) => {
 	const displayName = getDisplayName(stage);
-	const [isChecklistOpen, setChecklistOpen] = useState(true);
-
+	
 	if (!isContextReady) {
 		return (
 			<div
@@ -82,7 +81,7 @@ const StageCard: React.FC<StageCardProps> = ({
 	const shouldRenderChecklist = Boolean(isActive && checklist);
 
 	return (
-		<div className="space-y-3" data-testid={`stage-card-${stage.slug}`}>
+		<div className="space-y-1" data-testid={`stage-card-${stage.slug}`}>
 			<button
 				data-testid={`stage-tab-${stage.slug}`}
 				className={cn(
@@ -127,36 +126,16 @@ const StageCard: React.FC<StageCardProps> = ({
 									Completed
 								</span>
 							)}
-							<span
-								data-testid={`stage-progress-count-${stage.slug}`}
-								className="text-muted-foreground"
-							>
-								{`${progress.completedDocuments} / ${progress.totalDocuments} documents`}
-							</span>
 						</div>
 					)}
 				</div>
 			</button>
 			{shouldRenderChecklist && (
 				<div
-					className="rounded-lg border border-muted bg-card"
-					data-testid={`stage-checklist-accordion-${stage.slug}`}
+					className="w-full"
+					data-testid={`stage-checklist-wrapper-${stage.slug}`}
 				>
-					<button
-						type="button"
-						className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium"
-						data-testid={`stage-checklist-toggle-${stage.slug}`}
-						onClick={() => setChecklistOpen((previous) => !previous)}
-						aria-expanded={isChecklistOpen}
-					>
-						<span>Checklist</span>
-						<span aria-hidden="true">{isChecklistOpen ? "−" : "+"}</span>
-					</button>
-					{isChecklistOpen && (
-						<div className="space-y-4 px-4 pb-4" data-testid={`stage-checklist-content-${stage.slug}`}>
-							{checklist}
-						</div>
-					)}
+					{checklist}
 				</div>
 			)}
 		</div>
@@ -279,8 +258,8 @@ export const StageTabCard: React.FC = () => {
 	};
 
 	return (
-		<div className="space-y-6" data-testid="stage-container">
-			<div className="space-y-2 lg:w-80" data-testid="stage-tab-list">
+		<div className="space-y-2 self-start" data-testid="stage-container">
+			<div className="space-y-2" data-testid="stage-tab-list">
 				{stages.map((stage, index) => {
 					const isActiveStage = stage.slug === activeStageSlug;
 
@@ -307,7 +286,7 @@ export const StageTabCard: React.FC = () => {
 
 			{!canRenderChecklists && (
 				<div className="rounded-lg border border-dashed border-muted p-6 text-sm text-muted-foreground">
-					Stage checklist data is unavailable.
+					Select at least one model to view the checklist.
 				</div>
 			)}
 		</div>

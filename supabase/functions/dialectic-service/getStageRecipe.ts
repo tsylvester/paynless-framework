@@ -7,13 +7,14 @@ import {
   RelevanceRule,
   OutputRule,
   BranchKey,
-  OutputType, 
   JobType, 
   PromptType, 
-  GranularityStrategy, 
+  GranularityStrategy,
 } from "./dialectic.interface.ts";
 import { isInputRule, isRelevanceRule, isOutputRule } from "../_shared/utils/type-guards/type_guards.dialectic.recipe.ts";
 import { isRecord } from "../_shared/utils/type-guards/type_guards.common.ts";
+import type { ModelContributionFileTypes } from "../_shared/types/file_manager.types.ts";
+import { isModelContributionFileType, isFileType } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
 
 export async function getStageRecipe(
   payload: { stageSlug: string },
@@ -85,15 +86,30 @@ export async function getStageRecipe(
     if (!isGranularity(s.granularity_strategy)) return { status: 500, error: { message: `Invalid granularity_strategy for step_key=${s.step_key}: ${String(s.granularity_strategy)}` } };
     const granularity: GranularityStrategy = s.granularity_strategy;
 
-    // Map output_type from ModelContributionFileTypes to OutputType
-    let mappedOutputType: OutputType;
+    // Validate output_type: must be a ModelContributionFileType, and if renderable, include in DTO
     const rawType = String(s.output_type);
-    if (rawType === OutputType.HeaderContext) mappedOutputType = OutputType.HeaderContext;
-    else if (rawType === OutputType.AssembledDocumentJson) mappedOutputType = OutputType.AssembledDocumentJson;
-    else if (rawType === OutputType.RenderedDocument) mappedOutputType = OutputType.RenderedDocument;
-    else {
-      return { status: 500, error: { message: `Unknown output_type for step_key=${s.step_key}: ${rawType}` } };
+    
+    // First check if it's a valid FileType at all (if not, this is a data integrity error)
+    if (!isFileType(rawType)) {
+      return { status: 500, error: { message: `Invalid output_type for step_key=${s.step_key}: ${rawType} is not a valid FileType` } };
     }
+    
+    // If it's a valid FileType but not a ModelContributionFileType, handle based on type
+    if (!isModelContributionFileType(rawType)) {
+      // 'rendered_document' for EXECUTE jobs is a data integrity error (migrations should have fixed this)
+      // This should cause an error, not be filtered out silently
+      if (rawType === 'rendered_document' && jobType === 'EXECUTE') {
+        return { status: 500, error: { message: `Invalid output_type for step_key=${s.step_key}: ${rawType} is not a ModelContributionFileType` } };
+      }
+      // Other backend-only types (like assembled_document_json) should be filtered out silently
+      // These are legitimate intermediate types that should not appear in the frontend DTO
+      console.error(`[getStageRecipe] Filtering out step with backend-only output_type for step_key=${s.step_key}: ${rawType} is not a ModelContributionFileType (backend-only type)`);
+      continue;
+    }
+    
+    // At this point, rawType is validated as a ModelContributionFileType
+    // All steps are included in the DTO - frontend needs all steps (including PLAN with header_context) to track progress
+    const mappedOutputType: ModelContributionFileTypes = rawType;
 
     // Validate arrays and elements
     if (!Array.isArray(s.inputs_required)) {
@@ -116,14 +132,23 @@ export async function getStageRecipe(
       inputsRelevance.push(item);
     }
 
-    if (!Array.isArray(s.outputs_required)) {
-      return { status: 500, error: { message: `Malformed outputs_required (not array) for step_key=${s.step_key}` } };
-    }
     const outputsRequired: OutputRule[] = [];
-    for (let i = 0; i < s.outputs_required.length; i++) {
-      const item = s.outputs_required[i];
-      if (!isOutputRule(item)) return { status: 500, error: { message: `Malformed outputs_required[${i}] for step_key=${s.step_key}` } };
-      outputsRequired.push(item);
+    if (!isOutputRule(s.outputs_required)) return { status: 500, error: { message: `Malformed outputs_required for step_key=${s.step_key}` } };
+    
+    // LOG: Check if files_to_generate exists in raw database output
+    console.log(`[getStageRecipe] step_key=${s.step_key}, outputs_required has files_to_generate:`, 'files_to_generate' in s.outputs_required);
+    if ('files_to_generate' in s.outputs_required) {
+      console.log(`[getStageRecipe] step_key=${s.step_key}, files_to_generate value:`, JSON.stringify(s.outputs_required.files_to_generate));
+    } else {
+      console.log(`[getStageRecipe] step_key=${s.step_key}, outputs_required keys:`, Object.keys(s.outputs_required));
+    }
+    
+    outputsRequired.push(s.outputs_required);
+    
+    // LOG: Verify files_to_generate is still present after push
+    console.log(`[getStageRecipe] step_key=${s.step_key}, outputsRequired[0] has files_to_generate:`, 'files_to_generate' in outputsRequired[0]);
+    if ('files_to_generate' in outputsRequired[0]) {
+      console.log(`[getStageRecipe] step_key=${s.step_key}, outputsRequired[0].files_to_generate:`, JSON.stringify(outputsRequired[0].files_to_generate));
     }
 
     // Validate nullable simple fields
@@ -186,4 +211,6 @@ export async function getStageRecipe(
 
   return { status: 200, data: response };
 }
+
+
 

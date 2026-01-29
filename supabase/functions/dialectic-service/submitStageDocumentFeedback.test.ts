@@ -25,6 +25,7 @@ const mockPayload: SubmitStageDocumentFeedbackPayload = {
   feedbackType: 'user_feedback',
   userId: USER_ID,
   projectId: PROJECT_ID,
+  sourceContributionId: 'contrib-feedback-source',
 };
 
 Deno.test('submitStageDocumentFeedback - Happy Path: creates a new feedback record', async () => {
@@ -88,11 +89,86 @@ Deno.test('submitStageDocumentFeedback - Happy Path: creates a new feedback reco
 
   assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1);
 
+  const uploadCall = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
+  assertExists(uploadCall);
+  assertEquals(uploadCall.pathContext.sourceContributionId, mockPayload.sourceContributionId);
+
   const insertSpy = mockSupabase.spies.getLatestQueryBuilderSpies(
     'dialectic_feedback',
   )?.insert;
   assertExists(insertSpy);
   assertEquals(insertSpy.calls.length, 1);
+});
+
+Deno.test('submitStageDocumentFeedback - Happy Path: creates feedback when no sourceContributionId is provided', async () => {
+  const mockFileManager = createMockFileManagerService();
+  const mockFileRecord = {
+    id: 'feedback-record-id-1b',
+    project_id: PROJECT_ID,
+    session_id: mockPayload.sessionId,
+    user_id: USER_ID,
+    stage_slug: mockPayload.stageSlug,
+    iteration_number: mockPayload.iterationNumber,
+    storage_bucket: 'test-bucket',
+    storage_path: 'test/path',
+    file_name: 'feedback-no-source.md',
+    mime_type: 'text/markdown',
+    size_bytes: 110,
+    feedback_type: 'user_feedback',
+    resource_description: {
+      document_key: mockPayload.documentKey,
+      model_id: mockPayload.modelId,
+    },
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    target_contribution_id: null,
+  };
+  mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+  const payloadWithoutSource: SubmitStageDocumentFeedbackPayload = {
+    ...mockPayload,
+    sourceContributionId: null,
+  };
+
+  const mockDbRecord = {
+    id: 'feedback-new-id-2',
+    ...payloadWithoutSource,
+  };
+  const mockSupabase = createMockSupabaseClient(USER_ID, {
+    genericMockResults: {
+      dialectic_feedback: {
+        select: { data: [mockDbRecord], error: null },
+        insert: { data: [mockDbRecord], error: null },
+        update: { data: null, error: new Error('Update should not be called') },
+      },
+    },
+  });
+
+  const deps = {
+    fileManager: mockFileManager,
+    logger: {
+      log: spy(),
+      error: spy(),
+      warn: spy(),
+      info: spy(),
+      debug: spy(),
+    },
+  };
+
+  const result = await submitStageDocumentFeedback(
+    payloadWithoutSource,
+    mockSupabase.client as unknown as SupabaseClient<Database>,
+    deps,
+  );
+
+  assertExists(result.data);
+  assertEquals(result.data!.id, 'feedback-new-id-2');
+
+  assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1);
+
+  const uploadCall = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
+  assertExists(uploadCall);
+  assertEquals(uploadCall.pathContext.sourceContributionId, null);
 });
 
 Deno.test('submitStageDocumentFeedback - Happy Path: updates an existing feedback record', async () => {

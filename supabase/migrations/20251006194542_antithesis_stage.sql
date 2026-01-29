@@ -33,6 +33,10 @@ DECLARE
     v_doc_template_id UUID;
     v_domain_id UUID;
 BEGIN
+    -- Allow prompt_text to be NULL to support document_template_id fallback
+    ALTER TABLE public.system_prompts
+    ALTER COLUMN prompt_text DROP NOT NULL;
+    
     -- Get the domain_id for 'Software Development'
     SELECT id INTO v_domain_id FROM public.dialectic_domains WHERE name = 'Software Development' LIMIT 1;
     
@@ -54,7 +58,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'antithesis_planner_review_v1',
-        $PROMPT$\path=docs/prompts/antithesis/antithesis_planner_review_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Planner template that assembles the Antithesis per-proposal HeaderContext artifact',
@@ -124,7 +128,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'antithesis_business_case_critique_turn_v1',
-        $PROMPT$\path=docs/prompts/antithesis/antithesis_business_case_critique_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Antithesis stage per-proposal critique turn template',
@@ -159,7 +163,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'antithesis_feasibility_assessment_turn_v1',
-        $PROMPT$\path=docs/prompts/antithesis/antithesis_feasibility_assessment_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Antithesis stage technical feasibility assessment turn template',
@@ -194,7 +198,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'antithesis_risk_register_turn_v1',
-        $PROMPT$\path=docs/prompts/antithesis/antithesis_risk_register_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Antithesis stage risk register turn template',
@@ -229,7 +233,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'antithesis_non_functional_requirements_turn_v1',
-        $PROMPT$\path=docs/prompts/antithesis/antithesis_non_functional_requirements_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Antithesis stage non-functional requirements review turn template',
@@ -264,7 +268,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'antithesis_dependency_map_turn_v1',
-        $PROMPT$\path=docs/prompts/antithesis/antithesis_dependency_map_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Antithesis stage dependency map turn template',
@@ -299,7 +303,7 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         'antithesis_comparison_vector_turn_v1',
-        $PROMPT$\path=docs/prompts/antithesis/antithesis_comparison_vector_turn_v1.md$PROMPT$,
+        null,
         true,
         1,
         'Antithesis stage comparison vector turn template',
@@ -437,7 +441,7 @@ BEGIN
         'PLAN',
         'Planner',
         v_plan_prompt_id,
-        'HeaderContext',
+        'header_context',
         'per_source_document_by_lineage',
         '[{"type":"seed_prompt","slug":"antithesis","document_key":"seed_prompt","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"seed_prompt","relevance":1.0},{"document_key":"business_case","relevance":1.0},{"document_key":"feature_spec","relevance":0.9},{"document_key":"technical_approach","relevance":0.9},{"document_key":"success_metrics","relevance":0.8},{"document_key":"business_case","type":"feedback","relevance":0.6},{"document_key":"feature_spec","type":"feedback","relevance":0.6},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"success_metrics","type":"feedback","relevance":0.6}]'::jsonb,
@@ -500,10 +504,26 @@ BEGIN
              {
                "document_key": "business_case_critique",
                "content_to_include": {
+                 "executive_summary": "",
+                 "fit_to_original_user_request": "",
+                 "user_problem_validation": "",
+                 "market_opportunity": "",
+                 "competitive_analysis": "",
+                 "differentiation_value_proposition": "",
+                 "risks_mitigation": "",
                  "strengths": [],
                  "weaknesses": [],
                  "opportunities": [],
                  "threats": [],
+                 "problems": [],
+                 "obstacles": [],
+                 "errors": [],
+                 "omissions": [],
+                 "discrepancies": [],
+                 "areas_for_improvement": [],
+                 "feasibility": "",
+                 "next_steps": "",
+                 "proposal_references": "",
                  "recommendations": [],
                  "notes": []
                }
@@ -511,6 +531,7 @@ BEGIN
              {
                "document_key": "technical_feasibility_assessment",
                "content_to_include": {
+                 "summary": "",
                  "constraint_checklist": [
                    "team",
                    "timeline",
@@ -518,43 +539,73 @@ BEGIN
                    "integration",
                    "compliance"
                  ],
-                 "findings": []
+                 "findings": [],
+                 "architecture": "",
+                 "components": "",
+                 "data": "",
+                 "deployment": "",
+                 "sequencing": "",
+                 "risk_mitigation": "",
+                 "open_questions": ""
                }
              },
              {
                "document_key": "risk_register",
                "content_to_include": {
+                 "overview": "",
                  "required_fields": [
                    "risk",
                    "impact",
                    "likelihood",
                    "mitigation"
                  ],
-                 "seed_examples": []
+                 "seed_examples": [],
+                 "mitigation_plan": "",
+                 "notes": ""
                }
              },
              {
                "document_key": "non_functional_requirements",
-               "content_to_include": [
-                 "security",
-                 "performance",
-                 "reliability",
-                 "scalability",
-                 "maintainability",
-                 "compliance"
-               ]
+               "content_to_include": {
+                 "overview": "",
+                 "categories": [
+                   "security",
+                   "performance",
+                   "reliability",
+                   "scalability",
+                   "maintainability",
+                   "compliance"
+                 ],
+                 "outcome_alignment": "",
+                 "primary_kpis": "",
+                 "leading_indicators": "",
+                 "lagging_indicators": "",
+                 "measurement_plan": "",
+                 "risk_signals": "",
+                 "guardrails": "",
+                 "next_steps": ""
+               }
              },
              {
                "document_key": "dependency_map",
                "content_to_include": {
+                 "overview": "",
                  "components": [],
                  "integration_points": [],
-                 "conflict_flags": []
+                 "conflict_flags": [],
+                 "dependencies": "",
+                 "sequencing": "",
+                 "risk_mitigation": "",
+                 "open_questions": ""
                }
              },
              {
                "document_key": "comparison_vector",
                "content_to_include": {
+                 "proposal": {
+                   "lineage_key": "",
+                   "source_model_slug": ""
+                 },
                  "dimensions": {
                    "feasibility": { "score": 0, "rationale": "" },
                    "complexity": { "score": 0, "rationale": "" },
@@ -616,7 +667,7 @@ BEGIN
         'PLAN',
         'Planner',
         v_plan_prompt_id,
-        'HeaderContext',
+        'header_context',
         'per_source_document_by_lineage',
         '[{"type":"seed_prompt","slug":"antithesis","document_key":"seed_prompt","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"seed_prompt","relevance":1.0},{"document_key":"business_case","relevance":1.0},{"document_key":"feature_spec","relevance":0.9},{"document_key":"technical_approach","relevance":0.9},{"document_key":"success_metrics","relevance":0.8},{"document_key":"business_case","type":"feedback","relevance":0.6},{"document_key":"feature_spec","type":"feedback","relevance":0.6},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"success_metrics","type":"feedback","relevance":0.6}]'::jsonb,
@@ -679,10 +730,26 @@ BEGIN
              {
                "document_key": "business_case_critique",
                "content_to_include": {
+                 "executive_summary": "",
+                 "fit_to_original_user_request": "",
+                 "user_problem_validation": "",
+                 "market_opportunity": "",
+                 "competitive_analysis": "",
+                 "differentiation_value_proposition": "",
+                 "risks_mitigation": "",
                  "strengths": [],
                  "weaknesses": [],
                  "opportunities": [],
                  "threats": [],
+                 "problems": [],
+                 "obstacles": [],
+                 "errors": [],
+                 "omissions": [],
+                 "discrepancies": [],
+                 "areas_for_improvement": [],
+                 "feasibility": "",
+                 "next_steps": "",
+                 "proposal_references": "",
                  "recommendations": [],
                  "notes": []
                }
@@ -690,6 +757,7 @@ BEGIN
              {
                "document_key": "technical_feasibility_assessment",
                "content_to_include": {
+                 "summary": "",
                  "constraint_checklist": [
                    "team",
                    "timeline",
@@ -697,43 +765,73 @@ BEGIN
                    "integration",
                    "compliance"
                  ],
-                 "findings": []
+                 "findings": [],
+                 "architecture": "",
+                 "components": "",
+                 "data": "",
+                 "deployment": "",
+                 "sequencing": "",
+                 "risk_mitigation": "",
+                 "open_questions": ""
                }
              },
              {
                "document_key": "risk_register",
                "content_to_include": {
+                 "overview": "",
                  "required_fields": [
                    "risk",
                    "impact",
                    "likelihood",
                    "mitigation"
                  ],
-                 "seed_examples": []
+                 "seed_examples": [],
+                 "mitigation_plan": "",
+                 "notes": ""
                }
              },
              {
                "document_key": "non_functional_requirements",
-               "content_to_include": [
-                 "security",
-                 "performance",
-                 "reliability",
-                 "scalability",
-                 "maintainability",
-                 "compliance"
-               ]
+               "content_to_include": {
+                 "overview": "",
+                 "categories": [
+                   "security",
+                   "performance",
+                   "reliability",
+                   "scalability",
+                   "maintainability",
+                   "compliance"
+                 ],
+                 "outcome_alignment": "",
+                 "primary_kpis": "",
+                 "leading_indicators": "",
+                 "lagging_indicators": "",
+                 "measurement_plan": "",
+                 "risk_signals": "",
+                 "guardrails": "",
+                 "next_steps": ""
+               }
              },
              {
                "document_key": "dependency_map",
                "content_to_include": {
+                 "overview": "",
                  "components": [],
                  "integration_points": [],
-                 "conflict_flags": []
+                 "conflict_flags": [],
+                 "dependencies": "",
+                 "sequencing": "",
+                 "risk_mitigation": "",
+                 "open_questions": ""
                }
              },
              {
                "document_key": "comparison_vector",
                "content_to_include": {
+                 "proposal": {
+                   "lineage_key": "",
+                   "source_model_slug": ""
+                 },
                  "dimensions": {
                    "feasibility": { "score": 0, "rationale": "" },
                    "complexity": { "score": 0, "rationale": "" },
@@ -794,7 +892,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_business_prompt_id,
-        'RenderedDocument',
+        'business_case_critique',
         'per_source_document',
         '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"business_case","relevance":0.95},{"document_key":"feature_spec","relevance":0.85},{"document_key":"technical_approach","relevance":0.75},{"document_key":"success_metrics","relevance":0.65},{"document_key":"business_case","type":"feedback","relevance":0.6},{"document_key":"feature_spec","type":"feedback","relevance":0.6},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"success_metrics","type":"feedback","relevance":0.6}]'::jsonb,
@@ -806,7 +904,6 @@ BEGIN
               "artifact_class": "rendered_document",
               "file_type": "markdown",
               "content_to_include": {
-                "executive_summary": "",  
                 "fit_to_original_user_request": "",
                 "strengths": [],
                 "weaknesses": [],
@@ -820,7 +917,8 @@ BEGIN
                 "areas_for_improvement": [],
                 "feasibility": "",
                 "recommendations": [],
-                "notes": []
+                "notes": [],
+                "executive_summary": ""
               }
             }
           ],
@@ -878,7 +976,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_business_prompt_id,
-        'RenderedDocument',
+        'business_case_critique',
         'per_source_document',
         '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"business_case","relevance":0.95},{"document_key":"feature_spec","relevance":0.85},{"document_key":"technical_approach","relevance":0.75},{"document_key":"success_metrics","relevance":0.65},{"document_key":"business_case","type":"feedback","relevance":0.6},{"document_key":"feature_spec","type":"feedback","relevance":0.6},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"success_metrics","type":"feedback","relevance":0.6}]'::jsonb,
@@ -890,20 +988,21 @@ BEGIN
               "artifact_class": "rendered_document",
               "file_type": "markdown",
               "content_to_include": {
+                "fit_to_original_user_request": "",
                 "strengths": [],
                 "weaknesses": [],
                 "opportunities": [],
                 "threats": [],
-                "recommendations": [],
-                "notes": [],
-                "fit_to_original_user_request": "",
                 "problems": [],
                 "obstacles": [],
                 "errors": [],
                 "omissions": [],
                 "discrepancies": [],
                 "areas_for_improvement": [],
-                "feasibility": ""
+                "feasibility": "",
+                "recommendations": [],
+                "notes": [],
+                "executive_summary": ""
               }
             }
           ],
@@ -958,7 +1057,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_feasibility_prompt_id,
-        'RenderedDocument',
+        'technical_feasibility_assessment',
         'per_source_document',
         '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"feature_spec","relevance":0.9},{"document_key":"technical_approach","relevance":0.85},{"document_key":"business_case","relevance":0.7},{"document_key":"success_metrics","relevance":0.6},{"document_key":"business_case","type":"feedback","relevance":0.45},{"document_key":"feature_spec","type":"feedback","relevance":0.45},{"document_key":"technical_approach","type":"feedback","relevance":0.45},{"document_key":"success_metrics","type":"feedback","relevance":0.45}]'::jsonb,
@@ -970,25 +1069,38 @@ BEGIN
                "artifact_class": "rendered_document",
                "lineage_key": "<from the filename of the file being critiqued>",
                "source_model_slug": "<from the filename of the file being critiqued>",
-               "file_type": "markdown",
-               "content_to_include": {
-                 "constraint_checklist": [
-                   "team",
-                   "timeline",
-                   "cost",
-                   "integration",
-                   "compliance"
-                 ],
-                 "findings": []
-               }
-             }
-           ],
-           "files_to_generate": [
-             {
-               "template_filename": "antithesis_feasibility_assessment.md",
-               "from_document_key": "technical_feasibility_assessment"
-             }
-           ]
+              "file_type": "markdown",
+              "content_to_include": {
+                "summary": "",
+                "constraint_checklist": [
+                  "team",
+                  "timeline",
+                  "cost",
+                  "integration",
+                  "compliance"
+                ],
+                "team": "",
+                "timeline": "",
+                "cost": "",
+                "integration": "",
+                "compliance": "",
+                "findings": [],
+                "architecture": "",
+                "components": "",
+                "data": "",
+                "deployment": "",
+                "sequencing": "",
+                "risk_mitigation": "",
+                "open_questions": ""
+              }
+            }
+          ],
+          "files_to_generate": [
+            {
+              "template_filename": "antithesis_feasibility_assessment.md",
+              "from_document_key": "technical_feasibility_assessment"
+            }
+          ]
         }'::jsonb
     )
     ON CONFLICT (template_id, step_key) DO UPDATE
@@ -1037,7 +1149,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_feasibility_prompt_id,
-        'RenderedDocument',
+        'technical_feasibility_assessment',
         'per_source_document',
         '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"feature_spec","relevance":0.9},{"document_key":"technical_approach","relevance":0.85},{"document_key":"business_case","relevance":0.7},{"document_key":"success_metrics","relevance":0.6},{"document_key":"business_case","type":"feedback","relevance":0.45},{"document_key":"feature_spec","type":"feedback","relevance":0.45},{"document_key":"technical_approach","type":"feedback","relevance":0.45},{"document_key":"success_metrics","type":"feedback","relevance":0.45}]'::jsonb,
@@ -1051,6 +1163,7 @@ BEGIN
               "source_model_slug": "<from the filename of the file being critiqued>",
               "file_type": "markdown",
               "content_to_include": {
+                "summary": "",
                 "constraint_checklist": [
                   "team",
                   "timeline",
@@ -1058,7 +1171,19 @@ BEGIN
                   "integration",
                   "compliance"
                 ],
-                "findings": []
+                "team": "",
+                "timeline": "",
+                "cost": "",
+                "integration": "",
+                "compliance": "",
+                "findings": [],
+                "architecture": "",
+                "components": "",
+                "data": "",
+                "deployment": "",
+                "sequencing": "",
+                "risk_mitigation": "",
+                "open_questions": ""
               }
             }
           ],
@@ -1113,7 +1238,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_risk_prompt_id,
-        'RenderedDocument',
+        'risk_register',
         'per_source_document',
         '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"success_metrics","relevance":0.9},{"document_key":"technical_approach","relevance":0.8},{"document_key":"feature_spec","relevance":0.75},{"document_key":"business_case","relevance":0.65},{"document_key":"success_metrics","type":"feedback","relevance":0.7},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"feature_spec","type":"feedback","relevance":0.55},{"document_key":"business_case","type":"feedback","relevance":0.5}]'::jsonb,
@@ -1125,23 +1250,31 @@ BEGIN
                "artifact_class": "rendered_document",
                "lineage_key": "<from the filename of the file being critiqued>",
                "source_model_slug": "<from the filename of the file being critiqued>",
-               "file_type": "markdown",
-               "content_to_include": [
-                 {
-                   "risk": "",
-                   "impact": "",
-                   "likelihood": "",
-                   "mitigation": ""
-                 }
-               ]
-             }
-           ],
-           "files_to_generate": [
-             {
-               "template_filename": "antithesis_risk_register.md",
-               "from_document_key": "risk_register"
-             }
-           ]
+              "file_type": "markdown",
+              "content_to_include": {
+                "overview": "",
+                "required_fields": [
+                  "risk",
+                  "impact",
+                  "likelihood",
+                  "mitigation"
+                ],
+                "risk": "",
+                "impact": "",
+                "likelihood": "",
+                "mitigation": "",
+                "seed_examples": [],
+                "mitigation_plan": "",
+                "notes": ""
+              }
+            }
+          ],
+          "files_to_generate": [
+            {
+              "template_filename": "antithesis_risk_register.md",
+              "from_document_key": "risk_register"
+            }
+          ]
         }'::jsonb
     )
     ON CONFLICT (template_id, step_key) DO UPDATE
@@ -1190,7 +1323,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_risk_prompt_id,
-        'RenderedDocument',
+        'risk_register',
         'per_source_document',
         '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"success_metrics","relevance":0.9},{"document_key":"technical_approach","relevance":0.8},{"document_key":"feature_spec","relevance":0.75},{"document_key":"business_case","relevance":0.65},{"document_key":"success_metrics","type":"feedback","relevance":0.7},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"feature_spec","type":"feedback","relevance":0.55},{"document_key":"business_case","type":"feedback","relevance":0.5}]'::jsonb,
@@ -1203,14 +1336,22 @@ BEGIN
               "lineage_key": "<from the filename of the file being critiqued>",
               "source_model_slug": "<from the filename of the file being critiqued>",
               "file_type": "markdown",
-              "content_to_include": [
-                {
-                  "risk": "",
-                  "impact": "",
-                  "likelihood": "",
-                  "mitigation": ""
-                }
-              ]
+              "content_to_include": {
+                "overview": "",
+                "required_fields": [
+                  "risk",
+                  "impact",
+                  "likelihood",
+                  "mitigation"
+                ],
+                "risk": "",
+                "impact": "",
+                "likelihood": "",
+                "mitigation": "",
+                "seed_examples": [],
+                "mitigation_plan": "",
+                "notes": ""
+              }
             }
           ],
           "files_to_generate": [
@@ -1264,7 +1405,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_nfr_prompt_id,
-        'RenderedDocument',
+        'non_functional_requirements',
         'per_source_document',
         '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"technical_approach","relevance":0.9},{"document_key":"success_metrics","relevance":0.8},{"document_key":"feature_spec","relevance":0.7},{"document_key":"business_case","relevance":0.6},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"success_metrics","type":"feedback","relevance":0.55},{"document_key":"feature_spec","type":"feedback","relevance":0.5},{"document_key":"business_case","type":"feedback","relevance":0.45}]'::jsonb,
@@ -1276,23 +1417,40 @@ BEGIN
                "artifact_class": "rendered_document",
                "lineage_key": "<from the filename of the file being critiqued>",
                "source_model_slug": "<from the filename of the file being critiqued>",
-               "file_type": "markdown",
-               "content_to_include": [
-                 "security",
-                 "performance",
-                 "reliability",
-                 "scalability",
-                 "maintainability",
-                 "compliance"
-               ]
-             }
-           ],
-           "files_to_generate": [
-             {
-               "template_filename": "antithesis_non_functional_requirements.md",
-               "from_document_key": "non_functional_requirements"
-             }
-           ]
+              "file_type": "markdown",
+              "content_to_include": {
+                "overview": "",
+                "categories": [
+                  "security",
+                  "performance",
+                  "reliability",
+                  "scalability",
+                  "maintainability",
+                  "compliance"
+                ],
+                "security": "",
+                "performance": "",
+                "reliability": "",
+                "scalability": "",
+                "maintainability": "",
+                "compliance": "",
+                "outcome_alignment": "",
+                "primary_kpis": "",
+                "leading_indicators": "",
+                "lagging_indicators": "",
+                "measurement_plan": "",
+                "risk_signals": "",
+                "guardrails": "",
+                "next_steps": ""
+              }
+            }
+          ],
+          "files_to_generate": [
+            {
+              "template_filename": "antithesis_non_functional_requirements.md",
+              "from_document_key": "non_functional_requirements"
+            }
+          ]
         }'::jsonb
     )
     ON CONFLICT (template_id, step_key) DO UPDATE
@@ -1341,7 +1499,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_nfr_prompt_id,
-        'RenderedDocument',
+        'non_functional_requirements',
         'per_source_document',
         '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"technical_approach","relevance":0.9},{"document_key":"success_metrics","relevance":0.8},{"document_key":"feature_spec","relevance":0.7},{"document_key":"business_case","relevance":0.6},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"success_metrics","type":"feedback","relevance":0.55},{"document_key":"feature_spec","type":"feedback","relevance":0.5},{"document_key":"business_case","type":"feedback","relevance":0.45}]'::jsonb,
@@ -1354,14 +1512,31 @@ BEGIN
               "lineage_key": "<from the filename of the file being critiqued>",
               "source_model_slug": "<from the filename of the file being critiqued>",
               "file_type": "markdown",
-              "content_to_include": [
-                "security",
-                "performance",
-                "reliability",
-                "scalability",
-                "maintainability",
-                "compliance"
-              ]
+              "content_to_include": {
+                "overview": "",
+                "categories": [
+                  "security",
+                  "performance",
+                  "reliability",
+                  "scalability",
+                  "maintainability",
+                  "compliance"
+                ],
+                "security": "",
+                "performance": "",
+                "reliability": "",
+                "scalability": "",
+                "maintainability": "",
+                "compliance": "",
+                "outcome_alignment": "",
+                "primary_kpis": "",
+                "leading_indicators": "",
+                "lagging_indicators": "",
+                "measurement_plan": "",
+                "risk_signals": "",
+                "guardrails": "",
+                "next_steps": ""
+              }
             }
           ],
           "files_to_generate": [
@@ -1415,7 +1590,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_dependency_prompt_id,
-        'RenderedDocument',
+        'dependency_map',
         'per_source_document',
         '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"technical_approach","relevance":0.9},{"document_key":"feature_spec","relevance":0.85},{"document_key":"business_case","relevance":0.75},{"document_key":"success_metrics","relevance":0.65},{"document_key":"technical_approach","type":"feedback","relevance":0.5},{"document_key":"feature_spec","type":"feedback","relevance":0.45},{"document_key":"business_case","type":"feedback","relevance":0.4},{"document_key":"success_metrics","type":"feedback","relevance":0.35}]'::jsonb,
@@ -1429,9 +1604,14 @@ BEGIN
                "source_model_slug": "<from the filename of the file being critiqued>",
                "file_type": "markdown",
                "content_to_include": {
+                 "overview": "",
                  "components": [],
                  "integration_points": [],
-                 "conflict_flags": []
+                 "conflict_flags": [],
+                 "dependencies": "",
+                 "sequencing": "",
+                 "risk_mitigation": "",
+                 "open_questions": ""
                }
              }
            ],
@@ -1489,7 +1669,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_dependency_prompt_id,
-        'RenderedDocument',
+        'dependency_map',
         'per_source_document',
         '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"technical_approach","relevance":0.9},{"document_key":"feature_spec","relevance":0.85},{"document_key":"business_case","relevance":0.75},{"document_key":"success_metrics","relevance":0.65},{"document_key":"technical_approach","type":"feedback","relevance":0.5},{"document_key":"feature_spec","type":"feedback","relevance":0.45},{"document_key":"business_case","type":"feedback","relevance":0.4},{"document_key":"success_metrics","type":"feedback","relevance":0.35}]'::jsonb,
@@ -1503,9 +1683,14 @@ BEGIN
               "source_model_slug": "<from the filename of the file being critiqued>",
               "file_type": "markdown",
               "content_to_include": {
+                "overview": "",
                 "components": [],
                 "integration_points": [],
-                "conflict_flags": []
+                "conflict_flags": [],
+                "dependencies": "",
+                "sequencing": "",
+                "risk_mitigation": "",
+                "open_questions": ""
               }
             }
           ],
@@ -1560,7 +1745,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_comparison_prompt_id,
-        'AssembledDocumentJson',
+        'assembled_document_json',
         'per_source_document',
         '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"business_case","relevance":0.95},{"document_key":"feature_spec","relevance":0.95},{"document_key":"technical_approach","relevance":0.9},{"document_key":"success_metrics","relevance":0.85},{"document_key":"business_case","type":"feedback","relevance":0.75},{"document_key":"feature_spec","type":"feedback","relevance":0.7},{"document_key":"technical_approach","type":"feedback","relevance":0.7},{"document_key":"success_metrics","type":"feedback","relevance":0.65}]'::jsonb,
@@ -1647,7 +1832,7 @@ BEGIN
         'EXECUTE',
         'Turn',
         v_comparison_prompt_id,
-        'AssembledDocumentJson',
+        'assembled_document_json',
         'per_source_document',
         '[{"type":"header_context","slug":"antithesis","document_key":"header_context","required":true},{"type":"document","slug":"thesis","document_key":"business_case","required":true},{"type":"document","slug":"thesis","document_key":"feature_spec","required":true},{"type":"document","slug":"thesis","document_key":"technical_approach","required":true},{"type":"document","slug":"thesis","document_key":"success_metrics","required":true},{"type":"feedback","slug":"thesis","document_key":"business_case","required":false},{"type":"feedback","slug":"thesis","document_key":"feature_spec","required":false},{"type":"feedback","slug":"thesis","document_key":"technical_approach","required":false},{"type":"feedback","slug":"thesis","document_key":"success_metrics","required":false}]'::jsonb,
         '[{"document_key":"header_context","relevance":1.0},{"document_key":"business_case","relevance":0.95},{"document_key":"feature_spec","relevance":0.95},{"document_key":"technical_approach","relevance":0.9},{"document_key":"success_metrics","relevance":0.85},{"document_key":"business_case","type":"feedback","relevance":0.75},{"document_key":"feature_spec","type":"feedback","relevance":0.7},{"document_key":"technical_approach","type":"feedback","relevance":0.7},{"document_key":"success_metrics","type":"feedback","relevance":0.65}]'::jsonb,

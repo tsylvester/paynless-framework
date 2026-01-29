@@ -7,11 +7,15 @@ import {
 import {
   constructStoragePath,
   generateShortId,
+  mapStageSlugToDirName,
   sanitizeForPath,
 } from './path_constructor.ts'
 import { deconstructStoragePath } from '../utils/path_deconstructor.ts'
-import { FileType, type PathContext } from '../types/file_manager.types.ts'
-import type { DeconstructedPathInfo } from './path_deconstructor.types.ts'
+import { 
+  FileType, 
+  PathContext 
+} from '../types/file_manager.types.ts'
+import { DeconstructedPathInfo } from './path_deconstructor.types.ts'
 import { isContributionType } from './type_guards.ts'
 
 Deno.test('constructStoragePath and deconstructStoragePath should be perfect inverses', async (t) => {
@@ -74,18 +78,43 @@ Deno.test('constructStoragePath and deconstructStoragePath should be perfect inv
         context.stageSlug = 'synthesis';
         context.sourceAnchorType = 'thesis';
         context.sourceAnchorModelSlug = 'model-a';
+      } else if (fileType === FileType.RagContextSummary) {
+        context.stageSlug = 'synthesis';
+        context.sourceModelSlugs = sourceModelSlugs;
       }
 
-      return {
-        fileType,
-        context,
-        expectedDeconstructed: {
-          ...expectedBaseStageInfo,
-          stageSlug: context.stageSlug,
-          contributionType: fileTypeStr,
-          fileTypeGuess: fileType,
-        },
+      const baseExpected = {
+        ...expectedBaseStageInfo,
+        stageSlug: context.stageSlug,
+        fileTypeGuess: fileType,
       };
+      
+      // RagContextSummary does not have contributionType set by deconstructor
+      if (fileType === FileType.RagContextSummary) {
+        return {
+          fileType,
+          context,
+          expectedDeconstructed: {
+            ...baseExpected,
+            modelSlug,
+            sourceModelSlugs,
+          },
+        };
+      }
+      
+      // HeaderContext requires documentKey, so handle it in the switch statement instead
+      if (fileType === FileType.HeaderContext) {
+        // Let it fall through to the switch statement below
+      } else {
+        return {
+          fileType,
+          context,
+          expectedDeconstructed: {
+            ...baseExpected,
+            contributionType: fileTypeStr,
+          },
+        };
+      }
     } else {
       // Handle all other cases that are not contribution types
       switch (fileType) {
@@ -185,12 +214,22 @@ Deno.test('constructStoragePath and deconstructStoragePath should be perfect inv
             expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', modelSlug, attemptCount, documentKey },
           };
         case FileType.HeaderContext:
-        case FileType.comparison_vector:
+          return {
+            fileType,
+            context: { ...baseModelContext, documentKey: 'header_context' },
+            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', modelSlug, attemptCount, contributionType: 'header_context' },
+          };
         case FileType.SynthesisHeaderContext:
           return {
             fileType,
-            context: baseModelContext,
-            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', modelSlug, attemptCount },
+            context: { ...baseModelContext, documentKey: 'synthesis_header_context' },
+            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', modelSlug, attemptCount, contributionType: 'synthesis_header_context' },
+          };
+        case FileType.comparison_vector:
+          return {
+            fileType,
+            context: { ...baseModelContext, documentKey: 'comparison_vector' },
+            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', modelSlug, attemptCount, documentKey: 'comparison_vector' },
           };
         case FileType.AssembledDocumentJson:
           return {
@@ -203,21 +242,6 @@ Deno.test('constructStoragePath and deconstructStoragePath should be perfect inv
             fileType,
             context: baseDocumentContext,
             expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'thesis', modelSlug, attemptCount, documentKey },
-          };
-        case FileType.RagContextSummary:
-          return {
-            fileType,
-            context: {
-              ...baseModelContext,
-              stageSlug: 'synthesis',
-              sourceModelSlugs,
-            },
-            expectedDeconstructed: {
-              ...expectedBaseStageInfo,
-              stageSlug: 'synthesis',
-              modelSlug,
-              sourceModelSlugs,
-            },
           };
         
         // --- Document Keys Treated as FileTypes that are NOT contribution types ---
@@ -238,10 +262,10 @@ Deno.test('constructStoragePath and deconstructStoragePath should be perfect inv
         case FileType.synthesis_document_feature_spec:
         case FileType.synthesis_document_technical_approach:
         case FileType.synthesis_document_success_metrics:
-        case FileType.prd:
-        case FileType.system_architecture_overview:
-        case FileType.tech_stack_recommendations:
-        case FileType.trd:
+        case FileType.product_requirements:
+        case FileType.system_architecture:
+        case FileType.tech_stack:
+        case FileType.technical_requirements:
         case FileType.master_plan:
         case FileType.milestone_schema:
         case FileType.updated_master_plan:
@@ -252,7 +276,7 @@ Deno.test('constructStoragePath and deconstructStoragePath should be perfect inv
             ...baseModelContext,
             stageSlug: fileType.toString().includes('critique') || fileType.toString().includes('assessment') ? 'antithesis'
               : fileType.toString().includes('synthesis') ? 'synthesis'
-              : fileType.toString().includes('trd') || fileType.toString().includes('master_plan') ? 'parenthesis'
+              : fileType.toString().includes('technical_requirements') || fileType.toString().includes('master_plan') ? 'parenthesis'
               : fileType.toString().includes('advisor') ? 'paralysis'
               : 'thesis',
             documentKey: fileType.toString(),
@@ -406,10 +430,10 @@ Deno.test('constructStoragePath', async (t) => {
 
   await t.step('should handle model contributions with correct naming conventions', async (t) => {
     const thesisContext: PathContext = { ...baseContext, stageSlug: 'thesis', documentKey: 'business_case', fileType: FileType.business_case };
-    const antithesisContext: PathContext = { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.business_case_critique, sourceModelSlugs: ['claude-3-opus'], sourceAttemptCount: 0 };
+    const antithesisContext: PathContext = { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.business_case_critique, sourceModelSlugs: ['claude-3-opus'], sourceAttemptCount: 0, documentKey: 'business_case_critique' };
     const pairwiseContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'pairwise_synthesis_chunk', fileType: FileType.PairwiseSynthesisChunk };
     const reducedContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'reduced_synthesis', fileType: FileType.ReducedSynthesis };
-    const parenthesisContext: PathContext = { ...baseContext, stageSlug: 'parenthesis', contributionType: 'parenthesis', fileType: FileType.trd, documentKey: 'trd' };
+    const parenthesisContext: PathContext = { ...baseContext, stageSlug: 'parenthesis', contributionType: 'parenthesis', fileType: FileType.technical_requirements, documentKey: 'technical_requirements' };
     const paralysisContext: PathContext = { ...baseContext, stageSlug: 'paralysis', contributionType: 'paralysis', fileType: FileType.advisor_recommendations, documentKey: 'advisor_recommendations' };
 
     await t.step('handles SynthesisHeaderContext file type', () => {
@@ -435,7 +459,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'thesis',
         fileType: FileType.business_case,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'business_case',
       };
       const { storagePath, fileName } = constructStoragePath(businessCaseContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/documents`);
@@ -450,7 +475,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'thesis',
         fileType: FileType.feature_spec,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'feature_spec',
       };
       const { storagePath, fileName } = constructStoragePath(featureSpecContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/documents`);
@@ -465,7 +491,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'thesis',
         fileType: FileType.technical_approach,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'technical_approach',
       };
       const { storagePath, fileName } = constructStoragePath(technicalApproachContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/documents`);
@@ -480,7 +507,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'thesis',
         fileType: FileType.success_metrics,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'success_metrics',
       };
       const { storagePath, fileName } = constructStoragePath(successMetricsContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/documents`);
@@ -495,7 +523,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'antithesis',
         fileType: FileType.business_case_critique,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'business_case_critique',
       };
       const { storagePath, fileName } = constructStoragePath(businessCaseCritiqueContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/documents`);
@@ -510,7 +539,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'antithesis',
         fileType: FileType.technical_feasibility_assessment,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'technical_feasibility_assessment',
       };
       const { storagePath, fileName } = constructStoragePath(technicalFeasibilityContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/documents`);
@@ -525,7 +555,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'antithesis',
         fileType: FileType.risk_register,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'risk_register',
       };
       const { storagePath, fileName } = constructStoragePath(riskRegisterContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/documents`);
@@ -540,7 +571,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'antithesis',
         fileType: FileType.non_functional_requirements,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'non_functional_requirements',
       };
       const { storagePath, fileName } = constructStoragePath(nonFunctionalContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/documents`);
@@ -555,7 +587,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'antithesis',
         fileType: FileType.dependency_map,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'dependency_map',
       };
       const { storagePath, fileName } = constructStoragePath(dependencyMapContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/documents`);
@@ -570,7 +603,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'antithesis',
         fileType: FileType.comparison_vector,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'comparison_vector',
       };
       const { storagePath, fileName } = constructStoragePath(comparisonVectorContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/documents`);
@@ -585,7 +619,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'synthesis',
         fileType: FileType.synthesis_pairwise_business_case,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'synthesis_pairwise_business_case',
       };
       const { storagePath, fileName } = constructStoragePath(pairwiseBusinessCaseContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
@@ -600,7 +635,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'synthesis',
         fileType: FileType.synthesis_document_business_case,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'synthesis_document_business_case',
       };
       const { storagePath, fileName } = constructStoragePath(documentBusinessCaseContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
@@ -615,26 +651,28 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'paralysis',
         fileType: FileType.advisor_recommendations,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'advisor_recommendations',
       };
       const { storagePath, fileName } = constructStoragePath(advisorRecommendationsContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/5_paralysis/documents`);
       assertEquals(fileName, 'gpt-4-turbo_0_advisor_recommendations.md');
     });
 
-    await t.step('handles trd file type', () => {
-      const trdContext: PathContext = {
+    await t.step('handles technical_requirements file type', () => {
+      const technical_requirementsContext: PathContext = {
         projectId,
         sessionId,
         iteration,
         stageSlug: 'parenthesis',
-        fileType: FileType.trd,
+        fileType: FileType.technical_requirements,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'technical_requirements',
       };
-      const { storagePath, fileName } = constructStoragePath(trdContext);
+      const { storagePath, fileName } = constructStoragePath(technical_requirementsContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis/documents`);
-      assertEquals(fileName, 'gpt-4-turbo_0_trd.md');
+      assertEquals(fileName, 'gpt-4-turbo_0_technical_requirements.md');
     });
 
     await t.step('handles master_plan file type', () => {
@@ -645,7 +683,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'parenthesis',
         fileType: FileType.master_plan,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'master_plan',
       };
       const { storagePath, fileName } = constructStoragePath(masterPlanContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis/documents`);
@@ -660,7 +699,8 @@ Deno.test('constructStoragePath', async (t) => {
         stageSlug: 'parenthesis',
         fileType: FileType.milestone_schema,
         modelSlug: 'gpt-4-turbo',
-        attemptCount: 0
+        attemptCount: 0,
+        documentKey: 'milestone_schema',
       };
       const { storagePath, fileName } = constructStoragePath(milestoneSchemaContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis/documents`);
@@ -704,7 +744,7 @@ Deno.test('constructStoragePath', async (t) => {
     await t.step('constructs path for parenthesis', () => {
         const { storagePath, fileName } = constructStoragePath(parenthesisContext);
         assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis/documents`);
-        assertEquals(fileName, 'gpt-4-turbo_0_trd.md');
+        assertEquals(fileName, 'gpt-4-turbo_0_technical_requirements.md');
     });
 
     await t.step('constructs path for paralysis', () => {
@@ -732,6 +772,24 @@ Deno.test('constructStoragePath', async (t) => {
         const { storagePath, fileName } = constructStoragePath(antithesisRawContext);
         assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/raw_responses`);
         assertEquals(fileName, `gpt-4-turbo_critiquing_(claude-3-opus's_thesis_0)_0_antithesis_raw.json`);
+    });
+
+    await t.step('ModelContributionRawJson with stageSlug=antithesis and sourceAnchorModelSlug should use simple critiquing pattern', () => {
+        const context: PathContext = {
+          ...baseContext,
+          stageSlug: 'antithesis',
+          fileType: FileType.ModelContributionRawJson,
+          documentKey: 'business_case',
+          sourceAnchorModelSlug: 'claude-3-opus',
+          sourceGroupFragment: '98765432',
+        };
+        const { storagePath, fileName } = constructStoragePath(context);
+        assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/raw_responses`);
+        assertEquals(
+          fileName,
+          'gpt-4-turbo_critiquing_claude-3-opus_98765432_0_business_case_raw.json',
+          'ModelContributionRawJson with stageSlug=antithesis and sourceAnchorModelSlug should use simple critiquing pattern per documentation'
+        );
     });
 
     await t.step('constructs raw path for pairwise_synthesis_chunk', () => {
@@ -818,11 +876,11 @@ Deno.test('constructStoragePath', async (t) => {
 
     await t.step('throws if context is missing for model contributions', () => {
         const incompleteContext: Partial<PathContext> = { projectId, sessionId, iteration, stageSlug: 'thesis', fileType: FileType.business_case };
-        assertThrows(() => constructStoragePath(incompleteContext as PathContext), Error, `Required context missing for model contribution file of type ${FileType.business_case}.`);
+        assertThrows(() => constructStoragePath(incompleteContext as PathContext), Error, `constructStoragePath requires all of the following values for document file type '${FileType.business_case}'`);
     });
     
     await t.step('throws if sourceModelSlugs is missing for antithesis', () => {
-        const context: PathContext = { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.business_case_critique, sourceModelSlugs: [] };
+        const context: PathContext = { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.business_case_critique, sourceModelSlugs: [], documentKey: 'business_case_critique' };
         assertThrows(() => constructStoragePath(context), Error, 'Antithesis requires one sourceModelSlug, a sourceAnchorType, and a sourceAttemptCount.');
     });
 
@@ -848,15 +906,15 @@ Deno.test('constructStoragePath', async (t) => {
         // source documents that happen to be from the same original author.
         const contexts: PathContext[] = [
             // gpt-4 critiques claude's thesis v0
-            { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.business_case_critique, modelSlug: 'gpt-4-turbo', sourceModelSlugs: ['claude-3-opus'], sourceAnchorType: 'thesis', sourceAttemptCount: 0, attemptCount: 0 },
+            { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.business_case_critique, modelSlug: 'gpt-4-turbo', sourceModelSlugs: ['claude-3-opus'], sourceAnchorType: 'thesis', sourceAttemptCount: 0, attemptCount: 0, documentKey: 'business_case_critique' },
             // gpt-4 critiques claude's thesis v1
-            { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.business_case_critique, modelSlug: 'gpt-4-turbo', sourceModelSlugs: ['claude-3-opus'], sourceAnchorType: 'thesis', sourceAttemptCount: 1, attemptCount: 0 },
+            { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.business_case_critique, modelSlug: 'gpt-4-turbo', sourceModelSlugs: ['claude-3-opus'], sourceAnchorType: 'thesis', sourceAttemptCount: 1, attemptCount: 0, documentKey: 'business_case_critique' },
             // claude critiques gpt-4's thesis v0
-            { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.business_case_critique, modelSlug: 'claude-3-opus', sourceModelSlugs: ['gpt-4-turbo'], sourceAnchorType: 'thesis', sourceAttemptCount: 0, attemptCount: 0 },
+            { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.business_case_critique, modelSlug: 'claude-3-opus', sourceModelSlugs: ['gpt-4-turbo'], sourceAnchorType: 'thesis', sourceAttemptCount: 0, attemptCount: 0, documentKey: 'business_case_critique' },
             // A different critique type
-            { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.business_case_critique, modelSlug: 'gpt-4-turbo', sourceModelSlugs: ['claude-3-opus'], sourceAnchorType: 'summary', sourceAttemptCount: 0, attemptCount: 0 },
+            { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.business_case_critique, modelSlug: 'gpt-4-turbo', sourceModelSlugs: ['claude-3-opus'], sourceAnchorType: 'summary', sourceAttemptCount: 0, attemptCount: 0, documentKey: 'business_case_critique' },
             // A different attempt count for the critique itself
-            { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.business_case_critique, modelSlug: 'gpt-4-turbo', sourceModelSlugs: ['claude-3-opus'], sourceAnchorType: 'thesis', sourceAttemptCount: 0, attemptCount: 1 },
+            { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: FileType.business_case_critique, modelSlug: 'gpt-4-turbo', sourceModelSlugs: ['claude-3-opus'], sourceAnchorType: 'thesis', sourceAttemptCount: 0, attemptCount: 1, documentKey: 'business_case_critique' },
         ];
         const generatedPaths = new Set<string>();
         for (const context of contexts) {
@@ -1041,9 +1099,46 @@ Deno.test('constructStoragePath', async (t) => {
     });
 
     await t.step('constructs path for HeaderContext', () => {
-      const { storagePath, fileName } = constructStoragePath({ ...docContext, fileType: FileType.HeaderContext });
+      const headerContext: PathContext = {
+        ...baseContext,
+        fileType: FileType.HeaderContext,
+        stageSlug: 'thesis',
+        attemptCount: 1,
+        documentKey: 'header_context',
+      };
+      const { storagePath, fileName } = constructStoragePath(headerContext);
       const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/_work/context`;
       const expectedFileName = `${modelSlug}_1_header_context.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+    });
+
+    await t.step('constructs path for HeaderContext with documentKey', () => {
+      const headerContext: PathContext = {
+        ...baseContext,
+        fileType: FileType.HeaderContext,
+        stageSlug: 'thesis',
+        attemptCount: 1,
+        documentKey: 'header_context',
+      };
+      const { storagePath, fileName } = constructStoragePath(headerContext);
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/_work/context`;
+      const expectedFileName = `${modelSlug}_1_header_context.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+    });
+
+    await t.step('constructs path for HeaderContext with header_context_pairwise documentKey', () => {
+      const pairwiseContext: PathContext = {
+        ...baseContext,
+        fileType: FileType.HeaderContext,
+        stageSlug: 'synthesis',
+        attemptCount: 0,
+        documentKey: 'header_context_pairwise',
+      };
+      const { storagePath, fileName } = constructStoragePath(pairwiseContext);
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/context`;
+      const expectedFileName = `${modelSlug}_0_header_context_pairwise.json`;
       assertEquals(storagePath, expectedPath);
       assertEquals(fileName, expectedFileName);
     });
@@ -1052,6 +1147,25 @@ Deno.test('constructStoragePath', async (t) => {
       const { storagePath, fileName } = constructStoragePath({ ...docContext, fileType: FileType.AssembledDocumentJson });
       const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/_work/assembled_json`;
       const expectedFileName = `${modelSlug}_1_executive_summary_assembled.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+    });
+    
+    await t.step('constructs path for AssembledDocumentJson with synthesis_pairwise documentKey uses pairwise pattern', () => {
+      const pairwiseAssembledContext: PathContext = {
+        ...baseContext,
+        fileType: FileType.AssembledDocumentJson,
+        stageSlug: 'synthesis',
+        sourceAnchorType: 'thesis',
+        sourceAnchorModelSlug: 'claude-3-opus',
+        pairedModelSlug: 'gemini-1.5-pro',
+        attemptCount: 0,
+        documentKey: 'synthesis_pairwise_technical_approach',
+      };
+      const { storagePath, fileName } = constructStoragePath(pairwiseAssembledContext);
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/assembled_json`;
+      // Should match PairwiseSynthesisChunk pattern: ${modelSlug}_synthesizing_${sourceAnchorModelSlug}_with_${pairedModelSlug}_on_${sourceAnchorType}_${attemptCount}_${documentKey}_assembled.json
+      const expectedFileName = `${modelSlug}_synthesizing_claude-3-opus_with_gemini-1.5-pro_on_thesis_0_synthesis_pairwise_technical_approach_assembled.json`;
       assertEquals(storagePath, expectedPath);
       assertEquals(fileName, expectedFileName);
     });
@@ -1086,6 +1200,733 @@ Deno.test('constructStoragePath', async (t) => {
       const expectedFileName = `${modelSlug}_1_executive_summary_continuation_3_raw.json`;
       assertEquals(storagePath, expectedPath);
       assertEquals(fileName, expectedFileName);
+    });
+  });
+
+  await t.step('step 40.b: requires ALL required values for document file types', async (t) => {
+    const documentKey = 'business_case';
+    const stageSlug = 'thesis';
+    const mappedStageDir = mapStageSlugToDirName(stageSlug);
+    const expectedStoragePath = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/documents`;
+    const expectedFileName = `${modelSlug}_${attemptCount}_${documentKey}.md`;
+
+    await t.step('40.b.i: succeeds with ALL required values present', () => {
+      const context: PathContext = {
+        projectId,
+        fileType: FileType.business_case,
+        sessionId,
+        iteration,
+        stageSlug,
+        modelSlug,
+        attemptCount,
+        documentKey,
+      };
+      const { storagePath, fileName } = constructStoragePath(context);
+      assertEquals(storagePath, expectedStoragePath);
+      assertEquals(fileName, expectedFileName);
+    });
+
+    await t.step('40.b.ii: throws error when documentKey is undefined', () => {
+      const context: PathContext = {
+        projectId,
+        fileType: FileType.business_case,
+        sessionId,
+        iteration,
+        stageSlug,
+        modelSlug,
+        attemptCount,
+        documentKey: undefined,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'documentKey (string, non-empty)',
+      );
+    });
+
+    await t.step('40.b.ii: throws error when documentKey is null', () => {
+      const context: PathContext = {
+        projectId,
+        fileType: FileType.business_case,
+        sessionId,
+        iteration,
+        stageSlug,
+        modelSlug,
+        attemptCount,
+        documentKey: null as unknown as string,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'documentKey (string, non-empty)',
+      );
+    });
+
+    await t.step('40.b.ii: throws error when documentKey is empty string', () => {
+      const context: PathContext = {
+        projectId,
+        fileType: FileType.business_case,
+        sessionId,
+        iteration,
+        stageSlug,
+        modelSlug,
+        attemptCount,
+        documentKey: '',
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'documentKey (string, non-empty)',
+      );
+    });
+
+    await t.step('40.b.ii: throws error when sessionId is undefined', () => {
+      const context: PathContext = {
+        projectId,
+        fileType: FileType.business_case,
+        sessionId: undefined as unknown as string,
+        iteration,
+        stageSlug,
+        modelSlug,
+        attemptCount,
+        documentKey,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'sessionId (string, non-empty)',
+      );
+    });
+
+    await t.step('40.b.ii: throws error when iteration is undefined', () => {
+      const context: PathContext = {
+        projectId,
+        fileType: FileType.business_case,
+        sessionId,
+        iteration: undefined as unknown as number,
+        stageSlug,
+        modelSlug,
+        attemptCount,
+        documentKey,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'iteration (number)',
+      );
+    });
+
+    await t.step('40.b.ii: throws error when stageSlug is undefined', () => {
+      const context: PathContext = {
+        projectId,
+        fileType: FileType.business_case,
+        sessionId,
+        iteration,
+        stageSlug: undefined as unknown as string,
+        modelSlug,
+        attemptCount,
+        documentKey,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'stageSlug (string, non-empty)',
+      );
+    });
+
+    await t.step('40.b.ii: throws error when modelSlug is undefined', () => {
+      const context: PathContext = {
+        projectId,
+        fileType: FileType.business_case,
+        sessionId,
+        iteration,
+        stageSlug,
+        modelSlug: undefined as unknown as string,
+        attemptCount,
+        documentKey,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'modelSlug (string, non-empty)',
+      );
+    });
+
+    await t.step('40.b.ii: throws error when attemptCount is undefined', () => {
+      const context: PathContext = {
+        projectId,
+        fileType: FileType.business_case,
+        sessionId,
+        iteration,
+        stageSlug,
+        modelSlug,
+        attemptCount: undefined as unknown as number,
+        documentKey,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'attemptCount (number)',
+      );
+    });
+
+    await t.step('40.b.ii: throws error when projectId is undefined', () => {
+      const context: PathContext = {
+        projectId: undefined as unknown as string,
+        fileType: FileType.business_case,
+        sessionId,
+        iteration,
+        stageSlug,
+        modelSlug,
+        attemptCount,
+        documentKey,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'projectId (string, non-empty)',
+      );
+    });
+
+    await t.step('40.b.iii: HeaderContext requires documentKey', () => {
+      const nonDocumentFileType = FileType.HeaderContext;
+      const nonDocumentContext: PathContext = {
+        projectId,
+        fileType: nonDocumentFileType,
+        sessionId,
+        iteration,
+        stageSlug,
+        modelSlug,
+        attemptCount,
+        documentKey: 'header_context',
+      };
+      const { storagePath, fileName } = constructStoragePath(nonDocumentContext);
+      const expectedNonDocPath = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/_work/context`;
+      const expectedNonDocFileName = `${modelSlug}_${attemptCount}_header_context.json`;
+      assertEquals(storagePath, expectedNonDocPath);
+      assertEquals(fileName, expectedNonDocFileName);
+    });
+
+    await t.step('40.b.iii.b: HeaderContext throws error when documentKey is missing', () => {
+      const nonDocumentContext: PathContext = {
+        projectId,
+        fileType: FileType.HeaderContext,
+        sessionId,
+        iteration,
+        stageSlug,
+        modelSlug,
+        attemptCount,
+        documentKey: undefined,
+      };
+      assertThrows(
+        () => constructStoragePath(nonDocumentContext),
+        Error,
+        'documentKey is required for header_context file type',
+      );
+    });
+
+    await t.step('40.b.iv: verifies document file types and HeaderContext require documentKey', () => {
+      const documentContext: PathContext = {
+        projectId,
+        fileType: FileType.business_case,
+        sessionId,
+        iteration,
+        stageSlug,
+        modelSlug,
+        attemptCount,
+        documentKey,
+      };
+      const { storagePath: docPath, fileName: docFileName } = constructStoragePath(documentContext);
+      assertEquals(docPath, expectedStoragePath);
+      assertEquals(docFileName, expectedFileName);
+
+      const documentContextMissingKey: PathContext = {
+        projectId,
+        fileType: FileType.business_case,
+        sessionId,
+        iteration,
+        stageSlug,
+        modelSlug,
+        attemptCount,
+        documentKey: undefined,
+      };
+      assertThrows(
+        () => constructStoragePath(documentContextMissingKey),
+        Error,
+        'documentKey',
+      );
+
+      const nonDocumentContext: PathContext = {
+        projectId,
+        fileType: FileType.HeaderContext,
+        sessionId,
+        iteration,
+        stageSlug,
+        modelSlug,
+        attemptCount,
+        documentKey: 'header_context',
+      };
+      const { storagePath: nonDocPath, fileName: nonDocFileName } = constructStoragePath(nonDocumentContext);
+      assert(nonDocPath.includes('_work/context'), 'HeaderContext should work with documentKey');
+      assert(nonDocFileName.includes('header_context'), 'HeaderContext should include documentKey in filename');
+
+      const nonDocumentContextMissingKey: PathContext = {
+        projectId,
+        fileType: FileType.HeaderContext,
+        sessionId,
+        iteration,
+        stageSlug,
+        modelSlug,
+        attemptCount,
+        documentKey: undefined,
+      };
+      assertThrows(
+        () => constructStoragePath(nonDocumentContextMissingKey),
+        Error,
+        'documentKey is required for header_context file type',
+      );
+    });
+  });
+
+  await t.step('step 40.f: requires ALL required values for document file types', async (t) => {
+    const documentKey = 'business_case';
+    const stageSlug = 'thesis';
+    const mappedStageDir = mapStageSlugToDirName(stageSlug);
+    const expectedStoragePath = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/documents`;
+    const expectedFileName = `${modelSlug}_${attemptCount}_${documentKey}.md`;
+
+    await t.step('40.f.i: succeeds with ALL required values present', () => {
+      const testProjectId = 'project-123';
+      const testSessionId = 'session-123';
+      const testIteration = 1;
+      const testStageSlug = 'thesis';
+      const testModelSlug = 'claude-opus';
+      const testAttemptCount = 0;
+      const testDocumentKey = 'business_case';
+      const context: PathContext = {
+        projectId: testProjectId,
+        fileType: FileType.business_case,
+        sessionId: testSessionId,
+        iteration: testIteration,
+        stageSlug: testStageSlug,
+        modelSlug: testModelSlug,
+        attemptCount: testAttemptCount,
+        documentKey: testDocumentKey,
+      };
+      const { storagePath, fileName } = constructStoragePath(context);
+      const expectedShortSessionId = generateShortId(testSessionId);
+      const expectedMappedStageDir = mapStageSlugToDirName(testStageSlug);
+      const expectedPath = `${testProjectId}/session_${expectedShortSessionId}/iteration_${testIteration}/${expectedMappedStageDir}/documents`;
+      const expectedFile = `${testModelSlug}_${testAttemptCount}_${testDocumentKey}.md`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFile);
+    });
+
+    await t.step('40.f.ii.a: throws error when documentKey is undefined', () => {
+      const context: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.business_case,
+        sessionId: 'session-123',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-opus',
+        attemptCount: 0,
+        documentKey: undefined,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'documentKey',
+      );
+    });
+
+    await t.step('40.f.ii.b: throws error when documentKey is null', () => {
+      const context: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.business_case,
+        sessionId: 'session-123',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-opus',
+        attemptCount: 0,
+        documentKey: null as unknown as string,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'documentKey',
+      );
+    });
+
+    await t.step('40.f.ii.c: throws error when documentKey is empty string', () => {
+      const context: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.business_case,
+        sessionId: 'session-123',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-opus',
+        attemptCount: 0,
+        documentKey: '',
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'documentKey',
+      );
+    });
+
+    await t.step('40.f.ii.d: throws error when sessionId is undefined', () => {
+      const context: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.business_case,
+        sessionId: undefined as unknown as string,
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-opus',
+        attemptCount: 0,
+        documentKey: 'business_case',
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'sessionId',
+      );
+    });
+
+    await t.step('40.f.ii.e: throws error when iteration is undefined', () => {
+      const context: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.business_case,
+        sessionId: 'session-123',
+        iteration: undefined as unknown as number,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-opus',
+        attemptCount: 0,
+        documentKey: 'business_case',
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'iteration',
+      );
+    });
+
+    await t.step('40.f.ii.f: throws error when stageSlug is undefined', () => {
+      const context: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.business_case,
+        sessionId: 'session-123',
+        iteration: 1,
+        stageSlug: undefined as unknown as string,
+        modelSlug: 'claude-opus',
+        attemptCount: 0,
+        documentKey: 'business_case',
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'stageSlug',
+      );
+    });
+
+    await t.step('40.f.ii.g: throws error when modelSlug is undefined', () => {
+      const context: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.business_case,
+        sessionId: 'session-123',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: undefined as unknown as string,
+        attemptCount: 0,
+        documentKey: 'business_case',
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'modelSlug',
+      );
+    });
+
+    await t.step('40.f.ii.h: throws error when attemptCount is undefined', () => {
+      const context: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.business_case,
+        sessionId: 'session-123',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-opus',
+        attemptCount: undefined as unknown as number,
+        documentKey: 'business_case',
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'attemptCount',
+      );
+    });
+
+    await t.step('40.f.ii.i: throws error when projectId is undefined', () => {
+      const context: PathContext = {
+        projectId: undefined as unknown as string,
+        fileType: FileType.business_case,
+        sessionId: 'session-123',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-opus',
+        attemptCount: 0,
+        documentKey: 'business_case',
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'projectId',
+      );
+    });
+
+    await t.step('40.f.iii: HeaderContext requires documentKey', () => {
+      const nonDocumentContext: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.HeaderContext,
+        sessionId: 'session-123',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-opus',
+        attemptCount: 0,
+        documentKey: 'header_context',
+      };
+      const { storagePath, fileName } = constructStoragePath(nonDocumentContext);
+      assert(storagePath.includes('_work/context'), 'HeaderContext should work with documentKey');
+      assert(fileName.includes('header_context'), 'HeaderContext should include documentKey in filename');
+    });
+
+    await t.step('40.f.iii.b: HeaderContext throws error when documentKey is missing', () => {
+      const nonDocumentContext: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.HeaderContext,
+        sessionId: 'session-123',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-opus',
+        attemptCount: 0,
+        documentKey: undefined,
+      };
+      assertThrows(
+        () => constructStoragePath(nonDocumentContext),
+        Error,
+        'documentKey is required for header_context file type',
+      );
+    });
+
+    await t.step('40.f.iv: verifies document file types and HeaderContext require ALL required values', () => {
+      // (1) Call with ALL required values present, assert it succeeds
+      const documentContext: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.business_case,
+        sessionId: 'session-123',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-opus',
+        attemptCount: 0,
+        documentKey: 'business_case',
+      };
+      const { storagePath: docPath, fileName: docFileName } = constructStoragePath(documentContext);
+      assert(docPath.includes('documents'), 'Document path should be constructed successfully');
+      assert(docFileName.includes('business_case'), 'Document filename should include documentKey');
+
+      // (2) Call with missing documentKey, assert it throws an error
+      const documentContextMissingKey: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.business_case,
+        sessionId: 'session-123',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-opus',
+        attemptCount: 0,
+        documentKey: undefined,
+      };
+      assertThrows(
+        () => constructStoragePath(documentContextMissingKey),
+        Error,
+        'documentKey',
+      );
+
+      // (3) Call with HeaderContext and documentKey, assert it does NOT throw an error
+      const nonDocumentContext: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.HeaderContext,
+        sessionId: 'session-123',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-opus',
+        attemptCount: 0,
+        documentKey: 'header_context',
+      };
+      const { storagePath: nonDocPath, fileName: nonDocFileName } = constructStoragePath(nonDocumentContext);
+      assert(nonDocPath.includes('_work/context'), 'HeaderContext should work with documentKey');
+      assert(nonDocFileName.includes('header_context'), 'HeaderContext should include documentKey in filename');
+
+      // (4) Call with HeaderContext without documentKey, assert it DOES throw an error
+      const nonDocumentContextMissingKey: PathContext = {
+        projectId: 'project-123',
+        fileType: FileType.HeaderContext,
+        sessionId: 'session-123',
+        iteration: 1,
+        stageSlug: 'thesis',
+        modelSlug: 'claude-opus',
+        attemptCount: 0,
+        documentKey: undefined,
+      };
+      assertThrows(
+        () => constructStoragePath(nonDocumentContextMissingKey),
+        Error,
+        'documentKey is required for header_context file type',
+      );
+    });
+  });
+
+  await t.step('step 11.b: path construction prevents collisions between root and continuation chunks', async (t) => {
+    const documentKey = 'business_case';
+    const stageSlug = 'thesis';
+    const mappedStageDir = mapStageSlugToDirName(stageSlug);
+    const baseContext: PathContext = {
+      projectId,
+      sessionId,
+      iteration,
+      stageSlug,
+      modelSlug,
+      attemptCount,
+      documentKey,
+      fileType: FileType.ModelContributionRawJson,
+    };
+
+    await t.step('11.b.i: root chunk (isContinuation: false, turnIndex: undefined) does NOT include continuation suffix and uses raw_responses/', () => {
+      const context: PathContext = {
+        ...baseContext,
+        isContinuation: false,
+        turnIndex: undefined,
+      };
+      const { storagePath, fileName } = constructStoragePath(context);
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/raw_responses`;
+      const expectedFileName = `${modelSlug}_${attemptCount}_${documentKey}_raw.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+      assert(!fileName.includes('_continuation_'), 'Root chunk filename should not include continuation suffix');
+    });
+
+    await t.step('11.b.ii: continuation chunk (isContinuation: true, turnIndex: 1) includes _continuation_1 suffix and uses _work/raw_responses/', () => {
+      const context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: 1,
+      };
+      const { storagePath, fileName } = constructStoragePath(context);
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/_work/raw_responses`;
+      const expectedFileName = `${modelSlug}_${attemptCount}_${documentKey}_continuation_1_raw.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+      assert(fileName.includes('_continuation_1'), 'Continuation chunk filename should include _continuation_1 suffix');
+    });
+
+    await t.step('11.b.iii: continuation chunk (isContinuation: true, turnIndex: 2) includes _continuation_2 suffix and uses _work/raw_responses/', () => {
+      const context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: 2,
+      };
+      const { storagePath, fileName } = constructStoragePath(context);
+      const expectedPath = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/_work/raw_responses`;
+      const expectedFileName = `${modelSlug}_${attemptCount}_${documentKey}_continuation_2_raw.json`;
+      assertEquals(storagePath, expectedPath);
+      assertEquals(fileName, expectedFileName);
+      assert(fileName.includes('_continuation_2'), 'Continuation chunk filename should include _continuation_2 suffix');
+    });
+
+    await t.step('11.b.iv: continuation chunk (isContinuation: true, turnIndex: undefined) throws error indicating turnIndex is required and must be > 0', () => {
+      const context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: undefined,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'turnIndex is required and must be a number > 0 for continuation chunks',
+      );
+    });
+
+    await t.step('11.b.v: continuation chunk (isContinuation: true, turnIndex: 0) throws error indicating turnIndex must be > 0', () => {
+      const context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: 0,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'turnIndex is required and must be a number > 0 for continuation chunks',
+      );
+    });
+
+    await t.step('11.b.vi: continuation chunk (isContinuation: true, turnIndex: -1) throws error indicating turnIndex must be > 0', () => {
+      const context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: -1,
+      };
+      assertThrows(
+        () => constructStoragePath(context),
+        Error,
+        'turnIndex is required and must be a number > 0 for continuation chunks',
+      );
+    });
+
+    await t.step('11.b.vii: root chunk path and continuation chunk path (with turnIndex: 1) are different, proving no collision is possible', () => {
+      const rootContext: PathContext = {
+        ...baseContext,
+        isContinuation: false,
+        turnIndex: undefined,
+      };
+      const continuationContext: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: 1,
+      };
+      const rootPath = constructStoragePath(rootContext);
+      const continuationPath = constructStoragePath(continuationContext);
+      const rootFullPath = `${rootPath.storagePath}/${rootPath.fileName}`;
+      const continuationFullPath = `${continuationPath.storagePath}/${continuationPath.fileName}`;
+      assert(rootFullPath !== continuationFullPath, `Root chunk path (${rootFullPath}) and continuation chunk path (${continuationFullPath}) must be different to prevent collisions`);
+      assert(rootPath.storagePath !== continuationPath.storagePath, 'Root chunks and continuation chunks must use different storage directories');
+    });
+
+    await t.step('11.b.viii: multiple continuation chunks with different turnIndex values (1, 2, 3) have unique paths, proving no collision between continuation chunks', () => {
+      const continuation1Context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: 1,
+      };
+      const continuation2Context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: 2,
+      };
+      const continuation3Context: PathContext = {
+        ...baseContext,
+        isContinuation: true,
+        turnIndex: 3,
+      };
+      const path1 = constructStoragePath(continuation1Context);
+      const path2 = constructStoragePath(continuation2Context);
+      const path3 = constructStoragePath(continuation3Context);
+      const fullPath1 = `${path1.storagePath}/${path1.fileName}`;
+      const fullPath2 = `${path2.storagePath}/${path2.fileName}`;
+      const fullPath3 = `${path3.storagePath}/${path3.fileName}`;
+      const uniquePaths = new Set([fullPath1, fullPath2, fullPath3]);
+      assertEquals(uniquePaths.size, 3, `All continuation chunk paths must be unique. Got: ${Array.from(uniquePaths).join(', ')}`);
+      assert(path1.fileName.includes('_continuation_1'), 'First continuation chunk should have _continuation_1 in filename');
+      assert(path2.fileName.includes('_continuation_2'), 'Second continuation chunk should have _continuation_2 in filename');
+      assert(path3.fileName.includes('_continuation_3'), 'Third continuation chunk should have _continuation_3 in filename');
     });
   });
 });

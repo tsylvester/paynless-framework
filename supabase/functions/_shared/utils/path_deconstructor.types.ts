@@ -23,4 +23,15 @@ export interface DeconstructedPathInfo {
   turnIndex?: number;            // The turn index of this chunk
   documentKey?: string;          // The document key for document-centric artifacts
   stepName?: string;             // The step name for planner prompts
-} 
+  sourceGroupFragment?: string;  // First 8 characters of source_group UUID (sanitized) extracted from filename for disambiguation
+}
+
+export interface DeconstructStoragePathParams {
+  storageDir: string;
+  fileName: string;
+  dbOriginalFileName?: string;
+}
+
+export type DeconstructStoragePathFn = (
+  params: DeconstructStoragePathParams,
+) => DeconstructedPathInfo;

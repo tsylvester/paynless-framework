@@ -12,7 +12,7 @@ import {
     DialecticJobRow, 
     GranularityPlannerFn, 
     DialecticPlanJobPayload, 
-    IDialecticJobDeps, 
+    DialecticExecuteJobPayload,
     UnifiedAIResponse, 
     DialecticRecipeTemplateStep,
 } from '../dialectic-service/dialectic.interface.ts';
@@ -28,6 +28,9 @@ import { describe, it, beforeEach } from 'https://deno.land/std@0.170.0/testing/
 import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
+import { IPlanJobContext } from './JobContext.interface.ts';
+import { createPlanJobContext, createJobContext } from './createJobContext.ts';
+import { createMockJobContextParams } from './JobContext.mock.ts';
 
 const mockTemplateRecipeSteps: DialecticRecipeTemplateStep[] = [
     {
@@ -43,7 +46,7 @@ const mockTemplateRecipeSteps: DialecticRecipeTemplateStep[] = [
         granularity_strategy: 'per_source_document',
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
         step_number: 1,
         parallel_group: null,
         branch_key: null,
@@ -64,7 +67,7 @@ const mockTemplateRecipeSteps: DialecticRecipeTemplateStep[] = [
         granularity_strategy: 'per_source_document',
         inputs_required: [],
         inputs_relevance: [],
-        outputs_required: [],
+        outputs_required: {},
         step_number: 2,
         parallel_group: null,
         branch_key: null,
@@ -108,7 +111,7 @@ const mockInstanceRow_NotCloned = {
 
 describe('processComplexJob', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
-    let mockDeps: IDialecticJobDeps;
+    let planCtx: IPlanJobContext;
     let mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
     let mockJobProcessors: IJobProcessors;
     let mockProcessorSpies: MockJobProcessorsSpies;
@@ -141,12 +144,12 @@ describe('processComplexJob', () => {
         mockProcessorSpies = spies;
 
         const mockPayload: DialecticPlanJobPayload = {
-            job_type: 'PLAN',
             sessionId: 'session-id-complex',
             projectId: 'project-id-complex',
             stageSlug: 'antithesis',
             model_id: 'model-id-complex',
             walletId: 'wallet-id-complex',
+            user_jwt: 'user-jwt-complex',
         };
 
         if (!isJson(mockPayload)) {
@@ -175,48 +178,13 @@ describe('processComplexJob', () => {
             job_type: 'PLAN',
         };
 
-        const mockUnifiedAIResponse: UnifiedAIResponse = { content: 'mock', finish_reason: 'stop' };
-        mockDeps = {
-            logger,
+        const mockParams = {
+            ...createMockJobContextParams(),
             planComplexStage: mockProcessorSpies.planComplexStage,
-            downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({
-                data: await new Blob(['Mock content']).arrayBuffer(),
-                error: null
-            })),
-            getGranularityPlanner: spy((_strategyId: string): GranularityPlannerFn | undefined => undefined),
-            ragService: new MockRagService(),
-            fileManager: new MockFileManagerService(),
-            countTokens: spy(() => 0),
-            getAiProviderConfig: spy(async () => Promise.resolve({
-                api_identifier: 'mock-api',
-                input_token_cost_rate: 0,
-                output_token_cost_rate: 0,
-                provider_max_input_tokens: 8192,
-                tokenization_strategy: {
-                    type: 'tiktoken',
-                    tiktoken_encoding_name: 'cl100k_base',
-                    tiktoken_model_name_for_rules_fallback: 'gpt-4o',
-                    is_chatml_model: false,
-                    api_identifier_for_tokenization: 'mock-api'
-                },
-            })),
-            callUnifiedAIModel: spy(async () => mockUnifiedAIResponse),
-            getSeedPromptForStage: spy(async () => ({
-                content: 'mock',
-                fullPath: 'mock',
-                bucket: 'mock',
-                path: 'mock',
-                fileName: 'mock'
-            })),
-            continueJob: spy(async () => ({ enqueued: true })),
-            retryJob: spy(async () => ({})),
             notificationService: mockNotificationService,
-            executeModelCallAndSave: spy(async () => {}),
-            getExtensionFromMimeType: spy(() => '.txt'),
-            randomUUID: spy(() => 'mock-uuid'),
-            deleteFromStorage: spy(async () => ({ data: [], error: null })),
-            documentRenderer: { renderDocument: () => Promise.resolve({ pathContext: { projectId: '', sessionId: '', iteration: 0, stageSlug: '', documentKey: '', fileType: FileType.RenderedDocument, modelSlug: '' }, renderedBytes: new Uint8Array() }) },
         };
+        const rootCtx = createJobContext(mockParams);
+        planCtx = createPlanJobContext(rootCtx);
     });
 
     // Group 2: Error Handling & Input Validation
@@ -244,7 +212,7 @@ describe('processComplexJob', () => {
         // Per project standards, type casting is permitted when testing invalid objects.
         await assertRejects(
             async () => {
-                await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, malformedJob as any, 'user-id-complex', mockDeps, 'user-jwt-123');
+                await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, malformedJob as any, 'user-id-complex', planCtx, 'user-jwt-123');
             },
             Error,
             'invalid payload for complex processing'
@@ -267,7 +235,7 @@ describe('processComplexJob', () => {
         
         // Act:
         // - Call processComplexJob.
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', planCtx, 'user-jwt-123');
         
         // Assert:
         // - The 'update' spy was called with a status of 'failed' and a descriptive error message.
@@ -295,7 +263,7 @@ describe('processComplexJob', () => {
         
         // Act:
         // - Call processComplexJob.
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', planCtx, 'user-jwt-123');
         
         // Assert:
         // - The 'update' spy was called with a status of 'failed' and a descriptive error message.
@@ -324,7 +292,7 @@ describe('processComplexJob', () => {
         mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
 
         // Act
-        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', mockDeps, 'user-jwt-123');
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', planCtx, 'user-jwt-123');
 
         // Assert: planner was called with the first step from the recipe (no step_info required)
         const firstStep = mockTemplateRecipeSteps[0];
@@ -336,11 +304,17 @@ describe('processComplexJob', () => {
         // This tests the general error handling for the downstream planner.
         // Arrange:
         // - Configure the deps.planComplexStage spy to throw a new Error('Planner failed!').
-        mockDeps.planComplexStage = async () => Promise.reject(new Error('Planner failed!'));
+        const errorMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async () => Promise.reject(new Error('Planner failed!')),
+            notificationService: mockNotificationService,
+        };
+        const errorRootCtx = createJobContext(errorMockParams);
+        const errorPlanCtx = createPlanJobContext(errorRootCtx);
         
         // Act:
         // - Call processComplexJob.
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', errorPlanCtx, 'user-jwt-123');
         
         // Assert:
         // - The 'update' spy was called with a status of 'failed' and the correct error message.
@@ -356,11 +330,16 @@ describe('processComplexJob', () => {
     it('emits job_failed notification when planner throws a generic error', async () => {
         // Arrange
         resetMockNotificationService();
-        mockDeps.notificationService = mockNotificationService;
-        mockDeps.planComplexStage = async () => Promise.reject(new Error('Planner failed!'));
+        const errorMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async () => Promise.reject(new Error('Planner failed!')),
+            notificationService: mockNotificationService,
+        };
+        const errorRootCtx = createJobContext(errorMockParams);
+        const errorPlanCtx = createPlanJobContext(errorRootCtx);
 
         // Act
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', errorPlanCtx, 'user-jwt-123');
 
         // Assert
         const calls = mockNotificationService.sendDocumentCentricNotification.calls;
@@ -383,11 +362,16 @@ describe('processComplexJob', () => {
     it('emits job_failed notification when planner throws a ContextWindowError', async () => {
         // Arrange
         resetMockNotificationService();
-        mockDeps.notificationService = mockNotificationService;
-        mockDeps.planComplexStage = async () => Promise.reject(new ContextWindowError('Context too large!'));
+        const errorMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async () => Promise.reject(new ContextWindowError('Context too large!')),
+            notificationService: mockNotificationService,
+        };
+        const errorRootCtx = createJobContext(errorMockParams);
+        const errorPlanCtx = createPlanJobContext(errorRootCtx);
 
         // Act
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', errorPlanCtx, 'user-jwt-123');
 
         // Assert
         const calls = mockNotificationService.sendDocumentCentricNotification.calls;
@@ -411,11 +395,17 @@ describe('processComplexJob', () => {
         // This tests specialized error handling.
         // Arrange:
         // - Configure deps.planComplexStage to throw a new ContextWindowError('Context too large!').
-        mockDeps.planComplexStage = async () => Promise.reject(new ContextWindowError('Context too large!'));
+        const contextWindowMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async () => Promise.reject(new ContextWindowError('Context too large!')),
+            notificationService: mockNotificationService,
+        };
+        const contextWindowRootCtx = createJobContext(contextWindowMockParams);
+        const contextWindowPlanCtx = createPlanJobContext(contextWindowRootCtx);
         
         // Act:
         // - Call processComplexJob.
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps, 'user-jwt-123');
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', contextWindowPlanCtx, 'user-jwt-123');
         
         // Assert:
         // - The 'update' spy was called with a status of 'failed' and an error message that specifically mentions the context window.
@@ -470,7 +460,7 @@ describe('processComplexJob', () => {
         
         // Act:
         // - Call processComplexJob.
-        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', mockDeps, 'user-jwt-123');
+        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', planCtx, 'user-jwt-123');
 
         // Assert:
         // - The 'update' spy was called to set the parent job's status to 'failed'.
@@ -525,7 +515,7 @@ describe('processComplexJob', () => {
 
         // Act:
         // - Call processComplexJob.
-        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', mockDeps, 'user-jwt-123');
+        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', planCtx, 'user-jwt-123');
 
         // Assert:
         // - The function should catch the update error and make a second update call to set the job status to 'failed'.
@@ -537,5 +527,1216 @@ describe('processComplexJob', () => {
         assert(isRecord(secondUpdateArgs) && 'status' in secondUpdateArgs && 'error_details' in secondUpdateArgs);
         assertEquals(secondUpdateArgs.status, 'failed');
         assert(JSON.stringify(secondUpdateArgs.error_details).includes('Failed to update parent job status: DB update failed!'));
+    });
+
+    // Step 42.b.iv: Test that throws error when planner_metadata is undefined
+    it('should throw an error when a completed child job has planner_metadata: undefined', async () => {
+        // Arrange:
+        // - Create a PLAN job with a completed child job that has planner_metadata: undefined
+        const completedChildJobWithoutMetadata: DialecticJobRow = {
+            id: 'child-without-metadata',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                // planner_metadata is deliberately omitted (undefined)
+            },
+            iteration_number: 1,
+            status: 'completed',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [completedChildJobWithoutMetadata], error: null },
+                },
+            },
+        });
+
+        // Act & Assert:
+        // - processComplexJob should throw an error indicating planner_metadata is required
+        await assertRejects(
+            async () => {
+                await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
+            },
+            Error,
+            'planner_metadata.recipe_step_id is missing or invalid'
+        );
+    });
+
+    // Step 42.b.v: Test that throws error when planner_metadata is empty object (missing recipe_step_id)
+    it('should throw an error when a completed child job has planner_metadata: {} (missing recipe_step_id)', async () => {
+        // Arrange:
+        // - Create a PLAN job with a completed child job that has planner_metadata: {} (empty object)
+        const completedChildJobWithEmptyMetadata: DialecticJobRow = {
+            id: 'child-with-empty-metadata',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {}, // Empty object, missing recipe_step_id
+            },
+            iteration_number: 1,
+            status: 'completed',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [completedChildJobWithEmptyMetadata], error: null },
+                },
+            },
+        });
+
+        // Act & Assert:
+        // - processComplexJob should throw an error indicating planner_metadata.recipe_step_id is required
+        await assertRejects(
+            async () => {
+                await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
+            },
+            Error,
+            'planner_metadata.recipe_step_id is missing or invalid'
+        );
+    });
+
+    // Step 42.b.vi: Test that throws error when planner_metadata.recipe_step_id is empty string
+    it('should throw an error when a completed child job has planner_metadata: { recipe_step_id: "" } (empty string)', async () => {
+        // Arrange:
+        // - Create a PLAN job with a completed child job that has planner_metadata.recipe_step_id: '' (empty string)
+        const completedChildJobWithEmptyRecipeStepId: DialecticJobRow = {
+            id: 'child-with-empty-recipe-step-id',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: '', // Empty string
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'completed',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [completedChildJobWithEmptyRecipeStepId], error: null },
+                },
+            },
+        });
+
+        // Act & Assert:
+        // - processComplexJob should throw an error indicating planner_metadata.recipe_step_id must be non-empty
+        await assertRejects(
+            async () => {
+                await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
+            },
+            Error,
+            'planner_metadata.recipe_step_id is missing or invalid'
+        );
+    });
+
+    // Step 45.b: Tests for in-progress job tracking to prevent re-planning loops
+    it('should not re-plan a step that has a child EXECUTE job with status retrying', async () => {
+        // Arrange:
+        // - Create a PLAN job with a recipe step that has a child EXECUTE job with status `retrying`
+        const retryingChildJob: DialecticJobRow = {
+            id: 'child-retrying',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'retrying',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [retryingChildJob], error: null },
+                },
+            },
+        });
+
+        // Act:
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
+
+        // Assert:
+        // - planComplexStage should NOT be called because the step has an in-progress job
+        assertEquals(mockProcessorSpies.planComplexStage.calls.length, 0, 'planComplexStage should not be called when step has a retrying job');
+    });
+
+    it('should not re-plan a step that has a child EXECUTE job with status processing', async () => {
+        // Arrange:
+        const processingChildJob: DialecticJobRow = {
+            id: 'child-processing',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'processing',
+            attempt_count: 0,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [processingChildJob], error: null },
+                },
+            },
+        });
+
+        // Act:
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
+
+        // Assert:
+        assertEquals(mockProcessorSpies.planComplexStage.calls.length, 0, 'planComplexStage should not be called when step has a processing job');
+    });
+
+    it('should not re-plan a step that has a child EXECUTE job with status pending', async () => {
+        // Arrange:
+        const pendingChildJob: DialecticJobRow = {
+            id: 'child-pending',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'pending',
+            attempt_count: 0,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: null,
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [pendingChildJob], error: null },
+                },
+            },
+        });
+
+        // Act:
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
+
+        // Assert:
+        assertEquals(mockProcessorSpies.planComplexStage.calls.length, 0, 'planComplexStage should not be called when step has a pending job');
+    });
+
+    it('should not re-plan steps that have either completed or in-progress child jobs', async () => {
+        // Arrange:
+        const completedChildJob: DialecticJobRow = {
+            id: 'child-completed',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'completed',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const retryingChildJob: DialecticJobRow = {
+            id: 'child-retrying-2',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-2',
+                inputs: {},
+                output_type: FileType.business_case_critique,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-2',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'retrying',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [completedChildJob, retryingChildJob], error: null },
+                },
+            },
+        });
+
+        // Act:
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
+
+        // Assert:
+        // Both steps should be excluded: step-one (completed) and step-two (retrying)
+        assertEquals(mockProcessorSpies.planComplexStage.calls.length, 0, 'planComplexStage should not be called when steps have completed or in-progress jobs');
+    });
+
+    it('should not re-plan a step that has both completed and retrying child jobs', async () => {
+        // Arrange:
+        const completedChildJob: DialecticJobRow = {
+            id: 'child-completed-mixed',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'completed',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const retryingChildJob: DialecticJobRow = {
+            id: 'child-retrying-mixed',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'retrying',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [completedChildJob, retryingChildJob], error: null },
+                },
+            },
+        });
+
+        // Act:
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
+
+        // Assert:
+        // The step should NOT be re-planned because it has a retrying job (in-progress)
+        assertEquals(mockProcessorSpies.planComplexStage.calls.length, 0, 'planComplexStage should not be called when step has both completed and retrying jobs');
+    });
+
+    it('should not re-plan a step that has multiple child jobs with mixed in-progress statuses', async () => {
+        // Arrange:
+        const completedChildJob: DialecticJobRow = {
+            id: 'child-completed-mixed-2',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'completed',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const retryingChildJob: DialecticJobRow = {
+            id: 'child-retrying-mixed-2',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'retrying',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const processingChildJob: DialecticJobRow = {
+            id: 'child-processing-mixed',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'processing',
+            attempt_count: 0,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [completedChildJob, retryingChildJob, processingChildJob], error: null },
+                },
+            },
+        });
+
+        // Act:
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
+
+        // Assert:
+        // The step should NOT be re-planned because it has in-progress jobs
+        assertEquals(mockProcessorSpies.planComplexStage.calls.length, 0, 'planComplexStage should not be called when step has in-progress jobs');
+    });
+
+    it('should allow re-planning a step that has a child job with status failed', async () => {
+        // Arrange:
+        const failedChildJob: DialecticJobRow = {
+            id: 'child-failed',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'failed',
+            attempt_count: 3,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: { message: 'Job failed' },
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [failedChildJob], error: null },
+                },
+            },
+        });
+
+        mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
+
+        // Act:
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
+
+        // Assert:
+        // The step CAN be re-planned because failed is a terminal state
+        assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1, 'planComplexStage should be called when step has only failed jobs');
+    });
+
+    it('should allow re-planning a step that has a child job with status retry_loop_failed', async () => {
+        // Arrange:
+        const retryLoopFailedChildJob: DialecticJobRow = {
+            id: 'child-retry-loop-failed',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'retry_loop_failed',
+            attempt_count: 3,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: { message: 'Retry loop exhausted' },
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [retryLoopFailedChildJob], error: null },
+                },
+            },
+        });
+
+        mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
+
+        // Act:
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
+
+        // Assert:
+        // The step CAN be re-planned because retry_loop_failed is a terminal state
+        assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1, 'planComplexStage should be called when step has only retry_loop_failed jobs');
+    });
+
+    it('should include steps with no child jobs in readySteps', async () => {
+        // Arrange:
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [], error: null },
+                },
+            },
+        });
+
+        mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
+
+        // Act:
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
+
+        // Assert:
+        // The step IS included in readySteps (can be planned for the first time)
+        assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1, 'planComplexStage should be called when step has no child jobs');
+        const firstStep = mockTemplateRecipeSteps[0];
+        assertEquals(mockProcessorSpies.planComplexStage.calls[0].args[3], firstStep, 'planComplexStage should be called with the first step');
+    });
+
+    it('should re-plan a step with mixed completed and failed jobs but only for failed source documents', async () => {
+        // Arrange:
+        // - Create 3 source documents: doc1 (completed), doc2 (failed), doc3 (completed)
+        const completedChildJob1: DialecticJobRow = {
+            id: 'child-completed-doc1',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                    sourceAttemptCount: 1,
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'completed',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const failedChildJob: DialecticJobRow = {
+            id: 'child-failed-doc2',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                    sourceAttemptCount: 2,
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'failed',
+            attempt_count: 3,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: { message: 'Job failed' },
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const completedChildJob3: DialecticJobRow = {
+            id: 'child-completed-doc3',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                    sourceAttemptCount: 3,
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'completed',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [completedChildJob1, failedChildJob, completedChildJob3], error: null },
+                },
+            },
+        });
+
+        mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
+
+        // Act:
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
+
+        // Assert:
+        // planComplexStage should be called (step can be re-planned)
+        // planComplexStage should be called with source documents excluding those with sourceAttemptCount 1 and 3 (completed jobs)
+        assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1, 'planComplexStage should be called when step has mixed completed and failed jobs');
+        
+        // Verify that planComplexStage is called with the 6th argument containing completed source document IDs
+        // The source document identifiers are constructed from canonicalPathParams as: contributionType_stageSlug_sourceAttemptCount
+        const expectedCompletedSourceDocIds = new Set<string>(['thesis_antithesis_1', 'thesis_antithesis_3']);
+        const callArgs = mockProcessorSpies.planComplexStage.calls[0].args;
+        assert(callArgs.length >= 6, 'planComplexStage should be called with 6 arguments (including completedSourceDocumentIds)');
+        const completedSourceDocIdsArg = callArgs[5];
+        assert(completedSourceDocIdsArg instanceof Set, 'The 6th argument should be a Set<string>');
+        assertEquals(completedSourceDocIdsArg.size, expectedCompletedSourceDocIds.size, 'The Set should contain 2 completed source document IDs');
+        // Verify all expected IDs are in the actual Set passed to the function
+        for (const expectedId of expectedCompletedSourceDocIds) {
+            assert(completedSourceDocIdsArg.has(expectedId), `The Set should contain ${expectedId}`);
+        }
+    });
+
+    it('should preserve completed contributions when re-planning steps with mixed completed and failed jobs', async () => {
+        // Arrange:
+        const completedChildJob: DialecticJobRow = {
+            id: 'child-completed-preserve',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                    sourceAttemptCount: 1,
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'completed',
+            attempt_count: 1,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const failedChildJob: DialecticJobRow = {
+            id: 'child-failed-preserve',
+            user_id: 'user-id-complex',
+            session_id: 'session-id-complex',
+            stage_slug: 'antithesis',
+            payload: {
+                job_type: 'execute',
+                prompt_template_id: 'prompt-template-1',
+                inputs: {},
+                output_type: FileType.business_case,
+                projectId: 'project-id-complex',
+                sessionId: 'session-id-complex',
+                stageSlug: 'antithesis',
+                model_id: 'model-id-complex',
+                iterationNumber: 1,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-complex',
+                user_jwt: 'user-jwt-123',
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'antithesis',
+                    sourceAttemptCount: 2,
+                },
+                planner_metadata: {
+                    recipe_step_id: 'template-step-uuid-1',
+                    recipe_template_id: 'template-uuid-1',
+                },
+            },
+            iteration_number: 1,
+            status: 'failed',
+            attempt_count: 3,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            results: null,
+            error_details: { message: 'Job failed' },
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+        };
+
+        const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [completedChildJob, failedChildJob], error: null },
+                },
+            },
+        });
+
+        mockJobProcessors.planComplexStage = async () => Promise.resolve([]);
+
+        // Act:
+        await processComplexJob(customSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, planCtx, 'user-jwt-123');
+
+        // Assert:
+        // The step can be re-planned, but completed contributions should remain available
+        // Completed contributions are preserved in the database and available for future steps
+        // Newly-completed (previously failed) contributions are also available alongside existing ones
+        assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1, 'planComplexStage should be called when step has mixed completed and failed jobs');
     });
 });

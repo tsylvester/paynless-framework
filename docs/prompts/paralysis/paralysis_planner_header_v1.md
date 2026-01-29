@@ -12,12 +12,12 @@
 - **Stage Instructions**: {{stage_instructions}}
 - **Style Guide Markdown**: {{style_guide_markdown}}
 - **Parenthesis Documents**:
-  - TRD: {{parenthesis_documents.trd}}
+  - TRD: {{parenthesis_documents.technical_requirements}}
   - Master Plan: {{parenthesis_documents.master_plan}}
   - Milestone Schema: {{parenthesis_documents.milestone_schema}}
 {{#section:parenthesis_feedback}}
 - **Parenthesis Feedback (optional)**:
-  - TRD Feedback: {{parenthesis_feedback.trd}}
+  - TRD Feedback: {{parenthesis_feedback.technical_requirements}}
   - Master Plan Feedback: {{parenthesis_feedback.master_plan}}
   - Milestone Schema Feedback: {{parenthesis_feedback.milestone_schema}}
   {{/#section:parenthesis_feedback}}
@@ -40,11 +40,14 @@
     "input_artifacts_summary": "TRD sections used, Master Plan phase/milestone references",
     "stage_rationale": "explain ordering, TDD emphasis, and how checklist conforms to style guide",
     "progress_update": "summarize completed vs remaining milestones; denote updated statuses in Master Plan",
+    "generation_limits": {"max_steps": 200, "target_steps": "120-180", "max_output_lines": "600-800"},
     "document_order": [
       "actionable_checklist",
       "updated_master_plan",
       "advisor_recommendations"
     ],
+    "current_document": "actionable_checklist",
+    "exhaustiveness_requirement": "extreme detail; no summaries; each step includes inputs, outputs, validation; follow the style guide exactly",
     "validation_checkpoint": [
       "checklist uses style guide (status, numbering, labels)",
       "steps are atomic and testable",
@@ -79,20 +82,105 @@
     {
       "document_key": "actionable_checklist",
       "content_to_include": {
-        "milestone_ids": [],
-        "inputs_required": ["trd", "master_plan"],
-        "tdd_sequence": ["RED", "GREEN", "REFACTOR"],
-        "status_markers": ["[ ]", "[🚧]", "[✅]"],
-        "generation_limits": {
-          "max_steps": 200,
-          "target_steps": "120-180",
-          "max_output_lines": "600-800"
-        }
+        "milestone_ids": ["<list the next milestone(s) to detail from the master_plan and milestone_schema>"],
+        "index": [],
+        "milestone_reference": {
+          "id": "",
+          "phase": "",
+          "dependencies": ""
+        },
+        "steps": [
+          {
+            "status": "",
+            "component_label": "",
+            "numbering": "",
+            "title": "",
+            "description": "",
+            "inputs": "",
+            "outputs": "",
+            "validation": "",
+            "red_test": "",
+            "implementation": "",
+            "green_test": "",
+            "refactor": "",
+            "commit_message": ""
+          }
+        ],
+        "milestone_summary": ""
       }
     },
     {
       "document_key": "updated_master_plan",
       "content_to_include": {
+        "index": [],
+        "executive_summary": "",
+        "phases": [
+          {
+            "name": "",
+            "objective": "",
+            "technical_context": "",
+            "implementation_strategy": "",
+            "milestones": [
+              {
+                "id": "",
+                "title": "",
+                "status": "[ ]",
+                "objective": "",
+                "description": "",
+                "technical_complexity": "",
+                "effort_estimate": "",
+                "implementation_approach": "",
+                "test_strategy": "",
+                "component_labels": [],
+                "inputs": [],
+                "outputs": [],
+                "validation": [],
+                "dependencies": [],
+                "coverage_notes": "",
+                "iteration_delta": "",
+                "acceptance_criteria": []
+              }
+            ]
+          }
+        ],
+        "status_summary": {
+          "completed": [],
+          "in_progress": [],
+          "up_next": []
+        },
+        "status_markers": {
+          "unstarted": "[ ]",
+          "in_progress": "[🚧]",
+          "completed": "[✅]"
+        },
+        "dependency_rules": [],
+        "generation_limits": {
+          "max_steps": 200,
+          "target_steps": "120-180",
+          "max_output_lines": "600-800"
+        },
+        "feature_scope": [],
+        "features": [],
+        "mvp_description": "",
+        "market_opportunity": "",
+        "competitive_analysis": "",
+        "technical_context": "",
+        "implementation_context": "",
+        "test_framework": "",
+        "component_mapping": "",
+        "architecture_summary": "",
+        "architecture": "",
+        "services": [],
+        "components": [],
+        "integration_points": [],
+        "dependency_resolution": [],
+        "frontend_stack": {},
+        "backend_stack": {},
+        "data_platform": {},
+        "devops_tooling": {},
+        "security_tooling": {},
+        "shared_libraries": [],
+        "third_party_services": [],
         "preserve_completed": true,
         "set_in_progress": "[🚧]",
         "future_status": "[ ]",

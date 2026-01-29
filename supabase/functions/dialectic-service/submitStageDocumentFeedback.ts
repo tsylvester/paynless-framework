@@ -29,6 +29,7 @@ export async function submitStageDocumentFeedback(
     userId,
     projectId,
     feedbackId,
+    sourceContributionId,
   } = payload;
 
   if (
@@ -42,6 +43,7 @@ export async function submitStageDocumentFeedback(
   }
 
   const { fileManager, logger } = deps;
+  const resolvedSourceContributionId = sourceContributionId ?? null;
 
   const fileName =
     `feedback_${documentKey}_${modelId}_${new Date().toISOString()}.md`;
@@ -63,6 +65,7 @@ export async function submitStageDocumentFeedback(
       documentKey: documentKey,
       modelSlug: modelId,
       originalFileName: fileName,
+      sourceContributionId: resolvedSourceContributionId,
     },
     feedbackTypeForDb: feedbackType,
     resourceDescriptionForDb: {
@@ -110,6 +113,7 @@ export async function submitStageDocumentFeedback(
     storage_path: fileRecord.storage_path,
     size_bytes: fileRecord.size_bytes,
     mime_type: fileRecord.mime_type,
+    target_contribution_id: resolvedSourceContributionId,
   };
 
   if (feedbackId) {

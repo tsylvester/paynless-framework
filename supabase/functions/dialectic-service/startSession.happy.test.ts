@@ -128,7 +128,12 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
         randomUUID: () => mockNewChatId,
     };
 
-    await startSession(mockUser, adminDbClient, payload, deps);
+    const result = await startSession(mockUser, adminDbClient, payload, deps);
+
+    assertExists(result.data, `Session start failed: ${result.error?.message}`);
+    assertEquals(result.error, undefined, "Error should be undefined on happy path");
+    assertExists(result.data.seedPrompt, "The seedPrompt should be part of the successful response.");
+    assertEquals(result.data.seedPrompt, mockAssembledPrompt, "The returned seedPrompt should match the assembled prompt.");
 
     assertEquals(
         mockAssembler.assembleSeedPrompt.calls.length,
@@ -285,6 +290,8 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
         current_stage_id: mockInitialStageId,
     };
     assertObjectMatch(result.data, expectedResponse);
+    assertExists(result.data.seedPrompt, "The seedPrompt should be part of the successful response in the default case.");
+    assertEquals(result.data.seedPrompt, mockAssembledPrompt, "The returned seedPrompt should match the assembled prompt in the default case.");
     assertEquals(
         mockFileManager.uploadAndRegisterFile.calls.length,
         0,
@@ -476,6 +483,8 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
         undefined,
         "Error should be undefined on file prompt happy path",
     );
+    assertExists(result.data.seedPrompt, "The seedPrompt should be part of the successful response in the file prompt case.");
+    assertEquals(result.data.seedPrompt, mockAssembledPrompt, "The returned seedPrompt should match the assembled prompt in the file prompt case.");
 
     assertEquals(
         mockAssembler.assembleSeedPrompt.calls.length,
@@ -587,6 +596,8 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
         `Expected startSession to succeed with dummy embedding provider, but got error: ${result.error
             ?.message}`,
     );
+    assertExists(result.data.seedPrompt, "The seedPrompt should be part of the successful response in the dummy adapter case.");
+    assertEquals(result.data.seedPrompt, mockAssembledPrompt, "The returned seedPrompt should match the assembled prompt in the dummy adapter case.");
     assertEquals(
         mockFileManager.uploadAndRegisterFile.calls.length,
         0,

@@ -1,10 +1,16 @@
 import {
-  type UnifiedAIResponse,
-  type ModelProcessingResult,
-  type ExecuteModelCallAndSaveParams,
-  type SourceDocument,
+  UnifiedAIResponse,
+  ModelProcessingResult,
+  ExecuteModelCallAndSaveParams,
+  SourceDocument,
+  DialecticRenderJobPayload,
+  DocumentRelationships,
 } from '../dialectic-service/dialectic.interface.ts';
-import { ModelContributionFileTypes, ModelContributionUploadContext } from '../_shared/types/file_manager.types.ts';
+import { 
+    FileType, 
+    ModelContributionFileTypes, 
+    ModelContributionUploadContext 
+} from '../_shared/types/file_manager.types.ts';
 import { 
     isDialecticContribution, 
     isAiModelExtendedConfig, 
@@ -16,14 +22,37 @@ import {
     isFinishReason, 
     isDocumentRelationships,
     isJson,
+    isDialecticRenderJobPayload,
 } from "../_shared/utils/type_guards.ts";
-import { AiModelExtendedConfig, ChatApiRequest, Messages, FinishReason } from '../_shared/types.ts';
-import { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
-import { ContextWindowError } from '../_shared/utils/errors.ts';
+import { 
+    AiModelExtendedConfig, 
+    ChatApiRequest, 
+    Messages, 
+    FinishReason 
+} from '../_shared/types.ts';
+import { 
+    CountTokensDeps, 
+    CountableChatPayload 
+} from '../_shared/types/tokenizer.types.ts';
+import { 
+    ContextWindowError, 
+    RenderJobValidationError, 
+    RenderJobEnqueueError 
+} from '../_shared/utils/errors.ts';
 import { ResourceDocuments } from "../_shared/types.ts";
 import { getMaxOutputTokens } from '../_shared/utils/affordability_utils.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
-import { TablesInsert } from '../types_db.ts';  
+import { extractSourceGroupFragment } from '../_shared/utils/path_utils.ts';
+import { TablesInsert } from '../types_db.ts';
+import { sanitizeJsonContent } from '../_shared/utils/jsonSanitizer.ts';
+import { isJsonSanitizationResult } from '../_shared/utils/type-guards/type_guards.jsonSanitizer.ts';
+import { JsonSanitizationResult } from '../_shared/types/jsonSanitizer.interface.ts';
+import { 
+    isDocumentKey, 
+    isFileType,
+    isDocumentRelated
+} from '../_shared/utils/type-guards/type_guards.file_manager.ts';
+
 export async function executeModelCallAndSave(
     params: ExecuteModelCallAndSaveParams,
 ) {
@@ -39,32 +68,113 @@ export async function executeModelCallAndSave(
     
     //console.log('[executeModelCallAndSave] Received job payload:', JSON.stringify(job.payload, null, 2));
     
-    if (!isDialecticExecuteJobPayload(job.payload)) {
-        throw new Error(`Job ${job.id} does not have a valid 'execute' payload.`);
-    }
-    
     const { 
         id: jobId, 
         attempt_count: currentAttempt, 
     } = job;
     
+    // Validate user_jwt before type guard to ensure correct error message when missing
+    let userAuthTokenEarly: string | undefined = undefined;
+    {
+        const desc = Object.getOwnPropertyDescriptor(job.payload, 'user_jwt');
+        if (desc) {
+            const potential = desc.value;
+            if (typeof potential === 'string' && potential.length > 0) {
+                userAuthTokenEarly = potential;
+            }
+        }
+    }
+    if (!userAuthTokenEarly) {
+        throw new Error('payload.user_jwt required');
+    }
+    
+    if (!isDialecticExecuteJobPayload(job.payload)) {
+        throw new Error(`Job ${job.id} does not have a valid 'execute' payload.`);
+    }
+    
     const { 
-        iterationNumber = 1, 
-        stageSlug, 
-        projectId, 
-        model_id,
-        sessionId,
-        walletId,
+        iterationNumber: iterationNumberRaw, 
+        stageSlug: stageSlugRaw, 
+        projectId: projectIdRaw, 
+        model_id: model_idRaw,
+        sessionId: sessionIdRaw,
+        walletId: walletIdRaw,
         output_type,
     } = job.payload;
 
-    if (!stageSlug) {
+    deps.logger.info('[executeModelCallAndSave] Validating payload fields', {
+        jobId,
+        hasStageSlug: !!stageSlugRaw,
+        stageSlugType: typeof stageSlugRaw,
+        hasWalletId: !!walletIdRaw,
+        walletIdType: typeof walletIdRaw,
+        hasIterationNumber: iterationNumberRaw !== undefined,
+        iterationNumberType: typeof iterationNumberRaw,
+        hasProjectId: !!projectIdRaw,
+        projectIdType: typeof projectIdRaw,
+        hasSessionId: !!sessionIdRaw,
+        sessionIdType: typeof sessionIdRaw,
+        hasModelId: !!model_idRaw,
+        modelIdType: typeof model_idRaw,
+    });
+
+    if (!stageSlugRaw || typeof stageSlugRaw !== 'string' || stageSlugRaw.trim() === '') {
         throw new Error(`Job ${jobId} is missing required stageSlug in its payload.`);
     }
+    const stageSlug: string = stageSlugRaw;
 
     // Enforce wallet presence for ALL requests before any provider calls or sizing
-    if (typeof walletId !== 'string' || walletId.trim() === '') {
+    if (typeof walletIdRaw !== 'string' || walletIdRaw.trim() === '') {
         throw new Error('Wallet is required to process model calls.');
+    }
+    const walletId: string = walletIdRaw;
+
+    let iterationNumber: number;
+    if (typeof iterationNumberRaw === 'number') {
+        iterationNumber = iterationNumberRaw;
+    } else {
+        deps.logger.error('[executeModelCallAndSave] iterationNumber validation failed', {
+            jobId,
+            iterationNumberRaw,
+            iterationNumberType: typeof iterationNumberRaw,
+        });
+        throw new Error(`Job ${jobId} is missing required iterationNumber in its payload.`);
+    }
+    
+    let projectId: string;
+    if (typeof projectIdRaw === 'string' && projectIdRaw.trim() !== '') {
+        projectId = projectIdRaw;
+    } else {
+        deps.logger.error('[executeModelCallAndSave] projectId validation failed', {
+            jobId,
+            projectIdRaw,
+            projectIdType: typeof projectIdRaw,
+        });
+        throw new Error(`Job ${jobId} is missing required projectId in its payload.`);
+    }
+    
+    let sessionId: string;
+    if (typeof sessionIdRaw === 'string' && sessionIdRaw.trim() !== '') {
+        sessionId = sessionIdRaw;
+    } else {
+        deps.logger.error('[executeModelCallAndSave] sessionId validation failed', {
+            jobId,
+            sessionIdRaw,
+            sessionIdType: typeof sessionIdRaw,
+        });
+        throw new Error(`Job ${jobId} is missing required sessionId in its payload.`);
+    }
+    
+    let model_id: string;
+    if (typeof model_idRaw === 'string' && model_idRaw.trim() !== '') {
+        model_id = model_idRaw;
+    } else {
+        deps.logger.error('[executeModelCallAndSave] model_id validation failed', {
+            jobId,
+            model_idRaw,
+            modelIdType: typeof model_idRaw,
+        });
+        throw new Error(`Job ${jobId} is missing required model_id in its payload.`);
     }
 
     const { data: fullProviderData, error: providerError } = await dbClient
@@ -125,81 +235,76 @@ export async function executeModelCallAndSave(
 
         for (const ru of rulesUnknown) {
             const rType = isRecord(ru) && typeof ru['type'] === 'string' ? ru['type'] : undefined; // 'document' | 'feedback'
-            const rStage = isRecord(ru) && typeof ru['stage_slug'] === 'string' ? ru['stage_slug'] : undefined;
+            const rStage = isRecord(ru) && typeof ru['slug'] === 'string' ? ru['slug'] : undefined;
             const rKey = isRecord(ru) && typeof ru['document_key'] === 'string' ? ru['document_key'] : undefined;
+            const rRequired = isRecord(ru) && typeof ru['required'] === 'boolean' ? ru['required'] : true; // Default to required if not specified
             if (!rType || !rStage || !rKey) continue;
 
             try {
                 if (rType === 'document') {
-                    // From dialectic_contributions (stage column normalized to stage_slug)
-                    {
-                        const { data, error } = await dbClient
-                            .from('dialectic_contributions')
-                            .select('*')
-                            .eq('project_id', projectId)
-                            .eq('session_id', sessionId)
-                            .eq('iteration_number', iterationNumber)
-                            .eq('stage', rStage);
-                        if (!error && Array.isArray(data) && data.length > 0) {
-                            const filtered = (data).filter((row) => {
-                                const fileName = isRecord(row) && typeof row['file_name'] === 'string' ? row['file_name'] : '';
-                                const storageDir = isRecord(row) && typeof row['storage_path'] === 'string' ? row['storage_path'] : '';
-                                const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
-                                const rowStage = (isRecord(row) && typeof row['stage'] === 'string') ? row['stage']
-                                    : (typeof parsed.stageSlug === 'string' ? parsed.stageSlug : undefined);
-                                const parsedKey = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
-                                return rowStage === rStage && parsedKey === rKey;
-                            });
-                            const latest = pickLatest(filtered);
-                            if (latest && isRecord(latest)) {
-                                const u: unknown = latest;
-                                const id = isRecord(u) && typeof u['id'] === 'string' ? u['id'] : undefined;
-                                const fileName = isRecord(u) && typeof u['file_name'] === 'string' ? u['file_name'] : '';
-                                const storageDir = isRecord(u) && typeof u['storage_path'] === 'string' ? u['storage_path'] : '';
-                                const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
-                                const stageSlugEff = isRecord(u) && typeof u['stage'] === 'string' ? u['stage'] : (parsed.stageSlug || undefined);
-                                const docKeyEff = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
-                                const content = isRecord(u) && typeof u['content'] === 'string' ? u['content'] : '';
-                                if (id && stageSlugEff && docKeyEff) {
-                                    gathered.push({ id, content, document_key: docKeyEff, stage_slug: stageSlugEff, type: 'document' });
-                                }
-                            }
+                    // Query dialectic_project_resources for finished rendered documents (fail loud and hard if not found)
+                    deps.logger.info(`[gatherArtifacts] Querying dialectic_project_resources for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`);
+                    const { data, error } = await dbClient
+                        .from('dialectic_project_resources')
+                        .select('*')
+                        .eq('project_id', projectId)
+                        .eq('session_id', sessionId)
+                        .eq('iteration_number', iterationNumber)
+                        .eq('stage_slug', rStage)
+                        .eq('resource_type', 'rendered_document');
+                    if (error) {
+                        deps.logger.error(`[gatherArtifacts] Error querying dialectic_project_resources for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`, { error });
+                        if (rRequired === false) {
+                            deps.logger.info(`[gatherArtifacts] Error querying optional document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'. Skipping optional input.`);
+                            continue;
                         }
+                        throw new Error(`Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`);
                     }
-                    // From dialectic_project_resources (already stage_slug)
-                    {
-                        const { data, error } = await dbClient
-                            .from('dialectic_project_resources')
-                            .select('*')
-                            .eq('project_id', projectId)
-                            .eq('session_id', sessionId)
-                            .eq('iteration_number', iterationNumber)
-                            .eq('stage_slug', rStage);
-                        if (!error && Array.isArray(data) && data.length > 0) {
-                            const filtered = (data).filter((row) => {
-                                const fileName = isRecord(row) && typeof row['file_name'] === 'string' ? row['file_name'] : '';
-                                const storageDir = isRecord(row) && typeof row['storage_path'] === 'string' ? row['storage_path'] : '';
-                                const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
-                                const rowStage = (isRecord(row) && typeof row['stage_slug'] === 'string') ? row['stage_slug']
-                                    : (typeof parsed.stageSlug === 'string' ? parsed.stageSlug : undefined);
-                                const parsedKey = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
-                                return rowStage === rStage && parsedKey === rKey;
-                            });
-                            const latest = pickLatest(filtered);
-                            if (latest && isRecord(latest)) {
-                                const u: unknown = latest;
-                                const id = isRecord(u) && typeof u['id'] === 'string' ? u['id'] : undefined;
-                                const fileName = isRecord(u) && typeof u['file_name'] === 'string' ? u['file_name'] : '';
-                                const storageDir = isRecord(u) && typeof u['storage_path'] === 'string' ? u['storage_path'] : '';
-                                const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
-                                const stageSlugEff = isRecord(u) && typeof u['stage_slug'] === 'string' ? u['stage_slug'] : (parsed.stageSlug || undefined);
-                                const docKeyEff = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
-                                const content = isRecord(u) && typeof u['content'] === 'string' ? u['content'] : '';
-                                if (id && stageSlugEff && docKeyEff) {
-                                    gathered.push({ id, content, document_key: docKeyEff, stage_slug: stageSlugEff, type: 'document' });
-                                }
-                            }
+                    if (!Array.isArray(data) || data.length === 0) {
+                        deps.logger.warn(`[gatherArtifacts] No resources found in dialectic_project_resources for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`);
+                        if (rRequired === false) {
+                            deps.logger.info(`[gatherArtifacts] No rendered documents found for optional input rule type 'document' with stage '${rStage}' and document_key '${rKey}'. Skipping optional input.`);
+                            continue;
                         }
+                        throw new Error(`Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`);
+                    }
+                    const filtered = (data).filter((row) => {
+                        const fileName = isRecord(row) && typeof row['file_name'] === 'string' ? row['file_name'] : '';
+                        const storageDir = isRecord(row) && typeof row['storage_path'] === 'string' ? row['storage_path'] : '';
+                        const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
+                        const rowStage = (isRecord(row) && typeof row['stage_slug'] === 'string') ? row['stage_slug']
+                            : (typeof parsed.stageSlug === 'string' ? parsed.stageSlug : undefined);
+                        const parsedKey = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
+                        return rowStage === rStage && parsedKey === rKey;
+                    });
+                    const latest = pickLatest(filtered);
+                    if (latest && isRecord(latest)) {
+                        const u: unknown = latest;
+                        const id = isRecord(u) && typeof u['id'] === 'string' ? u['id'] : undefined;
+                        const fileName = isRecord(u) && typeof u['file_name'] === 'string' ? u['file_name'] : '';
+                        const storageDir = isRecord(u) && typeof u['storage_path'] === 'string' ? u['storage_path'] : '';
+                        const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
+                        const stageSlugEff = isRecord(u) && typeof u['stage_slug'] === 'string' ? u['stage_slug'] : (parsed.stageSlug || undefined);
+                        const docKeyEff = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
+                        const content = isRecord(u) && typeof u['content'] === 'string' ? u['content'] : '';
+                        if (id && stageSlugEff && docKeyEff) {
+                            deps.logger.info(`[gatherArtifacts] Found rendered document in dialectic_project_resources: id='${id}', stage='${stageSlugEff}', document_key='${docKeyEff}'`);
+                            gathered.push({ id, content, document_key: docKeyEff, stage_slug: stageSlugEff, type: 'document' });
+                        } else {
+                            deps.logger.warn(`[gatherArtifacts] Resource found but missing required fields: id='${id}', stageSlugEff='${stageSlugEff}', docKeyEff='${docKeyEff}'`);
+                            if (rRequired === false) {
+                                deps.logger.info(`[gatherArtifacts] Resource found but missing required fields for optional input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'. Skipping optional input.`);
+                                continue;
+                            }
+                            throw new Error(`Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`);
+                        }
+                    } else {
+                        deps.logger.warn(`[gatherArtifacts] No matching resource found after filtering for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`);
+                        if (rRequired === false) {
+                            deps.logger.info(`[gatherArtifacts] No matching resource found after filtering for optional input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'. Skipping optional input.`);
+                            continue;
+                        }
+                        throw new Error(`Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`);
                     }
                 }
                 if (rType === 'feedback') {
@@ -236,10 +341,53 @@ export async function executeModelCallAndSave(
                         }
                     }
                 }
-            } catch { /* non-fatal */ }
+                // Handle intermediate artifacts (header_context, etc.) that are stored in contributions
+                if (rType === 'header_context' || (rType !== 'document' && rType !== 'feedback')) {
+                    deps.logger.info(`[gatherArtifacts] Querying dialectic_contributions for intermediate artifact: type='${rType}', stage='${rStage}', document_key='${rKey}'`);
+                    const { data, error } = await dbClient
+                        .from('dialectic_contributions')
+                        .select('*')
+                        .eq('project_id', projectId)
+                        .eq('session_id', sessionId)
+                        .eq('iteration_number', iterationNumber)
+                        .eq('stage', rStage);
+                    if (!error && Array.isArray(data) && data.length > 0) {
+                        const filtered = (data).filter((row) => {
+                            const fileName = isRecord(row) && typeof row['file_name'] === 'string' ? row['file_name'] : '';
+                            const storageDir = isRecord(row) && typeof row['storage_path'] === 'string' ? row['storage_path'] : '';
+                            const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
+                            const rowStage = (isRecord(row) && typeof row['stage'] === 'string') ? row['stage']
+                                : (typeof parsed.stageSlug === 'string' ? parsed.stageSlug : undefined);
+                            const parsedKey = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
+                            return rowStage === rStage && parsedKey === rKey;
+                        });
+                        const latest = pickLatest(filtered);
+                        if (latest && isRecord(latest)) {
+                            const u: unknown = latest;
+                            const id = isRecord(u) && typeof u['id'] === 'string' ? u['id'] : undefined;
+                            const fileName = isRecord(u) && typeof u['file_name'] === 'string' ? u['file_name'] : '';
+                            const storageDir = isRecord(u) && typeof u['storage_path'] === 'string' ? u['storage_path'] : '';
+                            const parsed = deconstructStoragePath({ storageDir, fileName, dbOriginalFileName: fileName });
+                            const stageSlugEff = isRecord(u) && typeof u['stage'] === 'string' ? u['stage'] : (parsed.stageSlug || undefined);
+                            const docKeyEff = typeof parsed.documentKey === 'string' ? parsed.documentKey : undefined;
+                            const content = isRecord(u) && typeof u['content'] === 'string' ? u['content'] : '';
+                            if (id && stageSlugEff && docKeyEff) {
+                                deps.logger.info(`[gatherArtifacts] Found intermediate artifact in dialectic_contributions: id='${id}', stage='${stageSlugEff}', document_key='${docKeyEff}', type='${rType}'`);
+                                gathered.push({ id, content, document_key: docKeyEff, stage_slug: stageSlugEff, type: rType });
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                // For document-type inputs, errors indicate missing required rendered documents - re-throw to fail loud and hard
+                if (rType === 'document') {
+                    throw err;
+                }
+                // For other types (feedback, header_context, etc.), errors are non-fatal - continue processing other rules
+            }
         }
 
-        // Dedupe by id across sources
+        // Dedupe by id to handle multiple input rules returning the same document
         const unique = new Map<string, IdentityDoc>();
         for (const d of gathered) {
             const rec: unknown = d;
@@ -264,7 +412,7 @@ export async function executeModelCallAndSave(
             for (const ru of rulesUnknown) {
                 const ruUnknown: unknown = ru;
                 const rType = isRecord(ruUnknown) && typeof ruUnknown['type'] === 'string' ? ruUnknown['type'] : undefined;
-                const rStage = isRecord(ruUnknown) && typeof ruUnknown['stage_slug'] === 'string' ? ruUnknown['stage_slug'] : undefined;
+                const rStage = isRecord(ruUnknown) && typeof ruUnknown['slug'] === 'string' ? ruUnknown['slug'] : undefined;
                 const rKey = isRecord(ruUnknown) && typeof ruUnknown['document_key'] === 'string' ? ruUnknown['document_key'] : undefined;
                 if (rType && rStage && rKey && rType === tp && rStage === ss && rKey === dk) {
                     match = true;
@@ -880,18 +1028,8 @@ export async function executeModelCallAndSave(
             target_contribution_id: job.payload.target_contribution_id,
         });
     }
-    // Enforce presence of user_jwt on the payload (no fallback to function authToken)
-    let userAuthToken: string | undefined = undefined;
-    {
-        const desc = Object.getOwnPropertyDescriptor(job.payload, 'user_jwt');
-        const potential = desc ? desc.value : undefined;
-        if (typeof potential === 'string' && potential.length > 0) {
-            userAuthToken = potential;
-        }
-    }
-    if (!userAuthToken) {
-        throw new Error('payload.user_jwt required');
-    }
+    // user_jwt already validated above; use the early validation result
+    const userAuthTokenStrict: string = userAuthTokenEarly;
 
     if (!deps.callUnifiedAIModel) {
         throw new Error("Dependency 'callUnifiedAIModel' is not provided.");
@@ -900,7 +1038,7 @@ export async function executeModelCallAndSave(
     const startTime = Date.now();
     const aiResponse: UnifiedAIResponse = await deps.callUnifiedAIModel(
         chatApiRequest,
-        userAuthToken, 
+        userAuthTokenStrict, 
         { fetch: globalThis.fetch }
     );
 
@@ -931,12 +1069,44 @@ export async function executeModelCallAndSave(
     }
 
     // Unconditionally validate the response is parsable JSON before any other logic.
+    // First sanitize the content to handle common wrapper patterns (quotes, backticks, whitespace).
+    const sanitizationResult: JsonSanitizationResult = sanitizeJsonContent(aiResponse.content);
+    
+    if (!isJsonSanitizationResult(sanitizationResult)) {
+        // Type guard failure - log and retry
+        deps.logger.warn(`[executeModelCallAndSave] Invalid sanitization result for job ${job.id}. Triggering retry.`);
+        await deps.retryJob(
+            { logger: deps.logger, notificationService: deps.notificationService },
+            dbClient,
+            job,
+            job.attempt_count + 1,
+            [{
+                modelId: providerDetails.id,
+                api_identifier: providerDetails.api_identifier,
+                error: 'Invalid JSON sanitization result',
+                processingTimeMs: processingTimeMs,
+            }],
+            projectOwnerUserId
+        );
+        return;
+    }
+    
+    // Log sanitization event if sanitization was performed
+    if (sanitizationResult.wasSanitized) {
+        deps.logger.info(`[executeModelCallAndSave] JSON content sanitized for job ${job.id}`, { 
+            originalLength: sanitizationResult.originalLength, 
+            sanitizedLength: sanitizationResult.sanitized.length,
+            wasStructurallyFixed: sanitizationResult.wasStructurallyFixed
+        });
+    }
+    
+    // Attempt to parse the sanitized content
     let parsedContent: unknown;
     try {
-        parsedContent = JSON.parse(aiResponse.content);
+        parsedContent = JSON.parse(sanitizationResult.sanitized);
     } catch (e) {
-        // This handles a malformed JSON response, which is a retryable failure.
-        deps.logger.warn(`[executeModelCallAndSave] Malformed JSON response for job ${job.id}. Triggering retry.`, { error: e instanceof Error ? e.message : String(e) });
+        // This handles a malformed JSON response that cannot be fixed by sanitization, which is a retryable failure.
+        deps.logger.warn(`[executeModelCallAndSave] Malformed JSON response for job ${job.id} after sanitization. Triggering retry.`, { error: e instanceof Error ? e.message : String(e) });
         
         await deps.retryJob(
             { logger: deps.logger, notificationService: deps.notificationService },
@@ -994,7 +1164,7 @@ export async function executeModelCallAndSave(
         }
     }
 
-    const contentForStorage: string = aiResponse.content;
+    const contentForStorage: string = sanitizationResult.sanitized;
     
     // This is the correct implementation. The semantic relationships are inherited
     // directly from the job payload. The structural link for continuations is
@@ -1030,26 +1200,145 @@ export async function executeModelCallAndSave(
         if (!isDocumentRelationships(relsUnknown)) {
             throw new Error('Continuation save requires valid document_relationships');
         }
+        
+        // Validate continuation_count is required and > 0 for continuation chunks
+        const continuationCount = job.payload.continuation_count;
+        if (continuationCount === undefined || continuationCount === null) {
+            throw new Error('continuation_count is required and must be a number > 0 for continuation chunks');
+        }
+        if (typeof continuationCount !== 'number') {
+            throw new Error('continuation_count is required and must be a number > 0 for continuation chunks');
+        }
+        if (continuationCount <= 0) {
+            throw new Error('continuation_count is required and must be a number > 0 for continuation chunks');
+        }
     }
 
     if (!aiResponse.rawProviderResponse || !isJson(aiResponse.rawProviderResponse)) {
         throw new Error('Raw provider response is required');
     }
+
+    // Validate ALL required values for document file types BEFORE constructing pathContext
+    if (isDocumentRelated(fileType)) {
+        const missingValues: string[] = [];
+        
+        if (!job.payload.projectId || typeof job.payload.projectId !== 'string' || job.payload.projectId.trim() === '') {
+            missingValues.push('job.payload.projectId (string, non-empty)');
+        }
+        if (!job.payload.sessionId || typeof job.payload.sessionId !== 'string' || job.payload.sessionId.trim() === '') {
+            missingValues.push('job.payload.sessionId (string, non-empty)');
+        }
+        if (job.payload.iterationNumber === undefined || typeof job.payload.iterationNumber !== 'number') {
+            missingValues.push('job.payload.iterationNumber (number)');
+        }
+        if (!job.payload.canonicalPathParams || !isRecord(job.payload.canonicalPathParams)) {
+            missingValues.push('job.payload.canonicalPathParams (object)');
+        } else if (!job.payload.canonicalPathParams.stageSlug || typeof job.payload.canonicalPathParams.stageSlug !== 'string' || job.payload.canonicalPathParams.stageSlug.trim() === '') {
+            missingValues.push('job.payload.canonicalPathParams.stageSlug (string, non-empty)');
+        }
+        if (job.attempt_count === undefined || typeof job.attempt_count !== 'number') {
+            missingValues.push('job.attempt_count (number)');
+        }
+        if (!providerDetails.api_identifier || typeof providerDetails.api_identifier !== 'string' || providerDetails.api_identifier.trim() === '') {
+            missingValues.push('providerDetails.api_identifier (string, non-empty)');
+        }
+        if (!job.payload.document_key || typeof job.payload.document_key !== 'string' || job.payload.document_key.trim() === '') {
+            missingValues.push('job.payload.document_key (string, non-empty)');
+        }
+        
+        if (missingValues.length > 0) {
+            throw new Error(
+                `executeModelCallAndSave requires all of the following values for document file type '${output_type}': job.payload.projectId (string, non-empty), job.payload.sessionId (string, non-empty), job.payload.iterationNumber (number), job.payload.canonicalPathParams.stageSlug (string, non-empty), job.attempt_count (number), providerDetails.api_identifier (string, non-empty), job.payload.document_key (string, non-empty). Missing or invalid: ${missingValues.join(', ')}`
+            );
+        }
+    }
+
+    // For document outputs, use FileType.ModelContributionRawJson to save to raw_responses/ folder
+    // For non-document outputs (e.g., header_context), use the original fileType
+    const storageFileType = isDocumentKey(fileType) 
+        ? FileType.ModelContributionRawJson 
+        : fileType;
+
+    // Extract source_group fragment for filename disambiguation
+    // Fragment is extracted from document_relationships.source_group UUID (first 8 chars after hyphen removal)
+    // source_group is required for document outputs to enable filename disambiguation
+    // Exception: consolidation jobs (per_model granularity) use source_group = null to signal new lineage root
+    const sourceGroup = job.payload.document_relationships?.source_group ?? undefined;
+    const sourceGroupIsNull = job.payload.document_relationships?.source_group === null;
+    
+    if (isDocumentRelated(fileType) && !sourceGroup) {
+        // Check if this is a consolidation job (per_model granularity) that allows source_group = null
+        if (sourceGroupIsNull && job.payload.planner_metadata?.recipe_step_id) {
+            const recipeStepId = job.payload.planner_metadata.recipe_step_id;
+            
+            // Look up the recipe step to check granularity_strategy
+            // Try dialectic_stage_recipe_steps first (cloned instances)
+            let recipeStep: unknown = null;
+            const { data: clonedStep, error: clonedError } = await dbClient
+                .from('dialectic_stage_recipe_steps')
+                .select('granularity_strategy')
+                .eq('id', recipeStepId)
+                .maybeSingle();
+            
+            if (!clonedError && clonedStep && isRecord(clonedStep)) {
+                recipeStep = clonedStep;
+            } else {
+                // Try dialectic_recipe_template_steps (template instances)
+                const { data: templateStep, error: templateError } = await dbClient
+                    .from('dialectic_recipe_template_steps')
+                    .select('granularity_strategy')
+                    .eq('id', recipeStepId)
+                    .maybeSingle();
+                
+                if (!templateError && templateStep && isRecord(templateStep)) {
+                    recipeStep = templateStep;
+                }
+            }
+            
+            // If recipe step found and granularity_strategy is 'per_model', allow null source_group
+            if (recipeStep && isRecord(recipeStep) && typeof recipeStep.granularity_strategy === 'string' && recipeStep.granularity_strategy === 'per_model') {
+                // Consolidation job: source_group = null is allowed, will be set to self.id after save
+            } else {
+                throw new Error('source_group is required for document outputs');
+            }
+        } else {
+            throw new Error('source_group is required for document outputs');
+        }
+    }
+    const sourceGroupFragment = extractSourceGroupFragment(sourceGroup);
+
+    // Verify sourceAnchorModelSlug propagates correctly for antithesis patterns
+    // restOfCanonicalPathParams (spread from job.payload.canonicalPathParams) already includes sourceAnchorModelSlug
+    // when present, enabling antithesis pattern detection in constructStoragePath
+    if (restOfCanonicalPathParams.sourceAnchorModelSlug) {
+        deps.logger.info('[executeModelCallAndSave] sourceAnchorModelSlug present in canonicalPathParams, will propagate to pathContext for antithesis pattern detection', {
+            sourceAnchorModelSlug: restOfCanonicalPathParams.sourceAnchorModelSlug,
+            stageSlug: restOfCanonicalPathParams.stageSlug,
+            outputType: output_type,
+        });
+    }
+
+    const documentKey = job.payload.document_key;
+    if (!documentKey) {
+        throw new Error('document_key is required');
+    }
     const uploadContext: ModelContributionUploadContext = {
         pathContext: {
             projectId: job.payload.projectId,
-            fileType: fileType,
+            fileType: storageFileType,
             sessionId,
             iteration: iterationNumber,
             modelSlug: providerDetails.api_identifier,
             attemptCount: job.attempt_count,
             ...restOfCanonicalPathParams,
+            documentKey: documentKey,
             contributionType,
             isContinuation: isContinuationForStorage,
-            turnIndex: isContinuationForStorage ? job.payload.continuation_count ?? 0 : undefined,
+            turnIndex: isContinuationForStorage ? job.payload.continuation_count : undefined,
+            ...(sourceGroupFragment ? { sourceGroupFragment } : {}),
         },
         fileContent: contentForStorage, 
-        mimeType: aiResponse.contentType || "text/markdown",
+        mimeType: "application/json",
         sizeBytes: contentForStorage.length, 
         userId: projectOwnerUserId,
         description,
@@ -1060,7 +1349,6 @@ export async function executeModelCallAndSave(
             stageSlug, 
             iterationNumber, 
             contributionType: contributionType,
-            rawJsonResponseContent: aiResponse.rawProviderResponse,
             tokensUsedInput: aiResponse.inputTokens, 
             tokensUsedOutput: aiResponse.outputTokens,
             processingTimeMs: aiResponse.processingTimeMs,
@@ -1071,6 +1359,12 @@ export async function executeModelCallAndSave(
         },
     };
 
+    deps.logger.info('[executeModelCallAndSave] Saving validated JSON to raw file', { 
+        jobId, 
+        documentKey: documentKey, 
+        fileType: storageFileType 
+    });
+
     const savedResult = await deps.fileManager.uploadAndRegisterFile(uploadContext);
 
     if (savedResult.error || !isDialecticContribution(savedResult.record)) {
@@ -1079,20 +1373,7 @@ export async function executeModelCallAndSave(
 
     const contribution = savedResult.record;
 
-    // Emit chunk completion for continuation jobs immediately after save
-    if (projectOwnerUserId && isContinuationForStorage) {
-        await deps.notificationService.sendDocumentCentricNotification({
-            type: 'document_chunk_completed',
-            sessionId: sessionId,
-            stageSlug: stageSlug,
-            job_id: jobId,
-            document_key: String(output_type),
-            modelId: model_id,
-            iterationNumber: iterationNumber,
-        }, projectOwnerUserId);
-    }
-
-    // Persist full document_relationships for continuation saves to avoid initializer self-map
+    // Persist full document_relationships for continuation saves IMMEDIATELY after save (before RENDER job creation)
     const payloadRelationships = job.payload.document_relationships;
     if (isContinuationForStorage && isDocumentRelationships(payloadRelationships)) {
         const { error: relUpdateError } = await dbClient
@@ -1101,27 +1382,395 @@ export async function executeModelCallAndSave(
             .eq('id', contribution.id);
 
         if (relUpdateError) {
-            deps.logger.error(`[executeModelCallAndSave] CRITICAL: Failed to persist continuation document_relationships for contribution ${contribution.id}.`, { relUpdateError });
-        } else {
-            contribution.document_relationships = payloadRelationships;
+            throw new RenderJobValidationError(
+                `document_relationships[${stageSlug}] is required and must be persisted before RENDER job creation. Contribution ID: ${contribution.id}`
+            );
+        }
+
+        // Validate stageSlug value exists and is valid - isDocumentRelationships already validated it's a record
+        // Use Object.entries().find() to validate the specific key value type-safely
+        const stageSlugEntry = Object.entries(payloadRelationships).find(([key]) => key === stageSlug);
+        if (!stageSlugEntry || typeof stageSlugEntry[1] !== 'string' || stageSlugEntry[1].trim() === '') {
+            throw new Error(`document_relationships[${stageSlug}] is required and must be a non-empty string after persistence for continuation chunks`);
+        }
+
+        contribution.document_relationships = payloadRelationships;
+    }
+
+    // Initialize root-only relationships IMMEDIATELY after save (before RENDER job creation)
+    if (!isContinuationForStorage) {
+        const existing = contribution.document_relationships;
+        const existingStageValue = isRecord(existing) ? existing[stageSlug] : undefined;
+
+        const needsInit =
+            !isRecord(existing) ||
+            typeof existingStageValue !== 'string' ||
+            existingStageValue.trim() === '' ||
+            existingStageValue !== contribution.id;
+
+        if (needsInit) {
+            // Type-safe construction: build DocumentRelationships using validated keys
+            const merged: DocumentRelationships = {};
+            
+            // Copy existing valid RelationshipRole keys (ContributionType or 'source_group')
+            if (isRecord(existing) && isDocumentRelationships(existing)) {
+                for (const [key, value] of Object.entries(existing)) {
+                    if (typeof value === 'string') {
+                        // Validate key is a valid RelationshipRole: either ContributionType or 'source_group'
+                        if (isContributionType(key) || key === 'source_group') {
+                            // Type-safe: key is validated as RelationshipRole
+                            if (isContributionType(key)) {
+                                merged[key] = value;
+                            } else if (key === 'source_group') {
+                                merged.source_group = value;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // For consolidation jobs (per_model granularity), if source_group was null in payload, set it to self.id
+            const payloadSourceGroup = job.payload.document_relationships?.source_group;
+            if (payloadSourceGroup === null) {
+                // Consolidation job: set source_group to contribution's own ID (new lineage root)
+                merged.source_group = contribution.id;
+            }
+            
+            // Validate stageSlug is a valid ContributionType, then set it
+            if (!isContributionType(stageSlug)) {
+                throw new RenderJobValidationError(
+                    `Invalid stageSlug for document_relationships: ${stageSlug} is not a valid ContributionType. Contribution ID: ${contribution.id}`
+                );
+            }
+            merged[stageSlug] = contribution.id;
+
+            const { error: updateError } = await dbClient
+                .from('dialectic_contributions')
+                .update({ document_relationships: merged })
+                .eq('id', contribution.id);
+
+            if (updateError) {
+                throw new RenderJobValidationError(
+                    `document_relationships[${stageSlug}] is required and must be persisted before RENDER job creation. Contribution ID: ${contribution.id}`
+                );
+            }
+
+            // Validate initialization succeeded using type-safe access pattern
+            const stageSlugEntry = Object.entries(merged).find(([key]) => key === stageSlug);
+            if (
+                !stageSlugEntry ||
+                typeof stageSlugEntry[1] !== 'string' ||
+                stageSlugEntry[1].trim() === '' ||
+                stageSlugEntry[1] !== contribution.id
+            ) {
+                throw new RenderJobValidationError(
+                    `document_relationships[${stageSlug}] is required and must be persisted before RENDER job creation. Contribution ID: ${contribution.id}`
+                );
+            }
+
+            contribution.document_relationships = merged;
         }
     }
 
-    // Initialize root-only relationships when absent (first chunk only)
-    if (!contribution.document_relationships && !isContinuationForStorage) {
-        const dynamicRelationships: Record<string, string> = {};
-        dynamicRelationships[stageSlug] = contribution.id;
+    // Validate document_relationships presence for document outputs before render decision
+    // Use type-safe access pattern: Object.entries().find() instead of direct indexing
+    const stageRelationshipForStage = isRecord(contribution.document_relationships) && isDocumentRelationships(contribution.document_relationships)
+        ? Object.entries(contribution.document_relationships).find(([key]) => key === stageSlug)?.[1]
+        : undefined;
 
-        const { error: updateError } = await dbClient
-            .from('dialectic_contributions')
-            .update({ document_relationships: dynamicRelationships })
-            .eq('id', contribution.id);
+    if (
+        isDocumentRelated(fileType) &&
+        (
+            typeof stageRelationshipForStage !== 'string' ||
+            stageRelationshipForStage.trim() === ''
+        )
+    ) {
+        throw new RenderJobValidationError(
+            `document_relationships[${stageSlug}] is required and must be persisted before RENDER job creation. Contribution ID: ${contribution.id}`
+        );
+    }
 
-        if (updateError) {
-            deps.logger.error(`[executeModelCallAndSave] CRITICAL: Failed to update document_relationships for contribution ${contribution.id}.`, { updateError });
-        } else {
-            contribution.document_relationships = dynamicRelationships;
+    // Conditionally enqueue RENDER job for markdown document outputs on every chunk completion
+    const { shouldRender, reason, details } = await deps.shouldEnqueueRenderJob(
+        { dbClient, logger: deps.logger },
+        { outputType: output_type, stageSlug }
+    );
+
+    // Handle error reasons: fail the EXECUTE job for transient/config errors
+    if (!shouldRender && ['stage_not_found', 'instance_not_found', 'steps_not_found', 'parse_error', 'query_error', 'no_active_recipe'].includes(reason)) {
+        deps.logger.error('[executeModelCallAndSave] Failed to determine if RENDER job required due to query/config error', { reason, details, outputType: output_type, stageSlug });
+        throw new Error(`Cannot determine render requirement: ${reason}${details ? ` - ${details}` : ''}`);
+    }
+
+    // Log successful skip for JSON outputs (normal flow, not an error)
+    if (!shouldRender && reason === 'is_json') {
+        deps.logger.info('[executeModelCallAndSave] Skipping RENDER job for JSON output', { outputType: output_type });
+    }
+
+    // Proceed with RENDER job creation only for markdown documents
+    if (shouldRender && reason === 'is_markdown') {
+        deps.logger.info('[executeModelCallAndSave] Preparing to enqueue RENDER job', {
+            jobId,
+            output_type,
+            fileType,
+            storageFileType,
+            documentKey,
+        });
+        // Extract documentIdentity from document_relationships[stageSlug] specifically (must be persisted by now)
+        const documentIdentityValue = stageRelationshipForStage;
+        if (typeof documentIdentityValue !== 'string' || documentIdentityValue.trim() === '') {
+            throw new RenderJobValidationError(`document_relationships[${stageSlug}] is required and must be a non-empty string before RENDER job creation. Contribution ID: ${contribution.id}`);
         }
+        const documentIdentity: string = documentIdentityValue;
+
+        // Validate required fields before creating RENDER job payload
+        if (!documentKey || typeof documentKey !== 'string' || documentKey.trim() === '') {
+            deps.logger.error('[executeModelCallAndSave] Cannot enqueue RENDER job: documentKey is missing or invalid', {
+                jobId,
+                fileType,
+                documentKey
+            });
+            throw new RenderJobValidationError('documentKey is required for RENDER job but is missing or invalid');
+        }
+        const documentKeyStrict: string = documentKey;
+        if (!isFileType(documentKeyStrict)) {
+            throw new RenderJobValidationError('documentKey is not a valid FileType');
+        }
+        const documentKeyAsFileType: FileType = documentKeyStrict;
+
+        if (!documentIdentity || typeof documentIdentity !== 'string' || documentIdentity.trim() === '') {
+            deps.logger.error('[executeModelCallAndSave] Cannot enqueue RENDER job: documentIdentity is missing or invalid', {
+                jobId,
+                documentIdentity
+            });
+            throw new RenderJobValidationError('documentIdentity is required for RENDER job but is missing or invalid');
+        }
+        const documentIdentityStrict: string = documentIdentity;
+
+        if (!contribution.id || typeof contribution.id !== 'string' || contribution.id.trim() === '') {
+            throw new RenderJobValidationError('contribution.id is required for RENDER job but is missing or invalid');
+        }
+        const sourceContributionIdStrict: string = contribution.id;
+
+        // Query recipe step to extract template_filename from outputs_required.files_to_generate[]
+        // CRITICAL: Use the same stage/iteration context as the EXECUTE job to ensure correct recipe instance is retrieved
+        let templateFilename: string | undefined = undefined;
+
+        try {
+            // 1. Query dialectic_stages to get active_recipe_instance_id for the stageSlug
+            const { data: stageData, error: stageError } = await dbClient
+                .from('dialectic_stages')
+                .select('active_recipe_instance_id')
+                .eq('slug', stageSlug)
+                .single();
+
+            if (stageError || !stageData) {
+                throw new RenderJobValidationError(`Failed to query stage for template_filename extraction: ${stageError?.message || 'Stage not found'}`);
+            }
+            if (!stageData.active_recipe_instance_id) {
+                throw new RenderJobValidationError(`Stage '${stageSlug}' has no active recipe instance`);
+            }
+
+            // 2. Query dialectic_stage_recipe_instances to check if is_cloned
+            const { data: instance, error: instanceError } = await dbClient
+                .from('dialectic_stage_recipe_instances')
+                .select('*')
+                .eq('id', stageData.active_recipe_instance_id)
+                .single();
+
+            if (instanceError || !instance) {
+                throw new RenderJobValidationError(`Failed to query recipe instance for template_filename extraction: ${instanceError?.message || 'Instance not found'}`);
+            }
+
+            // 3. Query recipe steps based on whether instance is cloned
+            let steps: unknown[] = [];
+
+            if (instance.is_cloned === true) {
+                // If cloned, query dialectic_stage_recipe_steps where instance_id = active_recipe_instance_id
+                const { data: stepRows, error: stepErr } = await dbClient
+                    .from('dialectic_stage_recipe_steps')
+                    .select('*')
+                    .eq('instance_id', instance.id);
+
+                if (stepErr || !stepRows || stepRows.length === 0) {
+                    throw new RenderJobValidationError(`Failed to query cloned recipe steps for template_filename extraction: ${stepErr?.message || 'Steps not found'}`);
+                }
+
+                steps = stepRows;
+            } else {
+                // If not cloned, query dialectic_recipe_template_steps where template_id = instance.template_id
+                const { data: stepRows, error: stepErr } = await dbClient
+                    .from('dialectic_recipe_template_steps')
+                    .select('*')
+                    .eq('template_id', instance.template_id);
+
+                if (stepErr || !stepRows || stepRows.length === 0) {
+                    throw new RenderJobValidationError(`Failed to query template recipe steps for template_filename extraction: ${stepErr?.message || 'Steps not found'}`);
+                }
+
+                steps = stepRows;
+            }
+
+            // 4. Find the step where output_type matches the job's output_type
+            const matchingStep = steps.find((step) => {
+                if (!isRecord(step)) return false;
+                return step.output_type === output_type;
+            });
+
+            if (!matchingStep || !isRecord(matchingStep)) {
+                throw new RenderJobValidationError(`No recipe step found with output_type '${output_type}' for stage '${stageSlug}'`);
+            }
+
+            // 5. Extract template_filename from outputs_required.files_to_generate[] where from_document_key matches documentKey
+            const outputsRequired = matchingStep.outputs_required;
+            if (!outputsRequired || !isRecord(outputsRequired)) {
+                throw new RenderJobValidationError(`Recipe step with output_type '${output_type}' has missing or invalid outputs_required`);
+            }
+
+            const filesToGenerate = outputsRequired.files_to_generate;
+            if (!Array.isArray(filesToGenerate) || filesToGenerate.length === 0) {
+                throw new RenderJobValidationError(`Recipe step with output_type '${output_type}' has missing or empty files_to_generate array`);
+            }
+
+            // Find the entry where from_document_key matches documentKeyAsFileType
+            const matchingFileEntry = filesToGenerate.find((entry) => {
+                if (!isRecord(entry)) return false;
+                return entry.from_document_key === documentKeyAsFileType;
+            });
+
+            if (!matchingFileEntry || !isRecord(matchingFileEntry)) {
+                throw new RenderJobValidationError(`No files_to_generate entry found with from_document_key '${documentKeyAsFileType}' in recipe step with output_type '${output_type}'`);
+            }
+
+            // 6. Extract and validate template_filename
+            const extractedTemplateFilename = matchingFileEntry.template_filename;
+            if (typeof extractedTemplateFilename !== 'string' || extractedTemplateFilename.trim() === '') {
+                throw new RenderJobValidationError(`template_filename is missing or invalid in files_to_generate entry for from_document_key '${documentKeyAsFileType}'`);
+            }
+
+            templateFilename = extractedTemplateFilename.trim();
+        } catch (error) {
+            if (error instanceof RenderJobValidationError) {
+                throw error;
+            }
+            throw new RenderJobValidationError(`Failed to extract template_filename from recipe step: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+
+        // Validate template_filename is a non-empty string (should never happen after extraction, but double-check)
+        if (!templateFilename || typeof templateFilename !== 'string' || templateFilename.trim() === '') {
+            throw new RenderJobValidationError('template_filename must be a non-empty string');
+        }
+
+        const renderPayload: DialecticRenderJobPayload = {
+            projectId,
+            sessionId,
+            iterationNumber,
+            stageSlug,
+            documentIdentity: documentIdentityStrict,
+            documentKey: documentKeyAsFileType,
+            sourceContributionId: sourceContributionIdStrict,
+            template_filename: templateFilename,
+            user_jwt: userAuthTokenStrict,
+            model_id,
+            walletId,
+        };
+
+        if (!isDialecticRenderJobPayload(renderPayload)) {
+            throw new RenderJobValidationError('renderPayload is not a valid DialecticRenderJobPayload');
+        }
+        if(!isJson(renderPayload)) {
+            throw new RenderJobValidationError('renderPayload is not a valid JSON object');
+        }
+
+        const insertObj: TablesInsert<'dialectic_generation_jobs'> = {
+            job_type: 'RENDER',
+            session_id: job.session_id,
+            stage_slug: stageSlug,
+            iteration_number: iterationNumber,
+            parent_job_id: jobId,
+            payload: renderPayload,
+            is_test_job: job.is_test_job ?? false,
+            status: 'pending',
+            user_id: projectOwnerUserId,
+        };
+
+        const { data: renderInsertData, error: renderInsertError } = await dbClient
+            .from('dialectic_generation_jobs')
+            .insert(insertObj)
+            .select('*')
+            .single();
+
+        if (renderInsertError) {
+            const errorMessage = renderInsertError.message || '';
+            const errorCode = renderInsertError.code || '';
+
+            // Categorize programmer errors (FK violations, constraint violations, RLS)
+            const isProgrammerError =
+                errorMessage.includes('foreign key constraint') ||
+                errorMessage.includes('unique constraint') ||
+                errorMessage.includes('violates') ||
+                errorCode === '42501' || // RLS policy violation
+                errorCode === '23503' || // FK constraint violation
+                errorCode === '23505';   // Unique constraint violation
+
+            if (isProgrammerError) {
+                deps.logger.error('[executeModelCallAndSave] Programmer error during RENDER job insert', {
+                    renderInsertError,
+                    insertObj,
+                    errorMessage,
+                    errorCode
+                });
+                throw new RenderJobEnqueueError(
+                    `Failed to insert RENDER job due to database constraint violation: ${errorMessage} (code: ${errorCode})`
+                );
+            }
+
+            // Transient errors - throw to trigger job-level retry
+            deps.logger.error('[executeModelCallAndSave] Transient error during RENDER job insert - will retry', {
+                renderInsertError,
+                insertObj
+            });
+            throw new RenderJobEnqueueError(
+                `Failed to insert RENDER job due to transient error: ${errorMessage}`
+            );
+        } else {
+            const newId = isRecord(renderInsertData) && typeof renderInsertData['id'] === 'string' ? renderInsertData['id'] : undefined;
+            deps.logger.info('[executeModelCallAndSave] Enqueued RENDER job', { parent_job_id: jobId, render_job_id: newId });
+        }
+    }
+
+    if (typeof promptConstructionPayload.source_prompt_resource_id === 'string' && promptConstructionPayload.source_prompt_resource_id.trim().length > 0) {
+        const { error: promptLinkUpdateError } = await dbClient
+            .from('dialectic_project_resources')
+            .update({ source_contribution_id: contribution.id })
+            .eq('id', promptConstructionPayload.source_prompt_resource_id);
+
+        if (promptLinkUpdateError) {
+            deps.logger.error(
+                '[executeModelCallAndSave] Failed to update source_contribution_id for originating prompt resource.',
+                {
+                    promptResourceId: promptConstructionPayload.source_prompt_resource_id,
+                    contributionId: contribution.id,
+                    error: promptLinkUpdateError,
+                },
+            );
+        }
+    }
+
+    // Emit chunk completion for continuation jobs immediately after save
+    if (projectOwnerUserId && isContinuationForStorage && isDocumentRelated(fileType)) {
+        if (!job.payload.document_key || typeof job.payload.document_key !== 'string') {
+            throw new Error('document_key is required for document_chunk_completed notification but is missing or invalid');
+        }
+        await deps.notificationService.sendDocumentCentricNotification({
+            type: 'document_chunk_completed',
+            sessionId: sessionId,
+            stageSlug: stageSlug,
+            job_id: jobId,
+            document_key: job.payload.document_key,
+            modelId: model_id,
+            iterationNumber: iterationNumber,
+        }, projectOwnerUserId);
     }
     
     const needsContinuation = job.payload.continueUntilComplete && shouldContinue;
@@ -1149,13 +1798,15 @@ export async function executeModelCallAndSave(
           deps.logger.error(`[dialectic-worker] [executeModelCallAndSave] Failed to enqueue continuation for job ${job.id}.`, { error: continueResult.error.message });
         }
         if (projectOwnerUserId) {
+            // Calculate continuation number for the newly enqueued job (matches continueJob.ts logic)
+            const continuationNumber = (job.payload.continuation_count ?? 0) + 1;
             await deps.notificationService.sendContributionGenerationContinuedEvent({
                 type: 'contribution_generation_continued',
                 sessionId: sessionId,
                 contribution: contribution,
                 projectId: projectId,
                 modelId: model_id,
-                continuationNumber: job.payload.continuation_count ?? 1,
+                continuationNumber: continuationNumber,
                 job_id: jobId,
             }, projectOwnerUserId);
         }
@@ -1165,13 +1816,16 @@ export async function executeModelCallAndSave(
 
     if (isFinalChunk) {
         // Emit document_completed for final chunk
-        if (projectOwnerUserId) {
+        if (projectOwnerUserId && isDocumentRelated(fileType)) {
+            if (!job.payload.document_key || typeof job.payload.document_key !== 'string') {
+                throw new Error('document_key is required for document_completed notification but is missing or invalid');
+            }
             await deps.notificationService.sendDocumentCentricNotification({
                 type: 'document_completed',
                 sessionId: sessionId,
                 stageSlug: stageSlug,
                 job_id: jobId,
-                document_key: String(output_type),
+                document_key: job.payload.document_key,
                 modelId: model_id,
                 iterationNumber: iterationNumber,
             }, projectOwnerUserId);
@@ -1185,7 +1839,11 @@ export async function executeModelCallAndSave(
                 rootIdFromSaved = candidateUnknown;
             }
         }
-        if (rootIdFromSaved) {
+        // Only call assembleAndSaveFinalDocument for JSON-only artifacts (shouldRender === false)
+        // Rendered documents (shouldRender === true) are handled by RENDER jobs via renderDocument
+        // Only assemble if rootIdFromSaved exists AND is different from current contribution ID
+        // (meaning there are multiple chunks; single-chunk artifacts don't need assembly)
+        if (rootIdFromSaved && rootIdFromSaved !== contribution.id && !shouldRender) {
             await deps.fileManager.assembleAndSaveFinalDocument(rootIdFromSaved);
         }
     }
@@ -1219,57 +1877,6 @@ export async function executeModelCallAndSave(
                 projectId: projectId,
                 job_id: jobId,
             }, projectOwnerUserId);
-        }
-
-        // Programmatically schedule a RENDER job after successful EXECUTE completion
-        try {
-            // Derive a stable document identity from relationships when present; fallback to contribution.id
-            let documentIdentity: string = contribution.id;
-            if (isRecord(contribution.document_relationships)) {
-                const relObj = contribution.document_relationships;
-                for (const k of Object.keys(relObj)) {
-                    const v = relObj[k];
-                    if (typeof v === 'string' && v.trim() !== '') {
-                        documentIdentity = v;
-                        break;
-                    }
-                }
-            }
-
-            const renderPayload = {
-                projectId,
-                sessionId,
-                iterationNumber,
-                stageSlug,
-                documentIdentity,
-            };
-
-            const insertObj: TablesInsert<'dialectic_generation_jobs'> = {
-                job_type: 'RENDER',
-                session_id: job.session_id,
-                stage_slug: stageSlug,
-                iteration_number: iterationNumber,
-                parent_job_id: jobId,
-                payload: renderPayload,
-                is_test_job: job.is_test_job ?? false,
-                status: 'pending',
-                user_id: projectOwnerUserId,
-            };
-
-            const { data: renderInsertData, error: renderInsertError } = await dbClient
-                .from('dialectic_generation_jobs')
-                .insert(insertObj)
-                .select('*')
-                .single();
-
-            if (renderInsertError) {
-                deps.logger.error('[executeModelCallAndSave] Failed to enqueue RENDER job', { renderInsertError, insertObj });
-            } else {
-                const newId = isRecord(renderInsertData) && typeof renderInsertData['id'] === 'string' ? renderInsertData['id'] : undefined;
-                deps.logger.info('[executeModelCallAndSave] Enqueued RENDER job', { parent_job_id: jobId, render_job_id: newId });
-            }
-        } catch (e) {
-            deps.logger.error('[executeModelCallAndSave] CRITICAL: Exception while scheduling RENDER job', { error: e instanceof Error ? e.message : String(e) });
         }
     }
 

@@ -5,6 +5,7 @@ import {
 import { isRecord } from "../utils/type_guards.ts";
 import { downloadFromStorage } from "../supabase_storage_utils.ts";
 import { FileType } from "../types/file_manager.types.ts";
+import { HeaderContext } from "../../dialectic-service/dialectic.interface.ts";
 
 export const MOCK_CONTINUATION_INSTRUCTION_EXPLICIT =
   "Please continue the following text, ensuring you complete the thought without repetition:";
@@ -12,10 +13,6 @@ export const MOCK_CONTINUATION_INSTRUCTION_INCOMPLETE_JSON =
   "The previous response was an incomplete JSON object. Please complete the following JSON object, ensuring it is syntactically valid:";
 export const MOCK_CONTINUATION_INSTRUCTION_MALFORMED_JSON =
   "The previous response was a malformed JSON object. Please correct the following JSON object, ensuring it is syntactically valid:";
-
-type HeaderContext = {
-  system_materials: Record<string, unknown>;
-};
 
 function getJsonCorrectiveInstruction(content: string): string | null {
   if (!content.trim().startsWith("{") && !content.trim().startsWith("[")) {
@@ -79,18 +76,57 @@ export async function assembleContinuationPrompt(
 
   // 2. Fetch Header Context (if applicable)
   let headerContext: HeaderContext | null = null;
-  const headerResourceId = job.payload?.header_context_resource_id;
+  const inputs = isRecord(job.payload.inputs) ? job.payload.inputs : null;
+  const headerContextId = inputs?.header_context_id;
 
-  if (typeof headerResourceId === "string") {
+  if (typeof headerContextId === "string" && headerContextId.trim().length > 0) {
+    // Query contribution by ID to get storage details
+    const { data: headerContrib, error: contribError } = await dbClient
+      .from("dialectic_contributions")
+      .select("id, storage_bucket, storage_path, file_name, contribution_type")
+      .eq("id", headerContextId)
+      .single();
+
+    if (contribError || !headerContrib) {
+      throw new Error(
+        `Header context contribution with id '${headerContextId}' not found in database: ${contribError?.message}`,
+      );
+    }
+
+    if (headerContrib.contribution_type !== "header_context") {
+      throw new Error(
+        `Contribution '${headerContextId}' is not a header_context contribution (found '${headerContrib.contribution_type}').`,
+      );
+    }
+
+    if (typeof headerContrib.storage_bucket !== "string" || !headerContrib.storage_bucket) {
+      throw new Error(
+        `Header context contribution '${headerContextId}' is missing required storage_bucket.`,
+      );
+    }
+
+    if (typeof headerContrib.storage_path !== "string" || !headerContrib.storage_path) {
+      throw new Error(
+        `Header context contribution '${headerContextId}' is missing required storage_path.`,
+      );
+    }
+
+    // Construct storage path
+    const fileName = headerContrib.file_name || "";
+    const pathToDownload = fileName
+      ? `${headerContrib.storage_path}/${fileName}`
+      : headerContrib.storage_path;
+
+    // Download using the contribution's bucket
     const { data: buffer, error } = await downloadFromStorage(
       dbClient,
-      "dialectic_project_resources",
-      headerResourceId,
+      headerContrib.storage_bucket,
+      pathToDownload,
     );
 
     if (error || !buffer) {
       throw new Error(
-        `Failed to fetch HeaderContext with ID ${headerResourceId}: ${error?.message}`,
+        `Failed to download header context file from storage: ${error?.message}`,
       );
     }
 
@@ -125,6 +161,14 @@ export async function assembleContinuationPrompt(
     ? payload.model_slug
     : "unknown-model";
 
+  let sourceContributionId: string | undefined;
+  if (
+    typeof payload.target_contribution_id === "string" &&
+    payload.target_contribution_id.trim().length > 0
+  ) {
+    sourceContributionId = payload.target_contribution_id;
+  }
+
   let fileType: FileType;
   if (job.job_type === "PLAN") {
     fileType = FileType.PlannerPrompt;
@@ -140,6 +184,7 @@ export async function assembleContinuationPrompt(
       stageSlug: stage.slug,
       fileType: fileType,
       modelSlug: modelSlug,
+      attemptCount: job.attempt_count,
       documentKey: typeof payload.document_key === "string"
         ? payload.document_key
         : undefined,
@@ -148,6 +193,7 @@ export async function assembleContinuationPrompt(
       turnIndex: (job.attempt_count || 0) + 1,
       branchKey: stage.recipe_step?.branch_key,
       parallelGroup: stage.recipe_step?.parallel_group,
+      sourceContributionId,
     },
     fileContent: finalPrompt,
     mimeType: "text/markdown",

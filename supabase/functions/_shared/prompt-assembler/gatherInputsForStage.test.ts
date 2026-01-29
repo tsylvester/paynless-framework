@@ -223,8 +223,9 @@ Deno.test("gatherInputsForStage", async (t) => {
             const mockStageDisplayName = "Previous Document Stage";
             const modelName = "Model Alpha";
             const docContent = "This is document 1 content.";
-            const storagePath = "path/to";
-            const fileName = "doc1.md";
+            const storagePath = "p1/session_s1/iteration_1/thesis/documents";
+            const fileName = "gpt-4-turbo_0_business_case.md";
+            const resourceId = "doc1";
 
             const config: MockSupabaseDataConfig = {
                 genericMockResults: {
@@ -237,26 +238,48 @@ Deno.test("gatherInputsForStage", async (t) => {
                             return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
                         }
                     },
-                    'dialectic_contributions': {
+                    'dialectic_project_resources': {
                         select: async (state: MockQueryBuilderState) => {
-                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage' && f.value === docStageSlug);
-                            const latestEditFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'is_latest_edit' && f.value === true);
-                            if (stageFilter && latestEditFilter) {
+                            const resourceTypeFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'resource_type' && f.value === 'rendered_document');
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'session_id' && f.value === 's1');
+                            const iterationFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'iteration_number' && f.value === 1);
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage_slug' && f.value === docStageSlug);
+                            if (resourceTypeFilter && sessionFilter && iterationFilter && stageFilter) {
                                 return {
                                     data: [{
-                                        id: "doc1", storage_path: storagePath, file_name: fileName,
-                                        storage_bucket: "test-bucket", model_name: modelName,
-                                        session_id: 's1', iteration_number: 1, stage: docStageSlug, is_latest_edit: true, created_at: new Date().toISOString(),
-                                        user_id: 'u1', content_type: 'text/markdown', raw_text_content: null, word_count: null, token_count: null, dialectic_project_id: 'p1',
-                                        model_id: "model-alpha-id", prompt_template_id_used: null, seed_prompt_url: null, edit_version: 1,
-                                        original_model_contribution_id: null, raw_response_storage_path: null, target_contribution_id: null,
-                                        tokens_used_input: null, tokens_used_output: null, processing_time_ms: null, error: null, citations: null,
-                                        updated_at: new Date().toISOString(), contribution_type: "model_generated", size_bytes: null, mime_type: "text/markdown"
+                                        id: resourceId,
+                                        project_id: 'p1',
+                                        user_id: 'u1',
+                                        file_name: fileName,
+                                        storage_bucket: 'test-bucket',
+                                        storage_path: storagePath,
+                                        mime_type: 'text/markdown',
+                                        size_bytes: docContent.length,
+                                        resource_type: 'rendered_document',
+                                        session_id: 's1',
+                                        iteration_number: 1,
+                                        stage_slug: docStageSlug,
+                                        source_contribution_id: 'contrib-1',
+                                        resource_description: null,
+                                        created_at: new Date().toISOString(),
+                                        updated_at: new Date().toISOString(),
                                     }],
-                                    error: null, count: 1, status: 200, statusText: "OK"
+                                    error: null,
+                                    count: 1,
+                                    status: 200,
+                                    statusText: "OK"
                                 };
                             }
                             return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_contributions': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const idFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'id');
+                            if (idFilter && idFilter.value === 'contrib-1') {
+                                return { data: [{ id: 'contrib-1', model_name: modelName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 406, statusText: "OK" };
                         }
                     }
                 },
@@ -318,7 +341,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                         {
                             type: "document",
                             slug: docStageSlug,
-                            document_key: '*', // Assuming '*' fetches any document from that stage
+                            // document_key omitted to fetch any document from that stage
                             required: true,
                             multiple: false,
                             section_header: "Documents from some-slug stage",
@@ -330,20 +353,25 @@ Deno.test("gatherInputsForStage", async (t) => {
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                
+                // Initialize spies BEFORE the action to ensure calls are tracked
+                const storageSpies = spies.storage.from("test-bucket");
+                
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
                 assertEquals(result.sourceDocuments.length, 1);
                 const doc = result.sourceDocuments[0];
                 assertEquals(doc.id, "doc1");
-                assertEquals(doc.type, "document"); // The underlying fetch is still for contributions
+                assertEquals(doc.type, "document");
                 assertEquals(doc.content, docContent);
-                assertEquals(doc.metadata.modelName, modelName);
+                // modelName is extracted from file_name (model slug), not from contributions query
+                assertEquals(doc.metadata.modelName, "gpt-4-turbo");
                 assertEquals(doc.metadata.displayName, mockStageDisplayName);
                 assertEquals(doc.metadata.header, "Documents from some-slug stage");
 
-                const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
-                assertEquals(downloadSpies.calls.length, 1);
-                const actualPath = downloadSpies.calls[0].args[0];
+                const downloadSpy = storageSpies.downloadSpy;
+                assertEquals(downloadSpy.calls.length, 1);
+                const actualPath = downloadSpy.calls[0].args[0];
                 const expectedJoined = join(storagePath, fileName);
                 const expectedFs = expectedJoined.replace(/\\/g, '/');
                 assert(
@@ -463,6 +491,10 @@ Deno.test("gatherInputsForStage", async (t) => {
                 };
                 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                
+                // Initialize spies BEFORE the action
+                const storageSpies = spies.storage.from("test-bucket");
+                
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
                 
                 console.log("--- TEST LOG: should fetch and format only feedback ---");
@@ -477,9 +509,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                 assertEquals(doc.metadata.displayName, mockStageDisplayName);
                 assertEquals(doc.metadata.header, undefined); // No header defined in rule
 
-                const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
-                assertEquals(downloadSpies.calls.length, 1);
-                const actualPath = downloadSpies.calls[0].args[0];
+                const downloadSpy = storageSpies.downloadSpy;
+                assertEquals(downloadSpy.calls.length, 1);
+                const actualPath = downloadSpy.calls[0].args[0];
                 const expectedFs = expectedFeedbackPath.replace(/\\/g, '/');
                 assert(
                     actualPath === expectedFeedbackPath || actualPath === expectedFs,
@@ -502,8 +534,8 @@ Deno.test("gatherInputsForStage", async (t) => {
             const projectId = "p200";
             const sessionId = "s200";
             const iteration = 3;
-            const contribStoragePath = "path/to";
-            const contribFileName = "contrib-both.md";
+            const contribStoragePath = "path/to/documents";
+            const contribFileName = "gpt-4-turbo_0_feature_spec.md";
 
             const feedbackPathParts = constructStoragePath({
                 projectId,
@@ -528,23 +560,48 @@ Deno.test("gatherInputsForStage", async (t) => {
                             return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
                         }
                     },
-                    'dialectic_contributions': {
+                    'dialectic_project_resources': {
                         select: async (state: MockQueryBuilderState) => {
-                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage' && f.value === contribSlug);
-                            if (stageFilter) {
-                                return { 
+                            const resourceTypeFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'resource_type' && f.value === 'rendered_document');
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'session_id' && f.value === sessionId);
+                            const iterationFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'iteration_number' && f.value === iteration);
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage_slug' && f.value === contribSlug);
+                            if (resourceTypeFilter && sessionFilter && iterationFilter && stageFilter) {
+                                return {
                                     data: [{
-                                        id: "contrib-both", storage_path: contribStoragePath, file_name: contribFileName,
-                                        storage_bucket: "test-bucket", model_name: modelName, session_id: sessionId, iteration_number: iteration, stage: contribSlug, is_latest_edit: true, created_at: new Date().toISOString(), user_id: 'u200', content_type: 'text/markdown', raw_text_content: null, word_count: null, token_count: null, dialectic_project_id: projectId,
-                                        model_id: "model-gamma-id", prompt_template_id_used: null, seed_prompt_url: null, edit_version: 1,
-                                        original_model_contribution_id: null, raw_response_storage_path: null, target_contribution_id: null,
-                                        tokens_used_input: null, tokens_used_output: null, processing_time_ms: null, error: null, citations: null,
-                                        updated_at: new Date().toISOString(), contribution_type: "model_generated", size_bytes: null, mime_type: "text/markdown"
-                                    }], 
-                                    error: null, count: 1, status: 200, statusText: "OK"
+                                        id: "contrib-both",
+                                        project_id: projectId,
+                                        user_id: 'u200',
+                                        file_name: contribFileName,
+                                        storage_bucket: "test-bucket",
+                                        storage_path: contribStoragePath,
+                                        mime_type: 'text/markdown',
+                                        size_bytes: contribContent.length,
+                                        resource_type: 'rendered_document',
+                                        session_id: sessionId,
+                                        iteration_number: iteration,
+                                        stage_slug: contribSlug,
+                                        source_contribution_id: 'contrib-gamma-id',
+                                        resource_description: null,
+                                        created_at: new Date().toISOString(),
+                                        updated_at: new Date().toISOString(),
+                                    }],
+                                    error: null,
+                                    count: 1,
+                                    status: 200,
+                                    statusText: "OK"
                                 };
                             }
                             return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_contributions': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const idFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'id');
+                            if (idFilter && idFilter.value === 'contrib-gamma-id') {
+                                return { data: [{ id: 'contrib-gamma-id', model_name: modelName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 406, statusText: "OK" };
                         }
                     },
                     'dialectic_feedback': {
@@ -639,6 +696,10 @@ Deno.test("gatherInputsForStage", async (t) => {
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                
+                // Initialize spies BEFORE the action
+                const storageSpies = spies.storage.from("test-bucket");
+                
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
                 console.log("--- TEST LOG: should fetch and format both contributions and feedback ---");
@@ -655,7 +716,8 @@ Deno.test("gatherInputsForStage", async (t) => {
                 assertEquals(contribDoc?.content, contribContent);
                 assertEquals(contribDoc?.metadata.header, "Contributions from contrib-slug-for-both stage");
                 assertEquals(contribDoc?.metadata.displayName, contribDisplayName);
-                assertEquals(contribDoc?.metadata.modelName, modelName);
+                // modelName is extracted from file_name (model slug), not from contributions query
+                assertEquals(contribDoc?.metadata.modelName, "gpt-4-turbo");
 
                 assertEquals(!!feedbackDoc, true, "Feedback document not found in result");
                 assertEquals(feedbackDoc?.id, "fb-both");
@@ -663,8 +725,8 @@ Deno.test("gatherInputsForStage", async (t) => {
                 assertEquals(feedbackDoc?.metadata.header, "Feedback from feedback-slug-for-both stage");
                 assertEquals(feedbackDoc?.metadata.displayName, feedbackDisplayName);
 
-                const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
-                assertEquals(downloadSpies.calls.length, 2, "Expected two download calls");
+                const downloadSpy = storageSpies.downloadSpy;
+                assertEquals(downloadSpy.calls.length, 2, "Expected two download calls");
             } finally {
                 teardown();
             }
@@ -681,7 +743,7 @@ Deno.test("gatherInputsForStage", async (t) => {
             const projectId = "p300";
             const sessionId = "s300";
             const iteration = 1;
-            const contribStoragePath = "path";
+            const contribStoragePath = "path/documents";
             const contribFileName = "ch.md";
             const feedbackPathParts = constructStoragePath({
                 projectId,
@@ -707,23 +769,44 @@ Deno.test("gatherInputsForStage", async (t) => {
                             return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
                         }
                     },
-                    'dialectic_contributions': {
+                    'dialectic_project_resources': {
                         select: async (state: MockQueryBuilderState) => {
-                             const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage' && f.value === contribSlug);
-                            if (stageFilter) {
-                                return { 
+                            const resourceTypeFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'resource_type' && f.value === 'rendered_document');
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'session_id' && f.value === sessionId);
+                            const iterationFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'iteration_number' && f.value === iteration);
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage_slug' && f.value === contribSlug);
+                            if (resourceTypeFilter && sessionFilter && iterationFilter && stageFilter) {
+                                return {
                                     data: [{
-                                        id: "contrib-ch", storage_path: contribStoragePath, file_name: contribFileName,
-                                        storage_bucket: "test-bucket", model_name: modelName, session_id: sessionId, iteration_number: iteration, stage: contribSlug, is_latest_edit: true, created_at: new Date().toISOString(), user_id: 'u1', content_type: 'text/markdown', raw_text_content: null, word_count: null, token_count: null, dialectic_project_id: projectId,
-                                        model_id: "model-custom-id", prompt_template_id_used: null, seed_prompt_url: null, edit_version: 1,
-                                        original_model_contribution_id: null, raw_response_storage_path: null, target_contribution_id: null,
-                                        tokens_used_input: null, tokens_used_output: null, processing_time_ms: null, error: null, citations: null,
-                                        updated_at: new Date().toISOString(), contribution_type: "model_generated", size_bytes: null, mime_type: "text/markdown"
-                                    }], 
-                                    error: null, count: 1, status: 200, statusText: "OK"
+                                        id: "contrib-ch",
+                                        project_id: projectId,
+                                        user_id: 'u1',
+                                        file_name: contribFileName,
+                                        storage_bucket: "test-bucket",
+                                        storage_path: contribStoragePath,
+                                        mime_type: 'text/markdown',
+                                        size_bytes: contribContent.length,
+                                        resource_type: 'rendered_document',
+                                        session_id: sessionId,
+                                        iteration_number: iteration,
+                                        stage_slug: contribSlug,
+                                        source_contribution_id: 'contrib-custom-id',
+                                        resource_description: null,
+                                        created_at: new Date().toISOString(),
+                                        updated_at: new Date().toISOString(),
+                                    }],
+                                    error: null,
+                                    count: 1,
+                                    status: 200,
+                                    statusText: "OK"
                                 };
                             }
-                             return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_contributions': {
+                        select: async () => {
+                            return { data: [{ id: 'contrib-custom-id', model_name: modelName }], error: null, count: 1, status: 200, statusText: "OK" };
                         }
                     },
                     'dialectic_feedback': {
@@ -731,10 +814,12 @@ Deno.test("gatherInputsForStage", async (t) => {
                             const sessionFilter = state.filters.find(f => f.column === 'session_id' && f.value === sessionId);
                             const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === feedbackSlug);
                             const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === 1); // targetIteration is 1 when iteration is 1
-                            const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === 'u300');
+                            const userFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'user_id' && f.value === 'u300');
                             if (sessionFilter && stageFilter && iterFilter && userFilter) {
-                                return { data: [{ storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                                return { data: [{ id: "fb-ch", storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
                             }
+                            // Debugging fallback if filters fail
+                            // console.log("Feedback mock filters failed:", { sessionFilter, stageFilter, iterFilter, userFilter, filters: state.filters });
                             return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" };
                         }
                     }
@@ -819,6 +904,10 @@ Deno.test("gatherInputsForStage", async (t) => {
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                
+                // Initialize spies BEFORE the action
+                const storageSpies = spies.storage.from("test-bucket");
+                
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
 
                 console.log("--- TEST LOG: should use custom section_headers ---");
@@ -835,11 +924,12 @@ Deno.test("gatherInputsForStage", async (t) => {
                 assertEquals(contribDoc?.metadata.header, customContribHeader);
 
                 assertEquals(!!feedbackDoc, true, "Custom header feedback document not found");
+                assertEquals(feedbackDoc?.id, "fb-ch");
                 assertEquals(feedbackDoc?.content, feedbackContent);
                 assertEquals(feedbackDoc?.metadata.header, customFeedbackHeader);
 
-                const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
-                assertEquals(downloadSpies.calls.length, 2, "Expected two download calls for custom headers test");
+                const downloadSpy = storageSpies.downloadSpy;
+                assertEquals(downloadSpy.calls.length, 2, "Expected two download calls for custom headers test");
             } finally {
                 teardown();
             }
@@ -1107,9 +1197,8 @@ Deno.test("gatherInputsForStage", async (t) => {
                         await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, 1)
                     },
                     Error,
-                    `Failed to retrieve REQUIRED AI contributions for stage '${mockStageDisplayName}'.`
+                    `Required rendered document for stage '${mockStageDisplayName}' with document_key 'unspecified' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`
                 );
-                assertEquals(currentConsoleErrorSpy!.calls.some(call => call.args[0].includes("Failed to retrieve AI contributions")), true, "Expected console.error for DB failure");
             } finally {
                 teardown();
             }
@@ -1158,7 +1247,6 @@ Deno.test("gatherInputsForStage", async (t) => {
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, 1);
 
                 assertEquals(result.sourceDocuments.length, 0, "Result should be empty");
-                assertEquals(currentConsoleErrorSpy!.calls.some(call => call.args[0].includes("Failed to retrieve AI contributions")), true, "Expected console.error for DB failure");
             } finally {
                 teardown();
             }
@@ -1179,18 +1267,44 @@ Deno.test("gatherInputsForStage", async (t) => {
                             return { data: [], error: null };
                         }
                     },
+                    'dialectic_project_resources': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const resourceTypeFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'resource_type' && f.value === 'rendered_document');
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'session_id' && f.value === 's-cdl-err-req');
+                            const iterationFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'iteration_number' && f.value === 1);
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage_slug' && f.value === contribStageSlug);
+                            if (resourceTypeFilter && sessionFilter && iterationFilter && stageFilter) {
+                                return {
+                                    data: [{
+                                        id: badContentContribId,
+                                        project_id: 'p-cdl-err-req',
+                                        user_id: 'u1',
+                                        file_name: "required_content_error.md",
+                                        storage_bucket: "test-bucket",
+                                        storage_path: "path/to/documents",
+                                        mime_type: 'text/markdown',
+                                        size_bytes: 0,
+                                        resource_type: 'rendered_document',
+                                        session_id: 's-cdl-err-req',
+                                        iteration_number: 1,
+                                        stage_slug: contribStageSlug,
+                                        source_contribution_id: 'contrib-cdl-error-req-id',
+                                        resource_description: null,
+                                        created_at: new Date().toISOString(),
+                                        updated_at: new Date().toISOString(),
+                                    }],
+                                    error: null,
+                                    count: 1,
+                                    status: 200,
+                                    statusText: "OK"
+                                };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
                     'dialectic_contributions': {
                         select: async () => {
-                            return { 
-                                data: [{
-                                    id: badContentContribId, storage_path: "path/to", file_name: "required_content_error.md",
-                                    storage_bucket: "test-bucket", model_name: "Model Content Error Req",
-                                    session_id: 's-cdl-err-req', iteration_number: 1, stage: contribStageSlug, is_latest_edit: true, created_at: new Date().toISOString(),
-                                    user_id: 'u1', content_type: 'text/markdown', raw_text_content: null, word_count: null, token_count: null, dialectic_project_id: 'p-cdl-err-req',
-                                    model_id: "model-cdl-error-req-id", updated_at: new Date().toISOString(), contribution_type: "model_generated", mime_type: "text/markdown"
-                                }], 
-                                error: null, count: 1, status: 200, statusText: "OK"
-                            };
+                            return { data: [{ id: 'contrib-cdl-error-req-id', model_name: "Model Content Error Req" }], error: null, count: 1, status: 200, statusText: "OK" };
                         }
                     }
                 },
@@ -1228,12 +1342,12 @@ Deno.test("gatherInputsForStage", async (t) => {
                         await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, 1)
                     },
                     Error,
-                    `Failed to download REQUIRED content for contribution ${badContentContribId} from stage '${mockStageDisplayName}'.`
+                    `Failed to download REQUIRED rendered document ${badContentContribId} from stage '${mockStageDisplayName}'.`
                 );
                 assertEquals(currentConsoleErrorSpy!.calls.some(call => 
                     call.args.length > 0 && 
                     typeof call.args[0] === 'string' && 
-                    call.args[0].includes(`Failed to download contribution file.`)
+                    call.args[0].includes(`Failed to download rendered document from resources.`)
                 ), true, "Expected console.error for content download failure");
             } finally {
                 teardown();
@@ -1256,18 +1370,44 @@ Deno.test("gatherInputsForStage", async (t) => {
                             return { data: [], error: null };
                         }
                     },
+                    'dialectic_project_resources': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const resourceTypeFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'resource_type' && f.value === 'rendered_document');
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'session_id' && f.value === 's-cdl-err-opt');
+                            const iterationFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'iteration_number' && f.value === 1);
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage_slug' && f.value === contribStageSlug);
+                            if (resourceTypeFilter && sessionFilter && iterationFilter && stageFilter) {
+                                return {
+                                    data: [{
+                                        id: badContentContribId,
+                                        project_id: 'p-cdl-err-opt',
+                                        user_id: 'u1',
+                                        file_name: "optional_content_error.md",
+                                        storage_bucket: "test-bucket",
+                                        storage_path: "path/to/documents",
+                                        mime_type: 'text/markdown',
+                                        size_bytes: 0,
+                                        resource_type: 'rendered_document',
+                                        session_id: 's-cdl-err-opt',
+                                        iteration_number: 1,
+                                        stage_slug: contribStageSlug,
+                                        source_contribution_id: 'contrib-ms-opt-id',
+                                        resource_description: null,
+                                        created_at: new Date().toISOString(),
+                                        updated_at: new Date().toISOString(),
+                                    }],
+                                    error: null,
+                                    count: 1,
+                                    status: 200,
+                                    statusText: "OK"
+                                };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
                     'dialectic_contributions': {
                         select: async () => {
-                            return { 
-                                data: [{
-                                    id: badContentContribId, storage_path: "path/to", file_name: "optional_content_error.md",
-                                    storage_bucket: "test-bucket", model_name: "Model Content Error Opt",
-                                    session_id: 's-cdl-err-opt', iteration_number: 1, stage: contribStageSlug, is_latest_edit: true, created_at: new Date().toISOString(),
-                                    user_id: 'u1', content_type: 'text/markdown', raw_text_content: null, word_count: null, token_count: null, dialectic_project_id: 'p-cdl-err-opt',
-                                    model_id: "model-ms-opt-id", updated_at: new Date().toISOString(), contribution_type: "model_generated", mime_type: "text/markdown"
-                                }], 
-                                error: null, count: 1, status: 200, statusText: "OK"
-                            };
+                            return { data: [{ id: 'contrib-ms-opt-id', model_name: "Model Content Error Opt" }], error: null, count: 1, status: 200, statusText: "OK" };
                         }
                     }
                 },
@@ -1306,7 +1446,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                 assertEquals(currentConsoleErrorSpy!.calls.some(call => 
                     call.args.length > 0 &&
                     typeof call.args[0] === 'string' &&
-                    call.args[0].includes(`Failed to download contribution file.`)
+                    call.args[0].includes(`Failed to download rendered document from resources.`)
                 ), true, "Expected console.error for content download failure");
             } finally {
                 teardown();
@@ -1328,18 +1468,44 @@ Deno.test("gatherInputsForStage", async (t) => {
                             return { data: [], error: null };
                         }
                     },
+                    'dialectic_project_resources': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const resourceTypeFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'resource_type' && f.value === 'rendered_document');
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'session_id' && f.value === 's-ms-req');
+                            const iterationFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'iteration_number' && f.value === 1);
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage_slug' && f.value === contribStageSlug);
+                            if (resourceTypeFilter && sessionFilter && iterationFilter && stageFilter) {
+                                return {
+                                    data: [{
+                                        id: badContribId,
+                                        project_id: 'p-ms-req',
+                                        user_id: 'u1',
+                                        file_name: "missing_path_req.md",
+                                        storage_bucket: null, /* Key: Missing bucket */
+                                        storage_path: null, /* Key: Missing path */
+                                        mime_type: 'text/markdown',
+                                        size_bytes: 0,
+                                        resource_type: 'rendered_document',
+                                        session_id: 's-ms-req',
+                                        iteration_number: 1,
+                                        stage_slug: contribStageSlug,
+                                        source_contribution_id: 'contrib-ms-req-id',
+                                        resource_description: null,
+                                        created_at: new Date().toISOString(),
+                                        updated_at: new Date().toISOString(),
+                                    }],
+                                    error: null,
+                                    count: 1,
+                                    status: 200,
+                                    statusText: "OK"
+                                };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
                     'dialectic_contributions': {
                         select: async () => {
-                            return { 
-                                data: [{
-                                    id: badContribId, storage_path: null, /* Key: Missing path */ file_name: "missing_path_req.md",
-                                    storage_bucket: "test-bucket", model_name: "Model Missing Storage Req",
-                                    session_id: 's-ms-req', iteration_number: 1, stage: contribStageSlug, is_latest_edit: true, created_at: new Date().toISOString(),
-                                    user_id: 'u1', content_type: 'text/markdown', raw_text_content: null, word_count: null, token_count: null, dialectic_project_id: 'p-ms-req',
-                                    model_id: "model-ms-req-id", updated_at: new Date().toISOString(), contribution_type: "model_generated", mime_type: "text/markdown"
-                                }], 
-                                error: null, count: 1, status: 200, statusText: "OK"
-                            };
+                            return { data: [{ id: 'contrib-ms-req-id', model_name: "Model Missing Storage Req" }], error: null, count: 1, status: 200, statusText: "OK" };
                         }
                     }
                 },
@@ -1370,13 +1536,13 @@ Deno.test("gatherInputsForStage", async (t) => {
                         await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, 1)
                     },
                     Error,
-                    `REQUIRED Contribution ${badContribId} from stage '${mockStageDisplayName}' is missing storage details.`
+                    `REQUIRED Resource ${badContribId} from stage '${mockStageDisplayName}' is missing storage details.`
                 );
-                assertEquals(currentConsoleWarnSpy!.calls.some(call => 
+                assertEquals(currentConsoleErrorSpy!.calls.some(call => 
                     call.args.length > 0 && 
                     typeof call.args[0] === 'string' && 
-                    call.args[0].includes(`Contribution ${badContribId} is missing storage details`)
-                ), true, "Expected console.warn for missing storage details");
+                    call.args[0].includes(`Resource ${badContribId} is missing storage details`)
+                ), true, "Expected console.error for missing storage details");
             } finally {
                 teardown();
             }
@@ -1398,18 +1564,44 @@ Deno.test("gatherInputsForStage", async (t) => {
                             return { data: [], error: null };
                         }
                     },
+                    'dialectic_project_resources': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const resourceTypeFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'resource_type' && f.value === 'rendered_document');
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'session_id' && f.value === 's-ms-opt');
+                            const iterationFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'iteration_number' && f.value === 1);
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage_slug' && f.value === contribStageSlug);
+                            if (resourceTypeFilter && sessionFilter && iterationFilter && stageFilter) {
+                                return {
+                                    data: [{
+                                        id: badContribId,
+                                        project_id: 'p-ms-opt',
+                                        user_id: 'u1',
+                                        file_name: "missing_bucket_opt.md",
+                                        storage_bucket: null, /* Key: Missing bucket */
+                                        storage_path: "some/path",
+                                        mime_type: 'text/markdown',
+                                        size_bytes: 0,
+                                        resource_type: 'rendered_document',
+                                        session_id: 's-ms-opt',
+                                        iteration_number: 1,
+                                        stage_slug: contribStageSlug,
+                                        source_contribution_id: 'contrib-ms-opt-id',
+                                        resource_description: null,
+                                        created_at: new Date().toISOString(),
+                                        updated_at: new Date().toISOString(),
+                                    }],
+                                    error: null,
+                                    count: 1,
+                                    status: 200,
+                                    statusText: "OK"
+                                };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
                     'dialectic_contributions': {
                         select: async () => {
-                            return { 
-                                data: [{
-                                    id: badContribId, storage_path: "some/path", file_name: "missing_bucket_opt.md",
-                                    storage_bucket: null, /* Key: Missing bucket */ model_name: "Model Missing Storage Opt",
-                                    session_id: 's-ms-opt', iteration_number: 1, stage: contribStageSlug, is_latest_edit: true, created_at: new Date().toISOString(),
-                                    user_id: 'u1', content_type: 'text/markdown', raw_text_content: null, word_count: null, token_count: null, dialectic_project_id: 'p-ms-opt',
-                                    model_id: "model-ms-opt-id", updated_at: new Date().toISOString(), contribution_type: "model_generated", mime_type: "text/markdown"
-                                }], 
-                                error: null, count: 1, status: 200, statusText: "OK"
-                            };
+                            return { data: [{ id: 'contrib-ms-opt-id', model_name: "Model Missing Storage Opt" }], error: null, count: 1, status: 200, statusText: "OK" };
                         }
                     }
                 },
@@ -1438,11 +1630,817 @@ Deno.test("gatherInputsForStage", async (t) => {
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, 1);
 
                 assertEquals(result.sourceDocuments.length, 0, "Result should be empty");
-                assertEquals(currentConsoleWarnSpy!.calls.some(call => 
+                assertEquals(currentConsoleErrorSpy!.calls.some(call => 
                     call.args.length > 0 &&
                     typeof call.args[0] === 'string' &&
-                    call.args[0].includes(`Contribution ${badContribId} is missing storage details`)
-                ), true, "Expected console.warn for missing storage details on optional item");
+                    call.args[0].includes(`Resource ${badContribId} is missing storage details`)
+                ), true, "Expected console.error for missing storage details on optional item");
+            } finally {
+                teardown();
+            }
+        });
+
+        // Step 53.b.i: Test that queries dialectic_project_resources for finished rendered documents
+        await tCtx.step("53.b.i: should query dialectic_project_resources for finished rendered documents", async () => {
+            const docStageSlug = "prev-stage-resource";
+            const mockStageDisplayName = "Previous Resource Stage";
+            const documentKey = FileType.business_case;
+            const modelSlug = "gpt-4-turbo";
+            const attemptCount = 0;
+            const resourceContent = "This is rendered document content from resources.";
+            const storagePath = "p-resource/session_s1/iteration_1/thesis/documents";
+            const fileName = `${modelSlug}_${attemptCount}_${documentKey}.md`;
+            const resourceId = "resource-1";
+
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(docStageSlug)) {
+                                return { data: [{ slug: docStageSlug, display_name: mockStageDisplayName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_project_resources': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const resourceTypeFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'resource_type' && f.value === 'rendered_document');
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'session_id' && f.value === 's-resource');
+                            const iterationFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'iteration_number' && f.value === 1);
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage_slug' && f.value === docStageSlug);
+                            if (resourceTypeFilter && sessionFilter && iterationFilter && stageFilter) {
+                                return {
+                                    data: [{
+                                        id: resourceId,
+                                        project_id: 'p-resource',
+                                        user_id: 'u-resource',
+                                        file_name: fileName,
+                                        storage_bucket: 'test-bucket',
+                                        storage_path: storagePath,
+                                        mime_type: 'text/markdown',
+                                        size_bytes: resourceContent.length,
+                                        resource_type: 'rendered_document',
+                                        session_id: 's-resource',
+                                        iteration_number: 1,
+                                        stage_slug: docStageSlug,
+                                        source_contribution_id: 'contrib-1',
+                                        resource_description: null,
+                                        created_at: new Date().toISOString(),
+                                        updated_at: new Date().toISOString(),
+                                    }],
+                                    error: null,
+                                    count: 1,
+                                    status: 200,
+                                    statusText: "OK"
+                                };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_contributions': {
+                        select: async () => {
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: {
+                    downloadResult: async (bucketId: string, path: string) => {
+                        const expectedPath = join(storagePath, fileName);
+                        const expectedPathFs = expectedPath.replace(/\\/g, '/');
+                        if (bucketId === "test-bucket" && (path === expectedPath || path === expectedPathFs)) {
+                            return { data: new Blob([resourceContent]), error: null };
+                        }
+                        return { data: null, error: new Error("Unexpected download path in mock") };
+                    }
+                }
+            };
+
+            const { mockSupabaseClient, spies } = setup(config);
+
+            try {
+                const project: ProjectContext = {
+                    id: "p-resource",
+                    user_id: 'u-resource',
+                    project_name: "Test Project Resource",
+                    initial_user_prompt: "Initial prompt for resource test",
+                    initial_prompt_resource_id: null,
+                    selected_domain_id: "d1-resource",
+                    dialectic_domains: { name: "Test Domain Resource" },
+                    process_template_id: 'pt-resource',
+                    selected_domain_overlay_id: null,
+                    user_domain_overlay_values: null,
+                    repo_url: null,
+                    status: 'active',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                };
+                const session: SessionContext = {
+                    id: "s-resource",
+                    project_id: "p-resource",
+                    selected_model_ids: ["model-resource-id"],
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    current_stage_id: 'curr-stage-resource',
+                    iteration_count: 1,
+                    session_description: 'Session for resource test',
+                    status: 'pending_thesis',
+                    associated_chat_id: null,
+                    user_input_reference_url: null
+                };
+                const iterationNumber = 1;
+                const stage: StageContext = {
+                    id: "stage-resource",
+                    slug: "curr-stage-resource",
+                    display_name: "Current Resource Stage",
+                    description: null,
+                    system_prompts: null,
+                    domain_specific_prompt_overlays: [],
+                    created_at: new Date().toISOString(),
+                    default_system_prompt_id: null,
+                    recipe_step: createMockRecipeStep([
+                        {
+                            type: "document",
+                            slug: docStageSlug,
+                            document_key: documentKey,
+                            required: true,
+                            multiple: false,
+                            section_header: "Documents from resource stage",
+                        }
+                    ]),
+                    active_recipe_instance_id: null,
+                    recipe_template_id: null,
+                    expected_output_template_ids: [],
+                };
+
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                
+                // Initialize spies BEFORE the action
+                const storageSpies = spies.storage.from("test-bucket");
+                
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
+
+                // Assert that dialectic_project_resources was queried
+                const resourcesTableSpies = spies.getHistoricQueryBuilderSpies('dialectic_project_resources', 'select');
+                assert(resourcesTableSpies && resourcesTableSpies.callCount > 0, "Expected dialectic_project_resources to be queried");
+
+                // Assert that the function found the rendered document
+                assertEquals(result.sourceDocuments.length, 1, "Expected one document from resources");
+                const doc = result.sourceDocuments[0];
+                assertEquals(doc.id, resourceId, "Expected document ID to match resource ID");
+                assertEquals(doc.type, "document", "Expected document type");
+                assertEquals(doc.content, resourceContent, "Expected content to match downloaded resource content");
+                assertEquals(doc.metadata.displayName, mockStageDisplayName, "Expected display name to match");
+
+                // Assert that content was downloaded from resource's storage_path and file_name
+                const downloadSpy = storageSpies.downloadSpy;
+                assertEquals(downloadSpy.calls.length, 1, "Expected one download call");
+                const actualPath = downloadSpy.calls[0].args[0];
+                const expectedJoined = join(storagePath, fileName);
+                const expectedFs = expectedJoined.replace(/\\/g, '/');
+                assert(
+                    actualPath === expectedJoined || actualPath === expectedFs,
+                    `Expected download path to be '${expectedJoined}' or '${expectedFs}', got '${actualPath}'`
+                );
+            } finally {
+                teardown();
+            }
+        });
+
+        // Step 53.b.ii: Test that prefers resources over contributions when both exist
+        await tCtx.step("53.b.ii: should prefer resources over contributions when both exist", async () => {
+            const docStageSlug = "prev-stage-both";
+            const mockStageDisplayName = "Previous Both Stage";
+            const documentKey = FileType.feature_spec;
+            const modelSlug = "gpt-4-turbo";
+            const attemptCount = 0;
+            const resourceContent = "This is rendered document content from resources.";
+            const contributionContent = "This is raw chunk content from contributions.";
+            const storagePath = "p-both/session_s2/iteration_1/thesis/documents";
+            const fileName = `${modelSlug}_${attemptCount}_${documentKey}.md`;
+            const resourceId = "resource-2";
+            const contributionId = "contrib-2";
+
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(docStageSlug)) {
+                                return { data: [{ slug: docStageSlug, display_name: mockStageDisplayName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_project_resources': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const resourceTypeFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'resource_type' && f.value === 'rendered_document');
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'session_id' && f.value === 's-both');
+                            const iterationFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'iteration_number' && f.value === 1);
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage_slug' && f.value === docStageSlug);
+                            if (resourceTypeFilter && sessionFilter && iterationFilter && stageFilter) {
+                                return {
+                                    data: [{
+                                        id: resourceId,
+                                        project_id: 'p-both',
+                                        user_id: 'u-both',
+                                        file_name: fileName,
+                                        storage_bucket: 'test-bucket',
+                                        storage_path: storagePath,
+                                        mime_type: 'text/markdown',
+                                        size_bytes: resourceContent.length,
+                                        resource_type: 'rendered_document',
+                                        session_id: 's-both',
+                                        iteration_number: 1,
+                                        stage_slug: docStageSlug,
+                                        source_contribution_id: contributionId,
+                                        resource_description: null,
+                                        created_at: new Date().toISOString(),
+                                        updated_at: new Date().toISOString(),
+                                    }],
+                                    error: null,
+                                    count: 1,
+                                    status: 200,
+                                    statusText: "OK"
+                                };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_contributions': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage' && f.value === docStageSlug);
+                            if (stageFilter) {
+                                return {
+                                    data: [{
+                                        id: contributionId,
+                                        storage_path: storagePath,
+                                        file_name: fileName,
+                                        storage_bucket: "test-bucket",
+                                        model_name: "Model Both",
+                                        session_id: 's-both',
+                                        iteration_number: 1,
+                                        stage: docStageSlug,
+                                        is_latest_edit: true,
+                                        created_at: new Date().toISOString(),
+                                        user_id: 'u-both',
+                                        content_type: 'text/markdown',
+                                        raw_text_content: null,
+                                        word_count: null,
+                                        token_count: null,
+                                        dialectic_project_id: 'p-both',
+                                        model_id: "model-both-id",
+                                        prompt_template_id_used: null,
+                                        seed_prompt_url: null,
+                                        edit_version: 1,
+                                        original_model_contribution_id: null,
+                                        raw_response_storage_path: null,
+                                        target_contribution_id: null,
+                                        tokens_used_input: null,
+                                        tokens_used_output: null,
+                                        processing_time_ms: null,
+                                        error: null,
+                                        citations: null,
+                                        updated_at: new Date().toISOString(),
+                                        contribution_type: "model_generated",
+                                        size_bytes: null,
+                                        mime_type: "text/markdown"
+                                    }],
+                                    error: null,
+                                    count: 1,
+                                    status: 200,
+                                    statusText: "OK"
+                                };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: {
+                    downloadResult: async (bucketId: string, path: string) => {
+                        const expectedPath = join(storagePath, fileName);
+                        const expectedPathFs = expectedPath.replace(/\\/g, '/');
+                        if (bucketId === "test-bucket" && (path === expectedPath || path === expectedPathFs)) {
+                            return { data: new Blob([resourceContent]), error: null };
+                        }
+                        return { data: null, error: new Error("Unexpected download path in mock") };
+                    }
+                }
+            };
+
+            const { mockSupabaseClient, spies } = setup(config);
+
+            try {
+                const project: ProjectContext = {
+                    id: "p-both",
+                    user_id: 'u-both',
+                    project_name: "Test Project Both",
+                    initial_user_prompt: "Initial prompt for both test",
+                    initial_prompt_resource_id: null,
+                    selected_domain_id: "d1-both",
+                    dialectic_domains: { name: "Test Domain Both" },
+                    process_template_id: 'pt-both',
+                    selected_domain_overlay_id: null,
+                    user_domain_overlay_values: null,
+                    repo_url: null,
+                    status: 'active',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                };
+                const session: SessionContext = {
+                    id: "s-both",
+                    project_id: "p-both",
+                    selected_model_ids: ["model-both-id"],
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    current_stage_id: 'curr-stage-both',
+                    iteration_count: 1,
+                    session_description: 'Session for both test',
+                    status: 'pending_thesis',
+                    associated_chat_id: null,
+                    user_input_reference_url: null
+                };
+                const iterationNumber = 1;
+                const stage: StageContext = {
+                    id: "stage-both",
+                    slug: "curr-stage-both",
+                    display_name: "Current Both Stage",
+                    description: null,
+                    system_prompts: null,
+                    domain_specific_prompt_overlays: [],
+                    created_at: new Date().toISOString(),
+                    default_system_prompt_id: null,
+                    recipe_step: createMockRecipeStep([
+                        {
+                            type: "document",
+                            slug: docStageSlug,
+                            document_key: documentKey,
+                            required: true,
+                            multiple: false,
+                            section_header: "Documents from both stage",
+                        }
+                    ]),
+                    active_recipe_instance_id: null,
+                    recipe_template_id: null,
+                    expected_output_template_ids: [],
+                };
+
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
+
+                // Assert that resources were queried first
+                const resourcesTableSpies = spies.getHistoricQueryBuilderSpies('dialectic_project_resources', 'select');
+                assert(resourcesTableSpies && resourcesTableSpies.callCount > 0, "Expected dialectic_project_resources to be queried");
+
+                // Assert that only one document is added (from resources, not contributions)
+                assertEquals(result.sourceDocuments.length, 1, "Expected only one document (from resources, not contributions)");
+                const doc = result.sourceDocuments[0];
+                assertEquals(doc.id, resourceId, "Expected document ID to match resource ID (not contribution ID)");
+                assertEquals(doc.content, resourceContent, "Expected content to match resource content (not contribution content)");
+
+                // Assert that contributions were NOT queried (resources are sufficient)
+                const contributionsTableSpies = spies.getHistoricQueryBuilderSpies('dialectic_contributions', 'select');
+                // This test will fail initially because the function currently queries contributions
+                // After the fix, contributions should NOT be queried for document-type inputs
+                assert(contributionsTableSpies === undefined || contributionsTableSpies.callCount === 0, "Expected dialectic_contributions NOT to be queried when resources are found");
+            } finally {
+                teardown();
+            }
+        });
+
+        // Step 53.b.iii: Test that throws error when resources not found for required rules
+        await tCtx.step("53.b.iii: should throw error when required rendered document is not found in resources", async () => {
+            const docStageSlug = "prev-stage-missing";
+            const mockStageDisplayName = "Previous Missing Stage";
+            const documentKey = FileType.technical_approach;
+
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(docStageSlug)) {
+                                return { data: [{ slug: docStageSlug, display_name: mockStageDisplayName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_project_resources': {
+                        select: async () => {
+                            // Return empty - no resources found
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_contributions': {
+                        select: async () => {
+                            // This should NOT be queried when resources are not found for required rules
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                }
+            };
+
+            const { mockSupabaseClient, spies } = setup(config);
+
+            try {
+                const project: ProjectContext = {
+                    id: "p-missing",
+                    user_id: 'u-missing',
+                    project_name: "Test Project Missing",
+                    initial_user_prompt: "Initial prompt for missing test",
+                    initial_prompt_resource_id: null,
+                    selected_domain_id: "d1-missing",
+                    dialectic_domains: { name: "Test Domain Missing" },
+                    process_template_id: 'pt-missing',
+                    selected_domain_overlay_id: null,
+                    user_domain_overlay_values: null,
+                    repo_url: null,
+                    status: 'active',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                };
+                const session: SessionContext = {
+                    id: "s-missing",
+                    project_id: "p-missing",
+                    selected_model_ids: ["model-missing-id"],
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    current_stage_id: 'curr-stage-missing',
+                    iteration_count: 1,
+                    session_description: 'Session for missing test',
+                    status: 'pending_thesis',
+                    associated_chat_id: null,
+                    user_input_reference_url: null
+                };
+                const iterationNumber = 1;
+                const stage: StageContext = {
+                    id: "stage-missing",
+                    slug: "curr-stage-missing",
+                    display_name: "Current Missing Stage",
+                    description: null,
+                    system_prompts: null,
+                    domain_specific_prompt_overlays: [],
+                    created_at: new Date().toISOString(),
+                    default_system_prompt_id: null,
+                    recipe_step: createMockRecipeStep([
+                        {
+                            type: "document",
+                            slug: docStageSlug,
+                            document_key: documentKey,
+                            required: true,
+                            multiple: false,
+                            section_header: "Documents from missing stage",
+                        }
+                    ]),
+                    active_recipe_instance_id: null,
+                    recipe_template_id: null,
+                    expected_output_template_ids: [],
+                };
+
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                
+                // Assert that error is thrown immediately
+                await assertRejects(
+                    async () => {
+                        await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
+                    },
+                    Error,
+                    `Required rendered document for stage '${mockStageDisplayName}' with document_key '${documentKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`
+                );
+
+                // Assert that resources were queried
+                const resourcesTableSpies = spies.getHistoricQueryBuilderSpies('dialectic_project_resources', 'select');
+                assert(resourcesTableSpies && resourcesTableSpies.callCount > 0, "Expected dialectic_project_resources to be queried");
+
+                // Assert that contributions were NOT queried (finished documents must be in resources, not contributions)
+                const contributionsTableSpies = spies.getHistoricQueryBuilderSpies('dialectic_contributions', 'select');
+                assert(contributionsTableSpies === undefined || contributionsTableSpies.callCount === 0, "Expected dialectic_contributions NOT to be queried when resources are not found for required rules");
+            } finally {
+                teardown();
+            }
+        });
+
+        // Step 53.b.iv: Test that continues to query contributions for header_context type inputs
+        await tCtx.step("53.b.iv: should continue to query dialectic_contributions for header_context type inputs", async () => {
+            const headerContextStageSlug = "prev-stage-header";
+            const mockStageDisplayName = "Previous Header Context Stage";
+            const headerContextContent = "This is header context content from contributions.";
+            const storagePath = "p-header/session_s3/iteration_1/thesis";
+            const fileName = "gpt-4-turbo_0_header_context.json";
+            const contributionId = "contrib-header";
+
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(headerContextStageSlug)) {
+                                return { data: [{ slug: headerContextStageSlug, display_name: mockStageDisplayName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_project_resources': {
+                        select: async () => {
+                            // Resources should NOT be queried for header_context type inputs
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_contributions': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage' && f.value === headerContextStageSlug);
+                            if (stageFilter) {
+                                return {
+                                    data: [{
+                                        id: contributionId,
+                                        storage_path: storagePath,
+                                        file_name: fileName,
+                                        storage_bucket: "test-bucket",
+                                        model_name: "Model Header",
+                                        session_id: 's-header',
+                                        iteration_number: 1,
+                                        stage: headerContextStageSlug,
+                                        is_latest_edit: true,
+                                        created_at: new Date().toISOString(),
+                                        user_id: 'u-header',
+                                        content_type: 'application/json',
+                                        raw_text_content: null,
+                                        word_count: null,
+                                        token_count: null,
+                                        dialectic_project_id: 'p-header',
+                                        model_id: "model-header-id",
+                                        prompt_template_id_used: null,
+                                        seed_prompt_url: null,
+                                        edit_version: 1,
+                                        original_model_contribution_id: null,
+                                        raw_response_storage_path: null,
+                                        target_contribution_id: null,
+                                        tokens_used_input: null,
+                                        tokens_used_output: null,
+                                        processing_time_ms: null,
+                                        error: null,
+                                        citations: null,
+                                        updated_at: new Date().toISOString(),
+                                        contribution_type: "model_generated",
+                                        size_bytes: null,
+                                        mime_type: "application/json"
+                                    }],
+                                    error: null,
+                                    count: 1,
+                                    status: 200,
+                                    statusText: "OK"
+                                };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: {
+                    downloadResult: async (bucketId: string, path: string) => {
+                        const expectedPath = join(storagePath, fileName);
+                        const expectedPathFs = expectedPath.replace(/\\/g, '/');
+                        if (bucketId === "test-bucket" && (path === expectedPath || path === expectedPathFs)) {
+                            return { data: new Blob([headerContextContent]), error: null };
+                        }
+                        return { data: null, error: new Error("Unexpected download path in mock") };
+                    }
+                }
+            };
+
+            const { mockSupabaseClient, spies } = setup(config);
+
+            try {
+                const project: ProjectContext = {
+                    id: "p-header",
+                    user_id: 'u-header',
+                    project_name: "Test Project Header",
+                    initial_user_prompt: "Initial prompt for header test",
+                    initial_prompt_resource_id: null,
+                    selected_domain_id: "d1-header",
+                    dialectic_domains: { name: "Test Domain Header" },
+                    process_template_id: 'pt-header',
+                    selected_domain_overlay_id: null,
+                    user_domain_overlay_values: null,
+                    repo_url: null,
+                    status: 'active',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                };
+                const session: SessionContext = {
+                    id: "s-header",
+                    project_id: "p-header",
+                    selected_model_ids: ["model-header-id"],
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    current_stage_id: 'curr-stage-header',
+                    iteration_count: 1,
+                    session_description: 'Session for header test',
+                    status: 'pending_thesis',
+                    associated_chat_id: null,
+                    user_input_reference_url: null
+                };
+                const iterationNumber = 1;
+                const stage: StageContext = {
+                    id: "stage-header",
+                    slug: "curr-stage-header",
+                    display_name: "Current Header Stage",
+                    description: null,
+                    system_prompts: null,
+                    domain_specific_prompt_overlays: [],
+                    created_at: new Date().toISOString(),
+                    default_system_prompt_id: null,
+                    recipe_step: createMockRecipeStep([
+                        {
+                            type: "header_context",
+                            slug: headerContextStageSlug,
+                            required: true,
+                            multiple: false,
+                            section_header: "Header context from previous stage",
+                        }
+                    ]),
+                    active_recipe_instance_id: null,
+                    recipe_template_id: null,
+                    expected_output_template_ids: [],
+                };
+
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                
+                // Initialize spies BEFORE the action
+                const storageSpies = spies.storage.from("test-bucket");
+                
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
+
+                // Assert that contributions were queried for header_context
+                const contributionsTableSpies = spies.getHistoricQueryBuilderSpies('dialectic_contributions', 'select');
+                assert(contributionsTableSpies && contributionsTableSpies.callCount > 0, "Expected dialectic_contributions to be queried for header_context type inputs");
+
+                // Assert that resources were NOT queried (header_context is stored in contributions, not resources)
+                const resourcesTableSpies = spies.getHistoricQueryBuilderSpies('dialectic_project_resources', 'select');
+                assert(resourcesTableSpies === undefined || resourcesTableSpies.callCount === 0, "Expected dialectic_project_resources NOT to be queried for header_context type inputs");
+
+                // Assert that header_context was found in contributions
+                assertEquals(result.sourceDocuments.length, 1, "Expected one document from contributions");
+                const doc = result.sourceDocuments[0];
+                assertEquals(doc.id, contributionId, "Expected document ID to match contribution ID");
+                assertEquals(doc.content, headerContextContent, "Expected content to match downloaded contribution content");
+
+                const downloadSpy = storageSpies.downloadSpy;
+                assertEquals(downloadSpy.calls.length, 1, "Expected one download call");
+            } finally {
+                teardown();
+            }
+        });
+
+        // Step 53.b.v: Test that queries dialectic_contributions for contribution type inputs
+        await tCtx.step("53.b.v: should query dialectic_contributions for contribution type inputs", async () => {
+            const contribStageSlug = "prev-stage-contrib";
+            const mockStageDisplayName = "Previous Contribution Stage";
+            const contribContent = "This is raw contribution content.";
+            const storagePath = "p-contrib/session_s4/iteration_1/thesis";
+            const fileName = "gpt-4-turbo_0_comparison_vector.json";
+            const contributionId = "contrib-generic";
+            const documentKey = FileType.comparison_vector;
+
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(contribStageSlug)) {
+                                return { data: [{ slug: contribStageSlug, display_name: mockStageDisplayName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_contributions': {
+                        select: async (state: MockQueryBuilderState) => {
+                            // Check for stage filter (eq)
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage' && f.value === contribStageSlug);
+                            
+                            // Check for OR filter (used for document_key in gatherInputsForStage)
+                            const orFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'or');
+                            const orMatch = orFilter && typeof orFilter.filters === 'string' && orFilter.filters.includes(documentKey);
+
+                            // Check for fallback ilike filter (if implementation changes back or for robustness)
+                            const nameFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'ilike' && f.column === 'file_name');
+                            const nameMatch = nameFilter && typeof nameFilter.value === 'string' && nameFilter.value.includes(documentKey);
+                            
+                            if (stageFilter && (orMatch || nameMatch)) {
+                                return {
+                                    data: [{
+                                        id: contributionId,
+                                        storage_path: storagePath,
+                                        file_name: fileName,
+                                        storage_bucket: "test-bucket",
+                                        model_name: "Model Contrib",
+                                        session_id: 's-contrib',
+                                        iteration_number: 1,
+                                        stage: contribStageSlug,
+                                        is_latest_edit: true,
+                                        created_at: new Date().toISOString(),
+                                        user_id: 'u-contrib',
+                                        content_type: 'application/json',
+                                        dialectic_project_id: 'p-contrib',
+                                        model_id: "model-contrib-id",
+                                        updated_at: new Date().toISOString(),
+                                        contribution_type: "model_generated",
+                                        mime_type: "application/json"
+                                    }],
+                                    error: null,
+                                    count: 1,
+                                    status: 200,
+                                    statusText: "OK"
+                                };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: {
+                    downloadResult: async (bucketId: string, path: string) => {
+                        const expectedPath = join(storagePath, fileName);
+                        const expectedPathFs = expectedPath.replace(/\\/g, '/');
+                        if (bucketId === "test-bucket" && (path === expectedPath || path === expectedPathFs)) {
+                            return { data: new Blob([contribContent]), error: null };
+                        }
+                        return { data: null, error: new Error(`Unexpected download path in mock: ${path}`) };
+                    }
+                }
+            };
+
+            const { mockSupabaseClient, spies } = setup(config);
+
+            try {
+                const project: ProjectContext = {
+                    id: "p-contrib",
+                    user_id: 'u-contrib',
+                    project_name: "Test Project Contribution",
+                    initial_user_prompt: "Initial prompt for contrib test",
+                    initial_prompt_resource_id: null,
+                    selected_domain_id: "d1-contrib",
+                    dialectic_domains: { name: "Test Domain Contrib" },
+                    process_template_id: 'pt-contrib',
+                    selected_domain_overlay_id: null,
+                    user_domain_overlay_values: null,
+                    repo_url: null,
+                    status: 'active',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                };
+                const session: SessionContext = {
+                    id: "s-contrib",
+                    project_id: "p-contrib",
+                    selected_model_ids: ["model-contrib-id"],
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    current_stage_id: 'curr-stage-contrib',
+                    iteration_count: 1,
+                    session_description: 'Session for contrib test',
+                    status: 'pending_thesis',
+                    associated_chat_id: null,
+                    user_input_reference_url: null
+                };
+                const iterationNumber = 1;
+                const stage: StageContext = {
+                    id: "stage-contrib",
+                    slug: "curr-stage-contrib",
+                    display_name: "Current Contrib Stage",
+                    description: null,
+                    system_prompts: null,
+                    domain_specific_prompt_overlays: [],
+                    created_at: new Date().toISOString(),
+                    default_system_prompt_id: null,
+                    recipe_step: createMockRecipeStep([
+                        {
+                            type: "contribution",
+                            slug: contribStageSlug,
+                            document_key: documentKey,
+                            required: true,
+                            multiple: false,
+                            section_header: "Contribution from previous stage",
+                        }
+                    ]),
+                    active_recipe_instance_id: null,
+                    recipe_template_id: null,
+                    expected_output_template_ids: [],
+                };
+
+                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
+
+                // Assert that contributions were queried
+                const contributionsTableSpies = spies.getHistoricQueryBuilderSpies('dialectic_contributions', 'select');
+                assert(contributionsTableSpies && contributionsTableSpies.callCount > 0, "Expected dialectic_contributions to be queried for contribution type inputs");
+
+                // Assert that content was fetched
+                assertEquals(result.sourceDocuments.length, 1, "Expected one document from contributions");
+                const doc = result.sourceDocuments[0];
+                assertEquals(doc.id, contributionId, "Expected document ID to match contribution ID");
+                assertEquals(doc.type, "contribution", "Expected document type to be 'contribution'");
+                assertEquals(doc.content, contribContent, "Expected content to match downloaded contribution content");
+                assertEquals(doc.metadata.displayName, mockStageDisplayName);
+                assertEquals(doc.metadata.header, "Contribution from previous stage");
+                
             } finally {
                 teardown();
             }

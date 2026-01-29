@@ -14,12 +14,12 @@ import type {
     UpdateProjectInitialPromptPayload,
     GetProjectResourceContentPayload,
     GetProjectResourceContentResponse,
-    DialecticContribution,
     SubmitStageResponsesPayload,
     SubmitStageResponsesResponse,
     GetIterationInitialPromptPayload,
     IterationInitialPromptData,
     SaveContributionEditPayload,
+    SaveContributionEditSuccessResponse,
     DialecticDomain,
     DialecticProcessTemplate,
     UpdateSessionModelsPayload,
@@ -516,14 +516,14 @@ export class DialecticApiClient {
 
     async saveContributionEdit(
         payload: SaveContributionEditPayload
-    ): Promise<ApiResponse<DialecticContribution>> {
+    ): Promise<ApiResponse<SaveContributionEditSuccessResponse>> {
         logger.info('Saving user edit for contribution', {
             contributionId: payload.originalContributionIdToEdit,
         });
 
         try {
             const response = await this.apiClient.post<
-                DialecticContribution,
+                SaveContributionEditSuccessResponse,
                 DialecticServiceActionPayload
             >('dialectic-service', {
                 action: 'saveContributionEdit',
@@ -537,7 +537,7 @@ export class DialecticApiClient {
                 });
             } else {
                 logger.info('Successfully saved contribution edit', {
-                    newContributionId: response.data?.id,
+                    resourceId: response.data?.resource?.id,
                 });
             }
             return response;
@@ -775,14 +775,21 @@ export class DialecticApiClient {
     /**
      * Fetches the details of a specific dialectic session, including its current stage details.
      * Requires authentication.
+     * @param sessionId - The ID of the dialectic session to fetch details for
+     * @param skipSeedPrompt - Optional flag to skip fetching the seed prompt (e.g., when already in store)
      */
-    async getSessionDetails(sessionId: string): Promise<ApiResponse<GetSessionDetailsResponse>> {
-        logger.info('Fetching details for dialectic session', { sessionId });
+    async getSessionDetails(sessionId: string, skipSeedPrompt?: boolean): Promise<ApiResponse<GetSessionDetailsResponse>> {
+        logger.info('Fetching details for dialectic session', { sessionId, skipSeedPrompt });
 
         try {
-            const response = await this.apiClient.post<GetSessionDetailsResponse, { action: string; payload: { sessionId: string } }>(
+            const payload: { sessionId: string; skipSeedPrompt?: boolean } = { sessionId };
+            if (skipSeedPrompt !== undefined) {
+                payload.skipSeedPrompt = skipSeedPrompt;
+            }
+
+            const response = await this.apiClient.post<GetSessionDetailsResponse, { action: string; payload: { sessionId: string; skipSeedPrompt?: boolean } }>(
                 'dialectic-service',
-                { action: 'getSessionDetails', payload: { sessionId } }
+                { action: 'getSessionDetails', payload }
             );
 
             if (response.error) {

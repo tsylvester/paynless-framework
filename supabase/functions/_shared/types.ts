@@ -14,6 +14,10 @@ import type { handleDialecticPath } from '../chat/handleDialecticPath.ts';
 import type { debitTokens } from '../chat/debitTokens.ts';
 import { SystemInstruction } from '../dialectic-service/dialectic.interface.ts';
 
+export type GetAiProviderAdapterFn = (
+  deps: FactoryDependencies
+) => AiProviderAdapterInstance | null;
+
 export type ChatInsert = Tables<'chats'>;
 
 // Define PaymentTransaction using the Tables helper type from types_db.ts

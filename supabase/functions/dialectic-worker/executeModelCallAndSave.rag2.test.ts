@@ -2,26 +2,28 @@ import {
     assertEquals,
     assert,
   } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
-  import { spy, stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
-  import type { Database } from '../types_db.ts';
-  import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+  import { spy } from 'https://deno.land/std@0.224.0/testing/mock.ts';
+  import { Database } from '../types_db.ts';
+  import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
   import {
     isRecord,
 } from '../_shared/utils/type_guards.ts';
   import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
-  import type { 
+  import { 
     ExecuteModelCallAndSaveParams, 
     PromptConstructionPayload,
-    SourceDocument
+    SourceDocument,
+    RelevanceRule,
 } from '../dialectic-service/dialectic.interface.ts';
-import { Messages } from '../_shared/types.ts';
-import type { AiModelExtendedConfig } from '../_shared/types.ts';
-import { ContextWindowError } from '../_shared/utils/errors.ts';
-import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
-import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
-import { ICompressionStrategy, getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
-
+import { 
+  ICompressionStrategy, 
+  getSortedCompressionCandidates 
+} from '../_shared/utils/vector_utils.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
+import { CountTokensFn } from '../_shared/types/tokenizer.types.ts';
+import { IRagService } from '../_shared/services/rag_service.interface.ts';
+import { IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
 import { 
     createMockJob, 
     testPayload, 
@@ -31,7 +33,6 @@ import {
     setupMockClient, 
     getMockDeps 
 } from './executeModelCallAndSave.test.ts';
-import { DocumentRelationships } from '../_shared/types/file_manager.types.ts';
 
 Deno.test('passes inputsRelevance to rag_service.getContextForModel and compressionStrategy', async () => {
   if (!isRecord(mockFullProviderData.config)) {
@@ -54,20 +55,21 @@ Deno.test('passes inputsRelevance to rag_service.getContextForModel and compress
     }
   });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
+  let countIdx = 0;
+  const deterministicCountTokens: CountTokensFn = () => (++countIdx === 1 ? 500 : 90);
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
 
   // Capture inputsRelevance seen by rag_service
   let seenRagInputsRelevance: unknown = undefined;
-  deps.ragService = {
+  const ragService: IRagService = {
     async getContextForModel(_sourceDocuments, _modelConfig, _sessionId, _stageSlug, inputsRelevanceParam) {
       seenRagInputsRelevance = inputsRelevanceParam;
       return { context: 'summary', tokensUsedForIndexing: 0 };
-    }
+    },
   };
 
-  // Force oversized first, then fit after one compression
-  let countIdx = 0;
-  deps.countTokens = () => (++countIdx === 1 ? 500 : 90);
+  const deps = getMockDeps({ tokenWalletService, ragService, countTokens: deterministicCountTokens });
 
   // Capture the inputsRelevance received by the compression strategy
   let seenInputsRelevance: unknown = undefined;
@@ -79,8 +81,8 @@ Deno.test('passes inputsRelevance to rag_service.getContextForModel and compress
     ];
   };
 
-  const inputsRelevance = [
-    { document_key: 'docA', type: 'document', relevance: 1 },
+  const inputsRelevance: RelevanceRule[] = [
+    { document_key: FileType.business_case, type: 'document', relevance: 1 },
   ];
 
   const payload: PromptConstructionPayload = {
@@ -169,20 +171,21 @@ Deno.test('passes empty inputsRelevance as [] to rag_service and compressionStra
     }
   });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
+  let countIdx = 0;
+  const deterministicCountTokens: CountTokensFn = () => (++countIdx === 1 ? 1000 : 90);
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
 
   // Capture inputsRelevance seen by rag_service
   let seenRagInputsRelevance: unknown = undefined;
-  deps.ragService = {
+  const ragService: IRagService = {
     async getContextForModel(_sourceDocuments, _modelConfig, _sessionId, _stageSlug, inputsRelevanceParam) {
       seenRagInputsRelevance = inputsRelevanceParam;
       return { context: 'summary', tokensUsedForIndexing: 0 };
-    }
+    },
   };
 
-  // Force oversized → compression then fit on second sizing
-  let countIdx = 0;
-  deps.countTokens = () => (++countIdx === 1 ? 1000 : 90);
+  const deps = getMockDeps({ tokenWalletService, ragService, countTokens: deterministicCountTokens });
 
   let seenInputsRelevance: unknown = undefined;
   const capturingCompressionStrategy: ICompressionStrategy = async (_dbc, _deps, docs, _history, _currentUserPrompt, inputsRelevance) => {
@@ -276,42 +279,55 @@ Deno.test('compression ordering and identity: removes lowest blended-score first
     'ai_providers': { select: { data: [smallWindowProviderData], error: null } },
     'dialectic_memory': { select: { data: [], error: null } },
     // Executor gathers from DB; provide two distinct identities to avoid latest-per-identity dedupe
-    'dialectic_contributions': { select: { data: [
-      {
-        id: 'doc-high', content: 'high relevance', stage: 'stage-a', document_key: 'k_hi', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_k_hi.json'
-      },
-      {
-        id: 'doc-low', content: 'low relevance', stage: 'stage-a', document_key: 'k_lo', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_k_lo.json'
-      },
-    ], error: null } },
+    'dialectic_project_resources': {
+      select: () => {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'doc-high', content: 'high relevance', stage_slug: 'stage-a', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_product_requirements.md'
+            },
+            {
+              id: 'doc-low', content: 'low relevance', stage_slug: 'stage-a', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_business_case.md'
+            },
+          ],
+          error: null
+        });
+      }
+    },
   });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
+  const ragVictims: string[] = [];
+  let countIdx = 0;
+  const deterministicCountTokens: CountTokensFn = () => (++countIdx === 1 ? 500 : (countIdx === 2 ? 300 : 90));
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
 
   // Embedding client: keep equal similarities (< 1) so weights determine ordering
-  deps.embeddingClient = {
+  const embeddingClient: IEmbeddingClient = {
     async getEmbedding(text: string) {
       // Prompt gets a canonical vector; docs get a slightly different vector
       if (text === 'CURR') return { embedding: [1, 1, 1], usage: { prompt_tokens: 1, total_tokens: 1 } };
       return { embedding: [1, 1, 0.99], usage: { prompt_tokens: 1, total_tokens: 1 } };
-    }
+    },
   };
 
   // Capture RAG call victim order and provide a recognizable summary
-  const ragVictims: string[] = [];
-  deps.ragService = {
-    async getContextForModel(sourceDocuments) {
+  const ragService: IRagService = {
+    async getContextForModel(sourceDocuments, _modelConfig, _sessionId, _stageSlug, _inputsRelevance) {
       const id = sourceDocuments[0]?.id || '';
       ragVictims.push(id);
       return { context: `summary:${id}`, tokensUsedForIndexing: 1 };
-    }
+    },
   };
 
-  // Force oversized then fit after two compressions
-  let countIdx = 0;
-  deps.countTokens = () => (++countIdx === 1 ? 500 : (countIdx === 2 ? 300 : 90));
+  const deps = getMockDeps({
+    tokenWalletService,
+    embeddingClient,
+    ragService,
+    countTokens: deterministicCountTokens,
+  });
 
   // Use the real matrix strategy to order candidates; ties will be broken by inputsRelevance
   const compressionStrategy = getSortedCompressionCandidates;
@@ -349,16 +365,16 @@ Deno.test('compression ordering and identity: removes lowest blended-score first
     stage: 'test-stage',
     is_header: false,
     source_prompt_resource_id: null,
-    document_key: 'k_hi',
+    document_key: FileType.product_requirements,
     type: 'document',
     stage_slug: 'stage-a',
   };
 
-  const docLo = { ...docHi, id: 'doc-low', file_name: 'lo.txt', storage_path: 'p/lo', document_key: 'k_lo' };
+  const docLo = { ...docHi, id: 'doc-low', file_name: 'lo.txt', storage_path: 'p/lo', document_key: FileType.business_case };
 
-  const inputsRelevance = [
-    { document_key: 'k_hi', type: 'document', relevance: 1 }, // high priority for doc-high
-    { document_key: 'k_lo', type: 'document', relevance: 0 }, // low priority for doc-low
+  const inputsRelevance: RelevanceRule[] = [
+    { document_key: FileType.product_requirements, type: 'document', relevance: 1 }, // high priority for doc-high
+    { document_key: FileType.business_case, type: 'document', relevance: 0 }, // low priority for doc-low
   ];
 
   // Spy on adapter to inspect final resourceDocuments ordering and content replacement
@@ -384,8 +400,8 @@ Deno.test('compression ordering and identity: removes lowest blended-score first
     inputsRelevance,
     // Scope strictly to current step’s inputs for both identities
     inputsRequired: [
-      { document_key: 'k_hi', type: 'document', stage_slug: 'stage-a' },
-      { document_key: 'k_lo', type: 'document', stage_slug: 'stage-a' },
+      { document_key: FileType.product_requirements, type: 'document', slug: 'stage-a' },
+      { document_key: FileType.business_case, type: 'document', slug: 'stage-a' },
     ],
   };
 
@@ -428,39 +444,53 @@ Deno.test('inputsRelevance effects: higher relevance ranks later; stage_slug-spe
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [smallWindowProviderData], error: null } },
     'dialectic_memory': { select: { data: [], error: null } },
-    'dialectic_contributions': { select: { data: [
-      {
-        id: 'A', content: 'x', stage: 's1', document_key: 'k', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/s1/documents', file_name: 'model-collect_1_k.json'
-      },
-      {
-        id: 'B', content: 'x', stage: 's2', document_key: 'k', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/s2/documents', file_name: 'model-collect_1_k.json'
-      },
-    ], error: null } },
+    'dialectic_project_resources': {
+      select: () => {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'A', content: 'x', stage_slug: 's1', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/s1/documents', file_name: 'model-collect_1_success_metrics.md'
+            },
+            {
+              id: 'B', content: 'x', stage_slug: 's2', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/s2/documents', file_name: 'model-collect_1_business_case.md'
+            },
+          ],
+          error: null
+        });
+      }
+    },
   });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
+  const ragVictims: string[] = [];
+  let idx = 0;
+  const deterministicCountTokens: CountTokensFn = () => (++idx === 1 ? 600 : (idx === 2 ? 400 : 90));
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
+
   // Equal (but <1) similarities so matrix relevance differentiates ordering
-  deps.embeddingClient = { 
+  const embeddingClient: IEmbeddingClient = { 
     async getEmbedding(text: string) { 
       if (text === 'CURR') return { embedding: [1, 1, 1], usage: { prompt_tokens: 1, total_tokens: 1 } };
       return { embedding: [1, 1, 0.99], usage: { prompt_tokens: 1, total_tokens: 1 } };
-    } 
+    },
   };
 
   // Capture RAG order
-  const ragVictims: string[] = [];
-  deps.ragService = {
-    async getContextForModel(sourceDocuments) {
+  const ragService: IRagService = {
+    async getContextForModel(sourceDocuments, _modelConfig, _sessionId, _stageSlug, _inputsRelevance) {
       ragVictims.push(sourceDocuments[0]?.id || '');
       return { context: 's', tokensUsedForIndexing: 1 };
-    }
+    },
   };
 
-  // Oversized then fit after two compressions
-  let idx = 0;
-  deps.countTokens = () => (++idx === 1 ? 600 : (idx === 2 ? 400 : 90));
+  const deps = getMockDeps({
+    tokenWalletService,
+    embeddingClient,
+    ragService,
+    countTokens: deterministicCountTokens,
+  });
 
   // Use real strategy
   const compressionStrategy = getSortedCompressionCandidates;
@@ -474,14 +504,14 @@ Deno.test('inputsRelevance effects: higher relevance ranks later; stage_slug-spe
     original_model_contribution_id: null,
   };
 
-  const docA: SourceDocument = { ...base, id: 'A', file_name: 'a.txt', storage_path: 'p/a', document_key: 'k', type: 'document', stage_slug: 's1' };
-  const docB: SourceDocument = { ...base, id: 'B', file_name: 'b.txt', storage_path: 'p/b', document_key: 'k', type: 'document', stage_slug: 's2' };
+  const docA: SourceDocument = { ...base, id: 'A', file_name: 'a.txt', storage_path: 'p/a', document_key: FileType.success_metrics, type: 'document', stage_slug: 's1' };
+  const docB: SourceDocument = { ...base, id: 'B', file_name: 'b.txt', storage_path: 'p/b', document_key: FileType.business_case, type: 'document', stage_slug: 's2' };
   const docC: SourceDocument = { ...base, id: 'C', file_name: 'c.txt', storage_path: 'p/c' } as SourceDocument; // missing identity
 
   // Stage-specific rule for k@s1 and general rule for k
-  const inputsRelevance = [
-    { document_key: 'k', type: 'document', relevance: 0.3 },
-    { document_key: 'k', type: 'document', relevance: 1, stage_slug: 's1' },
+  const inputsRelevance: RelevanceRule[] = [
+    { document_key: FileType.business_case, type: 'document', relevance: 0.3 },
+    { document_key: FileType.success_metrics, type: 'document', relevance: 1, slug: 's1' },
   ];
 
   const params: ExecuteModelCallAndSaveParams = {
@@ -501,8 +531,8 @@ Deno.test('inputsRelevance effects: higher relevance ranks later; stage_slug-spe
     compressionStrategy,
     inputsRelevance,
     inputsRequired: [
-      { document_key: 'k', type: 'document', stage_slug: 's1' },
-      { document_key: 'k', type: 'document', stage_slug: 's2' },
+      { document_key: FileType.success_metrics, type: 'document', slug: 's1' },
+      { document_key: FileType.business_case, type: 'document', slug: 's2' },
     ],
   };
 
@@ -533,41 +563,54 @@ Deno.test('empty inputsRelevance: similarity-only behavior is deterministic', as
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [smallWindowProviderData], error: null } },
     'dialectic_memory': { select: { data: [], error: null } },
-    'dialectic_contributions': { select: { data: [
-      {
-        id: 'alpha', content: 'alpha', stage: 't', document_key: 'k_alpha', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_k_alpha.json'
-      },
-      {
-        id: 'beta', content: 'beta', stage: 't', document_key: 'k_beta', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_k_beta.json'
-      },
-    ], error: null } },
+    'dialectic_project_resources': {
+      select: () => {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'alpha', content: 'alpha', stage_slug: 't', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_business_case.md'
+            },
+            {
+              id: 'beta', content: 'beta', stage_slug: 't', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_success_metrics.md'
+            },
+          ],
+          error: null
+        });
+      }
+    },
   });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
+  const ragVictims: string[] = [];
+  let idx = 0;
+  const deterministicCountTokens: CountTokensFn = () => (++idx === 1 ? 400 : 80);
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
 
   // Embedding client to create different similarities to the prompt
-  deps.embeddingClient = {
+  const embeddingClient: IEmbeddingClient = {
     async getEmbedding(text: string) {
       // Map content string to slightly different embeddings
       if (text.includes('alpha')) return { embedding: [1, 1, 1], usage: { prompt_tokens: 1, total_tokens: 1 } };
       if (text.includes('beta')) return { embedding: [1, 1, 0.9], usage: { prompt_tokens: 1, total_tokens: 1 } };
       return { embedding: [1, 1, 0.8], usage: { prompt_tokens: 1, total_tokens: 1 } };
-    }
+    },
   };
 
-  const ragVictims: string[] = [];
-  deps.ragService = {
-    async getContextForModel(sourceDocuments) {
+  const ragService: IRagService = {
+    async getContextForModel(sourceDocuments, _modelConfig, _sessionId, _stageSlug, _inputsRelevance) {
       ragVictims.push(sourceDocuments[0]?.id || '');
       return { context: 's', tokensUsedForIndexing: 1 };
-    }
+    },
   };
 
-  // Oversized then fit
-  let idx = 0;
-  deps.countTokens = () => (++idx === 1 ? 400 : 80);
+  const deps = getMockDeps({
+    tokenWalletService,
+    embeddingClient,
+    ragService,
+    countTokens: deterministicCountTokens,
+  });
 
   const compressionStrategy = getSortedCompressionCandidates;
 
@@ -594,8 +637,8 @@ Deno.test('empty inputsRelevance: similarity-only behavior is deterministic', as
     compressionStrategy,
     inputsRelevance: [],
     inputsRequired: [
-      { document_key: 'k_alpha', type: 'document', stage_slug: 't' },
-      { document_key: 'k_beta',  type: 'document', stage_slug: 't' },
+      { document_key: FileType.business_case, type: 'document', slug: 't' },
+      { document_key: FileType.success_metrics,  type: 'document', slug: 't' },
     ],
   };
 
@@ -624,25 +667,34 @@ Deno.test('passes identity-rich candidates into compression even when prompt doc
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [smallWindowProviderData], error: null } },
     // Identity-rich rows in DB tables with document-centric file_name and directory-only storage_path
-    'dialectic_contributions': { select: { data: [ {
-      id: 'c1', content: 'C1', stage: 's1', document_key: 'k1', type: 'document', created_at: new Date().toISOString(),
-      storage_path: 'project-abc/session_session-456/iteration_1/s1/documents', file_name: 'modelM_1_k1.json'
-    } ], error: null } },
-    'dialectic_project_resources': { select: { data: [ {
-      id: 'r1', content: 'R1', stage_slug: 's2', document_key: 'k2', type: 'document', created_at: new Date().toISOString(),
-      storage_path: 'project-abc/session_session-456/iteration_1/s2/documents', file_name: 'modelM_1_k2.json'
-    } ], error: null } },
+    'dialectic_project_resources': {
+      select: () => {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'r1', content: 'R1', stage_slug: 's2', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/s2/documents', file_name: 'modelM_1_success_metrics.md'
+            },
+            {
+              id: 'r2', content: 'C1', stage_slug: 's1', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/s1/documents', file_name: 'modelM_1_business_case.md'
+            },
+          ],
+          error: null
+        });
+      }
+    },
     'dialectic_feedback': { select: { data: [ {
       id: 'f1', content: 'F1', stage_slug: 's3', document_key: 'k3', type: 'feedback', created_at: new Date().toISOString(),
-      storage_path: 'project-abc/session_session-456/iteration_1/s3/documents', file_name: 'modelM_1_k3.json'
+      storage_path: 'project-abc/session_session-456/iteration_1/s3/documents', file_name: 'modelM_1_user_feedback.md'
     } ], error: null } },
   });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
-
-  // Force oversized then fit
   let countIdx = 0;
-  deps.countTokens = () => (++countIdx === 1 ? 500 : 90);
+  const deterministicCountTokens: CountTokensFn = () => (++countIdx === 1 ? 500 : 90);
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
+  const deps = getMockDeps({ tokenWalletService, countTokens: deterministicCountTokens });
 
   // Capture docs seen by compression
   let seenDocs: unknown[] | null = null;
@@ -673,9 +725,9 @@ Deno.test('passes identity-rich candidates into compression even when prompt doc
     compressionStrategy: capturingCompressionStrategy,
     inputsRelevance: [],
     inputsRequired: [
-      { document_key: 'k1', type: 'document', stage_slug: 's1' },
-      { document_key: 'k2', type: 'document', stage_slug: 's2' },
-      { document_key: 'k3', type: 'feedback', stage_slug: 's3' },
+      { document_key: FileType.business_case, type: 'document', slug: 's1' },
+      { document_key: FileType.success_metrics, type: 'document', slug: 's2' },
+      { document_key: FileType.UserFeedback, type: 'feedback', slug: 's3' },
     ],
   };
 
@@ -715,9 +767,12 @@ Deno.test('throws when identity-less documents would be passed to compression', 
   const cfg = { ...mockFullProviderData.config, context_window_tokens: 100, provider_max_input_tokens: 256 };
   const { client: dbClient } = setupMockClient({ 'ai_providers': { select: { data: [ { ...mockFullProviderData, config: cfg } ], error: null } } });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
   // Oversized then fit if it ever reached compression
-  let idx = 0; deps.countTokens = () => (++idx === 1 ? 500 : 90);
+  let idx = 0;
+  const deterministicCountTokens: CountTokensFn = () => (++idx === 1 ? 500 : 90);
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
+  const deps = getMockDeps({ tokenWalletService, countTokens: deterministicCountTokens });
 
   // Compression strategy should not be called if executor validates identity first
   const compressionSpy: { called: boolean } = { called: false };
@@ -763,24 +818,38 @@ Deno.test('ties without inputsRelevance: candidates are in non-decreasing effect
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [ { ...mockFullProviderData, config: cfg } ], error: null } },
     'dialectic_memory': { select: { data: [], error: null } },
-    'dialectic_contributions': { select: { data: [
-      {
-        id: 'A', content: 'x', stage: 's', document_key: 'k1', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_k1.json'
-      },
-      {
-        id: 'B', content: 'x', stage: 's', document_key: 'k2', type: 'document', created_at: new Date().toISOString(),
-        storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_k2.json'
-      },
-    ], error: null } },
+    'dialectic_project_resources': {
+      select: () => {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'A', content: 'x', stage_slug: 's', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_business_case.md'
+            },
+            {
+              id: 'B', content: 'x', stage_slug: 's', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
+              storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_success_metrics.md'
+            },
+          ],
+          error: null
+        });
+      }
+    },
   });
 
-  const deps = getMockDeps(createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') }).instance);
-  // Identical embeddings to create ties
-  deps.embeddingClient = { async getEmbedding() { return { embedding: [1, 1, 1], usage: { prompt_tokens: 1, total_tokens: 1 } }; } };
-
   // Oversized once, then fit
-  let idx = 0; deps.countTokens = () => (++idx === 1 ? 500 : 90);
+  let idx = 0;
+  const deterministicCountTokens: CountTokensFn = () => (++idx === 1 ? 500 : 90);
+
+  const { instance: tokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100000') });
+  // Identical embeddings to create ties
+  const embeddingClient: IEmbeddingClient = { 
+    async getEmbedding(_text: string) { 
+      return { embedding: [1, 1, 1], usage: { prompt_tokens: 1, total_tokens: 1 } };
+    } 
+  };
+
+  const deps = getMockDeps({ tokenWalletService, embeddingClient, countTokens: deterministicCountTokens });
 
   // Capture candidates returned by real strategy via wrapper
   let returnedCandidates: { effectiveScore?: number }[] | null = null;
@@ -797,8 +866,8 @@ Deno.test('ties without inputsRelevance: candidates are in non-decreasing effect
     seed_prompt_url: null, size_bytes: 1, storage_bucket: 'b', tokens_used_input: 0, tokens_used_output: 0, stage: 't', is_header: false, source_prompt_resource_id: null,
     original_model_contribution_id: null,
   };
-  const d1: SourceDocument = { ...base, id: 'A', file_name: 'a.txt', storage_path: 'p/a', document_key: 'k', type: 'document', stage_slug: 's' };
-  const d2: SourceDocument = { ...base, id: 'B', file_name: 'b.txt', storage_path: 'p/b', document_key: 'k', type: 'document', stage_slug: 's' };
+  const d1: SourceDocument = { ...base, id: 'A', file_name: 'a.txt', storage_path: 'p/a', document_key: FileType.business_case, type: 'document', stage_slug: 's' };
+  const d2: SourceDocument = { ...base, id: 'B', file_name: 'b.txt', storage_path: 'p/b', document_key: FileType.success_metrics, type: 'document', stage_slug: 's' };
 
   const payload: PromptConstructionPayload = {
     systemInstruction: 'SYS',
@@ -819,8 +888,8 @@ Deno.test('ties without inputsRelevance: candidates are in non-decreasing effect
     compressionStrategy: wrapperStrategy,
     inputsRelevance: [],
     inputsRequired: [
-      { document_key: 'k1', type: 'document', stage_slug: 's' },
-      { document_key: 'k2', type: 'document', stage_slug: 's' },
+      { document_key: FileType.business_case, type: 'document', slug: 's' },
+      { document_key: FileType.success_metrics, type: 'document', slug: 's' },
     ],
   };
 

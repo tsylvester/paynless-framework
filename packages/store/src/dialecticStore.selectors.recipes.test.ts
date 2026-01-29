@@ -1,5 +1,6 @@
 import { describe, it, expect, expectTypeOf } from 'vitest';
 import type {
+  AssembledPrompt,
   DialecticContribution,
   DialecticFeedback,
   DialecticProcessTemplate,
@@ -65,11 +66,34 @@ describe('Selectors - Recipes', () => {
     outputs_required: [{ document_key: 'header_ctx_b', artifact_class: 'header_context', file_type: 'json' }],
   };
 
+  const stepC: DialecticStageRecipeStep = {
+    id: 'step-c',
+    step_key: 'c_key',
+    step_slug: 'c-slug',
+    step_name: 'C',
+    execution_order: 3,
+    parallel_group: 3,
+    branch_key: 'branch_c',
+    job_type: 'EXECUTE',
+    prompt_type: 'Turn',
+    prompt_template_id: 'pt-c',
+    output_type: 'rendered_document',
+    granularity_strategy: 'per_source_document',
+    inputs_required: [],
+    inputs_relevance: [],
+    outputs_required: [
+      { document_key: 'doc_a', artifact_class: 'rendered_document', file_type: 'markdown' },
+      { document_key: 'doc_b', artifact_class: 'rendered_document', file_type: 'markdown' },
+      { document_key: 'doc_c', artifact_class: 'rendered_document', file_type: 'markdown' },
+      { document_key: 'doc_d', artifact_class: 'rendered_document', file_type: 'markdown' },
+    ],
+  };
+
   const recipe: DialecticStageRecipe = {
     stageSlug,
     instanceId: 'instance-123',
     // Intentionally out-of-order array to verify ordering behavior in selector
-    steps: [stepB, stepA],
+    steps: [stepB, stepA, stepC],
   };
 
   const makeState = (overrides?: Partial<DialecticStateValues>): DialecticStateValues => ({
@@ -91,11 +115,13 @@ describe('Selectors - Recipes', () => {
   it('selectStepList returns steps ordered by execution_order and exposes parallel_group/branch_key', () => {
     const state = makeState();
     const list = selectStepList(state, stageSlug);
-    expect(list.map(s => s.step_key)).toEqual(['a_key', 'b_key']);
+    expect(list.map(s => s.step_key)).toEqual(['a_key', 'b_key', 'c_key']);
     expect(list[0].parallel_group).toBe(1);
     expect(list[0].branch_key).toBe('branch_a');
     expect(list[1].parallel_group).toBe(2);
     expect(list[1].branch_key).toBe('branch_b');
+    expect(list[2].parallel_group).toBe(3);
+    expect(list[2].branch_key).toBe('branch_c');
   });
 
   describe('stage run progress selectors', () => {
@@ -113,8 +139,24 @@ describe('Selectors - Recipes', () => {
             b_key: 'not_started',
           },
           documents: {
-            doc_a: { status: 'completed', job_id: 'job-1', latestRenderedResourceId: 'res-1', modelId: 'model-1', versionHash: 'hash-1', lastRenderedResourceId: 'res-1', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
-            doc_b: { status: 'generating', job_id: 'job-2', latestRenderedResourceId: 'res-2', modelId: 'model-2', versionHash: 'hash-2', lastRenderedResourceId: 'res-2', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
+            doc_a: {
+              status: 'completed',
+              job_id: 'job-1',
+              latestRenderedResourceId: 'res-1',
+              modelId: 'model-1',
+              versionHash: 'hash-1',
+              lastRenderedResourceId: 'res-1',
+              lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+            },
+            doc_b: {
+              status: 'generating',
+              job_id: 'job-2',
+              latestRenderedResourceId: 'res-2',
+              modelId: 'model-2',
+              versionHash: 'hash-2',
+              lastRenderedResourceId: 'res-2',
+              lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+            },
           },
         },
       },
@@ -154,6 +196,9 @@ describe('Selectors - Recipes', () => {
         totalDocuments: 2,
         completedDocuments: 1,
         outstandingDocuments: ['doc_b'],
+        hasFailed: false,
+        failedDocuments: 0,
+        failedDocumentKeys: [],
       });
     });
 
@@ -179,6 +224,9 @@ describe('Selectors - Recipes', () => {
         totalDocuments: 2,
         completedDocuments: 2,
         outstandingDocuments: [],
+        hasFailed: false,
+        failedDocuments: 0,
+        failedDocumentKeys: [],
       });
     });
 
@@ -188,10 +236,42 @@ describe('Selectors - Recipes', () => {
           [progressKey]: {
             stepStatuses: { a_key: 'completed', b_key: 'not_started' },
             documents: {
-              doc_a: { status: 'completed', job_id: 'job-1', latestRenderedResourceId: 'res-1', modelId: 'model-a', versionHash: 'hash-1', lastRenderedResourceId: 'res-1', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
-              doc_b: { status: 'generating', job_id: 'job-2', latestRenderedResourceId: 'res-2', modelId: 'model-b', versionHash: 'hash-2', lastRenderedResourceId: 'res-2', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
-              doc_c: { status: 'completed', job_id: 'job-3', latestRenderedResourceId: 'res-3', modelId: 'model-a', versionHash: 'hash-3', lastRenderedResourceId: 'res-3', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
-              doc_d: { status: 'continuing', job_id: 'job-4', latestRenderedResourceId: 'res-4', modelId: 'model-a', versionHash: 'hash-4', lastRenderedResourceId: 'res-4', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
+              doc_a: {
+                status: 'completed',
+                job_id: 'job-1',
+                latestRenderedResourceId: 'res-1',
+                modelId: 'model-a',
+                versionHash: 'hash-1',
+                lastRenderedResourceId: 'res-1',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+              },
+              doc_b: {
+                status: 'generating',
+                job_id: 'job-2',
+                latestRenderedResourceId: 'res-2',
+                modelId: 'model-b',
+                versionHash: 'hash-2',
+                lastRenderedResourceId: 'res-2',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+              },
+              doc_c: {
+                status: 'completed',
+                job_id: 'job-3',
+                latestRenderedResourceId: 'res-3',
+                modelId: 'model-a',
+                versionHash: 'hash-3',
+                lastRenderedResourceId: 'res-3',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+              },
+              doc_d: {
+                status: 'continuing',
+                job_id: 'job-4',
+                latestRenderedResourceId: 'res-4',
+                modelId: 'model-a',
+                versionHash: 'hash-4',
+                lastRenderedResourceId: 'res-4',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+              },
             },
           },
         },
@@ -204,6 +284,9 @@ describe('Selectors - Recipes', () => {
           totalDocuments: 3,
           completedDocuments: 2,
           outstandingDocuments: ['doc_d'],
+          hasFailed: false,
+          failedDocuments: 0,
+          failedDocumentKeys: [],
         });
       });
 
@@ -214,6 +297,9 @@ describe('Selectors - Recipes', () => {
           totalDocuments: 1,
           completedDocuments: 0,
           outstandingDocuments: ['doc_b'],
+          hasFailed: false,
+          failedDocuments: 0,
+          failedDocumentKeys: [],
         });
       });
 
@@ -222,29 +308,82 @@ describe('Selectors - Recipes', () => {
         expect(summary).toBeDefined();
         if (!summary) return;
 
-        const { outstandingDocuments, ...rest } = summary;
-
-        expect(outstandingDocuments.sort()).toEqual(['doc_b', 'doc_d'].sort());
-        expect(rest).toEqual({
+        expect(summary).toEqual({
           isComplete: false,
           totalDocuments: 4,
           completedDocuments: 2,
+          outstandingDocuments: ['doc_b', 'doc_d'],
+          hasFailed: false,
+          failedDocuments: 0,
+          failedDocumentKeys: [],
         });
       });
     });
 
-    it('selectStageDocumentChecklist returns each tracked document with status metadata', () => {
-      const checklist = selectStageDocumentChecklist(baseProgressState, progressKey, 'model-1');
-      expect(checklist).toEqual([
-        {
-          documentKey: 'doc_a',
-          status: 'completed',
-          jobId: 'job-1',
-          latestRenderedResourceId: 'res-1',
-          modelId: 'model-1',
+    it('selectStageProgressSummary reports failed documents separately from outstanding ones', () => {
+      const stateWithFailure = makeState({
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: {
+              a_key: 'completed',
+              b_key: 'failed',
+            },
+            documents: {
+              doc_a: {
+                status: 'completed',
+                job_id: 'job-1',
+                latestRenderedResourceId: 'res-1',
+                modelId: 'model-1',
+                versionHash: 'hash-1',
+                lastRenderedResourceId: 'res-1',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+              },
+              doc_b: {
+                status: 'failed',
+                job_id: 'job-2',
+                latestRenderedResourceId: 'res-2',
+                modelId: 'model-2',
+                versionHash: 'hash-2',
+                lastRenderedResourceId: 'res-2',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+              },
+              doc_c: {
+                status: 'generating',
+                job_id: 'job-3',
+                latestRenderedResourceId: 'res-3',
+                modelId: 'model-3',
+                versionHash: 'hash-3',
+                lastRenderedResourceId: 'res-3',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+              },
+            },
+          },
         },
+      });
 
-      ]);
+      const summary = selectStageProgressSummary(stateWithFailure, sessionId, stageSlug, iterationNumber);
+      expect(summary).toEqual({
+        isComplete: false,
+        totalDocuments: 3,
+        completedDocuments: 1,
+        outstandingDocuments: ['doc_c'],
+        hasFailed: true,
+        failedDocuments: 1,
+        failedDocumentKeys: ['doc_b'],
+      });
+    });
+
+    it('selectStageDocumentChecklist returns each tracked document with status metadata', () => {
+    const checklist = selectStageDocumentChecklist(baseProgressState, progressKey, 'model-1');
+    expect(checklist).toEqual([
+      expect.objectContaining({
+        documentKey: 'doc_a',
+        status: 'completed',
+        jobId: 'job-1',
+        latestRenderedResourceId: 'res-1',
+        modelId: 'model-1',
+      }),
+    ]);
     });
 
     it('selectStageDocumentChecklist entries always expose a modelId', () => {
@@ -252,7 +391,7 @@ describe('Selectors - Recipes', () => {
 
       expectTypeOf(checklist).items
         .toHaveProperty('modelId')
-        .toEqualTypeOf<string>();
+        .toEqualTypeOf<string | null>();
 
       checklist.forEach((entry) => {
         expect(entry.modelId).toBeDefined();
@@ -325,13 +464,15 @@ describe('Selectors - Recipes', () => {
       const focusedDetails = checklist.find(entry => entry.documentKey === focus?.documentKey);
 
       expect(focus).toEqual({ modelId: modelIdForTest, documentKey: 'doc_a' });
-      expect(focusedDetails).toEqual({
-        documentKey: 'doc_a',
-        status: 'completed',
-        jobId: 'job-1',
-        latestRenderedResourceId: 'res-1',
-        modelId: 'model-1',
-      });
+      expect(focusedDetails).toEqual(
+        expect.objectContaining({
+          documentKey: 'doc_a',
+          status: 'completed',
+          jobId: 'job-1',
+          latestRenderedResourceId: 'res-1',
+          modelId: 'model-1',
+        }),
+      );
     });
   });
 
@@ -497,6 +638,7 @@ describe('Selectors - Recipes', () => {
       contributions?: DialecticContribution[];
       feedbackEntries?: DialecticFeedback[];
       stepStatuses?: Partial<Record<string, StepStatus>>;
+      activeSeedPrompt?: AssembledPrompt | null;
     }): DialecticStateValues => {
       const resources = config?.resources ?? [];
       const contributions = config?.contributions ?? [];
@@ -557,6 +699,7 @@ describe('Selectors - Recipes', () => {
         ...initialDialecticStateValues,
         currentProjectDetail: project,
         currentProcessTemplate: processTemplate,
+        activeSeedPrompt: config?.activeSeedPrompt ?? null,
         recipesByStageSlug: { [stageSlugUnderTest]: readinessRecipe },
         stageRunProgress: {
           [progressKey]: {
@@ -595,8 +738,13 @@ describe('Selectors - Recipes', () => {
       ).toBe(false);
     });
 
+    const assembledSeedPrompt: AssembledPrompt = {
+      promptContent: 'Seed prompt content',
+      source_prompt_resource_id: seedPromptResource.id,
+    };
+
     it('returns true when the planner has its required seed prompt resource', () => {
-      const state = buildState({ resources: [seedPromptResource] });
+      const state = buildState({ resources: [seedPromptResource], activeSeedPrompt: assembledSeedPrompt });
       expect(
         selectIsStageReadyForSessionIteration(
           state,
@@ -670,6 +818,7 @@ describe('Selectors - Recipes', () => {
         contributions: [contribution],
         feedbackEntries: [feedbackEntry],
         stepStatuses: { [plannerStepKey]: 'completed' },
+        activeSeedPrompt: assembledSeedPrompt,
       });
 
       expect(

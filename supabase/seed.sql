@@ -253,3 +253,73 @@ ON CONFLICT (api_identifier) DO UPDATE SET
 
 -- Enable realtime for the notifications table
 alter publication supabase_realtime add table notifications;
+
+-- System prompt for "Trance Mode" - Self-Directed Pattern Transformation
+-- This prompt is stored in storage bucket and referenced via document_template_id
+-- The actual prompt file is at: docs/prompts/trance_mode_system_prompt.md
+-- It will be uploaded to storage by seed_prompt_templates.ts script
+DO $$
+DECLARE
+    v_domain_id UUID;
+    v_doc_template_id UUID;
+BEGIN
+    -- Get the domain_id for 'General' (used for non-dialectic prompts)
+    SELECT id INTO v_domain_id FROM public.dialectic_domains WHERE name = 'General' LIMIT 1;
+    
+    IF v_domain_id IS NULL THEN
+        RAISE EXCEPTION 'General domain not found. Please ensure dialectic_domains table is seeded before running this script.';
+    END IF;
+
+    -- Upsert the document template pointing to storage
+    INSERT INTO public.dialectic_document_templates (
+        name, 
+        domain_id, 
+        description, 
+        storage_bucket, 
+        storage_path, 
+        file_name
+    )
+    VALUES (
+        'Trance Mode - Self-Directed Pattern Transformation prompt',
+        v_domain_id,
+        'Source document for Trance Mode system prompt stored in storage bucket',
+        'prompt-templates',
+        'docs/prompts',
+        'trance_mode_system_prompt.md'
+    )
+    ON CONFLICT (name, domain_id) DO UPDATE 
+    SET description = EXCLUDED.description, 
+        storage_bucket = EXCLUDED.storage_bucket,
+        storage_path = EXCLUDED.storage_path,
+        file_name = EXCLUDED.file_name,
+        updated_at = now()
+    RETURNING id INTO v_doc_template_id;
+
+    -- Upsert the system prompt with document_template_id reference (prompt_text is NULL)
+    INSERT INTO public.system_prompts (
+        name,
+        prompt_text,
+        is_active,
+        version,
+        description,
+        user_selectable,
+        document_template_id
+    )
+    VALUES (
+        'Trance Mode - Self-Directed Pattern Transformation',
+        NULL,
+        true,
+        1,
+        'Consensual High-Intensity Self-Directed Trance Mode',
+        true,
+        v_doc_template_id
+    )
+    ON CONFLICT (name) DO UPDATE
+    SET prompt_text = NULL,
+        is_active = EXCLUDED.is_active,
+        version = EXCLUDED.version,
+        description = EXCLUDED.description,
+        user_selectable = EXCLUDED.user_selectable,
+        document_template_id = EXCLUDED.document_template_id,
+        updated_at = now();
+END $$;

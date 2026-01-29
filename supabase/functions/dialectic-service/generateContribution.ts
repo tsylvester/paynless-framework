@@ -4,18 +4,20 @@ import {
     JobType,
     StageWithRecipeSteps,
   } from "./dialectic.interface.ts";
-import type { Database, Json, TablesInsert } from "../types_db.ts";
+import type { Database, TablesInsert } from "../types_db.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import { logger } from "../_shared/logger.ts";
 import { isDatabaseRecipeSteps } from '../_shared/utils/type-guards/type_guards.dialectic.ts';
 import { mapToStageWithRecipeSteps } from '../_shared/utils/mappers.ts';
+import { DialecticPlanJobPayload } from './dialectic.interface.ts';
+import { isJson } from '../_shared/utils/type-guards/type_guards.common.ts';
   
 export async function generateContributions(
     dbClient: SupabaseClient<Database>,
     payload: GenerateContributionsPayload,
     user: User,
-    _deps: GenerateContributionsDeps,
-    authToken?: string | null,
+    deps: GenerateContributionsDeps,
+    authToken: string,
 ): Promise<{ success: boolean; data?: { job_ids: string[] }; error?: { message: string; status?: number; details?: string; code?: string } }> {
 
     const { sessionId, iterationNumber = 1, stageSlug, continueUntilComplete, maxRetries = 3 } = payload;
@@ -119,23 +121,45 @@ export async function generateContributions(
         }
 
         // 3. Calculate total steps from the recipe
-        const totalSteps = steps.length;
         const jobIds: string[] = [];
         for (const modelId of selectedModelIds) {
+            // Fetch model name from ai_providers table
+            const { data: modelData, error: modelError } = await dbClient
+                .from("ai_providers")
+                .select("name")
+                .eq("id", modelId)
+                .single();
+
+            if (modelError || !modelData) {
+                const errorMessage = modelError?.message || "Model not found";
+                logger.error(`[generateContributions] Failed to fetch model ${modelId}: ${errorMessage}`, { error: modelError });
+                return { 
+                    success: false, 
+                    error: { 
+                        message: `Failed to fetch model ${modelId}: ${errorMessage}`, 
+                        status: 500, 
+                        details: modelError?.details,
+                        code: modelError?.code
+                    } 
+                };
+            }
+
             // 4. Create a formal 'plan' payload for each job
             const jobType: JobType = 'PLAN';
-            const jobPayload: Json = {
+            const jobPayload: DialecticPlanJobPayload = {
                 ...payload,
                 model_id: modelId,
+                model_slug: modelData.name,
                 user_jwt: authToken,
-                job_type: jobType,
-                total_steps: totalSteps,
             };
 
 
             console.log(`[generateContributions] Final jobPayload for model ${modelId}:`, JSON.stringify(jobPayload, null, 2));
 
-
+            if(!isJson(jobPayload)) {
+                logger.error(`[generateContributions] Job payload is not a valid JSON object.`, { jobPayload });
+                return { success: false, error: { message: `Job payload is not a valid JSON object.`, status: 500 } };
+            }
             const jobToInsert: TablesInsert<'dialectic_generation_jobs'> = {
                 session_id: sessionId,
                 user_id: user.id,

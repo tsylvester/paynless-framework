@@ -20,7 +20,7 @@ DECLARE
     v_doc_technical_prompt_id UUID;
     v_doc_metrics_prompt_id UUID;
     v_final_header_prompt_id UUID;
-    v_prd_prompt_id UUID;
+    v_product_requirements_prompt_id UUID;
     v_system_architecture_prompt_id UUID;
     v_tech_stack_prompt_id UUID;
 
@@ -35,7 +35,7 @@ DECLARE
     v_doc_technical_step_id UUID;
     v_doc_metrics_step_id UUID;
     v_final_header_step_id UUID;
-    v_prd_step_id UUID;
+    v_product_requirements_step_id UUID;
     v_system_architecture_step_id UUID;
     v_tech_stack_step_id UUID;
 
@@ -50,11 +50,15 @@ DECLARE
     v_instance_doc_technical_step_id UUID;
     v_instance_doc_metrics_step_id UUID;
     v_instance_final_header_step_id UUID;
-    v_instance_prd_step_id UUID;
+    v_instance_product_requirements_step_id UUID;
     v_instance_arch_step_id UUID;
     v_instance_stack_step_id UUID;
 
 BEGIN
+    -- Allow prompt_text to be NULL to support document_template_id fallback
+    ALTER TABLE public.system_prompts
+    ALTER COLUMN prompt_text DROP NOT NULL;
+    
     -- Step 1: Get the domain_id for 'Software Development'
     SELECT id INTO v_domain_id FROM public.dialectic_domains WHERE name = 'Software Development' LIMIT 1;
 
@@ -65,7 +69,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_pairwise_header_planner_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_pairwise_header_planner_v1.md$PROMPT$, true, 1, 'Planner template that assembles the pairwise HeaderContext for Synthesis stage fan-out.', false, v_doc_template_id)
+    VALUES ('synthesis_pairwise_header_planner_v1', null, true, 1, 'Planner template that assembles the pairwise HeaderContext for Synthesis stage fan-out.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_pairwise_planner_prompt_id;
 
@@ -75,7 +79,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_pairwise_business_case_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_pairwise_business_case_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage pairwise business case synthesis turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_pairwise_business_case_turn_v1', null, true, 1, 'Synthesis stage pairwise business case synthesis turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_pairwise_business_prompt_id;
 
@@ -85,7 +89,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_pairwise_feature_spec_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_pairwise_feature_spec_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage pairwise feature spec synthesis turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_pairwise_feature_spec_turn_v1', null, true, 1, 'Synthesis stage pairwise feature spec synthesis turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_pairwise_feature_prompt_id;
 
@@ -95,7 +99,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_pairwise_technical_approach_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_pairwise_technical_approach_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage pairwise technical approach synthesis turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_pairwise_technical_approach_turn_v1', null, true, 1, 'Synthesis stage pairwise technical approach synthesis turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_pairwise_technical_prompt_id;
 
@@ -105,7 +109,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_pairwise_success_metrics_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_pairwise_success_metrics_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage pairwise success metrics synthesis turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_pairwise_success_metrics_turn_v1', null, true, 1, 'Synthesis stage pairwise success metrics synthesis turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_pairwise_metrics_prompt_id;
 
@@ -115,7 +119,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_document_business_case_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_document_business_case_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage document-level business case consolidation turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_document_business_case_turn_v1', null, true, 1, 'Synthesis stage document-level business case consolidation turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_doc_business_prompt_id;
 
@@ -125,7 +129,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_document_feature_spec_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_document_feature_spec_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage document-level feature spec consolidation turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_document_feature_spec_turn_v1', null, true, 1, 'Synthesis stage document-level feature spec consolidation turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_doc_feature_prompt_id;
 
@@ -135,7 +139,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_document_technical_approach_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_document_technical_approach_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage document-level technical approach consolidation turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_document_technical_approach_turn_v1', null, true, 1, 'Synthesis stage document-level technical approach consolidation turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_doc_technical_prompt_id;
 
@@ -145,7 +149,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_document_success_metrics_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_document_success_metrics_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage document-level success metrics consolidation turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_document_success_metrics_turn_v1', null, true, 1, 'Synthesis stage document-level success metrics consolidation turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_doc_metrics_prompt_id;
 
@@ -155,19 +159,19 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_final_header_planner_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_final_header_planner_v1.md$PROMPT$, true, 1, 'Planner template that prepares the final Synthesis HeaderContext before deliverable turns.', false, v_doc_template_id)
+    VALUES ('synthesis_final_header_planner_v1', null, true, 1, 'Planner template that prepares the final Synthesis HeaderContext before deliverable turns.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_final_header_prompt_id;
 
     -- 2.11: PRD Prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
-    VALUES ('synthesis_prd_turn_v1 prompt', v_domain_id, 'Source document for synthesis_prd_turn_v1 prompt', 'prompt-templates', 'docs/prompts/synthesis/', 'synthesis_prd_turn_v1.md')
+    VALUES ('synthesis_product_requirements_turn_v1 prompt', v_domain_id, 'Source document for synthesis_product_requirements_turn_v1 prompt', 'prompt-templates', 'docs/prompts/synthesis/', 'synthesis_product_requirements_turn_v1.md')
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_prd_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_prd_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage final Product Requirements Document turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_product_requirements_turn_v1', null, true, 1, 'Synthesis stage final Product Requirements Document turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
-    RETURNING id INTO v_prd_prompt_id;
+    RETURNING id INTO v_product_requirements_prompt_id;
 
     -- 2.12: System Architecture Prompt
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name)
@@ -175,7 +179,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_system_architecture_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_system_architecture_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage final system architecture overview turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_system_architecture_turn_v1', null, true, 1, 'Synthesis stage final system architecture overview turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_system_architecture_prompt_id;
 
@@ -185,7 +189,7 @@ BEGIN
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now() RETURNING id INTO v_doc_template_id;
 
     INSERT INTO public.system_prompts (name, prompt_text, is_active, version, description, user_selectable, document_template_id)
-    VALUES ('synthesis_tech_stack_turn_v1', $PROMPT$\path=docs/prompts/synthesis/synthesis_tech_stack_turn_v1.md$PROMPT$, true, 1, 'Synthesis stage final tech stack recommendations turn template.', false, v_doc_template_id)
+    VALUES ('synthesis_tech_stack_turn_v1', null, true, 1, 'Synthesis stage final tech stack recommendations turn template.', false, v_doc_template_id)
     ON CONFLICT (name) DO UPDATE SET prompt_text = EXCLUDED.prompt_text, is_active = EXCLUDED.is_active, version = EXCLUDED.version, description = EXCLUDED.description, user_selectable = EXCLUDED.user_selectable, document_template_id = EXCLUDED.document_template_id, updated_at = now()
     RETURNING id INTO v_tech_stack_prompt_id;
 
@@ -201,7 +205,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 1, 'synthesis_prepare_pairwise_header', 'prepare-pairwise-synthesis-header', 'Prepare Pairwise Synthesis Header', 'Generate HeaderContext JSON that guides pairwise synthesis turns across thesis lineages and antithesis critiques.',
-        'PLAN', 'Planner', v_pairwise_planner_prompt_id, 'HeaderContext', 'all_to_one',
+        'PLAN', 'Planner', v_pairwise_planner_prompt_id, 'header_context', 'all_to_one',
         '[
             { "type": "seed_prompt", "slug": "synthesis", "document_key": "seed_prompt", "required": true },
             { "type": "document", "slug": "thesis", "document_key": "business_case", "required": true, "multiple": true },
@@ -276,6 +280,7 @@ BEGIN
                         "weaknesses": [],
                         "opportunities": [],
                         "threats": [],
+                        "critique_alignment": "",
                         "next_steps": "",
                         "proposal_references": [],
                         "resolved_positions": [],
@@ -297,6 +302,8 @@ BEGIN
                                 "acceptance_criteria": [],
                                 "dependencies": [],
                                 "success_metrics": [],
+                                "risk_mitigation": "",
+                                "open_questions": "",
                                 "feasibility_insights": [],
                                 "non_functional_alignment": [],
                                 "score_adjustments": []
@@ -317,6 +324,7 @@ BEGIN
                         "data": "",
                         "deployment": "",
                         "sequencing": "",
+                        "architecture_alignment": [],
                         "risk_mitigations": [],
                         "dependency_resolution": [],
                         "open_questions": []
@@ -335,30 +343,12 @@ BEGIN
                         "lagging_indicators": [],
                         "guardrails": [],
                         "measurement_plan": "",
-                        "risk_signals": "",
+                        "risk_signals": [],
                         "next_steps": "",
                         "metric_alignment": [],
                         "tradeoffs": [],
                         "validation_checks": []
                     }
-                }
-            ],
-            "files_to_generate": [
-                {
-                    "template_filename": "synthesis_pairwise_business_case.json",
-                    "from_document_key": "synthesis_pairwise_business_case"
-                },
-                {
-                    "template_filename": "synthesis_pairwise_feature_spec.json",
-                    "from_document_key": "synthesis_pairwise_feature_spec"
-                },
-                {
-                    "template_filename": "synthesis_pairwise_technical_approach.json",
-                    "from_document_key": "synthesis_pairwise_technical_approach"
-                },
-                {
-                    "template_filename": "synthesis_pairwise_success_metrics.json",
-                    "from_document_key": "synthesis_pairwise_success_metrics"
                 }
             ]
         }'::jsonb
@@ -368,7 +358,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 2, 2, 'synthesis_pairwise_business_case', 'synthesis_pairwise_business_case', 'pairwise-synthesis-business-case', 'Pairwise Synthesis – Business Case', 'Combine the thesis business case with critiques and comparison vector signals into a resolved narrative.',
-        'EXECUTE', 'Turn', v_pairwise_business_prompt_id, 'AssembledDocumentJson', 'per_source_document',
+        'EXECUTE', 'Turn', v_pairwise_business_prompt_id, 'assembled_document_json', 'per_source_document',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context_pairwise", "required": true },
             { "type": "document", "slug": "thesis", "document_key": "business_case", "required": true },
@@ -396,6 +386,9 @@ BEGIN
                         "<derived from antithesis reviewer or reviewer combination>"
                     ],
                     "content_to_include": {
+                        "thesis_document": "business_case",
+                        "critique_document": "business_case_critique",
+                        "comparison_signal": "comparison_vector",
                         "executive_summary": "",
                         "user_problem_validation": "",
                         "market_opportunity": "",
@@ -406,11 +399,18 @@ BEGIN
                         "weaknesses": [],
                         "opportunities": [],
                         "threats": [],
+                        "critique_alignment": "",
                         "resolved_positions": [],
                         "open_questions": [],
                         "next_steps": "",
                         "proposal_references": []
                     }
+                }
+            ],
+            "files_to_generate": [
+                {
+                    "template_filename": "synthesis_pairwise_business_case.json",
+                    "from_document_key": "synthesis_pairwise_business_case"
                 }
             ]
         }'::jsonb
@@ -419,7 +419,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 2, 2, 'synthesis_pairwise_feature_spec', 'synthesis_pairwise_feature_spec', 'pairwise-synthesis-feature-spec', 'Pairwise Synthesis – Feature Spec', 'Merge feature scope with feasibility, non-functional insights, and comparison signals.',
-        'EXECUTE', 'Turn', v_pairwise_feature_prompt_id, 'AssembledDocumentJson', 'per_source_document',
+        'EXECUTE', 'Turn', v_pairwise_feature_prompt_id, 'assembled_document_json', 'per_source_document',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context_pairwise", "required": true },
             { "type": "document", "slug": "thesis", "document_key": "feature_spec", "required": true },
@@ -453,10 +453,10 @@ BEGIN
                         "<derived from antithesis reviewer or reviewer combination>"
                     ],
                     "content_to_include": {
-                        "feature_scope": [],
-                        "feasibility_insights": [],
-                        "non_functional_alignment": [],
-                        "score_adjustments": [],
+                        "thesis_document": "feature_spec",
+                        "feasibility_document": "technical_feasibility_assessment",
+                        "nfr_document": "non_functional_requirements",
+                        "comparison_signal": "comparison_vector",
                         "features": [
                             {
                                 "feature_name": "",
@@ -466,11 +466,21 @@ BEGIN
                                 "dependencies": [],
                                 "success_metrics": [],
                                 "risk_mitigation": "",
-                                "open_questions": ""
+                                "open_questions": "",
+                                "feasibility_insights": [],
+                                "non_functional_alignment": [],
+                                "score_adjustments": []
                             }
                         ],
+                        "feature_scope": [],
                         "tradeoffs": []
                     }
+                }
+            ],
+            "files_to_generate": [
+                {
+                    "template_filename": "synthesis_pairwise_feature_spec.json",
+                    "from_document_key": "synthesis_pairwise_feature_spec"
                 }
             ]
         }'::jsonb
@@ -479,7 +489,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 2, 2, 'synthesis_pairwise_technical_approach', 'synthesis_pairwise_technical_approach', 'pairwise-synthesis-technical-approach', 'Pairwise Synthesis – Technical Approach', 'Combine thesis technical approach with antithesis risk and dependency findings.',
-        'EXECUTE', 'Turn', v_pairwise_technical_prompt_id, 'AssembledDocumentJson', 'per_source_document',
+        'EXECUTE', 'Turn', v_pairwise_technical_prompt_id, 'assembled_document_json', 'per_source_document',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context_pairwise", "required": true },
             { "type": "document", "slug": "thesis", "document_key": "technical_approach", "required": true },
@@ -509,16 +519,25 @@ BEGIN
                         "<derived from antithesis reviewer or reviewer combination>"
                     ],
                     "content_to_include": {
-                        "architecture_alignment": [],
-                        "risk_mitigations": [],
-                        "dependency_resolution": [],
+                        "thesis_document": "technical_approach",
+                        "risk_document": "risk_register",
+                        "dependency_document": "dependency_map",
                         "architecture": "",
                         "components": [],
                         "data": "",
                         "deployment": "",
                         "sequencing": "",
+                        "architecture_alignment": [],
+                        "risk_mitigations": [],
+                        "dependency_resolution": [],
                         "open_questions": []
                     }
+                }
+            ],
+            "files_to_generate": [
+                {
+                    "template_filename": "synthesis_pairwise_technical_approach.json",
+                    "from_document_key": "synthesis_pairwise_technical_approach"
                 }
             ]
         }'::jsonb
@@ -527,7 +546,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 2, 2, 'synthesis_pairwise_success_metrics', 'synthesis_pairwise_success_metrics', 'pairwise-synthesis-success-metrics', 'Pairwise Synthesis – Success Metrics', 'Combine thesis success metrics with antithesis critique signals into a resolved set of measurable outcomes.',
-        'EXECUTE', 'Turn', v_pairwise_metrics_prompt_id, 'AssembledDocumentJson', 'per_source_document',
+        'EXECUTE', 'Turn', v_pairwise_metrics_prompt_id, 'assembled_document_json', 'per_source_document',
         '[
             { "type": "header_context", "slug": "synthesis", "document_key": "header_context_pairwise", "required": true },
             { "type": "document", "slug": "thesis", "document_key": "success_metrics", "required": true },
@@ -574,6 +593,12 @@ BEGIN
                         "validation_checks": []
                     }
                 }
+            ],
+            "files_to_generate": [
+                {
+                    "template_filename": "synthesis_pairwise_success_metrics.json",
+                    "from_document_key": "synthesis_pairwise_success_metrics"
+                }
             ]
         }'::jsonb
     ) ON CONFLICT (template_id, step_key) DO UPDATE SET updated_at = now() RETURNING id INTO v_pairwise_metrics_step_id;
@@ -581,8 +606,8 @@ BEGIN
     -- Step 4.3 (Parallel Group 3): Document-level Consolidation
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
-        v_template_id, 3, 3, 'synthesize_document_business_case', 'synthesize_document_business_case', 'synthesize-document-business-case', 'Synthesize Business Case Across Models', 'Synthesize the final business case from pairwise outputs.',
-        'EXECUTE', 'Turn', v_doc_business_prompt_id, 'AssembledDocumentJson', 'all_to_one',
+        v_template_id, 3, 3, 'synthesis_document_business_case', 'synthesis_document_business_case', 'synthesis-document-business-case', 'Synthesize Business Case Across Models', 'Synthesize the final business case from pairwise outputs.',
+        'EXECUTE', 'Turn', v_doc_business_prompt_id, 'assembled_document_json', 'all_to_one',
         '[
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_pairwise_business_case", "required": true, "multiple": true }
         ]'::jsonb, 
@@ -627,8 +652,8 @@ BEGIN
 
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
-        v_template_id, 3, 3, 'synthesize_document_feature_spec', 'synthesize_document_feature_spec', 'synthesis-document-feature-spec', 'Synthesize Feature Spec Across Models', 'Synthesize the final feature spec from pairwise outputs.',
-        'EXECUTE', 'Turn', v_doc_feature_prompt_id, 'AssembledDocumentJson', 'all_to_one',
+        v_template_id, 3, 3, 'synthesis_document_feature_spec', 'synthesis_document_feature_spec', 'synthesis-document-feature-spec', 'Synthesize Feature Spec Across Models', 'Synthesize the final feature spec from pairwise outputs.',
+        'EXECUTE', 'Turn', v_doc_feature_prompt_id, 'assembled_document_json', 'all_to_one',
         '[
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_pairwise_feature_spec", "required": true, "multiple": true }
         ]'::jsonb, 
@@ -676,8 +701,8 @@ BEGIN
 
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
-        v_template_id, 3, 3, 'synthesize_document_technical_approach', 'synthesize_document_technical_approach', 'synthesis-document-technical-approach', 'Synthesize Technical Approach Across Models', 'Synthesize the final technical approach from pairwise outputs.',
-        'EXECUTE', 'Turn', v_doc_technical_prompt_id, 'AssembledDocumentJson', 'all_to_one',
+        v_template_id, 3, 3, 'synthesis_document_technical_approach', 'synthesis_document_technical_approach', 'synthesis-document-technical-approach', 'Synthesize Technical Approach Across Models', 'Synthesize the final technical approach from pairwise outputs.',
+        'EXECUTE', 'Turn', v_doc_technical_prompt_id, 'assembled_document_json', 'all_to_one',
         '[
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_pairwise_technical_approach", "required": true, "multiple": true }
         ]'::jsonb, 
@@ -711,8 +736,8 @@ BEGIN
 
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
-        v_template_id, 3, 3, 'synthesize_document_success_metrics', 'synthesize_document_success_metrics', 'synthesis-document-success-metrics', 'Synthesize Success Metrics Across Models', 'Synthesize the final success metrics from pairwise outputs.',
-        'EXECUTE', 'Turn', v_doc_metrics_prompt_id, 'AssembledDocumentJson', 'all_to_one',
+        v_template_id, 3, 3, 'synthesis_document_success_metrics', 'synthesis_document_success_metrics', 'synthesis-document-success-metrics', 'Synthesize Success Metrics Across Models', 'Synthesize the final success metrics from pairwise outputs.',
+        'EXECUTE', 'Turn', v_doc_metrics_prompt_id, 'assembled_document_json', 'all_to_one',
         '[
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_pairwise_success_metrics", "required": true, "multiple": true }
         ]'::jsonb, 
@@ -757,7 +782,7 @@ BEGIN
     INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
     VALUES (
         v_template_id, 4, 'generate_final_synthesis_header', 'generate-final-synthesis-header', 'Generate Final Synthesis Header', 'Generate the final HeaderContext for Synthesis stage deliverables.',
-        'PLAN', 'Planner', v_final_header_prompt_id, 'HeaderContext', 'all_to_one',
+        'PLAN', 'Planner', v_final_header_prompt_id, 'header_context', 'all_to_one',
         '[
             { "type": "seed_prompt", "slug": "synthesis", "document_key": "seed_prompt", "required": true },
             { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_business_case", "required": true, "multiple": true },
@@ -817,7 +842,7 @@ BEGIN
             },
             "context_for_documents": [
                 {
-                    "document_key": "prd",
+                    "document_key": "product_requirements",
                     "content_to_include": {
                         "executive_summary": "",
                         "mvp_description": "",
@@ -867,7 +892,7 @@ BEGIN
                     }
                 },
                 {
-                    "document_key": "system_architecture_overview",
+                    "document_key": "system_architecture",
                     "content_to_include": {
                         "architecture_summary": "",
                         "architecture": "",
@@ -886,11 +911,213 @@ BEGIN
                         "scalability_plan": [],
                         "resilience_strategy": [],
                         "compliance_controls": [],
-                        "open_questions": []
+                        "open_questions": [],
+                        "rationale": ""
                     }
                 },
                 {
-                    "document_key": "tech_stack_recommendations",
+                    "document_key": "tech_stack",
+                    "content_to_include": {
+                        "frontend_stack": {},
+                        "backend_stack": {},
+                        "data_platform": {},
+                        "devops_tooling": {},
+                        "security_tooling": {},
+                        "shared_libraries": [],
+                        "third_party_services": [],
+                        "components": [
+                            {
+                                "component_name": "",
+                                "recommended_option": "",
+                                "rationale": "",
+                                "alternatives": [],
+                                "tradeoffs": [],
+                                "risk_signals": [],
+                                "integration_requirements": [],
+                                "operational_owners": [],
+                                "migration_plan": []
+                            }
+                        ],
+                        "open_questions": [],
+                        "next_steps": []
+                    }
+                }
+            ]
+        }'::jsonb
+    ) ON CONFLICT (template_id, step_key) DO UPDATE SET updated_at = now() RETURNING id INTO v_final_header_step_id;
+
+    -- Step 4.5 (Parallel Group 5): Final Deliverables
+    INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
+    VALUES (
+        v_template_id, 5, 5, 'product_requirements', 'product_requirements', 'render-product_requirements', 'Render Final PRD', 'Renders the final Product Requirements Document from the consolidated synthesis artifacts.',
+        'EXECUTE', 'Turn', v_product_requirements_prompt_id, 'product_requirements', 'all_to_one',
+        '[
+            { "type": "header_context", "slug": "synthesis", "document_key": "header_context", "required": true },
+            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_business_case", "required": true, "multiple": true },
+            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_feature_spec", "required": true, "multiple": true },
+            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_technical_approach", "required": true, "multiple": true },
+            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_success_metrics", "required": true, "multiple": true }
+        ]'::jsonb, 
+        '[
+            { "document_key": "header_context", "slug": "synthesis", "relevance": 1.0 },
+            { "document_key": "synthesis_document_business_case", "slug": "synthesis", "relevance": 1.0 },
+            { "document_key": "synthesis_document_feature_spec", "slug": "synthesis", "relevance": 0.9 },
+            { "document_key": "synthesis_document_technical_approach", "slug": "synthesis", "relevance": 0.85 },
+            { "document_key": "synthesis_document_success_metrics", "slug": "synthesis", "relevance": 0.8 }
+        ]'::jsonb, 
+        '{
+            "documents": [
+                {
+                    "document_key": "product_requirements",
+                    "template_filename": "synthesis_product_requirements_document.md",
+                    "artifact_class": "rendered_document",
+                    "file_type": "markdown",
+                    "lineage_key": "<>",
+                    "source_model_slug": "<>",
+                    "content_to_include": {
+                        "executive_summary": "",
+                        "mvp_description": "",
+                        "user_problem_validation": "",
+                        "market_opportunity": "",
+                        "competitive_analysis": "",
+                        "differentiation_&_value_proposition": "",
+                        "risks_&_mitigation": "",
+                        "strengths": [],
+                        "weaknesses": [],
+                        "opportunities": [],
+                        "threats": [],
+                        "feature_scope": [],
+                        "features": [
+                            {
+                                "feature_name": "",
+                                "feature_objective": "",
+                                "user_stories": [],
+                                "acceptance_criteria": [],
+                                "dependencies": [],
+                                "success_metrics": [],
+                                "risk_mitigation": "",
+                                "open_questions": "",
+                                "tradeoffs": []
+                            }
+                        ],
+                        "feasibility_insights": [],
+                        "non_functional_alignment": [],
+                        "score_adjustments": [],
+                        "outcome_alignment": "",
+                        "north_star_metric": "",
+                        "primary_kpis": [],
+                        "leading_indicators": [],
+                        "lagging_indicators": [],
+                        "guardrails": [],
+                        "measurement_plan": "",
+                        "risk_signals": [],
+                        "resolved_positions": [],
+                        "open_questions": [],
+                        "next_steps": "",
+                        "proposal_references": [],
+                        "release_plan": [],
+                        "assumptions": [],
+                        "open_decisions": [],
+                        "implementation_risks": [],
+                        "stakeholder_communications": []
+                    }
+                }
+            ],
+            "files_to_generate": [
+                {
+                    "template_filename": "synthesis_product_requirements_document.md",
+                    "from_document_key": "product_requirements"
+                }
+            ]
+        }'::jsonb
+    ) ON CONFLICT (template_id, step_key) DO UPDATE SET updated_at = now() RETURNING id INTO v_product_requirements_step_id;
+
+    INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
+    VALUES (
+        v_template_id, 5, 5, 'system_architecture', 'system_architecture', 'render-system-architecture-overview', 'Render Final System Architecture Overview', 'Renders the final System Architecture Overview from the consolidated synthesis artifacts.',
+        'EXECUTE', 'Turn', v_system_architecture_prompt_id, 'system_architecture', 'all_to_one',
+        '[
+            { "type": "header_context", "slug": "synthesis", "document_key": "header_context", "required": true },
+            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_technical_approach", "required": true, "multiple": true },
+            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_feature_spec", "required": true, "multiple": true },
+            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_business_case", "required": true, "multiple": true },
+            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_success_metrics", "required": true, "multiple": true }
+        ]'::jsonb, 
+        '[
+            { "document_key": "header_context", "slug": "synthesis", "relevance": 1.0 },
+            { "document_key": "synthesis_document_technical_approach", "slug": "synthesis", "relevance": 1.0 },
+            { "document_key": "synthesis_document_feature_spec", "slug": "synthesis", "relevance": 0.9 },
+            { "document_key": "synthesis_document_business_case", "slug": "synthesis", "relevance": 0.82 },
+            { "document_key": "synthesis_document_success_metrics", "slug": "synthesis", "relevance": 0.78 }
+        ]'::jsonb, 
+        '{
+            "documents": [
+                {
+                    "document_key": "system_architecture",
+                    "template_filename": "synthesis_system_architecture.md",
+                    "artifact_class": "rendered_document",
+                    "file_type": "markdown",
+                    "lineage_key": "<>",
+                    "source_model_slug": "<>",
+                    "content_to_include": {
+                        "architecture_summary": "",
+                        "architecture": "",
+                        "services": [],
+                        "components": [],
+                        "data_flows": [],
+                        "interfaces": [],
+                        "integration_points": [],
+                        "dependency_resolution": [],
+                        "conflict_flags": [],
+                        "sequencing": "",
+                        "risk_mitigations": [],
+                        "risk_signals": [],
+                        "security_measures": [],
+                        "observability_strategy": [],
+                        "scalability_plan": [],
+                        "resilience_strategy": [],
+                        "compliance_controls": [],
+                        "open_questions": [],
+                        "rationale": ""
+                    }
+                }
+            ],
+            "files_to_generate": [
+                {
+                    "template_filename": "synthesis_system_architecture.md",
+                    "from_document_key": "system_architecture"
+                }
+            ]
+        }'::jsonb
+    ) ON CONFLICT (template_id, step_key) DO UPDATE SET updated_at = now() RETURNING id INTO v_system_architecture_step_id;
+
+    INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
+    VALUES (
+        v_template_id, 5, 5, 'tech_stack', 'tech_stack', 'render-tech-stack-recommendations', 'Render Final Tech Stack Recommendations', 'Renders the final Tech Stack Recommendations from the consolidated synthesis artifacts.',
+        'EXECUTE', 'Turn', v_tech_stack_prompt_id, 'tech_stack', 'all_to_one',
+        '[
+            { "type": "header_context", "slug": "synthesis", "document_key": "header_context", "required": true },
+            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_technical_approach", "required": true, "multiple": true },
+            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_feature_spec", "required": true, "multiple": true },
+            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_success_metrics", "required": true, "multiple": true },
+            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_business_case", "required": true, "multiple": true }
+        ]'::jsonb, 
+        '[
+            { "document_key": "header_context", "slug": "synthesis", "relevance": 1.0 },
+            { "document_key": "synthesis_document_technical_approach", "slug": "synthesis", "relevance": 1.0 },
+            { "document_key": "synthesis_document_feature_spec", "slug": "synthesis", "relevance": 0.88 },
+            { "document_key": "synthesis_document_success_metrics", "slug": "synthesis", "relevance": 0.85 },
+            { "document_key": "synthesis_document_business_case", "slug": "synthesis", "relevance": 0.8 }
+        ]'::jsonb, 
+        '{
+            "documents": [
+                {
+                    "document_key": "tech_stack",
+                    "template_filename": "synthesis_tech_stack.md",
+                    "artifact_class": "rendered_document",
+                    "file_type": "markdown",
+                    "lineage_key": "<>",
+                    "source_model_slug": "<>",
                     "content_to_include": {
                         "frontend_stack": {},
                         "backend_stack": {},
@@ -919,202 +1146,8 @@ BEGIN
             ],
             "files_to_generate": [
                 {
-                    "template_filename": "synthesis_product_requirements_document.md",
-                    "from_document_key": "prd"
-                },
-                {
-                    "template_filename": "synthesis_system_architecture_overview.md",
-                    "from_document_key": "system_architecture_overview"
-                },
-                {
-                    "template_filename": "synthesis_tech_stack_recommendations.md",
-                    "from_document_key": "tech_stack_recommendations"
-                }
-            ]
-        }'::jsonb
-    ) ON CONFLICT (template_id, step_key) DO UPDATE SET updated_at = now() RETURNING id INTO v_final_header_step_id;
-
-    -- Step 4.5 (Parallel Group 5): Final Deliverables
-    INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
-    VALUES (
-        v_template_id, 5, 5, 'prd', 'prd', 'render-prd', 'Render Final PRD', 'Renders the final Product Requirements Document from the consolidated synthesis artifacts.',
-        'EXECUTE', 'Turn', v_prd_prompt_id, 'RenderedDocument', 'all_to_one',
-        '[
-            { "type": "header_context", "slug": "synthesis", "document_key": "header_context", "required": true },
-            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_business_case", "required": true, "multiple": true },
-            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_feature_spec", "required": true, "multiple": true },
-            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_technical_approach", "required": true, "multiple": true },
-            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_success_metrics", "required": true, "multiple": true }
-        ]'::jsonb, 
-        '[
-            { "document_key": "header_context", "slug": "synthesis", "relevance": 1.0 },
-            { "document_key": "synthesis_document_business_case", "slug": "synthesis", "relevance": 1.0 },
-            { "document_key": "synthesis_document_feature_spec", "slug": "synthesis", "relevance": 0.9 },
-            { "document_key": "synthesis_document_technical_approach", "slug": "synthesis", "relevance": 0.85 },
-            { "document_key": "synthesis_document_success_metrics", "slug": "synthesis", "relevance": 0.8 }
-        ]'::jsonb, 
-        '{
-            "documents": [
-                {
-                    "document_key": "prd",
-                    "template_filename": "synthesis_product_requirements_document.md",
-                    "artifact_class": "rendered_document",
-                    "file_type": "markdown",
-                    "lineage_key": "<>",
-                    "source_model_slug": "<>",
-                    "content_to_include": {
-                        "executive_summary": "",
-                        "mvp_description": "",
-                        "user_problem_validation": "",
-                        "market_opportunity": "",
-                        "competitive_analysis": "",
-                        "differentiation_&_value_proposition": "",
-                        "risks_&_mitigation": "",
-                        "strengths": [],
-                        "weaknesses": [],
-                        "opportunities": [],
-                        "threats": [],
-                        "feature_scope": [],
-                        "features": [
-                            {
-                                "feature_name": "",
-                                "feature_objective": "",
-                                "user_stories": [],
-                                "acceptance_criteria": [],
-                                "dependencies": [],
-                                "success_metrics": [],
-                                "risk_mitigation": "",
-                                "open_questions": "",
-                                "tradeoffs": []
-                            }
-                        ],
-                        "feasibility_insights": [],
-                        "non_functional_alignment": [],
-                        "score_adjustments": [],
-                        "outcome_alignment": "",
-                        "north_star_metric": "",
-                        "primary_kpis": [],
-                        "leading_indicators": [],
-                        "lagging_indicators": [],
-                        "guardrails": [],
-                        "measurement_plan": "",
-                        "risk_signals": [],
-                        "resolved_positions": [],
-                        "open_questions": [],
-                        "next_steps": "",
-                        "proposal_references": [],
-                        "release_plan": [],
-                        "assumptions": [],
-                        "open_decisions": [],
-                        "implementation_risks": [],
-                        "stakeholder_communications": []
-                    }
-                }
-            ]
-        }'::jsonb
-    ) ON CONFLICT (template_id, step_key) DO UPDATE SET updated_at = now() RETURNING id INTO v_prd_step_id;
-
-    INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
-    VALUES (
-        v_template_id, 5, 5, 'system_architecture_overview', 'system_architecture_overview', 'render-system-architecture-overview', 'Render Final System Architecture Overview', 'Renders the final System Architecture Overview from the consolidated synthesis artifacts.',
-        'EXECUTE', 'Turn', v_system_architecture_prompt_id, 'RenderedDocument', 'all_to_one',
-        '[
-            { "type": "header_context", "slug": "synthesis", "document_key": "header_context", "required": true },
-            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_technical_approach", "required": true, "multiple": true },
-            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_feature_spec", "required": true, "multiple": true },
-            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_business_case", "required": true, "multiple": true },
-            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_success_metrics", "required": true, "multiple": true }
-        ]'::jsonb, 
-        '[
-            { "document_key": "header_context", "slug": "synthesis", "relevance": 1.0 },
-            { "document_key": "synthesis_document_technical_approach", "slug": "synthesis", "relevance": 1.0 },
-            { "document_key": "synthesis_document_feature_spec", "slug": "synthesis", "relevance": 0.9 },
-            { "document_key": "synthesis_document_business_case", "slug": "synthesis", "relevance": 0.82 },
-            { "document_key": "synthesis_document_success_metrics", "slug": "synthesis", "relevance": 0.78 }
-        ]'::jsonb, 
-        '{
-            "documents": [
-                {
-                    "document_key": "system_architecture_overview",
-                    "template_filename": "synthesis_system_architecture_overview.md",
-                    "artifact_class": "rendered_document",
-                    "file_type": "markdown",
-                    "lineage_key": "<>",
-                    "source_model_slug": "<>",
-                    "content_to_include": {
-                        "architecture_summary": "",
-                        "architecture": "",
-                        "services": [],
-                        "components": [],
-                        "data_flows": [],
-                        "interfaces": [],
-                        "integration_points": [],
-                        "dependency_resolution": [],
-                        "conflict_flags": [],
-                        "sequencing": "",
-                        "risk_mitigations": [],
-                        "risk_signals": [],
-                        "security_measures": [],
-                        "observability_strategy": [],
-                        "scalability_plan": [],
-                        "resilience_strategy": [],
-                        "compliance_controls": [],
-                        "open_questions": []
-                    }
-                }
-            ]
-        }'::jsonb
-    ) ON CONFLICT (template_id, step_key) DO UPDATE SET updated_at = now() RETURNING id INTO v_system_architecture_step_id;
-
-    INSERT INTO public.dialectic_recipe_template_steps (template_id, step_number, parallel_group, branch_key, step_key, step_slug, step_name, step_description, job_type, prompt_type, prompt_template_id, output_type, granularity_strategy, inputs_required, inputs_relevance, outputs_required)
-    VALUES (
-        v_template_id, 5, 5, 'tech_stack_recommendations', 'tech_stack_recommendations', 'render-tech-stack-recommendations', 'Render Final Tech Stack Recommendations', 'Renders the final Tech Stack Recommendations from the consolidated synthesis artifacts.',
-        'EXECUTE', 'Turn', v_tech_stack_prompt_id, 'RenderedDocument', 'all_to_one',
-        '[
-            { "type": "header_context", "slug": "synthesis", "document_key": "header_context", "required": true },
-            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_technical_approach", "required": true, "multiple": true },
-            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_feature_spec", "required": true, "multiple": true },
-            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_success_metrics", "required": true, "multiple": true },
-            { "type": "document", "slug": "synthesis", "document_key": "synthesis_document_business_case", "required": true, "multiple": true }
-        ]'::jsonb, 
-        '[
-            { "document_key": "header_context", "slug": "synthesis", "relevance": 1.0 },
-            { "document_key": "synthesis_document_technical_approach", "slug": "synthesis", "relevance": 1.0 },
-            { "document_key": "synthesis_document_feature_spec", "slug": "synthesis", "relevance": 0.88 },
-            { "document_key": "synthesis_document_success_metrics", "slug": "synthesis", "relevance": 0.85 },
-            { "document_key": "synthesis_document_business_case", "slug": "synthesis", "relevance": 0.8 }
-        ]'::jsonb, 
-        '{
-            "documents": [
-                {
-                    "document_key": "tech_stack_recommendations",
-                    "template_filename": "synthesis_tech_stack_recommendations.md",
-                    "artifact_class": "rendered_document",
-                    "file_type": "markdown",
-                    "lineage_key": "<>",
-                    "source_model_slug": "<>",
-                    "content_to_include": [
-                        {
-                            "component_name": "",
-                            "recommended_option": "",
-                            "rationale": "",
-                            "alternatives": [],
-                            "tradeoffs": [],
-                            "risk_signals": [],
-                            "integration_requirements": [],
-                            "operational_owners": [],
-                            "migration_plan": []
-                        }
-                    ],
-                    "frontend_stack": {},
-                    "backend_stack": {},
-                    "data_platform": {},
-                    "devops_tooling": {},
-                    "security_tooling": {},
-                    "shared_libraries": [],
-                    "third_party_services": [],
-                    "open_questions": [],
-                    "next_steps": []
+                    "template_filename": "synthesis_tech_stack.md",
+                    "from_document_key": "tech_stack"
                 }
             ]
         }'::jsonb
@@ -1163,14 +1196,14 @@ BEGIN
     SELECT id INTO v_instance_pairwise_feature_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'synthesis_pairwise_feature_spec';
     SELECT id INTO v_instance_pairwise_technical_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'synthesis_pairwise_technical_approach';
     SELECT id INTO v_instance_pairwise_metrics_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'synthesis_pairwise_success_metrics';
-    SELECT id INTO v_instance_doc_business_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'synthesize_document_business_case';
-    SELECT id INTO v_instance_doc_feature_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'synthesize_document_feature_spec';
-    SELECT id INTO v_instance_doc_technical_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'synthesize_document_technical_approach';
-    SELECT id INTO v_instance_doc_metrics_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'synthesize_document_success_metrics';
+    SELECT id INTO v_instance_doc_business_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'synthesis_document_business_case';
+    SELECT id INTO v_instance_doc_feature_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'synthesis_document_feature_spec';
+    SELECT id INTO v_instance_doc_technical_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'synthesis_document_technical_approach';
+    SELECT id INTO v_instance_doc_metrics_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'synthesis_document_success_metrics';
     SELECT id INTO v_instance_final_header_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'generate_final_synthesis_header';
-    SELECT id INTO v_instance_prd_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'prd';
-    SELECT id INTO v_instance_arch_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'system_architecture_overview';
-    SELECT id INTO v_instance_stack_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'tech_stack_recommendations';
+    SELECT id INTO v_instance_product_requirements_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'product_requirements';
+    SELECT id INTO v_instance_arch_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'system_architecture';
+    SELECT id INTO v_instance_stack_step_id FROM public.dialectic_stage_recipe_steps WHERE instance_id = v_instance_id AND step_key = 'tech_stack';
 
     -- Step 8: Create the full DAG for both the template and the instance
     -- 8.1: Template Edges
@@ -1187,7 +1220,7 @@ BEGIN
         (v_template_id, v_doc_feature_step_id, v_final_header_step_id),
         (v_template_id, v_doc_technical_step_id, v_final_header_step_id),
         (v_template_id, v_doc_metrics_step_id, v_final_header_step_id),
-        (v_template_id, v_final_header_step_id, v_prd_step_id),
+        (v_template_id, v_final_header_step_id, v_product_requirements_step_id),
         (v_template_id, v_final_header_step_id, v_system_architecture_step_id),
         (v_template_id, v_final_header_step_id, v_tech_stack_step_id)
     ON CONFLICT (template_id, from_step_id, to_step_id) DO NOTHING;
@@ -1206,7 +1239,7 @@ BEGIN
         (v_instance_id, v_instance_doc_feature_step_id, v_instance_final_header_step_id),
         (v_instance_id, v_instance_doc_technical_step_id, v_instance_final_header_step_id),
         (v_instance_id, v_instance_doc_metrics_step_id, v_instance_final_header_step_id),
-        (v_instance_id, v_instance_final_header_step_id, v_instance_prd_step_id),
+        (v_instance_id, v_instance_final_header_step_id, v_instance_product_requirements_step_id),
         (v_instance_id, v_instance_final_header_step_id, v_instance_arch_step_id),
         (v_instance_id, v_instance_final_header_step_id, v_instance_stack_step_id)
     ON CONFLICT (instance_id, from_step_id, to_step_id) DO NOTHING;
@@ -1221,17 +1254,17 @@ BEGIN
 
     -- Seed document templates for outputs
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name, is_active)
-    VALUES ('synthesis_prd', v_domain_id, 'Synthesis stage output for PRD.', 'prompt-templates', 'docs/templates/synthesis/', 'synthesis_prd.md', TRUE)
+    VALUES ('synthesis_product_requirements', v_domain_id, 'Synthesis stage output for PRD.', 'prompt-templates', 'docs/templates/synthesis/', 'synthesis_product_requirements.md', TRUE)
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
-    RETURNING id INTO v_prd_prompt_id;
+    RETURNING id INTO v_product_requirements_prompt_id;
 
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name, is_active)
-    VALUES ('synthesis_system_architecture_overview', v_domain_id, 'Synthesis stage output for system architecture overview.', 'prompt-templates', 'docs/templates/synthesis/', 'synthesis_system_architecture_overview.md', TRUE)
+    VALUES ('synthesis_system_architecture', v_domain_id, 'Synthesis stage output for system architecture overview.', 'prompt-templates', 'docs/templates/synthesis/', 'synthesis_system_architecture.md', TRUE)
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_system_architecture_prompt_id;
 
     INSERT INTO public.dialectic_document_templates (name, domain_id, description, storage_bucket, storage_path, file_name, is_active)
-    VALUES ('synthesis_tech_stack_recommendations', v_domain_id, 'Synthesis stage output for tech stack recommendations.', 'prompt-templates', 'docs/templates/synthesis/', 'synthesis_tech_stack_recommendations.md', TRUE)
+    VALUES ('synthesis_tech_stack', v_domain_id, 'Synthesis stage output for tech stack recommendations.', 'prompt-templates', 'docs/templates/synthesis/', 'synthesis_tech_stack.md', TRUE)
     ON CONFLICT (name, domain_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
     RETURNING id INTO v_tech_stack_prompt_id;
 
@@ -1241,7 +1274,7 @@ BEGIN
         recipe_template_id = v_template_id,
         active_recipe_instance_id = v_instance_id,
         expected_output_template_ids = ARRAY[
-            v_prd_prompt_id,
+            v_product_requirements_prompt_id,
             v_system_architecture_prompt_id,
             v_tech_stack_prompt_id
         ]

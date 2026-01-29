@@ -5,15 +5,17 @@ import type {
   GetSessionDetailsResponse,
   DialecticStage,
 } from './dialectic.interface.ts';
+import type { AssembledPrompt } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
 import type { ServiceError } from '../_shared/types.ts';
 import { logger } from '../_shared/logger.ts';
+import { downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
 
 export async function getSessionDetails(
   payload: GetSessionDetailsPayload,
   dbClient: SupabaseClient,
   user: User,
 ): Promise<{ data?: GetSessionDetailsResponse; error?: ServiceError; status?: number }> {
-  const { sessionId } = payload;
+  const { sessionId, skipSeedPrompt } = payload;
 
   if (!sessionId) {
     logger.warn('getSessionDetails: Missing sessionId in payload', { payload });
@@ -56,12 +58,11 @@ export async function getSessionDetails(
 
     if (projectError) {
       logger.error('getSessionDetails: Error fetching associated project', { projectId: session.project_id, sessionId, error: projectError });
+      // If the project isn't found, it's a data integrity issue, not a standard DB error.
+      if (projectError.code === 'PGRST116') {
+        return { error: { message: 'Associated project not found for session.', code: 'INTERNAL_SERVER_ERROR' }, status: 500 };
+      }
       return { error: { message: 'Failed to verify session ownership.', code: 'DB_ERROR', details: projectError.message }, status: 500 };
-    }
-
-    if (!project) {
-      logger.error('getSessionDetails: Associated project not found for session (data inconsistency likely)', { projectId: session.project_id, sessionId });
-      return { error: { message: 'Associated project not found for session.', code: 'INTERNAL_SERVER_ERROR' }, status: 500 };
     }
 
     // Step 3: Verify that the authenticated user owns the project
@@ -70,7 +71,70 @@ export async function getSessionDetails(
       return { error: { message: 'You are not authorized to access this session.', code: 'FORBIDDEN' }, status: 403 };
     }
 
-    logger.info('getSessionDetails: Successfully fetched and authorized session', { sessionId, userId: user.id, projectId: session.project_id });
+    // Step 4: Fetch the seed prompt for the session (only one seed_prompt exists per session)
+    // If skipSeedPrompt is true, skip the query and return null for activeSeedPrompt
+    let activeSeedPrompt: AssembledPrompt | null = null;
+    if (!skipSeedPrompt) {
+      // Query for the seed prompt using only session_id and resource_type
+      // Only one seed_prompt exists per session, so no need to filter by stage_slug or iteration_number
+      logger.info(`getSessionDetails: Querying for seed prompt for session ${sessionId}`);
+      const { data: seedPromptResource, error: resourceError } = await dbClient
+        .from('dialectic_project_resources')
+        .select('id, storage_path, file_name, storage_bucket')
+        .eq('resource_type', 'seed_prompt')
+        .eq('session_id', sessionId)
+        .single();
+
+      if (resourceError) {
+        logger.error('getSessionDetails: Error fetching seed prompt resource', { sessionId, error: resourceError });
+        if (resourceError.code === 'PGRST116') {
+          return { error: { message: 'Seed prompt is required but not found.', code: 'MISSING_REQUIRED_RESOURCE' }, status: 500 };
+        }
+        return { error: { message: 'Failed to fetch seed prompt resource.', code: 'DB_ERROR', details: resourceError.message }, status: 500 };
+      }
+
+      if (!seedPromptResource || !seedPromptResource.storage_path || !seedPromptResource.file_name || !seedPromptResource.storage_bucket) {
+        logger.error('getSessionDetails: Seed prompt resource found but missing required fields', { sessionId, seedPromptResource });
+        return { error: { message: 'Seed prompt is required but not found.', code: 'MISSING_REQUIRED_RESOURCE' }, status: 500 };
+      }
+
+      // Download the seed prompt content from storage
+      const fullStoragePath = `${seedPromptResource.storage_path}/${seedPromptResource.file_name}`;
+      const { data: fileArrayBuffer, error: downloadError } = await downloadFromStorage(
+        dbClient,
+        seedPromptResource.storage_bucket,
+        fullStoragePath
+      );
+
+      if (downloadError) {
+        logger.error('getSessionDetails: Error downloading seed prompt content from storage', { sessionId, storagePath: fullStoragePath, error: downloadError });
+        return { error: { message: 'Failed to download seed prompt content from storage.', code: 'STORAGE_ERROR', details: downloadError.message }, status: 500 };
+      }
+
+      if (!fileArrayBuffer) {
+        logger.error('getSessionDetails: Seed prompt content is null after download', { sessionId, storagePath: fullStoragePath });
+        return { error: { message: 'Seed prompt content is required but not found.', code: 'MISSING_REQUIRED_RESOURCE' }, status: 500 };
+      }
+
+      try {
+        const promptContent = new TextDecoder().decode(fileArrayBuffer);
+        activeSeedPrompt = {
+          promptContent: promptContent,
+          source_prompt_resource_id: seedPromptResource.id,
+        };
+      } catch (e: unknown) {
+        let errorMessage = 'An unknown error occurred while reading the prompt content.';
+        if (e instanceof Error) {
+          errorMessage = e.message;
+        }
+        logger.error('getSessionDetails: Error decoding prompt content from ArrayBuffer', { sessionId, error: errorMessage });
+        return { error: { message: 'Failed to read seed prompt content.', code: 'PARSE_ERROR', details: errorMessage }, status: 500 };
+      }
+    } else {
+      logger.info(`getSessionDetails: Skipping seed prompt query as skipSeedPrompt is true for session ${sessionId}`);
+    }
+    
+    logger.info('getSessionDetails: Successfully fetched and authorized session', { sessionId, userId: user.id, projectId: session.project_id, activeSeedPrompt });
     
     // Extract session and stage details
     const { dialectic_stages, ...sessionFields } = session;
@@ -103,11 +167,20 @@ export async function getSessionDetails(
         }
       : null;
 
-    return { data: { session: typedSession, currentStageDetails }, status: 200 };
+    return { data: { session: typedSession, currentStageDetails, activeSeedPrompt }, status: 200 };
 
   } catch (e) {
-    const error = e as Error;
-    logger.error('getSessionDetails: An unexpected error occurred', { sessionId, errorMessage: error.message, stack: error.stack });
-    return { error: { message: 'An unexpected error occurred.', code: 'UNHANDLED_EXCEPTION', details: error.message }, status: 500 };
+    let errorMessage = 'An unknown error occurred.';
+    let errorStack = undefined;
+
+    if (e instanceof Error) {
+      errorMessage = e.message;
+      errorStack = e.stack;
+    } else {
+      errorMessage = String(e);
+    }
+    
+    logger.error('getSessionDetails: An unexpected error occurred', { sessionId, errorMessage, stack: errorStack });
+    return { error: { message: 'An unexpected error occurred.', code: 'UNHANDLED_EXCEPTION', details: errorMessage }, status: 500 };
   }
 }

@@ -6,9 +6,10 @@ import {
 import { GatherContextFn } from "./gatherContext.ts";
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { IFileManager } from "../types/file_manager.types.ts";
-import { DownloadStorageResult } from "../supabase_storage_utils.ts";
+import { DownloadStorageResult, DownloadFromStorageFn } from "../supabase_storage_utils.ts";
 import { GatherInputsForStageFn } from "./gatherInputsForStage.ts";
 import { Json } from "../../types_db.ts";
+import { InputRule } from "../../dialectic-service/dialectic.interface.ts";
 
 export type RenderFn = (
   renderPromptFn: RenderPromptFunctionType,
@@ -20,12 +21,17 @@ export type RenderFn = (
 export interface AssembleTurnPromptDeps {
   dbClient: SupabaseClient<Database>;
   fileManager: IFileManager;
+  gatherContext: GatherContextFn;
+  render: RenderFn;
+  downloadFromStorage: DownloadFromStorageFn;
+}
+
+export interface AssembleTurnPromptParams {
   job: DialecticJobRow;
   project: ProjectContext;
   session: SessionContext;
   stage: StageContext;
-  gatherContext: GatherContextFn;
-  render: RenderFn;
+  sourceContributionId?: string | null;
 }
 
 export interface AssembleContinuationPromptDeps {
@@ -37,6 +43,7 @@ export interface AssembleContinuationPromptDeps {
   stage: StageContext;
   continuationContent: string;
   gatherContext: GatherContextFn;
+  sourceContributionId?: string | null;
 }
 export interface AssemblePlannerPromptDeps {
   dbClient: SupabaseClient<Database>;
@@ -45,8 +52,10 @@ export interface AssemblePlannerPromptDeps {
   project: ProjectContext;
   session: SessionContext;
   stage: StageContext;
+  projectInitialUserPrompt: string;
   gatherContext: GatherContextFn;
   render: RenderFn;
+  sourceContributionId?: string | null;
 }
 
 export interface AssembleSeedPromptDeps {
@@ -63,6 +72,7 @@ export interface AssembleSeedPromptDeps {
     stage: StageContext;
     projectInitialUserPrompt: string;
     iterationNumber: number;
+    sourceContributionId?: string | null;
   }
   
   export type AssembleSeedPromptFn = (
@@ -79,6 +89,7 @@ export interface IPromptAssembler {
     ): Promise<AssembledPrompt>;
     assembleTurnPrompt(
         deps: AssembleTurnPromptDeps,
+        params: AssembleTurnPromptParams,
     ): Promise<AssembledPrompt>;
     assembleContinuationPrompt(
         deps: AssembleContinuationPromptDeps,
@@ -98,6 +109,7 @@ export type AssemblePromptOptions = {
     iterationNumber: number;
     job?: DialecticJobRow;
     continuationContent?: string;
+    sourceContributionId?: string | null;
 };
 
 export type DynamicContextVariables = {
@@ -149,7 +161,7 @@ export type ContributionOverride = {
 // Define a granular document type
 export interface AssemblerSourceDocument {
 	id: string;
-	type: 'document' | 'feedback';
+	type: InputRule['type'];
 	content: string;
 	metadata: {
 		displayName: string;

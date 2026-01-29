@@ -7,6 +7,8 @@ import { downloadFromStorage } from "../supabase_storage_utils.ts";
 import { gatherInputsForStage } from "./gatherInputsForStage.ts";
 import { renderPrompt } from "../prompt-renderer.ts";
 import { FileType } from "../types/file_manager.types.ts";
+import { ContextForDocument } from "../../dialectic-service/dialectic.interface.ts";
+import { isContextForDocumentArray } from "../utils/type-guards/type_guards.dialectic.ts";
 
 export async function assemblePlannerPrompt(
   {
@@ -16,6 +18,7 @@ export async function assemblePlannerPrompt(
     project,
     session,
     stage,
+    projectInitialUserPrompt,
     gatherContext,
     render,
   }: AssemblePlannerPromptDeps,
@@ -53,12 +56,6 @@ export async function assemblePlannerPrompt(
   if (!stage.recipe_step) {
     throw new Error("PRECONDITION_FAILED: Stage context is missing recipe_step.");
   }
-  if (typeof project.initial_user_prompt !== "string") {
-    throw new Error(
-      "PRECONDITION_FAILED: Project is missing initial_user_prompt.",
-    );
-  }
-  const initialUserPrompt = project.initial_user_prompt;
 
   if (!stage.recipe_step.prompt_template_id) {
     throw new Error(
@@ -67,7 +64,7 @@ export async function assemblePlannerPrompt(
   }
   const { data: promptTemplateData, error: templateError } = await dbClient
     .from("system_prompts")
-    .select("prompt_text")
+    .select("prompt_text, document_template_id")
     .eq("id", stage.recipe_step.prompt_template_id)
     .single();
 
@@ -103,7 +100,101 @@ export async function assemblePlannerPrompt(
     );
   }
 
-  const promptTemplate = promptTemplateData.prompt_text;
+  // 3. Resolve template content: either from inline prompt_text or from storage via document_template_id
+  let promptTemplate: string;
+
+  if (promptTemplateData.prompt_text && promptTemplateData.prompt_text.trim().length > 0) {
+    // Backward compatibility: use inline prompt_text when available
+    promptTemplate = promptTemplateData.prompt_text;
+  } else if (
+    promptTemplateData.document_template_id &&
+    typeof promptTemplateData.document_template_id === "string" &&
+    promptTemplateData.document_template_id.trim().length > 0
+  ) {
+    // Fetch template from storage using document_template_id
+    const { data: templateRecord, error: templateRecordError } = await dbClient
+      .from("dialectic_document_templates")
+      .select("storage_bucket, storage_path, file_name")
+      .eq("id", promptTemplateData.document_template_id)
+      .single();
+
+    if (templateRecordError) {
+      throw templateRecordError;
+    }
+
+    if (!templateRecord) {
+      throw new Error(
+        `Failed to find document template with ID ${promptTemplateData.document_template_id}`,
+      );
+    }
+
+    if (
+      !templateRecord.storage_bucket ||
+      typeof templateRecord.storage_bucket !== "string" ||
+      templateRecord.storage_bucket.trim().length === 0
+    ) {
+      throw new Error(
+        "Invalid template record: missing storage_bucket, storage_path, or file_name",
+      );
+    }
+
+    if (
+      !templateRecord.storage_path ||
+      typeof templateRecord.storage_path !== "string" ||
+      templateRecord.storage_path.trim().length === 0
+    ) {
+      throw new Error(
+        "Invalid template record: missing storage_bucket, storage_path, or file_name",
+      );
+    }
+
+    if (
+      !templateRecord.file_name ||
+      typeof templateRecord.file_name !== "string" ||
+      templateRecord.file_name.trim().length === 0
+    ) {
+      throw new Error(
+        "Invalid template record: missing storage_bucket, storage_path, or file_name",
+      );
+    }
+
+    const fullPath =
+      `${templateRecord.storage_path.replace(/\/$/, "")}/${templateRecord.file_name}`;
+
+    const { data: downloadedData, error: downloadError } = await downloadFromStorage(
+      dbClient,
+      templateRecord.storage_bucket,
+      fullPath,
+    );
+
+    if (downloadError) {
+      throw new Error(
+        `Failed to download template from storage: ${downloadError.message}`,
+      );
+    }
+
+    if (!downloadedData) {
+      throw new Error("Failed to download template from storage: No data returned");
+    }
+
+    // Decode the downloaded content
+    // downloadFromStorage returns ArrayBuffer | null, and we've already checked for null
+    // The checklist requires checking for both ArrayBuffer and Blob, but the actual implementation
+    // always converts Blob to ArrayBuffer before returning, so we only need to handle ArrayBuffer
+    if (downloadedData instanceof ArrayBuffer) {
+      promptTemplate = new TextDecoder().decode(downloadedData);
+    } else {
+      // This should never happen given the return type, but included for defensive programming
+      throw new Error("Invalid template file format");
+    }
+  } else {
+    // Both prompt_text and document_template_id are missing or empty
+    throw new Error(
+      "System prompt template is missing both prompt_text and document_template_id",
+    );
+  }
+
+  const sourceContributionId = job.target_contribution_id;
 
   const context = await gatherContext(
     dbClient,
@@ -112,9 +203,64 @@ export async function assemblePlannerPrompt(
     project,
     session,
     stage,
-    initialUserPrompt,
+    projectInitialUserPrompt,
     session.iteration_count,
   );
+
+  // Extract and validate context_for_documents from recipe step for PLAN jobs
+  if (!stage.recipe_step.outputs_required) {
+    throw new Error(
+      "PRECONDITION_FAILED: PLAN job requires context_for_documents in recipe_step.outputs_required",
+    );
+  }
+
+  if (!isRecord(stage.recipe_step.outputs_required)) {
+    throw new Error(
+      "PRECONDITION_FAILED: PLAN job requires context_for_documents in recipe_step.outputs_required",
+    );
+  }
+
+  if (!('context_for_documents' in stage.recipe_step.outputs_required)) {
+    throw new Error(
+      "PRECONDITION_FAILED: PLAN job requires context_for_documents in recipe_step.outputs_required",
+    );
+  }
+
+  const contextForDocumentsValue = stage.recipe_step.outputs_required['context_for_documents'];
+
+  if (!isContextForDocumentArray(contextForDocumentsValue)) {
+    throw new Error(
+      "PRECONDITION_FAILED: PLAN job requires context_for_documents in recipe_step.outputs_required to be an array of ContextForDocument objects",
+    );
+  }
+
+  if (contextForDocumentsValue.length === 0) {
+    throw new Error(
+      "PRECONDITION_FAILED: PLAN job requires context_for_documents in recipe_step.outputs_required to contain at least one entry",
+    );
+  }
+
+  const contextForDocuments: ContextForDocument[] = contextForDocumentsValue;
+
+  // Create instructions for the agent to fill in content_to_include objects
+  const contextForDocumentsInstructions = `You must fill in the content_to_include objects in the context_for_documents array with specific alignment values. These alignment details ensure cross-document coordination:
+
+1. Fill in each content_to_include object with shared terminology, consistent values, and coordinated decisions that will be used across all documents in this step group.
+2. Produce a header_context artifact with completed content_to_include objects containing these alignment values.
+3. Ensure all documents in the step group will use these alignment details when they are generated.
+
+The context_for_documents array below contains empty content_to_include object models that you must fill in with specific alignment values.`;
+
+  // Extend context with context_for_documents wrapped in an object that includes instructions
+  // This embeds the instructions as a predicate property (_instructions) within the structure
+  // so they are consumed together when {{context_for_documents}} is rendered
+  const extendedContext = {
+    ...context,
+    context_for_documents: {
+      _instructions: contextForDocumentsInstructions,
+      documents: contextForDocuments,
+    },
+  };
 
   const stageWithOverride = {
     ...stage,
@@ -124,7 +270,7 @@ export async function assemblePlannerPrompt(
   const renderedPrompt = render(
     renderPrompt,
     stageWithOverride,
-    context,
+    extendedContext,
     project.user_domain_overlay_values,
   );
 
@@ -136,9 +282,11 @@ export async function assemblePlannerPrompt(
       stageSlug: stage.slug,
       fileType: FileType.PlannerPrompt,
       modelSlug: job.payload.model_slug,
+      attemptCount: job.attempt_count,
       stepName: stage.recipe_step.step_name,
       branchKey: stage.recipe_step.branch_key,
       parallelGroup: stage.recipe_step.parallel_group,
+      sourceContributionId,
     },
     resourceTypeForDb: "planner_prompt",
     fileContent: renderedPrompt,

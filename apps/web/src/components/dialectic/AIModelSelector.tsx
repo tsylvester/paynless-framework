@@ -6,8 +6,6 @@ import {
 	DropdownMenuTrigger,
 	DropdownMenuContent,
 	DropdownMenuLabel,
-	DropdownMenuSeparator,
-	DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -94,17 +92,25 @@ const SelectedModelsDisplayContent: React.FC<{
 								{count}
 							</span>
 						)}
-						<Button
-							variant="ghost"
-							size="sm"
-							className="h-4 w-4 p-0 hover:bg-destructive hover:text-destructive-foreground rounded-full text-muted-foreground hover:text-destructive-foreground"
+						<span
+							role="button"
+							tabIndex={0}
+							aria-label={`Remove ${displayName}`}
+							className="h-4 w-4 p-0 hover:bg-destructive hover:text-destructive-foreground rounded-full text-muted-foreground hover:text-destructive-foreground cursor-pointer flex items-center justify-center"
 							onClick={(e) => {
 								e.stopPropagation();
 								onRemoveModel(modelId);
 							}}
+							onKeyDown={(e) => {
+								if (e.key === 'Enter' || e.key === ' ') {
+									e.preventDefault();
+									e.stopPropagation();
+									onRemoveModel(modelId);
+								}
+							}}
 						>
 							<X className="h-3 w-3" />
-						</Button>
+						</span>
 					</Badge>
 				);
 			})}
@@ -158,11 +164,6 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 		setModelMultiplicity(modelId, 0);
 	};
 
-	const getModelDisplayName = (modelId: string) => {
-		const provider = availableProviders?.find((p) => p.id === modelId);
-		return provider ? provider.name : "Unknown Model";
-	};
-
 	const hasContentProviders =
 		availableProviders && availableProviders.length > 0;
 
@@ -179,7 +180,6 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 			</DropdownMenuLabel>
 		);
 	} else if (hasContentProviders) {
-		const selectedCount = currentSelectedModelIds?.length || 0;
 		const uniqueSelectedCount = currentSelectedModelIds
 			? new Set(currentSelectedModelIds).size
 			: 0;

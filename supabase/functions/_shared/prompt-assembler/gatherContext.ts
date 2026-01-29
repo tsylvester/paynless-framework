@@ -52,9 +52,7 @@ export async function gatherContext(
       user_objective: project.project_name,
       domain: project.dialectic_domains.name,
       context_description: projectInitialUserPrompt,
-      original_user_request: hasProcessingStrategy(stage.recipe_step)
-        ? projectInitialUserPrompt
-        : "",
+      original_user_request: projectInitialUserPrompt,
       recipeStep: gatheredContext.recipeStep,
       sourceDocuments: gatheredContext.sourceDocuments,
     };

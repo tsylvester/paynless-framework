@@ -1,26 +1,25 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { Badge } from "@/components/ui/badge";
+import { useAuthStore, useNotificationStore } from "@paynless/store";
+import { useQuery } from "@tanstack/react-query";
 
 import {
-	BadgeCheck,
 	Bell,
 	ChevronsUpDown,
 	CreditCard,
 	LogOut,
+	Moon,
 	Sparkles,
 	Sun,
-	Moon,
+	User,
 } from "lucide-react";
-import { SimpleDropdown } from "@/components/ui/SimpleDropdown";
-import { useAuthStore, useNotificationStore } from "@paynless/store";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-
-import { SidebarMenuButton } from "@/components/ui/sidebar";
+import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { SimpleDropdown } from "@/components/ui/SimpleDropdown";
+import { SidebarMenuButton } from "@/components/ui/sidebar";
 import { useTheme } from "../../hooks/useTheme";
 
 export function NavUser({
@@ -143,6 +142,14 @@ export function NavUser({
 					>
 						<Bell />
 						Notifications ({unreadCount})
+					</Button>
+					<Button
+						variant="ghost"
+						className="w-full justify-start hover:underline"
+						onClick={() => navigate("/profile")}
+					>
+						<User />
+						Profile
 					</Button>
 
 					<Button

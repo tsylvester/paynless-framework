@@ -1,0 +1,11 @@
+
+Here is a HeaderContext JSON object. Use it as the source of truth for this document. We are generating multiple documents using this HeaderContext, your generation must align with all of the other documents described in the HeaderContext even though you're currently generating a single document. 
+
+
+Replace the placeholder bullets in the JSON snippet below with fully written Markdown derived from and informed by the HeaderContext. Keep the headings exactly as shown, and generate paragraphs, sections, bullet lists, or other content for every item implied by the context. Follow the continuation policy from the style guide by generating as much as is required to satisfy the HeaderContext and content object block here: 
+
+{
+  "content": "# Business Case\n\n## Market Opportunity\n- Describe the target audience, market sizing, and opportunity identified in the HeaderContext.\n\n## User Problem Validation\n- Summarize evidence that the problem is real and pressing, referencing user feedback, research, or data included in the HeaderContext.\n\n## Competitive Analysis\n- Compare the proposal against relevant alternatives, including strengths, weaknesses, and differentiators noted in the HeaderContext.\n\n## Differentiation & Value Proposition\n- Highlight the unique advantages of the proposed approach and explain why it outperforms alternatives for stakeholders.\n\n## Risks & Mitigation\n- List the primary risks called out in the HeaderContext and the mitigation strategies that address them.\n\n## Strengths\n- Capture the key strengths identified in the HeaderContext.\n\n## Weaknesses\n- Document the weaknesses or limitations that must be managed.\n\n## Opportunities\n- Outline opportunities the plan can leverage.\n\n## Threats\n- Note external threats or challenges to success.\n\n## Next Steps\n- Outline immediate actions, decisions, or follow-ups required to advance the proposal, aligned with the HeaderContext.\n\n## Proposal References\n- Cite the supporting sources, artifacts, or data called out in the HeaderContext. List as bullet points.\n\n## Executive Summary\n- Provide a concise synopsis of the proposal, highlighting purpose, scope, and key insights derived from the HeaderContext."
+}
+
+Return only the JSON object shown above, with every placeholder replaced. Do not add fences or commentary outside the JSON.

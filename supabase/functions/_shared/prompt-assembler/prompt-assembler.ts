@@ -13,6 +13,7 @@ import {
     AssembleSeedPromptDeps,
     AssemblePlannerPromptDeps,
     AssembleTurnPromptDeps,
+    AssembleTurnPromptParams,
     AssembleContinuationPromptDeps
 } from "./prompt-assembler.interface.ts";
 import type { DownloadStorageResult } from "../supabase_storage_utils.ts";
@@ -26,8 +27,9 @@ import { assemblePlannerPrompt } from "./assemblePlannerPrompt.ts";
 import { assembleTurnPrompt } from "./assembleTurnPrompt.ts";
 import { assembleContinuationPrompt } from "./assembleContinuationPrompt.ts";
 import { IFileManager } from "../types/file_manager.types.ts";
-import { isDialecticPlanJobPayload } from "../utils/type_guards.ts";
+import { isRecord } from "../utils/type_guards.ts";
 import { RenderFn } from "./prompt-assembler.interface.ts";
+import { render } from "./render.ts";
 
 export class PromptAssembler implements IPromptAssembler {
     private dbClient: SupabaseClient<Database>;
@@ -37,7 +39,7 @@ export class PromptAssembler implements IPromptAssembler {
     private downloadFromStorageFn: (bucket: string, path: string) => Promise<DownloadStorageResult>;
     private assembleSeedPromptFn: (deps: AssembleSeedPromptDeps) => Promise<AssembledPrompt>;
     private assemblePlannerPromptFn: (deps: AssemblePlannerPromptDeps) => Promise<AssembledPrompt>;
-    private assembleTurnPromptFn: (deps: AssembleTurnPromptDeps) => Promise<AssembledPrompt>;
+    private assembleTurnPromptFn: (deps: AssembleTurnPromptDeps, params: AssembleTurnPromptParams) => Promise<AssembledPrompt>;
     private assembleContinuationPromptFn: (deps: AssembleContinuationPromptDeps) => Promise<AssembledPrompt>;
     private gatherContextFn: GatherContextFn;
     private renderFn: RenderFn;
@@ -51,7 +53,7 @@ export class PromptAssembler implements IPromptAssembler {
         renderPromptFn?: RenderPromptFunctionType,
         assembleSeedPromptFn?: (deps: AssembleSeedPromptDeps) => Promise<AssembledPrompt>,
         assemblePlannerPromptFn?: (deps: AssemblePlannerPromptDeps) => Promise<AssembledPrompt>,
-        assembleTurnPromptFn?: (deps: AssembleTurnPromptDeps) => Promise<AssembledPrompt>,
+        assembleTurnPromptFn?: (deps: AssembleTurnPromptDeps, params: AssembleTurnPromptParams) => Promise<AssembledPrompt>,
         assembleContinuationPromptFn?: (deps: AssembleContinuationPromptDeps) => Promise<AssembledPrompt>,
         gatherContextFn?: GatherContextFn,
         renderFn?: RenderFn,
@@ -67,7 +69,7 @@ export class PromptAssembler implements IPromptAssembler {
         this.assembleTurnPromptFn = assembleTurnPromptFn || assembleTurnPrompt;
         this.assembleContinuationPromptFn = assembleContinuationPromptFn || assembleContinuationPrompt;
         this.gatherContextFn = gatherContextFn || gatherContext;
-        this.renderFn = renderFn || ((renderPromptFn: RenderPromptFunctionType, stage: StageContext, context: DynamicContextVariables, userProjectOverlayValues: Json | null) => renderPromptFn(stage.system_prompts!.prompt_text, context, stage.domain_specific_prompt_overlays[0]?.overlay_values, userProjectOverlayValues));
+        this.renderFn = renderFn || render;
         this.gatherInputsForStageFn = gatherInputsForStageFn || ((dbClient: SupabaseClient<Database>, downloadFromStorageFn: (bucket: string, path: string) => Promise<DownloadStorageResult>, stage: StageContext, project: ProjectContext, session: SessionContext, iterationNumber: number) => gatherInputsForStage(dbClient, downloadFromStorageFn, stage, project, session, iterationNumber));
         this.gatherContinuationInputsFn = gatherContinuationInputsFn || gatherContinuationInputs;
 
@@ -79,6 +81,8 @@ export class PromptAssembler implements IPromptAssembler {
     }
 
     async assemble(options: AssemblePromptOptions): Promise<AssembledPrompt> {
+        const sourceContributionId = this.resolveSourceContributionId(options);
+
         if (options.job) {
             if (options.continuationContent) {
                 return this.assembleContinuationPrompt({
@@ -89,12 +93,12 @@ export class PromptAssembler implements IPromptAssembler {
                     session: options.session,
                     stage: options.stage,
                     continuationContent: options.continuationContent,
-                    gatherContext: this.gatherContextFn
+                    gatherContext: this.gatherContextFn,
+                    sourceContributionId
                 });
             } 
             
-            const { payload } = options.job;
-            if (isDialecticPlanJobPayload(payload)) {
+            if (options.stage.recipe_step.job_type === 'PLAN') {
                 return this.assemblePlannerPrompt({
                     dbClient: this.dbClient,
                     fileManager: this.fileManager,
@@ -102,20 +106,28 @@ export class PromptAssembler implements IPromptAssembler {
                     project: options.project,
                     session: options.session,
                     stage: options.stage,
+                    projectInitialUserPrompt: options.projectInitialUserPrompt,
                     gatherContext: this.gatherContextFn,
-                    render: this.renderFn
+                    render: this.renderFn,
+                    sourceContributionId
                 });
             } else {
-                return this.assembleTurnPrompt({
-                    dbClient: this.dbClient,
-                    fileManager: this.fileManager,
-                    job: options.job,
-                    project: options.project,
-                    session: options.session,
-                    stage: options.stage,
-                    gatherContext: this.gatherContextFn,
-                    render: this.renderFn
-                });
+                return this.assembleTurnPrompt(
+                    {
+                        dbClient: this.dbClient,
+                        fileManager: this.fileManager,
+                        gatherContext: this.gatherContextFn,
+                        render: this.renderFn,
+                        downloadFromStorage: (supabase, bucket, path) => downloadFromStorage(supabase, bucket, path),
+                    },
+                    {
+                        job: options.job!,
+                        project: options.project,
+                        session: options.session,
+                        stage: options.stage,
+                        sourceContributionId,
+                    }
+                );
             }
         } else {
             return this.assembleSeedPrompt({
@@ -128,7 +140,8 @@ export class PromptAssembler implements IPromptAssembler {
                 iterationNumber: options.iterationNumber,
                 downloadFromStorageFn: this.downloadFromStorageFn,
                 gatherInputsForStageFn: this.gatherInputsForStageFn,
-                renderPromptFn: this.renderPromptFn
+                renderPromptFn: this.renderPromptFn,
+                sourceContributionId
             });
         }
     }
@@ -146,15 +159,68 @@ export class PromptAssembler implements IPromptAssembler {
     }
 
     assembleTurnPrompt(
-        deps: AssembleTurnPromptDeps
+        deps: AssembleTurnPromptDeps,
+        params: AssembleTurnPromptParams
     ): Promise<AssembledPrompt> {
-        return this.assembleTurnPromptFn(deps);
+        return this.assembleTurnPromptFn(deps, params);
     }
 
     assembleContinuationPrompt(
         deps: AssembleContinuationPromptDeps
     ): Promise<AssembledPrompt> {
         return this.assembleContinuationPromptFn(deps);
+    }
+
+    private resolveSourceContributionId(options: AssemblePromptOptions): string | null {
+        const optionValue = this.normalizeContributionId(options.sourceContributionId);
+        if (optionValue) {
+            return optionValue;
+        }
+
+        return this.extractContributionIdFromJob(options.job);
+    }
+
+    private normalizeContributionId(value: string | null | undefined) {
+        if (typeof value !== "string") {
+            return null;
+        }
+        return value;
+    }
+
+    private extractContributionIdFromJob(job: AssemblePromptOptions["job"]): string | null {
+        if (!job) {
+            return null;
+        }
+
+        const directId = this.normalizeContributionId(job.target_contribution_id);
+        if (directId) {
+            return directId;
+        }
+
+        return this.extractContributionIdFromPayload(job.payload);
+    }
+
+    private extractContributionIdFromPayload(payload: Json | null | undefined): string | null {
+        if (!isRecord(payload)) {
+            return null;
+        }
+
+        const keysToCheck: ReadonlyArray<string> = [
+            "sourceContributionId",
+            "source_contribution_id",
+            "target_contribution_id"
+        ];
+
+        for (const key of keysToCheck) {
+            if (key in payload) {
+                const value = payload[key];
+                if (typeof value === "string") {
+                    return this.normalizeContributionId(value);
+                }
+            }
+        }
+
+        return null;
     }
 
     private async _gatherContext(

@@ -1,21 +1,19 @@
-import { PostgrestError } from 'npm:@supabase/postgrest-js@1.19.4';
-import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import {
     DialecticExecuteJobPayload,
     DialecticJobRow,
     DialecticPlanJobPayload,
     DialecticRecipeStep,
     SourceDocument,
-    IDialecticJobDeps,
-    DialecticContributionRow,
-    DialecticProjectResourceRow,
-    DialecticFeedbackRow,
 } from '../dialectic-service/dialectic.interface.ts';
-import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
-import { isDialecticExecuteJobPayload, isJson, isDocumentRelationships } from '../_shared/utils/type_guards.ts';
-import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
-import type { DialecticStageRecipeStep, DialecticRecipeTemplateStep } from '../dialectic-service/dialectic.interface.ts';
+import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload, isJson } from '../_shared/utils/type_guards.ts';
+import { 
+    DialecticStageRecipeStep, 
+    DialecticRecipeTemplateStep 
+} from '../dialectic-service/dialectic.interface.ts';
 import { Database } from '../types_db.ts';
+import { extractSourceDocumentIdentifier } from '../_shared/utils/source_document_identifier.ts';
+import { IPlanJobContext } from './JobContext.interface.ts';
 
 function isPlannableStep(step: DialecticRecipeStep): step is (DialecticStageRecipeStep | DialecticRecipeTemplateStep) {
     if ('is_skipped' in step && step.is_skipped) {
@@ -24,233 +22,13 @@ function isPlannableStep(step: DialecticRecipeStep): step is (DialecticStageReci
     return 'job_type' in step && (step.job_type === 'PLAN' || step.job_type === 'EXECUTE' || step.job_type === 'RENDER');
 }
 
-// Type guards to differentiate between the different source table row types.
-function isContributionRow(record: unknown): record is DialecticContributionRow {
-    return record != null && typeof record === 'object' && 'contribution_type' in record;
-}
-
-function isProjectResourceRow(record: unknown): record is DialecticProjectResourceRow {
-    return record != null && typeof record === 'object' && 'resource_type' in record;
-}
-
-function isFeedbackRow(record: unknown): record is DialecticFeedbackRow {
-    return record != null && typeof record === 'object' && 'feedback_type' in record;
-}
-
-// Mapper functions to transform each row type into a valid SourceDocument.
-function mapContributionToSourceDocument(row: DialecticContributionRow, content: string): SourceDocument {
-    const { document_relationships, ...rest } = row;
-    const docRels = document_relationships && isDocumentRelationships(document_relationships) ? document_relationships : null;
-    const deconstructedPath = deconstructStoragePath({ storageDir: row.storage_path!, fileName: row.file_name! });
-    return { ...rest, content, document_relationships: docRels, attempt_count: deconstructedPath.attemptCount ?? 1 };
-}
-
-function mapResourceToSourceDocument(row: DialecticProjectResourceRow, content: string): SourceDocument {
-    return {
-        id: row.id,
-        session_id: row.session_id ?? '',
-        user_id: row.user_id,
-        stage: row.stage_slug ?? '',
-        iteration_number: row.iteration_number ?? 0,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        contribution_type: row.resource_type,
-        file_name: row.file_name,
-        storage_bucket: row.storage_bucket,
-        storage_path: row.storage_path,
-        size_bytes: row.size_bytes,
-        mime_type: row.mime_type,
-        content: content,
-        model_id: null,
-        model_name: null,
-        prompt_template_id_used: null,
-        seed_prompt_url: null,
-        edit_version: 1,
-        is_latest_edit: true,
-        original_model_contribution_id: null,
-        raw_response_storage_path: null,
-        target_contribution_id: null,
-        tokens_used_input: null,
-        tokens_used_output: null,
-        processing_time_ms: null,
-        error: null,
-        citations: null,
-        document_relationships: null,
-        is_header: false,
-        source_prompt_resource_id: row.source_contribution_id,
-    };
-}
-
-function mapFeedbackToSourceDocument(row: DialecticFeedbackRow, content: string): SourceDocument {
-    return {
-        id: row.id,
-        session_id: row.session_id,
-        user_id: row.user_id,
-        stage: row.stage_slug,
-        iteration_number: row.iteration_number,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        contribution_type: 'feedback',
-        file_name: row.file_name,
-        storage_bucket: row.storage_bucket,
-        storage_path: row.storage_path,
-        size_bytes: row.size_bytes,
-        mime_type: row.mime_type,
-        content: content,
-        model_id: null,
-        model_name: null,
-        prompt_template_id_used: null,
-        seed_prompt_url: null,
-        edit_version: 1,
-        is_latest_edit: true,
-        original_model_contribution_id: null,
-        raw_response_storage_path: null,
-        target_contribution_id: row.target_contribution_id,
-        tokens_used_input: null,
-        tokens_used_output: null,
-        processing_time_ms: null,
-        error: null,
-        citations: null,
-        document_relationships: null,
-        is_header: false,
-        source_prompt_resource_id: null,
-    };
-}
-
-type SourceRecord = DialecticContributionRow | DialecticProjectResourceRow | DialecticFeedbackRow;
-
-async function findSourceDocuments(
-    dbClient: SupabaseClient<Database>,
-    parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
-    inputsRequired: DialecticRecipeStep['inputs_required'],
-    downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>,
-): Promise<SourceDocument[]> {
-    if (!inputsRequired) return [];
-
-    const allSourceDocuments: SourceDocument[] = [];
-    const seenKeys = new Set<string>();
-    const { projectId, sessionId, iterationNumber } = parentJob.payload;
-
-    for (const rule of inputsRequired) {
-        let sourceRecords: SourceRecord[] | null = null;
-        let error: PostgrestError | null = null;
-        
-        if (rule.type === 'feedback') {
-            let query = dbClient.from('dialectic_feedback').select('*').eq('session_id', sessionId);
-            if (rule.stage_slug) query = query.eq('stage_slug', rule.stage_slug);
-            const result = await query;
-            sourceRecords = result.data;
-            error = result.error;
-
-        } else if (rule.type === 'document') {
-            // Prefer canonical documents from project resources
-            let resourceQuery = dbClient.from('dialectic_project_resources').select('*').eq('project_id', projectId);
-            if (rule.document_key && rule.document_key !== '*') {
-                resourceQuery = resourceQuery.eq('id', rule.document_key);
-            }
-            if (rule.stage_slug) {
-                resourceQuery = resourceQuery.eq('stage_slug', rule.stage_slug);
-            }
-            const { data: resourceData, error: resourceError } = await resourceQuery;
-            if (resourceError) {
-                throw new Error(`Failed to fetch source documents for type '${rule.type}' from project_resources: ${resourceError.message}`);
-            }
-
-            if (resourceData && resourceData.length > 0) {
-                sourceRecords = resourceData;
-                error = null;
-            } else {
-                // CoW DAG override: fallback to contributions when no resources found
-                let contributionQuery = dbClient.from('dialectic_contributions').select('*')
-                    .eq('session_id', sessionId)
-                    .eq('iteration_number', iterationNumber ?? 0)
-                    .eq('is_latest_edit', true);
-
-                if (rule.document_key && rule.document_key !== '*') {
-                    contributionQuery = contributionQuery.eq('id', rule.document_key);
-                }
-                if (rule.stage_slug) {
-                    contributionQuery = contributionQuery.eq('stage', rule.stage_slug);
-                }
-
-                const { data: contributionData, error: contributionError } = await contributionQuery;
-                if (contributionError) {
-                    throw new Error(`Failed to fetch source documents for type '${rule.type}' from contributions: ${contributionError.message}`);
-                }
-                sourceRecords = contributionData ?? [];
-                error = null;
-            }
-        } else { // Handle contribution types like 'thesis', 'header_context', etc.
-            let query = dbClient.from('dialectic_contributions').select('*')
-                .eq('session_id', sessionId)
-                .eq('iteration_number', iterationNumber ?? 0)
-                .eq('is_latest_edit', true);
-
-            if (rule.stage_slug) {
-                query = query.eq('stage', rule.stage_slug);
-            } else if (rule.type) {
-                query = query.eq('contribution_type', rule.type);
-            }
-            if (rule.document_key && rule.document_key !== '*') {
-                query = query.eq('id', rule.document_key);
-            }
-            const result = await query;
-            sourceRecords = result.data;
-            error = result.error;
-        }
-
-        if (error) {
-            throw new Error(`Failed to fetch source documents for type '${rule.type}': ${error.message}`);
-        }
-        if (!sourceRecords || sourceRecords.length === 0) {
-            // Only throw if the rule is not optional, which we can assume for now.
-            // A more robust implementation might check a `rule.optional` flag.
-            throw new Error(`A required input of type '${rule.type}' was not found for the current job.`);
-        }
-
-        const documents = await Promise.all(
-            sourceRecords.map(async (record: SourceRecord) => {
-                if (!record.file_name || !record.storage_bucket || !record.storage_path) {
-                    throw new Error(`Contribution ${record.id} is missing required storage information (file_name, storage_bucket, or storage_path).`);
-                }
-                const fullPath = `${record.storage_path}/${record.file_name}`;
-                const { data, error } = await downloadFromStorage(record.storage_bucket, fullPath);
-                if (error) {
-                    throw new Error(`Failed to download content for contribution ${record.id} from ${fullPath}: ${error.message}`);
-                }
-                
-                const content = new TextDecoder().decode(data!);
-                
-                if (isFeedbackRow(record)) {
-                    return mapFeedbackToSourceDocument(record, content);
-                } else if (isProjectResourceRow(record)) {
-                    return mapResourceToSourceDocument(record, content);
-                } else if (isContributionRow(record)) {
-                    return mapContributionToSourceDocument(record, content);
-                }
-                return null;
-            })
-        );
-        
-        const validDocuments = documents.filter((doc): doc is SourceDocument => doc !== null);
-        for (const doc of validDocuments) {
-            const key = `${doc.storage_bucket}|${doc.storage_path}|${doc.file_name}`;
-            if (!seenKeys.has(key)) {
-                seenKeys.add(key);
-                allSourceDocuments.push(doc);
-            }
-        }
-    }
-    
-    return allSourceDocuments;
-}
-
 export async function planComplexStage(
     dbClient: SupabaseClient<Database>,
     parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
-    deps: IDialecticJobDeps,
+    ctx: IPlanJobContext,
     recipeStep: DialecticRecipeStep,
     authToken: string,
+    completedSourceDocumentIds?: Set<string>,
 ): Promise<DialecticJobRow[]> {
     if (!isPlannableStep(recipeStep)) {
         throw new Error('planComplexStage cannot process this type of recipe step. This indicates an orchestration logic error.');
@@ -274,17 +52,13 @@ export async function planComplexStage(
 
     //deps.logger.info(`[task_isolator] [planComplexStage] Planning step "${recipeStep.name}" for parent job ID: ${parentJob.id}`);
     
-    // Enforce presence of user_jwt on the parent payload (no healing, no fallback)
-    let parentJwt: string | undefined = undefined;
+    // Validate presence of user_jwt on the parent payload (planners will use it directly)
     {
         const desc = Object.getOwnPropertyDescriptor(parentJob.payload, 'user_jwt');
         const potential = desc ? desc.value : undefined;
-        if (typeof potential === 'string' && potential.length > 0) {
-            parentJwt = potential;
+        if (typeof potential !== 'string' || potential.length === 0) {
+            throw new Error('parent payload.user_jwt is required');
         }
-    }
-    if (!parentJwt) {
-        throw new Error('parent payload.user_jwt is required');
     }
 
     // Validate stageSlug correctness: must exist on payload and match row if present
@@ -297,11 +71,11 @@ export async function planComplexStage(
     }
 
     // 1. Fetch source documents required for this specific step.
-    const sourceDocuments = await findSourceDocuments(
+    ctx.logger.info(`[planComplexStage] Step '${recipeStep.step_slug}' (key: '${recipeStep.step_key}') inputs_required: ${JSON.stringify(recipeStep.inputs_required)}`);
+    let sourceDocuments = await ctx.findSourceDocuments(
         dbClient, 
         parentJob, 
         recipeStep.inputs_required,
-        deps.downloadFromStorage,
     );
     
     if (sourceDocuments.length === 0) {
@@ -309,8 +83,76 @@ export async function planComplexStage(
         return [];
     }
 
-    // 2. Unconditionally call the planner with all source documents.
-    const planner = deps.getGranularityPlanner!(recipeStep.granularity_strategy);
+    // 1.5. Filter by source_group if parent job has document_relationships.source_group set.
+    // This ensures we select documents from the correct lineage branch when multiple documents match.
+    // First filter by matching source_group, then select the most recent document from that lineage.
+    const parentPayload = parentJob.payload;
+    const parentSourceGroup = (parentPayload as { document_relationships?: { source_group?: string | null } | null }).document_relationships?.source_group;
+    
+    if (typeof parentSourceGroup === 'string' && parentSourceGroup.length > 0) {
+        // Filter documents to only those matching the parent's source_group
+        const matchingLineageDocs = sourceDocuments.filter((doc) => {
+            const docSourceGroup = doc.document_relationships?.source_group;
+            return typeof docSourceGroup === 'string' && docSourceGroup === parentSourceGroup;
+        });
+
+        if (matchingLineageDocs.length > 0) {
+            // Select the most recent document from the matching lineage (by created_at, then updated_at)
+            const sortedByRecency = [...matchingLineageDocs].sort((a, b) => {
+                const aUpdated = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+                const bUpdated = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+                if (bUpdated !== aUpdated) {
+                    return bUpdated - aUpdated;
+                }
+                const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
+                const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+                return bCreated - aCreated;
+            });
+            
+            sourceDocuments = [sortedByRecency[0]];
+            ctx.logger.info(`[planComplexStage] Filtered by source_group '${parentSourceGroup}': ${matchingLineageDocs.length} matching document(s), selected most recent: ${sourceDocuments[0]?.id}`);
+        } else {
+            // No documents match the parent's source_group - this might be an error condition
+            // but we'll let it proceed and let downstream logic handle it
+            ctx.logger.warn(`[planComplexStage] Parent job has source_group '${parentSourceGroup}' but no source documents match this lineage. Proceeding with all ${sourceDocuments.length} document(s).`);
+        }
+    }
+
+    // 2. Filter out completed source documents if completedSourceDocumentIds is provided.
+    if (completedSourceDocumentIds && completedSourceDocumentIds.size > 0) {
+        const sourceDocumentsBeforeFiltering = sourceDocuments.length;
+        const completedIdsCount = completedSourceDocumentIds.size;
+        const filteredOutIdentifiers: string[] = [];
+        
+        const filteredSourceDocuments: SourceDocument[] = [];
+        for (const doc of sourceDocuments) {
+            try {
+                const identifier = extractSourceDocumentIdentifier(doc);
+                if (identifier === null) {
+                    throw new Error('extractSourceDocumentIdentifier returned null for source document');
+                }
+                if (completedSourceDocumentIds.has(identifier)) {
+                    filteredOutIdentifiers.push(identifier);
+                } else {
+                    filteredSourceDocuments.push(doc);
+                }
+            } catch (error) {
+                // Re-throw original error to preserve exact error message and stack trace
+                // This ensures "fail loud and hard" behavior per step 45.i criterion 3
+                if (error instanceof Error) {
+                    throw error;
+                }
+                throw new Error(`Failed to extract source document identifier: ${String(error)}`);
+            }
+        }
+        
+        sourceDocuments = filteredSourceDocuments;
+        
+        ctx.logger.info(`[planComplexStage] Filtered source documents: ${sourceDocumentsBeforeFiltering} before, ${completedIdsCount} completed IDs in filter Set, ${sourceDocuments.length} after filtering. Filtered out identifiers: [${filteredOutIdentifiers.join(', ')}]`);
+    }
+
+    // 3. Call the planner with filtered source documents.
+    const planner = ctx.getGranularityPlanner(recipeStep.granularity_strategy);
     if (!planner) {
         throw new Error(`No planner found for granularity strategy: ${recipeStep.granularity_strategy}`);
     }
@@ -319,42 +161,54 @@ export async function planComplexStage(
     if (!Array.isArray(plannedPayloads)) {
         throw new Error(`Planner for strategy '${recipeStep.granularity_strategy}' returned a non-array value.`);
     }
-    const childJobPayloads: DialecticExecuteJobPayload[] = plannedPayloads;
+    const childJobPayloads: (DialecticExecuteJobPayload | DialecticPlanJobPayload)[] = plannedPayloads;
     
-    //deps.logger.info(`[task_isolator] [planComplexStage] Planner returned ${childJobPayloads.length} payloads. Content: ${JSON.stringify(childJobPayloads, null, 2)}`);
+    //ctx.logger.info(`[task_isolator] [planComplexStage] Planner returned ${childJobPayloads.length} payloads. Content: ${JSON.stringify(childJobPayloads, null, 2)}`);
 
-    // 3. Map to full job rows for DB insertion.
+    // 4. Map to full job rows for DB insertion.
     const childJobsToInsert: DialecticJobRow[] = [];
     for (const payload of childJobPayloads) {
         try {
-            // 1. Enrichment Stage: Add the JWT first, then validate full shape
-            const candidatePayload: DialecticExecuteJobPayload = {
-                ...payload,
-                user_jwt: parentJwt,
-            };
+            // 1. Determine payload type and validate shape
+            let jobType: 'PLAN' | 'EXECUTE';
+            let validatedPayload: DialecticExecuteJobPayload | DialecticPlanJobPayload;
 
-            // 2. Shape Check on enriched payload
-            if (!isDialecticExecuteJobPayload(candidatePayload)) {
-                deps.logger.warn(`[task_isolator] Skipping malformed payload from planner due to invalid shape: ${JSON.stringify(payload)}`);
-                continue;
+            let isExecutePayload = false;
+            try {
+                // Guard throws on failure; if it returns true, it matches.
+                if (isDialecticExecuteJobPayload(payload)) {
+                    isExecutePayload = true;
+                }
+            } catch {
+                // Ignored: not an execute payload (or malformed), proceed to check PLAN
+                isExecutePayload = false;
             }
 
-            // 3. Context Check: Ensure planner's payload matches the authoritative parent context.
+            if (isExecutePayload) {
+                jobType = 'EXECUTE';
+                validatedPayload = payload;
+            } else if (isDialecticPlanJobPayload(payload)) {
+                jobType = 'PLAN';
+                validatedPayload = payload;
+            } else {
+                ctx.logger.warn(`[task_isolator] Skipping malformed payload from planner due to invalid shape: ${JSON.stringify(payload)}`);
+                continue;
+            }
+            // 2. Context Check: Ensure planner's payload matches the authoritative parent context.
             const parentPayload = parentJob.payload;
             const contextMismatches: string[] = [];
-            if (candidatePayload.projectId !== parentPayload.projectId) contextMismatches.push('projectId');
-            if (candidatePayload.sessionId !== parentPayload.sessionId) contextMismatches.push('sessionId');
-            if (candidatePayload.stageSlug !== parentPayload.stageSlug) contextMismatches.push('stageSlug');
-            if (candidatePayload.iterationNumber !== parentPayload.iterationNumber) contextMismatches.push('iterationNumber');
-            if (candidatePayload.walletId !== parentPayload.walletId) contextMismatches.push('walletId');
+            if (validatedPayload.projectId !== parentPayload.projectId) contextMismatches.push('projectId');
+            if (validatedPayload.sessionId !== parentPayload.sessionId) contextMismatches.push('sessionId');
+            if (validatedPayload.stageSlug !== parentPayload.stageSlug) contextMismatches.push('stageSlug');
+            if (validatedPayload.iterationNumber !== parentPayload.iterationNumber) contextMismatches.push('iterationNumber');
+            if (validatedPayload.walletId !== parentPayload.walletId) contextMismatches.push('walletId');
 
             if (contextMismatches.length > 0) {
-                deps.logger.warn(`[task_isolator] Skipping payload with mismatched context. Fields: ${contextMismatches.join(', ')}`, { parent: parentPayload, received: candidatePayload });
+                ctx.logger.warn(`[task_isolator] Skipping payload with mismatched context. Fields: ${contextMismatches.join(', ')}`, { parent: parentPayload, received: validatedPayload });
                 continue;
             }
 
-            if (!isJson(candidatePayload)) {
-                // This should be an unreachable state if DialecticExecuteJobPayload is properly defined.
+            if (!isJson(validatedPayload)) {
                 throw new Error('FATAL: Constructed child job payload is not a valid JSON object.');
             }
 
@@ -378,19 +232,16 @@ export async function planComplexStage(
                 error_details: null,
                 target_contribution_id: null,
                 prerequisite_job_id: null,
-                payload: candidatePayload,
-                is_test_job: false,
-                job_type: 'EXECUTE',
+                payload: validatedPayload,
+                is_test_job: parentJob.is_test_job ?? false,
+                job_type: jobType,
             });
         } catch (error) {
-            deps.logger.warn(`[task_isolator] Error processing payload, skipping. Error: ${error instanceof Error ? error.message : String(error)}`, { payload: JSON.stringify(payload) });
+            ctx.logger.warn(`[task_isolator] Error processing payload, skipping. Error: ${error instanceof Error ? error.message : String(error)}`, { payload: JSON.stringify(payload) });
             continue;
         }
     }
 
-    //deps.logger.info(`[task_isolator] [planComplexStage] Planned ${childJobsToInsert.length} child jobs for step "${recipeStep.name}".`);
+    //ctx.logger.info(`[task_isolator] [planComplexStage] Planned ${childJobsToInsert.length} child jobs for step "${recipeStep.name}".`);
     return childJobsToInsert;
 }
-
-
-
