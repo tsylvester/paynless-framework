@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import {
 	useDialecticStore,
 	selectIsLoadingProjectDetail,
@@ -12,9 +12,7 @@ import {
 	selectStageRunProgress,
 } from "@paynless/store";
 import {
-	ApiError,
 	DialecticFeedback,
-	SubmitStageResponsesPayload,
 	StageDocumentChecklistEntry,
 } from "@paynless/types";
 import {
@@ -34,27 +32,14 @@ import {
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogTitle,
-
 } from "@/components/ui/alert-dialog";
-
-import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { Loader2, CheckCircle2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { cn } from "@/lib/utils";
 import { useStageRunProgressHydration } from '../../hooks/useStageRunProgressHydration';
 import { Badge } from "@/components/ui/badge";
 import { GeneratedContributionCard } from "./GeneratedContributionCard";
-
-
-const isApiError = (error: unknown): error is ApiError => {
-	return (
-		typeof error === "object" &&
-		error !== null &&
-		"message" in error &&
-		typeof (error as ApiError).message === "string"
-	);
-};
 
 // UI-only mapping of stage names
 const stageNameMap: Record<string, string> = {
@@ -105,28 +90,13 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 		(state) => state.currentProcessTemplate,
 	);
 	const sortedStages = useDialecticStore(selectSortedStages);
-	const setActiveStage = useDialecticStore((state) => state.setActiveStage);
 	const focusedStageDocument = useDialecticStore((state) => state.focusedStageDocument);
 
-  const activeStage = useMemo(() => {
-	return processTemplate?.stages?.find((s) => s.slug === activeStageSlug) || null;
-  }, [processTemplate, activeStageSlug]);
-  
-  useStageRunProgressHydration();
+	const activeStage = useMemo(() => {
+		return processTemplate?.stages?.find((s) => s.slug === activeStageSlug) || null;
+	}, [processTemplate, activeStageSlug]);
 
-	const submitStageResponses = useDialecticStore(
-		(state) => state.submitStageResponses,
-	);
-	const isSubmitting = useDialecticStore(
-		(state) => state.isSubmittingStageResponses,
-	);
-	const submissionError = useDialecticStore(
-		(state) => state.submitStageResponsesError,
-	);
-	const resetSubmitError = useDialecticStore(
-		(state) => state.resetSubmitStageResponsesError,
-	);
-
+	useStageRunProgressHydration();
 
 	// New store states for loading and error handling
 	const isLoadingCurrentProjectDetail = useDialecticStore(
@@ -157,256 +127,206 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 		(state) => state.resetFetchFeedbackFileContentError,
 	);
 
-  const documentsByModel = useDialecticStore((state) => {
-    if (!session || !activeStage || typeof session.iteration_count !== 'number') {
-      return new Map<string, StageDocumentChecklistEntry[]>();
-    }
+	// IMPORTANT: Read values directly from state to avoid stale closure issues when switching stages
+	const documentsByModel = useDialecticStore((state) => {
+		const currentSession = state.activeSessionDetail;
+		const currentStageSlug = state.activeStageSlug;
+		const currentProcessTemplate = state.currentProcessTemplate;
+		const currentActiveStage = currentProcessTemplate?.stages?.find((s) => s.slug === currentStageSlug) || null;
 
-    const progressKey = `${session.id}:${activeStage.slug}:${session.iteration_count}`;
-    const progress = selectStageRunProgress(
-      state,
-      session.id,
-      activeStage.slug,
-      session.iteration_count,
-    );
+		if (!currentSession || !currentActiveStage || typeof currentSession.iteration_count !== 'number') {
+			return new Map<string, StageDocumentChecklistEntry[]>();
+		}
 
-    let resolvedModelIds =
-      state.selectedModelIds && state.selectedModelIds.length > 0
-        ? state.selectedModelIds
-        : session.selected_model_ids ?? [];
+		const progressKey = `${currentSession.id}:${currentActiveStage.slug}:${currentSession.iteration_count}`;
+		const progress = selectStageRunProgress(
+			state,
+			currentSession.id,
+			currentActiveStage.slug,
+			currentSession.iteration_count,
+		);
 
-    if ((!resolvedModelIds || resolvedModelIds.length === 0) && progress?.documents) {
-      resolvedModelIds = Object.values(progress.documents)
-        .map((entry) => entry?.modelId)
-        .filter((modelId): modelId is string => Boolean(modelId));
-    }
+		let resolvedModelIds =
+			state.selectedModelIds && state.selectedModelIds.length > 0
+				? state.selectedModelIds
+				: currentSession.selected_model_ids ?? [];
 
-    const uniqueModels = Array.from(new Set(resolvedModelIds ?? []));
-    const map = new Map<string, StageDocumentChecklistEntry[]>();
+		if ((!resolvedModelIds || resolvedModelIds.length === 0) && progress?.documents) {
+			resolvedModelIds = Object.values(progress.documents)
+				.map((entry) => entry?.modelId)
+				.filter((modelId): modelId is string => Boolean(modelId));
+		}
 
-    if (uniqueModels.length === 0 && progress?.documents) {
-      const fallbackModels = Array.from(
-        new Set(
-          Object.values(progress.documents)
-            .map((entry) => entry?.modelId)
-            .filter((modelId): modelId is string => Boolean(modelId)),
-        ),
-      );
+		const uniqueModels = Array.from(new Set(resolvedModelIds ?? []));
+		const map = new Map<string, StageDocumentChecklistEntry[]>();
 
-      fallbackModels.forEach((modelId) => {
-        map.set(modelId, selectStageDocumentChecklist(state, progressKey, modelId));
-      });
-      return map;
-    }
+		if (uniqueModels.length === 0 && progress?.documents) {
+			const fallbackModels = Array.from(
+				new Set(
+					Object.values(progress.documents)
+						.map((entry) => entry?.modelId)
+						.filter((modelId): modelId is string => Boolean(modelId)),
+				),
+			);
 
-    uniqueModels.forEach((modelId) => {
-      map.set(modelId, selectStageDocumentChecklist(state, progressKey, modelId));
-    });
+			fallbackModels.forEach((modelId) => {
+				map.set(modelId, selectStageDocumentChecklist(state, progressKey, modelId));
+			});
+			return map;
+		}
 
-    return map;
-  });
+		uniqueModels.forEach((modelId) => {
+			map.set(modelId, selectStageDocumentChecklist(state, progressKey, modelId));
+		});
 
-  const stageProgressSummary = useDialecticStore((state) => {
-    if (!session || !activeStage || typeof session.iteration_count !== 'number') {
-      return undefined;
-    }
+		return map;
+	});
 
-    return selectStageProgressSummary(
-      state,
-      session.id,
-      activeStage.slug,
-      session.iteration_count,
-    );
-  });
+	// IMPORTANT: Read values directly from state to avoid stale closure issues when switching stages
+	const stageProgressSummary = useDialecticStore((state) => {
+		const currentSession = state.activeSessionDetail;
+		const currentStageSlug = state.activeStageSlug;
+		const currentProcessTemplate = state.currentProcessTemplate;
+		const currentActiveStage = currentProcessTemplate?.stages?.find((s) => s.slug === currentStageSlug) || null;
 
-  const canSubmitStageResponses = stageProgressSummary?.isComplete === true;
+		if (!currentSession || !currentActiveStage || typeof currentSession.iteration_count !== 'number') {
+			return undefined;
+		}
 
-  const isLastStage = useMemo(() => {
-    // Handle edge cases: empty sortedStages or null activeStage
-    if (!sortedStages || sortedStages.length === 0) {
-      return false;
-    }
-    if (!activeStage) {
-      return false;
-    }
-    // Check if activeStage.slug matches the last stage in sortedStages
-    const lastStage = sortedStages[sortedStages.length - 1];
-    return activeStage.slug === lastStage?.slug;
-  }, [sortedStages, activeStage]);
+		return selectStageProgressSummary(
+			state,
+			currentSession.id,
+			currentActiveStage.slug,
+			currentSession.iteration_count,
+		);
+	});
 
-  const documentGroups = useMemo(
-    () => Array.from(documentsByModel.entries()),
-    [documentsByModel],
-  );
+	const isLastStage = useMemo(() => {
+		// Handle edge cases: empty sortedStages or null activeStage
+		if (!sortedStages || sortedStages.length === 0) {
+			return false;
+		}
+		if (!activeStage) {
+			return false;
+		}
+		// Check if activeStage.slug matches the last stage in sortedStages
+		const lastStage = sortedStages[sortedStages.length - 1];
+		return activeStage.slug === lastStage?.slug;
+	}, [sortedStages, activeStage]);
 
-  const selectedDocumentKey = useMemo((): string | null => {
-    if (!focusedStageDocument || typeof focusedStageDocument !== 'object') {
-      return null;
-    }
-    const first = Object.values(focusedStageDocument).find(
-      (entry): entry is { modelId: string; documentKey: string } =>
-        entry != null && typeof entry.documentKey === 'string' && entry.documentKey.length > 0,
-    );
-    return first?.documentKey ?? null;
-  }, [focusedStageDocument]);
+	const documentGroups = useMemo(
+		() => Array.from(documentsByModel.entries()),
+		[documentsByModel],
+	);
 
-  const entryMatchesSelectedDocument = (
-    entryDocumentKey: string,
-    modelId: string,
-    selectedKey: string,
-  ): boolean =>
-    entryDocumentKey === selectedKey ||
-    entryDocumentKey === `${selectedKey}_model_${modelId}` ||
-    entryDocumentKey === `${selectedKey}_${modelId.replace(/-/g, '_')}`;
+	// Get the selected document key, filtered by the CURRENT stage
+	// focusedStageDocument is keyed by `${sessionId}:${stageSlug}:${modelId}`
+	const selectedDocumentKey = useMemo((): string | null => {
+		if (!focusedStageDocument || typeof focusedStageDocument !== 'object') {
+			return null;
+		}
+		if (!session || !activeStageSlug) {
+			return null;
+		}
 
-  const modelIdsForSelectedDocument = useMemo((): string[] => {
-    if (selectedDocumentKey == null || selectedDocumentKey === '') {
-      return [];
-    }
-    const key: string = selectedDocumentKey;
-    return documentGroups
-      .filter(([, entries]) =>
-        entries.some(
-          (entry) =>
-            entry.modelId != null &&
-            entryMatchesSelectedDocument(entry.documentKey, entry.modelId, key),
-        ),
-      )
-      .map(([modelId]) => modelId);
-  }, [documentGroups, selectedDocumentKey]);
+		// Only look at entries for the current session and stage
+		const currentStagePrefix = `${session.id}:${activeStageSlug}:`;
 
-const failedDocumentKeys = useMemo(() => {
-  if (stageProgressSummary?.hasFailed) {
-    return stageProgressSummary.failedDocumentKeys;
-  }
+		// Find the first entry that belongs to the current stage
+		for (const [key, entry] of Object.entries(focusedStageDocument)) {
+			if (
+				key.startsWith(currentStagePrefix) &&
+				entry != null &&
+				typeof entry.documentKey === 'string' &&
+				entry.documentKey.length > 0
+			) {
+				return entry.documentKey;
+			}
+		}
 
-  const fallback = documentGroups.flatMap(([, documents]) =>
-    documents
-      .filter((document) => document.status === 'failed')
-      .map((document) => document.documentKey),
-  );
+		return null;
+	}, [focusedStageDocument, session, activeStageSlug]);
 
-  return Array.from(new Set(fallback));
-}, [documentGroups, stageProgressSummary]);
+	const entryMatchesSelectedDocument = (
+		entryDocumentKey: string,
+		modelId: string,
+		selectedKey: string,
+	): boolean =>
+		entryDocumentKey === selectedKey ||
+		entryDocumentKey === `${selectedKey}_model_${modelId}` ||
+		entryDocumentKey === `${selectedKey}_${modelId.replace(/-/g, '_')}`;
 
-const hasGeneratingDocuments = useMemo(() => {
-  // Check documentGroups (derived from selectStageDocumentChecklist via documentsByModel) for any document with status 'generating'
-  // Defensive: This check explicitly looks for 'generating' status only, which inherently excludes 'completed' documents
-  // The status check ensures we only count documents that are actively generating, not those that are completed
-  return documentGroups.some(([, documents]) =>
-    documents.some((document) => document.status === 'generating')
-  );
-}, [documentGroups]);
+	const modelIdsForSelectedDocument = useMemo((): string[] => {
+		if (selectedDocumentKey == null || selectedDocumentKey === '') {
+			return [];
+		}
+		const key: string = selectedDocumentKey;
+		return documentGroups
+			.filter(([, entries]) =>
+				entries.some(
+					(entry) =>
+						entry.modelId != null &&
+						entryMatchesSelectedDocument(entry.documentKey, entry.modelId, key),
+				),
+			)
+			.map(([modelId]) => modelId);
+	}, [documentGroups, selectedDocumentKey]);
 
-const isGenerating = useMemo(() => {
-  // Banner is shown only when: documents are generating, no failed documents, and no generation errors
-  return hasGeneratingDocuments && failedDocumentKeys.length === 0 && !generationError;
-}, [hasGeneratingDocuments, failedDocumentKeys, generationError]);
+	const failedDocumentKeys = useMemo(() => {
+		if (stageProgressSummary?.hasFailed) {
+			return stageProgressSummary.failedDocumentKeys;
+		}
 
-  const hasDocuments = useMemo(
-    () => modelIdsForSelectedDocument.length > 0,
-    [modelIdsForSelectedDocument],
-  );
+		const fallback = documentGroups.flatMap(([, documents]) =>
+			documents
+				.filter((document) => document.status === 'failed')
+				.map((document) => document.documentKey),
+		);
+
+		return Array.from(new Set(fallback));
+	}, [documentGroups, stageProgressSummary]);
+
+	const hasGeneratingDocuments = useMemo(() => {
+		return documentGroups.some(([, documents]) =>
+			documents.some((document) => document.status === 'generating')
+		);
+	}, [documentGroups]);
+
+	const isGenerating = useMemo(() => {
+		return hasGeneratingDocuments && failedDocumentKeys.length === 0 && !generationError;
+	}, [hasGeneratingDocuments, failedDocumentKeys, generationError]);
+
+	const hasDocuments = useMemo(
+		() => modelIdsForSelectedDocument.length > 0,
+		[modelIdsForSelectedDocument],
+	);
 
 	// Select feedback metadata for the current stage and iteration
-	const feedbacksForStageIterationArray = useDialecticStore((state) =>
-		project && session && activeStage
-			? selectFeedbackForStageIteration(
-					state,
-					session.id,
-					activeStage.slug,
-					session.iteration_count,
-				)
-			: null,
-	);
+	// IMPORTANT: Read values directly from state to avoid stale closure issues when switching stages
+	const feedbacksForStageIterationArray = useDialecticStore((state) => {
+		const currentProject = selectCurrentProjectDetail(state);
+		const currentSession = state.activeSessionDetail;
+		const currentStageSlug = state.activeStageSlug;
+		const currentProcessTemplate = state.currentProcessTemplate;
+		const currentActiveStage = currentProcessTemplate?.stages?.find((s) => s.slug === currentStageSlug) || null;
+
+		if (!currentProject || !currentSession || !currentActiveStage) {
+			return null;
+		}
+
+		return selectFeedbackForStageIteration(
+			state,
+			currentSession.id,
+			currentActiveStage.slug,
+			currentSession.iteration_count,
+		);
+	});
 	const feedbackForStageIteration: DialecticFeedback | undefined =
 		feedbacksForStageIterationArray?.[0];
 
-	const [submissionSuccessMessage, setSubmissionSuccessMessage] = useState<
-		string | null
-	>(null);
-	const [showConfirmationModal, setShowConfirmationModal] = useState(false);
 	// ADDED: State for controlling feedback content modal
 	const [showFeedbackContentModal, setShowFeedbackContentModal] =
 		useState(false);
-
-  useEffect(() => {
-    setSubmissionSuccessMessage(null);
-    if (submissionError) {
-        resetSubmitError?.();
-    }
-  }, [activeStage, resetSubmitError, submissionError]);
-
-  const proceedWithSubmission = async () => {
-    if (!session || !session.iteration_count || !activeStage || !project) return;
-    setSubmissionSuccessMessage(null);
-    if (submissionError) {
-        resetSubmitError?.();
-    }
-
-    const payload: SubmitStageResponsesPayload = {
-      sessionId: session.id,
-      currentIterationNumber: session.iteration_count,
-      projectId: project.id,
-      stageSlug: activeStage.slug,
-    };
-
-    try {
-      // The store action is now responsible for finding and submitting all drafts
-      // before advancing the stage.
-      const result = await submitStageResponses(payload);
-
-      if (result?.error) {
-          throw result.error;
-      }
-      
-      setSubmissionSuccessMessage('Your feedback has been submitted successfully!');
-      toast.success('Feedback submitted!', {
-          description: "The next stage's seed prompt has been generated."
-      });
-      // Do NOT clear stageResponses here so user can see what they wrote
-      if (activeStage && sortedStages && setActiveStage) {
-        const currentIndex = sortedStages.findIndex(s => s.slug === activeStage.slug);
-        if (currentIndex > -1 && currentIndex < sortedStages.length - 1) {
-          const nextStage = sortedStages[currentIndex + 1];
-          setActiveStage(nextStage.slug);
-        }
-      }
-      
-    } catch (error) {
-      if (isApiError(error)) {
-        toast.error('Submission Failed', {
-            description: error.message || 'An unexpected error occurred.'
-        });
-      } else {
-        toast.error('Submission Failed', {
-            description: 'An unexpected error occurred.'
-        });
-      }
-    }
-  };
-  
-  const handleSubmitResponses = async () => {
-      setShowConfirmationModal(true);
-  };
-
-  const renderSubmitButton = () => (
-    <Button
-      onClick={handleSubmitResponses}
-      disabled={isSubmitting || !canSubmitStageResponses || isLastStage}
-      className={cn({ 'animate-pulse': !isSubmitting && canSubmitStageResponses && !isLastStage })}
-    >
-      {isSubmitting ? (
-        <>
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...
-        </>
-      ) : isLastStage ? (
-        'Project Complete - Final Stage'
-      ) : (
-        'Submit Responses & Advance Stage'
-      )}
-    </Button>
-  );
 
 	const handleShowFeedbackContent = (feedback?: DialecticFeedback | null) => {
 		if (feedback?.storage_path && project) {
@@ -415,11 +335,6 @@ const isGenerating = useMemo(() => {
 				storagePath: feedback.storage_path,
 			});
 			setShowFeedbackContentModal(true);
-		} else {
-			toast.warning("No feedback content to display.", {
-				description:
-					"The selected feedback record does not have an associated file path.",
-			});
 		}
 	};
 
@@ -472,157 +387,113 @@ const isGenerating = useMemo(() => {
 		);
 	}
 
-  return (
-    <div className="space-y-8">
-      <div data-testid="card-header" className="space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-2">
-            <h2 className="text-2xl font-light tracking-tight">{getDisplayName(activeStage)}</h2>
-            <p className="text-muted-foreground leading-relaxed">{activeStage.description}</p>
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            {renderSubmitButton()}
-            {isLastStage && canSubmitStageResponses && (
-              <Badge variant="secondary" className="bg-emerald-100 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-100">
-                Project Complete - All stages finished
-              </Badge>
-            )}
-            {feedbackForStageIteration && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleShowFeedbackContent(feedbackForStageIteration)}
-              >
-                View Submitted Feedback
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
+	return (
+		<div className="space-y-6">
+			{/* Stage Header */}
+			<div data-testid="card-header" className="space-y-2">
+				<div className="flex items-start justify-between gap-4">
+					<div className="space-y-1">
+						<h2 className="text-xl font-medium tracking-tight">{getDisplayName(activeStage)}</h2>
+						<p className="text-sm text-muted-foreground leading-relaxed">{activeStage.description}</p>
+					</div>
+					<div className="flex items-center gap-2">
+						{/* Stage completion indicator */}
+						{stageProgressSummary?.isComplete && (
+							<Badge
+								variant="secondary"
+								className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 gap-1"
+							>
+								<CheckCircle2 className="h-3.5 w-3.5" />
+								Complete
+							</Badge>
+						)}
+						{/* View submitted feedback button */}
+						{feedbackForStageIteration && (
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => handleShowFeedbackContent(feedbackForStageIteration)}
+							>
+								View Submitted Feedback
+							</Button>
+						)}
+					</div>
+				</div>
+			</div>
 
-      {isGenerating && (
-        <div className="bg-blue-50 dark:bg-blue-950/20 rounded-xl px-6 py-4 border border-blue-200/50 dark:border-blue-800/50">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
-              <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
-            </div>
-            <div>
-              <p className="font-medium text-blue-900 dark:text-blue-100">Generating documents</p>
-              <p className="text-sm text-blue-700 dark:text-blue-300">
-                Please wait while AI models process your request...
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-      {(generationError || failedDocumentKeys.length > 0) && (
-        <div
-          className="bg-red-50 dark:bg-red-950/20 rounded-xl px-6 py-4 border border-red-200/50 dark:border-red-800/50"
-          data-testid="generation-error-banner"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
-              <div className="h-5 w-5 rounded-full bg-red-600 flex items-center justify-center">
-                <span className="text-white text-xs font-bold">!</span>
-              </div>
-            </div>
-            <div>
-              <p className="font-medium text-red-900 dark:text-red-100">Generation Error</p>
-              {generationError?.message && (
-                <p className="text-sm text-red-700 dark:text-red-300">{generationError.message}</p>
-              )}
-              {failedDocumentKeys.length > 0 && (
-                <p className="text-xs text-red-700 dark:text-red-300">
-                  Failed documents: {failedDocumentKeys.join(', ')}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+			{/* Generation Status Banners */}
+			{isGenerating && (
+				<div className="bg-blue-50 dark:bg-blue-950/20 rounded-xl px-5 py-3 border border-blue-200/50 dark:border-blue-800/50">
+					<div className="flex items-center gap-3">
+						<div className="p-1.5 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+							<Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+						</div>
+						<div>
+							<p className="text-sm font-medium text-blue-900 dark:text-blue-100">Generating documents</p>
+							<p className="text-xs text-blue-700 dark:text-blue-300">
+								Please wait while AI models process your request...
+							</p>
+						</div>
+					</div>
+				</div>
+			)}
 
-      <div className="space-y-6">
-        {hasDocuments ? (
-          modelIdsForSelectedDocument.map((modelId) => (
-            <div
-              key={modelId}
-              data-testid={`generated-contribution-card-${modelId}`}
-            >
-              <GeneratedContributionCard modelId={modelId} />
-            </div>
-          ))
-        ) : (
-          <p className="text-sm text-muted-foreground">No documents generated yet.</p>
-        )}
-      </div>
+			{(generationError || failedDocumentKeys.length > 0) && (
+				<div
+					className="bg-red-50 dark:bg-red-950/20 rounded-xl px-5 py-3 border border-red-200/50 dark:border-red-800/50"
+					data-testid="generation-error-banner"
+				>
+					<div className="flex items-center gap-3">
+						<div className="p-1.5 bg-red-100 dark:bg-red-900/50 rounded-lg">
+							<div className="h-4 w-4 rounded-full bg-red-600 flex items-center justify-center">
+								<span className="text-white text-xs font-bold">!</span>
+							</div>
+						</div>
+						<div>
+							<p className="text-sm font-medium text-red-900 dark:text-red-100">Generation Error</p>
+							{generationError?.message && (
+								<p className="text-xs text-red-700 dark:text-red-300">{generationError.message}</p>
+							)}
+							{failedDocumentKeys.length > 0 && (
+								<p className="text-xs text-red-700 dark:text-red-300">
+									Failed documents: {failedDocumentKeys.join(', ')}
+								</p>
+							)}
+						</div>
+					</div>
+				</div>
+			)}
 
-      <div data-testid="card-footer" className="space-y-4">
-        {renderSubmitButton()}
-        {isLastStage && canSubmitStageResponses && (
-          <Badge variant="secondary" className="bg-emerald-100 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-100">
-            Project Complete - All stages finished
-          </Badge>
-        )}
-        {(submissionSuccessMessage || submissionError) && (
-          <div className="space-y-4">
-            {submissionSuccessMessage && (
-              <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-xl px-6 py-4 border border-emerald-200/50 dark:border-emerald-800/50">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg">
-                    <div className="w-5 h-5 text-emerald-600">✅</div>
-                  </div>
-                  <div>
-                    <p className="font-medium text-emerald-900 dark:text-emerald-100">Success!</p>
-                    <p className="text-sm text-emerald-700 dark:text-emerald-300">
-                      {submissionSuccessMessage}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            {submissionError && (
-              <div className="bg-red-50 dark:bg-red-950/20 rounded-xl px-6 py-4 border border-red-200/50 dark:border-red-800/50">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
-                    <div className="h-5 w-5 text-red-600">❌</div>
-                  </div>
-                  <div>
-                    <p className="font-medium text-red-900 dark:text-red-100">Submission Failed</p>
-                    <p className="text-sm text-red-700 dark:text-red-300">{submissionError.message}</p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-			{/* Confirmation Modal */}
-			<AlertDialog
-				open={showConfirmationModal}
-				onOpenChange={setShowConfirmationModal}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-						<AlertDialogDescription>
-							This will submit your feedback and generate the seed prompt for
-							the next stage. This action cannot be undone.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							onClick={() => {
-								setShowConfirmationModal(false);
-								proceedWithSubmission();
-							}}
+			{/* Document Cards */}
+			<div className="space-y-4">
+				{hasDocuments ? (
+					modelIdsForSelectedDocument.map((modelId) => (
+						<div
+							key={modelId}
+							data-testid={`generated-contribution-card-${modelId}`}
 						>
-							Continue
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+							<GeneratedContributionCard modelId={modelId} />
+						</div>
+					))
+				) : (
+					<div className="text-center py-12 text-muted-foreground">
+						<p>No documents generated yet.</p>
+						<p className="text-sm mt-1">Select a document from the sidebar checklist to view and edit.</p>
+					</div>
+				)}
+			</div>
+
+			{/* Project Complete Badge (final stage) */}
+			{isLastStage && stageProgressSummary?.isComplete && (
+				<div className="flex justify-center">
+					<Badge
+						variant="secondary"
+						className="bg-emerald-100 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-100 px-4 py-2"
+					>
+						Project Complete - All stages finished
+					</Badge>
+				</div>
+			)}
 
 			{/* Feedback Content Modal */}
 			<AlertDialog
