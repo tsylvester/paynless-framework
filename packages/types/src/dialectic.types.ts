@@ -445,6 +445,8 @@ export interface StageDocumentContentState {
   pendingDiff: string | null;
   lastAppliedVersionHash: string | null;
   sourceContributionId: string | null;
+  feedbackDraftMarkdown: string;
+  feedbackIsDirty: boolean;
 }
 
 export interface StageRunProgressSnapshot {
@@ -537,6 +539,7 @@ export interface DialecticActions {
 
   beginStageDocumentEdit: (key: StageDocumentCompositeKey, initialDraftMarkdown: string) => void;
   updateStageDocumentDraft: (key: StageDocumentCompositeKey, draftMarkdown: string) => void;
+  updateStageDocumentFeedbackDraft: (key: StageDocumentCompositeKey, feedbackMarkdown: string) => void;
   flushStageDocumentDraft: (key: StageDocumentCompositeKey) => void;
   clearStageDocumentDraft: (key: StageDocumentCompositeKey) => void;
   fetchStageDocumentContent: (key: StageDocumentCompositeKey, resourceId: string) => Promise<void>;

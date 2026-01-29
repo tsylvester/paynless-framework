@@ -69,6 +69,7 @@ export const GeneratedContributionCard: React.FC<
 		focusedStageDocumentMap,
 		focusedDocument,
 		updateStageDocumentDraft,
+		updateStageDocumentFeedbackDraft,
 		submitStageDocumentFeedback,
 		saveContributionEdit,
 		modelCatalog,
@@ -94,6 +95,7 @@ export const GeneratedContributionCard: React.FC<
 			focusedStageDocumentMap: state.focusedStageDocument,
 			focusedDocument,
 			updateStageDocumentDraft: state.updateStageDocumentDraft,
+			updateStageDocumentFeedbackDraft: state.updateStageDocumentFeedbackDraft,
 			submitStageDocumentFeedback: state.submitStageDocumentFeedback,
 			saveContributionEdit: state.saveContributionEdit,
 			modelCatalog: state.modelCatalog,
@@ -183,7 +185,7 @@ export const GeneratedContributionCard: React.FC<
 		);
 	});
 
-	const draftValue = documentResourceState?.currentDraftMarkdown ?? "";
+	const feedbackDraftValue = documentResourceState?.feedbackDraftMarkdown ?? "";
 	const baselineContent = documentResourceState?.baselineMarkdown ?? "";
 	const isDraftLoading = documentResourceState?.isLoading ?? false;
 	const draftError = documentResourceState?.error;
@@ -229,14 +231,14 @@ export const GeneratedContributionCard: React.FC<
 		fetchStageDocumentContent,
 	]);
 
-	const handleDraftChange = useCallback(
+	const handleFeedbackDraftChange = useCallback(
 		(value: string) => {
 			if (!compositeKey) {
 				return;
 			}
-			updateStageDocumentDraft(compositeKey, value);
+			updateStageDocumentFeedbackDraft(compositeKey, value);
 		},
-		[compositeKey, updateStageDocumentDraft],
+		[compositeKey, updateStageDocumentFeedbackDraft],
 	);
 
 	const handleSaveFeedback = useCallback(async () => {
@@ -245,9 +247,9 @@ export const GeneratedContributionCard: React.FC<
 			return;
 		}
 
-		const currentDraft = documentResourceState?.currentDraftMarkdown;
+		const feedbackDraft = documentResourceState?.feedbackDraftMarkdown ?? "";
 
-		if (!currentDraft || currentDraft.trim().length === 0) {
+		if (!feedbackDraft || feedbackDraft.trim().length === 0) {
 			toast.error("Provide feedback before saving.");
 			return;
 		}
@@ -255,7 +257,7 @@ export const GeneratedContributionCard: React.FC<
 		try {
 			await submitStageDocumentFeedback({
 				...compositeKey,
-				feedback: currentDraft,
+				feedback: feedbackDraft,
 			});
 			toast.success("Feedback saved successfully.");
 		} catch (_error) {
@@ -326,7 +328,7 @@ export const GeneratedContributionCard: React.FC<
 
 	const canSaveFeedback =
 		Boolean(compositeKey) &&
-		Boolean(documentResourceState?.currentDraftMarkdown);
+		Boolean(documentResourceState?.feedbackDraftMarkdown);
 
 	const canSaveEdit =
 		Boolean(compositeKey) &&
@@ -431,8 +433,8 @@ export const GeneratedContributionCard: React.FC<
 
 						<TextInputArea
 							label="Document Feedback"
-							value={draftValue}
-							onChange={handleDraftChange}
+							value={feedbackDraftValue}
+							onChange={handleFeedbackDraftChange}
 							placeholder={`Enter feedback for ${focusedDocument.documentKey}`}
 							id={`stage-document-feedback-${modelId}-${focusedDocument.documentKey}`}
 							dataTestId={`stage-document-feedback-${modelId}-${focusedDocument.documentKey}`}

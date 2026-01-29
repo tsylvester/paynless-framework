@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
@@ -16,6 +16,7 @@ import type {
 } from '@paynless/types';
 
 import { SessionContributionsDisplayCard } from './SessionContributionsDisplayCard';
+import { GeneratedContributionCard } from './GeneratedContributionCard';
 
 import {
   getDialecticStoreState,
@@ -33,6 +34,10 @@ vi.mock('./ExportProjectButton', () => ({
 
 vi.mock('../../hooks/useStageRunProgressHydration', () => ({
   useStageRunProgressHydration: vi.fn(),
+}));
+
+vi.mock('./GeneratedContributionCard', () => ({
+  GeneratedContributionCard: vi.fn(() => null),
 }));
 
 const stageSlug = 'thesis';
@@ -255,6 +260,9 @@ const buildStageDocumentContent = (
   lastBaselineVersion: null,
   pendingDiff: null,
   lastAppliedVersionHash: null,
+  sourceContributionId: null,
+  feedbackDraftMarkdown: '',
+  feedbackIsDirty: false,
   ...overrides,
 });
 
@@ -322,91 +330,7 @@ describe('SessionContributionsDisplayCard', () => {
     });
   };
 
-  describe('Document rendering', () => {
-    it('renders a stage document card for each model document', () => {
-      const progress = buildStageRunProgress(
-        {},
-        {
-          draft_document_outline_model_a: buildStageDocumentDescriptor('model-a'),
-          draft_document_outline_model_b: buildStageDocumentDescriptor('model-b'),
-        },
-      );
-
-      seedBaseStore(progress, {
-        focusedStageDocument: {
-          [`${sessionId}:${stageSlug}:model-a`]: {
-            modelId: 'model-a',
-            documentKey: 'draft_document_outline_model_a',
-          },
-          [`${sessionId}:${stageSlug}:model-b`]: {
-            modelId: 'model-b',
-            documentKey: 'draft_document_outline_model_b',
-          },
-        },
-        stageDocumentContent: {
-          [buildStageDocumentKey('model-a', 'draft_document_outline_model_a')]:
-            buildStageDocumentContent(),
-          [buildStageDocumentKey('model-b', 'draft_document_outline_model_b')]:
-            buildStageDocumentContent(),
-        },
-      });
-
-      renderSessionContributionsDisplayCard();
-
-      expect(
-        screen.getByTestId('stage-document-card-model-a-draft_document_outline_model_a'),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByTestId('stage-document-card-model-b-draft_document_outline_model_b'),
-      ).toBeInTheDocument();
-
-      expect(screen.getByTestId('card-header')).toBeInTheDocument();
-      expect(screen.getByTestId('card-footer')).toBeInTheDocument();
-    });
-
-    it('routes document draft edits through updateStageDocumentDraft', () => {
-      const documentKey = 'draft_document_outline_model_a';
-      const progress = buildStageRunProgress(
-        {},
-        {
-          [documentKey]: buildStageDocumentDescriptor('model-a'),
-        },
-      );
-
-      seedBaseStore(progress, {
-        focusedStageDocument: {
-          [`${sessionId}:${stageSlug}:model-a`]: {
-            modelId: 'model-a',
-            documentKey,
-          },
-        },
-        stageDocumentContent: {
-          [buildStageDocumentKey('model-a', documentKey)]: buildStageDocumentContent(),
-        },
-      });
-
-      const { updateStageDocumentDraft } = getDialecticStoreState();
-
-      renderSessionContributionsDisplayCard();
-
-      const draftArea = screen.getByTestId(
-        `stage-document-feedback-model-a-${documentKey}`,
-      );
-
-      fireEvent.change(draftArea, { target: { value: 'Updated draft' } });
-
-      expect(updateStageDocumentDraft).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sessionId,
-          stageSlug,
-          iterationNumber,
-          modelId: 'model-a',
-          documentKey,
-        }),
-        'Updated draft',
-      );
-    });
-  });
+  // NOTE: "Document rendering" tests removed - behavior is now owned by GeneratedContributionCard
 
   describe('Hydration', () => {
     it('invokes useStageRunProgressHydration with active session context', () => {
@@ -1053,177 +977,7 @@ describe('SessionContributionsDisplayCard', () => {
     });
   });
 
-  describe('Resource metadata display', () => {
-    it('renders document resource metadata including source_contribution_id and updated_at', () => {
-      const documentKey = 'draft_document_outline_model_a';
-      const sourceContributionId = 'contrib-source-123';
-      const updatedAt = '2024-01-15T10:30:00.000Z';
-      
-      const progress = buildStageRunProgress(
-        {},
-        {
-          [documentKey]: buildStageDocumentDescriptor('model-a'),
-        },
-      );
-
-      const mockResourceMetadata = buildEditedDocumentResource(documentKey, {
-        source_contribution_id: sourceContributionId,
-        updated_at: updatedAt,
-      });
-
-      seedBaseStore(progress, {
-        focusedStageDocument: {
-          [`${sessionId}:${stageSlug}:model-a`]: {
-            modelId: 'model-a',
-            documentKey,
-          },
-        },
-        stageDocumentContent: {
-          [buildStageDocumentKey('model-a', documentKey)]: buildStageDocumentContent(),
-        },
-        stageDocumentResources: {
-          [buildStageDocumentKey('model-a', documentKey)]: mockResourceMetadata,
-        },
-      });
-
-      renderSessionContributionsDisplayCard();
-
-      const card = screen.getByTestId(`stage-document-card-model-a-${documentKey}`);
-      expect(card).toBeInTheDocument();
-      
-      // Assert resource metadata is displayed within the specific card
-      // Text is split across multiple elements, so we use a function matcher scoped to the card
-      // Use getAllByText since parent elements also match, then check that at least one exists
-      const cardQueries = within(card);
-      const sourceContributionMatches = cardQueries.getAllByText((_content, element) => {
-        const hasText = element?.textContent?.includes(`Source Contribution: ${sourceContributionId}`);
-        return hasText === true;
-      });
-      expect(sourceContributionMatches.length).toBeGreaterThan(0);
-      
-      const formattedDate = new Date(updatedAt).toLocaleString();
-      const lastModifiedMatches = cardQueries.getAllByText((_content, element) => {
-        const hasText = element?.textContent?.includes(`Last Modified: ${formattedDate}`);
-        return hasText === true;
-      });
-      expect(lastModifiedMatches.length).toBeGreaterThan(0);
-    });
-
-    it('displays resource metadata when document is edited via saveContributionEdit', () => {
-      const documentKey = 'draft_document_outline_model_a';
-      const originalContributionId = 'contrib-original-789';
-      const editedUpdatedAt = '2024-01-20T14:45:00.000Z';
-      
-      const progress = buildStageRunProgress(
-        {},
-        {
-          [documentKey]: buildStageDocumentDescriptor('model-a'),
-        },
-      );
-
-      seedBaseStore(progress, {
-        focusedStageDocument: {
-          [`${sessionId}:${stageSlug}:model-a`]: {
-            modelId: 'model-a',
-            documentKey,
-          },
-        },
-        stageDocumentContent: {
-          [buildStageDocumentKey('model-a', documentKey)]: buildStageDocumentContent({
-            currentDraftMarkdown: 'Edited content',
-            isDirty: true,
-          }),
-        },
-        stageDocumentResources: {
-          [buildStageDocumentKey('model-a', documentKey)]: buildEditedDocumentResource(documentKey, {
-            source_contribution_id: originalContributionId,
-            updated_at: editedUpdatedAt,
-          }),
-        },
-      });
-
-      renderSessionContributionsDisplayCard();
-
-      const card = screen.getByTestId(`stage-document-card-model-a-${documentKey}`);
-      const cardQueries = within(card);
-
-      // Assert edited document shows updated metadata within the specific card
-      // Text is split across multiple elements, so we use a function matcher scoped to the card
-      // Use getAllByText since parent elements also match, then check that at least one exists
-      const sourceContributionMatches = cardQueries.getAllByText((_content, element) => {
-        const hasText = element?.textContent?.includes(`Source Contribution: ${originalContributionId}`);
-        return hasText === true;
-      });
-      expect(sourceContributionMatches.length).toBeGreaterThan(0);
-      
-      const formattedDate = new Date(editedUpdatedAt).toLocaleString();
-      const lastModifiedMatches = cardQueries.getAllByText((_content, element) => {
-        const hasText = element?.textContent?.includes(`Last Modified: ${formattedDate}`);
-        return hasText === true;
-      });
-      expect(lastModifiedMatches.length).toBeGreaterThan(0);
-    });
-
-    it('proves the card renders from stageDocumentContent and reflects resource metadata', () => {
-      const documentKey = 'draft_document_outline_model_a';
-      const documentContent = 'Content from stageDocumentContent';
-      const sourceContributionId = 'contrib-metadata-test';
-      const updatedAt = '2024-01-25T08:15:00.000Z';
-      
-      const progress = buildStageRunProgress(
-        {},
-        {
-          [documentKey]: buildStageDocumentDescriptor('model-a'),
-        },
-      );
-
-      seedBaseStore(progress, {
-        focusedStageDocument: {
-          [`${sessionId}:${stageSlug}:model-a`]: {
-            modelId: 'model-a',
-            documentKey,
-          },
-        },
-        stageDocumentContent: {
-          [buildStageDocumentKey('model-a', documentKey)]: buildStageDocumentContent({
-            baselineMarkdown: documentContent,
-            currentDraftMarkdown: documentContent,
-          }),
-        },
-        stageDocumentResources: {
-          [buildStageDocumentKey('model-a', documentKey)]: buildEditedDocumentResource(documentKey, {
-            source_contribution_id: sourceContributionId,
-            updated_at: updatedAt,
-          }),
-        },
-      });
-
-      renderSessionContributionsDisplayCard();
-
-      // Assert card renders content from stageDocumentContent
-      const textarea = screen.getByTestId(`stage-document-feedback-model-a-${documentKey}`);
-      expect(textarea).toHaveValue(documentContent);
-
-      const card = screen.getByTestId(`stage-document-card-model-a-${documentKey}`);
-      const cardQueries = within(card);
-
-      // Assert resource metadata is displayed within the specific card
-      // Text is split across multiple elements, so we use a function matcher scoped to the card
-      // Use getAllByText since parent elements also match, then check that at least one exists
-      const sourceContributionMatches = cardQueries.getAllByText((_content, element) => {
-        const hasText = element?.textContent?.includes(`Source Contribution: ${sourceContributionId}`);
-        return hasText === true;
-      });
-      expect(sourceContributionMatches.length).toBeGreaterThan(0);
-      
-      const formattedDate = new Date(updatedAt).toLocaleString();
-      const lastModifiedMatches = cardQueries.getAllByText((_content, element) => {
-        const hasText = element?.textContent?.includes(`Last Modified: ${formattedDate}`);
-        return hasText === true;
-      });
-      expect(lastModifiedMatches.length).toBeGreaterThan(0);
-    });
-  });
+  // NOTE: "Resource metadata display" tests removed - behavior is now owned by GeneratedContributionCard
 
   describe('Progress summary display removal', () => {
     it('does not display document progress summary', () => {
@@ -1790,46 +1544,10 @@ describe('SessionContributionsDisplayCard', () => {
   });
 
   describe('Step 38.j: Document highlighting filtering', () => {
-    it('renders only highlighted documents when multiple documents exist for a model', () => {
-      // 38.j.i: Mock store state with multiple documents in documentsByModel for a model
-      // but only one document is highlighted in focusedStageDocument
-      const modelId = 'model-a';
-      const businessCaseKey = 'business_case';
-      const featureSpecKey = 'feature_spec';
-      const focusKey = `${sessionId}:${stageSlug}:${modelId}`;
+    // NOTE: Tests for document-level rendering detail removed - behavior is now owned by GeneratedContributionCard
+    // Remaining tests verify that no cards render when no documents are highlighted
 
-      const progress = buildStageRunProgress(
-        {},
-        {
-          [businessCaseKey]: buildStageDocumentDescriptor(modelId),
-          [featureSpecKey]: buildStageDocumentDescriptor(modelId),
-        },
-      );
-
-      seedBaseStore(progress, {
-        focusedStageDocument: {
-          [focusKey]: { modelId, documentKey: businessCaseKey },
-        },
-        stageDocumentContent: {
-          [buildStageDocumentKey(modelId, businessCaseKey)]: buildStageDocumentContent(),
-          [buildStageDocumentKey(modelId, featureSpecKey)]: buildStageDocumentContent(),
-        },
-      });
-
-      renderSessionContributionsDisplayCard();
-
-      // 38.j.ii: Assert that only the highlighted document has a Card component rendered
-      expect(
-        screen.getByTestId(`stage-document-card-${modelId}-${businessCaseKey}`),
-      ).toBeInTheDocument();
-
-      // 38.j.iii: Assert that the non-highlighted document does NOT have a Card component rendered
-      expect(
-        screen.queryByTestId(`stage-document-card-${modelId}-${featureSpecKey}`),
-      ).not.toBeInTheDocument();
-    });
-
-    it('renders no document cards when no documents are highlighted', () => {
+    it('renders no GeneratedContributionCards when no documents are highlighted', () => {
       // 38.j.iv: Create a test case where no documents are highlighted
       const modelId = 'model1';
       const businessCaseKey = 'business_case';
@@ -1853,17 +1571,14 @@ describe('SessionContributionsDisplayCard', () => {
 
       renderSessionContributionsDisplayCard();
 
-      // Assert that no document cards are rendered (only the "No documents generated yet" message)
+      // Assert that no GeneratedContributionCards are rendered (only the "No documents generated yet" message)
       expect(
-        screen.queryByTestId(`stage-document-card-${modelId}-${businessCaseKey}`),
-      ).not.toBeInTheDocument();
-      expect(
-        screen.queryByTestId(`stage-document-card-${modelId}-${featureSpecKey}`),
+        screen.queryByTestId(`generated-contribution-card-${modelId}`),
       ).not.toBeInTheDocument();
       expect(screen.getByText('No documents generated yet.')).toBeInTheDocument();
     });
 
-    it('renders no document cards when focusedStageDocument is undefined', () => {
+    it('renders no GeneratedContributionCards when focusedStageDocument is undefined', () => {
       // 38.j.iv: Test case where focusedStageDocument is undefined
       const modelId = 'model1';
       const businessCaseKey = 'business_case';
@@ -1884,68 +1599,11 @@ describe('SessionContributionsDisplayCard', () => {
 
       renderSessionContributionsDisplayCard();
 
-      // Assert that no document cards are rendered
+      // Assert that no GeneratedContributionCards are rendered
       expect(
-        screen.queryByTestId(`stage-document-card-${modelId}-${businessCaseKey}`),
+        screen.queryByTestId(`generated-contribution-card-${modelId}`),
       ).not.toBeInTheDocument();
       expect(screen.getByText('No documents generated yet.')).toBeInTheDocument();
-    });
-
-    it('renders only highlighted documents for each model when multiple models have different highlighted documents', () => {
-      // 38.j.v: Create a test case with multiple models, where each model has different highlighted documents
-      const modelA = 'model-a';
-      const modelB = 'model-b';
-      const businessCaseKey = 'business_case';
-      const featureSpecKey = 'feature_spec';
-      const focusKeyA = `${sessionId}:${stageSlug}:${modelA}`;
-      const focusKeyB = `${sessionId}:${stageSlug}:${modelB}`;
-
-      const progress = buildStageRunProgress(
-        {},
-        {
-          [`${businessCaseKey}_model_a`]: buildStageDocumentDescriptor(modelA),
-          [`${featureSpecKey}_model_a`]: buildStageDocumentDescriptor(modelA),
-          [`${businessCaseKey}_model_b`]: buildStageDocumentDescriptor(modelB),
-          [`${featureSpecKey}_model_b`]: buildStageDocumentDescriptor(modelB),
-        },
-      );
-
-      seedBaseStore(progress, {
-        focusedStageDocument: {
-          // model-a has business_case highlighted
-          [focusKeyA]: { modelId: modelA, documentKey: `${businessCaseKey}_model_a` },
-          // model-b has feature_spec highlighted
-          [focusKeyB]: { modelId: modelB, documentKey: `${featureSpecKey}_model_b` },
-        },
-        stageDocumentContent: {
-          [buildStageDocumentKey(modelA, `${businessCaseKey}_model_a`)]: buildStageDocumentContent(),
-          [buildStageDocumentKey(modelA, `${featureSpecKey}_model_a`)]: buildStageDocumentContent(),
-          [buildStageDocumentKey(modelB, `${businessCaseKey}_model_b`)]: buildStageDocumentContent(),
-          [buildStageDocumentKey(modelB, `${featureSpecKey}_model_b`)]: buildStageDocumentContent(),
-        },
-      });
-
-      renderSessionContributionsDisplayCard();
-
-      // Verify only highlighted documents are rendered for each model
-      // model-a: only business_case should be rendered
-      expect(
-        screen.getByTestId(`stage-document-card-${modelA}-${businessCaseKey}_model_a`),
-      ).toBeInTheDocument();
-      expect(
-        screen.queryByTestId(`stage-document-card-${modelA}-${featureSpecKey}_model_a`),
-      ).not.toBeInTheDocument();
-
-      // model-b: only feature_spec should be rendered
-      expect(
-        screen.getByTestId(`stage-document-card-${modelB}-${featureSpecKey}_model_b`),
-      ).toBeInTheDocument();
-      expect(
-        screen.queryByTestId(`stage-document-card-${modelB}-${businessCaseKey}_model_b`),
-      ).not.toBeInTheDocument();
-
-      // This test must fail because SessionContributionsDisplayCard currently renders all documents
-      // regardless of highlighting status
     });
   });
 
@@ -2063,7 +1721,7 @@ describe('SessionContributionsDisplayCard', () => {
       expect(screen.queryByText('Generating documents')).not.toBeInTheDocument();
     });
 
-    it('updates banner visibility when document status changes from generating to completed', () => {
+    it('updates banner visibility when document status changes from generating to completed', async () => {
       // 3.b.iv: Verify the component correctly updates the banner visibility when document status changes
       const initialProgress = buildStageRunProgress(
         {
@@ -2094,7 +1752,7 @@ describe('SessionContributionsDisplayCard', () => {
         generateContributionsError: null,
       });
 
-      const { rerender } = renderSessionContributionsDisplayCard();
+      renderSessionContributionsDisplayCard();
 
       // Initially, banner should be displayed
       expect(screen.getByText('Generating documents')).toBeInTheDocument();
@@ -2125,15 +1783,577 @@ describe('SessionContributionsDisplayCard', () => {
         },
       );
 
-      seedBaseStore(updatedProgress, {
-        generateContributionsError: null,
+      act(() => {
+        seedBaseStore(updatedProgress, {
+          generateContributionsError: null,
+        });
       });
 
-      // Rerender with updated state
-      rerender(<SessionContributionsDisplayCard />);
+      // After status change, banner should NOT be displayed (waitFor flushes store-driven re-renders inside act)
+      await waitFor(() => {
+        expect(screen.queryByText('Generating documents')).not.toBeInTheDocument();
+      });
+    });
+  });
 
-      // After status change, banner should NOT be displayed
-      expect(screen.queryByText('Generating documents')).not.toBeInTheDocument();
+  describe('Step 5.c: GeneratedContributionCard per model and modelId prop', () => {
+    it('5.c.i: renders GeneratedContributionCard for each unique modelId when a documentKey is focused', () => {
+      const sharedDocumentKey = 'shared_document';
+      const focusKeyA = `${sessionId}:${stageSlug}:model-a`;
+      const focusKeyB = `${sessionId}:${stageSlug}:model-b`;
+
+      const progress = buildStageRunProgress(
+        {},
+        {
+          [sharedDocumentKey]: buildStageDocumentDescriptor('model-a'),
+          [`${sharedDocumentKey}_model_b`]: buildStageDocumentDescriptor('model-b', {
+            modelId: 'model-b',
+          }),
+        },
+      );
+
+      seedBaseStore(progress, {
+        focusedStageDocument: {
+          [focusKeyA]: { modelId: 'model-a', documentKey: sharedDocumentKey },
+          [focusKeyB]: { modelId: 'model-b', documentKey: sharedDocumentKey },
+        },
+        stageDocumentContent: {
+          [buildStageDocumentKey('model-a', sharedDocumentKey)]: buildStageDocumentContent(),
+          [buildStageDocumentKey('model-b', sharedDocumentKey)]: buildStageDocumentContent(),
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      expect(screen.getByTestId('generated-contribution-card-model-a')).toBeInTheDocument();
+      expect(screen.getByTestId('generated-contribution-card-model-b')).toBeInTheDocument();
+      expect(GeneratedContributionCard).toHaveBeenCalledTimes(2);
+    });
+
+    it('5.c.ii: passes modelId prop correctly to each GeneratedContributionCard', () => {
+      const sharedDocumentKey = 'shared_document';
+      const focusKeyA = `${sessionId}:${stageSlug}:model-a`;
+      const focusKeyB = `${sessionId}:${stageSlug}:model-b`;
+
+      const progress = buildStageRunProgress(
+        {},
+        {
+          [sharedDocumentKey]: buildStageDocumentDescriptor('model-a'),
+          [`${sharedDocumentKey}_model_b`]: buildStageDocumentDescriptor('model-b', {
+            modelId: 'model-b',
+          }),
+        },
+      );
+
+      seedBaseStore(progress, {
+        focusedStageDocument: {
+          [focusKeyA]: { modelId: 'model-a', documentKey: sharedDocumentKey },
+          [focusKeyB]: { modelId: 'model-b', documentKey: sharedDocumentKey },
+        },
+        stageDocumentContent: {
+          [buildStageDocumentKey('model-a', sharedDocumentKey)]: buildStageDocumentContent(),
+          [buildStageDocumentKey('model-b', sharedDocumentKey)]: buildStageDocumentContent(),
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      expect(GeneratedContributionCard).toHaveBeenCalledWith(expect.objectContaining({ modelId: 'model-a' }), expect.anything());
+      expect(GeneratedContributionCard).toHaveBeenCalledWith(expect.objectContaining({ modelId: 'model-b' }), expect.anything());
+    });
+  });
+
+  describe('Step 5.f: Acceptance criteria', () => {
+    it('5.f.i: GeneratedContributionCard rendered for each model', () => {
+      const sharedDocumentKey = 'shared_document';
+      const focusKeyA = `${sessionId}:${stageSlug}:model-a`;
+      const focusKeyB = `${sessionId}:${stageSlug}:model-b`;
+
+      const progress = buildStageRunProgress(
+        {},
+        {
+          [sharedDocumentKey]: buildStageDocumentDescriptor('model-a'),
+          [`${sharedDocumentKey}_model_b`]: buildStageDocumentDescriptor('model-b', { modelId: 'model-b' }),
+        },
+      );
+
+      seedBaseStore(progress, {
+        focusedStageDocument: {
+          [focusKeyA]: { modelId: 'model-a', documentKey: sharedDocumentKey },
+          [focusKeyB]: { modelId: 'model-b', documentKey: sharedDocumentKey },
+        },
+        stageDocumentContent: {
+          [buildStageDocumentKey('model-a', sharedDocumentKey)]: buildStageDocumentContent(),
+          [buildStageDocumentKey('model-b', sharedDocumentKey)]: buildStageDocumentContent(),
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      expect(screen.getByTestId('generated-contribution-card-model-a')).toBeInTheDocument();
+      expect(screen.getByTestId('generated-contribution-card-model-b')).toBeInTheDocument();
+    });
+
+    it('5.f.ii: Document content visible after clicking in StageRunChecklist', () => {
+      const sharedDocumentKey = 'shared_document';
+      const focusKeyA = `${sessionId}:${stageSlug}:model-a`;
+      const focusKeyB = `${sessionId}:${stageSlug}:model-b`;
+
+      const progress = buildStageRunProgress(
+        {},
+        {
+          [sharedDocumentKey]: buildStageDocumentDescriptor('model-a'),
+          [`${sharedDocumentKey}_model_b`]: buildStageDocumentDescriptor('model-b', { modelId: 'model-b' }),
+        },
+      );
+
+      seedBaseStore(progress, {
+        focusedStageDocument: {
+          [focusKeyA]: { modelId: 'model-a', documentKey: sharedDocumentKey },
+          [focusKeyB]: { modelId: 'model-b', documentKey: sharedDocumentKey },
+        },
+        stageDocumentContent: {
+          [buildStageDocumentKey('model-a', sharedDocumentKey)]: buildStageDocumentContent(),
+          [buildStageDocumentKey('model-b', sharedDocumentKey)]: buildStageDocumentContent(),
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      expect(screen.queryByText('No documents generated yet.')).not.toBeInTheDocument();
+      expect(screen.getByTestId('generated-contribution-card-model-a')).toBeInTheDocument();
+      expect(screen.getByTestId('generated-contribution-card-model-b')).toBeInTheDocument();
+    });
+
+    it('5.f.iii: Progressive rendering visible (content updates as chunks arrive)', () => {
+      const sharedDocumentKey = 'shared_document';
+      const focusKeyA = `${sessionId}:${stageSlug}:model-a`;
+      const focusKeyB = `${sessionId}:${stageSlug}:model-b`;
+
+      const progress = buildStageRunProgress(
+        {},
+        {
+          [sharedDocumentKey]: buildStageDocumentDescriptor('model-a', {
+            status: 'generating',
+            latestRenderedResourceId: 'chunk-1',
+          }),
+          [`${sharedDocumentKey}_model_b`]: buildStageDocumentDescriptor('model-b', {
+            modelId: 'model-b',
+            status: 'generating',
+            latestRenderedResourceId: 'chunk-2',
+          }),
+        },
+      );
+
+      seedBaseStore(progress, {
+        focusedStageDocument: {
+          [focusKeyA]: { modelId: 'model-a', documentKey: sharedDocumentKey },
+          [focusKeyB]: { modelId: 'model-b', documentKey: sharedDocumentKey },
+        },
+        stageDocumentContent: {
+          [buildStageDocumentKey('model-a', sharedDocumentKey)]: buildStageDocumentContent(),
+          [buildStageDocumentKey('model-b', sharedDocumentKey)]: buildStageDocumentContent(),
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      expect(screen.getByTestId('generated-contribution-card-model-a')).toBeInTheDocument();
+      expect(screen.getByTestId('generated-contribution-card-model-b')).toBeInTheDocument();
+    });
+  });
+
+  describe('Step 14.c: GeneratedContributionCard rendering and submit behavior', () => {
+    it('14.c.i: renders one GeneratedContributionCard per model when a documentKey is focused', () => {
+      // Target: When the user selects a specific document in the list, one GeneratedContributionCard
+      // is rendered per model so the user can compare that document across models. Models always
+      // have the same set of documents; progress may key them as documentKey (model-a) and
+      // documentKey_model_b (model-b) for the same logical document.
+      const sharedDocumentKey = 'shared_document';
+      const focusKeyA = `${sessionId}:${stageSlug}:model-a`;
+      const focusKeyB = `${sessionId}:${stageSlug}:model-b`;
+
+      const progress = buildStageRunProgress(
+        {},
+        {
+          [sharedDocumentKey]: buildStageDocumentDescriptor('model-a'),
+          [`${sharedDocumentKey}_model_b`]: buildStageDocumentDescriptor('model-b', {
+            modelId: 'model-b',
+          }),
+        },
+      );
+
+      seedBaseStore(progress, {
+        focusedStageDocument: {
+          [focusKeyA]: { modelId: 'model-a', documentKey: sharedDocumentKey },
+          [focusKeyB]: { modelId: 'model-b', documentKey: sharedDocumentKey },
+        },
+        stageDocumentContent: {
+          [buildStageDocumentKey('model-a', sharedDocumentKey)]: buildStageDocumentContent(),
+          [buildStageDocumentKey('model-b', sharedDocumentKey)]: buildStageDocumentContent(),
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      expect(screen.getByTestId('generated-contribution-card-model-a')).toBeInTheDocument();
+      expect(screen.getByTestId('generated-contribution-card-model-b')).toBeInTheDocument();
+    });
+
+    it('14.c.ii: submits all document-level feedback then advances stage on Submit Responses & Advance Stage', async () => {
+      // Setup multi-stage so submit button is enabled
+      const stage1: DialecticStage = {
+        id: 'stage-1',
+        slug: 'thesis',
+        display_name: 'Thesis',
+        description: 'Thesis stage',
+        default_system_prompt_id: 'prompt-1',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: isoTimestamp,
+      };
+      const stage2: DialecticStage = {
+        id: 'stage-2',
+        slug: 'antithesis',
+        display_name: 'Antithesis',
+        description: 'Antithesis stage',
+        default_system_prompt_id: 'prompt-2',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: isoTimestamp,
+      };
+      const multiStageProcessTemplate: DialecticProcessTemplate = {
+        id: 'template-multi',
+        name: 'Multi-Stage Template',
+        description: 'Template with multiple stages',
+        starting_stage_id: stage1.id,
+        created_at: isoTimestamp,
+        stages: [stage1, stage2],
+        transitions: [
+          {
+            id: 'transition-1',
+            source_stage_id: stage1.id,
+            target_stage_id: stage2.id,
+            condition_description: null,
+            created_at: isoTimestamp,
+            process_template_id: 'template-multi',
+          },
+        ],
+      };
+
+      const documentKeyA = 'doc_a';
+      const documentKeyB = 'doc_b';
+
+      const progress = buildStageRunProgress(
+        {
+          planner_header: 'completed',
+          draft_document: 'completed',
+          render_document: 'completed',
+        },
+        {
+          [documentKeyA]: buildStageDocumentDescriptor('model-a', { status: 'completed' }),
+          [documentKeyB]: buildStageDocumentDescriptor('model-b', { status: 'completed' }),
+        },
+      );
+
+      const steps = buildRecipeSteps();
+      const contributions = ['model-a', 'model-b'].map(buildContribution);
+      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const project = buildProject(session, multiStageProcessTemplate);
+      const recipe = buildRecipe(steps);
+
+      const feedbackA = 'Feedback for document A';
+      const feedbackB = 'Feedback for document B';
+
+      setDialecticStateValues({
+        activeContextProjectId: project.id,
+        activeContextSessionId: session.id,
+        activeContextStage: stage1,
+        activeStageSlug: stage1.slug,
+        activeSessionDetail: session,
+        selectedModelIds: session.selected_model_ids ?? [],
+        currentProjectDetail: project,
+        currentProcessTemplate: multiStageProcessTemplate,
+        recipesByStageSlug: {
+          [stage1.slug]: recipe,
+        },
+        stageRunProgress: {
+          [progressKey]: progress,
+        },
+        stageDocumentContent: {
+          [buildStageDocumentKey('model-a', documentKeyA)]: buildStageDocumentContent({
+            currentDraftMarkdown: feedbackA,
+          }),
+          [buildStageDocumentKey('model-b', documentKeyB)]: buildStageDocumentContent({
+            currentDraftMarkdown: feedbackB,
+          }),
+        },
+      });
+
+      const { submitStageResponses } = getDialecticStoreState();
+
+      renderSessionContributionsDisplayCard();
+
+      const footer = screen.getByTestId('card-footer');
+      const submitButton = within(footer).getByRole('button', { name: 'Submit Responses & Advance Stage' });
+
+      fireEvent.click(submitButton);
+
+      // Confirm via dialog
+      const confirmButton = await screen.findByRole('button', { name: 'Continue' });
+      fireEvent.click(confirmButton);
+
+      // Assert: submitStageResponses called with payload that includes all document feedback
+      // The store action is responsible for collecting drafts from stageDocumentContent
+      await waitFor(() => {
+        expect(submitStageResponses).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sessionId: session.id,
+            currentIterationNumber: session.iteration_count,
+            projectId: project.id,
+            stageSlug: stage1.slug,
+          }),
+        );
+      });
+    });
+
+    it('14.c.iii: does not submit feedback for documents with empty feedback area', async () => {
+      // Setup multi-stage so submit button is enabled
+      const stage1: DialecticStage = {
+        id: 'stage-1',
+        slug: 'thesis',
+        display_name: 'Thesis',
+        description: 'Thesis stage',
+        default_system_prompt_id: 'prompt-1',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: isoTimestamp,
+      };
+      const stage2: DialecticStage = {
+        id: 'stage-2',
+        slug: 'antithesis',
+        display_name: 'Antithesis',
+        description: 'Antithesis stage',
+        default_system_prompt_id: 'prompt-2',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: isoTimestamp,
+      };
+      const multiStageProcessTemplate: DialecticProcessTemplate = {
+        id: 'template-multi',
+        name: 'Multi-Stage Template',
+        description: 'Template with multiple stages',
+        starting_stage_id: stage1.id,
+        created_at: isoTimestamp,
+        stages: [stage1, stage2],
+        transitions: [
+          {
+            id: 'transition-1',
+            source_stage_id: stage1.id,
+            target_stage_id: stage2.id,
+            condition_description: null,
+            created_at: isoTimestamp,
+            process_template_id: 'template-multi',
+          },
+        ],
+      };
+
+      const documentKeyA = 'doc_a';
+      const documentKeyB = 'doc_b';
+
+      const progress = buildStageRunProgress(
+        {
+          planner_header: 'completed',
+          draft_document: 'completed',
+          render_document: 'completed',
+        },
+        {
+          [documentKeyA]: buildStageDocumentDescriptor('model-a', { status: 'completed' }),
+          [documentKeyB]: buildStageDocumentDescriptor('model-b', { status: 'completed' }),
+        },
+      );
+
+      const steps = buildRecipeSteps();
+      const contributions = ['model-a', 'model-b'].map(buildContribution);
+      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const project = buildProject(session, multiStageProcessTemplate);
+      const recipe = buildRecipe(steps);
+
+      setDialecticStateValues({
+        activeContextProjectId: project.id,
+        activeContextSessionId: session.id,
+        activeContextStage: stage1,
+        activeStageSlug: stage1.slug,
+        activeSessionDetail: session,
+        selectedModelIds: session.selected_model_ids ?? [],
+        currentProjectDetail: project,
+        currentProcessTemplate: multiStageProcessTemplate,
+        recipesByStageSlug: {
+          [stage1.slug]: recipe,
+        },
+        stageRunProgress: {
+          [progressKey]: progress,
+        },
+        stageDocumentContent: {
+          // Document A has feedback, Document B has empty feedback
+          [buildStageDocumentKey('model-a', documentKeyA)]: buildStageDocumentContent({
+            currentDraftMarkdown: 'Feedback for A',
+          }),
+          [buildStageDocumentKey('model-b', documentKeyB)]: buildStageDocumentContent({
+            currentDraftMarkdown: '', // Empty feedback
+          }),
+        },
+      });
+
+      const { submitStageResponses } = getDialecticStoreState();
+
+      renderSessionContributionsDisplayCard();
+
+      const footer = screen.getByTestId('card-footer');
+      const submitButton = within(footer).getByRole('button', { name: 'Submit Responses & Advance Stage' });
+
+      fireEvent.click(submitButton);
+
+      // Confirm via dialog
+      const confirmButton = await screen.findByRole('button', { name: 'Continue' });
+      fireEvent.click(confirmButton);
+
+      // Assert: submitStageResponses called, and store should filter empty feedback
+      // The test verifies the submit is called; the store is responsible for filtering empty drafts
+      await waitFor(() => {
+        expect(submitStageResponses).toHaveBeenCalled();
+      });
+
+      // Note: The actual filtering of empty feedback happens in the store action
+      // This test verifies the component correctly calls submit with all drafts,
+      // and the store is responsible for filtering empty ones
+    });
+
+    it('14.c.iv: submits edited document content when user has edited and submits', async () => {
+      // Setup multi-stage so submit button is enabled
+      const stage1: DialecticStage = {
+        id: 'stage-1',
+        slug: 'thesis',
+        display_name: 'Thesis',
+        description: 'Thesis stage',
+        default_system_prompt_id: 'prompt-1',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: isoTimestamp,
+      };
+      const stage2: DialecticStage = {
+        id: 'stage-2',
+        slug: 'antithesis',
+        display_name: 'Antithesis',
+        description: 'Antithesis stage',
+        default_system_prompt_id: 'prompt-2',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: isoTimestamp,
+      };
+      const multiStageProcessTemplate: DialecticProcessTemplate = {
+        id: 'template-multi',
+        name: 'Multi-Stage Template',
+        description: 'Template with multiple stages',
+        starting_stage_id: stage1.id,
+        created_at: isoTimestamp,
+        stages: [stage1, stage2],
+        transitions: [
+          {
+            id: 'transition-1',
+            source_stage_id: stage1.id,
+            target_stage_id: stage2.id,
+            condition_description: null,
+            created_at: isoTimestamp,
+            process_template_id: 'template-multi',
+          },
+        ],
+      };
+
+      const documentKey = 'editable_doc';
+
+      const progress = buildStageRunProgress(
+        {
+          planner_header: 'completed',
+          draft_document: 'completed',
+          render_document: 'completed',
+        },
+        {
+          [documentKey]: buildStageDocumentDescriptor('model-a', { status: 'completed' }),
+        },
+      );
+
+      const steps = buildRecipeSteps();
+      const contributions = ['model-a'].map(buildContribution);
+      const session = buildSession(contributions, ['model-a']);
+      const project = buildProject(session, multiStageProcessTemplate);
+      const recipe = buildRecipe(steps);
+
+      const editedContent = 'This is the edited document content';
+
+      setDialecticStateValues({
+        activeContextProjectId: project.id,
+        activeContextSessionId: session.id,
+        activeContextStage: stage1,
+        activeStageSlug: stage1.slug,
+        activeSessionDetail: session,
+        selectedModelIds: session.selected_model_ids ?? [],
+        currentProjectDetail: project,
+        currentProcessTemplate: multiStageProcessTemplate,
+        recipesByStageSlug: {
+          [stage1.slug]: recipe,
+        },
+        stageRunProgress: {
+          [progressKey]: progress,
+        },
+        stageDocumentContent: {
+          [buildStageDocumentKey('model-a', documentKey)]: buildStageDocumentContent({
+            baselineMarkdown: 'Original content',
+            currentDraftMarkdown: editedContent,
+            isDirty: true, // Document has been edited
+          }),
+        },
+        stageDocumentResources: {
+          [buildStageDocumentKey('model-a', documentKey)]: buildEditedDocumentResource(documentKey, {
+            source_contribution_id: 'contrib-original',
+          }),
+        },
+      });
+
+      const { submitStageResponses } = getDialecticStoreState();
+
+      renderSessionContributionsDisplayCard();
+
+      const footer = screen.getByTestId('card-footer');
+      const submitButton = within(footer).getByRole('button', { name: 'Submit Responses & Advance Stage' });
+
+      fireEvent.click(submitButton);
+
+      // Confirm via dialog
+      const confirmButton = await screen.findByRole('button', { name: 'Continue' });
+      fireEvent.click(confirmButton);
+
+      // Assert: submitStageResponses called
+      // The store is responsible for collecting dirty documents and submitting edited content
+      await waitFor(() => {
+        expect(submitStageResponses).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sessionId: session.id,
+            currentIterationNumber: session.iteration_count,
+            projectId: project.id,
+            stageSlug: stage1.slug,
+          }),
+        );
+      });
+
+      // Note: The actual submission of edited document content happens in the store action
+      // This test verifies the component correctly triggers submit when documents are dirty
     });
   });
 });

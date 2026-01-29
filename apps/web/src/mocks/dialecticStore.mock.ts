@@ -22,6 +22,7 @@ import type {
   ClearFocusedStageDocumentPayload,
   StageRunProgressEntry,
   RenderCompletedPayload,
+  DocumentCompletedPayload,
   StageDocumentChecklistEntry,
   StageDocumentCompositeKey,
   StageDocumentContentState,
@@ -43,6 +44,7 @@ import {
   hydrateStageProgressLogic,
   reapplyDraftToNewBaselineLogic,
   recordStageDocumentDraftLogic,
+  recordStageDocumentFeedbackDraftLogic,
   updateStageDocumentDraftLogic,
   upsertStageDocumentVersionLogic,
 } from '../../../../packages/store/src/dialecticStore.documents';
@@ -101,6 +103,28 @@ export const selectCurrentProcessTemplate = (state: DialecticStateValues): Diale
 export const selectOverlay = vi.fn();
 export const setFocusedStageDocument = vi.fn();
 export const submitStageDocumentFeedback = vi.fn();
+
+export const selectFocusedStageDocument = (
+  state: DialecticStateValues,
+  sessionId: string,
+  stageSlug: string,
+  modelId: string,
+): { modelId: string; documentKey: string } | null => {
+  const key = `${sessionId}:${stageSlug}:${modelId}`;
+  return state.focusedStageDocument?.[key] ?? null;
+};
+
+export const selectStageDocumentResource = (
+  state: DialecticStateValues,
+  sessionId: string,
+  stageSlug: string,
+  iterationNumber: number,
+  modelId: string,
+  documentKey: string,
+): StageDocumentContentState | undefined => {
+  const compositeKey = `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
+  return state.stageDocumentContent[compositeKey];
+};
 
 const selectRecipeSteps = (
   state: DialecticStateValues,
@@ -535,6 +559,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       _handlePlannerStarted: vi.fn(),
       _handleDocumentStarted: vi.fn(),
       _handleDocumentChunkCompleted: vi.fn(),
+      _handleDocumentCompleted: vi.fn<[DocumentCompletedPayload], void>(),
       _handleRenderCompleted: vi.fn().mockImplementation((event: RenderCompletedPayload) => {
         handleRenderCompletedLogic(get, set, event);
       }),
@@ -573,6 +598,13 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
                 key,
                 draftMarkdown,
             );
+        },
+      ),
+      updateStageDocumentFeedbackDraft: vi.fn().mockImplementation(
+        (key: StageDocumentCompositeKey, feedbackMarkdown: string) => {
+          set((state) => {
+            recordStageDocumentFeedbackDraftLogic(state, key, feedbackMarkdown);
+          });
         },
       ),
       flushStageDocumentDraft: vi.fn().mockImplementation((key: StageDocumentCompositeKey) => {
@@ -616,7 +648,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
         },
       ),
       hydrateStageProgress: vi.fn().mockImplementation((payload: ListStageDocumentsPayload) => {
-        hydrateStageProgressLogic(set, { sessionId: payload.sessionId, stageSlug: payload.stageSlug, iterationNumber: payload.iterationNumber });
+        hydrateStageProgressLogic(set, payload);
       }),
       resetSubmitStageDocumentFeedbackError: vi.fn(() => set({ submitStageDocumentFeedbackError: null })),
     };

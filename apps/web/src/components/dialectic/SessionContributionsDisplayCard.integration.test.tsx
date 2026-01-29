@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
@@ -381,7 +381,7 @@ describe('SessionContributionsDisplayCard Integration Tests', () => {
       expect(screen.getByText('Generating documents')).toBeInTheDocument();
     });
 
-    it('updates banner visibility when document status changes from generating to completed via selectStageDocumentChecklist', () => {
+    it('updates banner visibility when document status changes from generating to completed via selectStageDocumentChecklist', async () => {
       // 3.e.iii: Assert that when document status in the store (via selectStageDocumentChecklist - producer) changes
       // from 'generating' to 'completed', the component SessionContributionsDisplayCard (test subject) correctly
       // updates hasGeneratingDocuments to false (via useMemo dependencies) and the rendered output (consumer) hides the banner
@@ -419,7 +419,7 @@ describe('SessionContributionsDisplayCard Integration Tests', () => {
       let checklist = selectStageDocumentChecklist(state, progressKey, 'model-a');
       expect(checklist.some((doc) => doc.status === 'generating')).toBe(true);
 
-      const { rerender } = renderSessionContributionsDisplayCard();
+      renderSessionContributionsDisplayCard();
 
       // Initially: Component calculates hasGeneratingDocuments as true, isGenerating as true
       // Rendered output displays the banner
@@ -452,8 +452,10 @@ describe('SessionContributionsDisplayCard Integration Tests', () => {
         },
       );
 
-      seedBaseStore(updatedProgress, {
-        generateContributionsError: null,
+      act(() => {
+        seedBaseStore(updatedProgress, {
+          generateContributionsError: null,
+        });
       });
 
       // Verify producer: After update, selectStageDocumentChecklist returns documents with status 'completed'
@@ -462,13 +464,10 @@ describe('SessionContributionsDisplayCard Integration Tests', () => {
       expect(checklist.every((doc) => doc.status === 'completed' || doc.status === 'not_started')).toBe(true);
       expect(checklist.some((doc) => doc.status === 'generating')).toBe(false);
 
-      // Rerender with updated store state
-      rerender(<SessionContributionsDisplayCard />);
-
-      // After status change: Component updates hasGeneratingDocuments to false (via useMemo dependencies on documentGroups)
-      // Component updates isGenerating to false (via useMemo dependencies)
-      // Rendered output hides the banner
-      expect(screen.queryByText('Generating documents')).not.toBeInTheDocument();
+      // After status change: Component updates (store-driven re-render). waitFor flushes inside act.
+      await waitFor(() => {
+        expect(screen.queryByText('Generating documents')).not.toBeInTheDocument();
+      });
     });
   });
 });

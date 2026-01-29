@@ -16,11 +16,7 @@ import {
 	DialecticFeedback,
 	SubmitStageResponsesPayload,
 	StageDocumentChecklistEntry,
-	StageDocumentCompositeKey,
-	StageDocumentContentState,
-	EditedDocumentResource,
 } from "@paynless/types";
-import { isDocumentHighlighted } from "@paynless/utils";
 import {
 	Card,
 	CardContent,
@@ -48,6 +44,7 @@ import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { cn } from "@/lib/utils";
 import { useStageRunProgressHydration } from '../../hooks/useStageRunProgressHydration';
 import { Badge } from "@/components/ui/badge";
+import { GeneratedContributionCard } from "./GeneratedContributionCard";
 
 
 const isApiError = (error: unknown): error is ApiError => {
@@ -109,10 +106,6 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	);
 	const sortedStages = useDialecticStore(selectSortedStages);
 	const setActiveStage = useDialecticStore((state) => state.setActiveStage);
-	const updateStageDocumentDraft = useDialecticStore((state) => state.updateStageDocumentDraft);
-	const stageDocumentContent = useDialecticStore((state) => state.stageDocumentContent);
-	const stageDocumentResources = useDialecticStore((state) => state.stageDocumentResources);
-	const modelCatalog = useDialecticStore((state) => state.modelCatalog);
 	const focusedStageDocument = useDialecticStore((state) => state.focusedStageDocument);
 
   const activeStage = useMemo(() => {
@@ -241,73 +234,46 @@ export const SessionContributionsDisplayCard: React.FC = () => {
     return activeStage.slug === lastStage?.slug;
   }, [sortedStages, activeStage]);
 
-  const formatDocumentStatus = (status: string): string =>
-    status
-      .split('_')
-      .map((segment) =>
-        segment.length > 0 ? `${segment.charAt(0).toUpperCase()}${segment.slice(1)}` : segment,
-      )
-      .join(' ');
-
-  const buildCompositeKey = (modelId: string, documentKey: string): StageDocumentCompositeKey | null => {
-    if (!session || !activeStage || typeof session?.iteration_count !== 'number') {
-      return null;
-    }
-
-    return {
-      sessionId: session.id,
-      stageSlug: activeStage.slug,
-      iterationNumber: session.iteration_count,
-      modelId,
-      documentKey,
-    };
-  };
-
-  const serializeCompositeKey = (key: StageDocumentCompositeKey): string =>
-    `${key.sessionId}:${key.stageSlug}:${key.iterationNumber}:${key.modelId}:${key.documentKey}`;
-
-  const getDocumentResourceMetadata = (serializedKey: string): EditedDocumentResource | undefined => {
-    return stageDocumentResources[serializedKey];
-  };
-
-  const handleDocumentDraftChange = (modelId: string, documentKey: string, value: string) => {
-    const compositeKey = buildCompositeKey(modelId, documentKey);
-    if (!compositeKey) {
-      return;
-    }
-
-    updateStageDocumentDraft(compositeKey, value);
-  };
-
-  const resolveModelName = (modelId: string): string => {
-    const catalogEntry = modelCatalog?.find((model) => model.id === modelId) ?? null;
-    return catalogEntry?.model_name ?? modelId;
-  };
-
   const documentGroups = useMemo(
     () => Array.from(documentsByModel.entries()),
     [documentsByModel],
   );
 
-  const filteredDocumentGroups = useMemo(() => {
-    if (!session || !activeStage) {
+  const selectedDocumentKey = useMemo((): string | null => {
+    if (!focusedStageDocument || typeof focusedStageDocument !== 'object') {
+      return null;
+    }
+    const first = Object.values(focusedStageDocument).find(
+      (entry): entry is { modelId: string; documentKey: string } =>
+        entry != null && typeof entry.documentKey === 'string' && entry.documentKey.length > 0,
+    );
+    return first?.documentKey ?? null;
+  }, [focusedStageDocument]);
+
+  const entryMatchesSelectedDocument = (
+    entryDocumentKey: string,
+    modelId: string,
+    selectedKey: string,
+  ): boolean =>
+    entryDocumentKey === selectedKey ||
+    entryDocumentKey === `${selectedKey}_model_${modelId}` ||
+    entryDocumentKey === `${selectedKey}_${modelId.replace(/-/g, '_')}`;
+
+  const modelIdsForSelectedDocument = useMemo((): string[] => {
+    if (selectedDocumentKey == null || selectedDocumentKey === '') {
       return [];
     }
+    const key: string = selectedDocumentKey;
     return documentGroups
-      .map(([modelId, documents]) => {
-        const filteredDocuments = documents.filter((document) =>
-          isDocumentHighlighted(
-            session.id,
-            activeStage.slug,
-            modelId,
-            document.documentKey,
-            focusedStageDocument,
-          ),
-        );
-        return filteredDocuments.length > 0 ? ([modelId, filteredDocuments] as const) : null;
-      })
-      .filter((group): group is [string, StageDocumentChecklistEntry[]] => group !== null);
-  }, [documentGroups, session, activeStage, focusedStageDocument]);
+      .filter(([, entries]) =>
+        entries.some(
+          (entry) =>
+            entry.modelId != null &&
+            entryMatchesSelectedDocument(entry.documentKey, entry.modelId, key),
+        ),
+      )
+      .map(([modelId]) => modelId);
+  }, [documentGroups, selectedDocumentKey]);
 
 const failedDocumentKeys = useMemo(() => {
   if (stageProgressSummary?.hasFailed) {
@@ -338,8 +304,8 @@ const isGenerating = useMemo(() => {
 }, [hasGeneratingDocuments, failedDocumentKeys, generationError]);
 
   const hasDocuments = useMemo(
-    () => filteredDocumentGroups.some(([, documents]) => documents.length > 0),
-    [filteredDocumentGroups],
+    () => modelIdsForSelectedDocument.length > 0,
+    [modelIdsForSelectedDocument],
   );
 
 	// Select feedback metadata for the current stage and iteration
@@ -577,102 +543,14 @@ const isGenerating = useMemo(() => {
 
       <div className="space-y-6">
         {hasDocuments ? (
-          filteredDocumentGroups.map(([modelId, documents]) => {
-            if (!documents || documents.length === 0) {
-              return null;
-            }
-
-            const modelName = resolveModelName(modelId);
-
-            return (
-              <div key={modelId} className="space-y-4">
-                <h3 className="text-base font-semibold text-foreground">{modelName}</h3>
-                <div className="space-y-4">
-                  {documents.map((document) => {
-                    const compositeKey = buildCompositeKey(modelId, document.documentKey);
-                    const serializedKey =
-                      compositeKey !== null ? serializeCompositeKey(compositeKey) : null;
-                    const documentState: StageDocumentContentState | undefined =
-                      serializedKey !== null ? stageDocumentContent[serializedKey] : undefined;
-                    const draftValue = documentState?.currentDraftMarkdown ?? '';
-                    const resourceMetadata = serializedKey !== null ? getDocumentResourceMetadata(serializedKey) : undefined;
-
-                    return (
-                      <Card
-                        key={`${modelId}-${document.documentKey}`}
-                        data-testid={`stage-document-card-${modelId}-${document.documentKey}`}
-                      >
-                        <CardHeader className="flex flex-col gap-3">
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="space-y-1">
-                              <p className="text-sm font-medium text-foreground">{modelName}</p>
-                              <p className="font-mono text-xs text-muted-foreground">
-                                {document.documentKey}
-                              </p>
-                            </div>
-                            <Badge>{formatDocumentStatus(document.status ?? 'not_started')}</Badge>
-                          </div>
-                          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-                            {document.jobId && (
-                              <span>
-                                Job:{' '}
-                                <span className="font-medium text-foreground">{document.jobId}</span>
-                              </span>
-                            )}
-                            {document.latestRenderedResourceId && (
-                              <span>
-                                Latest Render:{' '}
-                                <span className="font-medium text-foreground">
-                                  {document.latestRenderedResourceId}
-                                </span>
-                              </span>
-                            )}
-                            {resourceMetadata?.source_contribution_id && (
-                              <span>
-                                Source Contribution:{' '}
-                                <span className="font-medium text-foreground">
-                                  {resourceMetadata.source_contribution_id}
-                                </span>
-                              </span>
-                            )}
-                            {resourceMetadata?.updated_at && (
-                              <span>
-                                Last Modified:{' '}
-                                <span className="font-medium text-foreground">
-                                  {new Date(resourceMetadata.updated_at).toLocaleString()}
-                                </span>
-                              </span>
-                            )}
-                          </div>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                          <label
-                            className="text-sm font-medium text-muted-foreground"
-                            htmlFor={`stage-document-feedback-${modelId}-${document.documentKey}`}
-                          >
-                            Document Feedback
-                          </label>
-                          <textarea
-                            id={`stage-document-feedback-${modelId}-${document.documentKey}`}
-                            data-testid={`stage-document-feedback-${modelId}-${document.documentKey}`}
-                            className="w-full min-h-[120px] resize-y rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                            value={draftValue}
-                            onChange={(event) =>
-                              handleDocumentDraftChange(
-                                modelId,
-                                document.documentKey,
-                                event.target.value,
-                              )
-                            }
-                          />
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })
+          modelIdsForSelectedDocument.map((modelId) => (
+            <div
+              key={modelId}
+              data-testid={`generated-contribution-card-${modelId}`}
+            >
+              <GeneratedContributionCard modelId={modelId} />
+            </div>
+          ))
         ) : (
           <p className="text-sm text-muted-foreground">No documents generated yet.</p>
         )}

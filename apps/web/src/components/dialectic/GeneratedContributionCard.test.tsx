@@ -274,14 +274,16 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
   const contentState = compositeKey ? {
     [compositeKey]: {
       baselineMarkdown: content,
-      currentDraftMarkdown: feedback,
-      isDirty: feedback !== '',
+      currentDraftMarkdown: content,
+      isDirty: false,
       isLoading: isLoading,
       error: null,
       lastBaselineVersion: sourceContributionId ? { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' } : null,
       pendingDiff: null,
       lastAppliedVersionHash: 'hash-1',
       sourceContributionId: sourceContributionId,
+      feedbackDraftMarkdown: feedback,
+      feedbackIsDirty: feedback !== '',
     }
   } : {};
 
@@ -371,7 +373,7 @@ describe('GeneratedContributionCard', () => {
       },
     });
 
-    const { updateStageDocumentDraft } = getDialecticStoreState();
+    const { updateStageDocumentFeedbackDraft } = getDialecticStoreState();
 
     render(<GeneratedContributionCard modelId={modelA} />);
 
@@ -387,8 +389,7 @@ describe('GeneratedContributionCard', () => {
     };
 
     await waitFor(() => {
-      // user.type types character by character, so check the last call
-      const mockedUpdate = vi.mocked(updateStageDocumentDraft);
+      const mockedUpdate = vi.mocked(updateStageDocumentFeedbackDraft);
       const calls = mockedUpdate.mock.calls;
       expect(calls.length).toBeGreaterThan(0);
       const lastCall = calls[calls.length - 1];
@@ -407,7 +408,7 @@ describe('GeneratedContributionCard', () => {
         [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
       },
     });
-    const { submitStageDocumentFeedback, updateStageDocumentDraft } = getDialecticStoreState();
+    const { submitStageDocumentFeedback, updateStageDocumentFeedbackDraft } = getDialecticStoreState();
 
     render(<GeneratedContributionCard modelId={modelA} />);
 
@@ -423,8 +424,7 @@ describe('GeneratedContributionCard', () => {
     };
 
     await waitFor(() => {
-      // user.type types character by character, so check the last call
-      const mockedUpdate = vi.mocked(updateStageDocumentDraft);
+      const mockedUpdate = vi.mocked(updateStageDocumentFeedbackDraft);
       const calls = mockedUpdate.mock.calls;
       expect(calls.length).toBeGreaterThan(0);
       const lastCall = calls[calls.length - 1];
@@ -439,7 +439,6 @@ describe('GeneratedContributionCard', () => {
       expect(submitStageDocumentFeedback).toHaveBeenCalled();
       const callArgs = vi.mocked(submitStageDocumentFeedback).mock.calls[0]?.[0];
       
-      // Verify all required composite key fields are present
       expect(callArgs).toHaveProperty('sessionId', mockSessionId);
       expect(callArgs).toHaveProperty('stageSlug', mockStageSlug);
       expect(callArgs).toHaveProperty('iterationNumber', iterationNumber);
@@ -447,9 +446,6 @@ describe('GeneratedContributionCard', () => {
       expect(callArgs).toHaveProperty('documentKey', docA1Key);
       expect(callArgs).toHaveProperty('feedback', 'This is my feedback for A1. This is new feedback.');
       
-      // Verify component passes only composite key + feedback; store may enrich with sourceContributionId
-      // Component does not compute or set sourceContributionId - that's the store's responsibility
-      // This assertion verifies the payload structure is compatible with enriched payloads
       expect(callArgs).toEqual(
         expect.objectContaining({
           ...expectedKey,
@@ -485,6 +481,8 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: null,
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
       };
 
       mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
@@ -520,6 +518,8 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: null,
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
       };
 
       mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
@@ -623,6 +623,8 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-456',
         sourceContributionId: null,
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
       };
 
       mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
@@ -1202,6 +1204,8 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: null,
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
       };
 
       mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
@@ -1232,6 +1236,8 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: null,
         sourceContributionId: null,
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
       };
 
       mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
@@ -1265,6 +1271,8 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: null,
         sourceContributionId: null,
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
       };
 
       mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
@@ -1312,6 +1320,8 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: null,
         sourceContributionId: null,
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
       };
 
       mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
@@ -1347,6 +1357,132 @@ describe('GeneratedContributionCard', () => {
     expect(screen.getByPlaceholderText(/Enter feedback for doc-a1/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /save edit/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /save feedback/i })).toBeInTheDocument();
+  });
+
+  it('17.c.i: Document Content input is bound to content draft and Document Feedback input to feedback draft; changing one does not change the other', async () => {
+    const user = userEvent.setup();
+    setupStore({
+      focusedDocument: { modelId: modelA, documentKey: docA1Key },
+      content: 'Content draft text',
+      feedback: 'Feedback draft text',
+      focusedStageDocument: {
+        [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+      },
+    });
+
+    const actualStore = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
+    const realSelectStageDocumentResource = actualStore.selectStageDocumentResource;
+    const fallbackKey = `${mockSessionId}:${mockStageSlug}:${iterationNumber}:${modelA}:${docA1Key}`;
+    const fallbackState = {
+      baselineMarkdown: 'Content draft text',
+      currentDraftMarkdown: 'Content draft text',
+      isDirty: false,
+      isLoading: false,
+      error: null,
+      lastBaselineVersion: null,
+      pendingDiff: null,
+      lastAppliedVersionHash: null,
+      sourceContributionId: null,
+      feedbackDraftMarkdown: 'Feedback draft text',
+      feedbackIsDirty: true,
+    };
+    mockSelectStageDocumentResource.mockImplementation(
+      (state: Parameters<typeof realSelectStageDocumentResource>[0], sessionId: string, stageSlug: string, iter: number, modelId: string, documentKey: string) => {
+        const result = realSelectStageDocumentResource(state, sessionId, stageSlug, iter, modelId, documentKey);
+        if (result !== undefined) return result;
+        const key = `${sessionId}:${stageSlug}:${iter}:${modelId}:${documentKey}`;
+        if (key === fallbackKey) return fallbackState;
+        return result;
+      },
+    );
+
+    const { updateStageDocumentDraft, updateStageDocumentFeedbackDraft } = getDialecticStoreState();
+
+    render(<GeneratedContributionCard modelId={modelA} />);
+
+    const contentTextarea = await screen.findByTestId('content-textarea');
+    const feedbackTextarea = await screen.findByTestId('feedback-textarea');
+
+    expect(contentTextarea).toHaveValue('Content draft text');
+    expect(feedbackTextarea).toHaveValue('Feedback draft text');
+
+    await user.clear(contentTextarea);
+    await user.type(contentTextarea, 'New content only');
+
+    await waitFor(() => {
+      const contentCalls = vi.mocked(updateStageDocumentDraft).mock.calls;
+      expect(contentCalls.length).toBeGreaterThan(0);
+      const lastContentCall = contentCalls[contentCalls.length - 1];
+      expect(lastContentCall[1]).toBe('Content draft textNew content only');
+    });
+    expect(feedbackTextarea).toHaveValue('Feedback draft text');
+
+    await user.clear(feedbackTextarea);
+    await user.type(feedbackTextarea, 'New feedback only');
+
+    await waitFor(() => {
+      const feedbackCalls = vi.mocked(updateStageDocumentFeedbackDraft).mock.calls;
+      expect(feedbackCalls.length).toBeGreaterThan(0);
+      const lastFeedbackCall = feedbackCalls[feedbackCalls.length - 1];
+      expect(lastFeedbackCall[1]).toBe('New feedback only');
+    });
+    expect(contentTextarea).toHaveValue('Content draft textNew content only');
+  });
+
+  it('17.c.ii: Save Edit submits content draft and Save Feedback submits feedback draft when both are filled', async () => {
+    const user = userEvent.setup();
+    setupStore({
+      focusedDocument: { modelId: modelA, documentKey: docA1Key },
+      content: 'Edited content draft',
+      feedback: 'Feedback draft for submit',
+      sourceContributionId: 'contrib-1',
+      focusedStageDocument: {
+        [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+      },
+    });
+
+    mockSelectStageDocumentResource.mockReturnValue({
+      baselineMarkdown: 'Edited content draft',
+      currentDraftMarkdown: 'Edited content draft',
+      isDirty: false,
+      isLoading: false,
+      error: null,
+      lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+      pendingDiff: null,
+      lastAppliedVersionHash: 'hash-1',
+      sourceContributionId: 'contrib-1',
+      feedbackDraftMarkdown: 'Feedback draft for submit',
+      feedbackIsDirty: true,
+    });
+
+    const { saveContributionEdit, submitStageDocumentFeedback } = getDialecticStoreState();
+
+    render(<GeneratedContributionCard modelId={modelA} />);
+
+    const contentTextarea = await screen.findByTestId('content-textarea');
+    const feedbackTextarea = await screen.findByTestId('feedback-textarea');
+
+    expect(contentTextarea).toHaveValue('Edited content draft');
+    expect(feedbackTextarea).toHaveValue('Feedback draft for submit');
+
+    const saveEditButton = screen.getByRole('button', { name: /save edit/i });
+    expect(saveEditButton).not.toBeDisabled();
+    await user.click(saveEditButton);
+
+    await waitFor(() => {
+      expect(saveContributionEdit).toHaveBeenCalled();
+      const editPayload = vi.mocked(saveContributionEdit).mock.calls[0]?.[0];
+      expect(editPayload.editedContentText).toBe('Edited content draft');
+    });
+
+    const saveFeedbackButton = screen.getByRole('button', { name: /save feedback/i });
+    await user.click(saveFeedbackButton);
+
+    await waitFor(() => {
+      expect(submitStageDocumentFeedback).toHaveBeenCalled();
+      const feedbackPayload = vi.mocked(submitStageDocumentFeedback).mock.calls[0]?.[0];
+      expect(feedbackPayload.feedback).toBe('Feedback draft for submit');
+    });
   });
 });
 

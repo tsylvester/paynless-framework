@@ -23,6 +23,9 @@ import type {
 import {
 	handleRenderCompletedLogic,
 	getStageDocumentKey,
+	ensureStageDocumentContentLogic,
+	recordStageDocumentFeedbackDraftLogic,
+	flushStageDocumentFeedbackDraftLogic,
 } from './dialecticStore.documents';
 import {
 	api,
@@ -93,16 +96,22 @@ describe('Stage Progress Hydration', () => {
 
 		expect(useDialecticStore.getState().stageRunProgress[progressKey]).toBeUndefined();
 
+		const userId = 'user-1';
+		const projectId = 'project-1';
 		await useDialecticStore.getState().hydrateStageProgress({
 			sessionId,
 			stageSlug,
 			iterationNumber,
+			userId,
+			projectId,
 		});
 
 		expect(listStageDocumentsSpy).toHaveBeenCalledWith({
 			sessionId,
 			stageSlug,
 			iterationNumber,
+			userId,
+			projectId,
 		});
 
 		const state = useDialecticStore.getState();
@@ -319,6 +328,8 @@ describe('Dialectic store document refresh behaviour', () => {
 				pendingDiff: userEdits,
 				lastAppliedVersionHash: 'old-hash',
 				sourceContributionId: null,
+				feedbackDraftMarkdown: '',
+				feedbackIsDirty: false,
 			};
 			state.stageRunProgress[progressKey] = {
 				documents: {},
@@ -364,6 +375,8 @@ describe('Dialectic store document refresh behaviour', () => {
 			pendingDiff: 'User edits',
 			lastAppliedVersionHash: 'some-hash',
 			sourceContributionId: null,
+			feedbackDraftMarkdown: '',
+			feedbackIsDirty: false,
 		};
 
 		const mockRecipe: DialecticStageRecipe = {
@@ -468,6 +481,8 @@ describe('Dialectic store document refresh behaviour', () => {
 					pendingDiff: 'Some edits for A',
 					lastAppliedVersionHash: 'a1',
 					sourceContributionId: null,
+					feedbackDraftMarkdown: '',
+					feedbackIsDirty: false,
 				},
 				[secondSerialized]: {
 					baselineMarkdown: 'Doc B baseline',
@@ -483,6 +498,8 @@ describe('Dialectic store document refresh behaviour', () => {
 					pendingDiff: 'Some edits for B',
 					lastAppliedVersionHash: 'b1',
 					sourceContributionId: null,
+					feedbackDraftMarkdown: '',
+					feedbackIsDirty: false,
 				},
 			},
 		});
@@ -653,6 +670,8 @@ describe('Dialectic store document clear focused stage document', () => {
 					pendingDiff: 'Some edits for A',
 					lastAppliedVersionHash: 'a1',
 					sourceContributionId: null,
+					feedbackDraftMarkdown: '',
+					feedbackIsDirty: false,
 				},
 				[secondSerialized]: {
 					baselineMarkdown: 'Doc B baseline',
@@ -668,6 +687,8 @@ describe('Dialectic store document clear focused stage document', () => {
 					pendingDiff: 'Some edits for B',
 					lastAppliedVersionHash: 'b1',
 					sourceContributionId: null,
+					feedbackDraftMarkdown: '',
+					feedbackIsDirty: false,
 				},
 			},
 			focusedStageDocument: {
@@ -2354,5 +2375,101 @@ describe('fetchStageDocumentContentLogic stores sourceContributionId', () => {
 		const content = state.stageDocumentContent[serializedKey];
 		expect(content).toBeDefined();
 		expect(content?.sourceContributionId).toBe(null);
+	});
+});
+
+describe('Feedback draft logic (15.c)', () => {
+	const key: StageDocumentCompositeKey = {
+		sessionId: 's1',
+		stageSlug: 'thesis',
+		iterationNumber: 1,
+		modelId: 'm1',
+		documentKey: 'doc_a',
+	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		resetApiMock();
+		useDialecticStore.setState(initialDialecticStateValues);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('15.c.i: recordStageDocumentFeedbackDraftLogic updates only feedbackDraftMarkdown and feedbackIsDirty and does not change currentDraftMarkdown or isDirty', () => {
+		const serializedKey = getStageDocumentKey(key);
+		const initialContent: StageDocumentContentState = {
+			baselineMarkdown: 'Baseline',
+			currentDraftMarkdown: 'Baseline\nContent edit',
+			isDirty: true,
+			isLoading: false,
+			error: null,
+			lastBaselineVersion: null,
+			pendingDiff: 'Content edit',
+			lastAppliedVersionHash: null,
+			sourceContributionId: null,
+			feedbackDraftMarkdown: '',
+			feedbackIsDirty: false,
+		};
+
+		useDialecticStore.setState((state) => {
+			state.stageDocumentContent[serializedKey] = initialContent;
+			recordStageDocumentFeedbackDraftLogic(state, key, 'User feedback text');
+		});
+
+		const state = useDialecticStore.getState();
+		const entry = state.stageDocumentContent[serializedKey];
+		expect(entry).toBeDefined();
+		expect(entry?.feedbackDraftMarkdown).toBe('User feedback text');
+		expect(entry?.feedbackIsDirty).toBe(true);
+		expect(entry?.currentDraftMarkdown).toBe('Baseline\nContent edit');
+		expect(entry?.isDirty).toBe(true);
+	});
+
+	it('15.c.ii: flushStageDocumentFeedbackDraftLogic clears feedback draft and does not change content draft', () => {
+		const serializedKey = getStageDocumentKey(key);
+		useDialecticStore.setState((state) => {
+			state.stageDocumentContent[serializedKey] = {
+				baselineMarkdown: 'Baseline',
+				currentDraftMarkdown: 'Baseline\nContent edit',
+				isDirty: true,
+				isLoading: false,
+				error: null,
+				lastBaselineVersion: null,
+				pendingDiff: 'Content edit',
+				lastAppliedVersionHash: null,
+				sourceContributionId: null,
+				feedbackDraftMarkdown: 'Draft feedback',
+				feedbackIsDirty: true,
+			};
+		});
+
+		useDialecticStore.setState((state) => {
+			flushStageDocumentFeedbackDraftLogic(state, key);
+		});
+
+		const state = useDialecticStore.getState();
+		const entry = state.stageDocumentContent[serializedKey];
+		expect(entry).toBeDefined();
+		expect(entry?.feedbackDraftMarkdown).toBe('');
+		expect(entry?.feedbackIsDirty).toBe(false);
+		expect(entry?.currentDraftMarkdown).toBe('Baseline\nContent edit');
+		expect(entry?.isDirty).toBe(true);
+	});
+
+	it('15.c.iii: new entries from ensureStageDocumentContentLogic include feedbackDraftMarkdown and feedbackIsDirty', () => {
+		const serializedKey = getStageDocumentKey(key);
+		expect(useDialecticStore.getState().stageDocumentContent[serializedKey]).toBeUndefined();
+
+		useDialecticStore.setState((state) => {
+			ensureStageDocumentContentLogic(state, key, { baselineMarkdown: '' });
+		});
+
+		const state = useDialecticStore.getState();
+		const entry = state.stageDocumentContent[serializedKey];
+		expect(entry).toBeDefined();
+		expect(entry?.feedbackDraftMarkdown).toBe('');
+		expect(entry?.feedbackIsDirty).toBe(false);
 	});
 });

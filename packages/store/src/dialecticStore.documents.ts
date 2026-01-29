@@ -166,10 +166,31 @@ export const ensureStageDocumentContentLogic = (
     pendingDiff: null,
     lastAppliedVersionHash: version?.versionHash ?? null,
     sourceContributionId: null,
+    feedbackDraftMarkdown: '',
+    feedbackIsDirty: false,
   };
 
   state.stageDocumentContent[serializedKey] = entry;
   return entry;
+};
+
+export const recordStageDocumentFeedbackDraftLogic = (
+	state: Draft<DialecticStateValues>,
+	key: StageDocumentCompositeKey,
+	feedbackMarkdown: string,
+): void => {
+	const entry = ensureStageDocumentContentLogic(state, key);
+	entry.feedbackDraftMarkdown = feedbackMarkdown;
+	entry.feedbackIsDirty = feedbackMarkdown !== '';
+};
+
+export const flushStageDocumentFeedbackDraftLogic = (
+	state: Draft<DialecticStateValues>,
+	key: StageDocumentCompositeKey,
+): void => {
+	const entry = ensureStageDocumentContentLogic(state, key);
+	entry.feedbackDraftMarkdown = '';
+	entry.feedbackIsDirty = false;
 };
 
 export const recordStageDocumentDraftLogic = (
@@ -364,6 +385,8 @@ export const fetchStageDocumentContentLogic = async (
 				pendingDiff: null,
 				lastAppliedVersionHash: versionInfo.versionHash,
 				sourceContributionId: null,
+				feedbackDraftMarkdown: '',
+				feedbackIsDirty: false,
 			};
 		} else {
 			entry.isLoading = true;
@@ -1217,8 +1240,7 @@ export const submitStageDocumentFeedbackLogic = async (
 			set(state => {
 				state.isSubmittingStageDocumentFeedback = false;
 				state.submitStageDocumentFeedbackError = null;
-				// On success, flush the draft
-				flushStageDocumentDraftLogic(state, compositeKey);
+				flushStageDocumentFeedbackDraftLogic(state, compositeKey);
 			});
 		}
 		return response;

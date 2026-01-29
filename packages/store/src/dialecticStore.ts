@@ -60,6 +60,7 @@ import {
 	flushStageDocumentDraftLogic,
 	reapplyDraftToNewBaselineLogic,
 	recordStageDocumentDraftLogic,
+	recordStageDocumentFeedbackDraftLogic,
 	upsertStageDocumentVersionLogic,
 	beginStageDocumentEditLogic,
 	updateStageDocumentDraftLogic,
@@ -1333,6 +1334,15 @@ export const useDialecticStore = create<DialecticStore>()(
 		);
 	},
 
+	updateStageDocumentFeedbackDraft: (
+		key: StageDocumentCompositeKey,
+		feedbackMarkdown: string,
+	) => {
+		set((state) => {
+			recordStageDocumentFeedbackDraftLogic(state, key, feedbackMarkdown);
+		});
+	},
+
 	flushStageDocumentDraft: (key: StageDocumentCompositeKey) => {
 		flushStageDocumentDraftActionLogic(set, { flushStageDocumentDraft }, key);
 	},
@@ -1873,31 +1883,76 @@ export const useDialecticStore = create<DialecticStore>()(
 			payload,
 		});
 
-		const { stageDocumentContent } = get();
-		const dirtyDocuments = Object.entries(stageDocumentContent).filter(
-			([_, content]) => content.isDirty,
+		const { stageDocumentContent, stageDocumentResources } = get();
+		const keysWithWork = Object.entries(stageDocumentContent).filter(
+			([_, content]) => content.isDirty || content.feedbackIsDirty,
 		);
 
-		if (dirtyDocuments.length > 0) {
-			logger.info(
-				`[DialecticStore] Found ${dirtyDocuments.length} unsaved document drafts. Saving before advancing stage.`,
-			);
-			const submissionPromises = dirtyDocuments.map(
-				([key, content]) => {
-					const [sessionId, stageSlug, iterationStr, modelId, documentKey] =
-						key.split(":");
-					const iterationNumber = parseInt(iterationStr, 10);
-					return get().submitStageDocumentFeedback({
-						sessionId,
-						stageSlug,
-						iterationNumber,
-						modelId,
-						documentKey,
-						feedback: content.currentDraftMarkdown,
-					});
-				},
-			);
+		const submissionPromises: Promise<
+			ApiResponse<SaveContributionEditSuccessResponse> | ApiResponse<{ success: boolean }>
+		>[] = [];
 
+		for (const [serializedKey, content] of keysWithWork) {
+			const [sessionId, stageSlug, iterationStr, modelId, documentKey] =
+				serializedKey.split(":");
+			const iterationNumber = parseInt(iterationStr, 10);
+			const resource = stageDocumentResources[serializedKey];
+
+			if (content.isDirty && content.sourceContributionId) {
+				if (!resource) {
+					logger.error(
+						'[DialecticStore] Missing stageDocumentResources entry for content edit',
+						{ serializedKey },
+					);
+					continue;
+				}
+				if (!resource.resource_type) {
+					logger.error(
+						'[DialecticStore] Missing resource_type for serializedKey',
+						{ serializedKey },
+					);
+					continue;
+				}
+				const editPayload: SaveContributionEditPayload = {
+					originalContributionIdToEdit: content.sourceContributionId,
+					editedContentText: content.currentDraftMarkdown,
+					projectId: payload.projectId,
+					sessionId,
+					originalModelContributionId: content.sourceContributionId,
+					responseText: "",
+					documentKey,
+					resourceType: resource.resource_type,
+				};
+				submissionPromises.push(get().saveContributionEdit(editPayload));
+			}
+
+			if (content.feedbackIsDirty) {
+				if (!resource) {
+					logger.error(
+						'[DialecticStore] Missing stageDocumentResources entry for feedback submit',
+						{ serializedKey },
+					);
+					continue;
+				}
+				const feedbackPayload: SubmitStageDocumentFeedbackPayload = {
+					sessionId,
+					stageSlug,
+					iterationNumber,
+					modelId,
+					documentKey,
+					feedback: content.feedbackDraftMarkdown,
+					sourceContributionId: resource.source_contribution_id,
+				};
+				submissionPromises.push(
+					get().submitStageDocumentFeedback(feedbackPayload),
+				);
+			}
+		}
+
+		if (submissionPromises.length > 0) {
+			logger.info(
+				`[DialecticStore] Found ${submissionPromises.length} unsaved item(s). Submitting before advancing stage.`,
+			);
 			try {
 				const submissionResults = await Promise.all(submissionPromises);
 				const firstErrorResult = submissionResults.find((res) => res.error);
@@ -1906,11 +1961,11 @@ export const useDialecticStore = create<DialecticStore>()(
 					const submissionError: ApiError = {
 						message:
 							firstErrorResult.error.message ||
-							"An unknown error occurred while submitting document feedback",
+							"An unknown error occurred while submitting",
 						code: firstErrorResult.error.code || "SUBMISSION_FAILED",
 					};
 					logger.error(
-						"[DialecticStore] Failed to submit one or more document drafts:",
+						"[DialecticStore] Failed to submit one or more items:",
 						{ error: submissionError },
 					);
 					set({
@@ -1920,23 +1975,23 @@ export const useDialecticStore = create<DialecticStore>()(
 					return {
 						data: undefined,
 						error: submissionError,
-						status: firstErrorResult.status || 0,
+						status: firstErrorResult.status ?? 0,
 					};
 				}
 
 				logger.info(
-					"[DialecticStore] All unsaved drafts have been successfully submitted.",
+					"[DialecticStore] All unsaved items have been successfully submitted.",
 				);
 			} catch (error: unknown) {
 				const submissionError: ApiError = {
 					message:
 						error instanceof Error
 							? error.message
-							: "An unknown network error occurred while submitting document feedback",
+							: "An unknown network error occurred while submitting",
 					code: "SUBMISSION_FAILED",
 				};
 				logger.error(
-					"[DialecticStore] A network or promise rejection error occurred while submitting document drafts:",
+					"[DialecticStore] A network or promise rejection error occurred while submitting:",
 					{ error: submissionError },
 				);
 				set({
@@ -1947,7 +2002,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			}
 		} else {
 			logger.info(
-				"[DialecticStore] No unsaved drafts found. Proceeding directly to advance stage.",
+				"[DialecticStore] No unsaved work found. Proceeding directly to advance stage.",
 			);
 		}
 

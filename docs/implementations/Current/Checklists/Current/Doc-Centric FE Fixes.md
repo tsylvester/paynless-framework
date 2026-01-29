@@ -119,7 +119,7 @@
         *   `[✅]` 4.f.iii. User can view documents after returning to page
     *   `[✅]` 4.g. [COMMIT] `fix(ui): call hydrateStageProgress in useStageRunProgressHydration hook`
 
-*   `[ ]` 5. **[UI] Update `SessionContributionsDisplayCard` to render `GeneratedContributionCard` for each model**
+*   `[✅]` 5. **[UI] Update `SessionContributionsDisplayCard` to render `GeneratedContributionCard` for each model**
     *   `[✅]` 5.a. [DEPS] Dependencies and signature analysis
         *   `[✅]` 5.a.i. `SessionContributionsDisplayCard` is the container for document display
         *   `[✅]` 5.a.ii. `GeneratedContributionCard` has proper display logic including "Generating" states
@@ -128,16 +128,16 @@
     *   `[✅]` 5.c. [TEST-UNIT] Add/update tests in `SessionContributionsDisplayCard.test.tsx`
         *   `[✅]` 5.c.i. Assert `GeneratedContributionCard` is rendered for each unique modelId
         *   `[✅]` 5.c.ii. Assert `modelId` prop passed correctly
-    *   `[ ]` 5.d. [UI] Modify `SessionContributionsDisplayCard.tsx`
-        *   `[ ]` 5.d.i. Add import for `GeneratedContributionCard`
-        *   `[ ]` 5.d.ii. Replace inline Card rendering with `GeneratedContributionCard` components
-        *   `[ ]` 5.d.iii. Remove unused imports/helpers
-    *   `[ ]` 5.e. [TEST-UNIT] Rerun tests to confirm GREEN state
-    *   `[ ]` 5.f. [CRITERIA] Acceptance criteria
-        *   `[ ]` 5.f.i. `GeneratedContributionCard` rendered for each model
-        *   `[ ]` 5.f.ii. Document content visible after clicking in StageRunChecklist
-        *   `[ ]` 5.f.iii. Progressive rendering visible (content updates as chunks arrive)
-    *   `[ ]` 5.g. [COMMIT] `fix(ui): render GeneratedContributionCard in SessionContributionsDisplayCard`
+    *   `[✅]` 5.d. [UI] Modify `SessionContributionsDisplayCard.tsx`
+        *   `[✅]` 5.d.i. Add import for `GeneratedContributionCard`
+        *   `[✅]` 5.d.ii. Replace inline Card rendering with `GeneratedContributionCard` components
+        *   `[✅]` 5.d.iii. Remove unused imports/helpers
+    *   `[✅]` 5.e. [TEST-UNIT] Rerun tests to confirm GREEN state
+    *   `[✅]` 5.f. [CRITERIA] Acceptance criteria
+        *   `[✅]` 5.f.i. `GeneratedContributionCard` rendered for each model
+        *   `[✅]` 5.f.ii. Document content visible after clicking in StageRunChecklist
+        *   `[✅]` 5.f.iii. Progressive rendering visible (content updates as chunks arrive)
+    *   `[✅]` 5.g. [COMMIT] `fix(ui): render GeneratedContributionCard in SessionContributionsDisplayCard`
 
 *   `[ ]` 6. **[TEST-INT] Integration verification for progressive rendering**
     *   `[ ]` 6.a. [TEST-INT] Integration tests
@@ -267,30 +267,97 @@
         *   `[✅]` 13.g.iv. No new iteration is created on “Save Edit”
     *   `[✅]` 13.h. [COMMIT] `fix(be): saveContributionEdit overwrites rendered document and upserts resource without new iteration`
 
-*   `[ ]` 14. **[UI] SessionContributionsDisplayCard: render GeneratedContributionCard per model for selected documentKey and submit all document-level feedback and edited documents on Advance**
-    *   `[ ]` 14.a. [DEPS] Dependencies and signature analysis
-        *   `[ ]` 14.a.i. `SessionContributionsDisplayCard` in `apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx` is the main-area container; user selects a document in the sidebar (StageRunChecklist) by documentKey
-        *   `[ ]` 14.a.ii. When one documentKey is selected, display one `GeneratedContributionCard` per model that has that document so users can compare that document across models
-        *   `[ ]` 14.a.iii. “Submit Responses & Advance Stage” must submit all document-level feedback (all drafts) and edited documents then advance the stage; there is only document-level feedback, no stage-level feedback
-        *   `[ ]` 14.a.iv. Step 9 and Step 13 must be complete (GeneratedContributionCard is detail-only; backend handles edited-document submission). If an API or store layer exists for edited-document submission, implement and test it in additional steps between 13 and 14 (BE → API maybe → Store maybe → FE).
-    *   `[ ]` 14.b. [TYPES] No new types required unless existing types do not support “selected documentKey” and “models that have this documentKey”; add or extend only in this file’s step per checklist rules
-        *   `[ ]` 14.b.i. Omit type guard test/substeps if no type changes
-        *   `[ ]` 14.b.ii. Omit type guard substeps if no type changes
-    *   `[ ]` 14.c. [TEST-UNIT] Add or update tests in `SessionContributionsDisplayCard.test.tsx`
-        *   `[ ]` 14.c.i. Assert when a documentKey is focused (e.g. from sidebar), one `GeneratedContributionCard` is rendered per model that has that documentKey
-        *   `[ ]` 14.c.ii. Assert “Submit Responses & Advance Stage” submits all document-level feedback then advances stage (mock store, assert correct submit payload and advance called)
-        *   `[ ]` 14.c.iii. Assert that when a document’s feedback area is empty, no feedback is submitted for that document
-        *   `[ ]` 14.c.iv. Assert that when the user has edited the document content and submits, the component invokes the submit action with payload that includes the edited content for each edited document
-    *   `[ ]` 14.d. [UI] Modify `SessionContributionsDisplayCard.tsx`
-        *   `[ ]` 14.d.i. Replace inline Card rendering with one `GeneratedContributionCard` per model for the selected documentKey (derive selected documentKey from focused document state; derive list of modelIds that have that documentKey from stage progress/checklist data)
-        *   `[ ]` 14.d.ii. Ensure “Submit Responses & Advance Stage” submits all document-level feedback (all drafts) and edited documents then advances the stage
-        *   `[ ]` 14.d.iii. Remove unused imports and helpers that were only used by the removed inline cards
-    *   `[ ]` 14.e. [TEST-UNIT] Rerun tests to confirm GREEN state
-    *   `[ ]` 14.f. [TEST-INT] If there is a chain (StageRunChecklist → setFocusedStageDocument → SessionContributionsDisplayCard → GeneratedContributionCard), prove it; assert that submitting edited documents results in backend receiving and persisting them (FE → Store → API → BE)
-        *   `[ ]` 14.f.i. Assert clicking a document in StageRunChecklist results in SessionContributionsDisplayCard rendering GeneratedContributionCard(s) for each model’s version of that document
-        *   `[ ]` 14.f.ii. Assert that when edited document content is submitted, the chain (FE → Store → API → BE) results in the backend persisting the edited document as specified in Step 13
-    *   `[ ]` 14.g. [CRITERIA] Acceptance criteria
-        *   `[ ]` 14.g.i. Selecting a document in the sidebar shows one GeneratedContributionCard per model for that documentKey
-        *   `[ ]` 14.g.ii. Document content and feedback visible per model after selection; progressive rendering unchanged
-        *   `[ ]` 14.g.iii. “Submit Responses & Advance Stage” submits all document-level feedback and edited documents then advances the stage
-    *   `[ ]` 14.h. [COMMIT] `fix(ui): render GeneratedContributionCard per model for selected document in SessionContributionsDisplayCard; submit all document feedback and edited documents on Advance`
+*   `[✅]` 14. **[UI] SessionContributionsDisplayCard: render GeneratedContributionCard per model for selected documentKey and submit all document-level feedback and edited documents on Advance**
+    *   `[✅]` 14.a. [DEPS] Dependencies and signature analysis
+        *   `[✅]` 14.a.i. `SessionContributionsDisplayCard` in `apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx` is the main-area container; user selects a document in the sidebar (StageRunChecklist) by documentKey
+        *   `[✅]` 14.a.ii. When one documentKey is selected, display one `GeneratedContributionCard` per model that has that document so users can compare that document across models
+        *   `[✅]` 14.a.iii. “Submit Responses & Advance Stage” must submit all document-level feedback (all drafts) and edited documents then advance the stage; there is only document-level feedback, no stage-level feedback
+        *   `[✅]` 14.a.iv. Step 9 and Step 13 must be complete (GeneratedContributionCard is detail-only; backend handles edited-document submission). If an API or store layer exists for edited-document submission, implement and test it in additional steps between 13 and 14 (BE → API maybe → Store maybe → FE).
+    *   `[✅]` 14.b. [TYPES] No new types required unless existing types do not support “selected documentKey” and “models that have this documentKey”; add or extend only in this file’s step per checklist rules
+        *   `[✅]` 14.b.i. Omit type guard test/substeps if no type changes
+        *   `[✅]` 14.b.ii. Omit type guard substeps if no type changes
+    *   `[✅]` 14.c. [TEST-UNIT] Add or update tests in `SessionContributionsDisplayCard.test.tsx`
+        *   `[✅]` 14.c.i. Assert when a documentKey is focused (e.g. from sidebar), one `GeneratedContributionCard` is rendered per model that has that documentKey
+        *   `[✅]` 14.c.ii. Assert “Submit Responses & Advance Stage” submits all document-level feedback then advances stage (mock store, assert correct submit payload and advance called)
+        *   `[✅]` 14.c.iii. Assert that when a document’s feedback area is empty, no feedback is submitted for that document
+        *   `[✅]` 14.c.iv. Assert that when the user has edited the document content and submits, the component invokes the submit action with payload that includes the edited content for each edited document
+    *   `[✅]` 14.d. [UI] Modify `SessionContributionsDisplayCard.tsx`
+        *   `[✅]` 14.d.i. Replace inline Card rendering with one `GeneratedContributionCard` per model for the selected documentKey (derive selected documentKey from focused document state; derive list of modelIds that have that documentKey from stage progress/checklist data)
+        *   `[✅]` 14.d.ii. Ensure “Submit Responses & Advance Stage” submits all document-level feedback (all drafts) and edited documents then advances the stage
+        *   `[✅]` 14.d.iii. Remove unused imports and helpers that were only used by the removed inline cards
+    *   `[✅]` 14.e. [TEST-UNIT] Rerun tests to confirm GREEN state
+    *   `[✅]` 14.f. [TEST-INT] If there is a chain (StageRunChecklist → setFocusedStageDocument → SessionContributionsDisplayCard → GeneratedContributionCard), prove it; assert that submitting edited documents results in backend receiving and persisting them (FE → Store → API → BE)
+        *   `[✅]` 14.f.i. Assert clicking a document in StageRunChecklist results in SessionContributionsDisplayCard rendering GeneratedContributionCard(s) for each model’s version of that document
+        *   `[✅]` 14.f.ii. Assert that when edited document content is submitted, the chain (FE → Store → API → BE) results in the backend persisting the edited document as specified in Step 13
+    *   `[✅]` 14.g. [CRITERIA] Acceptance criteria
+        *   `[✅]` 14.g.i. Selecting a document in the sidebar shows one GeneratedContributionCard per model for that documentKey
+        *   `[✅]` 14.g.ii. Document content and feedback visible per model after selection; progressive rendering unchanged
+        *   `[✅]` 14.g.iii. “Submit Responses & Advance Stage” submits all document-level feedback and edited documents then advances the stage
+    *   `[✅]` 14.h. [COMMIT] `fix(ui): render GeneratedContributionCard per model for selected document in SessionContributionsDisplayCard; submit all document feedback and edited documents on Advance`
+
+*   `[✅]` 15. **[STORE] Add feedback draft to `StageDocumentContentState` and implement feedback-draft logic in `packages/store/src/dialecticStore.documents.ts`**
+    *   `[✅]` 15.a. [DEPS] Dependencies and signatures for the functions that need the new state and logic.
+        *   `[✅]` 15.a.i. `ensureStageDocumentContentLogic` in `dialecticStore.documents.ts` creates/updates entries in `stageDocumentContent`; it must initialize the new feedback-draft fields.
+        *   `[✅]` 15.a.ii. New logic: `recordStageDocumentFeedbackDraftLogic` and `flushStageDocumentFeedbackDraftLogic` in `dialecticStore.documents.ts` update only feedback draft fields; `submitStageDocumentFeedbackLogic` (or caller) must call flush on success.
+    *   `[✅]` 15.b. [TYPES] Strict typing for the new state and logic.
+        *   `[✅]` 15.b.i. [TYPE-GUARD-TEST] Omit if no type guards change.
+        *   `[✅]` 15.b.ii. Extend `StageDocumentContentState` in `packages/types/src/dialectic.types.ts` with `feedbackDraftMarkdown: string` and `feedbackIsDirty: boolean`. Every construction site for `StageDocumentContentState` in this file (and any used by it) must set these (e.g. `feedbackDraftMarkdown: ''`, `feedbackIsDirty: false`).
+    *   `[✅]` 15.c. [TEST-UNIT] Unit tests for feedback-draft logic in `packages/store/src/dialecticStore.documents.test.ts`.
+        *   `[✅]` 15.c.i. Assert `recordStageDocumentFeedbackDraftLogic` updates only `feedbackDraftMarkdown` and `feedbackIsDirty` and does not change `currentDraftMarkdown` or `isDirty`.
+        *   `[✅]` 15.c.ii. Assert `flushStageDocumentFeedbackDraftLogic` clears feedback draft (`feedbackDraftMarkdown` reset, `feedbackIsDirty: false`) and does not change content draft.
+        *   `[✅]` 15.c.iii. Assert new entries from `ensureStageDocumentContentLogic` include `feedbackDraftMarkdown: ''` and `feedbackIsDirty: false`.
+    *   `[✅]` 15.d. [STORE] Implementation in `packages/store/src/dialecticStore.documents.ts`.
+        *   `[✅]` 15.d.i. In `ensureStageDocumentContentLogic` (and any other construction of `StageDocumentContentState` in this file), set `feedbackDraftMarkdown: ''` and `feedbackIsDirty: false`.
+        *   `[✅]` 15.d.ii. Implement `recordStageDocumentFeedbackDraftLogic(state, key, feedbackMarkdown)` and `flushStageDocumentFeedbackDraftLogic(state, key)`; call flush after successful `submitStageDocumentFeedback` where appropriate.
+    *   `[✅]` 15.e. [TEST-UNIT] Rerun and expand tests for feedback-draft behavior.
+        *   `[✅]` 15.e.i. Confirm all new and existing unit tests for this file are GREEN.
+    *   `[✅]` 15.f. [TEST-INT] If there is a chain, prove it.
+        *   `[✅]` 15.f.i. Omit or add only if a defined integration boundary for this file requires it.
+    *   `[✅]` 15.g. [CRITERIA] Acceptance for this file.
+        *   `[✅]` 15.g.i. Each document slot has independent content draft and feedback draft; feedback-draft logic does not touch content draft.
+        *   `[✅]` 15.g.ii. Feedback draft is flushed after successful feedback submit.
+    *   `[✅]` 15.h. [COMMIT] `feat(store): add feedback draft to StageDocumentContentState and feedback-draft logic in dialecticStore.documents`
+
+*   `[✅]` 16. **[STORE] `submitStageResponses` submits both content edits and feedback drafts; add `updateStageDocumentFeedbackDraft` in `packages/store/src/dialecticStore.ts`**
+    *   `[✅]` 16.a. [DEPS] Dependencies and signatures.
+        *   `[✅]` 16.a.i. `submitStageResponses` in `dialecticStore.ts` reads `stageDocumentContent` and calls `saveContributionEdit` and `submitStageDocumentFeedback`; it must consider both `isDirty` (content) and `feedbackIsDirty` per key.
+        *   `[✅]` 16.a.ii. New action `updateStageDocumentFeedbackDraft(key, feedbackMarkdown)` in `dialecticStore.ts` delegates to feedback-draft logic in `dialecticStore.documents.ts` (step 15).
+    *   `[✅]` 16.b. [TYPES] No new types; use `StageDocumentContentState` and existing payload types from step 15.
+        *   `[✅]` 16.b.i. Omit if no type guards change.
+        *   `[✅]` 16.b.ii. Omit if no type guards change.
+    *   `[✅]` 16.c. [TEST-UNIT] Unit tests in `packages/store/src/dialecticStore.test.ts`.
+        *   `[✅]` 16.c.i. Assert when one key has both content dirty and feedback dirty, `submitStageResponses` calls both `saveContributionEdit` (with `currentDraftMarkdown`) and `submitStageDocumentFeedback` (with `feedbackDraftMarkdown`) for that key.
+        *   `[✅]` 16.c.ii. Assert when multiple keys have mixed states, every dirty content edit and every dirty feedback draft is submitted exactly once; advance runs only after all succeed.
+        *   `[✅]` 16.c.iii. Assert `updateStageDocumentFeedbackDraft` only updates feedback draft state (mock or inspect store state).
+    *   `[✅]` 16.d. [STORE] Implementation in `packages/store/src/dialecticStore.ts`.
+        *   `[✅]` 16.d.i. Expose `updateStageDocumentFeedbackDraft(key, feedbackMarkdown)` and wire it to the feedback-draft logic from step 15.
+        *   `[✅]` 16.d.ii. In `submitStageResponses`, for each key with unsaved work (`isDirty` or `feedbackIsDirty`): if content dirty and `sourceContributionId` set, enqueue `saveContributionEdit` with `currentDraftMarkdown`; if feedback dirty, enqueue `submitStageDocumentFeedback` with `feedbackDraftMarkdown`. Await all (e.g. `Promise.all`), then call advance-stage API.
+    *   `[✅]` 16.e. [TEST-UNIT] Rerun and expand store tests.
+        *   `[✅]` 16.e.i. Confirm unit tests for `submitStageResponses` and `updateStageDocumentFeedbackDraft` are GREEN.
+    *   `[✅]` 16.f. [TEST-INT] If there is a chain, prove it.
+        *   `[✅]` 16.f.i. No new integration test required for this step unless a defined boundary says otherwise.
+    *   `[✅]` 16.g. [CRITERIA] Acceptance for this file.
+        *   `[✅]` 16.g.i. "Submit Responses & Advance Stage" submits every dirty content edit via `saveContributionEdit` and every dirty feedback draft via `submitStageDocumentFeedback`; no input lost.
+        *   `[✅]` 16.g.ii. Stage advances only after all such submissions succeed.
+    *   `[✅]` 16.h. [COMMIT] `feat(store): submitStageResponses submits content edits and feedback drafts; add updateStageDocumentFeedbackDraft`
+
+*   `[✅]` 17. **[UI] Bind Document Content and Document Feedback to separate drafts in `apps/web/src/components/dialectic/GeneratedContributionCard.tsx`**
+    *   `[✅]` 17.a. [DEPS] Dependencies and how the component uses store state and actions.
+        *   `[✅]` 17.a.i. Document Content field must bind only to content draft (`currentDraftMarkdown`) and `updateStageDocumentDraft`; Document Feedback field only to feedback draft (`feedbackDraftMarkdown`) and `updateStageDocumentFeedbackDraft` so the two do not overwrite each other.
+    *   `[✅]` 17.b. [TYPES] No new types; use store state and actions from steps 15-16.
+        *   `[✅]` 17.b.i. Omit if no type guards change.
+        *   `[✅]` 17.b.ii. Omit if no type guards change.
+    *   `[✅]` 17.c. [TEST-UNIT] Tests in `GeneratedContributionCard.test.tsx`.
+        *   `[✅]` 17.c.i. Assert Document Content input is bound to content draft and Document Feedback input to feedback draft (separate bindings; changing one does not change the other).
+        *   `[✅]` 17.c.ii. Assert Advance (or submit) triggers submission of both when both are filled, per store mocks.
+    *   `[✅]` 17.d. [UI] Implementation in `GeneratedContributionCard.tsx`.
+        *   `[✅]` 17.d.i. Document Content: `value` and `onChange` use `currentDraftMarkdown` and `updateStageDocumentDraft` only.
+        *   `[✅]` 17.d.ii. Document Feedback: `value` and `onChange` use `feedbackDraftMarkdown` and `updateStageDocumentFeedbackDraft` only.
+    *   `[✅]` 17.e. [TEST-UNIT] Rerun and expand component tests.
+        *   `[✅]` 17.e.i. Confirm Document Content and Document Feedback tests are GREEN.
+    *   `[✅]` 17.f. [TEST-INT] If there is a chain, prove it.
+        *   `[✅]` 17.f.i. Assert in SessionContributionsDisplayCard (or integration test) that submitting with both content and feedback filled results in both being submitted (per step 16).
+    *   `[✅]` 17.g. [CRITERIA] Acceptance for this file.
+        *   `[✅]` 17.g.i. User can edit every document and provide feedback on every document; the two fields retain separate values.
+        *   `[✅]` 17.g.ii. "Submit Responses & Advance Stage" submits both drafts when both are present; no input lost.
+    *   `[✅]` 17.h. [COMMIT] `feat(ui): bind Document Content and Document Feedback to separate drafts in GeneratedContributionCard`
