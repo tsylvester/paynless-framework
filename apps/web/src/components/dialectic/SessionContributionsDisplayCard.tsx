@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
 	useDialecticStore,
 	selectIsLoadingProjectDetail,
@@ -234,6 +234,15 @@ export const SessionContributionsDisplayCard: React.FC = () => {
     return activeStage.slug === lastStage?.slug;
   }, [sortedStages, activeStage]);
 
+  const isViewingPriorStage = useMemo((): boolean => {
+    if (!sortedStages || sortedStages.length === 0 || !activeStage || !session?.current_stage_id) {
+      return false;
+    }
+    const sessionStageIndex = sortedStages.findIndex((s) => s.id === session.current_stage_id);
+    const viewingIndex = sortedStages.findIndex((s) => s.slug === activeStage.slug);
+    return sessionStageIndex >= 0 && viewingIndex >= 0 && sessionStageIndex > viewingIndex;
+  }, [sortedStages, activeStage, session?.current_stage_id]);
+
   const documentGroups = useMemo(
     () => Array.from(documentsByModel.entries()),
     [documentsByModel],
@@ -329,8 +338,16 @@ const isGenerating = useMemo(() => {
 	// ADDED: State for controlling feedback content modal
 	const [showFeedbackContentModal, setShowFeedbackContentModal] =
 		useState(false);
+	const justAdvancedStageRef = useRef<boolean>(false);
 
   useEffect(() => {
+    if (justAdvancedStageRef.current) {
+      justAdvancedStageRef.current = false;
+      if (submissionError) {
+        resetSubmitError?.();
+      }
+      return;
+    }
     setSubmissionSuccessMessage(null);
     if (submissionError) {
         resetSubmitError?.();
@@ -359,20 +376,31 @@ const isGenerating = useMemo(() => {
       if (result?.error) {
           throw result.error;
       }
-      
-      setSubmissionSuccessMessage('Your feedback has been submitted successfully!');
-      toast.success('Feedback submitted!', {
-          description: "The next stage's seed prompt has been generated."
-      });
-      // Do NOT clear stageResponses here so user can see what they wrote
-      if (activeStage && sortedStages && setActiveStage) {
-        const currentIndex = sortedStages.findIndex(s => s.slug === activeStage.slug);
-        if (currentIndex > -1 && currentIndex < sortedStages.length - 1) {
-          const nextStage = sortedStages[currentIndex + 1];
-          setActiveStage(nextStage.slug);
+
+      const responseMessage: string = result?.data?.message ?? "";
+      const isNoAdvancement =
+        responseMessage.includes("No advancement") ||
+        responseMessage.includes("already at a later stage");
+
+      if (isNoAdvancement) {
+        setSubmissionSuccessMessage("Edits and feedback saved.");
+        toast.success("Edits and feedback saved.", {
+          description: "Your changes were recorded. The stage was not advanced.",
+        });
+      } else {
+        setSubmissionSuccessMessage("Your feedback has been submitted successfully!");
+        toast.success("Feedback submitted!", {
+          description: "The next stage's seed prompt has been generated.",
+        });
+        if (activeStage && sortedStages && setActiveStage) {
+          const currentIndex = sortedStages.findIndex((s) => s.slug === activeStage.slug);
+          if (currentIndex > -1 && currentIndex < sortedStages.length - 1) {
+            const nextStage = sortedStages[currentIndex + 1];
+            justAdvancedStageRef.current = true;
+            setActiveStage(nextStage.slug);
+          }
         }
       }
-      
     } catch (error) {
       if (isApiError(error)) {
         toast.error('Submission Failed', {
@@ -402,6 +430,8 @@ const isGenerating = useMemo(() => {
         </>
       ) : isLastStage ? (
         'Project Complete - Final Stage'
+      ) : isViewingPriorStage ? (
+        'Save Edits & Feedback'
       ) : (
         'Submit Responses & Advance Stage'
       )}

@@ -1095,19 +1095,35 @@ export interface SubmitStageResponseItem {
   rating?: number;
 }
 
-export interface SubmitStageResponsesPayload { 
+/**
+ * Payload for submitStageResponses (user-initiated stage advancement).
+ *
+ * Session status patterns accepted by the handler:
+ * - `{stageSlug}_completed` — trigger has marked stage complete; handler may advance.
+ * - `running_{stageSlug}` — stage still running (race before trigger); handler may advance when at target stage.
+ *
+ * Idempotency: The handler always returns success for valid payloads. Saves (edits/feedback) are the client's
+ * responsibility before calling this action. Advancement is conditional: the handler advances the session
+ * (current_stage_id, status) only when the session is currently at the target stage (payload.stageSlug).
+ * If the session is already past the target stage, the handler returns success without advancing.
+ */
+export interface SubmitStageResponsesPayload {
   sessionId: string;
   projectId: string;
   stageSlug: DialecticStage['slug'];
   currentIterationNumber: number;
   responses: SubmitStageResponseItem[];
-  userStageFeedback?: { 
-    content: string; 
-    feedbackType: string; 
-    resourceDescription?: Json | null; 
+  userStageFeedback?: {
+    content: string;
+    feedbackType: string;
+    resourceDescription?: Json | null;
   };
 }
 
+/**
+ * Response from submitStageResponses. updatedSession reflects the session after the call;
+ * if advancement occurred, it will have the next stage and pending_{nextStage} status.
+ */
 export interface SubmitStageResponsesResponse {
   message: string;
   updatedSession: DialecticSession;

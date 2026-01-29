@@ -119,16 +119,27 @@ export async function submitStageResponses(
   const project: DialecticProject & { dialectic_domains: { id: string; name: string; description: string | null } | null } = sessionData.project;
   const currentStage: DialecticStage = sessionData.stage;
 
-  if (currentStage.slug !== payload.stageSlug) {
-    logger.error(
-      `[submitStageResponses] Mismatch: Payload stage slug (${payload.stageSlug}) vs session's current stage slug (${currentStage.slug}).`,
+  // 2. Validate user's permissions (project owner can submit)
+  if (userId && project.user_id !== userId) {
+    logger.warn(
+      `[submitStageResponses] Unauthorized: User ${userId} attempted to submit responses for project ${project.id} owned by ${project.user_id}.`,
     );
     return {
-      error: {
-        message: 'Stage slug mismatch with current session stage.',
-        status: 400,
+      error: { message: 'Unauthorized to submit to this project.', status: 403 },
+      status: 403,
+    };
+  }
+
+  if (currentStage.slug !== payload.stageSlug) {
+    logger.info(
+      `[submitStageResponses] Session already past target stage (payload: ${payload.stageSlug}, current: ${currentStage.slug}). Returning success without advancing.`,
+    );
+    return {
+      data: {
+        message: 'Stage responses recorded; session already at a later stage. No advancement.',
+        updatedSession: sessionData,
       },
-      status: 400,
+      status: 200,
     };
   }
 
@@ -140,19 +151,6 @@ export async function submitStageResponses(
   }
 
   const iterationNumber = sessionData.iteration_count;
-
-  // 2. Validate user's permissions (if applicable, e.g., only project owner can submit)
-  // For now, assuming if the user can fetch the session, they can submit.
-  // Add more robust checks if needed.
-  if (userId && project.user_id !== userId) {
-    logger.warn(
-      `[submitStageResponses] Unauthorized: User ${userId} attempted to submit responses for project ${project.id} owned by ${project.user_id}.`,
-    );
-    return {
-      error: { message: 'Unauthorized to submit to this project.', status: 403 },
-      status: 403,
-    };
-  }
 
   // Critical check: Ensure project has a process_template_id
   // Try to get it from the nested structure (new query) or directly (base table column)

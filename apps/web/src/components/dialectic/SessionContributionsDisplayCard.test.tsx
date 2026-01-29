@@ -2356,5 +2356,487 @@ describe('SessionContributionsDisplayCard', () => {
       // This test verifies the component correctly triggers submit when documents are dirty
     });
   });
+
+  describe('Submit button label when viewing prior stage', () => {
+    it('shows Save Edits & Feedback when session already past this stage', () => {
+      const thesisStage: DialecticStage = {
+        id: 'stage-thesis',
+        slug: 'thesis',
+        display_name: 'Thesis',
+        description: 'Thesis stage',
+        default_system_prompt_id: 'prompt-1',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: isoTimestamp,
+      };
+      const antithesisStage: DialecticStage = {
+        id: 'stage-antithesis',
+        slug: 'antithesis',
+        display_name: 'Antithesis',
+        description: 'Antithesis stage',
+        default_system_prompt_id: 'prompt-2',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: isoTimestamp,
+      };
+      const multiStageProcessTemplate: DialecticProcessTemplate = {
+        id: 'template-multi',
+        name: 'Multi-Stage Template',
+        description: 'Template with multiple stages',
+        starting_stage_id: thesisStage.id,
+        created_at: isoTimestamp,
+        stages: [thesisStage, antithesisStage],
+        transitions: [
+          {
+            id: 'transition-1',
+            source_stage_id: thesisStage.id,
+            target_stage_id: antithesisStage.id,
+            condition_description: null,
+            created_at: isoTimestamp,
+            process_template_id: 'template-multi',
+          },
+        ],
+      };
+
+      const thesisProgressKey = `${sessionId}:${thesisStage.slug}:${iterationNumber}`;
+      const progress = buildStageRunProgress(
+        {
+          planner_header: 'completed',
+          draft_document: 'completed',
+          render_document: 'completed',
+        },
+        {
+          header_context: {
+            status: 'completed',
+            job_id: 'job-1',
+            latestRenderedResourceId: 'header.json',
+            modelId: 'model-a',
+            versionHash: 'hash-a',
+            lastRenderedResourceId: 'resource-a',
+            lastRenderAtIso: isoTimestamp,
+          },
+          draft_document_markdown: buildStageDocumentDescriptor('model-a', {
+            status: 'completed',
+          }),
+        },
+      );
+
+      const steps = buildRecipeSteps();
+      const contributions = ['model-a', 'model-b'].map(buildContribution);
+      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const sessionAlreadyPastThesis: DialecticSession = {
+        ...session,
+        current_stage_id: antithesisStage.id,
+      };
+      const project = buildProject(session, multiStageProcessTemplate);
+      const recipe = buildRecipe(steps);
+
+      setDialecticStateValues({
+        activeContextProjectId: project.id,
+        activeContextSessionId: session.id,
+        activeContextStage: thesisStage,
+        activeStageSlug: thesisStage.slug,
+        activeSessionDetail: sessionAlreadyPastThesis,
+        selectedModelIds: session.selected_model_ids ?? [],
+        currentProjectDetail: project,
+        currentProcessTemplate: multiStageProcessTemplate,
+        recipesByStageSlug: {
+          [thesisStage.slug]: recipe,
+        },
+        stageRunProgress: {
+          [thesisProgressKey]: progress,
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      const footer = screen.getByTestId('card-footer');
+      const submitButton = within(footer).getByRole('button', {
+        name: 'Save Edits & Feedback',
+      });
+      expect(submitButton).toBeInTheDocument();
+      expect(submitButton).not.toBeDisabled();
+    });
+
+    it('when viewing prior stage and backend returns no advancement, does not call setActiveStage', async () => {
+      const thesisStage: DialecticStage = {
+        id: 'stage-thesis',
+        slug: 'thesis',
+        display_name: 'Thesis',
+        description: 'Thesis stage',
+        default_system_prompt_id: 'prompt-1',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: isoTimestamp,
+      };
+      const antithesisStage: DialecticStage = {
+        id: 'stage-antithesis',
+        slug: 'antithesis',
+        display_name: 'Antithesis',
+        description: 'Antithesis stage',
+        default_system_prompt_id: 'prompt-2',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: isoTimestamp,
+      };
+      const multiStageProcessTemplate: DialecticProcessTemplate = {
+        id: 'template-multi',
+        name: 'Multi-Stage Template',
+        description: 'Template with multiple stages',
+        starting_stage_id: thesisStage.id,
+        created_at: isoTimestamp,
+        stages: [thesisStage, antithesisStage],
+        transitions: [
+          {
+            id: 'transition-1',
+            source_stage_id: thesisStage.id,
+            target_stage_id: antithesisStage.id,
+            condition_description: null,
+            created_at: isoTimestamp,
+            process_template_id: 'template-multi',
+          },
+        ],
+      };
+
+      const thesisProgressKey = `${sessionId}:${thesisStage.slug}:${iterationNumber}`;
+      const progress = buildStageRunProgress(
+        {
+          planner_header: 'completed',
+          draft_document: 'completed',
+          render_document: 'completed',
+        },
+        {
+          header_context: {
+            status: 'completed',
+            job_id: 'job-1',
+            latestRenderedResourceId: 'header.json',
+            modelId: 'model-a',
+            versionHash: 'hash-a',
+            lastRenderedResourceId: 'resource-a',
+            lastRenderAtIso: isoTimestamp,
+          },
+          draft_document_markdown: buildStageDocumentDescriptor('model-a', {
+            status: 'completed',
+          }),
+        },
+      );
+
+      const steps = buildRecipeSteps();
+      const contributions = ['model-a', 'model-b'].map(buildContribution);
+      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const sessionAlreadyPastThesis: DialecticSession = {
+        ...session,
+        current_stage_id: antithesisStage.id,
+      };
+      const project = buildProject(session, multiStageProcessTemplate);
+      const recipe = buildRecipe(steps);
+
+      const store = getDialecticStoreState();
+      const noAdvanceResponse = {
+        data: {
+          message: 'Stage responses recorded; session already at a later stage. No advancement.',
+          updatedSession: sessionAlreadyPastThesis,
+        },
+        error: undefined,
+        status: 200,
+      };
+      vi.mocked(store.submitStageResponses).mockResolvedValueOnce(noAdvanceResponse);
+
+      setDialecticStateValues({
+        activeContextProjectId: project.id,
+        activeContextSessionId: session.id,
+        activeContextStage: thesisStage,
+        activeStageSlug: thesisStage.slug,
+        activeSessionDetail: sessionAlreadyPastThesis,
+        selectedModelIds: session.selected_model_ids ?? [],
+        currentProjectDetail: project,
+        currentProcessTemplate: multiStageProcessTemplate,
+        recipesByStageSlug: {
+          [thesisStage.slug]: recipe,
+        },
+        stageRunProgress: {
+          [thesisProgressKey]: progress,
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      const footer = screen.getByTestId('card-footer');
+      const submitButton = within(footer).getByRole('button', {
+        name: 'Save Edits & Feedback',
+      });
+      fireEvent.click(submitButton);
+
+      const confirmButton = await screen.findByRole('button', { name: 'Continue' });
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(store.submitStageResponses).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sessionId: session.id,
+            projectId: project.id,
+            stageSlug: thesisStage.slug,
+            currentIterationNumber: session.iteration_count,
+          }),
+        );
+      });
+
+      expect(store.setActiveStage).not.toHaveBeenCalled();
+    });
+
+    it('when backend returns advancement, calls setActiveStage with next stage and shows success', async () => {
+      const thesisStage: DialecticStage = {
+        id: 'stage-thesis',
+        slug: 'thesis',
+        display_name: 'Thesis',
+        description: 'Thesis stage',
+        default_system_prompt_id: 'prompt-1',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: isoTimestamp,
+      };
+      const antithesisStage: DialecticStage = {
+        id: 'stage-antithesis',
+        slug: 'antithesis',
+        display_name: 'Antithesis',
+        description: 'Antithesis stage',
+        default_system_prompt_id: 'prompt-2',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: isoTimestamp,
+      };
+      const multiStageProcessTemplate: DialecticProcessTemplate = {
+        id: 'template-multi',
+        name: 'Multi-Stage Template',
+        description: 'Template with multiple stages',
+        starting_stage_id: thesisStage.id,
+        created_at: isoTimestamp,
+        stages: [thesisStage, antithesisStage],
+        transitions: [
+          {
+            id: 'transition-1',
+            source_stage_id: thesisStage.id,
+            target_stage_id: antithesisStage.id,
+            condition_description: null,
+            created_at: isoTimestamp,
+            process_template_id: 'template-multi',
+          },
+        ],
+      };
+
+      const thesisProgressKey = `${sessionId}:${thesisStage.slug}:${iterationNumber}`;
+      const progress = buildStageRunProgress(
+        {
+          planner_header: 'completed',
+          draft_document: 'completed',
+          render_document: 'completed',
+        },
+        {
+          header_context: {
+            status: 'completed',
+            job_id: 'job-1',
+            latestRenderedResourceId: 'header.json',
+            modelId: 'model-a',
+            versionHash: 'hash-a',
+            lastRenderedResourceId: 'resource-a',
+            lastRenderAtIso: isoTimestamp,
+          },
+          draft_document_markdown: buildStageDocumentDescriptor('model-a', {
+            status: 'completed',
+          }),
+        },
+      );
+
+      const steps = buildRecipeSteps();
+      const contributions = ['model-a', 'model-b'].map(buildContribution);
+      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const sessionAfterAdvance: DialecticSession = {
+        ...session,
+        current_stage_id: antithesisStage.id,
+      };
+      const project = buildProject(session, multiStageProcessTemplate);
+      const recipe = buildRecipe(steps);
+
+      const store = getDialecticStoreState();
+      const advanceResponse = {
+        data: {
+          message: 'Stage advanced.',
+          updatedSession: sessionAfterAdvance,
+        },
+        error: undefined,
+        status: 200,
+      };
+      vi.mocked(store.submitStageResponses).mockResolvedValueOnce(advanceResponse);
+
+      setDialecticStateValues({
+        activeContextProjectId: project.id,
+        activeContextSessionId: session.id,
+        activeContextStage: thesisStage,
+        activeStageSlug: thesisStage.slug,
+        activeSessionDetail: session,
+        selectedModelIds: session.selected_model_ids ?? [],
+        currentProjectDetail: project,
+        currentProcessTemplate: multiStageProcessTemplate,
+        recipesByStageSlug: {
+          [thesisStage.slug]: recipe,
+        },
+        stageRunProgress: {
+          [thesisProgressKey]: progress,
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      const footer = screen.getByTestId('card-footer');
+      const submitButton = within(footer).getByRole('button', {
+        name: 'Submit Responses & Advance Stage',
+      });
+      fireEvent.click(submitButton);
+
+      const confirmButton = await screen.findByRole('button', { name: 'Continue' });
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(store.submitStageResponses).toHaveBeenCalled();
+      });
+
+      expect(store.setActiveStage).toHaveBeenCalledWith(antithesisStage.slug);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Success!/)).toBeInTheDocument();
+      });
+      expect(screen.getByText(/next stage|seed prompt|submitted successfully/i)).toBeInTheDocument();
+    });
+
+    it('when viewing prior stage and backend returns no advancement, shows saved-without-advancing message', async () => {
+      const thesisStage: DialecticStage = {
+        id: 'stage-thesis',
+        slug: 'thesis',
+        display_name: 'Thesis',
+        description: 'Thesis stage',
+        default_system_prompt_id: 'prompt-1',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: isoTimestamp,
+      };
+      const antithesisStage: DialecticStage = {
+        id: 'stage-antithesis',
+        slug: 'antithesis',
+        display_name: 'Antithesis',
+        description: 'Antithesis stage',
+        default_system_prompt_id: 'prompt-2',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: isoTimestamp,
+      };
+      const multiStageProcessTemplate: DialecticProcessTemplate = {
+        id: 'template-multi',
+        name: 'Multi-Stage Template',
+        description: 'Template with multiple stages',
+        starting_stage_id: thesisStage.id,
+        created_at: isoTimestamp,
+        stages: [thesisStage, antithesisStage],
+        transitions: [
+          {
+            id: 'transition-1',
+            source_stage_id: thesisStage.id,
+            target_stage_id: antithesisStage.id,
+            condition_description: null,
+            created_at: isoTimestamp,
+            process_template_id: 'template-multi',
+          },
+        ],
+      };
+
+      const thesisProgressKey = `${sessionId}:${thesisStage.slug}:${iterationNumber}`;
+      const progress = buildStageRunProgress(
+        {
+          planner_header: 'completed',
+          draft_document: 'completed',
+          render_document: 'completed',
+        },
+        {
+          header_context: {
+            status: 'completed',
+            job_id: 'job-1',
+            latestRenderedResourceId: 'header.json',
+            modelId: 'model-a',
+            versionHash: 'hash-a',
+            lastRenderedResourceId: 'resource-a',
+            lastRenderAtIso: isoTimestamp,
+          },
+          draft_document_markdown: buildStageDocumentDescriptor('model-a', {
+            status: 'completed',
+          }),
+        },
+      );
+
+      const steps = buildRecipeSteps();
+      const contributions = ['model-a', 'model-b'].map(buildContribution);
+      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const sessionAlreadyPastThesis: DialecticSession = {
+        ...session,
+        current_stage_id: antithesisStage.id,
+      };
+      const project = buildProject(session, multiStageProcessTemplate);
+      const recipe = buildRecipe(steps);
+
+      const store = getDialecticStoreState();
+      const noAdvanceResponse = {
+        data: {
+          message: 'Stage responses recorded; session already at a later stage. No advancement.',
+          updatedSession: sessionAlreadyPastThesis,
+        },
+        error: undefined,
+        status: 200,
+      };
+      vi.mocked(store.submitStageResponses).mockResolvedValueOnce(noAdvanceResponse);
+
+      setDialecticStateValues({
+        activeContextProjectId: project.id,
+        activeContextSessionId: session.id,
+        activeContextStage: thesisStage,
+        activeStageSlug: thesisStage.slug,
+        activeSessionDetail: sessionAlreadyPastThesis,
+        selectedModelIds: session.selected_model_ids ?? [],
+        currentProjectDetail: project,
+        currentProcessTemplate: multiStageProcessTemplate,
+        recipesByStageSlug: {
+          [thesisStage.slug]: recipe,
+        },
+        stageRunProgress: {
+          [thesisProgressKey]: progress,
+        },
+      });
+
+      renderSessionContributionsDisplayCard();
+
+      const footer = screen.getByTestId('card-footer');
+      const submitButton = within(footer).getByRole('button', {
+        name: 'Save Edits & Feedback',
+      });
+      fireEvent.click(submitButton);
+
+      const confirmButton = await screen.findByRole('button', { name: 'Continue' });
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(store.submitStageResponses).toHaveBeenCalled();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Success!/)).toBeInTheDocument();
+      });
+      expect(screen.getByText(/saved|Edits and feedback/i)).toBeInTheDocument();
+    });
+  });
 });
 

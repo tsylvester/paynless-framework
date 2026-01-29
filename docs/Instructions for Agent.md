@@ -25,11 +25,11 @@
 ## 1. Read → Analyze → Explain → Propose → Edit → Lint → Halt 
 * Re-read this entire block from disk before every action. On the first reference summarize it before working.
 * Read every referenced or implied file (including types, interfaces, and helpers) from disk immediately before editing. After editing, re-read to confirm the exact change.
-* Follow the explicit cycle: READ the step + files → ANALYZE gaps → EXPLAIN the delta → PROPOSE the exact edit → EDIT a single file → LINT that file → HALT.
+* Follow the explicit cycle: READ the node + files → ANALYZE gaps → EXPLAIN the delta → PROPOSE the exact edit → EDIT a single file → LINT that file → HALT.
 * If you are NOT told to edit a file, Read → Analyze → Explain → Propose → Halt (do not edit a file unless you are explicitly told to edit a file). 
 * Analyze dependencies; if more than one file is required, stop, explain the discovery, propose the necessary checklist insertion (`Discovery / Impact / Proposed checklist insert`), and wait instead of editing.
 * Discoveries include merely thinking about multi-file work—report them immediately without ruminating on work-arounds.
-* **Explain & Propose:** restate the plan in bullets and explicitly commit, “I will implement exactly this plan now,” noting the checklist step it fulfills.
+* **Explain & Propose:** restate the plan in bullets and explicitly commit, “I will implement exactly this plan now,” noting the checklist node it fulfills.
 * A proposed checklist insertion must follow the `## Example Checklist` structure exactly. 
 * **Edit exactly one file per turn** following the plan. Never touch files you were not explicitly instructed to modify.
 * Lint that file using internal tools and fix all issues.
@@ -38,26 +38,26 @@
 
 ## 2. TDD & Dependency Ordering
 * One-file TDD cycle: RED test (desired green behavior) → implementation → GREEN test → lint. Documents/types/interfaces are exempt from tests but still follow Read→Halt.
-* "One-file" refers to a source file and includes any types, type guard tests, type guards, and tests required to complete the source file. A valid checklist step may include the types, type guard tests, and type guards, but may exclude any not required for the specific work described in the step. A TDD cycle MUST include the source test and source. 
+* "One-file" refers to a source file and includes any types, type guard tests, type guards, and tests required to complete the source file. A valid checklist node may include the types, type guard tests, and type guards, but may exclude any not required for the specific work described in the node. A TDD cycle MUST include the source test and source. 
 * Do not edit executable code without first authoring the RED test that proves the intended green-state behavior; only pure docs/types/interfaces are exempt.
-* Maintain bottom-up dependency order for both editing and testing: construct types/interfaces/helpers before consumers, construct type guard tests for new types, construct type guards, then write source tests, then write source, then write consumer tests only after producers exist. Interfaces, type guard tests, and type guards may be excluded if not required for that step. 
+* Maintain bottom-up dependency order for both editing and testing: construct types/interfaces/helpers before consumers, construct type guard tests for new types, construct type guards, then write source tests, then write source, then write consumer tests only after producers exist. Interfaces, type guard tests, and type guards may be excluded if not required for that node. 
 * Always try to locate an existing resource - type, type guard, test, source - before assuming its non-existence, proposing its creation, or trying to create it in-line. 
 * Do not advance to another file until the current file’s proof (tests or documented exemption) is complete and acknowledged.
 * The agent never runs tests directly; rely on provided outputs or internal reasoning while keeping the application in a provable state.
 * The agent does not run the user’s terminal commands or tests; use only internal tooling and rely on provided outputs.
 
 ## 3. Checklist Discipline
-* Do not edit the checklist (or its statuses) without explicit instruction; when instructed, change only the specified portion using legal-style numbering.
-* Execute exactly what the active checklist step instructs with no deviation or “creative interpretation.”
-* Each numbered checklist step equals one file’s entire TDD cycle (explanation of deps → types → type guard tests → type guards → source tests → implementation of source → proof source works → integration test showing test target works with immediate producer and immediate consumer). Preserve existing detail while adding new requirements.
-* Document every edit within the checklist. If required edits are missing from the plan, explain the discovery, propose the new step, and halt instead of improvising.
+* Do not edit the checklist (or its statuses) without explicit instruction; when instructed, change only the specified portion exactly as described in the checklist instruction set.
+* Execute exactly what the active checklist node instructs with no deviation or “creative interpretation.”
+* Each checklist node equals one file’s entire TDD cycle (explanation of deps → types → type guard tests → type guards → source tests → implementation of source → proof source works → integration test showing test target works with immediate producer and immediate consumer). Preserve existing detail while adding new requirements.
+* Document every edit within the checklist. If required edits are missing from the plan, explain the discovery, propose the new node, and halt instead of improvising.
 * If the user instructs you to perform work without updating the checklist, obey the user without complaining. 
-* Never update the status of any work step (checkboxes or badges) without explicit instruction.
-* Following a block of related checklist steps that complete a working implementation, include a commit with a proposed commit message like the `## Example Checklist` demonstrates.
+* Never update the status of any work node (checkboxes or badges) without explicit instruction.
+* Following a block of related checklist nodes that complete a working implementation, include a commit with a proposed commit message like the `## Example Checklist` demonstrates.
 
 ## 4. Builder vs Reviewer Modes
-* **Builder:** follow the Read→…→Halt loop precisely. If a deviation, blocker, or new requirement is discovered—or the current step simply cannot be completed as written—explain the problem, propose the required checklist change, and halt immediately.
-* **Reviewer:** treat prior reasoning as untrusted. Re-read relevant files/tests from scratch and produce a numbered EO&D list referencing files/sections. Ignore checklist status or RED/GREEN history unless it causes a real defect. If no EO&D are found, state “No EO&D detected; residual risks: …”
+* **Builder:** follow the Read→…→Halt loop precisely. If a deviation, blocker, or new requirement is discovered—or the current node simply cannot be completed as written—explain the problem, propose the required checklist change, and halt immediately.
+* **Reviewer:** treat prior reasoning as untrusted. Re-read relevant files/tests from scratch and produce an EO&D list grouped by the specific file. Ignore checklist status or RED/GREEN history unless it causes a real defect. If no EO&D are found, state “No EO&D detected; residual risks: …”
 * Sign your work with your model identification at the end of your chat message so the user knows what agent performed the work. 
 * When reviewing work against the checklist, do not assume the checklist is correct. If you see a problem with the checklist, or the work violates these instructions, stop, explain the problem, propose a correction to the checklist, and halt.
 * When reviewing work against the checklist, the work being completed already is not a discovery or a problem to resolve. Do not propose undoing the work you are reviewing. Do not propose undoing a GREEN state to prove a RED state. "This work has already been completed and matches the checklist" is a valid statement to make in a review.
@@ -72,7 +72,7 @@
 * Use type guards to prove and narrow types for the compiler when required.
 * Never import entire libraries with `*`, never alias imports, never add `"type"` to type imports.
 * A ternary is not a type guard, a ternary is a default value. Default values are prohibited in production code.
-* Every object and variable must be typed. There are no exceptions to this rule. If you are building a function and find untyped vars or objects, stop, explain the discovery, propose the new checklist step to type the vars or objects, and halt.
+* Every object and variable must be typed. There are no exceptions to this rule. If you are building a function and find untyped vars or objects, stop, explain the discovery, propose the new checklist node to type the vars or objects, and halt.
 
 ## 6. Plan Fidelity & Shortcut Ban
 * Once a solution is described, implement exactly that solution and the user’s instruction. Expedient shortcuts are forbidden without explicit approval.
@@ -93,9 +93,9 @@
 * Preserve bottom-up compilation: adapters and types before consumers.
 * When a file exceeds 600 lines, stop and propose a logical refactoring to decompose the file into smaller parts providing clear SOC and DRY.
 * Do not add hidden defaults inside code or context—context factories must explicitly set every field.
-* One function per file, one file per function. If you are tempted to add a second function to a file, stop, explain the discovery, propose the new checklist step, and halt.
-* Do not create deeply nested functions. If you are tempted to create a deeply nested function, stop, explain the discovery, propose the new checklist step to refactor the function into smaller functions, and halt.
-* If you are working on a function that does not use DI, is too long, or is too complex, stop, explain the discovery, propose the new checklist step to refactor the function into smaller functions, and halt.
+* One function per file, one file per function. If you are tempted to add a second function to a file, stop, explain the discovery, propose the new checklist node, and halt.
+* Do not create deeply nested functions. If you are tempted to create a deeply nested function, stop, explain the discovery, propose the new checklist node to refactor the function into smaller functions, and halt.
+* If you are working on a function that does not use DI, is too long, or is too complex, stop, explain the discovery, propose the new checklist node to refactor the function into smaller functions, and halt.
 
 ## 8. Testing Standards
 * Tests assert the desired passing state (no RED/GREEN labels) and new tests are added to the end of the file.
@@ -115,7 +115,7 @@
   * A module’s tests may be split across multiple files grouped by behavior (e.g., `bar.basic.test.ts`, `bar.error.test.ts`, `bar.edge.test.ts`).
   * Group related tests in nested `Deno.test` / `t.step` blocks for readability.
 * **Integration tests:** must test bounded subsystems (Approved Integration Boundaries) rather than always requiring a full producer→subject→consumer end-to-end. Boundaries include API, service, repository, and external adapter. Integration fixtures may be used but must be built from Trusted Factories.
-* **End-to-end tests:** are minimal in number and reserved for real end-to-end validation only; recommend using dedicated, isolated pipelines.
+* **End-to-end tests:** are minimal and reserved for real end-to-end validation only; recommend using dedicated, isolated pipelines.
 * Tests must call out which production type/helper each mock mirrors so partial objects are not invented.
 * Prove the functional gap, the implemented fix, and regressions through tests before moving on; never assume success without proof.
 
@@ -134,7 +134,7 @@
 * Completion proof requires a lint-clean file plus GREEN test evidence (or documented exemption for types/docs).
 
 ## 11. Reporting & Traceability
-* Every response must include: mode declaration, confirmation that this block was re-read, plan bullets (Builder) or EO&D findings (Reviewer), checklist step references, lint/test evidence, and the agent's model identification.
+* Every response must include: mode declaration, confirmation that this block was re-read, plan bullets (Builder) or EO&D findings (Reviewer), checklist node references, lint/test evidence, and the agent's model identification.
 * If no EO&D are found, state that along with remaining risks. "This work has already been completed and matches the checklist" is not an EO&D finding.
 * The agent uses only its own tools and never the user’s terminal.
 
@@ -184,7 +184,7 @@
 * If a required change spans multiple files, the agent must:
   * Stop.
   * Produce a discovery report that lists the dependent files and the minimal checklist additions required.
-  * Propose the new checklist steps.
+  * Propose the new checklist nodes.
   * Wait for explicit permission to proceed.
 * Do not attempt multi-file edits or implicit refactors without explicit approval.
 * Even thinking about how to work around this restriction is a violation - stop immediately and explain yourself. 
@@ -200,65 +200,82 @@
 
 ## Checklist-Specific Editing Rules
 *   THE AGENT NEVER TOUCHES THE CHECKLIST UNLESS THEY ARE EXPLICITLY INSTRUCTED TO! 
-*   When editing checklists, each numbered step (1, 2, 3, etc.) represents editing ONE FILE with a complete TDD cycle.
-*   "One file per step" means the checklist only addresses one **source file** for each top level checklist step. 
-*   Included in "one file per step" is **the entire support system** for that **one source file**: interfaces/types, type guard tests, type guards, unit tests, --> source file <--, integration tests
-*   Sub-steps within each numbered step use legal-style numbering (1.a, 1.b, 1.a.i, 1.a.ii, etc.) for the complete TDD cycle for that file.
-*   All changes to a single file are described and performed within that file's numbered step.
+*   Each top level node represents the complete TDD cycle and all support files for one source file.
+*   "One file per node" means the checklist only addresses one **source file** for each top level checklist node. 
+*   Included in "one file per node" is **the entire support system** for that **one source file**, qualifying inclusions are demonstrated in the example checklist.
+*   All changes to a single file and its support system are described and performed within that file's node.
 *   Types files (interfaces, enums) are exempt from RED/GREEN testing requirements.
-*   Each file edit includes: RED test → implementation → GREEN test → optional refactor.
-*   Steps are ordered by dependency (lowest dependencies first).
-*   Preserve all existing detail and work while adding new requirements.
-*   Use proper legal-style nesting for sub-steps within each file edit.
-*   NEVER create multiple top-level steps for the same file edit operation.
-*   Adding console logs is not required to be detailed in checklist work. 
-*   NEVER suggest making a type or interface update its own step - that is NEVER correct, types or interfaces are ALWAYS 'x'.b for whatever function demands the type change 
+*   All intra and inter node work is dependency-ordered with lowest dependencies (producers) first.
+*   Preserve all existing detail when adding new requirements unless an existing requirement is explicitly changed by the user, we are incrementing and improving, not replacing.
+*   Do not create multiple sequential top-level nodes that describe editing the same set of files. 
+*   If there is a prior version of the node, copy its state and revise that state to match the new requirements.
+*   Adding console logs or doing fixes from test output is not required to be detailed in checklist work unless the logs or test output indicate a requirement is misstated and must be corrected. 
+*   NEVER suggest making a type or interface update its own node - that is NEVER correct, types or interfaces are ALWAYS 'x'.b for whatever function demands the type change 
 *   NEVER suggest separating out type guard tests or guards from the interface that uses them, type guard tests are ALWAYS 'x'.b.i for whatever function demands the type change
-*   NEVER suggest editing two source files in a single top level checklist step, function1.ts and function2.ts are different steps
-*   "I'll suggest one step for the interface, one step for the type guards, and then one step for the unit test and source file!" NO! WRONG! NEVER SEPARATE INTERFACES AND TYPE GUARDS FROM THE FILE THAT NEEDS THEM UPDATED!  
+*   NEVER suggest editing two source files in a single top level checklist node, function1.ts and function2.ts are different nodes
+
+## Example Cases in Creating Checklist Nodes
+*   "I'll suggest one node for the interface, one node for the type guards, and then one node for the unit test and source file!" NO! WRONG! NEVER SEPARATE INTERFACES AND TYPE GUARDS FROM THE FILE THAT NEEDS THEM UPDATED!  
 *   "I'll structure the checklist as function1, function1-test! " NO! WRONG! TESTS FIRST! 
-*   "I'll structure the checklist as function1-test, function2-test, function1, function2!" NO! WRONG! NEVER MIX MULTIPLE SOURCE FILES IN ONE STEP! 
-*   "I'll orphan an interface edit in its own step!" NO! WRONG! NEVER ORPHAN A TYPE EDIT! PUT IT WITH WHOEVER NEEDS THE TYPE CHANGE! AND UPDATE THE TYPE GUARDS! 
-*   "I have a few interfaces and type guards to change, then I'll need to update a few source files. I'll make those all separate steps." NO! WRONG! 
-*   "I have a few interfaces and type guards to change, then I'll need to update a few source files. I'll make that all one step." NO! WRONG! 
-*   "I have a few interfaces and type guards to change. I'll group each change to an interface and its type guards with the source file that needs them first, and ensure each source file has its own top level step. I won't orphan any interfaces or type guards. And I won't cram a bunch of source file changes into the same step, those are all their own top level step." YES! MY GOD! THAT'S WHAT THE INSTRUCTIONS TELL YOU TO DO! 
+*   "I'll structure the checklist as function1-test, function2-test, function1, function2!" NO! WRONG! NEVER MIX MULTIPLE SOURCE FILES IN ONE NODE! 
+*   "I'll orphan an interface edit in its own node!" NO! WRONG! NEVER ORPHAN A TYPE EDIT! PUT IT WITH WHOEVER NEEDS THE TYPE CHANGE! AND UPDATE THE TYPE GUARDS! 
+*   "I have a few interfaces and type guards to change, then I'll need to update a few source files. I'll make those all separate nodes." NO! WRONG! 
+*   "I have a few interfaces and type guards to change, then I'll need to update a few source files. I'll make that all one node." NO! WRONG! 
+*   "I have a few interfaces and type guards to change. I'll group each change to an interface and its type guards with the source file that needs them first, and ensure each source file has its own top level node. I won't orphan any interfaces or type guards. And I won't cram a bunch of source file changes into the same node, those are all their own top level node." YES! MY GOD! THAT'S WHAT THE INSTRUCTIONS TELL YOU TO DO! 
 
 ## Example Checklist
+*   `[ ]`   [path]/[function] **Descriptive explanatory title**
+  *   `[ ]`   `objective.md`  
+    *   `[ ]`   Explain the functional and non-functional requirements to meet the objective
+    *   `[ ]`   Each requirement is its own nested item so that they can be cleanly compared, revised, iterated
+  *   `[ ]`   `role.md`  
+    *   `[ ]`   Explain the role that this module will play to contribute to delivery of the objective
+    *   `[ ]`   Ex: domain, app, port, adapter, infrastructure
+  *   `[ ]`   `module.md`  
+    *   `[ ]`   Provide boundaries for the context or feature area of the role this module plays
+    *   `[ ]`   Each boundary is its own nested item so that they can be cleanly compared, revised, iterated
+  *   `[ ]`   `deps.md`  
+    *   `[ ]`   Detail all the deps that the function will have
+    *   `[ ]`   Each dep is its own nested item so that they can be cleanly compared, revised, iterated
+  *   `[ ]`   interface/`interface.ts`  
+    *   `[ ]`   Detail all the interfaces that describe the extent of the object, this includes the signature, return, parameters
+    *   `[ ]`   Each type is its own nested item so that they can be cleanly compared, revised, iterated
+  *   `[ ]`   interface/tests/`[function].interface.test.ts`  
+    *   `[ ]`   Detail the contracts of each type and interface
+    *   `[ ]`   Each contract is its own nested item so that they can be cleanly compared, revised, iterated
+  *   `[ ]`   interface/guards/`[function].interface.guards.ts`  
+    *   `[ ]`   Each guard guarantees the contracts of one type or interface
+    *   `[ ]`   Each guard is its own nested item so that they can be cleanly compared, revised, iterated
+  *   `[ ]`   unit/`[function].test.ts` 
+    *   `[ ]`   Tests that prove the signature, return, and parameter contracts of the function
+    *   `[ ]`   Each test is its own nested item so that they can be cleanly compared, revised, iterated
+  *   `[ ]`   `[function].ts`  
+    *   `[ ]`   Implementation of the requirements of the contracts of the function
+    *   `[ ]`   Each requirement is its own nested item so that they can be cleanly compared, revised, iterated
+  *   `[ ]`   provides/`[function].provides.ts`
+    *   `[ ]`   This is the bounded outer surface of the module, every I/O interaction beyond the module's boundary must flow through `[function].provides.ts` to be valid
+    *   `[ ]`   Each exported symbol, semantic guarantee, stability expectation, route, endpoint, etc is its own nested item so that they can be cleanly compared, revised, iterated
+  *   `[ ]`   integration/`[function].integration.test.ts`
+    *   `[ ]`   Tests for every defined and expected interaction with providers and consumers, generally proposed as provider->[function] or [function]->consumer or provider->[function]->consumer
+    *   `[ ]`   Each test is its own nested item so that they can be cleanly compared, revised, iterated
+  *   `[ ]`   `requirements.md`
+    *   `[ ]`   Detail the functional obligations and acceptance criteria to consider the work correct and complete.
+    *   `[ ]`   Each obligation or criteria is its own nested item so that they can be cleanly compared, revised, iterated
+  *   `[ ]`   **Commit** `[type of work] [address of work] [brief explanation of work]`
+    *   `[ ]`   Detail each change performed on the file in this work increment 
 
-*   `[ ]`   1. **Title** Objective (every template literal must be replaced with actual data, the checklist item should never carry template literals)
-    *   `[ ]`   1.a. [DEPS] A list explaining dependencies of the function, its signature, and its return shape 
-        *   `[ ]` 1.a.i. eg. `function(something)` in `file.ts` provides this or that
-    *   `[ ]`   1.b. [TYPES] A list strictly typing all the objects used in the function 
-        *   `[ ]` 1.b.i  [TYPE-GUARD-TEST] A list of type guard tests that need to be updated for the interface change (omit if no type guards will change)
-        *   `[ ]` 1.b.ii [TYPE-GUARDS] A list of the type guards that need to be updated for the interface change (omit if no type guards will change)
-    *   `[ ]`   1.c. [TEST-UNIT] A list explaining the test cases 
-        *   `[ ]` 1.c.i. Assert `function(something)` in `file.ts` acts a certain way 
-    *   `[ ]`   1.d. [{$WORK_AREA}] A list explaining the implementation requirements
-        *   `[ ]` 1.d.i. Implement `function(something)` in `file.ts` acts a certain way 
-    *   `[ ]`   1.e. [TEST-UNIT] Rerun and expand test proving the function
-        *   `[ ]` 1.e.i. Implement `function(something)` in `file.ts` acts a certain way 
-    *   `[ ]`   1.f. [TEST-INT] If there is a chain of functions that work together, prove it
-        *   `[ ]` 1.f.i. For every cross-function interaction, assert `thisFunction(something)` in `this_file.ts` acts a certain way towards `thatFunction(other)` in `that_file.ts`
-    *   `[ ]`   1.g. [CRITERIA] A list explaining the acceptence criteria to consider the work complete and correct. 
-    *   `[ ]`   1.h. [COMMIT] A commit that explains the function and its proofs
+## Legend - You must use this EXACT format. Do not modify it, adapt it, or "improve" it. The bullets, square braces, ticks, nesting, and node structuring are ABSOLUTELY MANDATORY and UNALTERABLE. 
 
-*   `[ ]`   2. **Title** Objective
-    *   `[ ]`   2.a. [DEPS] Low level providers are always build before high level consumers (DI/DIP)
-    *   `[ ]`   2.b. [TYPES] DI/DIP and strict typing ensures unit tests can always run 
-    *   `[ ]`   2.c. [TEST-UNIT] All functions matching defined external objects and acting as asserted helps ensure integration tests pass
-
-## Legend - You must use this EXACT format. Do not modify it, adapt it, or "improve" it. The bullets, square braces, ticks, nesting, and numbering are ABSOLUTELY MANDATORY and UNALTERABLE. 
-
-*   `[ ]` 1. Unstarted work step. Each work step will be uniquely named for easy reference. We begin with 1.
-    *   `[ ]` 1.a. Work steps will be nested as shown. Substeps use characters, as is typical with legal documents.
-        *   `[ ]` 1. a. i. Nesting can be as deep as logically required, using roman numerals, according to standard legal document numbering processes.
-*   `[✅]` Represents a completed step or nested set.
-*   `[🚧]` Represents an incomplete or partially completed step or nested set.
-*   `[⏸️]` Represents a paused step where a discovery has been made that requires backtracking or further clarification.
+*   `[ ]` [path]/[workspace] Unstarted work node. Each node is addressed by its deepest unique segment to disambiguate.
+    *   `[ ]` [subfolder]/`filename`. Elements in work nodes will be nested as shown. Subnodes show the file name, or path and file name, to address that element.
+        *   `[ ]` [subfolder]/[subfolder]/`filename` Nesting can be as deep as logically required, using the file tree path segment.
+*   `[✅]` Represents a completed node at any depth.
+*   `[🚧]` Represents an incomplete or partially completed node.
+*   `[⏸️]` Represents a paused node where a discovery has been made that requires backtracking or further clarification.
 *   `[❓]` Represents an uncertainty that must be resolved before continuing.
-*   `[🚫]` Represents a blocked, halted, or stopped step or has an unresolved problem or prior dependency to resolve before continuing.
+*   `[🚫]` Represents a blocked, halted, or stopped node or has an unresolved problem or prior dependency to resolve before continuing.
 
-## Component Types and Labels
+## Example Component Types and Labels
 
 *   `[DB]` Database Schema Change (Migration)
 *   `[RLS]` Row-Level Security Policy
@@ -272,7 +289,7 @@
 *   `[TEST-INT]` Integration Test Implementation/Update (API-Backend, Store-Component, RLS)
 *   `[TEST-E2E]` End-to-End Test Implementation/Update
 *   `[DOCS]` Documentation Update (READMEs, API docs, user guides)
-*   `[REFACTOR]` Code Refactoring Step
+*   `[REFACTOR]` Code Refactoring
 *   `[PROMPT]` System Prompt Engineering/Management
 *   `[CONFIG]` Configuration changes (e.g., environment variables, service configurations)
 *   `[COMMIT]` Checkpoint for Git Commit (aligns with "feat:", "test:", "fix:", "docs:", "refactor:" conventions)

@@ -388,13 +388,148 @@
         *   `[✅]` 17.g.i. User can edit every document and provide feedback on every document; the two fields retain separate values.
         *   `[✅]` 17.g.ii. "Submit Responses & Advance Stage" submits both drafts when both are present; no input lost.
     *   `[✅]` 17.h. [COMMIT] `feat(ui): bind Document Content and Document Feedback to separate drafts in GeneratedContributionCard`
+    
+*   `[✅]` supabase/migrations/`handle_job_completion_stage_completed_status` **[DB] Trigger sets {stage}_completed status instead of auto-advancing**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Modify `handle_job_completion()` trigger so when all stage jobs complete, session status becomes `{current_stage_slug}_completed`
+        *   `[✅]` Trigger must NOT update `current_stage_id` - stage advancement is user-initiated only
+        *   `[✅]` Apply to ALL stages including terminal (no special case for "no next stage")
+    *   `[✅]` `role.md`
+        *   `[✅]` Infrastructure layer - database trigger function
+        *   `[✅]` Decouples "work completed" from "advance to next stage"
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to `public.handle_job_completion()` function in PostgreSQL
+        *   `[✅]` Affects `dialectic_sessions.status` column only
+        *   `[✅]` Does NOT modify `current_stage_id`
+    *   `[✅]` `deps.md`
+        *   `[✅]` `dialectic_sessions` table
+        *   `[✅]` `dialectic_generation_jobs` table
+        *   `[✅]` Existing trigger infrastructure
+    *   `[✅]` `migration.sql`
+        *   `[✅]` Create migration: `YYYYMMDDHHMMSS_stage_completed_status.sql`
+        *   `[✅]` DROP and recreate `handle_job_completion()` function
+        *   `[✅]` Line ~349-352: Change `'pending_' || v_next_stage_slug` to `v_stage_slug || '_completed'`
+        *   `[✅]` Lines ~353-356: Remove `current_stage_id` update entirely (keep it unchanged)
+        *   `[✅]` Remove special handling for `v_next_stage_slug IS NULL` - all stages use `{stage}_completed`
+    *   `[✅]` supabase/functions/integration_tests/services/`handle_job_completion.integration.test.ts`
+        *   `[✅]` 66.b.i: Assert session status `thesis_completed` (not `pending_antithesis`) when all root PLAN jobs complete for thesis
+        *   `[✅]` 66.b.ii: Assert session status `synthesis_completed` (not `pending_parenthesis`) when all root PLAN jobs complete for synthesis
+        *   `[✅]` 66.b.v: Assert session status `paralysis_completed` (not `iteration_complete_pending_review`) when all root PLAN jobs complete for terminal stage
+        *   `[✅]` Do not assert trigger updates `current_stage_id`; remove or adjust any such assertion if present
+    *   `[✅]` `requirements.md`
+        *   `[✅]` When all root PLAN jobs complete, session status becomes `{stage_slug}_completed`
+        *   `[✅]` `current_stage_id` unchanged by trigger
+        *   `[✅]` Works for all stages including terminal (paralysis_completed)
+        *   `[✅]` Existing job dependency logic (prerequisite unblocking, parent/child) unchanged
+    *   `[✅]` **Commit** `fix(db): handle_job_completion sets {stage}_completed status without advancing stage`
 
-    - Fix the auto increment stage so that submit stage responses doesn't error 
-    -- User reports that when a stage enables "Submit Stage Responses & Advance Stage" the UI throws an error
-    -- Initial investigation reports that the database trigger auto-increments stage when all stage job reqs are met
-    -- Trigger auto-increment seems to collide with manual increment by user from "Submit" 
-    -- Choice point: Introduce intermediate stage for trigger e.g. "stage_completed" but don't advance stage OR let "Submit" ignore stage value collision if the stage they're trying to submit for is already advanced.  
-    -- Consider: The user wants to submit edits/feedback for the stage. If the stage has already been incremented WITHOUT that feedback being sent, can they submit the edits/feedback correctly for that stage/document? Is submitting edits/feedback tied to the focused stage or the database setting? 
+*   `[✅]` supabase/functions/dialectic-service/`submitStageResponses.ts` **[BE] Validate stage status and perform actual advancement with idempotency**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Accept sessions with `{stage}_completed` OR `running_{stage}` status for the target stage
+        *   `[✅]` Save all edits/feedback regardless of current session status (idempotent for prior stages)
+        *   `[✅]` Advance stage only if session is currently at that stage; otherwise return success without advancing
+        *   `[✅]` On advancement: set `current_stage_id` to next stage and status to `pending_{next_stage}`
+        *   `[✅]` Terminal stage advancement: set `iteration_complete_pending_review`
+    *   `[✅]` `role.md`
+        *   `[✅]` Backend API handler - application layer
+        *   `[✅]` Single owner of user-initiated stage advancement
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to `submitStageResponses` function in `dialectic-service`
+        *   `[✅]` Consumes: session status, stage transitions, edits/feedback payloads
+        *   `[✅]` Produces: saved edits/feedback; optionally advanced session
+    *   `[✅]` `deps.md`
+        *   `[✅]` `dialectic_sessions` table
+        *   `[✅]` `dialectic_stage_transitions` table
+        *   `[✅]` `dialectic_stages` table
+        *   `[✅]` `PromptAssembler` service
+        *   `[✅]` FileManager for edits persistence
+    *   `[✅]` interface/`submitStageResponses.interface.ts`
+        *   `[✅]` Add JSDoc documenting expected status patterns: `{stage}_completed`, `running_{stage}`
+        *   `[✅]` Document idempotency: saves always succeed; advancement conditional on current stage
+    *   `[✅]` unit/`submitStageResponses.test.ts`
+        *   `[✅]` Assert accepts session with `{stageSlug}_completed` status
+        *   `[✅]` Assert accepts session with `running_{stageSlug}` status (race condition tolerance)
+        *   `[✅]` Assert saves edits/feedback for prior stage even after advancement (idempotency)
+        *   `[✅]` Assert advances only when session is currently at target stage
+        *   `[✅]` Assert returns success without advancing when session already past target stage
+        *   `[✅]` Assert updates `current_stage_id` to next stage on advancement
+        *   `[✅]` Assert sets status to `pending_{next_stage}` on advancement
+        *   `[✅]` Assert terminal stage sets `iteration_complete_pending_review`
+        *   `[✅]` Assert "last non-empty wins" for edits/feedback overwrites
+    *   `[✅]` `submitStageResponses.ts`
+        *   `[✅]` Extract stage from status: parse `{slug}_completed` or `running_{slug}` pattern
+        *   `[✅]` Validate: allow saves for any stage; advancement only if current stage matches
+        *   `[✅]` Save edits/feedback via existing mechanisms
+        *   `[✅]` Determine next stage via `dialectic_stage_transitions`
+        *   `[✅]` Update session: `current_stage_id = next_stage_id`, `status = 'pending_' || next_stage_slug`
+        *   `[✅]` Terminal: set `iteration_complete_pending_review`, keep `current_stage_id`
+        *   `[✅]` Return success in all valid cases (idempotent)
+    *   `[✅]` integration/`submitStageResponses.integration.test.ts`
+        *   `[✅]` Test: `thesis_completed` → submit → `pending_antithesis` with updated `current_stage_id`
+        *   `[✅]` Test: Already at `pending_antithesis` → submit for thesis → saves succeed, no advancement, no error
+        *   `[✅]` Test: `running_thesis` → submit → saves succeed, advancement succeeds (trigger may not have fired yet)
+        *   `[✅]` Test: `paralysis_completed` → submit → `iteration_complete_pending_review`
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Edits/feedback saved regardless of session status (idempotent)
+        *   `[✅]` Advancement only when session is at target stage
+        *   `[✅]` "Last non-empty wins" for overwrite semantics
+        *   `[✅]` No collision with trigger - trigger marks complete, handler advances
+    *   `[✅]` **Commit** `fix(be): submitStageResponses validates stage status and advances with idempotency`
+
+*   `[✅]` apps/web/src/components/dialectic/`SessionContributionsDisplayCard.tsx` **[UI] Update Submit button logic for new status lifecycle**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Submit button should remain enabled based on `stageProgressSummary?.isComplete` (existing behavior)
+        *   `[✅]` Button label and behavior should reflect idempotent save-and-advance semantics
+        *   `[✅]` Allow submit for prior stages when user navigates back (edits/feedback still saveable)
+    *   `[✅]` `role.md`
+        *   `[✅]` UI component - presentation layer
+        *   `[✅]` Consumes store state for button enablement
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to `SessionContributionsDisplayCard` component
+        *   `[✅]` Interacts with `dialecticStore` for progress summary and submit action
+    *   `[✅]` `deps.md`
+        *   `[✅]` `selectStageProgressSummary` selector
+        *   `[✅]` `submitStageResponses` store action
+        *   `[✅]` Session and stage state from store
+    *   `[✅]` unit/`SessionContributionsDisplayCard.test.tsx`
+        *   `[✅]` Assert Submit button enabled when `isComplete` is true (existing)
+        *   `[✅]` Assert Submit button works when viewing prior stage after advancement (idempotency)
+        *   `[✅]` Assert appropriate messaging on success (stage advanced vs edits saved)
+    *   `[✅]` `SessionContributionsDisplayCard.tsx`
+        *   `[✅]` Review `canSubmitStageResponses` derivation - may need to allow submit for prior stages
+        *   `[✅]` Update success toast messaging to distinguish "advanced" vs "saved without advancing"
+        *   `[✅]` If session already past this stage, show "Save Edits & Feedback" instead of "Submit & Advance"
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Button enabled based on document completion (store state)
+        *   `[✅]` User can submit for prior stages after advancement
+        *   `[✅]` Clear feedback on what happened (advanced vs saved)
+    *   `[✅]` **Commit** `fix(ui): update Submit button for idempotent save-and-advance semantics`
+
+*   `[✅]` supabase/integration_tests/triggers/`state_management_stage_completed.integration.test.ts` **[TEST-INT] Validate complete status lifecycle**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Prove trigger sets `{stage}_completed` without advancing
+        *   `[✅]` Prove `submitStageResponses` advances correctly
+        *   `[✅]` Prove idempotency for prior-stage submissions
+        *   `[✅]` Prove no collision between trigger and manual submit
+    *   `[✅]` `role.md`
+        *   `[✅]` Integration test - proves DB trigger + Backend handler boundary
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to: `handle_job_completion` trigger ↔ `submitStageResponses` handler
+    *   `[✅]` `deps.md`
+        *   `[✅]` Test database with new migration applied
+        *   `[✅]` `handle_job_completion` trigger
+        *   `[✅]` `submitStageResponses` handler
+    *   `[✅]` integration/`state_management_stage_completed.integration.test.ts`
+        *   `[✅]` Test: Jobs complete → trigger sets `thesis_completed`, `current_stage_id` unchanged
+        *   `[✅]` Test: `thesis_completed` → submit → `pending_antithesis` + `current_stage_id` updated
+        *   `[✅]` Test: Already `pending_antithesis` → submit for thesis → success, no error, no duplicate advancement
+        *   `[✅]` Test: User submits during `running_thesis` (trigger not yet fired) → success
+        *   `[✅]` Test: `paralysis_completed` → submit → `iteration_complete_pending_review`
+    *   `[✅]` `requirements.md`
+        *   `[✅]` All tests pass proving decoupled lifecycle
+        *   `[✅]` No regressions in existing state management tests
+    *   `[✅]` **Commit** `test(integration): validate {stage}_completed lifecycle and idempotent advancement`
+
 
     - Fix unintended automatic renavigation
     -- User reports that when a stage completes generating documents, it renavigates the user to the next stage
