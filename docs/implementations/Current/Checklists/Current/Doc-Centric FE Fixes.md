@@ -390,11 +390,71 @@
     *   `[✅]` 17.h. [COMMIT] `feat(ui): bind Document Content and Document Feedback to separate drafts in GeneratedContributionCard`
 
     - Fix the auto increment stage so that submit stage responses doesn't error 
+    -- User reports that when a stage enables "Submit Stage Responses & Advance Stage" the UI throws an error
+    -- Initial investigation reports that the database trigger auto-increments stage when all stage job reqs are met
+    -- Trigger auto-increment seems to collide with manual increment by user from "Submit" 
+    -- Choice point: Introduce intermediate stage for trigger e.g. "stage_completed" but don't advance stage OR let "Submit" ignore stage value collision if the stage they're trying to submit for is already advanced.  
+    -- Consider: The user wants to submit edits/feedback for the stage. If the stage has already been incremented WITHOUT that feedback being sent, can they submit the edits/feedback correctly for that stage/document? Is submitting edits/feedback tied to the focused stage or the database setting? 
+
+    - Fix unintended automatic renavigation
+    -- User reports that when a stage completes generating documents, it renavigates the user to the next stage
+    -- The UI should not renavigate the user unless the renavigation is justified or the user actively wants to renavigate
+    -- Proposed fix: Even if the stage is considered completed, leave the user on the completed stage UNLESS they click the new stage in the stagetabcard or click "Submit" to advance to the next stage 
+
     - Fix the inputs required documents not being appended to the chat message 
+    -- User reports that for antithesis stage, documents generate but the agent complains that the base case it's supposed to critique was not supplied.
+    -- Initial investigation indicates that EMCAS has the documents for inputs_required but is not actually including them in the ChatAPIRequest it sends to the model 
+    -- Troubleshoot EMCAS and verify that the inputs_required artifacts are actually being populated into the API call to the model 
+
     - Stage progress data for future stages needs to tolerate missing inputs because they aren't generated yet, this is progress information, not an error  
+    -- User reports when viewing future stages, StageTabCard / StageRunChecklist complains inputs_required isn't satisfied. 
+    -- inputs_required isn't satisfied because the stage isn't ready yet, this isn't an error, this is progress information
+    -- StageTabCard / StageRunChecklist must still calculate what the stage needs, and will produce, even when those deps aren't met 
+    -- Communicate the unmet deps as status, indicate to the user how to produce those deps, instead of a useless error 
+
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
-    - Stop automatically incrementing users to the next stage tab when documents successfully generate 
-    - Progress needs to start at zero, not 20%, the stage isn't finished, and increment progress when steps are complete
+    -- User reports that a single document failed and they liked the other documents, but had to regenerate the entire stage
+    -- User requests option to only regenerate the exact document that failed
+    -- Initial investigation shows this should be possible, all the deps are met, we just need a means to dispatch a job for only the exact document that errored or otherwise wasn't produced so that the user does't have to rerun the entire stage to get a single document
+    -- Added bonus, this lets users "roll the dice" to get a different/better/alternative version of an existing document if they want to try again 
+    -- FOR CONSIDERATION: This is a powerful feature but implies a branch in the work
+    --- User generates stage, all succeeds
+    --- User advances stages, decides they want to fix an oversight in a prior stage
+    --- User regenerates a prior document
+    --- Now all subsequent documents are invalid
+    --- Is this a true branch/iteration, or do we highlight the downstream products so that those can be regenerated from the new input that was produced? 
+    --- PROPOSED: Implement regeneration prior to stage advancement, disable regeneration for documents who have downstream documents, set up future sprint for branching/iteration to support hints to regenerate downstream documents if a user regenerates upstream documents
+    --- BLOCKER: Some stages are fundamentally dependent on all prior outputs, like synthesis, and the entire stage needs to be rerun if thesis/antithesis documents are regenerated
+
     - Each step needs to emit a completed notice so that the progress bar can track status 
+    -- Dev reports that steps are not all steps/jobs emit completion notices
+    -- Since job/step completed notices are patchy, they can't be relied on for progress bar 
+    -- Ensure every step/job emits a completed notice that lines up exactly to the progress bar expectations for the flow
+    -- This enables the progress bar to accurately communicate not only inter-stage progress but intra-stage progress for users 
+
     - All stage progress needs to draw from a SSOT in the store informed by the step progress notifications 
+    -- User reports that dialectic page has multiple "progress" and "status" indicators that do not always agree 
+    -- Upper right badge says one thing, title bar says another, documents say a third, progress indicator a fourth
+    -- Proposed fix: Align and distill. SSOT for progress/status in store, all badges and notices draw from SSOT, remove duplicate progress/status indicators
+    -- DEP: "each step needs to emit completed notice"  
+
+    - Progress needs to start at zero, not 20%, the stage isn't finished, and increment progress when steps are complete
+    -- User reports progress indicator is confusing, it starts at 20% when there's no work done
+    -- Progress bar needs to start at 0% and increment on step completed/stage completed notices for accurate, granular progress 
+    -- DEP: "each step needs to emit completed notice" & "progress SSOT" 
+
     - Determine an index value for a full flow for 3 models and set that as the new user signup token deposit
+    -- User reports their new sign up allocation was only enough to get 3/4 docs in thesis 
+    -- Reasonable for a new user to want to complete an entire first project from their initial token allocation
+    -- Not a dev task per se, but we need to run a few e2e multi-model flows and index the cost then set the new user sign up deposit close to that value
+    -- This is not recurring, just a new user sign up 
+    -- Dep: Will need to finally set up email validation so that users can't just create new accounts for each project 
+
+    - Email validation disabled
+    -- Need to actually set up email validation
+    
+    - User password changes disabled
+    -- need to actually set up password changes 
+
+    - New user sign in banner doesn't display, throws console error  
+    -- Chase, diagnose, fix 
