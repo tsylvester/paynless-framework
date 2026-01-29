@@ -9,7 +9,6 @@ import {
 import {
 	StageDocumentCompositeKey,
 	StageRunDocumentDescriptor,
-	SetFocusedStageDocumentPayload,
 	SaveContributionEditPayload,
 } from "@paynless/types";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -20,7 +19,6 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { StageRunChecklist } from "./StageRunChecklist";
 import { isDocumentHighlighted } from "@paynless/utils";
 
 const getStageDocumentKey = (key: StageDocumentCompositeKey): string =>
@@ -70,7 +68,6 @@ export const GeneratedContributionCard: React.FC<
 		iterationNumber,
 		focusedStageDocumentMap,
 		focusedDocument,
-		setFocusedStageDocument,
 		updateStageDocumentDraft,
 		submitStageDocumentFeedback,
 		saveContributionEdit,
@@ -96,7 +93,6 @@ export const GeneratedContributionCard: React.FC<
 			iterationNumber,
 			focusedStageDocumentMap: state.focusedStageDocument,
 			focusedDocument,
-			setFocusedStageDocument: state.setFocusedStageDocument,
 			updateStageDocumentDraft: state.updateStageDocumentDraft,
 			submitStageDocumentFeedback: state.submitStageDocumentFeedback,
 			saveContributionEdit: state.saveContributionEdit,
@@ -233,13 +229,6 @@ export const GeneratedContributionCard: React.FC<
 		fetchStageDocumentContent,
 	]);
 
-	const handleDocumentSelect = useCallback(
-		(payload: SetFocusedStageDocumentPayload) => {
-			setFocusedStageDocument(payload);
-		},
-		[setFocusedStageDocument],
-	);
-
 	const handleDraftChange = useCallback(
 		(value: string) => {
 			if (!compositeKey) {
@@ -374,12 +363,6 @@ export const GeneratedContributionCard: React.FC<
 			</CardHeader>
 
 			<CardContent className="space-y-6">
-				<StageRunChecklist
-					modelId={modelId}
-					focusedStageDocumentMap={focusedStageDocumentMap ?? {}}
-					onDocumentSelect={handleDocumentSelect}
-				/>
-
 				{focusedDocument && isValidMarkdownDocument && sessionId && stageSlug && isDocumentHighlighted(sessionId, stageSlug, modelId, focusedDocument.documentKey, focusedStageDocumentMap) ? (
 					<div className="space-y-4">
 						<div className="space-y-1">

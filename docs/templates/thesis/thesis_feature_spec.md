@@ -5,32 +5,32 @@
 {{/section:feature_name}}
 
 {{#section:feature_objective}}
-# Feature Objective
+## Feature Objective
 {feature_objective}
 {{/section:feature_objective}}
 
 {{#section:user_stories}}
-# User Stories
+## User Stories
 {user_stories}
 {{/section:user_stories}}
 
 {{#section:acceptance_criteria}}
-# Acceptance Criteria
+## Acceptance Criteria
 {acceptance_criteria}
 {{/section:acceptance_criteria}}
 
 {{#section:dependencies}}
-# Dependencies
+## Dependencies
 {dependencies}
 {{/section:dependencies}}
 
 {{#section:success_metrics}}
-# Success Metrics
+## Success Metrics
 {success_metrics}
 {{/section:success_metrics}}
 
 {{#section:_extra_content}}
-# Additional Content
+## Additional Content
 {_extra_content}
 {{/section:_extra_content}}
 

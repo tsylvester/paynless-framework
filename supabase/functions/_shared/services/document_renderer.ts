@@ -305,21 +305,91 @@ export async function renderDocument(
   for (const key in mergedStructuredData) {
     if (Object.prototype.hasOwnProperty.call(mergedStructuredData, key)) {
       const value = mergedStructuredData[key];
-      if (Array.isArray(value)) {
+      if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'string') {
+        // Array of strings (e.g., _extra_content from multiple chunks) - join with newlines
         mergedStructuredData[key] = value.join('\n\n');
       }
     }
   }
 
-  // Use renderPrompt to merge structured data into the template
-  // Templates use section-based placeholders, not {{content}}
-  // Add title to the structured data for {{title}} replacement
-  const structuredDataForRender = {
-    title: titleFromDocumentKey(String(documentKey)),
-    ...mergedStructuredData
-  };
+  // Detect if mergedStructuredData has a primary array of objects
+  // This handles AI responses like { features: [{feature_name: "...", ...}, {...}] }
+  // where the template expects flat fields like {feature_name}
+  let primaryArrayKey: string | null = null;
+  let primaryArray: unknown[] | null = null;
   
-  const rendered = renderPrompt(template, structuredDataForRender);
+  for (const key in mergedStructuredData) {
+    if (Object.prototype.hasOwnProperty.call(mergedStructuredData, key)) {
+      const value = mergedStructuredData[key];
+      if (Array.isArray(value) && value.length > 0 && isRecord(value[0])) {
+        primaryArrayKey = key;
+        primaryArray = value;
+        break; // Use first array of objects found
+      }
+    }
+  }
+
+  // Helper: format string arrays as bullet lists
+  function formatNestedArrays(data: Record<string, unknown>): Record<string, unknown> {
+    const formatted: Record<string, unknown> = {};
+    for (const key in data) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        const value = data[key];
+        if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'string') {
+          formatted[key] = value.map(item => `- ${item}`).join('\n');
+        } else {
+          formatted[key] = value;
+        }
+      }
+    }
+    return formatted;
+  }
+
+  // Helper: strip template comments from output
+  function stripTemplateComments(text: string): string {
+    return text.replace(/<!--\s*Template:.*?-->\s*/gi, '');
+  }
+
+  let rendered: string;
+  
+  if (primaryArray && primaryArrayKey) {
+    // Array content: iterate and render template per item, concatenate with separator
+    const renderedItems: string[] = [];
+    const titleValue = titleFromDocumentKey(String(documentKey));
+    
+    for (const item of primaryArray) {
+      if (!isRecord(item)) continue;
+      
+      // Format nested string arrays as bullet lists
+      const formattedItem = formatNestedArrays(item);
+      
+      // Each item's fields become top-level keys for template substitution
+      const itemDataForRender: Record<string, unknown> = {
+        title: titleValue,
+        ...formattedItem,
+      };
+      
+      const itemRendered = renderPrompt(template, itemDataForRender);
+      renderedItems.push(itemRendered.trim());
+    }
+    
+    rendered = renderedItems.join('\n\n---\n\n');
+  } else {
+    // Flat content: render as before (no change)
+    // Use renderPrompt to merge structured data into the template
+    // Templates use section-based placeholders, not {{content}}
+    // Add title to the structured data for {{title}} replacement
+    const structuredDataForRender = {
+      title: titleFromDocumentKey(String(documentKey)),
+      ...mergedStructuredData
+    };
+    
+    rendered = renderPrompt(template, structuredDataForRender);
+  }
+
+  // Strip template comments from final output
+  rendered = stripTemplateComments(rendered);
+
   const renderedBytes = new TextEncoder().encode(rendered);
 
   // 6) Compute final path context and write if a fileManager is available

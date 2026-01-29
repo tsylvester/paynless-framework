@@ -763,11 +763,7 @@ export const handleRenderCompletedLogic = (
 		logger.warn('[DialecticStore] render_completed ignored; progress bucket missing', { progressKey });
 		return;
 	}
-	const stepKey = event.step_key ?? recipe.steps.find((step) => step.job_type === 'RENDER')?.step_key;
-	if (!stepKey) {
-		logger.warn('[DialecticStore] render_completed ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
-		return;
-	}
+	// Validate latestRenderedResourceId BEFORE stepKey check - this is a truly invalid event
 	const latestRenderedResourceId = event.latestRenderedResourceId;
 	if (typeof latestRenderedResourceId !== 'string' || latestRenderedResourceId.length === 0) {
 		logger.warn('[DialecticStore] render_completed ignored; latestRenderedResourceId missing', {
@@ -777,6 +773,9 @@ export const handleRenderCompletedLogic = (
 		});
 		return;
 	}
+	// stepKey is optional - RENDER is a post-processing job type, not always a recipe step
+	// We still update the document descriptor even without stepKey
+	const stepKey = event.step_key ?? recipe.steps.find((step) => step.job_type === 'RENDER')?.step_key;
 
 	const compositeKey: StageDocumentCompositeKey = {
 		sessionId: event.sessionId,
@@ -793,26 +792,39 @@ export const handleRenderCompletedLogic = (
 		if (!progress) {
 			return;
 		}
-		progress.stepStatuses[stepKey] = 'completed';
+		// Only update stepStatuses if stepKey is defined
+		if (stepKey) {
+			progress.stepStatuses[stepKey] = 'completed';
+		}
 		const documentKeyValue = event.document_key;
+		const existingDescriptor = progress.documents[documentKeyValue];
+		// Preserve existing status if stepKey is undefined (progressive rendering)
+		// Only set status to 'completed' when stepKey is defined (final render step)
+		const statusToUse = stepKey ? 'completed' : (existingDescriptor && !isPlannedDescriptor(existingDescriptor) ? existingDescriptor.status : 'generating');
 		const descriptor = ensureRenderedDocumentDescriptor(progress, documentKeyValue, {
-			status: 'completed',
+			status: statusToUse,
 			jobId: event.job_id,
 			latestRenderedResourceId,
 			modelId: event.modelId,
 			versionInfo,
 			stepKey,
 		});
-		descriptor.status = 'completed';
+		// Update version-related fields always
 		descriptor.job_id = event.job_id;
 		descriptor.latestRenderedResourceId = latestRenderedResourceId;
 		descriptor.modelId = event.modelId;
 		descriptor.versionHash = versionInfo.versionHash;
 		descriptor.lastRenderedResourceId = latestRenderedResourceId;
 		descriptor.lastRenderAtIso = versionInfo.updatedAt;
-		if (!descriptor.stepKey && stepKey) {
-			descriptor.stepKey = stepKey;
+		// Only update status to 'completed' if stepKey is defined
+		if (stepKey) {
+			descriptor.status = 'completed';
+			// Only set stepKey on descriptor if not already set
+			if (!descriptor.stepKey) {
+				descriptor.stepKey = stepKey;
+			}
 		}
+		// Note: if stepKey is undefined, status remains unchanged (preserves 'generating' state)
 
 		const serializedKey = getStageDocumentKey(compositeKey);
 		const existingVersion = state.stageDocumentVersions[serializedKey];

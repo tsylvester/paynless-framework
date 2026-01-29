@@ -25,10 +25,23 @@ import {
   DialecticFeedbackRow,
   DialecticServiceResponse,
   GetSessionDetailsResponse,
+  SaveContributionEditPayload,
+  SaveContributionEditContext,
+  SaveContributionEditResult,
 } from "./dialectic.interface.ts";
 import { createMockSupabaseClient, type MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
+import { isRecord } from '../_shared/utils/type-guards/type_guards.common.ts';
 import { CloneProjectResult } from "./cloneProject.ts";
 import { Database, Json } from "../types_db.ts";
+import { FileType } from '../_shared/types/file_manager.types.ts';
+
+function isUser(u: unknown): u is User {
+  return isRecord(u) && typeof u.id === 'string';
+}
+
+function isSaveContributionEditContext(c: unknown): c is SaveContributionEditContext {
+  return isRecord(c) && 'dbClient' in c && 'user' in c && 'logger' in c && 'fileManager' in c && 'pathDeconstructor' in c;
+}
 
 // #region MOCK DATA
 // To satisfy the strict types from dialectic.interface.ts
@@ -112,13 +125,13 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers> & { getStageReci
         cloneProject: overrides?.cloneProject || (() => Promise.resolve({ data: mockProject, error: null, status: 201 })),
         exportProject: overrides?.exportProject || (() => Promise.resolve({ data: { export_url: '' }})),
         getProjectResourceContent: overrides?.getProjectResourceContent || (() => Promise.resolve({ data: { fileName: '', mimeType: '', content: '', sourceContributionId: null }})),
-        saveContributionEdit: overrides?.saveContributionEdit || (() => Promise.resolve({ data: { resource: { id: 'mock-resource-id', resource_type: 'rendered_document', project_id: 'mock-project-id', session_id: 'mock-session-id', stage_slug: 'thesis', iteration_number: 1, document_key: null, source_contribution_id: 'mock-contribution-id', storage_bucket: 'mock-bucket', storage_path: 'mock-path', file_name: 'mock.txt', mime_type: 'text/plain', size_bytes: 123, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }, sourceContributionId: 'mock-contribution-id' }, status: 200 })),
+        saveContributionEdit: (overrides?.saveContributionEdit || ((_payload: SaveContributionEditPayload, _user: User, _deps: SaveContributionEditContext): Promise<SaveContributionEditResult> => Promise.resolve({ data: { resource: { id: 'mock-resource-id', resource_type: 'rendered_document', project_id: 'mock-project-id', session_id: 'mock-session-id', stage_slug: 'thesis', iteration_number: 1, document_key: null, source_contribution_id: 'mock-contribution-id', storage_bucket: 'mock-bucket', storage_path: 'mock-path', file_name: 'mock.txt', mime_type: 'text/plain', size_bytes: 123, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }, sourceContributionId: 'mock-contribution-id' }, status: 200 }))) as ActionHandlers['saveContributionEdit'],
         submitStageResponses: overrides?.submitStageResponses || (() => Promise.resolve({ data: { message: 'mock-message', updatedSession: mockSession, feedbackRecords: [] }, status: 200 })),
         listDomains: overrides?.listDomains || (() => Promise.resolve({ data: [] })),
         fetchProcessTemplate: overrides?.fetchProcessTemplate || (() => Promise.resolve({ data: { created_at: new Date().toISOString(), description: 'mock-description', id: 'mock-id', name: 'mock-name', starting_stage_id: 'mock-starting-stage-id' }, status: 200 })),
         updateSessionModels: overrides?.updateSessionModels || (() => Promise.resolve({ data: mockSession, status: 200 })),
         getStageRecipe: overrides?.getStageRecipe || (() => Promise.resolve({ data: { stageSlug: '', instanceId: '', steps: [] }, status: 200 })),
-        listStageDocuments: overrides?.listStageDocuments || (() => Promise.resolve({ data: { documents: [] }, status: 200 })),
+        listStageDocuments: overrides?.listStageDocuments || (() => Promise.resolve({ data: [], status: 200 })),
         submitStageDocumentFeedback: overrides?.submitStageDocumentFeedback || (() => Promise.resolve({ data: mockFeedbackRow })),
         ...overrides,
     };
@@ -1454,7 +1467,7 @@ withSupabaseEnv("handleRequest - listStageDocuments", async (t) => {
     };
 
     await t.step("should call listStageDocuments and return 200 on success", async () => {
-        const mockResponse: ListStageDocumentsResponse = { documents: [{ documentKey: 'doc1', modelId: 'model-a', lastRenderedResourceId: 'res-1' }] };
+        const mockResponse: ListStageDocumentsResponse = [{ documentKey: 'doc1', modelId: 'model-a', latestRenderedResourceId: 'res-1', status: 'completed', jobId: 'job-1' }];
         const listSpy = spy(() => Promise.resolve({ data: mockResponse, status: 200 }));
         const mockHandlers = createMockHandlers({ listStageDocuments: listSpy });
 
@@ -1474,7 +1487,7 @@ withSupabaseEnv("handleRequest - listStageDocuments", async (t) => {
         
         assertEquals(response.status, 200);
         const body = await response.json();
-        assertEquals(body.documents[0].documentKey, 'doc1');
+        assertEquals(body[0].documentKey, 'doc1');
         assertEquals(listSpy.calls.length, 1);
     });
 
@@ -1504,7 +1517,7 @@ withSupabaseEnv("handleRequest - listStageDocuments", async (t) => {
     });
 
     await t.step("should return 401 if not authenticated", async () => {
-        const listSpy = spy(() => Promise.resolve({ data: { documents: [] }, status: 200 }));
+        const listSpy = spy(() => Promise.resolve({ data: [], status: 200 }));
         const mockHandlers = createMockHandlers({ listStageDocuments: listSpy });
 
         const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
@@ -1587,4 +1600,144 @@ withSupabaseEnv("handleRequest - submitStageDocumentFeedback", async (t) => {
         assertEquals(body.error, error.message);
         assertEquals(submitSpy.calls.length, 1);
     });
+});
+
+withSupabaseEnv("handleRequest - saveContributionEdit", async (t) => {
+  const payload: SaveContributionEditPayload = {
+    originalContributionIdToEdit: 'contrib-123',
+    editedContentText: 'edited content',
+    documentKey: FileType.business_case,
+    resourceType: 'rendered_document',
+  };
+
+  await t.step("should call saveContributionEdit with (payload, user, context) and return 200 on success", async () => {
+    const saveContributionEditSpy = spy((
+      _payload: SaveContributionEditPayload,
+      _user: User,
+      _deps: SaveContributionEditContext,
+    ): Promise<SaveContributionEditResult> => Promise.resolve({
+      data: {
+        resource: {
+          id: 'mock-resource-id',
+          resource_type: 'rendered_document',
+          project_id: 'mock-project-id',
+          session_id: 'mock-session-id',
+          stage_slug: 'thesis',
+          iteration_number: 1,
+          document_key: payload.documentKey,
+          source_contribution_id: payload.originalContributionIdToEdit,
+          storage_bucket: 'mock-bucket',
+          storage_path: 'mock-path',
+          file_name: 'mock.txt',
+          mime_type: 'text/plain',
+          size_bytes: 123,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        sourceContributionId: payload.originalContributionIdToEdit,
+      },
+      status: 200,
+    }));
+    const mockHandlers = createMockHandlers({ saveContributionEdit: saveContributionEditSpy });
+
+    const mockToken = "mock-jwt";
+    const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+      getUserResult: { data: { user: mockUser }, error: null }
+    });
+    const { client: mockAdminClient } = createMockSupabaseClient();
+
+    const req = createJsonRequest("saveContributionEdit", payload, mockToken);
+    const response = await handleRequest(
+      req,
+      mockHandlers,
+      mockUserClient as unknown as SupabaseClient<Database>,
+      mockAdminClient as unknown as SupabaseClient<Database>
+    );
+
+    assertEquals(response.status, 200);
+    assertEquals(saveContributionEditSpy.calls.length, 1);
+    const args = saveContributionEditSpy.calls[0].args;
+    assertEquals(args.length, 3, "saveContributionEdit must be called with (payload, user, context)");
+    assertEquals(args[0], payload);
+    assert(isUser(args[1]), "second argument must be User");
+    assertEquals(args[1].id, 'test-user-id');
+    assert(isSaveContributionEditContext(args[2]), "third argument must be SaveContributionEditContext");
+    assertEquals(args[2].user, args[1]);
+  });
+
+  await t.step("should return error if saveContributionEdit handler fails", async () => {
+    const error: ServiceError = { message: "Save failed", status: 500, code: "SAVE_ERROR" };
+    const saveContributionEditSpy = spy((
+      _payload: SaveContributionEditPayload,
+      _user: User,
+      _deps: SaveContributionEditContext,
+    ): Promise<SaveContributionEditResult> => Promise.resolve({ error, status: 500 }));
+    const mockHandlers = createMockHandlers({ saveContributionEdit: saveContributionEditSpy });
+
+    const mockToken = "mock-jwt";
+    const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+      getUserResult: { data: { user: mockUser }, error: null }
+    });
+    const { client: mockAdminClient } = createMockSupabaseClient();
+
+    const req = createJsonRequest("saveContributionEdit", payload, mockToken);
+    const response = await handleRequest(
+      req,
+      mockHandlers,
+      mockUserClient as unknown as SupabaseClient<Database>,
+      mockAdminClient as unknown as SupabaseClient<Database>
+    );
+
+    assertEquals(response.status, 500);
+    const body = await response.json();
+    assertEquals(body.error, error.message);
+    assertEquals(saveContributionEditSpy.calls.length, 1);
+  });
+
+  await t.step("should return 401 if not authenticated", async () => {
+    const saveContributionEditSpy = spy((
+      _payload: SaveContributionEditPayload,
+      _user: User,
+      _deps: SaveContributionEditContext,
+    ): Promise<SaveContributionEditResult> => Promise.resolve({
+      data: {
+        resource: {
+          id: 'mock-resource-id',
+          resource_type: 'rendered_document',
+          project_id: 'mock-project-id',
+          session_id: 'mock-session-id',
+          stage_slug: 'thesis',
+          iteration_number: 1,
+          document_key: payload.documentKey,
+          source_contribution_id: payload.originalContributionIdToEdit,
+          storage_bucket: 'mock-bucket',
+          storage_path: 'mock-path',
+          file_name: 'mock.txt',
+          mime_type: 'text/plain',
+          size_bytes: 123,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        sourceContributionId: payload.originalContributionIdToEdit,
+      },
+      status: 200,
+    }));
+    const mockHandlers = createMockHandlers({ saveContributionEdit: saveContributionEditSpy });
+
+    const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+      getUserResult: { data: { user: null }, error: null }
+    });
+    const { client: mockAdminClient } = createMockSupabaseClient();
+
+    const req = createJsonRequest("saveContributionEdit", payload);
+    const response = await handleRequest(
+      req,
+      mockHandlers,
+      mockUserClient as unknown as SupabaseClient<Database>,
+      mockAdminClient as unknown as SupabaseClient<Database>
+    );
+
+    assertEquals(response.status, 401);
+    assertEquals(saveContributionEditSpy.calls.length, 0);
+  });
 });

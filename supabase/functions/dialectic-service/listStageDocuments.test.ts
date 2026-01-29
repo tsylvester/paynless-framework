@@ -60,7 +60,7 @@ Deno.test('listStageDocuments - Happy Path: returns normalized document descript
     {
       id: 'resource-1',
       project_id: 'proj-1',
-      file_name: 'doc-a.md',
+      file_name: 'model-a_0_doc-a.md',
       resource_type: 'rendered_document',
       session_id: 'session-123',
       stage_slug: 'synthesis',
@@ -76,7 +76,7 @@ Deno.test('listStageDocuments - Happy Path: returns normalized document descript
       mime_type: 'text/markdown',
       size_bytes: 100,
       storage_bucket: 'dialectic-contributions',
-      storage_path: 'path/to/doc-a.md',
+      storage_path: 'proj-1/session_abc/iteration_1/3_synthesis/documents',
       user_id: USER_ID,
     },
   ];
@@ -99,18 +99,22 @@ Deno.test('listStageDocuments - Happy Path: returns normalized document descript
 
   assertEquals(result.status, 200);
   assertExists(result.data);
-  const { documents }: ListStageDocumentsResponse = result.data;
+  const documents: ListStageDocumentsResponse = result.data;
   assertEquals(documents.length, 2);
 
   const docA = documents.find((d: StageDocumentDescriptorDto) => d.documentKey === 'doc-a');
   assertExists(docA);
   assertEquals(docA.modelId, 'model-a');
-  assertEquals(docA.lastRenderedResourceId, 'resource-1');
+  assertEquals(docA.latestRenderedResourceId, 'resource-1');
+  assertEquals(docA.jobId, 'job-1');
+  assertEquals(docA.status, 'completed');
 
   const docB = documents.find((d: StageDocumentDescriptorDto) => d.documentKey === 'doc-b');
   assertExists(docB);
   assertEquals(docB.modelId, 'model-b');
-  assertEquals(docB.lastRenderedResourceId, null);
+  assertEquals(docB.latestRenderedResourceId, '');
+  assertEquals(docB.jobId, 'job-2');
+  assertEquals(docB.status, 'generating');
 
   // Assert that the correct filters were applied for security and data narrowing
   const jobsSpies = mockSupabase.spies.getLatestQueryBuilderSpies(
@@ -192,8 +196,10 @@ Deno.test('listStageDocuments - Happy Path: handles jobs with no rendered resour
 
   assertEquals(result.status, 200);
   assertExists(result.data);
-  assertEquals(result.data.documents.length, 1);
-  assertEquals(result.data.documents[0].lastRenderedResourceId, null);
+  assertEquals(result.data.length, 1);
+  assertEquals(result.data[0].latestRenderedResourceId, '');
+  assertEquals(result.data[0].jobId, 'job-1');
+  assertEquals(result.data[0].status, 'generating');
 });
 
 Deno.test('listStageDocuments - Happy Path: returns empty array when no jobs found', async () => {
@@ -211,7 +217,7 @@ Deno.test('listStageDocuments - Happy Path: returns empty array when no jobs fou
 
   assertEquals(result.status, 200);
   assertExists(result.data);
-  assertEquals(result.data.documents.length, 0);
+  assertEquals(result.data.length, 0);
 });
 
 Deno.test('listStageDocuments - Edge Case: filters out jobs without a document_key', async () => {
@@ -248,8 +254,8 @@ Deno.test('listStageDocuments - Edge Case: filters out jobs without a document_k
 
   assertEquals(result.status, 200);
   assertExists(result.data);
-  assertEquals(result.data.documents.length, 1);
-  assertEquals(result.data.documents[0].documentKey, 'doc-a');
+  assertEquals(result.data.length, 1);
+  assertEquals(result.data[0].documentKey, 'doc-a');
 });
 
 Deno.test('listStageDocuments - Error: returns 500 on database error', async () => {
@@ -295,7 +301,7 @@ Deno.test('listStageDocuments - Happy Path: correlates resources via source_cont
     {
       id: 'resource-1',
       project_id: PROJECT_ID,
-      file_name: 'doc-a.md',
+      file_name: 'model-a_0_doc-a.md',
       resource_type: 'rendered_document',
       session_id: 'session-123',
       stage_slug: 'synthesis',
@@ -310,7 +316,7 @@ Deno.test('listStageDocuments - Happy Path: correlates resources via source_cont
       mime_type: 'text/markdown',
       size_bytes: 100,
       storage_bucket: 'dialectic-contributions',
-      storage_path: 'path/to/doc-a.md',
+      storage_path: 'project-xyz/session_abc/iteration_1/3_synthesis/documents',
       user_id: USER_ID,
     },
   ];
@@ -333,13 +339,15 @@ Deno.test('listStageDocuments - Happy Path: correlates resources via source_cont
 
   assertEquals(result.status, 200);
   assertExists(result.data);
-  const { documents }: ListStageDocumentsResponse = result.data;
+  const documents: ListStageDocumentsResponse = result.data;
   assertEquals(documents.length, 1);
 
   const docA = documents.find((d: StageDocumentDescriptorDto) => d.documentKey === 'doc-a');
   assertExists(docA);
   assertEquals(docA.modelId, 'model-a');
-  assertEquals(docA.lastRenderedResourceId, 'resource-1');
+  assertEquals(docA.latestRenderedResourceId, 'resource-1');
+  assertEquals(docA.jobId, 'job-1');
+  assertEquals(docA.status, 'completed');
 
   // Assert that the resources query filters by columns including source_contribution_id correlation
   const resourcesSpies = mockSupabase.spies.getLatestQueryBuilderSpies(

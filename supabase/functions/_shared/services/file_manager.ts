@@ -227,11 +227,14 @@ export class FileManagerService {
     try {
       if (isResourceContext(context)) {
         const targetTable = 'dialectic_project_resources'
-        // Build resource_description.
-        const resourceDescriptionForDb: Json = {
+        // Build resource_description: base (type, originalDescription) then merge context.resourceDescriptionForDb when provided (step 10.d.i).
+        const baseDescription: Json = {
           type: pathContextForStorage.fileType,
           ...(context.description && { originalDescription: context.description }),
         };
+        const resourceDescriptionForDb: Json = isRecord(context.resourceDescriptionForDb)
+          ? { ...context.resourceDescriptionForDb, type: pathContextForStorage.fileType, ...(context.description && { originalDescription: context.description }) }
+          : baseDescription;
 
         const resourceType = context.resourceTypeForDb ?? pathContextForStorage.fileType
         const recordData: TablesInsert<'dialectic_project_resources'> = {

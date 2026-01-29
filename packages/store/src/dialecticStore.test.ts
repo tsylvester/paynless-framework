@@ -29,6 +29,10 @@ import type {
   ContributionGenerationStatus,
   GetSessionDetailsResponse,
   DialecticLifecycleEvent,
+  SaveContributionEditPayload,
+  SaveContributionEditSuccessResponse,
+  EditedDocumentResource,
+  DialecticContribution,
 } from '@paynless/types';
 
 // Add the mock call here
@@ -255,8 +259,9 @@ describe('useDialecticStore', () => {
                 created_at: new Date().toISOString(), 
                 display_name: 'Test Stage', 
                 default_system_prompt_id: null, 
-                expected_output_artifacts: {}, 
-                input_artifact_rules: {} 
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                active_recipe_instance_id: null,
             };
             setActiveContextStage(testStage);
             expect(useDialecticStore.getState().activeContextStage).toEqual(testStage);
@@ -276,8 +281,9 @@ describe('useDialecticStore', () => {
                     created_at: new Date().toISOString(),
                     display_name: 'Context Stage',
                     default_system_prompt_id: null,
-                    expected_output_artifacts: {},
-                    input_artifact_rules: {}
+                    expected_output_template_ids: [],
+                    recipe_template_id: null,
+                    active_recipe_instance_id: null,
                 },
             };
             setActiveDialecticContext(testContext);
@@ -341,6 +347,197 @@ describe('useDialecticStore', () => {
             const { resetSaveContributionEditError } = useDialecticStore.getState();
             resetSaveContributionEditError();
             expect(useDialecticStore.getState().saveContributionEditError).toBeNull();
+        });
+    });
+
+    describe('saveContributionEdit thunk', () => {
+        const payload: SaveContributionEditPayload = {
+            originalContributionIdToEdit: 'contrib-1',
+            editedContentText: 'Edited content.',
+            projectId: 'proj-1',
+            sessionId: 'sess-1',
+            originalModelContributionId: 'contrib-1',
+            responseText: 'Edited content.',
+            documentKey: 'feature_spec',
+            resourceType: 'rendered_document',
+        };
+
+        const mockResource: EditedDocumentResource = {
+            id: 'resource-1',
+            resource_type: 'rendered_document',
+            project_id: payload.projectId,
+            session_id: payload.sessionId,
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            document_key: payload.documentKey,
+            source_contribution_id: payload.originalContributionIdToEdit,
+            storage_bucket: 'bucket',
+            storage_path: 'path',
+            file_name: 'file.md',
+            mime_type: 'text/markdown',
+            size_bytes: 100,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        };
+
+        const mockSuccessResponse: ApiResponse<SaveContributionEditSuccessResponse> = {
+            data: { resource: mockResource, sourceContributionId: payload.originalContributionIdToEdit },
+            status: 201,
+        };
+
+        it('should call api.dialectic().saveContributionEdit with payload including documentKey and resourceType and return success', async () => {
+            getMockDialecticClient().saveContributionEdit.mockResolvedValue(mockSuccessResponse);
+
+            const { saveContributionEdit } = useDialecticStore.getState();
+            const result = await saveContributionEdit(payload);
+
+            expect(getMockDialecticClient().saveContributionEdit).toHaveBeenCalledWith(payload);
+            expect(result.error).toBeUndefined();
+            expect(result.status).toBe(201);
+            expect(result.data?.resource.id).toBe(mockResource.id);
+            const state = useDialecticStore.getState();
+            expect(state.isSavingContributionEdit).toBe(false);
+            expect(state.saveContributionEditError).toBeNull();
+        });
+
+        it('should set saveContributionEditError when API returns error', async () => {
+            const mockError: ApiError = { code: 'SAVE_ERROR', message: 'Save failed' };
+            getMockDialecticClient().saveContributionEdit.mockResolvedValue({ error: mockError, status: 500 });
+
+            const { saveContributionEdit } = useDialecticStore.getState();
+            const result = await saveContributionEdit(payload);
+
+            expect(getMockDialecticClient().saveContributionEdit).toHaveBeenCalledWith(payload);
+            expect(result.error).toEqual(mockError);
+            const state = useDialecticStore.getState();
+            expect(state.isSavingContributionEdit).toBe(false);
+            expect(state.saveContributionEditError).toEqual(mockError);
+        });
+
+        it('should use payload.documentKey for stageDocumentContent composite key, not resource.document_key or originalContribution.contribution_type', async () => {
+            const sessionId = 'sess-payload-key';
+            const originalContributionIdToEdit = 'contrib-payload-key';
+            const payloadDocumentKey = 'feature_spec';
+
+            const originalContribution: DialecticContribution = {
+                id: originalContributionIdToEdit,
+                session_id: sessionId,
+                user_id: 'user-1',
+                stage: 'synthesis',
+                iteration_number: 1,
+                model_id: 'model-1',
+                job_id: 'job-1',
+                status: 'completed',
+                original_model_contribution_id: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                model_name: 'Test Model',
+                prompt_template_id_used: 'prompt-1',
+                seed_prompt_url: 'path/to/seed.md',
+                edit_version: 0,
+                is_latest_edit: true,
+                raw_response_storage_path: 'path/to/raw.json',
+                target_contribution_id: null,
+                tokens_used_input: 10,
+                tokens_used_output: 20,
+                processing_time_ms: 100,
+                error: null,
+                citations: null,
+                contribution_type: 'synthesis',
+                file_name: 'synthesis.md',
+                storage_bucket: 'bucket',
+                storage_path: 'path',
+                size_bytes: 100,
+                mime_type: 'text/markdown',
+            };
+
+            const projectWithSession: DialecticProject = {
+                id: 'proj-payload-key',
+                user_id: 'user-1',
+                project_name: 'Test',
+                selected_domain_id: 'domain-1',
+                dialectic_domains: { name: 'Domain' },
+                selected_domain_overlay_id: null,
+                repo_url: null,
+                status: 'active',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                dialectic_process_templates: null,
+                process_template_id: 'pt-1',
+                isLoadingProcessTemplate: false,
+                processTemplateError: null,
+                contributionGenerationStatus: 'idle',
+                generateContributionsError: null,
+                isSubmittingStageResponses: false,
+                submitStageResponsesError: null,
+                isSavingContributionEdit: false,
+                saveContributionEditError: null,
+                dialectic_sessions: [{
+                    id: sessionId,
+                    dialectic_contributions: [originalContribution],
+                    iteration_count: 1,
+                    project_id: 'proj-payload-key',
+                    session_description: 'Session',
+                    user_input_reference_url: null,
+                    selected_model_ids: [],
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    status: 'pending_hypothesis',
+                    associated_chat_id: null,
+                    current_stage_id: 'thesis',
+                }],
+            };
+
+            const resourceWithDifferentDocumentKey: EditedDocumentResource = {
+                id: 'resource-payload-key',
+                resource_type: 'rendered_document',
+                project_id: 'proj-payload-key',
+                session_id: sessionId,
+                stage_slug: 'synthesis',
+                iteration_number: 1,
+                document_key: 'other_key',
+                source_contribution_id: originalContributionIdToEdit,
+                storage_bucket: 'bucket',
+                storage_path: 'path',
+                file_name: 'file.md',
+                mime_type: 'text/markdown',
+                size_bytes: 100,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+
+            const payloadWithDocumentKey: SaveContributionEditPayload = {
+                originalContributionIdToEdit,
+                editedContentText: 'Edited by payload key test.',
+                projectId: 'proj-payload-key',
+                sessionId,
+                originalModelContributionId: originalContributionIdToEdit,
+                responseText: 'Edited by payload key test.',
+                documentKey: payloadDocumentKey,
+                resourceType: 'rendered_document',
+            };
+
+            getMockDialecticClient().saveContributionEdit.mockResolvedValue({
+                data: { resource: resourceWithDifferentDocumentKey, sourceContributionId: originalContributionIdToEdit },
+                status: 201,
+            });
+
+            useDialecticStore.setState({
+                currentProjectDetail: projectWithSession,
+                stageDocumentContent: {},
+                stageDocumentResources: {},
+            });
+
+            const { saveContributionEdit } = useDialecticStore.getState();
+            await saveContributionEdit(payloadWithDocumentKey);
+
+            const finalState = useDialecticStore.getState();
+            const expectedKey = `${sessionId}:synthesis:1:model-1:${payloadDocumentKey}`;
+            const documentEntry = finalState.stageDocumentContent[expectedKey];
+
+            expect(documentEntry).toBeDefined();
+            expect(documentEntry?.baselineMarkdown).toBe(payloadWithDocumentKey.editedContentText);
+            expect(documentEntry?.currentDraftMarkdown).toBe(payloadWithDocumentKey.editedContentText);
         });
     });
 
@@ -745,8 +942,9 @@ describe('useDialecticStore', () => {
                     created_at: new Date().toISOString(), 
                     display_name: 'Thesis', 
                     default_system_prompt_id: null, 
-                    expected_output_artifacts: {}, 
-                    input_artifact_rules: {} 
+                    expected_output_template_ids: [],
+                    recipe_template_id: null,
+                    active_recipe_instance_id: null,
                 }]
             },
             dialectic_sessions: [{ 
@@ -816,8 +1014,9 @@ describe('useDialecticStore', () => {
             created_at: new Date().toISOString(),
             display_name: 'Thesis',
             default_system_prompt_id: null,
-            expected_output_artifacts: {},
-            input_artifact_rules: {}
+            expected_output_template_ids: [],
+            recipe_template_id: null,
+            active_recipe_instance_id: null,
         };
 
         it('should fetch project, then session, and set all context', async () => {
@@ -831,6 +1030,7 @@ describe('useDialecticStore', () => {
                 data: {
                     session: mockSession,
                     currentStageDetails: mockStage,
+                    activeSeedPrompt: null,
                 },
                 status: 200,
             });
@@ -852,7 +1052,7 @@ describe('useDialecticStore', () => {
             // Assert
             const state = useDialecticStore.getState();
             expect(getMockDialecticClient().getProjectDetails).toHaveBeenCalledWith(mockProjectId);
-            expect(getMockDialecticClient().getSessionDetails).toHaveBeenCalledWith(mockSessionId);
+            expect(getMockDialecticClient().getSessionDetails).toHaveBeenCalledWith(mockSessionId, false);
 
             expect(state.currentProjectDetail).toEqual(mockProject);
             expect(state.activeSessionDetail).toEqual(expect.objectContaining(mockSession));

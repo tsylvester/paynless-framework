@@ -52,7 +52,7 @@ import {
   IPlanJobContext, 
   IRenderJobContext 
 } from '../dialectic-worker/JobContext.interface.ts';
-import { DeconstructedPathInfo } from '../_shared/utils/path_deconstructor.types.ts';
+import { DeconstructStoragePathFn, DeconstructedPathInfo } from '../_shared/utils/path_deconstructor.types.ts';
 
 export type DialecticStageRecipeEdge = Database['public']['Tables']['dialectic_stage_recipe_edges']['Row'];
 export type DialecticStageRecipeInstance = Database['public']['Tables']['dialectic_stage_recipe_instances']['Row'];
@@ -464,15 +464,26 @@ type SubmitStageDocumentFeedbackAction = {
 
 // --- START: DTOs for listStageDocuments ---
 
+export type StageRunDocumentStatus =
+  | 'idle'
+  | 'generating'
+  | 'retrying'
+  | 'failed'
+  | 'completed'
+  | 'continuing'
+  | 'not_started';
+
 export interface StageDocumentDescriptorDto {
+  descriptorType?: 'rendered';
   documentKey: string;
+  status: StageRunDocumentStatus;
+  jobId: string;
+  latestRenderedResourceId: string;
   modelId: string;
-  lastRenderedResourceId: string | null;
+  stepKey?: string;
 }
 
-export interface ListStageDocumentsResponse {
-  documents: StageDocumentDescriptorDto[];
-}
+export type ListStageDocumentsResponse = StageDocumentDescriptorDto[];
 
 // --- END: DTOs for listStageDocuments ---
 
@@ -998,14 +1009,63 @@ export interface SaveContributionEditPayload {
   originalContributionIdToEdit: string;
   editedContentText: string;
   // session_id is implied by the originalContributionIdToEdit and will be fetched
-  documentKey?: FileType;
-  resourceType?: string;
+  documentKey: FileType;
+  resourceType: string;
 }
+
+export interface SaveContributionEditSessionJoinRow {
+  project_id: string | null;
+  dialectic_projects: { user_id: string | null } | null;
+  current_stage_id: string | null;
+}
+
+export type OriginalContributionQueryResult =
+  & Pick<
+    DialecticContributionRow,
+    | 'id'
+    | 'session_id'
+    | 'stage'
+    | 'iteration_number'
+    | 'edit_version'
+    | 'original_model_contribution_id'
+    | 'target_contribution_id'
+    | 'user_id'
+    | 'model_id'
+    | 'model_name'
+    | 'storage_path'
+    | 'file_name'
+  >
+  & {
+    dialectic_sessions: SaveContributionEditSessionJoinRow | null;
+  };
 
 export interface SaveContributionEditSuccessResponse {
   resource: EditedDocumentResource;
   sourceContributionId: string;
 }
+
+// Dialectic action (saveContributionEdit) contract types.
+// - Uses a single context object for DI (no duplicated deps in both signature and deps object).
+// - Consumes shared utility callable types from their utility type files.
+export interface SaveContributionEditContext {
+  dbClient: SupabaseClient<Database>;
+  user: User;
+  logger: ILogger;
+  fileManager: IFileManager;
+  pathDeconstructor: DeconstructStoragePathFn;
+}
+
+export interface SaveContributionEditResult {
+  data?: SaveContributionEditSuccessResponse;
+  error?: ServiceError;
+  status?: number;
+}
+
+export type SaveContributionEditFn = (
+  payload: SaveContributionEditPayload,
+  user: User,
+  deps: SaveContributionEditContext,
+) => Promise<SaveContributionEditResult>;
 
 // Updated DialecticFeedback to match the new file-based schema
 export interface DialecticFeedback {

@@ -1,9 +1,12 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { 
     ApiResponse, 
     DialecticStageRecipe, 
-    DialecticStageRecipeStep 
+    DialecticStageRecipeStep,
+    StageDocumentCompositeKey,
+    StageRenderedDocumentDescriptor,
 } from '@paynless/types';
+import { getStageDocumentKey } from './dialecticStore.documents';
 
 vi.mock('@paynless/api', async (importOriginal) => {
   const original = await importOriginal<typeof import('@paynless/api')>();
@@ -37,7 +40,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
     job_type: 'PLAN',
     prompt_type: 'Planner',
     prompt_template_id: 'pt-a',
-    output_type: 'HeaderContext',
+    output_type: 'header_context',
     granularity_strategy: 'all_to_one',
     inputs_required: [{ type: 'seed_prompt', document_key: 'seed_prompt', required: true, slug: 'seed_prompt' }],
     inputs_relevance: [],
@@ -54,7 +57,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
     job_type: 'EXECUTE',
     prompt_type: 'Turn',
     prompt_template_id: 'pt-b',
-    output_type: 'AssembledDocumentJson',
+    output_type: 'assembled_document_json',
     granularity_strategy: 'per_source_document',
     inputs_required: [{ type: 'document', document_key: 'feature_spec', required: true, slug: 'feature_spec' }],
     inputs_relevance: [{ document_key: 'feature_spec', relevance: 1, type: 'feedback', slug: 'feature_spec' }],
@@ -203,6 +206,246 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
 
       const state = useDialecticStore.getState();
       expect(state.focusedStageDocument?.[focusKey] ?? null).toBeNull();
+    });
+  });
+
+  describe('setFocusedStageDocument content fetch', () => {
+    const documentKey = 'business_case';
+    const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+    const compositeKey: StageDocumentCompositeKey = {
+      sessionId,
+      stageSlug,
+      iterationNumber,
+      modelId,
+      documentKey,
+    };
+    const serializedKey = getStageDocumentKey(compositeKey);
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('2.c.i: fetches content when latestRenderedResourceId exists and content not cached', async () => {
+      const latestRenderedResourceId = 'resource-to-fetch';
+
+      // Seed with document descriptor that has latestRenderedResourceId
+      const documentDescriptor: StageRenderedDocumentDescriptor = {
+        descriptorType: 'rendered',
+        status: 'completed',
+        job_id: 'job-1',
+        latestRenderedResourceId,
+        modelId,
+        versionHash: 'hash-1',
+        lastRenderedResourceId: latestRenderedResourceId,
+        lastRenderAtIso: new Date().toISOString(),
+        stepKey: 'execute_step',
+      };
+
+      useDialecticStore.setState((state) => {
+        state.stageRunProgress[progressKey] = {
+          documents: {
+            [documentKey]: documentDescriptor,
+          },
+          stepStatuses: {},
+        };
+        // No cached content - stageDocumentContent is empty
+      });
+
+      const fetchSpy = vi.spyOn(useDialecticStore.getState(), 'fetchStageDocumentContent');
+
+      await useDialecticStore.getState().setFocusedStageDocument({
+        sessionId,
+        stageSlug,
+        modelId,
+        documentKey,
+        stepKey: 'execute_step',
+        iterationNumber,
+      });
+
+      expect(fetchSpy).toHaveBeenCalledWith(compositeKey, latestRenderedResourceId);
+    });
+
+    it('2.c.ii: fetches content even when document status is generating (progressive rendering)', async () => {
+      const latestRenderedResourceId = 'resource-generating';
+
+      const documentDescriptor: StageRenderedDocumentDescriptor = {
+        descriptorType: 'rendered',
+        status: 'generating', // Still generating but has rendered content
+        job_id: 'job-1',
+        latestRenderedResourceId,
+        modelId,
+        versionHash: 'hash-1',
+        lastRenderedResourceId: latestRenderedResourceId,
+        lastRenderAtIso: new Date().toISOString(),
+        stepKey: 'execute_step',
+      };
+
+      useDialecticStore.setState((state) => {
+        state.stageRunProgress[progressKey] = {
+          documents: {
+            [documentKey]: documentDescriptor,
+          },
+          stepStatuses: {},
+        };
+      });
+
+      const fetchSpy = vi.spyOn(useDialecticStore.getState(), 'fetchStageDocumentContent');
+
+      await useDialecticStore.getState().setFocusedStageDocument({
+        sessionId,
+        stageSlug,
+        modelId,
+        documentKey,
+        stepKey: 'execute_step',
+        iterationNumber,
+      });
+
+      expect(fetchSpy).toHaveBeenCalledWith(compositeKey, latestRenderedResourceId);
+    });
+
+    it('2.c.iii: does NOT fetch when content already cached with same latestRenderedResourceId', async () => {
+      const latestRenderedResourceId = 'resource-cached';
+
+      const documentDescriptor: StageRenderedDocumentDescriptor = {
+        descriptorType: 'rendered',
+        status: 'completed',
+        job_id: 'job-1',
+        latestRenderedResourceId,
+        modelId,
+        versionHash: 'hash-cached',
+        lastRenderedResourceId: latestRenderedResourceId,
+        lastRenderAtIso: new Date().toISOString(),
+        stepKey: 'execute_step',
+      };
+
+      useDialecticStore.setState((state) => {
+        state.stageRunProgress[progressKey] = {
+          documents: {
+            [documentKey]: documentDescriptor,
+          },
+          stepStatuses: {},
+        };
+        // Content IS cached with matching version
+        state.stageDocumentContent[serializedKey] = {
+          baselineMarkdown: 'Cached content',
+          currentDraftMarkdown: 'Cached content',
+          isDirty: false,
+          isLoading: false,
+          error: null,
+          lastBaselineVersion: {
+            resourceId: latestRenderedResourceId,
+            versionHash: 'hash-cached',
+            updatedAt: new Date().toISOString(),
+          },
+          pendingDiff: null,
+          lastAppliedVersionHash: 'hash-cached',
+          sourceContributionId: null,
+        };
+      });
+
+      const fetchSpy = vi.spyOn(useDialecticStore.getState(), 'fetchStageDocumentContent');
+
+      await useDialecticStore.getState().setFocusedStageDocument({
+        sessionId,
+        stageSlug,
+        modelId,
+        documentKey,
+        stepKey: 'execute_step',
+        iterationNumber,
+      });
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('2.c.iv: re-fetches when latestRenderedResourceId changed (new chunk rendered)', async () => {
+      const oldResourceId = 'resource-old';
+      const newResourceId = 'resource-new';
+
+      const documentDescriptor: StageRenderedDocumentDescriptor = {
+        descriptorType: 'rendered',
+        status: 'generating',
+        job_id: 'job-1',
+        latestRenderedResourceId: newResourceId, // New resource ID
+        modelId,
+        versionHash: 'hash-new',
+        lastRenderedResourceId: newResourceId,
+        lastRenderAtIso: new Date().toISOString(),
+        stepKey: 'execute_step',
+      };
+
+      useDialecticStore.setState((state) => {
+        state.stageRunProgress[progressKey] = {
+          documents: {
+            [documentKey]: documentDescriptor,
+          },
+          stepStatuses: {},
+        };
+        // Content cached but with OLD resource ID (stale)
+        state.stageDocumentContent[serializedKey] = {
+          baselineMarkdown: 'Old content',
+          currentDraftMarkdown: 'Old content',
+          isDirty: false,
+          isLoading: false,
+          error: null,
+          lastBaselineVersion: {
+            resourceId: oldResourceId, // Stale - different from descriptor
+            versionHash: 'hash-old',
+            updatedAt: new Date().toISOString(),
+          },
+          pendingDiff: null,
+          lastAppliedVersionHash: 'hash-old',
+          sourceContributionId: null,
+        };
+      });
+
+      const fetchSpy = vi.spyOn(useDialecticStore.getState(), 'fetchStageDocumentContent');
+
+      await useDialecticStore.getState().setFocusedStageDocument({
+        sessionId,
+        stageSlug,
+        modelId,
+        documentKey,
+        stepKey: 'execute_step',
+        iterationNumber,
+      });
+
+      expect(fetchSpy).toHaveBeenCalledWith(compositeKey, newResourceId);
+    });
+
+    it('2.c.v: does NOT fetch when document has no latestRenderedResourceId', async () => {
+      const documentDescriptor: StageRenderedDocumentDescriptor = {
+        descriptorType: 'rendered',
+        status: 'generating',
+        job_id: 'job-1',
+        latestRenderedResourceId: '', // Empty - no rendered content yet
+        modelId,
+        versionHash: '',
+        lastRenderedResourceId: '',
+        lastRenderAtIso: new Date().toISOString(),
+        stepKey: 'execute_step',
+      };
+
+      useDialecticStore.setState((state) => {
+        state.stageRunProgress[progressKey] = {
+          documents: {
+            [documentKey]: documentDescriptor,
+          },
+          stepStatuses: {},
+        };
+      });
+
+      const fetchSpy = vi.spyOn(useDialecticStore.getState(), 'fetchStageDocumentContent');
+
+      await useDialecticStore.getState().setFocusedStageDocument({
+        sessionId,
+        stageSlug,
+        modelId,
+        documentKey,
+        stepKey: 'execute_step',
+        iterationNumber,
+      });
+
+      expect(fetchSpy).not.toHaveBeenCalled();
     });
   });
 });

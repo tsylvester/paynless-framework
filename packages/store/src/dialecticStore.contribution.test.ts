@@ -23,6 +23,7 @@ import {
   SubmitStageDocumentFeedbackPayload,
   SaveContributionEditSuccessResponse,
   EditedDocumentResource,
+  StageDocumentContentState,
 } from '@paynless/types';
 
 // We need to import the mock api object and helpers to use in the test
@@ -449,9 +450,8 @@ describe('useDialecticStore', () => {
         });
 
         it('should identify unsaved drafts, save each, then advance the stage', async () => {
-            // 1. Setup Mock State with dirty documents
-            useDialecticStore.setState({
-                stageDocumentContent: {
+            // 1. Setup Mock State with dirty documents (typed so incomplete data is a compile error)
+            const stageContent: Record<string, StageDocumentContentState> = {
                     [compositeKey1]: {
                         baselineMarkdown: 'baseline 1',
                         currentDraftMarkdown: 'draft 1',
@@ -461,6 +461,7 @@ describe('useDialecticStore', () => {
                         lastBaselineVersion: null,
                         pendingDiff: 'diff 1',
                         lastAppliedVersionHash: null,
+                        sourceContributionId: null,
                     },
                     [compositeKey2]: { // This one is not dirty
                         baselineMarkdown: 'baseline 2',
@@ -471,6 +472,7 @@ describe('useDialecticStore', () => {
                         lastBaselineVersion: null,
                         pendingDiff: null,
                         lastAppliedVersionHash: null,
+                        sourceContributionId: null,
                     },
                     [compositeKey3]: {
                         baselineMarkdown: 'baseline 3',
@@ -481,8 +483,11 @@ describe('useDialecticStore', () => {
                         lastBaselineVersion: null,
                         pendingDiff: 'diff 3',
                         lastAppliedVersionHash: null,
+                        sourceContributionId: null,
                     },
-                },
+                };
+            useDialecticStore.setState({
+                stageDocumentContent: stageContent,
                 stageDocumentResources: {
                     [compositeKey1]: {
                         id: 'resource-doc-1',
@@ -579,8 +584,7 @@ describe('useDialecticStore', () => {
         });
 
         it('should advance the stage without saving feedback if no drafts are dirty', async () => {
-             useDialecticStore.setState({
-                stageDocumentContent: {
+            const stageContent: Record<string, StageDocumentContentState> = {
                     [compositeKey1]: {
                         baselineMarkdown: 'baseline 1',
                         currentDraftMarkdown: 'baseline 1',
@@ -590,8 +594,11 @@ describe('useDialecticStore', () => {
                         lastBaselineVersion: null,
                         pendingDiff: null,
                         lastAppliedVersionHash: null,
+                        sourceContributionId: null,
                     },
-                },
+                };
+             useDialecticStore.setState({
+                stageDocumentContent: stageContent,
             });
 
             const submitDocFeedbackSpy = vi.spyOn(useDialecticStore.getState(), 'submitStageDocumentFeedback');
@@ -613,8 +620,7 @@ describe('useDialecticStore', () => {
 
         it('should halt and set an error if saving a document feedback fails', async () => {
             const feedbackError: ApiError = { message: 'Failed to save draft', code: 'SAVE_FAILED' };
-            useDialecticStore.setState({
-                stageDocumentContent: {
+            const stageContent: Record<string, StageDocumentContentState> = {
                     [compositeKey1]: {
                         baselineMarkdown: 'baseline 1',
                         currentDraftMarkdown: 'draft 1',
@@ -624,8 +630,11 @@ describe('useDialecticStore', () => {
                         lastBaselineVersion: null,
                         pendingDiff: 'diff 1',
                         lastAppliedVersionHash: null,
+                        sourceContributionId: null,
                     },
-                },
+                };
+            useDialecticStore.setState({
+                stageDocumentContent: stageContent,
             });
         
             const submitStageResponsesSpy = vi.spyOn(api.dialectic(), 'submitStageResponses');
@@ -649,14 +658,16 @@ describe('useDialecticStore', () => {
         const mockSessionId = 'sess-edit-1';
         const originalContributionId = 'contrib-edit-original';
 
-        // Correctly structured payload
+        // Correctly structured payload (documentKey and resourceType required per SaveContributionEditPayload)
         const mockPayload: SaveContributionEditPayload = {
             projectId: mockProjectId,
             sessionId: mockSessionId,
             originalContributionIdToEdit: originalContributionId,
             editedContentText: 'This is the new, edited content.',
-            originalModelContributionId: originalContributionId, // This may be redundant depending on backend, but include for type correctness
-            responseText: 'User feedback on the edit.'
+            originalModelContributionId: originalContributionId,
+            responseText: 'User feedback on the edit.',
+            documentKey: 'synthesis',
+            resourceType: 'rendered_document',
         };
 
         const mockEditedDocumentResource: EditedDocumentResource = {

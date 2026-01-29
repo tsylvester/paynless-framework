@@ -3607,4 +3607,643 @@ Deno.test("DocumentRenderer - successfully finds template when template_filename
     });
 });
 
+// Template for feature_spec with flat field placeholders
+const FEATURE_SPEC_TEMPLATE = `{{#section:feature_name}}
+# Feature Name
+{feature_name}
+{{/section:feature_name}}
+
+{{#section:feature_objective}}
+## Feature Objective
+{feature_objective}
+{{/section:feature_objective}}
+
+{{#section:user_stories}}
+## User Stories
+{user_stories}
+{{/section:user_stories}}
+
+{{#section:acceptance_criteria}}
+## Acceptance Criteria
+{acceptance_criteria}
+{{/section:acceptance_criteria}}
+`;
+
+Deno.test("DocumentRenderer - array content handling", async (t) => {
+  const setup = (config: MockSupabaseDataConfig = {}) => {
+    const { client, spies, clearAllStubs } = createMockSupabaseClient(undefined, config);
+    return { dbClient: client as unknown as SupabaseClient<Database>, spies, clearAllStubs };
+  };
+
+  await t.step("renders template once per array item when content has array structure", async () => {
+    const rootId = "root-array-1";
+    const sessionId = "session_array1";
+    const stageSlug = "thesis";
+    const rawJsonPath = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_feature_spec_raw.json";
+    
+    // Array-structured content like AI returns for feature_spec
+    const arrayContent = {
+      features: [
+        {
+          feature_name: "User Authentication",
+          feature_objective: "Enable secure user login and registration",
+          user_stories: ["As a user, I want to log in securely"],
+          acceptance_criteria: ["Users can register with email and password"],
+        },
+        {
+          feature_name: "Dashboard Display",
+          feature_objective: "Show user overview on login",
+          user_stories: ["As a user, I want to see my dashboard"],
+          acceptance_criteria: ["Dashboard loads within 2 seconds"],
+        },
+      ],
+    };
+    const jsonContent = JSON.stringify({ content: arrayContent });
+
+    const contributions: ContributionRowMinimal[] = [
+      {
+        id: rootId,
+        session_id: sessionId,
+        stage: "THESIS",
+        iteration_number: 1,
+        storage_bucket: "content",
+        storage_path: "proj_x/session_s/iteration_1/thesis/documents",
+        file_name: "gpt-4o-mini_0_feature_spec.md",
+        raw_response_storage_path: rawJsonPath,
+        mime_type: "text/markdown",
+        document_relationships: { thesis: rootId },
+        created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        target_contribution_id: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        user_id: "user_123",
+      },
+    ];
+
+    const mockDownloadFromStorage = async (
+      _supabase: SupabaseClient,
+      _bucket: string,
+      path: string,
+    ) => {
+      if (path === rawJsonPath) {
+        const blob = new Blob([jsonContent], { type: "application/json" });
+        return { data: await blob.arrayBuffer(), error: null };
+      }
+      const blob = new Blob([FEATURE_SPEC_TEMPLATE], { type: "text/markdown" });
+      return { data: await blob.arrayBuffer(), error: null };
+    };
+
+    const { dbClient, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: {
+          select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_projects: {
+          select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_document_templates: {
+          select: {
+            data: [
+              {
+                id: "template-1",
+                created_at: "2025-01-01T00:00:00Z",
+                description: null,
+                domain_id: "domain-1",
+                file_name: "thesis_feature_spec.md",
+                is_active: true,
+                name: "thesis_feature_spec",
+                storage_bucket: "prompt-templates",
+                storage_path: "templates/thesis",
+                updated_at: "2025-01-01T00:00:00Z",
+              },
+            ],
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId,
+      iterationNumber: 1,
+      stageSlug,
+      documentIdentity: rootId,
+      documentKey: FileType.feature_spec,
+      sourceContributionId: rootId,
+      template_filename: "thesis_feature_spec.md",
+    };
+
+    const mockFileManager = new MockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+    const result: RenderDocumentResult = await renderDocument(
+      dbClient,
+      {
+        downloadFromStorage: mockDownloadFromStorage,
+        fileManager: mockFileManager,
+        notificationService: mockNotificationService,
+        notifyUserId: "user_123",
+        logger: logger,
+      },
+      params,
+    );
+
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+
+    // Assert BOTH features are rendered
+    assert(rendered.includes("User Authentication"), "rendered document should contain first feature name");
+    assert(rendered.includes("Enable secure user login"), "rendered document should contain first feature objective");
+    assert(rendered.includes("Dashboard Display"), "rendered document should contain second feature name");
+    assert(rendered.includes("Show user overview on login"), "rendered document should contain second feature objective");
+
+    clearAllStubs?.();
+  });
+
+  await t.step("concatenates array items with separator", async () => {
+    const rootId = "root-array-2";
+    const sessionId = "session_array2";
+    const stageSlug = "thesis";
+    const rawJsonPath = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_feature_spec_raw.json";
+    
+    const arrayContent = {
+      features: [
+        { feature_name: "Feature One", feature_objective: "Objective One" },
+        { feature_name: "Feature Two", feature_objective: "Objective Two" },
+      ],
+    };
+    const jsonContent = JSON.stringify({ content: arrayContent });
+
+    const contributions: ContributionRowMinimal[] = [
+      {
+        id: rootId,
+        session_id: sessionId,
+        stage: "THESIS",
+        iteration_number: 1,
+        storage_bucket: "content",
+        storage_path: "proj_x/session_s/iteration_1/thesis/documents",
+        file_name: "gpt-4o-mini_0_feature_spec.md",
+        raw_response_storage_path: rawJsonPath,
+        mime_type: "text/markdown",
+        document_relationships: { thesis: rootId },
+        created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        target_contribution_id: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        user_id: "user_123",
+      },
+    ];
+
+    const mockDownloadFromStorage = async (
+      _supabase: SupabaseClient,
+      _bucket: string,
+      path: string,
+    ) => {
+      if (path === rawJsonPath) {
+        const blob = new Blob([jsonContent], { type: "application/json" });
+        return { data: await blob.arrayBuffer(), error: null };
+      }
+      const blob = new Blob([FEATURE_SPEC_TEMPLATE], { type: "text/markdown" });
+      return { data: await blob.arrayBuffer(), error: null };
+    };
+
+    const { dbClient, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: {
+          select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_projects: {
+          select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_document_templates: {
+          select: {
+            data: [
+              {
+                id: "template-1",
+                created_at: "2025-01-01T00:00:00Z",
+                description: null,
+                domain_id: "domain-1",
+                file_name: "thesis_feature_spec.md",
+                is_active: true,
+                name: "thesis_feature_spec",
+                storage_bucket: "prompt-templates",
+                storage_path: "templates/thesis",
+                updated_at: "2025-01-01T00:00:00Z",
+              },
+            ],
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId,
+      iterationNumber: 1,
+      stageSlug,
+      documentIdentity: rootId,
+      documentKey: FileType.feature_spec,
+      sourceContributionId: rootId,
+      template_filename: "thesis_feature_spec.md",
+    };
+
+    const mockFileManager = new MockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+    const result: RenderDocumentResult = await renderDocument(
+      dbClient,
+      {
+        downloadFromStorage: mockDownloadFromStorage,
+        fileManager: mockFileManager,
+        notificationService: mockNotificationService,
+        notifyUserId: "user_123",
+        logger: logger,
+      },
+      params,
+    );
+
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+
+    // Assert separator exists between features
+    assert(rendered.includes("---"), "rendered document should contain separator between array items");
+
+    clearAllStubs?.();
+  });
+
+  await t.step("flat content (non-array) still works as before", async () => {
+    const rootId = "root-flat-1";
+    const sessionId = "session_flat1";
+    const stageSlug = "thesis";
+    const rawJsonPath = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
+    
+    // Flat content structure (existing behavior)
+    const flatContent = {
+      executive_summary: "This is the executive summary.",
+      market_opportunity: "This is the market opportunity.",
+    };
+    const jsonContent = JSON.stringify({ content: flatContent });
+
+    const contributions: ContributionRowMinimal[] = [
+      {
+        id: rootId,
+        session_id: sessionId,
+        stage: "THESIS",
+        iteration_number: 1,
+        storage_bucket: "content",
+        storage_path: "proj_x/session_s/iteration_1/thesis/documents",
+        file_name: "gpt-4o-mini_0_business_case.md",
+        raw_response_storage_path: rawJsonPath,
+        mime_type: "text/markdown",
+        document_relationships: { thesis: rootId },
+        created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        target_contribution_id: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        user_id: "user_123",
+      },
+    ];
+
+    const mockDownloadFromStorage = async (
+      _supabase: SupabaseClient,
+      _bucket: string,
+      path: string,
+    ) => {
+      if (path === rawJsonPath) {
+        const blob = new Blob([jsonContent], { type: "application/json" });
+        return { data: await blob.arrayBuffer(), error: null };
+      }
+      const blob = new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" });
+      return { data: await blob.arrayBuffer(), error: null };
+    };
+
+    const { dbClient, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: {
+          select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_projects: {
+          select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_document_templates: {
+          select: {
+            data: [
+              {
+                id: "template-1",
+                created_at: "2025-01-01T00:00:00Z",
+                description: null,
+                domain_id: "domain-1",
+                file_name: "thesis_business_case.md",
+                is_active: true,
+                name: "thesis_business_case",
+                storage_bucket: "prompt-templates",
+                storage_path: "templates/thesis",
+                updated_at: "2025-01-01T00:00:00Z",
+              },
+            ],
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId,
+      iterationNumber: 1,
+      stageSlug,
+      documentIdentity: rootId,
+      documentKey: FileType.business_case,
+      sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md",
+    };
+
+    const mockFileManager = new MockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+    const result: RenderDocumentResult = await renderDocument(
+      dbClient,
+      {
+        downloadFromStorage: mockDownloadFromStorage,
+        fileManager: mockFileManager,
+        notificationService: mockNotificationService,
+        notifyUserId: "user_123",
+        logger: logger,
+      },
+      params,
+    );
+
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+
+    // Assert flat content is rendered correctly (existing behavior preserved)
+    assert(rendered.includes("# Executive Summary"), "rendered document should contain Executive Summary header");
+    assert(rendered.includes("This is the executive summary."), "rendered document should contain executive_summary content");
+    assert(rendered.includes("# Market Opportunity"), "rendered document should contain Market Opportunity header");
+    assert(rendered.includes("This is the market opportunity."), "rendered document should contain market_opportunity content");
+
+    clearAllStubs?.();
+  });
+
+  await t.step("formats nested arrays as bullet lists", async () => {
+    const rootId = "root-array-nested-1";
+    const sessionId = "session_array_nested1";
+    const stageSlug = "thesis";
+    const rawJsonPath = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_feature_spec_raw.json";
+    
+    // Content with nested arrays that should become bullet lists
+    const arrayContent = {
+      features: [
+        {
+          feature_name: "Test Feature",
+          feature_objective: "Test objective",
+          user_stories: ["Story one", "Story two", "Story three"],
+          acceptance_criteria: ["Criteria A", "Criteria B"],
+        },
+      ],
+    };
+    const jsonContent = JSON.stringify({ content: arrayContent });
+
+    const contributions: ContributionRowMinimal[] = [
+      {
+        id: rootId,
+        session_id: sessionId,
+        stage: "THESIS",
+        iteration_number: 1,
+        storage_bucket: "content",
+        storage_path: "proj_x/session_s/iteration_1/thesis/documents",
+        file_name: "gpt-4o-mini_0_feature_spec.md",
+        raw_response_storage_path: rawJsonPath,
+        mime_type: "text/markdown",
+        document_relationships: { thesis: rootId },
+        created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        target_contribution_id: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        user_id: "user_123",
+      },
+    ];
+
+    const mockDownloadFromStorage = async (
+      _supabase: SupabaseClient,
+      _bucket: string,
+      path: string,
+    ) => {
+      if (path === rawJsonPath) {
+        const blob = new Blob([jsonContent], { type: "application/json" });
+        return { data: await blob.arrayBuffer(), error: null };
+      }
+      const blob = new Blob([FEATURE_SPEC_TEMPLATE], { type: "text/markdown" });
+      return { data: await blob.arrayBuffer(), error: null };
+    };
+
+    const { dbClient, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: {
+          select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_projects: {
+          select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_document_templates: {
+          select: {
+            data: [
+              {
+                id: "template-1",
+                created_at: "2025-01-01T00:00:00Z",
+                description: null,
+                domain_id: "domain-1",
+                file_name: "thesis_feature_spec.md",
+                is_active: true,
+                name: "thesis_feature_spec",
+                storage_bucket: "prompt-templates",
+                storage_path: "templates/thesis",
+                updated_at: "2025-01-01T00:00:00Z",
+              },
+            ],
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId,
+      iterationNumber: 1,
+      stageSlug,
+      documentIdentity: rootId,
+      documentKey: FileType.feature_spec,
+      sourceContributionId: rootId,
+      template_filename: "thesis_feature_spec.md",
+    };
+
+    const mockFileManager = new MockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+    const result: RenderDocumentResult = await renderDocument(
+      dbClient,
+      {
+        downloadFromStorage: mockDownloadFromStorage,
+        fileManager: mockFileManager,
+        notificationService: mockNotificationService,
+        notifyUserId: "user_123",
+        logger: logger,
+      },
+      params,
+    );
+
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+
+    // Assert nested arrays are formatted as bullet lists, not comma-separated
+    assert(rendered.includes("- Story one"), "user_stories should be formatted as bullet list");
+    assert(rendered.includes("- Story two"), "user_stories should include second item as bullet");
+    assert(rendered.includes("- Story three"), "user_stories should include third item as bullet");
+    assert(rendered.includes("- Criteria A"), "acceptance_criteria should be formatted as bullet list");
+    assert(rendered.includes("- Criteria B"), "acceptance_criteria should include second item as bullet");
+    assert(!rendered.includes("Story one, Story two"), "nested arrays should NOT be comma-separated");
+
+    clearAllStubs?.();
+  });
+
+  await t.step("strips template comments from output", async () => {
+    const rootId = "root-array-comment-1";
+    const sessionId = "session_array_comment1";
+    const stageSlug = "thesis";
+    const rawJsonPath = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_feature_spec_raw.json";
+    
+    const arrayContent = {
+      features: [
+        { feature_name: "Feature One", feature_objective: "Objective One" },
+      ],
+    };
+    const jsonContent = JSON.stringify({ content: arrayContent });
+
+    // Template WITH comment that should be stripped
+    const templateWithComment = `<!-- Template: thesis_feature_spec.md -->
+{{#section:feature_name}}
+# {feature_name}
+{{/section:feature_name}}
+
+{{#section:feature_objective}}
+## Feature Objective
+{feature_objective}
+{{/section:feature_objective}}
+`;
+
+    const contributions: ContributionRowMinimal[] = [
+      {
+        id: rootId,
+        session_id: sessionId,
+        stage: "THESIS",
+        iteration_number: 1,
+        storage_bucket: "content",
+        storage_path: "proj_x/session_s/iteration_1/thesis/documents",
+        file_name: "gpt-4o-mini_0_feature_spec.md",
+        raw_response_storage_path: rawJsonPath,
+        mime_type: "text/markdown",
+        document_relationships: { thesis: rootId },
+        created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        target_contribution_id: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        user_id: "user_123",
+      },
+    ];
+
+    const mockDownloadFromStorage = async (
+      _supabase: SupabaseClient,
+      _bucket: string,
+      path: string,
+    ) => {
+      if (path === rawJsonPath) {
+        const blob = new Blob([jsonContent], { type: "application/json" });
+        return { data: await blob.arrayBuffer(), error: null };
+      }
+      const blob = new Blob([templateWithComment], { type: "text/markdown" });
+      return { data: await blob.arrayBuffer(), error: null };
+    };
+
+    const { dbClient, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: {
+          select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_projects: {
+          select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_document_templates: {
+          select: {
+            data: [
+              {
+                id: "template-1",
+                created_at: "2025-01-01T00:00:00Z",
+                description: null,
+                domain_id: "domain-1",
+                file_name: "thesis_feature_spec.md",
+                is_active: true,
+                name: "thesis_feature_spec",
+                storage_bucket: "prompt-templates",
+                storage_path: "templates/thesis",
+                updated_at: "2025-01-01T00:00:00Z",
+              },
+            ],
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId,
+      iterationNumber: 1,
+      stageSlug,
+      documentIdentity: rootId,
+      documentKey: FileType.feature_spec,
+      sourceContributionId: rootId,
+      template_filename: "thesis_feature_spec.md",
+    };
+
+    const mockFileManager = new MockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+    const result: RenderDocumentResult = await renderDocument(
+      dbClient,
+      {
+        downloadFromStorage: mockDownloadFromStorage,
+        fileManager: mockFileManager,
+        notificationService: mockNotificationService,
+        notifyUserId: "user_123",
+        logger: logger,
+      },
+      params,
+    );
+
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+
+    // Assert template comment is stripped from output
+    assert(!rendered.includes("<!-- Template:"), "template comment should be stripped from output");
+    assert(!rendered.includes("thesis_feature_spec.md -->"), "template filename comment should be stripped");
+    // But actual content should still be present
+    assert(rendered.includes("Feature One"), "feature name should still be present");
+    assert(rendered.includes("Objective One"), "feature objective should still be present");
+
+    clearAllStubs?.();
+  });
+});
 

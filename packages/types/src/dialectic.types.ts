@@ -902,6 +902,8 @@ export interface ListStageDocumentsPayload {
   sessionId: string;
   stageSlug: string;
   iterationNumber: number;
+  userId: string;
+  projectId: string;
 }
 
 export interface ContributionContentSignedUrlResponse {
@@ -1086,14 +1088,13 @@ export interface SaveContributionEditPayload {
     originalModelContributionId: string; 
     responseText: string;
     /**
-     * Explicit document key identifier. Edits no longer infer from contribution_type.
-     * Optional to maintain backward compatibility.
+     * Document key identifier for doc-centric edits. Required; backend returns 400 when missing.
      */
-    documentKey?: string;
+    documentKey: string;
     /**
-     * Explicit resource type. Optional to allow backend to determine default.
+     * Resource type for dialectic_project_resources. Required; backend returns 400 when missing.
      */
-    resourceType?: string;
+    resourceType: string;
 }
 
 // START: New type definitions needed for 1.5.6 UI and 1.2.Y backend enhancements

@@ -4,8 +4,10 @@ import {
   ListStageDocumentsPayload,
   ListStageDocumentsResponse,
   StageDocumentDescriptorDto,
+  StageRunDocumentStatus,
 } from './dialectic.interface.ts';
 import { isRecord } from '../_shared/utils/type-guards/type_guards.common.ts';
+import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
 
 export async function listStageDocuments(
   payload: ListStageDocumentsPayload,
@@ -50,14 +52,14 @@ export async function listStageDocuments(
   if (!jobs || jobs.length === 0) {
     return {
       status: 200,
-      data: { documents: [] },
+      data: [],
     };
   }
 
   // 2. Fetch all relevant rendered resources using column-based filters
   const { data: resources, error: resourcesError } = await dbClient
     .from('dialectic_project_resources')
-    .select('id, resource_description, source_contribution_id')
+    .select('id, storage_path, file_name, source_contribution_id')
     .eq('resource_type', 'rendered_document')
     .eq('session_id', sessionId)
     .eq('stage_slug', stageSlug)
@@ -80,15 +82,15 @@ export async function listStageDocuments(
 
   if (resources) {
     for (const resource of resources) {
-      // Extract document_key from resource_description for fallback correlation
-      if (
-        isRecord(resource.resource_description) &&
-        typeof resource.resource_description.document_key === 'string'
-      ) {
-        resourceMapByDocumentKey.set(
-          resource.resource_description.document_key,
-          resource.id,
-        );
+      // Extract document_key from file path using deconstructStoragePath
+      if (resource.storage_path && resource.file_name) {
+        const pathInfo = deconstructStoragePath({
+          storageDir: resource.storage_path,
+          fileName: resource.file_name,
+        });
+        if (pathInfo.documentKey) {
+          resourceMapByDocumentKey.set(pathInfo.documentKey, resource.id);
+        }
       }
 
       // Use source_contribution_id for preferred correlation when available
@@ -110,33 +112,48 @@ export async function listStageDocuments(
       typeof job.payload.model_id === 'string'
     ) {
       // Correlate resource to job: prefer source_contribution_id, fall back to document_key
-      let lastRenderedResourceId: string | null = null;
+      let latestRenderedResourceId = '';
 
       // First, try correlation via source_contribution_id if job payload includes it
       if (
         typeof job.payload.sourceContributionId === 'string' &&
         resourceMapBySourceContributionId.has(job.payload.sourceContributionId)
       ) {
-        lastRenderedResourceId = resourceMapBySourceContributionId.get(
+        latestRenderedResourceId = resourceMapBySourceContributionId.get(
           job.payload.sourceContributionId,
-        ) || null;
+        ) ?? '';
       } else {
         // Fall back to document_key correlation
-        lastRenderedResourceId = resourceMapByDocumentKey.get(
+        latestRenderedResourceId = resourceMapByDocumentKey.get(
           job.payload.document_key,
-        ) || null;
+        ) ?? '';
+      }
+
+      // Map job status to StageRunDocumentStatus
+      const jobStatus = typeof job.status === 'string' ? job.status : '';
+      let status: StageRunDocumentStatus = 'idle';
+      if (jobStatus === 'completed') {
+        status = 'completed';
+      } else if (jobStatus === 'in_progress') {
+        status = 'generating';
+      } else if (jobStatus === 'failed') {
+        status = 'failed';
+      } else if (jobStatus === 'retrying') {
+        status = 'retrying';
       }
 
       documents.push({
         documentKey: job.payload.document_key,
         modelId: job.payload.model_id,
-        lastRenderedResourceId,
+        jobId: job.id,
+        status,
+        latestRenderedResourceId,
       });
     }
   }
 
   return {
     status: 200,
-    data: { documents },
+    data: documents,
   };
 }

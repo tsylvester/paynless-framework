@@ -7,8 +7,6 @@ import { toast } from 'sonner';
 import {
   StageRunDocumentDescriptor,
   StageDocumentCompositeKey,
-  SetFocusedStageDocumentPayload,
-  StageRunChecklistProps,
   SaveContributionEditPayload,
   DialecticContribution,
   DialecticStageRecipe,
@@ -83,20 +81,6 @@ vi.mock('@/components/common/TextInputArea', () => ({
       />
     </div>
   )),
-}));
-
-const stageRunChecklistMock = vi.fn<[StageRunChecklistProps], void>();
-
-vi.mock('./StageRunChecklist', () => ({
-  StageRunChecklist: (props: StageRunChecklistProps) => {
-    stageRunChecklistMock(props);
-    const { modelId } = props;
-    return (
-      <div data-testid="stage-run-checklist" data-model-id={modelId}>
-        Stage Run Checklist for {modelId}
-      </div>
-    );
-  },
 }));
 
 const mockIsDocumentHighlighted = vi.fn<[string, string, string, string, Record<string, { modelId: string; documentKey: string } | null> | null | undefined], boolean>();
@@ -342,7 +326,6 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
 describe('GeneratedContributionCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    stageRunChecklistMock.mockClear();
     mockSelectStageDocumentResource.mockClear();
     mockSelectValidMarkdownDocumentKeys.mockClear();
     mockSelectFocusedStageDocument.mockClear();
@@ -375,51 +358,6 @@ describe('GeneratedContributionCard', () => {
     expect(
       screen.getByText(/Select a document to view its content and provide feedback./i),
     ).toBeInTheDocument();
-  });
-
-  it('passes focus state to StageRunChecklist and forwards selections', () => {
-    setupStore({
-      focusedDocument: { modelId: modelA, documentKey: docA1Key },
-      focusedStageDocument: {
-        [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
-      },
-    });
-    const { setFocusedStageDocument } = getDialecticStoreState();
-
-    render(<GeneratedContributionCard modelId={modelA} />);
-
-    expect(stageRunChecklistMock).toHaveBeenCalled();
-    const lastCall = stageRunChecklistMock.mock.calls.at(-1);
-    expect(lastCall).toBeDefined();
-    const checklistProps = lastCall![0];
-
-    expect(checklistProps.modelId).toBe(modelA);
-    expect(checklistProps.focusedStageDocumentMap).toEqual(
-      expect.objectContaining({
-        [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
-      }),
-    );
-
-    const handleSelectPayload: SetFocusedStageDocumentPayload = {
-      sessionId: mockSessionId,
-      stageSlug: mockStageSlug,
-      iterationNumber,
-      modelId: modelA,
-      documentKey: docA2Key,
-      stepKey: 'draft_document',
-    };
-
-    checklistProps.onDocumentSelect(handleSelectPayload);
-
-    expect(setFocusedStageDocument).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionId: mockSessionId,
-        stageSlug: mockStageSlug,
-        iterationNumber,
-        modelId: modelA,
-        documentKey: docA2Key,
-      }),
-    );
   });
 
   it('updates the stage document draft when feedback changes', async () => {
@@ -1162,10 +1100,6 @@ describe('GeneratedContributionCard', () => {
       expect(callArgs?.[4]).toBe(focusedStageDocumentMap);
 
       expect(await screen.findByText(/Document: doc-a1/i)).toBeInTheDocument();
-
-      const checklistProps = stageRunChecklistMock.mock.calls[0]?.[0];
-      expect(checklistProps).toBeDefined();
-      expect(checklistProps?.focusedStageDocumentMap).toEqual(focusedStageDocumentMap);
     });
 
     it('ensures highlighting logic is consistent between GeneratedContributionCard and StageRunChecklist by using same shared utility function', async () => {
@@ -1197,9 +1131,6 @@ describe('GeneratedContributionCard', () => {
       expect(modelId).toBe(modelA);
       expect(documentKey).toBe(docA1Key);
       expect(map).toBe(focusedStageDocumentMap);
-
-      const checklistProps = stageRunChecklistMock.mock.calls[0]?.[0];
-      expect(checklistProps?.focusedStageDocumentMap).toBe(focusedStageDocumentMap);
 
       expect(await screen.findByText(/Document: doc-a1/i)).toBeInTheDocument();
     });
@@ -1396,6 +1327,26 @@ describe('GeneratedContributionCard', () => {
         expect(contentTextarea).toHaveAttribute('placeholder', 'No content available.');
       });
     });
+  });
+
+  it('renders model name, focused document detail, document content, document feedback, and Save Edit / Save Feedback when a document is focused', async () => {
+    setupStore({
+      focusedDocument: { modelId: modelA, documentKey: docA1Key },
+      content: 'Document A1 baseline',
+      feedback: 'Feedback draft',
+      focusedStageDocument: {
+        [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+      },
+    });
+
+    render(<GeneratedContributionCard modelId={modelA} />);
+
+    expect(await screen.findByText(/Model Alpha/i)).toBeInTheDocument();
+    expect(screen.getByText(/Document: doc-a1/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Document Content/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Enter feedback for doc-a1/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save edit/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save feedback/i })).toBeInTheDocument();
   });
 });
 

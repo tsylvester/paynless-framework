@@ -1860,6 +1860,423 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 	});
 });
 
+describe('handleRenderCompletedLogic without stepKey', () => {
+	const sessionId = 'session-render-no-step';
+	const stageSlug = 'thesis';
+	const iterationNumber = 1;
+	const modelId = 'model-render';
+	const documentKey = 'business_case';
+	const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+	const compositeKey: StageDocumentCompositeKey = {
+		sessionId,
+		stageSlug,
+		iterationNumber,
+		modelId,
+		documentKey,
+	};
+	const serializedKey = getStageDocumentKey(compositeKey);
+
+	// Recipe WITHOUT a RENDER step - simulates RENDER being a post-processing job type
+	const mockRecipeNoRenderStep: DialecticStageRecipe = {
+		stageSlug,
+		instanceId: 'instance-no-render',
+		steps: [
+			{
+				id: 'execute-step-id',
+				step_key: 'execute_step',
+				step_slug: 'execute-step',
+				step_name: 'Execute Step',
+				execution_order: 1,
+				job_type: 'EXECUTE',
+				prompt_type: 'Turn',
+				output_type: 'rendered_document',
+				granularity_strategy: 'per_source_document',
+				inputs_required: [],
+				outputs_required: [],
+			},
+		],
+	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		resetApiMock();
+		useDialecticStore.setState(initialDialecticStateValues);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('1.c.i: should update latestRenderedResourceId when render_completed has no step_key', () => {
+		const latestRenderedResourceId = 'resource-render-no-step';
+
+		// Seed with existing document descriptor in 'generating' state
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = mockRecipeNoRenderStep;
+			state.stageRunProgress[progressKey] = {
+				documents: {
+					[documentKey]: {
+						descriptorType: 'rendered',
+						status: 'generating',
+						job_id: 'job-execute',
+						latestRenderedResourceId: 'resource-old',
+						modelId,
+						versionHash: 'old-hash',
+						lastRenderedResourceId: 'resource-old',
+						lastRenderAtIso: new Date().toISOString(),
+						stepKey: 'execute_step',
+					},
+				},
+				stepStatuses: {
+					execute_step: 'in_progress',
+				},
+			};
+		});
+
+		// render_completed WITHOUT step_key (simulating RENDER as post-processing)
+		const renderEvent: RenderCompletedPayload = {
+			type: 'render_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: 'job-render',
+			document_key: documentKey,
+			modelId,
+			latestRenderedResourceId,
+			// step_key intentionally omitted
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(renderEvent);
+
+		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
+		const descriptor = updatedProgress?.documents[documentKey];
+
+		expect(descriptor).toBeDefined();
+		expect(isRenderedDescriptor(descriptor)).toBe(true);
+		if (isRenderedDescriptor(descriptor)) {
+			expect(descriptor.latestRenderedResourceId).toBe(latestRenderedResourceId);
+		}
+	});
+
+	it('1.c.ii: should NOT change status to completed when render_completed without stepKey', () => {
+		const latestRenderedResourceId = 'resource-render-status';
+
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = mockRecipeNoRenderStep;
+			state.stageRunProgress[progressKey] = {
+				documents: {
+					[documentKey]: {
+						descriptorType: 'rendered',
+						status: 'generating',
+						job_id: 'job-execute',
+						latestRenderedResourceId: 'resource-old',
+						modelId,
+						versionHash: 'old-hash',
+						lastRenderedResourceId: 'resource-old',
+						lastRenderAtIso: new Date().toISOString(),
+						stepKey: 'execute_step',
+					},
+				},
+				stepStatuses: {
+					execute_step: 'in_progress',
+				},
+			};
+		});
+
+		const renderEvent: RenderCompletedPayload = {
+			type: 'render_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: 'job-render',
+			document_key: documentKey,
+			modelId,
+			latestRenderedResourceId,
+			// step_key intentionally omitted
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(renderEvent);
+
+		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
+		const descriptor = updatedProgress?.documents[documentKey];
+
+		expect(descriptor).toBeDefined();
+		expect(isRenderedDescriptor(descriptor)).toBe(true);
+		if (isRenderedDescriptor(descriptor)) {
+			// Status should remain 'generating', NOT changed to 'completed'
+			expect(descriptor.status).toBe('generating');
+		}
+	});
+
+	it('1.c.iii: should NOT update stepStatuses when stepKey is undefined in render_completed', () => {
+		const latestRenderedResourceId = 'resource-render-step-status';
+
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = mockRecipeNoRenderStep;
+			state.stageRunProgress[progressKey] = {
+				documents: {
+					[documentKey]: {
+						descriptorType: 'rendered',
+						status: 'generating',
+						job_id: 'job-execute',
+						latestRenderedResourceId: 'resource-old',
+						modelId,
+						versionHash: 'old-hash',
+						lastRenderedResourceId: 'resource-old',
+						lastRenderAtIso: new Date().toISOString(),
+						stepKey: 'execute_step',
+					},
+				},
+				stepStatuses: {
+					execute_step: 'in_progress',
+				},
+			};
+		});
+
+		const renderEvent: RenderCompletedPayload = {
+			type: 'render_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: 'job-render',
+			document_key: documentKey,
+			modelId,
+			latestRenderedResourceId,
+			// step_key intentionally omitted
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(renderEvent);
+
+		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
+
+		// stepStatuses should NOT be modified - execute_step should remain in_progress
+		expect(updatedProgress?.stepStatuses['execute_step']).toBe('in_progress');
+		// No new step status should be created for undefined step
+		expect(Object.keys(updatedProgress?.stepStatuses || {}).length).toBe(1);
+	});
+
+	it('1.c.iv: should update latestRenderedResourceId to latest value on multiple render_completed events', () => {
+		const firstResourceId = 'resource-render-first';
+		const secondResourceId = 'resource-render-second';
+		const thirdResourceId = 'resource-render-third';
+
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = mockRecipeNoRenderStep;
+			state.stageRunProgress[progressKey] = {
+				documents: {
+					[documentKey]: {
+						descriptorType: 'rendered',
+						status: 'generating',
+						job_id: 'job-execute',
+						latestRenderedResourceId: 'resource-initial',
+						modelId,
+						versionHash: 'initial-hash',
+						lastRenderedResourceId: 'resource-initial',
+						lastRenderAtIso: new Date().toISOString(),
+						stepKey: 'execute_step',
+					},
+				},
+				stepStatuses: {
+					execute_step: 'in_progress',
+				},
+			};
+		});
+
+		// First render_completed
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.({
+			type: 'render_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: 'job-render-1',
+			document_key: documentKey,
+			modelId,
+			latestRenderedResourceId: firstResourceId,
+		});
+
+		let descriptor = useDialecticStore.getState().stageRunProgress[progressKey]?.documents[documentKey];
+		expect(isRenderedDescriptor(descriptor)).toBe(true);
+		if (isRenderedDescriptor(descriptor)) {
+			expect(descriptor.latestRenderedResourceId).toBe(firstResourceId);
+		}
+
+		// Second render_completed
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.({
+			type: 'render_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: 'job-render-2',
+			document_key: documentKey,
+			modelId,
+			latestRenderedResourceId: secondResourceId,
+		});
+
+		descriptor = useDialecticStore.getState().stageRunProgress[progressKey]?.documents[documentKey];
+		expect(isRenderedDescriptor(descriptor)).toBe(true);
+		if (isRenderedDescriptor(descriptor)) {
+			expect(descriptor.latestRenderedResourceId).toBe(secondResourceId);
+		}
+
+		// Third render_completed
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.({
+			type: 'render_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: 'job-render-3',
+			document_key: documentKey,
+			modelId,
+			latestRenderedResourceId: thirdResourceId,
+		});
+
+		descriptor = useDialecticStore.getState().stageRunProgress[progressKey]?.documents[documentKey];
+		expect(isRenderedDescriptor(descriptor)).toBe(true);
+		if (isRenderedDescriptor(descriptor)) {
+			expect(descriptor.latestRenderedResourceId).toBe(thirdResourceId);
+		}
+	});
+
+	it('1.c.v: should preserve existing behavior when valid stepKey IS provided', () => {
+		const latestRenderedResourceId = 'resource-with-step';
+
+		// Recipe WITH a RENDER step
+		const mockRecipeWithRenderStep: DialecticStageRecipe = {
+			stageSlug,
+			instanceId: 'instance-with-render',
+			steps: [
+				{
+					id: 'execute-step-id',
+					step_key: 'execute_step',
+					step_slug: 'execute-step',
+					step_name: 'Execute Step',
+					execution_order: 1,
+					job_type: 'EXECUTE',
+					prompt_type: 'Turn',
+					output_type: 'rendered_document',
+					granularity_strategy: 'per_source_document',
+					inputs_required: [],
+					outputs_required: [],
+				},
+				{
+					id: 'render-step-id',
+					step_key: 'render_step',
+					step_slug: 'render-step',
+					step_name: 'Render Step',
+					execution_order: 2,
+					job_type: 'RENDER',
+					prompt_type: 'Turn',
+					output_type: 'rendered_document',
+					granularity_strategy: 'per_source_document',
+					inputs_required: [],
+					outputs_required: [],
+				},
+			],
+		};
+
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = mockRecipeWithRenderStep;
+			state.stageRunProgress[progressKey] = {
+				documents: {
+					[documentKey]: {
+						descriptorType: 'rendered',
+						status: 'generating',
+						job_id: 'job-execute',
+						latestRenderedResourceId: 'resource-old',
+						modelId,
+						versionHash: 'old-hash',
+						lastRenderedResourceId: 'resource-old',
+						lastRenderAtIso: new Date().toISOString(),
+						stepKey: 'execute_step',
+					},
+				},
+				stepStatuses: {
+					execute_step: 'completed',
+					render_step: 'in_progress',
+				},
+			};
+		});
+
+		const renderEvent: RenderCompletedPayload = {
+			type: 'render_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: 'job-render',
+			document_key: documentKey,
+			modelId,
+			latestRenderedResourceId,
+			step_key: 'render_step', // Valid stepKey provided
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(renderEvent);
+
+		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
+		const descriptor = updatedProgress?.documents[documentKey];
+
+		expect(descriptor).toBeDefined();
+		expect(isRenderedDescriptor(descriptor)).toBe(true);
+		if (isRenderedDescriptor(descriptor)) {
+			expect(descriptor.latestRenderedResourceId).toBe(latestRenderedResourceId);
+			// With valid stepKey, status SHOULD be set to 'completed'
+			expect(descriptor.status).toBe('completed');
+		}
+		// stepStatuses SHOULD be updated when valid stepKey is provided
+		expect(updatedProgress?.stepStatuses['render_step']).toBe('completed');
+	});
+
+	it('1.c.vi: should preserve existing stepKey on descriptor when render_completed arrives', () => {
+		const latestRenderedResourceId = 'resource-preserve-step';
+		const existingStepKey = 'execute_step';
+
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = mockRecipeNoRenderStep;
+			state.stageRunProgress[progressKey] = {
+				documents: {
+					[documentKey]: {
+						descriptorType: 'rendered',
+						status: 'generating',
+						job_id: 'job-execute',
+						latestRenderedResourceId: 'resource-old',
+						modelId,
+						versionHash: 'old-hash',
+						lastRenderedResourceId: 'resource-old',
+						lastRenderAtIso: new Date().toISOString(),
+						stepKey: existingStepKey, // Existing stepKey should be preserved
+					},
+				},
+				stepStatuses: {
+					execute_step: 'in_progress',
+				},
+			};
+		});
+
+		const renderEvent: RenderCompletedPayload = {
+			type: 'render_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: 'job-render',
+			document_key: documentKey,
+			modelId,
+			latestRenderedResourceId,
+			// step_key intentionally omitted
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(renderEvent);
+
+		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
+		const descriptor = updatedProgress?.documents[documentKey];
+
+		expect(descriptor).toBeDefined();
+		expect(isRenderedDescriptor(descriptor)).toBe(true);
+		if (isRenderedDescriptor(descriptor)) {
+			// Existing stepKey should be preserved, not overwritten or cleared
+			expect(descriptor.stepKey).toBe(existingStepKey);
+		}
+	});
+});
+
 describe('fetchStageDocumentContentLogic stores sourceContributionId', () => {
 	const compositeKey: StageDocumentCompositeKey = {
 		sessionId: 'session-source-contrib',

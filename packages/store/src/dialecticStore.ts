@@ -2045,9 +2045,8 @@ export const useDialecticStore = create<DialecticStore>()(
                   // Toggle isLatestEdit flag on original contribution (don't replace it)
                   originalContribution.is_latest_edit = false;
                   
-                  // Derive composite key using resource fields + modelId from original contribution
-                  // Extract documentKey - use from resource if available, otherwise derive from payload
-                  const documentKey = resource.document_key ?? payload.documentKey ?? originalContribution.contribution_type ?? '';
+                  // Composite key uses payload.documentKey (required); no fallback to resource or contribution (step 11.d.i).
+                  const documentKey = payload.documentKey;
                   if (!documentKey) {
                     logger.error('[DialecticStore] Cannot determine documentKey for stageDocumentContent update', { resource, payload });
                   } else {
@@ -2398,6 +2397,41 @@ export const useDialecticStore = create<DialecticStore>()(
 		const existingEntry = get().stageDocumentContent[serializedKey];
 		const initialDraft = existingEntry ? existingEntry.currentDraftMarkdown : '';
 		get().beginStageDocumentEdit(compositeKey, initialDraft);
+
+		// 2.d: Fetch content if document is loadable and not cached/stale
+		const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+		const progress = get().stageRunProgress[progressKey];
+		if (!progress) {
+			return;
+		}
+
+		const descriptor = progress.documents[documentKey];
+		if (!descriptor || descriptor.descriptorType !== 'rendered') {
+			return;
+		}
+
+		const latestRenderedResourceId = descriptor.latestRenderedResourceId;
+		if (!latestRenderedResourceId || latestRenderedResourceId.length === 0) {
+			return;
+		}
+
+		// Check if cached content matches current latestRenderedResourceId
+		const cachedContent = get().stageDocumentContent[serializedKey];
+		const cachedResourceId = cachedContent?.lastBaselineVersion?.resourceId;
+		if (cachedResourceId === latestRenderedResourceId) {
+			// Content is already cached with the same version, no fetch needed
+			return;
+		}
+
+		// Content is loadable and not cached/stale - fetch it
+		logger.info('[DialecticStore] Fetching document content on focus', {
+			sessionId,
+			stageSlug,
+			documentKey,
+			latestRenderedResourceId,
+			cachedResourceId,
+		});
+		void get().fetchStageDocumentContent(compositeKey, latestRenderedResourceId);
 	},
 
 	clearFocusedStageDocument: ({ sessionId, stageSlug, modelId }: ClearFocusedStageDocumentPayload) => {

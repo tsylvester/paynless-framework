@@ -13,7 +13,6 @@ import {
   GetProjectResourceContentPayload,
   GetProjectResourceContentResponse,
   SaveContributionEditPayload,
-  SaveContributionEditSuccessResponse,
   SubmitStageResponsesPayload,
   SubmitStageResponsesResponse,
   SubmitStageResponsesDependencies,
@@ -80,9 +79,8 @@ import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
-import type { SaveContributionEditDeps } from './saveContributionEdit.ts';
-import type { DialecticServiceResponse, DialecticFeedbackRow } from './dialectic.interface.ts';
-
+import type { DialecticServiceResponse, DialecticFeedbackRow, SaveContributionEditFn, SaveContributionEditContext } from './dialectic.interface.ts';
+import type { Database } from '../types_db.ts';
 
 console.log("dialectic-service function started");
 
@@ -177,7 +175,7 @@ export interface ActionHandlers {
   cloneProject: (dbClient: SupabaseClient, fileManager: IFileManager, originalProjectId: string, newProjectName: string | undefined, cloningUserId: string) => Promise<CloneProjectResult>;
   exportProject: (dbClient: SupabaseClient, fileManager: IFileManager, storageUtils: IStorageUtils, projectId: string, userId: string) => Promise<{ data?: { export_url: string }; error?: ServiceError; status?: number }>;
   getProjectResourceContent: (payload: GetProjectResourceContentPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetProjectResourceContentResponse; error?: ServiceError; status?: number }>;
-  saveContributionEdit: (payload: SaveContributionEditPayload, dbClient: SupabaseClient, user: User, logger: ILogger, deps: SaveContributionEditDeps) => Promise<{ data?: SaveContributionEditSuccessResponse; error?: ServiceError; status?: number }>;
+  saveContributionEdit: SaveContributionEditFn;
   submitStageResponses: (payload: SubmitStageResponsesPayload, dbClient: SupabaseClient, user: User, dependencies: SubmitStageResponsesDependencies) => Promise<{ data?: SubmitStageResponsesResponse; error?: ServiceError; status?: number }>;
   listDomains: (dbClient: SupabaseClient) => Promise<{ data?: DialecticDomain[]; error?: ServiceError }>;
   fetchProcessTemplate: (dbClient: SupabaseClient, payload: FetchProcessTemplatePayload) => Promise<{ data?: DialecticProcessTemplate; error?: ServiceError; status?: number }>;
@@ -200,7 +198,8 @@ export async function handleRequest(
   }
 
   const FileManagerDependencies = {
-    constructStoragePath: constructStoragePath
+    constructStoragePath: constructStoragePath,
+    logger: logger,
   };
 
   const getUserFnForRequest: GetUserFn = async (): Promise<GetUserFnResult> => {
@@ -396,12 +395,12 @@ export async function handleRequest(
           logger.info("[generateContributions handler] Creating dependencies.");
           const deps: GenerateContributionsDeps = {
             callUnifiedAIModel: callUnifiedAIModel,
-            downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+            downloadFromStorage: (_supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(adminClient as SupabaseClient<Database>, bucket, path),
             getExtensionFromMimeType: getExtensionFromMimeType,
             logger: logger,
             randomUUID: crypto.randomUUID.bind(crypto),
             fileManager: fileManager,
-            deleteFromStorage: (path: string) => deleteFromStorage(adminClient, 'dialectic_contributions', [path])
+            deleteFromStorage: (_supabase: SupabaseClient, bucket: string, paths: string[]) => deleteFromStorage(adminClient, bucket, paths)
           };
 
           logger.info("[generateContributions handler] Awaiting job creation...");
@@ -498,15 +497,18 @@ export async function handleRequest(
           return createSuccessResponse(data, 200, req);
         }
         case "saveContributionEdit": {
+          if (!userForJson) {
+            return createErrorResponse('User not authenticated for saveContributionEdit', 401, req, { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' });
+          }
           const payload: SaveContributionEditPayload = requestBody.payload;
-          const deps: SaveContributionEditDeps = {
-            fileManager: new FileManagerService(userClient, FileManagerDependencies),
+          const context: SaveContributionEditContext = {
+            dbClient: userClient as SupabaseClient<Database>,
+            user: userForJson,
             logger,
-            dbClient: userClient,
+            fileManager: new FileManagerService(userClient, FileManagerDependencies),
             pathDeconstructor: deconstructStoragePath,
-            pathConstructor: constructStoragePath,
           };
-          const { data, error, status } = await handlers.saveContributionEdit(payload, userClient, userForJson!, logger, deps);
+          const { data, error, status } = await handlers.saveContributionEdit(payload, userForJson, context);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }

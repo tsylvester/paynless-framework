@@ -184,10 +184,10 @@ describe("document_renderer Integration Tests", () => {
     const docIdentity = crypto.randomUUID();
 
     const contributionContent = JSON.stringify({
-      content: JSON.stringify({
+      content: {
         executive_summary: "Root chunk executive summary content",
         market_opportunity: "Root chunk market opportunity content",
-      })
+      }
     });
 
     const contributionContext: ModelContributionUploadContext = {
@@ -352,10 +352,10 @@ describe("document_renderer Integration Tests", () => {
 
     // Create root chunk
     const rootContributionContent = JSON.stringify({
-      content: JSON.stringify({
+      content: {
         executive_summary: "Root chunk executive summary",
         market_opportunity: "Root chunk market opportunity",
-      })
+      }
     });
 
     const rootContributionContext: ModelContributionUploadContext = {
@@ -411,10 +411,10 @@ describe("document_renderer Integration Tests", () => {
 
     // Create continuation chunk
     const continuationContributionContent = JSON.stringify({
-      content: JSON.stringify({
+      content: {
         executive_summary: "Continuation chunk executive summary",
         market_opportunity: "Continuation chunk market opportunity",
-      })
+      }
     });
 
     const continuationContributionContext: ModelContributionUploadContext = {
@@ -635,10 +635,10 @@ describe("document_renderer Integration Tests", () => {
     const docIdentity = crypto.randomUUID();
 
     const contributionContent = JSON.stringify({
-      content: JSON.stringify({
+      content: {
         executive_summary: "Test executive summary with fragment",
         market_opportunity: "Test market opportunity with fragment",
-      })
+      }
     });
 
     const contributionContext: ModelContributionUploadContext = {
@@ -857,10 +857,10 @@ describe("document_renderer Integration Tests", () => {
     const docIdentity = crypto.randomUUID();
 
     const contributionContent = JSON.stringify({
-      content: JSON.stringify({
+      content: {
         executive_summary: "Antithesis critique executive summary",
         market_opportunity: "Antithesis critique market opportunity",
-      })
+      }
     });
 
     // Use FileManagerService to create the contribution with proper antithesis pattern
@@ -1112,6 +1112,667 @@ describe("document_renderer Integration Tests", () => {
       deconstructedRendered.sourceAnchorModelSlug,
       sourceAnchorModelSlug,
       `Rendered document sourceAnchorModelSlug should equal '${sourceAnchorModelSlug}'. Actual: ${deconstructedRendered.sourceAnchorModelSlug}`
+    );
+  });
+
+  // Test 8.a.i: thesis_feature_spec renders all features from sample JSON array
+  it("8.a.i: thesis_feature_spec renders all features from array content", async () => {
+    const stageSlug = "thesis";
+    const documentKey = FileType.feature_spec;
+    const iterationNumber = 1;
+    const modelSlug = MOCK_MODEL_CONFIG.api_identifier;
+    const attemptCount = 0;
+
+    // Query for thesis_feature_spec template
+    const templateName = "thesis_feature_spec";
+    const { data: existingTemplate, error: templateQueryError } = await adminClient
+      .from("dialectic_document_templates")
+      .select("*")
+      .eq("domain_id", testProject.selected_domain_id)
+      .eq("is_active", true)
+      .eq("name", templateName)
+      .maybeSingle();
+
+    assert(!templateQueryError, `Failed to query template: ${templateQueryError?.message}`);
+    assertExists(
+      existingTemplate,
+      `Template '${templateName}' not found for domain '${testProject.selected_domain_id}'. Templates should exist in the database.`
+    );
+
+    // Create contribution with array-structured content (multiple features)
+    const docIdentity = crypto.randomUUID();
+
+    const contributionContent = JSON.stringify({
+      content: {
+        features: [
+          {
+            feature_name: "User Authentication",
+            feature_objective: "Enable secure user login and registration",
+            user_stories: "As a user, I want to log in securely",
+            acceptance_criteria: "Users can register and log in with email/password",
+            dependencies: "Database, Email service",
+            success_metrics: "99.9% uptime, <2s login time",
+          },
+          {
+            feature_name: "Dashboard Analytics",
+            feature_objective: "Provide real-time analytics dashboard",
+            user_stories: "As an admin, I want to view metrics",
+            acceptance_criteria: "Dashboard shows real-time data",
+            dependencies: "Analytics service, Charts library",
+            success_metrics: "Data refresh <5s, 100% accuracy",
+          },
+          {
+            feature_name: "Notification System",
+            feature_objective: "Send push and email notifications",
+            user_stories: "As a user, I want to receive alerts",
+            acceptance_criteria: "Notifications delivered within 30s",
+            dependencies: "Push service, Email service",
+            success_metrics: "95% delivery rate",
+          },
+        ],
+      },
+    });
+
+    const contributionContext: ModelContributionUploadContext = {
+      pathContext: {
+        fileType: documentKey,
+        projectId: testProject.id,
+        sessionId: testSession.id,
+        iteration: iterationNumber,
+        stageSlug: stageSlug,
+        modelSlug: modelSlug,
+        attemptCount: attemptCount,
+        documentKey: documentKey,
+      },
+      fileContent: contributionContent,
+      mimeType: "application/json",
+      sizeBytes: new TextEncoder().encode(contributionContent).length,
+      userId: testUserId,
+      description: `Test array content contribution for ${stageSlug} ${documentKey}`,
+      contributionMetadata: {
+        sessionId: testSession.id,
+        modelIdUsed: testModelId,
+        modelNameDisplay: modelSlug,
+        stageSlug: stageSlug,
+        iterationNumber: iterationNumber,
+        document_relationships: { [stageSlug]: docIdentity },
+        editVersion: 1,
+        isLatestEdit: true,
+      },
+    };
+
+    const uploadResult = await fileManager.uploadAndRegisterFile(contributionContext);
+    assert(!uploadResult.error, `Failed to upload contribution: ${uploadResult.error?.message}`);
+    assertExists(uploadResult.record, "Contribution should be uploaded");
+
+    const contributionRecord = uploadResult.record;
+    if (!contributionRecord || !('id' in contributionRecord)) {
+      throw new Error("Contribution record is missing or missing id field");
+    }
+    const actualRootContributionId = contributionRecord.id;
+
+    // Update document_relationships to use actual contribution ID
+    const { error: updateRelationshipsError } = await adminClient
+      .from("dialectic_contributions")
+      .update({
+        document_relationships: { [stageSlug]: actualRootContributionId },
+      })
+      .eq("id", actualRootContributionId);
+
+    assert(!updateRelationshipsError, `Failed to update document_relationships: ${updateRelationshipsError?.message}`);
+
+    // Create RENDER job
+    const renderJobPayload: DialecticRenderJobPayload = {
+      projectId: testProject.id,
+      sessionId: testSession.id,
+      iterationNumber: iterationNumber,
+      stageSlug: stageSlug,
+      model_id: testModelId,
+      documentIdentity: actualRootContributionId,
+      documentKey: documentKey,
+      sourceContributionId: actualRootContributionId,
+      walletId: testWalletId,
+      user_jwt: testUserJwt,
+      template_filename: "thesis_feature_spec.md",
+    };
+
+    if (!isJson(renderJobPayload)) {
+      throw new Error("RENDER job payload is not a JSON object");
+    }
+    const jobInsert: Database["public"]["Tables"]["dialectic_generation_jobs"]["Insert"] = {
+      job_type: "RENDER",
+      session_id: testSession.id,
+      iteration_number: iterationNumber,
+      stage_slug: stageSlug,
+      status: "pending",
+      payload: renderJobPayload,
+      user_id: testUserId,
+    };
+
+    const { data: renderJob, error: renderJobError } = await adminClient
+      .from("dialectic_generation_jobs")
+      .insert(jobInsert)
+      .select("*")
+      .single();
+
+    assert(!renderJobError, `Failed to create RENDER job: ${renderJobError?.message}`);
+    assertExists(renderJob, "RENDER job should be created");
+    const typedRenderJob: DialecticJobRow = renderJob;
+
+    // Process RENDER job
+    const renderJobDeps: IRenderJobContext = {
+      documentRenderer: {
+        renderDocument: renderDocument,
+      },
+      downloadFromStorage: downloadFromStorage,
+      deleteFromStorage: deleteFromStorage,
+      fileManager: fileManager,
+      notificationService: new NotificationService(adminClient),
+      logger: testLogger,
+    };
+
+    let processError: Error | null = null;
+    try {
+      await processRenderJob(
+        adminClient,
+        typedRenderJob,
+        testUserId,
+        renderJobDeps,
+        testUserJwt,
+      );
+    } catch (e) {
+      processError = e instanceof Error ? e : new Error(String(e));
+    }
+
+    assert(processError === null, `processRenderJob should not throw errors, but got: ${processError?.message}`);
+
+    // Query rendered document
+    const { data: renderedResource, error: resourceError } = await adminClient
+      .from("dialectic_project_resources")
+      .select("*")
+      .eq("project_id", testProject.id)
+      .eq("session_id", testSession.id)
+      .eq("iteration_number", iterationNumber)
+      .eq("stage_slug", stageSlug)
+      .eq("resource_type", FileType.RenderedDocument)
+      .eq("source_contribution_id", actualRootContributionId)
+      .maybeSingle();
+
+    assert(!resourceError, `Failed to query rendered document resource: ${resourceError?.message}`);
+    assertExists(renderedResource, "Rendered document resource should exist");
+    assertExists(renderedResource.storage_bucket, "Rendered document resource should have storage_bucket");
+    assertExists(renderedResource.storage_path, "Rendered document resource should have storage_path");
+    assertExists(renderedResource.file_name, "Rendered document resource should have file_name");
+
+    // Download and verify rendered content
+    const fullStoragePath = `${renderedResource.storage_path}/${renderedResource.file_name}`;
+    const { data: renderedFileData, error: downloadError } = await downloadFromStorage(
+      adminClient,
+      renderedResource.storage_bucket,
+      fullStoragePath,
+    );
+
+    assert(!downloadError, `Failed to download rendered document: ${downloadError?.message}`);
+    assertExists(renderedFileData, "Rendered document file data should exist");
+
+    if (renderedFileData === null) {
+      throw new Error("Rendered document file data is null after assertExists check");
+    }
+    const renderedMarkdown = new TextDecoder().decode(renderedFileData);
+
+    // Verify all three features are present
+    assert(
+      renderedMarkdown.includes("User Authentication"),
+      "Rendered document should contain first feature name"
+    );
+    assert(
+      renderedMarkdown.includes("Dashboard Analytics"),
+      "Rendered document should contain second feature name"
+    );
+    assert(
+      renderedMarkdown.includes("Notification System"),
+      "Rendered document should contain third feature name"
+    );
+
+    // Verify features are separated by ---
+    const separatorCount = (renderedMarkdown.match(/\n---\n/g) || []).length;
+    assertEquals(
+      separatorCount,
+      2,
+      `Expected 2 separators between 3 features, got ${separatorCount}`
+    );
+
+    // Verify feature objectives are present
+    assert(
+      renderedMarkdown.includes("Enable secure user login"),
+      "Rendered document should contain first feature objective"
+    );
+    assert(
+      renderedMarkdown.includes("Provide real-time analytics"),
+      "Rendered document should contain second feature objective"
+    );
+    assert(
+      renderedMarkdown.includes("Send push and email notifications"),
+      "Rendered document should contain third feature objective"
+    );
+  });
+
+  // Test 8.a.ii: thesis_feature_spec renders nested string arrays as bullet lists
+  it("8.a.ii: thesis_feature_spec renders nested string arrays as bullet lists", async () => {
+    const stageSlug = "thesis";
+    const documentKey = FileType.feature_spec;
+    const iterationNumber = 1;
+    const modelSlug = MOCK_MODEL_CONFIG.api_identifier;
+    const attemptCount = 0;
+
+    // Query for thesis_feature_spec template
+    const templateName = "thesis_feature_spec";
+    const { data: existingTemplate, error: templateQueryError } = await adminClient
+      .from("dialectic_document_templates")
+      .select("*")
+      .eq("domain_id", testProject.selected_domain_id)
+      .eq("is_active", true)
+      .eq("name", templateName)
+      .maybeSingle();
+
+    assert(!templateQueryError, `Failed to query template: ${templateQueryError?.message}`);
+    assertExists(
+      existingTemplate,
+      `Template '${templateName}' not found for domain '${testProject.selected_domain_id}'. Templates should exist in the database.`
+    );
+
+    // Create contribution with features containing nested string arrays
+    // The formatNestedArrays function converts string arrays to bullet lists
+    const docIdentity = crypto.randomUUID();
+
+    const contributionContent = JSON.stringify({
+      content: {
+        features: [
+          {
+            feature_name: "Authentication Module",
+            feature_objective: "Secure user identity management",
+            user_stories: ["As a user I can register", "As a user I can login"],
+            acceptance_criteria: "All auth flows work",
+            dependencies: ["Database service", "Email service", "Token manager"],
+            success_metrics: "99.9% uptime",
+          },
+        ],
+      },
+    });
+
+    const contributionContext: ModelContributionUploadContext = {
+      pathContext: {
+        fileType: documentKey,
+        projectId: testProject.id,
+        sessionId: testSession.id,
+        iteration: iterationNumber,
+        stageSlug: stageSlug,
+        modelSlug: modelSlug,
+        attemptCount: attemptCount,
+        documentKey: documentKey,
+      },
+      fileContent: contributionContent,
+      mimeType: "application/json",
+      sizeBytes: new TextEncoder().encode(contributionContent).length,
+      userId: testUserId,
+      description: `Test nested string arrays contribution for ${stageSlug} ${documentKey}`,
+      contributionMetadata: {
+        sessionId: testSession.id,
+        modelIdUsed: testModelId,
+        modelNameDisplay: modelSlug,
+        stageSlug: stageSlug,
+        iterationNumber: iterationNumber,
+        document_relationships: { [stageSlug]: docIdentity },
+        editVersion: 1,
+        isLatestEdit: true,
+      },
+    };
+
+    const uploadResult = await fileManager.uploadAndRegisterFile(contributionContext);
+    assert(!uploadResult.error, `Failed to upload contribution: ${uploadResult.error?.message}`);
+    assertExists(uploadResult.record, "Contribution should be uploaded");
+
+    const contributionRecord = uploadResult.record;
+    if (!contributionRecord || !('id' in contributionRecord)) {
+      throw new Error("Contribution record is missing or missing id field");
+    }
+    const actualRootContributionId = contributionRecord.id;
+
+    // Update document_relationships
+    const { error: updateRelationshipsError } = await adminClient
+      .from("dialectic_contributions")
+      .update({
+        document_relationships: { [stageSlug]: actualRootContributionId },
+      })
+      .eq("id", actualRootContributionId);
+
+    assert(!updateRelationshipsError, `Failed to update document_relationships: ${updateRelationshipsError?.message}`);
+
+    // Create RENDER job
+    const renderJobPayload: DialecticRenderJobPayload = {
+      projectId: testProject.id,
+      sessionId: testSession.id,
+      iterationNumber: iterationNumber,
+      stageSlug: stageSlug,
+      model_id: testModelId,
+      documentIdentity: actualRootContributionId,
+      documentKey: documentKey,
+      sourceContributionId: actualRootContributionId,
+      walletId: testWalletId,
+      user_jwt: testUserJwt,
+      template_filename: "thesis_feature_spec.md",
+    };
+
+    if (!isJson(renderJobPayload)) {
+      throw new Error("RENDER job payload is not a JSON object");
+    }
+    const jobInsert: Database["public"]["Tables"]["dialectic_generation_jobs"]["Insert"] = {
+      job_type: "RENDER",
+      session_id: testSession.id,
+      iteration_number: iterationNumber,
+      stage_slug: stageSlug,
+      status: "pending",
+      payload: renderJobPayload,
+      user_id: testUserId,
+    };
+
+    const { data: renderJob, error: renderJobError } = await adminClient
+      .from("dialectic_generation_jobs")
+      .insert(jobInsert)
+      .select("*")
+      .single();
+
+    assert(!renderJobError, `Failed to create RENDER job: ${renderJobError?.message}`);
+    assertExists(renderJob, "RENDER job should be created");
+    const typedRenderJob: DialecticJobRow = renderJob;
+
+    // Process RENDER job
+    const renderJobDeps: IRenderJobContext = {
+      documentRenderer: {
+        renderDocument: renderDocument,
+      },
+      downloadFromStorage: downloadFromStorage,
+      deleteFromStorage: deleteFromStorage,
+      fileManager: fileManager,
+      notificationService: new NotificationService(adminClient),
+      logger: testLogger,
+    };
+
+    let processError: Error | null = null;
+    try {
+      await processRenderJob(
+        adminClient,
+        typedRenderJob,
+        testUserId,
+        renderJobDeps,
+        testUserJwt,
+      );
+    } catch (e) {
+      processError = e instanceof Error ? e : new Error(String(e));
+    }
+
+    assert(processError === null, `processRenderJob should not throw errors, but got: ${processError?.message}`);
+
+    // Query rendered document
+    const { data: renderedResource, error: resourceError } = await adminClient
+      .from("dialectic_project_resources")
+      .select("*")
+      .eq("project_id", testProject.id)
+      .eq("session_id", testSession.id)
+      .eq("iteration_number", iterationNumber)
+      .eq("stage_slug", stageSlug)
+      .eq("resource_type", FileType.RenderedDocument)
+      .eq("source_contribution_id", actualRootContributionId)
+      .maybeSingle();
+
+    assert(!resourceError, `Failed to query rendered document resource: ${resourceError?.message}`);
+    assertExists(renderedResource, "Rendered document resource should exist");
+    assertExists(renderedResource.storage_bucket, "Rendered document resource should have storage_bucket");
+    assertExists(renderedResource.storage_path, "Rendered document resource should have storage_path");
+    assertExists(renderedResource.file_name, "Rendered document resource should have file_name");
+
+    // Download and verify rendered content
+    const fullStoragePath = `${renderedResource.storage_path}/${renderedResource.file_name}`;
+    const { data: renderedFileData, error: downloadError } = await downloadFromStorage(
+      adminClient,
+      renderedResource.storage_bucket,
+      fullStoragePath,
+    );
+
+    assert(!downloadError, `Failed to download rendered document: ${downloadError?.message}`);
+    assertExists(renderedFileData, "Rendered document file data should exist");
+
+    if (renderedFileData === null) {
+      throw new Error("Rendered document file data is null after assertExists check");
+    }
+    const renderedMarkdown = new TextDecoder().decode(renderedFileData);
+
+    // Verify feature name is present
+    assert(
+      renderedMarkdown.includes("Authentication Module"),
+      "Rendered document should contain feature name"
+    );
+
+    // Verify nested dependencies array is formatted as bullet list (- prefix)
+    assert(
+      renderedMarkdown.includes("- Database service"),
+      "Rendered document should contain first dependency as bullet"
+    );
+    assert(
+      renderedMarkdown.includes("- Email service"),
+      "Rendered document should contain second dependency as bullet"
+    );
+    assert(
+      renderedMarkdown.includes("- Token manager"),
+      "Rendered document should contain third dependency as bullet"
+    );
+
+    // Verify nested user_stories array is formatted as bullet list
+    assert(
+      renderedMarkdown.includes("- As a user I can register"),
+      "Rendered document should contain first user story as bullet"
+    );
+    assert(
+      renderedMarkdown.includes("- As a user I can login"),
+      "Rendered document should contain second user story as bullet"
+    );
+  });
+
+  // Test 8.a.iii: empty arrays produce no output
+  it("8.a.iii: empty array produces no feature sections", async () => {
+    const stageSlug = "thesis";
+    const documentKey = FileType.feature_spec;
+    const iterationNumber = 1;
+    const modelSlug = MOCK_MODEL_CONFIG.api_identifier;
+    const attemptCount = 0;
+
+    // Query for thesis_feature_spec template
+    const templateName = "thesis_feature_spec";
+    const { data: existingTemplate, error: templateQueryError } = await adminClient
+      .from("dialectic_document_templates")
+      .select("*")
+      .eq("domain_id", testProject.selected_domain_id)
+      .eq("is_active", true)
+      .eq("name", templateName)
+      .maybeSingle();
+
+    assert(!templateQueryError, `Failed to query template: ${templateQueryError?.message}`);
+    assertExists(
+      existingTemplate,
+      `Template '${templateName}' not found for domain '${testProject.selected_domain_id}'. Templates should exist in the database.`
+    );
+
+    // Create contribution with empty array
+    const docIdentity = crypto.randomUUID();
+
+    const contributionContent = JSON.stringify({
+      content: {
+        features: [],
+      },
+    });
+
+    const contributionContext: ModelContributionUploadContext = {
+      pathContext: {
+        fileType: documentKey,
+        projectId: testProject.id,
+        sessionId: testSession.id,
+        iteration: iterationNumber,
+        stageSlug: stageSlug,
+        modelSlug: modelSlug,
+        attemptCount: attemptCount,
+        documentKey: documentKey,
+      },
+      fileContent: contributionContent,
+      mimeType: "application/json",
+      sizeBytes: new TextEncoder().encode(contributionContent).length,
+      userId: testUserId,
+      description: `Test empty array contribution for ${stageSlug} ${documentKey}`,
+      contributionMetadata: {
+        sessionId: testSession.id,
+        modelIdUsed: testModelId,
+        modelNameDisplay: modelSlug,
+        stageSlug: stageSlug,
+        iterationNumber: iterationNumber,
+        document_relationships: { [stageSlug]: docIdentity },
+        editVersion: 1,
+        isLatestEdit: true,
+      },
+    };
+
+    const uploadResult = await fileManager.uploadAndRegisterFile(contributionContext);
+    assert(!uploadResult.error, `Failed to upload contribution: ${uploadResult.error?.message}`);
+    assertExists(uploadResult.record, "Contribution should be uploaded");
+
+    const contributionRecord = uploadResult.record;
+    if (!contributionRecord || !('id' in contributionRecord)) {
+      throw new Error("Contribution record is missing or missing id field");
+    }
+    const actualRootContributionId = contributionRecord.id;
+
+    // Update document_relationships
+    const { error: updateRelationshipsError } = await adminClient
+      .from("dialectic_contributions")
+      .update({
+        document_relationships: { [stageSlug]: actualRootContributionId },
+      })
+      .eq("id", actualRootContributionId);
+
+    assert(!updateRelationshipsError, `Failed to update document_relationships: ${updateRelationshipsError?.message}`);
+
+    // Create RENDER job
+    const renderJobPayload: DialecticRenderJobPayload = {
+      projectId: testProject.id,
+      sessionId: testSession.id,
+      iterationNumber: iterationNumber,
+      stageSlug: stageSlug,
+      model_id: testModelId,
+      documentIdentity: actualRootContributionId,
+      documentKey: documentKey,
+      sourceContributionId: actualRootContributionId,
+      walletId: testWalletId,
+      user_jwt: testUserJwt,
+      template_filename: "thesis_feature_spec.md",
+    };
+
+    if (!isJson(renderJobPayload)) {
+      throw new Error("RENDER job payload is not a JSON object");
+    }
+    const jobInsert: Database["public"]["Tables"]["dialectic_generation_jobs"]["Insert"] = {
+      job_type: "RENDER",
+      session_id: testSession.id,
+      iteration_number: iterationNumber,
+      stage_slug: stageSlug,
+      status: "pending",
+      payload: renderJobPayload,
+      user_id: testUserId,
+    };
+
+    const { data: renderJob, error: renderJobError } = await adminClient
+      .from("dialectic_generation_jobs")
+      .insert(jobInsert)
+      .select("*")
+      .single();
+
+    assert(!renderJobError, `Failed to create RENDER job: ${renderJobError?.message}`);
+    assertExists(renderJob, "RENDER job should be created");
+    const typedRenderJob: DialecticJobRow = renderJob;
+
+    // Process RENDER job
+    const renderJobDeps: IRenderJobContext = {
+      documentRenderer: {
+        renderDocument: renderDocument,
+      },
+      downloadFromStorage: downloadFromStorage,
+      deleteFromStorage: deleteFromStorage,
+      fileManager: fileManager,
+      notificationService: new NotificationService(adminClient),
+      logger: testLogger,
+    };
+
+    let processError: Error | null = null;
+    try {
+      await processRenderJob(
+        adminClient,
+        typedRenderJob,
+        testUserId,
+        renderJobDeps,
+        testUserJwt,
+      );
+    } catch (e) {
+      processError = e instanceof Error ? e : new Error(String(e));
+    }
+
+    assert(processError === null, `processRenderJob should not throw errors, but got: ${processError?.message}`);
+
+    // Query rendered document
+    const { data: renderedResource, error: resourceError } = await adminClient
+      .from("dialectic_project_resources")
+      .select("*")
+      .eq("project_id", testProject.id)
+      .eq("session_id", testSession.id)
+      .eq("iteration_number", iterationNumber)
+      .eq("stage_slug", stageSlug)
+      .eq("resource_type", FileType.RenderedDocument)
+      .eq("source_contribution_id", actualRootContributionId)
+      .maybeSingle();
+
+    assert(!resourceError, `Failed to query rendered document resource: ${resourceError?.message}`);
+    assertExists(renderedResource, "Rendered document resource should exist");
+    assertExists(renderedResource.storage_bucket, "Rendered document resource should have storage_bucket");
+    assertExists(renderedResource.storage_path, "Rendered document resource should have storage_path");
+    assertExists(renderedResource.file_name, "Rendered document resource should have file_name");
+
+    // Download and verify rendered content
+    const fullStoragePath = `${renderedResource.storage_path}/${renderedResource.file_name}`;
+    const { data: renderedFileData, error: downloadError } = await downloadFromStorage(
+      adminClient,
+      renderedResource.storage_bucket,
+      fullStoragePath,
+    );
+
+    assert(!downloadError, `Failed to download rendered document: ${downloadError?.message}`);
+    assertExists(renderedFileData, "Rendered document file data should exist");
+
+    if (renderedFileData === null) {
+      throw new Error("Rendered document file data is null after assertExists check");
+    }
+    const renderedMarkdown = new TextDecoder().decode(renderedFileData);
+
+    // Verify empty array produces empty or minimal output (no feature sections)
+    // The rendered content should be empty string or whitespace only since no items to iterate
+    const trimmedContent = renderedMarkdown.trim();
+    assertEquals(
+      trimmedContent.length,
+      0,
+      `Empty array should produce empty rendered content, got ${trimmedContent.length} characters: "${trimmedContent.substring(0, 100)}..."`
+    );
+
+    // Verify no separators (would indicate content was rendered)
+    const separatorCount = (renderedMarkdown.match(/\n---\n/g) || []).length;
+    assertEquals(
+      separatorCount,
+      0,
+      `Empty array should produce no separators, got ${separatorCount}`
     );
   });
 });

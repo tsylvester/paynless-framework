@@ -7,10 +7,10 @@ import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { saveContributionEdit } from './saveContributionEdit.ts';
 import { describe, it, beforeEach } from 'https://deno.land/std@0.208.0/testing/bdd.ts';
-import type { Database } from '../types_db.ts';
+import { Database } from '../types_db.ts';
 import { MockLogger} from '../_shared/logger.mock.ts';
-import type { SaveContributionEditDeps } from './saveContributionEdit.ts';
-import type { EditedDocumentResource } from './dialectic.interface.ts';
+import { SaveContributionEditContext } from './dialectic.interface.ts';
+import { EditedDocumentResource } from './dialectic.interface.ts';
 import { isEditedDocumentResource, isSaveContributionEditSuccessResponse } from '../_shared/utils/type-guards/type_guards.dialectic.ts';
 
 const mockLogger = new MockLogger();
@@ -187,12 +187,15 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
 
       // Call function directly (unit). Note: function currently lacks DI for FileManager; this test will be RED until refactor.
       const { data: { user } } = await mockSupabaseSetup.client.auth.getUser();
-      const deps: SaveContributionEditDeps = {
+      if (!user) {
+        throw new Error('User cannot be null');
+      }
+      const deps: SaveContributionEditContext = {
+        user: user,
         fileManager: fm,
         logger: mockLogger,
         dbClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
         pathDeconstructor: deconstructStoragePath,
-        pathConstructor: constructStoragePath,
       };
       const result = await saveContributionEdit({ 
         originalContributionIdToEdit: originalContributionId, 
@@ -200,9 +203,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
         documentKey: FileType.business_case,
         resourceType: 'rendered_document',
       }, 
-        mockSupabaseSetup.client as unknown as SupabaseClient<Database>, 
-        user!, 
-        mockLogger,
+        user, 
         deps);
 
       // Expect success status
@@ -231,12 +232,30 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
         assertEquals(ctx.resourceTypeForDb, 'rendered_document');
       }
 
+      // 13.c.ii: Rendered document is written at canonical /documents/ address (overwrite; DB upsert)
+      const { storagePath } = constructStoragePath(ctx.pathContext);
+      assert(storagePath.includes('documents'), 'Rendered document must be written to canonical /documents/ path');
+
+      // 13.c.iii: No write to raw-response paths; only one upload and it targets RenderedDocument
+      assert(calls.length === 1 && ctx.pathContext.fileType === FileType.RenderedDocument, 'Must not write to raw-response paths; only RenderedDocument upload allowed');
+
       // Original should be marked not latest
       const updateForOriginal = updatesApplied.find(u => u.filters.some(f => f.column === 'id' && f.value === originalContributionId));
       assert(updateForOriginal, 'Original row should be updated');
       const updated = updateForOriginal!.update;
       assertEquals(updated.is_latest_edit, false);
       assertEquals(updated.document_relationships, undefined, "Update payload must not touch existing document_relationships");
+
+      // 13.g [CRITERIA] Acceptance criteria
+      // 13.g.i: Saving an edit overwrites the rendered document at its canonical /documents/... address
+      assert(storagePath.includes('documents'), '13.g.i: rendered document must be at canonical /documents/ address');
+      assertEquals(ctx.pathContext.fileType, FileType.RenderedDocument, '13.g.i: upload targets RenderedDocument for overwrite');
+      // 13.g.ii: A dialectic_project_resources record exists for the rendered document at that address (upserted on conflict)
+      assert(calls.length === 1 && 'resourceTypeForDb' in ctx, '13.g.ii: resource upload registers/upserts dialectic_project_resources');
+      // 13.g.iii: Raw response artifacts are not overwritten
+      assert(calls.length === 1 && ctx.pathContext.fileType === FileType.RenderedDocument, '13.g.iii: only RenderedDocument upload; raw artifacts untouched');
+      // 13.g.iv: No new iteration is created on "Save Edit"
+      assertEquals(ctx.pathContext.iteration, iterationNumber, '13.g.iv: iteration must match original; no new iteration created');
 
       // Expect the response to return the rendered resource payload
       assert(result.data);
@@ -262,20 +281,23 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       });
 
       const { data: { user } } = await mockSupabaseSetup.client.auth.getUser();
-      const deps: SaveContributionEditDeps = {
+      if (!user) {
+        throw new Error('User cannot be null');
+      }
+      const deps: SaveContributionEditContext = {
+        user: user,
         fileManager: fm,
         logger: mockLogger,
         dbClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
         pathDeconstructor: deconstructStoragePath,
-        pathConstructor: constructStoragePath,
       };
-      const result = await saveContributionEdit({ 
-        originalContributionIdToEdit: originalContributionId, 
-        editedContentText: 'text' 
-      }, 
-      mockSupabaseSetup.client as unknown as SupabaseClient<Database>, 
-      user!, 
-      mockLogger,
+      const result = await saveContributionEdit({
+        originalContributionIdToEdit: originalContributionId,
+        editedContentText: 'text',
+        documentKey: FileType.business_case,
+        resourceType: 'rendered_document',
+      },
+      user,
       deps);
 
       assert(result.error);
@@ -337,14 +359,22 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       });
 
       const { data: { user } } = await mockSupabaseSetup.client.auth.getUser();
-      const deps: SaveContributionEditDeps = {
+      if (!user) {
+        throw new Error('User cannot be null');
+      }
+      const deps: SaveContributionEditContext = {
+        user: user,
         fileManager: fm,
         logger: mockLogger,
         dbClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
         pathDeconstructor: deconstructStoragePath,
-        pathConstructor: constructStoragePath,
       };
-      const result = await saveContributionEdit({ originalContributionIdToEdit: originalContributionId, editedContentText: 'text' }, mockSupabaseSetup.client as unknown as SupabaseClient<Database>, user!, mockLogger, deps);
+      const result = await saveContributionEdit({
+        originalContributionIdToEdit: originalContributionId,
+        editedContentText: 'text',
+        documentKey: FileType.business_case,
+        resourceType: 'rendered_document',
+      }, user, deps);
 
       assert(result.error);
       assertEquals(result.data, undefined);
@@ -405,14 +435,22 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       });
 
       const { data: { user } } = await mockSupabaseSetup.client.auth.getUser();
-      const deps: SaveContributionEditDeps = {
+      if (!user) {
+        throw new Error('User cannot be null');
+      }
+      const deps: SaveContributionEditContext = {
+        user: user,
         fileManager: fm,
         logger: mockLogger,
         dbClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
         pathDeconstructor: deconstructStoragePath,
-        pathConstructor: constructStoragePath,
       };
-      const result = await saveContributionEdit({ originalContributionIdToEdit: originalContributionId, editedContentText: 'text' }, mockSupabaseSetup.client as unknown as SupabaseClient<Database>, user!, mockLogger, deps);
+      const result = await saveContributionEdit({
+        originalContributionIdToEdit: originalContributionId,
+        editedContentText: 'text',
+        documentKey: FileType.business_case,
+        resourceType: 'rendered_document',
+      }, user, deps);
 
       assert(result.error);
       assertEquals(result.data, undefined);
@@ -424,14 +462,22 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     it('returns 400 on missing originalContributionIdToEdit', async () => {
       const setup = createMockSupabaseClient('user-y');
       const { data: { user } } = await setup.client.auth.getUser();
-      const deps: SaveContributionEditDeps = {
+      if (!user) {
+        throw new Error('User cannot be null');
+      }
+      const deps: SaveContributionEditContext = {
+        user: user,
         fileManager: fm,
         logger: mockLogger,
         dbClient: setup.client as unknown as SupabaseClient<Database>,
         pathDeconstructor: deconstructStoragePath,
-        pathConstructor: constructStoragePath,
       };
-      const result = await saveContributionEdit({ originalContributionIdToEdit: '' as unknown as string, editedContentText: 'text' }, setup.client as unknown as SupabaseClient<Database>, user!, mockLogger, deps);
+      const result = await saveContributionEdit({
+        originalContributionIdToEdit: '' as unknown as string,
+        editedContentText: 'text',
+        documentKey: FileType.business_case,
+        resourceType: 'rendered_document',
+      }, user, deps);
       assert(result.error);
       assertEquals((result.status ?? result.error?.status), 400);
       assertEquals(fm.uploadAndRegisterFile.calls.length, 0);
@@ -440,14 +486,22 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     it('returns 400 on missing editedContentText', async () => {
       const setup = createMockSupabaseClient('user-z');
       const { data: { user } } = await setup.client.auth.getUser();
-      const deps: SaveContributionEditDeps = {
+      if (!user) {
+        throw new Error('User cannot be null');
+      }
+      const deps: SaveContributionEditContext = {
+        user: user,
         fileManager: fm,
         logger: mockLogger,
         dbClient: setup.client as unknown as SupabaseClient<Database>,
         pathDeconstructor: deconstructStoragePath,
-        pathConstructor: constructStoragePath,
       };
-      const result = await saveContributionEdit({ originalContributionIdToEdit: 'some-id', editedContentText: undefined as unknown as string }, setup.client as unknown as SupabaseClient<Database>, user!, mockLogger, deps);
+      const result = await saveContributionEdit({
+        originalContributionIdToEdit: 'some-id',
+        editedContentText: undefined as unknown as string,
+        documentKey: FileType.business_case,
+        resourceType: 'rendered_document',
+      }, user, deps);
       assert(result.error);
       assertEquals((result.status ?? result.error?.status), 400);
       assertEquals(result.error?.message, 'editedContentText is required.');
@@ -516,19 +570,22 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       fm.setUploadAndRegisterFileResponse(renderedResourceRow, null);
 
       const { data: { user } } = await mockSupabaseSetup.client.auth.getUser();
-      const deps: SaveContributionEditDeps = {
+      if (!user) {
+        throw new Error('User cannot be null');
+      }
+      const deps: SaveContributionEditContext = {
+        user: user,
         fileManager: fm,
         logger: mockLogger,
         dbClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
         pathDeconstructor: deconstructStoragePath,
-        pathConstructor: constructStoragePath,
       };
       const result = await saveContributionEdit({ 
         originalContributionIdToEdit: originalContributionId, 
         editedContentText: 'edited',
         documentKey: FileType.business_case,
         resourceType: 'rendered_document',
-      }, mockSupabaseSetup.client as unknown as SupabaseClient<Database>, user!, mockLogger, deps);
+      }, user, deps);
       assert(result.data);
       assertEquals(result.data!.resource.resource_type, 'rendered_document');
     });

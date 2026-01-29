@@ -2969,6 +2969,62 @@ Deno.test('FileManagerService', async (t) => {
       afterEach();
     }
   });
+
+  await t.step('uploadAndRegisterFile resource_description includes merged resourceDescriptionForDb when provided (step 10.c.i)', async () => {
+    try {
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_project_resources: {
+            upsert: { data: [{ id: 'resource-merged-desc-id' }], error: null },
+          },
+        },
+      };
+      beforeEach(config);
+
+      const extraFields: { documentKey: string; sourceContributionId: string } = {
+        documentKey: 'feature_spec',
+        sourceContributionId: 'contrib-uuid-merge-test',
+      };
+      const resourceDescriptionForDb: Json = extraFields;
+
+      const pathContext: ResourceUploadContext['pathContext'] = {
+        fileType: FileType.RenderedDocument,
+        projectId: 'project-uuid-123',
+        sessionId: 'session-uuid-456',
+        iteration: 1,
+        stageSlug: 'thesis',
+        documentKey: 'feature_spec',
+        modelSlug: 'test-model',
+        attemptCount: 0,
+      };
+
+      const context: ResourceUploadContext = {
+        ...baseUploadContext,
+        pathContext,
+        description: 'Rendered document for feature spec',
+        resourceDescriptionForDb,
+      };
+
+      const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+      assertEquals(error, null);
+      assertExists(record);
+
+      const upsertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.upsert;
+      assertExists(upsertSpy);
+      const upsertArgs = upsertSpy.calls[0].args;
+      const insertData = upsertArgs[0];
+
+      assert(isRecord(insertData.resource_description), 'resource_description should be an object');
+      const desc: Record<string, unknown> = insertData.resource_description;
+      assertEquals(desc.type, context.pathContext.fileType, 'resource_description must preserve type');
+      assertEquals(desc.originalDescription, context.description, 'resource_description must preserve originalDescription');
+      assertEquals(desc.documentKey, extraFields.documentKey, 'resource_description must include merged resourceDescriptionForDb.documentKey');
+      assertEquals(desc.sourceContributionId, extraFields.sourceContributionId, 'resource_description must include merged resourceDescriptionForDb.sourceContributionId');
+    } finally {
+      afterEach();
+    }
+  });
 });
 
 
