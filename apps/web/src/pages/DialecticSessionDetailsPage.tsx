@@ -1,6 +1,11 @@
 import React, { useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useDialecticStore, selectSortedStages } from "@paynless/store";
+import {
+	useDialecticStore,
+	selectSortedStages,
+	selectActiveStageSlug,
+	selectCurrentProcessTemplate,
+} from "@paynless/store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -40,9 +45,10 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 	const currentProjectDetail = useDialecticStore(
 		(state) => state.currentProjectDetail,
 	) as DialecticProject | null;
-	const activeContextStage = useDialecticStore(
-		(state) => state.activeContextStage,
-	) as DialecticStage | null;
+	const activeStageSlug = useDialecticStore(selectActiveStageSlug);
+	const currentProcessTemplate = useDialecticStore(selectCurrentProcessTemplate);
+	const activeStageForProgressBar: DialecticStage | null =
+		currentProcessTemplate?.stages?.find((s) => s.slug === activeStageSlug) ?? null;
 	const sortedStages = useDialecticStore(selectSortedStages);
 
 	// Loading and error states from store
@@ -161,13 +167,13 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 							</div>
 
 							{/* Enhanced Progress */}
-							{sortedStages.length > 0 && activeContextStage && (
+							{sortedStages.length > 0 && activeStageForProgressBar && (
 								<div className="bg-muted/30 rounded-xl p-4 space-y-3">
 									<div className="flex items-center justify-between text-sm">
 										<span className="text-muted-foreground">Progress</span>
 										<span className="font-medium">
 											{sortedStages.findIndex(
-												(s) => s.id === activeContextStage.id,
+												(s) => s.id === activeStageForProgressBar.id,
 											) + 1}
 											/{sortedStages.length}
 										</span>
@@ -176,14 +182,14 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 										<div
 											className="bg-gradient-to-r from-blue-600 to-blue-700 h-2 rounded-full transition-all duration-500 ease-out"
 											style={{
-												width: `${((sortedStages.findIndex((s) => s.id === activeContextStage.id) + 1) / sortedStages.length) * 100}%`,
+												width: `${((sortedStages.findIndex((s) => s.id === activeStageForProgressBar.id) + 1) / sortedStages.length) * 100}%`,
 											}}
 										/>
 									</div>
 									<p className="text-xs text-muted-foreground">
 										{Math.round(
 											((sortedStages.findIndex(
-												(s) => s.id === activeContextStage.id,
+												(s) => s.id === activeStageForProgressBar.id,
 											) +
 												1) /
 												sortedStages.length) *
@@ -199,13 +205,13 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 					{/* Enhanced Content Area */}
 					<div className="lg:col-span-4">
 						<div className="bg-card rounded-2xl shadow-sm overflow-hidden">
-							{activeContextStage && activeSessionDetail ? (
+							{activeStageForProgressBar && activeSessionDetail ? (
 								<div className="p-8">
 									<SessionContributionsDisplayCard />
 								</div>
 							) : (
 								<div className="py-24 text-center">
-									{!activeContextStage &&
+									{!activeStageForProgressBar &&
 									sortedStages.length > 0 &&
 									!isLoading ? (
 										<div className="space-y-4">

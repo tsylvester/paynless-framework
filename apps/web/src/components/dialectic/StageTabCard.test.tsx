@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { StageTabCard } from './StageTabCard';
 import {
@@ -12,7 +12,11 @@ import {
   DialecticStageRecipe,
   DialecticStageRecipeStep,
 } from '@paynless/types';
-import { initializeMockDialecticState, getDialecticStoreState } from '../../mocks/dialecticStore.mock';
+import {
+  initializeMockDialecticState,
+  getDialecticStoreState,
+  setDialecticStateValues,
+} from '../../mocks/dialecticStore.mock';
 
 vi.mock('@/components/dialectic/GenerateContributionButton', () => ({
   GenerateContributionButton: vi.fn(() => <div data-testid="generate-contribution-button-mock"></div>),
@@ -446,5 +450,46 @@ describe('StageTabCard', () => {
     expect(countElement).toBeNull();
     expect(labelElement).toBeInTheDocument();
     expect(labelElement?.textContent).toBe('Completed');
+  });
+
+  it('does not call setActiveStage from useEffect when activeStageSlug is already set', () => {
+    const storeActions = setupStore({ activeStageSlug: 'analysis' });
+    renderComponent();
+    expect(storeActions.setActiveStage).not.toHaveBeenCalled();
+  });
+
+  it('does not re-fire useEffect when activeSessionDetail reference changes but current_stage_id is unchanged', () => {
+    const storeActions = setupStore({
+      activeStageSlug: null,
+      activeSessionDetail: mockSession,
+    });
+    renderComponent();
+    expect(storeActions.setActiveStage).toHaveBeenCalledTimes(1);
+    expect(storeActions.setActiveStage).toHaveBeenCalledWith('hypothesis');
+
+    const sessionNewReference: DialecticSession = {
+      ...mockSession,
+      updated_at: new Date().toISOString(),
+    };
+    act(() => {
+      setDialecticStateValues({
+        currentProjectDetail: {
+          ...mockProject,
+          dialectic_sessions: [sessionNewReference],
+        },
+      });
+    });
+
+    expect(storeActions.setActiveStage).toHaveBeenCalledTimes(1);
+  });
+
+  it('sets initial stage on mount when activeStageSlug is null', () => {
+    const storeActions = setupStore({
+      activeStageSlug: null,
+      activeSessionDetail: mockSession,
+      currentProcessTemplate: mockProcessTemplate,
+    });
+    renderComponent();
+    expect(storeActions.setActiveStage).toHaveBeenCalledWith('hypothesis');
   });
 });

@@ -582,7 +582,12 @@ export const useDialecticStore = create<DialecticStore>()(
 					}
 				}
 
-				if (stageToSet) {
+				if (get().activeStageSlug !== null) {
+					logger.info(
+						"[DialecticStore] Skipping stage set: user has already selected stage.",
+						{ activeStageSlug: get().activeStageSlug },
+					);
+				} else if (stageToSet) {
 					set({ activeContextStage: stageToSet });
 				} else if (!get().activeContextStage) {
 					// Fallback: if no stage could be determined and none is set, set to the first stage in the template

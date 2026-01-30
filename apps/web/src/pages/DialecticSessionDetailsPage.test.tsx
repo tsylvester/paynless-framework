@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { DialecticSessionDetailsPage } from './DialecticSessionDetailsPage';
 import { setDialecticStateValues, resetDialecticStoreMock, mockActivateProjectAndSessionContextForDeepLink } from '../mocks/dialecticStore.mock';
@@ -55,8 +55,8 @@ const mockSessionId = 'session-abc';
 const mockOtherSessionId = 'session-xyz';
 
 const mockStages: DialecticStage[] = [
-    { id: 'stage-1', slug: 'hypothesis', display_name: 'Hypothesis', description: 'desc', created_at: 'now', default_system_prompt_id: 'p1', input_artifact_rules: {}, expected_output_artifacts: {}},
-    { id: 'stage-2', slug: 'antithesis', display_name: 'Antithesis', description: 'desc', created_at: 'now', default_system_prompt_id: 'p1', input_artifact_rules: {}, expected_output_artifacts: {}},
+    { id: 'stage-1', slug: 'hypothesis', display_name: 'Hypothesis', description: 'desc', created_at: 'now', default_system_prompt_id: 'p1', recipe_template_id: 'rt-1', expected_output_template_ids: ['ot-1'], active_recipe_instance_id: null },
+    { id: 'stage-2', slug: 'antithesis', display_name: 'Antithesis', description: 'desc', created_at: 'now', default_system_prompt_id: 'p1', recipe_template_id: 'rt-1', expected_output_template_ids: ['ot-1'], active_recipe_instance_id: null },
 ];
 
 const mockProcessTemplate: DialecticProcessTemplate = {
@@ -217,7 +217,7 @@ describe('DialecticSessionDetailsPage', () => {
       activeSessionDetail: mockSession,
       currentProjectDetail: mockProject,
       currentProcessTemplate: mockProcessTemplate,
-      activeContextStage: mockStages[0],
+      activeStageSlug: mockStages[0].slug,
       isLoadingActiveSessionDetail: false,
       activeSessionDetailError: null,
     });
@@ -274,5 +274,59 @@ describe('DialecticSessionDetailsPage', () => {
         expect(screen.getByText(mockError.message)).toBeInTheDocument();
       }
     });
+  });
+
+  it('progress bar reflects activeStageSlug not activeContextStage', async () => {
+    mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+    setDialecticStateValues({
+      activeContextProjectId: mockProjectId,
+      activeContextSessionId: mockSessionId,
+      activeSessionDetail: mockSession,
+      currentProjectDetail: mockProject,
+      currentProcessTemplate: mockProcessTemplate,
+      activeStageSlug: 'antithesis',
+      activeContextStage: mockStages[0],
+      isLoadingActiveSessionDetail: false,
+      activeSessionDetailError: null,
+    });
+
+    renderWithRouter({});
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-stage-tab-card')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('2/2')).toBeInTheDocument();
+    const progressSection = screen.getByText('Progress').closest('.space-y-3');
+    expect(progressSection).toHaveTextContent('100% complete');
+  });
+
+  it('progress bar does not update when activeContextStage changes but activeStageSlug is constant', async () => {
+    mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+    setDialecticStateValues({
+      activeContextProjectId: mockProjectId,
+      activeContextSessionId: mockSessionId,
+      activeSessionDetail: mockSession,
+      currentProjectDetail: mockProject,
+      currentProcessTemplate: mockProcessTemplate,
+      activeStageSlug: 'hypothesis',
+      activeContextStage: mockStages[0],
+      isLoadingActiveSessionDetail: false,
+      activeSessionDetailError: null,
+    });
+
+    renderWithRouter({});
+
+    await waitFor(() => {
+      expect(screen.getByText('1/2')).toBeInTheDocument();
+    });
+
+    act(() => {
+      setDialecticStateValues({ activeContextStage: mockStages[1] });
+    });
+
+    expect(screen.getByText('1/2')).toBeInTheDocument();
+    const progressSection = screen.getByText('Progress').closest('.space-y-3');
+    expect(progressSection).toHaveTextContent('50% complete');
   });
 }); 

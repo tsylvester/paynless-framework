@@ -388,7 +388,7 @@
         *   `[✅]` 17.g.i. User can edit every document and provide feedback on every document; the two fields retain separate values.
         *   `[✅]` 17.g.ii. "Submit Responses & Advance Stage" submits both drafts when both are present; no input lost.
     *   `[✅]` 17.h. [COMMIT] `feat(ui): bind Document Content and Document Feedback to separate drafts in GeneratedContributionCard`
-    
+
 *   `[✅]` supabase/migrations/`handle_job_completion_stage_completed_status` **[DB] Trigger sets {stage}_completed status instead of auto-advancing**
     *   `[✅]` `objective.md`
         *   `[✅]` Modify `handle_job_completion()` trigger so when all stage jobs complete, session status becomes `{current_stage_slug}_completed`
@@ -530,16 +530,318 @@
         *   `[✅]` No regressions in existing state management tests
     *   `[✅]` **Commit** `test(integration): validate {stage}_completed lifecycle and idempotent advancement`
 
+*   `[✅]` packages/store/src/`dialecticStore.ts` **[STORE] Prevent fetchProcessTemplate from overwriting user's viewed stage**
+    *   `[✅]` `objective.md`
+        *   `[✅]` `fetchProcessTemplate` must NOT set `activeContextStage` after initial load
+        *   `[✅]` User's stage selection must persist through data refreshes triggered by notifications
+        *   `[✅]` Only set stage on: (1) initial page load when no stage is set, (2) explicit user navigation
+    *   `[✅]` `role.md`
+        *   `[✅]` State management layer - store action
+        *   `[✅]` Decouples backend data refresh from UI navigation state
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to `fetchProcessTemplate` function in `dialecticStore.ts`
+        *   `[✅]` Affects lines 553-596 where `activeContextStage` is set
+    *   `[✅]` `deps.md`
+        *   `[✅]` `activeContextStage` state field
+        *   `[✅]` `activeStageSlug` state field (should remain unchanged by this function)
+        *   `[✅]` `currentProjectDetail.dialectic_sessions` for reading session data
+    *   `[✅]` interface/`interface.ts`
+        *   `[✅]` No interface changes required; internal logic change only
+    *   `[✅]` unit/`dialecticStore.fetchProcessTemplate.test.ts`
+        *   `[✅]` Assert `activeContextStage` is NOT overwritten when already set and `activeStageSlug` is set
+        *   `[✅]` Assert `activeContextStage` IS set on initial load (when both are null)
+        *   `[✅]` Assert data refresh after `contribution_generation_complete` does NOT change `activeContextStage` or `activeStageSlug`
+        *   `[✅]` Assert `activeContextStage` can still be set via `setActiveContextStage` action (explicit navigation)
+    *   `[✅]` `dialecticStore.ts`
+        *   `[✅]` Add guard at line ~585: only set `activeContextStage` if `get().activeStageSlug === null`
+        *   `[✅]` Remove unconditional `set({ activeContextStage: stageToSet })` at line 586
+        *   `[✅]` Preserve fallback logic at line 587-595 (only when no stage is set)
+        *   `[✅]` Add logging to indicate when stage set is skipped due to user selection
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Data refresh does not change user's viewed stage
+        *   `[✅]` Initial page load still sets appropriate starting stage
+        *   `[✅]` User can still navigate to any stage manually
+    *   `[✅]` **Commit** `fix(store): prevent fetchProcessTemplate from overwriting user's viewed stage selection`
 
-    - Fix unintended automatic renavigation
-    -- User reports that when a stage completes generating documents, it renavigates the user to the next stage
-    -- The UI should not renavigate the user unless the renavigation is justified or the user actively wants to renavigate
-    -- Proposed fix: Even if the stage is considered completed, leave the user on the completed stage UNLESS they click the new stage in the stagetabcard or click "Submit" to advance to the next stage 
+*   `[✅]` apps/web/src/components/dialectic/`StageTabCard.tsx` **[UI] Strengthen stage initialization guard to prevent race conditions**
+    *   `[✅]` `objective.md`
+        *   `[✅]` useEffect that sets initial stage must not re-fire during data refreshes
+        *   `[✅]` Guard must be robust against transient state changes
+    *   `[✅]` `role.md`
+        *   `[✅]` UI component - stage navigation sidebar
+        *   `[✅]` Owns initial stage selection on page mount
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to `StageTabCard.tsx` useEffect at lines 203-215
+        *   `[✅]` Affects dependency array and guard condition
+    *   `[✅]` `deps.md`
+        *   `[✅]` `activeStageSlug` from store (via `selectActiveStageSlug`)
+        *   `[✅]` `activeSessionDetail` from store
+        *   `[✅]` `stages` from `selectSortedStages`
+        *   `[✅]` `setActiveStage` action
+    *   `[✅]` interface/`interface.ts`
+        *   `[✅]` No interface changes required
+    *   `[✅]` unit/`StageTabCard.test.tsx`
+        *   `[✅]` Assert useEffect does NOT call `setActiveStage` when `activeStageSlug` is already set
+        *   `[✅]` Assert useEffect does NOT re-fire when `activeSessionDetail` reference changes but `current_stage_id` is unchanged
+        *   `[✅]` Assert initial stage IS set on mount when `activeStageSlug` is null
+    *   `[✅]` `StageTabCard.tsx`
+        *   `[✅]` Add `useRef` to track if initial stage has been set (`hasInitializedStage`)
+        *   `[✅]` Modify guard to: `if (!hasInitializedStage.current && !activeStageSlug && stages.length > 0)`
+        *   `[✅]` Set `hasInitializedStage.current = true` after calling `setActiveStage`
+        *   `[✅]` Remove `activeSessionDetail` from dependency array (no longer needed for initial stage logic)
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Stage tabs do not change during document generation lifecycle
+        *   `[✅]` User's stage selection persists through all notification-driven data refreshes
+        *   `[✅]` Initial stage is still set correctly on page mount
+    *   `[✅]` **Commit** `fix(ui): strengthen StageTabCard stage initialization guard against race conditions`
 
-    - Fix the inputs required documents not being appended to the chat message 
-    -- User reports that for antithesis stage, documents generate but the agent complains that the base case it's supposed to critique was not supplied.
-    -- Initial investigation indicates that EMCAS has the documents for inputs_required but is not actually including them in the ChatAPIRequest it sends to the model 
-    -- Troubleshoot EMCAS and verify that the inputs_required artifacts are actually being populated into the API call to the model 
+*   `[✅]` apps/web/src/pages/`DialecticSessionDetailsPage.tsx` **[UI] Decouple progress bar from activeContextStage**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Progress bar must use `activeStageSlug` for consistency with tab selection
+        *   `[✅]` Progress display must not change when backend refreshes data
+        *   `[✅]` (Future: progress bar should show step-level DAG completion, not just stage position)
+    *   `[✅]` `role.md`
+        *   `[✅]` UI page component - main dialectic session view
+        *   `[✅]` Renders progress indicator in sidebar
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to progress bar JSX at lines 164-193
+        *   `[✅]` Uses `activeContextStage` currently, should use derived stage from `activeStageSlug`
+    *   `[✅]` `deps.md`
+        *   `[✅]` `activeContextStage` (to be replaced)
+        *   `[✅]` `activeStageSlug` (new source)
+        *   `[✅]` `selectSortedStages` selector
+        *   `[✅]` `selectCurrentProcessTemplate` selector (to derive stage object from slug)
+    *   `[✅]` interface/`interface.ts`
+        *   `[✅]` No interface changes required
+    *   `[✅]` unit/`DialecticSessionDetailsPage.test.tsx`
+        *   `[✅]` Assert progress bar reflects `activeStageSlug`, not `activeContextStage`
+        *   `[✅]` Assert progress bar does not update when `activeContextStage` changes but `activeStageSlug` is constant
+    *   `[✅]` `DialecticSessionDetailsPage.tsx`
+        *   `[✅]` Add selector for `activeStageSlug` from store
+        *   `[✅]` Derive `activeStageForProgressBar` from `processTemplate.stages.find(s => s.slug === activeStageSlug)`
+        *   `[✅]` Replace `activeContextStage` usage in progress bar with `activeStageForProgressBar`
+        *   `[✅]` Keep conditional render check or update to use derived stage
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Progress bar stays stable during document generation lifecycle
+        *   `[✅]` Progress bar accurately reflects user's current view, not backend state
+    *   `[✅]` **Commit** `fix(ui): decouple progress bar from activeContextStage to prevent display jumps`
+
+*   `[✅]` **[TEST-INT]** Integration test for stage view stability during generation lifecycle
+    *   `[✅]` `objective.md`
+        *   `[✅]` Prove that stage navigation state remains stable during document generation and completion
+        *   `[✅]` Prove that notifications do not cause unwanted stage changes
+    *   `[✅]` `role.md`
+        *   `[✅]` Integration test - proves NotificationStore → DialecticStore → UI boundary
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to: NotificationStore handlers → DialecticStore state → StageTabCard/DialecticSessionDetailsPage
+    *   `[✅]` `deps.md`
+        *   `[✅]` NotificationStore `handleIncomingNotification`
+        *   `[✅]` DialecticStore `fetchProcessTemplate`, `activeStageSlug`, `activeContextStage`
+        *   `[✅]` MSW for mocking API responses
+    *   `[✅]` integration/`stage-navigation-stability.integration.test.ts`
+        *   `[✅]` Test: User viewing thesis, `contribution_generation_complete` fires → `activeStageSlug` unchanged, tabs unchanged
+        *   `[✅]` Test: User viewing thesis, `document_completed` fires → `activeStageSlug` unchanged
+        *   `[✅]` Test: User viewing thesis, `render_completed` fires → `activeStageSlug` unchanged
+        *   `[✅]` Test: User explicitly clicks antithesis tab → `activeStageSlug` changes to antithesis
+        *   `[✅]` Test: User clicks Submit → `activeStageSlug` advances to next stage (intentional navigation)
+    *   `[✅]` `requirements.md`
+        *   `[✅]` All notification-driven data refreshes preserve user's stage selection
+        *   `[✅]` Only explicit user actions (tab click, Submit) change viewed stage
+    *   `[✅]` **Commit** `test(integration): add stage navigation stability tests for generation lifecycle`
+
+*   `[ ]` supabase/functions/_shared/ai_service/`anthropic_adapter.ts` **[BE] Format resourceDocuments as Claude document content blocks**
+    *   `[ ]` `objective.md`
+        *   `[ ]` When `request.resourceDocuments` has items, format each as a Claude `document` content block
+        *   `[ ]` Use `PlainTextSource` with document_key as title and stage as context
+        *   `[ ]` Prepend document blocks to the content array before text/user messages
+    *   `[ ]` `role.md`
+        *   `[ ]` AI provider adapter - Anthropic/Claude specific implementation
+    *   `[ ]` `module.md`
+        *   `[ ]` Bounded to `AnthropicAdapter.sendMessage` method
+        *   `[ ]` Affects message construction before `this.client.messages.create`
+    *   `[ ]` `deps.md`
+        *   `[ ]` `request.resourceDocuments` - array of `{ id, content, document_key?, stage_slug?, type? }`
+        *   `[ ]` Anthropic SDK `MessageParam` type with content blocks
+    *   `[ ]` interface/`interface.ts`
+        *   `[ ]` No interface changes; uses existing `ChatApiRequest.resourceDocuments`
+    *   `[ ]` unit/`anthropic_adapter.test.ts`
+        *   `[ ]` Assert when `resourceDocuments` present, they appear as `type: "document"` blocks in API call
+        *   `[ ]` Assert document title is set to document_key
+        *   `[ ]` Assert document context includes stage_slug
+        *   `[ ]` Assert empty resourceDocuments does not add document blocks
+        *   `[ ]` Assert document blocks are prepended before user message content
+    *   `[ ]` `anthropic_adapter.ts`
+        *   `[ ]` In `sendMessage`, after extracting messages, check `request.resourceDocuments`
+        *   `[ ]` For each doc, create content block: `{ type: "document", source: { type: "text", media_type: "text/plain", data: doc.content }, title: doc.document_key, context: doc.stage_slug }`
+        *   `[ ]` Build final content array as `[...documentBlocks, ...textBlocks]`
+        *   `[ ]` Pass structured content array to `this.client.messages.create`
+    *   `[ ]` `requirements.md`
+        *   `[ ]` Documents reach Claude as native document blocks with metadata
+        *   `[ ]` Claude can reference documents by title in responses
+        *   `[ ]` Citations enabled for document content
+    *   `[ ]` **Commit** `fix(be): format resourceDocuments as Claude document content blocks in AnthropicAdapter`
+
+*   `[ ]` supabase/functions/_shared/ai_service/`google_adapter.ts` **[BE] Format resourceDocuments as Gemini inline_data parts**
+    *   `[ ]` `objective.md`
+        *   `[ ]` When `request.resourceDocuments` has items, format each as Gemini `inline_data` part
+        *   `[ ]` Use `text/plain` mime_type for markdown content
+        *   `[ ]` Include document label text part before each inline_data for context
+    *   `[ ]` `role.md`
+        *   `[ ]` AI provider adapter - Google Gemini specific implementation
+    *   `[ ]` `module.md`
+        *   `[ ]` Bounded to `GoogleAdapter.sendMessage` method
+        *   `[ ]` Affects parts construction before `chat.sendMessage`
+    *   `[ ]` `deps.md`
+        *   `[ ]` `request.resourceDocuments` - array of `{ id, content, document_key?, stage_slug?, type? }`
+        *   `[ ]` Google Generative AI SDK `Content` and parts types
+    *   `[ ]` interface/`interface.ts`
+        *   `[ ]` No interface changes
+    *   `[ ]` unit/`google_adapter.test.ts`
+        *   `[ ]` Assert when `resourceDocuments` present, they appear as `inline_data` parts
+        *   `[ ]` Assert mime_type is `text/plain`
+        *   `[ ]` Assert document label text precedes each inline_data
+        *   `[ ]` Assert empty resourceDocuments does not add extra parts
+    *   `[ ]` `google_adapter.ts`
+        *   `[ ]` In `sendMessage`, after building history, check `request.resourceDocuments`
+        *   `[ ]` For each doc, add parts: `{ text: "[Document: ${doc.document_key} from ${doc.stage_slug}]" }` and `{ inline_data: { mime_type: "text/plain", data: doc.content } }`
+        *   `[ ]` Prepend document parts to the final user message parts
+    *   `[ ]` `requirements.md`
+        *   `[ ]` Documents reach Gemini as inline_data with proper mime_type
+        *   `[ ]` Documents are labeled for model to reference
+    *   `[ ]` **Commit** `fix(be): format resourceDocuments as Gemini inline_data parts in GoogleAdapter`
+
+*   `[ ]` supabase/functions/_shared/ai_service/`openai_adapter.ts` **[BE] Format resourceDocuments as labeled text in messages**
+    *   `[ ]` `objective.md`
+        *   `[ ]` When `request.resourceDocuments` has items, embed as labeled text content
+        *   `[ ]` OpenAI Chat Completions lacks native document blocks - use structured text
+        *   `[ ]` Format: `[Document: {key} from {stage}]\n{content}`
+    *   `[ ]` `role.md`
+        *   `[ ]` AI provider adapter - OpenAI specific implementation
+    *   `[ ]` `module.md`
+        *   `[ ]` Bounded to `OpenAiAdapter.sendMessage` method
+        *   `[ ]` Affects message construction before `this.client.chat.completions.create`
+    *   `[ ]` `deps.md`
+        *   `[ ]` `request.resourceDocuments` - array of `{ id, content, document_key?, stage_slug?, type? }`
+        *   `[ ]` OpenAI SDK `ChatCompletionMessageParam` type
+    *   `[ ]` interface/`interface.ts`
+        *   `[ ]` No interface changes
+    *   `[ ]` unit/`openai_adapter.test.ts`
+        *   `[ ]` Assert when `resourceDocuments` present, they appear as text in messages
+        *   `[ ]` Assert document labels are present in message content
+        *   `[ ]` Assert empty resourceDocuments does not add placeholder messages
+    *   `[ ]` `openai_adapter.ts`
+        *   `[ ]` In `sendMessage`, after building openaiMessages, check `request.resourceDocuments`
+        *   `[ ]` For each doc, prepend user message: `{ role: "user", content: "[Document: ${doc.document_key} from ${doc.stage_slug}]\n${doc.content}" }`
+        *   `[ ]` Or concatenate all docs into single context message before the user prompt
+    *   `[ ]` `requirements.md`
+        *   `[ ]` Documents reach OpenAI as labeled text
+        *   `[ ]` Model can reference documents by key
+    *   `[ ]` **Commit** `fix(be): format resourceDocuments as labeled text in OpenAiAdapter`
+
+*   `[ ]` supabase/functions/dialectic-worker/`executeModelCallAndSave.ts` **[BE] Fail-fast guard: error if required inputsRequired documents are empty**
+    *   `[ ]` `objective.md`
+        *   `[ ]` After gathering and scoping, validate required documents exist
+        *   `[ ]` Error BEFORE API call if required documents missing
+        *   `[ ]` Prevents wasted API spend on useless "no documents" responses
+    *   `[ ]` `role.md`
+        *   `[ ]` Backend worker - execution layer guard
+    *   `[ ]` `module.md`
+        *   `[ ]` Bounded to `executeModelCallAndSave` after `applyInputsRequiredScope`
+    *   `[ ]` `deps.md`
+        *   `[ ]` `params.inputsRequired` - rules specifying required documents
+        *   `[ ]` `scopedDocs` - result of document gathering
+    *   `[ ]` unit/`executeModelCallAndSave.test.ts`
+        *   `[ ]` Assert error thrown when required docs missing
+        *   `[ ]` Assert error message identifies missing document_key/stage
+        *   `[ ]` Assert optional docs don't cause error when missing
+        *   `[ ]` Update test at line ~1353 (remove assertion that docs must NOT be in messages - that was wrong)
+    *   `[ ]` `executeModelCallAndSave.ts`
+        *   `[ ]` Remove outdated comment at line 1005
+        *   `[ ]` After line ~428, add validation for each `required: true` rule
+        *   `[ ]` Throw descriptive error if required doc missing
+    *   `[ ]` `requirements.md`
+        *   `[ ]` Required documents validated before expensive API call
+        *   `[ ]` Clear error message for missing inputs
+    *   `[ ]` **Commit** `fix(be): fail-fast when required inputsRequired documents are missing`
+
+*   `[ ]` **[TEST-INT]** Integration test for provider-specific document formatting
+    *   `[ ]` `objective.md`
+        *   `[ ]` Prove each adapter correctly formats resourceDocuments for its provider
+        *   `[ ]` Prove documents reach the model (via mock/spy on provider API call)
+    *   `[ ]` integration/`adapter_resource_documents.integration.test.ts`
+        *   `[ ]` Test: AnthropicAdapter includes document content blocks with title/context
+        *   `[ ]` Test: GoogleAdapter includes inline_data parts with text/plain
+        *   `[ ]` Test: OpenAiAdapter includes labeled text in messages
+        *   `[ ]` Test: Empty resourceDocuments doesn't break any adapter
+    *   `[ ]` `requirements.md`
+        *   `[ ]` All adapters correctly handle resourceDocuments
+        *   `[ ]` Provider-specific formatting verified
+    *   `[ ]` **Commit** `test(integration): add tests for provider-specific resourceDocuments formatting`
+
+*   `[ ]`   packages/types + packages/store / submitStageDocumentFeedback payload **[STORE] Frontend: align SubmitStageDocumentFeedback payload with backend contract**
+    *   `[ ]`   `objective.md`
+        *   `[ ]`   Backend requires feedbackContent, userId, projectId, feedbackType; frontend must send them so the request is valid and verifiable.
+        *   `[ ]`   Remove trust of minimal frontend shape: caller proves identity and context in the payload.
+    *   `[ ]`   `role.md`
+        *   `[ ]`   Application types (packages/types) define the wire contract for dialectic-service.
+        *   `[ ]`   Store (packages/store) builds the payload from auth and dialectic state and calls API.
+    *   `[ ]`   `module.md`
+        *   `[ ]`   Boundary: SubmitStageDocumentFeedbackPayload in packages/types and all call sites that build or pass it (dialecticStore.ts, dialecticStore.documents.ts).
+        *   `[ ]`   Boundary: API (packages/api) forwards the typed payload; no enrichment.
+    *   `[ ]`   `deps.md`
+        *   `[ ]`   packages/types: SubmitStageDocumentFeedbackPayload must match backend SubmitStageDocumentFeedbackPayload (dialectic.interface.ts).
+        *   `[ ]`   Store depends on useAuthStore (userId), activeSessionDetail or session/project (projectId), feedbackDraftMarkdown (feedbackContent), and a constant or config for feedbackType (e.g. 'user_feedback').
+        *   `[ ]`   API depends on the type from packages/types; no extra fields.
+    *   `[ ]`   interface/`interface.ts` (packages/types dialectic.types.ts)
+        *   `[ ]`   SubmitStageDocumentFeedbackPayload: require feedbackContent (string), userId (string), projectId (string), feedbackType (string); keep sessionId, stageSlug, iterationNumber, modelId, documentKey; optional feedbackId, sourceContributionId. Remove or deprecate feedback in favor of feedbackContent.
+        *   `[ ]`   Each field is its own nested item for comparison and iteration.
+    *   `[ ]`   interface/tests/`[function].interface.test.ts`
+        *   `[ ]`   If type-guard or contract tests exist for this payload, update them for the new required fields.
+    *   `[ ]`   unit/`[function].test.ts` (store tests)
+        *   `[ ]`   Assert that submitStageDocumentFeedback (and submitStageResponses when feedback is dirty) builds payload with feedbackContent, userId, projectId, feedbackType.
+        *   `[ ]`   Assert payload shape matches backend contract (no missing required fields).
+    *   `[ ]`   `[function].ts` (packages/store dialecticStore.ts + dialecticStore.documents.ts)
+        *   `[ ]`   Where feedback payload is built: set feedbackContent from feedback draft; set userId from auth; set projectId from session/project; set feedbackType (e.g. 'user_feedback'). Use SubmitStageDocumentFeedbackPayload from packages/types.
+        *   `[ ]`   Each requirement is its own nested item.
+    *   `[ ]`   provides/`[function].provides.ts`
+        *   `[ ]`   Store action submitStageDocumentFeedback and submitStageResponses path that builds feedback payload; API method submitStageDocumentFeedback that sends payload as-is.
+    *   `[ ]`   integration/`[function].integration.test.ts`
+        *   `[ ]`   If present: assert that when feedback is submitted, the payload sent to dialectic-service includes feedbackContent, userId, projectId, feedbackType.
+    *   `[ ]`   `requirements.md`
+        *   `[ ]`   SubmitStageDocumentFeedbackPayload in types has required feedbackContent, userId, projectId, feedbackType.
+        *   `[ ]`   All call sites build payload with those fields; backend validation passes without relaxing checks.
+    *   `[ ]`   **Commit** `fix(types,store): align SubmitStageDocumentFeedback payload with backend contract (feedbackContent, userId, projectId, feedbackType)`
+        *   `[ ]`   Detail each change in types and store payload construction.
+
+*   `[ ]`   supabase/functions/dialectic-service/index.ts / saveContributionEdit branch **[BE] Backend: use service-role client for FileManager in saveContributionEdit**
+    *   `[ ]`   `objective.md`
+        *   `[ ]`   saveContributionEdit currently uses userClient for FileManager; storage bucket RLS disallows INSERT for authenticated, causing 403 and 500.
+        *   `[ ]`   Edge Function must perform upload and dialectic_project_resources upsert with service role so the write is allowed.
+    *   `[ ]`   `role.md`
+        *   `[ ]`   Router (index.ts) wires handlers and constructs context (dbClient, fileManager, etc.) per action.
+        *   `[ ]`   saveContributionEdit handler receives SaveContributionEditContext including fileManager; user is already validated via JWT.
+    *   `[ ]`   `module.md`
+        *   `[ ]`   Boundary: saveContributionEdit case in index.ts only; no change to saveContributionEdit.ts or FileManagerService implementation.
+        *   `[ ]`   Boundary: FileManager is constructed in index.ts and passed into SaveContributionEditContext.
+    *   `[ ]`   `deps.md`
+        *   `[ ]`   SaveContributionEditContext requires fileManager: IFileManager. FileManagerService(supabaseClient, deps) uses that client for storage and DB.
+        *   `[ ]`   For saveContributionEdit branch only: pass adminClient (service role) to FileManagerService instead of userClient; keep userClient for dbClient if reads must remain RLS-bound.
+    *   `[ ]`   interface/`interface.ts`
+        *   `[ ]`   No interface change; SaveContributionEditContext and IFileManager unchanged.
+    *   `[ ]`   unit/`[function].test.ts`
+        *   `[ ]`   If index tests stub or assert FileManager construction per action: assert saveContributionEdit branch uses adminClient (or equivalent) for fileManager.
+    *   `[ ]`   `[function].ts` (index.ts)
+        *   `[ ]`   In case "saveContributionEdit": build FileManager with adminClient (e.g. new FileManagerService(adminClient, FileManagerDependencies)) when constructing SaveContributionEditContext; do not use userClient for fileManager in this branch.
+        *   `[ ]`   Each requirement is its own nested item.
+    *   `[ ]`   provides/`[function].provides.ts`
+        *   `[ ]`   createDialecticHandler / handleRequest: saveContributionEdit branch exposes no new routes; only wiring of fileManager client changes.
+    *   `[ ]`   integration/`[function].integration.test.ts`
+        *   `[ ]`   If present: assert saveContributionEdit flow completes (upload + resource upsert) without RLS 403; may require local Supabase or mocked storage.
+    *   `[ ]`   `requirements.md`
+        *   `[ ]`   FileManager used by saveContributionEdit is created with adminClient so storage INSERT and dialectic_project_resources upsert succeed.
+        *   `[ ]`   No relaxation of payload or user validation; only the client used for the write is elevated.
+    *   `[ ]`   **Commit** `fix(be): use adminClient for FileManager in saveContributionEdit to satisfy storage RLS`
+        *   `[ ]`   Detail the change in index.ts saveContributionEdit context construction.
 
     - Stage progress data for future stages needs to tolerate missing inputs because they aren't generated yet, this is progress information, not an error  
     -- User reports when viewing future stages, StageTabCard / StageRunChecklist complains inputs_required isn't satisfied. 

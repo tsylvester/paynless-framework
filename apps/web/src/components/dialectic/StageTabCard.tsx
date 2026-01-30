@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import type {
 	DialecticStage,
 	FocusedStageDocumentState,
@@ -200,8 +200,10 @@ export const StageTabCard: React.FC = () => {
 		};
 	});
 
+	const hasInitializedStage = useRef(false);
+
 	useEffect(() => {
-		if (!activeStageSlug && stages.length > 0) {
+		if (!hasInitializedStage.current && !activeStageSlug && stages.length > 0) {
 			const currentStageFromSession = activeSessionDetail?.current_stage_id
 				? stages.find((s) => s.id === activeSessionDetail.current_stage_id)
 				: undefined;
@@ -211,8 +213,9 @@ export const StageTabCard: React.FC = () => {
 			} else {
 				setActiveStage(stages[0].slug);
 			}
+			hasInitializedStage.current = true;
 		}
-	}, [stages, activeSessionDetail, activeStageSlug, setActiveStage]);
+	}, [stages, activeStageSlug, setActiveStage]);
 
 	if (stages.length === 0) {
 		return (
