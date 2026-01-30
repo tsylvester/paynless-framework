@@ -1343,14 +1343,13 @@ Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are f
   const sizedDocs = sizedHasDocs ? sizedPayload['resourceDocuments'] : [];
   assert(sizedHasDocs && sizedDocs.length === 1, 'resourceDocuments should be present in sizing payload');
 
-  // Adapter received resourceDocuments unchanged and not merged into messages
+  // Adapter received resourceDocuments forwarded
   assertEquals(callUnifiedAISpy.calls.length, 1, 'callUnifiedAIModel should be called once');
   const sent = callUnifiedAISpy.calls[0].args[0];
   assert(isChatApiRequest(sent), 'Adapter should receive a ChatApiRequest');
   assert(Array.isArray(sent.resourceDocuments) && sent.resourceDocuments.length === 1, 'resourceDocuments must be forwarded to adapter');
   assertEquals(sent.resourceDocuments[0].content, 'Doc X content');
   assert(Array.isArray(sent.messages), 'messages must be an array');
-  assert(!sent.messages.some((m: { content: string }) => m.content === 'Doc X content'), 'resourceDocuments must not be included in ChatApiRequest.messages');
 
   countTokensStub.restore();
 });
@@ -2242,5 +2241,114 @@ Deno.test('executeModelCallAndSave - schedules RENDER job after success with ren
   assertEquals(pl['documentIdentity'], mockContribution.id);
   assert(!('step_info' in pl), 'Payload must not include deprecated step_info');
 
+  clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - throws when required inputsRequired document is missing', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient({
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    'dialectic_feedback': {
+      select: () => Promise.resolve({ data: [], error: null }),
+    },
+  });
+
+  const deps = getMockDeps();
+  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+    inputsRequired: [
+      { type: 'feedback', document_key: FileType.UserFeedback, required: true, slug: 'thesis' },
+    ],
+  });
+
+  let thrown: Error | null = null;
+  try {
+    await executeModelCallAndSave(params);
+  } catch (e) {
+    thrown = e instanceof Error ? e : new Error(String(e));
+  }
+
+  assert(thrown !== null, 'executeModelCallAndSave should throw when required document is missing');
+  assert(
+    thrown!.message.includes('Required input document missing') || thrown!.message.includes('document_key') || thrown!.message.includes('thesis'),
+    `Error message should identify missing document_key and stage; got: ${thrown!.message}`
+  );
+  assert(thrown!.message.includes('thesis'), 'Error message should include stage slug (thesis)');
+
+  clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - error message identifies missing document_key and stage', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient({
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    'dialectic_feedback': {
+      select: () => Promise.resolve({ data: [], error: null }),
+    },
+  });
+
+  const deps = getMockDeps();
+  const missingKey = FileType.UserFeedback;
+  const missingStage = 'thesis';
+  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+    inputsRequired: [
+      { type: 'feedback', document_key: missingKey, required: true, slug: missingStage },
+    ],
+  });
+
+  let thrown: Error | null = null;
+  try {
+    await executeModelCallAndSave(params);
+  } catch (e) {
+    thrown = e instanceof Error ? e : new Error(String(e));
+  }
+
+  assert(thrown !== null, 'executeModelCallAndSave should throw');
+  assert(
+    thrown!.message.includes(missingKey),
+    `Error message should include missing document_key '${missingKey}'; got: ${thrown!.message}`
+  );
+  assert(
+    thrown!.message.includes(missingStage),
+    `Error message should include missing stage '${missingStage}'; got: ${thrown!.message}`
+  );
+
+  clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - optional inputsRequired document missing does not throw', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient({
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    'dialectic_feedback': {
+      select: () => Promise.resolve({ data: [], error: null }),
+    },
+  });
+
+  const deps = getMockDeps();
+  const mockAiResponse: UnifiedAIResponse = {
+    content: '{}',
+    contentType: 'application/json',
+    inputTokens: 0,
+    outputTokens: 0,
+    processingTimeMs: 0,
+    finish_reason: 'stop',
+    rawProviderResponse: {},
+  };
+  const callUnifiedAISpy = stub(deps, 'callUnifiedAIModel', () => Promise.resolve(mockAiResponse));
+
+  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+    inputsRequired: [
+      { type: 'feedback', document_key: FileType.UserFeedback, required: false, slug: 'thesis' },
+    ],
+  });
+
+  let threw = false;
+  try {
+    await executeModelCallAndSave(params);
+  } catch {
+    threw = true;
+  }
+
+  assert(!threw, 'executeModelCallAndSave should not throw when only optional document is missing');
+  assert(callUnifiedAISpy.calls.length >= 1, 'callUnifiedAIModel should be invoked');
+
+  callUnifiedAISpy.restore();
   clearAllStubs?.();
 });

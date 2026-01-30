@@ -1213,16 +1213,44 @@ export const submitStageDocumentFeedbackLogic = async (
 		};
 		const serializedKey = getStageDocumentKey(compositeKey);
 		const resolvedResource = get().stageDocumentResources[serializedKey];
-		
-		// Derive sourceContributionId from resource metadata
 		const sourceContributionId = resolvedResource?.source_contribution_id ?? null;
-		
-		// Construct enriched payload with sourceContributionId
+
+		// Require correct data at write time; no defaults or fallbacks
+		const missing: string[] = [];
+		if (payload.feedbackContent === undefined || payload.feedbackContent === null) missing.push('feedbackContent');
+		if (payload.userId === undefined || payload.userId === null || payload.userId === '') missing.push('userId');
+		if (payload.projectId === undefined || payload.projectId === null || payload.projectId === '') missing.push('projectId');
+		if (payload.feedbackType === undefined || payload.feedbackType === null || payload.feedbackType === '') missing.push('feedbackType');
+		if (missing.length > 0) {
+			const error: ApiError = {
+				message: `Cannot submit feedback: missing required fields: ${missing.join(', ')}.`,
+				code: 'VALIDATION_ERROR',
+			};
+			logger.error('[submitStageDocumentFeedback] Missing required payload fields', {
+				serializedKey,
+				missing,
+			});
+			set(state => {
+				state.isSubmittingStageDocumentFeedback = false;
+				state.submitStageDocumentFeedbackError = error;
+			});
+			return { data: undefined, error, status: 400 };
+		}
+
 		const enrichedPayload: SubmitStageDocumentFeedbackPayload = {
-			...payload,
+			sessionId: payload.sessionId,
+			stageSlug: payload.stageSlug,
+			iterationNumber: payload.iterationNumber,
+			modelId: payload.modelId,
+			documentKey: payload.documentKey,
+			feedbackContent: payload.feedbackContent,
+			userId: payload.userId,
+			projectId: payload.projectId,
+			feedbackType: payload.feedbackType,
+			...(payload.feedbackId !== undefined && { feedbackId: payload.feedbackId }),
 			sourceContributionId,
 		};
-		
+
 		const response = await api.dialectic().submitStageDocumentFeedback(enrichedPayload);
 		if (response.error) {
 			logger.error(

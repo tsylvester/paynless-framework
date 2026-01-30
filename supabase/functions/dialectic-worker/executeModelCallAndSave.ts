@@ -426,6 +426,29 @@ export async function executeModelCallAndSave(
 
     const gatheredDocs = await gatherArtifacts();
     const scopedDocs = applyInputsRequiredScope(gatheredDocs);
+
+    // Fail-fast: validate each required inputsRequired rule has a matching doc before expensive API call
+    const rulesUnknown = (params && Array.isArray(params.inputsRequired)) ? params.inputsRequired : [];
+    for (const ru of rulesUnknown) {
+        const ruUnknown: unknown = ru;
+        const rRequired = isRecord(ruUnknown) && ruUnknown['required'] === true;
+        if (!rRequired) continue;
+        const rType = isRecord(ruUnknown) && typeof ruUnknown['type'] === 'string' ? ruUnknown['type'] : undefined;
+        const rSlug = isRecord(ruUnknown) && typeof ruUnknown['slug'] === 'string' ? ruUnknown['slug'] : undefined;
+        const rKey = isRecord(ruUnknown) && typeof ruUnknown['document_key'] === 'string' ? ruUnknown['document_key'] : undefined;
+        if (!rType || !rSlug || !rKey) continue;
+        const found = scopedDocs.some((d) => {
+            const rec: unknown = d;
+            const dk = isRecord(rec) && typeof rec['document_key'] === 'string' ? rec['document_key'] : undefined;
+            const ss = isRecord(rec) && typeof rec['stage_slug'] === 'string' ? rec['stage_slug'] : undefined;
+            const tp = isRecord(rec) && typeof rec['type'] === 'string' ? rec['type'] : undefined;
+            return rType === tp && rSlug === ss && rKey === dk;
+        });
+        if (!found) {
+            throw new Error(`Required input document missing: document_key=${rKey}, stage=${rSlug}`);
+        }
+    }
+
     // Build identity-rich view required for compression and an id/content-only view for sizing/send
     type IdentitySourceDoc = { id: string; content: string; document_key: string; stage_slug: string; type: string };
     const identityRichDocs: IdentitySourceDoc[] = [];
@@ -1001,8 +1024,6 @@ export async function executeModelCallAndSave(
             max_tokens_to_generate: plannedMaxOutputTokensPost,
         };
     }
-
-    // Do not append resourceDocuments into messages; they are not implemented as chat messages
 
     // chatApiRequest already constructed and kept in sync above; use it directly for the adapter call
     // Diagnostics without casting: observe payload user_jwt presence before guard

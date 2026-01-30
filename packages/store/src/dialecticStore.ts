@@ -51,6 +51,7 @@ import {
   type EditedDocumentResource,
 } from '@paynless/types';
 import { api } from '@paynless/api';
+import { useAuthStore } from './authStore';
 import { useWalletStore } from './walletStore';
 import { useAiStore } from './aiStore';
 import { selectActiveChatWalletInfo } from './walletStore.selectors';
@@ -1939,13 +1940,25 @@ export const useDialecticStore = create<DialecticStore>()(
 					);
 					continue;
 				}
+				const userId: string | undefined = useAuthStore.getState().user?.id;
+				const projectId: string = payload.projectId;
+				if (!userId) {
+					logger.error(
+						'[DialecticStore] Cannot submit feedback: user not authenticated',
+						{ serializedKey },
+					);
+					continue;
+				}
 				const feedbackPayload: SubmitStageDocumentFeedbackPayload = {
 					sessionId,
 					stageSlug,
 					iterationNumber,
 					modelId,
 					documentKey,
-					feedback: content.feedbackDraftMarkdown,
+					feedbackContent: content.feedbackDraftMarkdown,
+					userId,
+					projectId,
+					feedbackType: 'user_feedback',
 					sourceContributionId: resource.source_contribution_id,
 				};
 				submissionPromises.push(

@@ -6,9 +6,8 @@ import {
     afterEach, 
     vi,
 } from 'vitest';
-import { 
-    useDialecticStore, 
-} from './dialecticStore';
+import { useDialecticStore } from './dialecticStore';
+import { useAuthStore } from './authStore';
 import { 
   ApiError, 
   ApiResponse, 
@@ -744,6 +743,7 @@ describe('useDialecticStore', () => {
         });
 
         it('16.c.i: when one key has both content dirty and feedback dirty, submitStageResponses calls both saveContributionEdit (with currentDraftMarkdown) and submitStageDocumentFeedback (with feedbackDraftMarkdown) for that key', async () => {
+            useAuthStore.setState({ user: { id: 'user-test-123' } });
             const stageContent: Record<string, StageDocumentContentState> = {
                 [compositeKey1]: {
                     baselineMarkdown: 'baseline 1',
@@ -820,14 +820,29 @@ describe('useDialecticStore', () => {
             expect(api.dialectic().submitStageDocumentFeedback).toHaveBeenCalledTimes(1);
             expect(api.dialectic().submitStageDocumentFeedback).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    feedback: 'feedback text',
+                    feedbackContent: 'feedback text',
                     documentKey: docKey1,
+                    sessionId: mockSessionId,
+                    stageSlug: mockStageSlug,
+                    iterationNumber: mockIteration,
+                    modelId: modelIdA,
+                    userId: expect.any(String),
+                    projectId: expect.any(String),
+                    feedbackType: expect.any(String),
                 }),
             );
+            const mockClient: MockDialecticApiClient = getMockDialecticClient();
+            const firstCallArgs: [SubmitStageDocumentFeedbackPayload] = mockClient.submitStageDocumentFeedback.mock.calls[0];
+            const feedbackPayload: SubmitStageDocumentFeedbackPayload = firstCallArgs[0];
+            expect(feedbackPayload.feedbackContent).toBe('feedback text');
+            expect(feedbackPayload.userId).toBeDefined();
+            expect(feedbackPayload.projectId).toBeDefined();
+            expect(feedbackPayload.feedbackType).toBeDefined();
             expect(submitStageResponsesSpy).toHaveBeenCalledTimes(1);
         });
 
         it('16.c.ii: when multiple keys have mixed states, every dirty content edit and every dirty feedback draft is submitted exactly once; advance runs only after all succeed', async () => {
+            useAuthStore.setState({ user: { id: 'user-test-123' } });
             const stageContent: Record<string, StageDocumentContentState> = {
                 [compositeKey1]: {
                     baselineMarkdown: 'b1',
@@ -971,6 +986,15 @@ describe('useDialecticStore', () => {
 
             expect(api.dialectic().saveContributionEdit).toHaveBeenCalledTimes(2);
             expect(api.dialectic().submitStageDocumentFeedback).toHaveBeenCalledTimes(2);
+            const mockClient: MockDialecticApiClient = getMockDialecticClient();
+            const feedbackCalls: Array<[SubmitStageDocumentFeedbackPayload]> = mockClient.submitStageDocumentFeedback.mock.calls;
+            for (const call of feedbackCalls) {
+                const payload: SubmitStageDocumentFeedbackPayload = call[0];
+                expect(payload.feedbackContent).toBeDefined();
+                expect(payload.userId).toBeDefined();
+                expect(payload.projectId).toBeDefined();
+                expect(payload.feedbackType).toBeDefined();
+            }
             expect(submitStageResponsesSpy).toHaveBeenCalledTimes(1);
             const state = useDialecticStore.getState();
             expect(state.submitStageResponsesError).toBeNull();

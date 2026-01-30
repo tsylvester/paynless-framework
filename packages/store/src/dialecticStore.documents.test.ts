@@ -592,7 +592,10 @@ describe('Surface document content & feedback accessors', () => {
 
 		await useDialecticStore.getState().submitStageDocumentFeedback({
 			...compositeKey,
-			feedback: feedbackContent,
+			feedbackContent: feedbackContent,
+			userId: 'user-test-123',
+			projectId: 'proj-test-456',
+			feedbackType: 'user_feedback',
 		});
 
 		const state = useDialecticStore.getState();
@@ -728,6 +731,13 @@ describe('Dialectic store document clear focused stage document', () => {
 });
 
 describe('submitStageDocumentFeedback', () => {
+	const backendContractFields = [
+		'feedbackContent',
+		'userId',
+		'projectId',
+		'feedbackType',
+	];
+
 	it('should call the API with the correct payload and optimistically update the store', async () => {
 		const feedbackPayload: SubmitStageDocumentFeedbackPayload = {
 			sessionId: 'test-session-id',
@@ -735,7 +745,10 @@ describe('submitStageDocumentFeedback', () => {
 			iterationNumber: 1,
 			modelId: 'model-a',
 			documentKey: 'document_1',
-			feedback: 'This is a test feedback.',
+			feedbackContent: 'This is a test feedback.',
+			userId: 'user-test-123',
+			projectId: 'proj-test-456',
+			feedbackType: 'user_feedback',
 			sourceContributionId: null,
 		};
 
@@ -752,6 +765,11 @@ describe('submitStageDocumentFeedback', () => {
 		);
 
 		expect(spy).toHaveBeenCalledWith(feedbackPayload);
+		const sentPayload = spy.mock.calls[0][0];
+		for (const field of backendContractFields) {
+			expect(sentPayload).toHaveProperty(field);
+			expect(typeof sentPayload[field]).toBe('string');
+		}
 	});
 
 	it('should log an error if the API call fails', async () => {
@@ -761,7 +779,10 @@ describe('submitStageDocumentFeedback', () => {
 			iterationNumber: 1,
 			modelId: 'model-a',
 			documentKey: 'document_1',
-			feedback: 'This is a test feedback.',
+			feedbackContent: 'This is a test feedback.',
+			userId: 'user-test-123',
+			projectId: 'proj-test-456',
+			feedbackType: 'user_feedback',
 		};
 
 		const apiError: ApiError = {
@@ -800,7 +821,10 @@ describe('submitStageDocumentFeedback', () => {
 			iterationNumber: 1,
 			modelId: 'model-a',
 			documentKey: 'document_1',
-			feedback: 'This is test feedback.',
+			feedbackContent: 'This is test feedback.',
+			userId: 'user-test-123',
+			projectId: 'proj-test-456',
+			feedbackType: 'user_feedback',
 		};
 
 		const compositeKey: StageDocumentCompositeKey = {
@@ -847,10 +871,14 @@ describe('submitStageDocumentFeedback', () => {
 			feedbackPayload,
 		);
 
-		expect(spy).toHaveBeenCalledWith({
+		const expectedPayload = {
 			...feedbackPayload,
 			sourceContributionId: 'contrib-doc-123',
-		});
+		};
+		expect(spy).toHaveBeenCalledWith(expectedPayload);
+		for (const field of backendContractFields) {
+			expect(expectedPayload).toHaveProperty(field);
+		}
 	});
 
 	it('should pass null for sourceContributionId when resource has no linkage', async () => {
@@ -860,7 +888,10 @@ describe('submitStageDocumentFeedback', () => {
 			iterationNumber: 1,
 			modelId: 'model-a',
 			documentKey: 'document_2',
-			feedback: 'This is test feedback.',
+			feedbackContent: 'This is test feedback.',
+			userId: 'user-test-123',
+			projectId: 'proj-test-456',
+			feedbackType: 'user_feedback',
 		};
 
 		const compositeKey: StageDocumentCompositeKey = {
@@ -907,10 +938,14 @@ describe('submitStageDocumentFeedback', () => {
 			feedbackPayload,
 		);
 
-		expect(spy).toHaveBeenCalledWith({
+		const expectedPayload = {
 			...feedbackPayload,
 			sourceContributionId: null,
-		});
+		};
+		expect(spy).toHaveBeenCalledWith(expectedPayload);
+		for (const field of backendContractFields) {
+			expect(expectedPayload).toHaveProperty(field);
+		}
 	});
 });
 

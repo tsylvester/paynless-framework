@@ -100,6 +100,24 @@ export class AnthropicAdapter {
         }
     }
 
+    // Prepend resourceDocuments as Claude document content blocks to the first user message.
+    if (request.resourceDocuments && request.resourceDocuments.length > 0) {
+        const documentBlocks: MessageParam['content'] = request.resourceDocuments.map((doc) => ({
+            type: 'document',
+            source: { type: 'text', media_type: 'text/plain', data: doc.content },
+            title: doc.document_key ?? doc.id ?? '',
+            context: doc.stage_slug ?? '',
+        }));
+        const firstUserIndex = anthropicMessages.findIndex((m) => m.role === 'user');
+        if (firstUserIndex >= 0) {
+            const first = anthropicMessages[firstUserIndex];
+            const existingContent: MessageParam['content'] = Array.isArray(first.content)
+                ? first.content
+                : [{ type: 'text', text: typeof first.content === 'string' ? first.content : '' }];
+            anthropicMessages[firstUserIndex] = { ...first, content: [...documentBlocks, ...existingContent] };
+        }
+    }
+
     if (anthropicMessages.length === 0) {
         this.logger.error('Anthropic request format error: No valid user/assistant messages found after filtering.', { modelApiName });
         throw new Error('Cannot send request to Anthropic: No valid messages to send.');

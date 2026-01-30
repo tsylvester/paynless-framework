@@ -649,205 +649,568 @@
         *   `[✅]` Only explicit user actions (tab click, Submit) change viewed stage
     *   `[✅]` **Commit** `test(integration): add stage navigation stability tests for generation lifecycle`
 
-*   `[ ]` supabase/functions/_shared/ai_service/`anthropic_adapter.ts` **[BE] Format resourceDocuments as Claude document content blocks**
-    *   `[ ]` `objective.md`
-        *   `[ ]` When `request.resourceDocuments` has items, format each as a Claude `document` content block
-        *   `[ ]` Use `PlainTextSource` with document_key as title and stage as context
-        *   `[ ]` Prepend document blocks to the content array before text/user messages
-    *   `[ ]` `role.md`
-        *   `[ ]` AI provider adapter - Anthropic/Claude specific implementation
-    *   `[ ]` `module.md`
-        *   `[ ]` Bounded to `AnthropicAdapter.sendMessage` method
-        *   `[ ]` Affects message construction before `this.client.messages.create`
+*   `[✅]` supabase/functions/_shared/ai_service/`anthropic_adapter.ts` **[BE] Format resourceDocuments as Claude document content blocks**
+    *   `[✅]` `objective.md`
+        *   `[✅]` When `request.resourceDocuments` has items, format each as a Claude `document` content block
+        *   `[✅]` Use `PlainTextSource` with document_key as title and stage as context
+        *   `[✅]` Prepend document blocks to the content array before text/user messages
+    *   `[✅]` `role.md`
+        *   `[✅]` AI provider adapter - Anthropic/Claude specific implementation
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to `AnthropicAdapter.sendMessage` method
+        *   `[✅]` Affects message construction before `this.client.messages.create`
+    *   `[✅]` `deps.md`
+        *   `[✅]` `request.resourceDocuments` - array of `{ id, content, document_key?, stage_slug?, type? }`
+        *   `[✅]` Anthropic SDK `MessageParam` type with content blocks
+    *   `[✅]` interface/`interface.ts`
+        *   `[✅]` No interface changes; uses existing `ChatApiRequest.resourceDocuments`
+    *   `[✅]` unit/`anthropic_adapter.test.ts`
+        *   `[✅]` Assert when `resourceDocuments` present, they appear as `type: "document"` blocks in API call
+        *   `[✅]` Assert document title is set to document_key
+        *   `[✅]` Assert document context includes stage_slug
+        *   `[✅]` Assert empty resourceDocuments does not add document blocks
+        *   `[✅]` Assert document blocks are prepended before user message content
+    *   `[✅]` `anthropic_adapter.ts`
+        *   `[✅]` In `sendMessage`, after extracting messages, check `request.resourceDocuments`
+        *   `[✅]` For each doc, create content block: `{ type: "document", source: { type: "text", media_type: "text/plain", data: doc.content }, title: doc.document_key, context: doc.stage_slug }`
+        *   `[✅]` Build final content array as `[...documentBlocks, ...textBlocks]`
+        *   `[✅]` Pass structured content array to `this.client.messages.create`
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Documents reach Claude as native document blocks with metadata
+        *   `[✅]` Claude can reference documents by title in responses
+        *   `[✅]` Citations enabled for document content
+    *   `[✅]` **Commit** `fix(be): format resourceDocuments as Claude document content blocks in AnthropicAdapter`
+
+*   `[✅]` supabase/functions/_shared/ai_service/`google_adapter.ts` **[BE] Format resourceDocuments as Gemini inline_data parts**
+    *   `[✅]` `objective.md`
+        *   `[✅]` When `request.resourceDocuments` has items, format each as Gemini `inline_data` part
+        *   `[✅]` Use `text/plain` mime_type for markdown content
+        *   `[✅]` Include document label text part before each inline_data for context
+    *   `[✅]` `role.md`
+        *   `[✅]` AI provider adapter - Google Gemini specific implementation
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to `GoogleAdapter.sendMessage` method
+        *   `[✅]` Affects parts construction before `chat.sendMessage`
+    *   `[✅]` `deps.md`
+        *   `[✅]` `request.resourceDocuments` - array of `{ id, content, document_key?, stage_slug?, type? }`
+        *   `[✅]` Google Generative AI SDK `Content` and parts types
+    *   `[✅]` interface/`interface.ts`
+        *   `[✅]` No interface changes
+    *   `[✅]` unit/`google_adapter.test.ts`
+        *   `[✅]` Assert when `resourceDocuments` present, they appear as `inline_data` parts
+        *   `[✅]` Assert mime_type is `text/plain`
+        *   `[✅]` Assert document label text precedes each inline_data
+        *   `[✅]` Assert empty resourceDocuments does not add extra parts
+    *   `[✅]` `google_adapter.ts`
+        *   `[✅]` In `sendMessage`, after building history, check `request.resourceDocuments`
+        *   `[✅]` For each doc, add parts: `{ text: "[Document: ${doc.document_key} from ${doc.stage_slug}]" }` and `{ inline_data: { mime_type: "text/plain", data: doc.content } }`
+        *   `[✅]` Prepend document parts to the final user message parts
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Documents reach Gemini as inline_data with proper mime_type
+        *   `[✅]` Documents are labeled for model to reference
+    *   `[✅]` **Commit** `fix(be): format resourceDocuments as Gemini inline_data parts in GoogleAdapter`
+
+*   `[✅]` supabase/functions/_shared/ai_service/`openai_adapter.ts` **[BE] Format resourceDocuments as labeled text in messages**
+    *   `[✅]` `objective.md`
+        *   `[✅]` When `request.resourceDocuments` has items, embed as labeled text content
+        *   `[✅]` OpenAI Chat Completions lacks native document blocks - use structured text
+        *   `[✅]` Format: `[Document: {key} from {stage}]\n{content}`
+    *   `[✅]` `role.md`
+        *   `[✅]` AI provider adapter - OpenAI specific implementation
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to `OpenAiAdapter.sendMessage` method
+        *   `[✅]` Affects message construction before `this.client.chat.completions.create`
+    *   `[✅]` `deps.md`
+        *   `[✅]` `request.resourceDocuments` - array of `{ id, content, document_key?, stage_slug?, type? }`
+        *   `[✅]` OpenAI SDK `ChatCompletionMessageParam` type
+    *   `[✅]` interface/`interface.ts`
+        *   `[✅]` No interface changes
+    *   `[✅]` unit/`openai_adapter.test.ts`
+        *   `[✅]` Assert when `resourceDocuments` present, they appear as text in messages
+        *   `[✅]` Assert document labels are present in message content
+        *   `[✅]` Assert empty resourceDocuments does not add placeholder messages
+    *   `[✅]` `openai_adapter.ts`
+        *   `[✅]` In `sendMessage`, after building openaiMessages, check `request.resourceDocuments`
+        *   `[✅]` For each doc, prepend user message: `{ role: "user", content: "[Document: ${doc.document_key} from ${doc.stage_slug}]\n${doc.content}" }`
+        *   `[✅]` Or concatenate all docs into single context message before the user prompt
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Documents reach OpenAI as labeled text
+        *   `[✅]` Model can reference documents by key
+    *   `[✅]` **Commit** `fix(be): format resourceDocuments as labeled text in OpenAiAdapter`
+
+*   `[✅]` supabase/functions/dialectic-worker/`executeModelCallAndSave.ts` **[BE] Fail-fast guard: error if required inputsRequired documents are empty**
+    *   `[✅]` `objective.md`
+        *   `[✅]` After gathering and scoping, validate required documents exist
+        *   `[✅]` Error BEFORE API call if required documents missing
+        *   `[✅]` Prevents wasted API spend on useless "no documents" responses
+    *   `[✅]` `role.md`
+        *   `[✅]` Backend worker - execution layer guard
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to `executeModelCallAndSave` after `applyInputsRequiredScope`
+    *   `[✅]` `deps.md`
+        *   `[✅]` `params.inputsRequired` - rules specifying required documents
+        *   `[✅]` `scopedDocs` - result of document gathering
+    *   `[✅]` unit/`executeModelCallAndSave.test.ts`
+        *   `[✅]` Assert error thrown when required docs missing
+        *   `[✅]` Assert error message identifies missing document_key/stage
+        *   `[✅]` Assert optional docs don't cause error when missing
+        *   `[✅]` Update test at line ~1353 (remove assertion that docs must NOT be in messages - that was wrong)
+    *   `[✅]` `executeModelCallAndSave.ts`
+        *   `[✅]` Remove outdated comment at line 1005
+        *   `[✅]` After line ~428, add validation for each `required: true` rule
+        *   `[✅]` Throw descriptive error if required doc missing
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Required documents validated before expensive API call
+        *   `[✅]` Clear error message for missing inputs
+    *   `[✅]` **Commit** `fix(be): fail-fast when required inputsRequired documents are missing`
+
+*   `[✅]` **[TEST-INT]** Integration test for provider-specific document formatting
+    *   `[✅]` `objective.md`
+        *   `[✅]` Prove each adapter correctly formats resourceDocuments for its provider
+        *   `[✅]` Prove documents reach the model (via mock/spy on provider API call)
+    *   `[✅]` integration/`adapter_resource_documents.integration.test.ts`
+        *   `[✅]` Test: AnthropicAdapter includes document content blocks with title/context
+        *   `[✅]` Test: GoogleAdapter includes inline_data parts with text/plain
+        *   `[✅]` Test: OpenAiAdapter includes labeled text in messages
+        *   `[✅]` Test: Empty resourceDocuments doesn't break any adapter
+    *   `[✅]` `requirements.md`
+        *   `[✅]` All adapters correctly handle resourceDocuments
+        *   `[✅]` Provider-specific formatting verified
+    *   `[✅]` **Commit** `test(integration): add tests for provider-specific resourceDocuments formatting`
+
+*   `[✅]`   packages/types + packages/store / submitStageDocumentFeedback payload **[STORE] Frontend: align SubmitStageDocumentFeedback payload with backend contract**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Backend requires feedbackContent, userId, projectId, feedbackType; frontend must send them so the request is valid and verifiable.
+        *   `[✅]`   Remove trust of minimal frontend shape: caller proves identity and context in the payload.
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Application types (packages/types) define the wire contract for dialectic-service.
+        *   `[✅]`   Store (packages/store) builds the payload from auth and dialectic state and calls API.
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: SubmitStageDocumentFeedbackPayload in packages/types and all call sites that build or pass it (dialecticStore.ts, dialecticStore.documents.ts).
+        *   `[✅]`   Boundary: API (packages/api) forwards the typed payload; no enrichment.
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   packages/types: SubmitStageDocumentFeedbackPayload must match backend SubmitStageDocumentFeedbackPayload (dialectic.interface.ts).
+        *   `[✅]`   Store depends on useAuthStore (userId), activeSessionDetail or session/project (projectId), feedbackDraftMarkdown (feedbackContent), and a constant or config for feedbackType (e.g. 'user_feedback').
+        *   `[✅]`   API depends on the type from packages/types; no extra fields.
+    *   `[✅]`   interface/`interface.ts` (packages/types dialectic.types.ts)
+        *   `[✅]`   SubmitStageDocumentFeedbackPayload: require feedbackContent (string), userId (string), projectId (string), feedbackType (string); keep sessionId, stageSlug, iterationNumber, modelId, documentKey; optional feedbackId, sourceContributionId. Remove or deprecate feedback in favor of feedbackContent.
+        *   `[✅]`   Each field is its own nested item for comparison and iteration.
+    *   `[✅]`   interface/tests/`[function].interface.test.ts`
+        *   `[✅]`   If type-guard or contract tests exist for this payload, update them for the new required fields.
+    *   `[✅]`   unit/`[function].test.ts` (store tests)
+        *   `[✅]`   Assert that submitStageDocumentFeedback (and submitStageResponses when feedback is dirty) builds payload with feedbackContent, userId, projectId, feedbackType.
+        *   `[✅]`   Assert payload shape matches backend contract (no missing required fields).
+    *   `[✅]`   `[function].ts` (packages/store dialecticStore.ts + dialecticStore.documents.ts)
+        *   `[✅]`   Where feedback payload is built: set feedbackContent from feedback draft; set userId from auth; set projectId from session/project; set feedbackType (e.g. 'user_feedback'). Use SubmitStageDocumentFeedbackPayload from packages/types.
+        *   `[✅]`   Each requirement is its own nested item.
+    *   `[✅]`   provides/`[function].provides.ts`
+        *   `[✅]`   Store action submitStageDocumentFeedback and submitStageResponses path that builds feedback payload; API method submitStageDocumentFeedback that sends payload as-is.
+    *   `[✅]`   integration/`[function].integration.test.ts`
+        *   `[✅]`   If present: assert that when feedback is submitted, the payload sent to dialectic-service includes feedbackContent, userId, projectId, feedbackType.
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   SubmitStageDocumentFeedbackPayload in types has required feedbackContent, userId, projectId, feedbackType.
+        *   `[✅]`   All call sites build payload with those fields; backend validation passes without relaxing checks.
+    *   `[✅]`   **Commit** `fix(types,store): align SubmitStageDocumentFeedback payload with backend contract (feedbackContent, userId, projectId, feedbackType)`
+        *   `[✅]`   Detail each change in types and store payload construction.
+
+*   `[✅]`   supabase/functions/dialectic-service/index.ts / saveContributionEdit branch **[BE] Backend: use service-role client for FileManager in saveContributionEdit**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   saveContributionEdit currently uses userClient for FileManager; storage bucket RLS disallows INSERT for authenticated, causing 403 and 500.
+        *   `[✅]`   Edge Function must perform upload and dialectic_project_resources upsert with service role so the write is allowed.
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Router (index.ts) wires handlers and constructs context (dbClient, fileManager, etc.) per action.
+        *   `[✅]`   saveContributionEdit handler receives SaveContributionEditContext including fileManager; user is already validated via JWT.
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: saveContributionEdit case in index.ts only; no change to saveContributionEdit.ts or FileManagerService implementation.
+        *   `[✅]`   Boundary: FileManager is constructed in index.ts and passed into SaveContributionEditContext.
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   SaveContributionEditContext requires fileManager: IFileManager. FileManagerService(supabaseClient, deps) uses that client for storage and DB.
+        *   `[✅]`   For saveContributionEdit branch only: pass adminClient (service role) to FileManagerService instead of userClient; keep userClient for dbClient if reads must remain RLS-bound.
+    *   `[✅]`   interface/`interface.ts`
+        *   `[✅]`   No interface change; SaveContributionEditContext and IFileManager unchanged.
+    *   `[✅]`   unit/`[function].test.ts`
+        *   `[✅]`   If index tests stub or assert FileManager construction per action: assert saveContributionEdit branch uses adminClient (or equivalent) for fileManager.
+    *   `[✅]`   `[function].ts` (index.ts)
+        *   `[✅]`   In case "saveContributionEdit": build FileManager with adminClient (e.g. new FileManagerService(adminClient, FileManagerDependencies)) when constructing SaveContributionEditContext; do not use userClient for fileManager in this branch.
+        *   `[✅]`   Each requirement is its own nested item.
+    *   `[✅]`   provides/`[function].provides.ts`
+        *   `[✅]`   createDialecticHandler / handleRequest: saveContributionEdit branch exposes no new routes; only wiring of fileManager client changes.
+    *   `[✅]`   integration/`[function].integration.test.ts`
+        *   `[✅]`   If present: assert saveContributionEdit flow completes (upload + resource upsert) without RLS 403; may require local Supabase or mocked storage.
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   FileManager used by saveContributionEdit is created with adminClient so storage INSERT and dialectic_project_resources upsert succeed.
+        *   `[✅]`   No relaxation of payload or user validation; only the client used for the write is elevated.
+    *   `[✅]`   **Commit** `fix(be): use adminClient for FileManager in saveContributionEdit to satisfy storage RLS`
+        *   `[✅]`   Detail the change in index.ts saveContributionEdit context construction.
+
+## Progress Tracking SSOT Implementation
+
+### User Complaints Addressed
+- Progress bar starts at 20% instead of 0%
+- Multiple progress indicators disagree (badge, title bar, documents, progress bar)
+- StageRunChecklist hides documents for future stages
+- Not all backend steps emit started/completed notices
+- Progress bar shows useless/inaccurate information
+
+### Scope
+- Consolidate to single source of truth for progress tracking
+- Remove unused `sessionProgress` system in favor of `stageRunProgress`
+- Ensure ALL backend jobs emit start/error/fail/completed notifications for complete DAG visibility
+- Calculate progress dynamically from recipe × model count × actual completion
+- Steps with model calls: progress = completedModels / totalModels
+- Steps without model calls: progress = 1/1 (complete when step completes)
+- Extract embedded progress bar from page into reusable component
+- Consolidate ALL progress indicators (title bar, badge, progress bar, documents) to SSOT
+- Show all stage documents with appropriate status indicators
+
+---
+
+*   `[ ]` [BE] supabase/functions/dialectic-worker/`processComplexJob` **Emit complete lifecycle notifications for PLAN jobs (started, completed, error, failed)**
     *   `[ ]` `deps.md`
-        *   `[ ]` `request.resourceDocuments` - array of `{ id, content, document_key?, stage_slug?, type? }`
-        *   `[ ]` Anthropic SDK `MessageParam` type with content blocks
-    *   `[ ]` interface/`interface.ts`
-        *   `[ ]` No interface changes; uses existing `ChatApiRequest.resourceDocuments`
-    *   `[ ]` unit/`anthropic_adapter.test.ts`
-        *   `[ ]` Assert when `resourceDocuments` present, they appear as `type: "document"` blocks in API call
-        *   `[ ]` Assert document title is set to document_key
-        *   `[ ]` Assert document context includes stage_slug
-        *   `[ ]` Assert empty resourceDocuments does not add document blocks
-        *   `[ ]` Assert document blocks are prepended before user message content
-    *   `[ ]` `anthropic_adapter.ts`
-        *   `[ ]` In `sendMessage`, after extracting messages, check `request.resourceDocuments`
-        *   `[ ]` For each doc, create content block: `{ type: "document", source: { type: "text", media_type: "text/plain", data: doc.content }, title: doc.document_key, context: doc.stage_slug }`
-        *   `[ ]` Build final content array as `[...documentBlocks, ...textBlocks]`
-        *   `[ ]` Pass structured content array to `this.client.messages.create`
-    *   `[ ]` `requirements.md`
-        *   `[ ]` Documents reach Claude as native document blocks with metadata
-        *   `[ ]` Claude can reference documents by title in responses
-        *   `[ ]` Citations enabled for document content
-    *   `[ ]` **Commit** `fix(be): format resourceDocuments as Claude document content blocks in AnthropicAdapter`
+        *   `[ ]` NotificationService from `_shared/utils/notification.service.ts`
+        *   `[ ]` DocumentCentricNotificationEvent types from `_shared/types/notification.service.types.ts`
+    *   `[ ]` `notification.service.types.ts`
+        *   `[ ]` Add `PlannerCompletedPayload` interface extending DocumentPayload with type: 'planner_completed'
+        *   `[ ]` Add `PlannerErrorPayload` interface with error details for recoverable errors
+        *   `[ ]` Add `PlannerFailedPayload` interface with error details for terminal failures
+    *   `[ ]` `processComplexJob.test.ts`
+        *   `[ ]` Test: emits `planner_started` event when PLAN job begins processing (verify existing)
+        *   `[ ]` Test: emits `planner_completed` event when PLAN job transitions to 'completed' status
+        *   `[ ]` Test: emits `planner_error` event when PLAN job encounters recoverable error
+        *   `[ ]` Test: emits `planner_failed` event when PLAN job exhausts retries
+        *   `[ ]` Test: all payloads include sessionId, stageSlug, job_id, document_key, modelId, iterationNumber
+        *   `[ ]` Test: notification is sent to projectOwnerUserId
+    *   `[ ]` `processComplexJob.ts`
+        *   `[ ]` Verify `planner_started` emission exists at job start (should already exist)
+        *   `[ ]` Add `planner_completed` emission in the job completion path after all child jobs complete
+        *   `[ ]` Add `planner_error` emission in catch blocks for recoverable errors
+        *   `[ ]` Add `planner_failed` emission when job status becomes 'failed' or 'retry_loop_failed'
+    *   `[ ]` **Commit** `feat(dialectic-worker): emit complete PLAN job lifecycle notifications (started/completed/error/failed)`
 
-*   `[ ]` supabase/functions/_shared/ai_service/`google_adapter.ts` **[BE] Format resourceDocuments as Gemini inline_data parts**
-    *   `[ ]` `objective.md`
-        *   `[ ]` When `request.resourceDocuments` has items, format each as Gemini `inline_data` part
-        *   `[ ]` Use `text/plain` mime_type for markdown content
-        *   `[ ]` Include document label text part before each inline_data for context
-    *   `[ ]` `role.md`
-        *   `[ ]` AI provider adapter - Google Gemini specific implementation
-    *   `[ ]` `module.md`
-        *   `[ ]` Bounded to `GoogleAdapter.sendMessage` method
-        *   `[ ]` Affects parts construction before `chat.sendMessage`
+*   `[ ]` [BE] supabase/functions/dialectic-worker/`processRenderJob` **Emit complete lifecycle notifications for RENDER jobs (started, completed, error, failed)**
     *   `[ ]` `deps.md`
-        *   `[ ]` `request.resourceDocuments` - array of `{ id, content, document_key?, stage_slug?, type? }`
-        *   `[ ]` Google Generative AI SDK `Content` and parts types
-    *   `[ ]` interface/`interface.ts`
-        *   `[ ]` No interface changes
-    *   `[ ]` unit/`google_adapter.test.ts`
-        *   `[ ]` Assert when `resourceDocuments` present, they appear as `inline_data` parts
-        *   `[ ]` Assert mime_type is `text/plain`
-        *   `[ ]` Assert document label text precedes each inline_data
-        *   `[ ]` Assert empty resourceDocuments does not add extra parts
-    *   `[ ]` `google_adapter.ts`
-        *   `[ ]` In `sendMessage`, after building history, check `request.resourceDocuments`
-        *   `[ ]` For each doc, add parts: `{ text: "[Document: ${doc.document_key} from ${doc.stage_slug}]" }` and `{ inline_data: { mime_type: "text/plain", data: doc.content } }`
-        *   `[ ]` Prepend document parts to the final user message parts
-    *   `[ ]` `requirements.md`
-        *   `[ ]` Documents reach Gemini as inline_data with proper mime_type
-        *   `[ ]` Documents are labeled for model to reference
-    *   `[ ]` **Commit** `fix(be): format resourceDocuments as Gemini inline_data parts in GoogleAdapter`
+        *   `[ ]` NotificationService from `_shared/utils/notification.service.ts`
+        *   `[ ]` DocumentCentricNotificationEvent types from `_shared/types/notification.service.types.ts`
+    *   `[ ]` `notification.service.types.ts`
+        *   `[ ]` Add `RenderStartedPayload` interface extending DocumentPayload with type: 'render_started'
+        *   `[ ]` Add `RenderErrorPayload` interface with error details for recoverable errors
+        *   `[ ]` Add `RenderFailedPayload` interface with error details for terminal failures
+    *   `[ ]` `processRenderJob.test.ts`
+        *   `[ ]` Test: emits `render_started` event when RENDER job begins processing
+        *   `[ ]` Test: emits `render_completed` event when RENDER job finishes (verify existing)
+        *   `[ ]` Test: emits `render_error` event when RENDER job encounters recoverable error
+        *   `[ ]` Test: emits `render_failed` event when RENDER job exhausts retries
+        *   `[ ]` Test: all payloads include sessionId, stageSlug, job_id, document_key, modelId, iterationNumber
+        *   `[ ]` Test: notification is sent to projectOwnerUserId
+    *   `[ ]` `processRenderJob.ts`
+        *   `[ ]` Add `render_started` emission at the start of render job processing
+        *   `[ ]` Verify `render_completed` emission exists at job completion (should already exist)
+        *   `[ ]` Add `render_error` emission in catch blocks for recoverable errors
+        *   `[ ]` Add `render_failed` emission when job status becomes 'failed' or 'retry_loop_failed'
+    *   `[ ]` **Commit** `feat(dialectic-worker): emit complete RENDER job lifecycle notifications (started/completed/error/failed)`
 
-*   `[ ]` supabase/functions/_shared/ai_service/`openai_adapter.ts` **[BE] Format resourceDocuments as labeled text in messages**
-    *   `[ ]` `objective.md`
-        *   `[ ]` When `request.resourceDocuments` has items, embed as labeled text content
-        *   `[ ]` OpenAI Chat Completions lacks native document blocks - use structured text
-        *   `[ ]` Format: `[Document: {key} from {stage}]\n{content}`
-    *   `[ ]` `role.md`
-        *   `[ ]` AI provider adapter - OpenAI specific implementation
-    *   `[ ]` `module.md`
-        *   `[ ]` Bounded to `OpenAiAdapter.sendMessage` method
-        *   `[ ]` Affects message construction before `this.client.chat.completions.create`
+*   `[ ]` [BE] supabase/functions/dialectic-worker/`processSimpleJob` **Emit complete lifecycle notifications for EXECUTE jobs (started, completed, error, failed)**
     *   `[ ]` `deps.md`
-        *   `[ ]` `request.resourceDocuments` - array of `{ id, content, document_key?, stage_slug?, type? }`
-        *   `[ ]` OpenAI SDK `ChatCompletionMessageParam` type
-    *   `[ ]` interface/`interface.ts`
-        *   `[ ]` No interface changes
-    *   `[ ]` unit/`openai_adapter.test.ts`
-        *   `[ ]` Assert when `resourceDocuments` present, they appear as text in messages
-        *   `[ ]` Assert document labels are present in message content
-        *   `[ ]` Assert empty resourceDocuments does not add placeholder messages
-    *   `[ ]` `openai_adapter.ts`
-        *   `[ ]` In `sendMessage`, after building openaiMessages, check `request.resourceDocuments`
-        *   `[ ]` For each doc, prepend user message: `{ role: "user", content: "[Document: ${doc.document_key} from ${doc.stage_slug}]\n${doc.content}" }`
-        *   `[ ]` Or concatenate all docs into single context message before the user prompt
-    *   `[ ]` `requirements.md`
-        *   `[ ]` Documents reach OpenAI as labeled text
-        *   `[ ]` Model can reference documents by key
-    *   `[ ]` **Commit** `fix(be): format resourceDocuments as labeled text in OpenAiAdapter`
+        *   `[ ]` NotificationService from `_shared/utils/notification.service.ts`
+        *   `[ ]` DocumentCentricNotificationEvent types from `_shared/types/notification.service.types.ts`
+    *   `[ ]` `notification.service.types.ts`
+        *   `[ ]` Add `DocumentErrorPayload` interface extending DocumentPayload with type: 'document_error', error details
+        *   `[ ]` Add `DocumentFailedPayload` interface extending DocumentPayload with type: 'document_failed', error details
+    *   `[ ]` `processSimpleJob.test.ts`
+        *   `[ ]` Test: emits `document_started` event when EXECUTE job begins processing (verify existing)
+        *   `[ ]` Test: emits `document_completed` event when EXECUTE job finishes (verify existing)
+        *   `[ ]` Test: emits `document_error` event when EXECUTE job encounters recoverable error
+        *   `[ ]` Test: emits `document_failed` event when EXECUTE job exhausts retries
+        *   `[ ]` Test: all payloads include sessionId, stageSlug, job_id, document_key, modelId, iterationNumber
+        *   `[ ]` Test: error/failed payloads include error code and message
+        *   `[ ]` Test: notification is sent to projectOwnerUserId
+    *   `[ ]` `processSimpleJob.ts`
+        *   `[ ]` Verify `document_started` emission exists at job start (should already exist)
+        *   `[ ]` Verify `document_completed` emission exists at job completion (should already exist)
+        *   `[ ]` Add `document_error` emission in catch blocks for recoverable errors
+        *   `[ ]` Add `document_failed` emission when job status becomes 'failed' or 'retry_loop_failed'
+    *   `[ ]` **Commit** `feat(dialectic-worker): emit complete EXECUTE job lifecycle notifications (started/completed/error/failed)`
 
-*   `[ ]` supabase/functions/dialectic-worker/`executeModelCallAndSave.ts` **[BE] Fail-fast guard: error if required inputsRequired documents are empty**
-    *   `[ ]` `objective.md`
-        *   `[ ]` After gathering and scoping, validate required documents exist
-        *   `[ ]` Error BEFORE API call if required documents missing
-        *   `[ ]` Prevents wasted API spend on useless "no documents" responses
-    *   `[ ]` `role.md`
-        *   `[ ]` Backend worker - execution layer guard
-    *   `[ ]` `module.md`
-        *   `[ ]` Bounded to `executeModelCallAndSave` after `applyInputsRequiredScope`
+*   `[ ]` [STORE] packages/store/src/`dialecticStore.selectors` **Add selectUnifiedProjectProgress selector for SSOT progress calculation**
     *   `[ ]` `deps.md`
-        *   `[ ]` `params.inputsRequired` - rules specifying required documents
-        *   `[ ]` `scopedDocs` - result of document gathering
-    *   `[ ]` unit/`executeModelCallAndSave.test.ts`
-        *   `[ ]` Assert error thrown when required docs missing
-        *   `[ ]` Assert error message identifies missing document_key/stage
-        *   `[ ]` Assert optional docs don't cause error when missing
-        *   `[ ]` Update test at line ~1353 (remove assertion that docs must NOT be in messages - that was wrong)
-    *   `[ ]` `executeModelCallAndSave.ts`
-        *   `[ ]` Remove outdated comment at line 1005
-        *   `[ ]` After line ~428, add validation for each `required: true` rule
-        *   `[ ]` Throw descriptive error if required doc missing
-    *   `[ ]` `requirements.md`
-        *   `[ ]` Required documents validated before expensive API call
-        *   `[ ]` Clear error message for missing inputs
-    *   `[ ]` **Commit** `fix(be): fail-fast when required inputsRequired documents are missing`
+        *   `[ ]` DialecticStateValues from `@paynless/types`
+        *   `[ ]` recipesByStageSlug state for step counts
+        *   `[ ]` stageRunProgress state for document completion status
+        *   `[ ]` selectedModelIds state for model count
+        *   `[ ]` currentProjectDetail.dialectic_process_templates for stage list
+        *   `[ ]` selectSessionById for current stage/iteration
+    *   `[ ]` `dialectic.types.ts`
+        *   `[ ]` Add `UnifiedProjectProgress` interface with totalStages, completedStages, currentStageSlug, overallPercentage, currentStage, projectStatus
+        *   `[ ]` Add `StepProgressDetail` interface with stepKey, stepName, totalModels, completedModels, stepPercentage, status
+        *   `[ ]` Add `StageProgressDetail` interface with stageSlug, totalSteps, completedSteps, stagePercentage, stepsDetail, stageStatus
+    *   `[ ]` `dialecticStore.selectors.test.ts`
+        *   `[ ]` Test: returns 0% progress for new project with no completed documents
+        *   `[ ]` Test: calculates step progress as completedModels/totalModels (e.g., 1/3 = 33%)
+        *   `[ ]` Test: calculates stage progress as sum of step progress / total steps
+        *   `[ ]` Test: calculates overall progress as (completed stages + current stage progress) / total stages
+        *   `[ ]` Test: returns 100% when all stages complete
+        *   `[ ]` Test: handles multi-model steps correctly (3 models = step complete only when all 3 finish)
+        *   `[ ]` Test: handles non-model steps as 1/1 (step without model call counts as complete when step completes)
+        *   `[ ]` Test: mixed recipe with model and non-model steps calculates correctly
+        *   `[ ]` Test: returns 'failed' status if any document has failed status
+        *   `[ ]` Test: returns 'in_progress' status when documents are generating
+        *   `[ ]` Test: returns 'not_started' status for stages with no progress data
+    *   `[ ]` `dialecticStore.selectors.ts`
+        *   `[ ]` Implement `selectUnifiedProjectProgress(state, sessionId)` selector
+        *   `[ ]` Get total stages from process template
+        *   `[ ]` Get model count from selectedModelIds.length
+        *   `[ ]` For each step, determine if it requires model calls (check job_type or outputs_required)
+        *   `[ ]` Model steps: progress = completedModels / totalModels
+        *   `[ ]` Non-model steps (e.g., assembly, render): progress = 1/1 when step status is completed
+        *   `[ ]` For each stage, calculate step progress from stageRunProgress documents filtered by modelId
+        *   `[ ]` Aggregate step → stage → project progress with proper weighting
+        *   `[ ]` Derive status from document statuses (not_started | in_progress | completed | failed)
+    *   `[ ]` **Commit** `feat(store): add selectUnifiedProjectProgress selector for SSOT progress tracking`
 
-*   `[ ]` **[TEST-INT]** Integration test for provider-specific document formatting
-    *   `[ ]` `objective.md`
-        *   `[ ]` Prove each adapter correctly formats resourceDocuments for its provider
-        *   `[ ]` Prove documents reach the model (via mock/spy on provider API call)
-    *   `[ ]` integration/`adapter_resource_documents.integration.test.ts`
-        *   `[ ]` Test: AnthropicAdapter includes document content blocks with title/context
-        *   `[ ]` Test: GoogleAdapter includes inline_data parts with text/plain
-        *   `[ ]` Test: OpenAiAdapter includes labeled text in messages
-        *   `[ ]` Test: Empty resourceDocuments doesn't break any adapter
-    *   `[ ]` `requirements.md`
-        *   `[ ]` All adapters correctly handle resourceDocuments
-        *   `[ ]` Provider-specific formatting verified
-    *   `[ ]` **Commit** `test(integration): add tests for provider-specific resourceDocuments formatting`
+*   `[ ]` [UI] apps/web/src/components/common/`DynamicProgressBar` **Refactor to use selectUnifiedProjectProgress**
+    *   `[ ]` `deps.md`
+        *   `[ ]` selectUnifiedProjectProgress from `@paynless/store`
+        *   `[ ]` UnifiedProjectProgress type from `@paynless/types`
+        *   `[ ]` Progress UI component from `../ui/progress`
+    *   `[ ]` `DynamicProgressBar.test.tsx`
+        *   `[ ]` Test: renders 0% progress bar for new project
+        *   `[ ]` Test: renders correct percentage from selectUnifiedProjectProgress.overallPercentage
+        *   `[ ]` Test: displays current stage name in message
+        *   `[ ]` Test: displays step detail (e.g., "Step 2/4: 2/3 models complete")
+        *   `[ ]` Test: renders null when no session selected
+    *   `[ ]` `DynamicProgressBar.tsx`
+        *   `[ ]` Replace `state.sessionProgress[sessionId]` with `selectUnifiedProjectProgress(state, sessionId)`
+        *   `[ ]` Update display to show overallPercentage from selector
+        *   `[ ]` Update message to show meaningful progress info (stage, step, model counts)
+        *   `[ ]` Remove dependency on legacy sessionProgress
+    *   `[ ]` **Commit** `refactor(ui): DynamicProgressBar uses selectUnifiedProjectProgress SSOT`
 
-*   `[ ]`   packages/types + packages/store / submitStageDocumentFeedback payload **[STORE] Frontend: align SubmitStageDocumentFeedback payload with backend contract**
-    *   `[ ]`   `objective.md`
-        *   `[ ]`   Backend requires feedbackContent, userId, projectId, feedbackType; frontend must send them so the request is valid and verifiable.
-        *   `[ ]`   Remove trust of minimal frontend shape: caller proves identity and context in the payload.
-    *   `[ ]`   `role.md`
-        *   `[ ]`   Application types (packages/types) define the wire contract for dialectic-service.
-        *   `[ ]`   Store (packages/store) builds the payload from auth and dialectic state and calls API.
-    *   `[ ]`   `module.md`
-        *   `[ ]`   Boundary: SubmitStageDocumentFeedbackPayload in packages/types and all call sites that build or pass it (dialecticStore.ts, dialecticStore.documents.ts).
-        *   `[ ]`   Boundary: API (packages/api) forwards the typed payload; no enrichment.
-    *   `[ ]`   `deps.md`
-        *   `[ ]`   packages/types: SubmitStageDocumentFeedbackPayload must match backend SubmitStageDocumentFeedbackPayload (dialectic.interface.ts).
-        *   `[ ]`   Store depends on useAuthStore (userId), activeSessionDetail or session/project (projectId), feedbackDraftMarkdown (feedbackContent), and a constant or config for feedbackType (e.g. 'user_feedback').
-        *   `[ ]`   API depends on the type from packages/types; no extra fields.
-    *   `[ ]`   interface/`interface.ts` (packages/types dialectic.types.ts)
-        *   `[ ]`   SubmitStageDocumentFeedbackPayload: require feedbackContent (string), userId (string), projectId (string), feedbackType (string); keep sessionId, stageSlug, iterationNumber, modelId, documentKey; optional feedbackId, sourceContributionId. Remove or deprecate feedback in favor of feedbackContent.
-        *   `[ ]`   Each field is its own nested item for comparison and iteration.
-    *   `[ ]`   interface/tests/`[function].interface.test.ts`
-        *   `[ ]`   If type-guard or contract tests exist for this payload, update them for the new required fields.
-    *   `[ ]`   unit/`[function].test.ts` (store tests)
-        *   `[ ]`   Assert that submitStageDocumentFeedback (and submitStageResponses when feedback is dirty) builds payload with feedbackContent, userId, projectId, feedbackType.
-        *   `[ ]`   Assert payload shape matches backend contract (no missing required fields).
-    *   `[ ]`   `[function].ts` (packages/store dialecticStore.ts + dialecticStore.documents.ts)
-        *   `[ ]`   Where feedback payload is built: set feedbackContent from feedback draft; set userId from auth; set projectId from session/project; set feedbackType (e.g. 'user_feedback'). Use SubmitStageDocumentFeedbackPayload from packages/types.
-        *   `[ ]`   Each requirement is its own nested item.
-    *   `[ ]`   provides/`[function].provides.ts`
-        *   `[ ]`   Store action submitStageDocumentFeedback and submitStageResponses path that builds feedback payload; API method submitStageDocumentFeedback that sends payload as-is.
-    *   `[ ]`   integration/`[function].integration.test.ts`
-        *   `[ ]`   If present: assert that when feedback is submitted, the payload sent to dialectic-service includes feedbackContent, userId, projectId, feedbackType.
-    *   `[ ]`   `requirements.md`
-        *   `[ ]`   SubmitStageDocumentFeedbackPayload in types has required feedbackContent, userId, projectId, feedbackType.
-        *   `[ ]`   All call sites build payload with those fields; backend validation passes without relaxing checks.
-    *   `[ ]`   **Commit** `fix(types,store): align SubmitStageDocumentFeedback payload with backend contract (feedbackContent, userId, projectId, feedbackType)`
-        *   `[ ]`   Detail each change in types and store payload construction.
+*   `[ ]` [UI] apps/web/src/components/dialectic/`StageRunChecklist` **Show documents for all stages with appropriate status indicators**
+    *   `[ ]` `deps.md`
+        *   `[ ]` selectValidMarkdownDocumentKeys from `@paynless/store`
+        *   `[ ]` selectStageRunProgress from `@paynless/store`
+        *   `[ ]` selectStageRecipe from `@paynless/store`
+        *   `[ ]` Process template stages from currentProjectDetail
+    *   `[ ]` `StageRunChecklist.test.tsx`
+        *   `[ ]` Test: displays documents for current stage with real-time status
+        *   `[ ]` Test: displays documents for completed (past) stages with completed status
+        *   `[ ]` Test: displays documents for future stages with "stage not ready" indicator
+        *   `[ ]` Test: distinguishes "stage not ready" from "document not started" (stage ready but not run)
+        *   `[ ]` Test: shows model progress per document (e.g., "2/3 models complete")
+        *   `[ ]` Test: shows documents for all selected models, not just one
+        *   `[ ]` Test: does not filter out documents lacking modelId for future stages
+    *   `[ ]` `StageRunChecklist.tsx`
+        *   `[ ]` Remove filter that hides future stage documents
+        *   `[ ]` Add logic to determine stage readiness (is current stage or prior stage)
+        *   `[ ]` Add "Stage not ready" visual indicator for stages after current
+        *   `[ ]` Add "Not started" visual indicator for documents in ready stage that haven't begun
+        *   `[ ]` Show model progress count for in-progress documents
+        *   `[ ]` Always show what documents the stage will produce regardless of progress
+    *   `[ ]` **Commit** `feat(ui): StageRunChecklist shows all stage documents with status indicators`
 
-*   `[ ]`   supabase/functions/dialectic-service/index.ts / saveContributionEdit branch **[BE] Backend: use service-role client for FileManager in saveContributionEdit**
-    *   `[ ]`   `objective.md`
-        *   `[ ]`   saveContributionEdit currently uses userClient for FileManager; storage bucket RLS disallows INSERT for authenticated, causing 403 and 500.
-        *   `[ ]`   Edge Function must perform upload and dialectic_project_resources upsert with service role so the write is allowed.
-    *   `[ ]`   `role.md`
-        *   `[ ]`   Router (index.ts) wires handlers and constructs context (dbClient, fileManager, etc.) per action.
-        *   `[ ]`   saveContributionEdit handler receives SaveContributionEditContext including fileManager; user is already validated via JWT.
-    *   `[ ]`   `module.md`
-        *   `[ ]`   Boundary: saveContributionEdit case in index.ts only; no change to saveContributionEdit.ts or FileManagerService implementation.
-        *   `[ ]`   Boundary: FileManager is constructed in index.ts and passed into SaveContributionEditContext.
-    *   `[ ]`   `deps.md`
-        *   `[ ]`   SaveContributionEditContext requires fileManager: IFileManager. FileManagerService(supabaseClient, deps) uses that client for storage and DB.
-        *   `[ ]`   For saveContributionEdit branch only: pass adminClient (service role) to FileManagerService instead of userClient; keep userClient for dbClient if reads must remain RLS-bound.
-    *   `[ ]`   interface/`interface.ts`
-        *   `[ ]`   No interface change; SaveContributionEditContext and IFileManager unchanged.
-    *   `[ ]`   unit/`[function].test.ts`
-        *   `[ ]`   If index tests stub or assert FileManager construction per action: assert saveContributionEdit branch uses adminClient (or equivalent) for fileManager.
-    *   `[ ]`   `[function].ts` (index.ts)
-        *   `[ ]`   In case "saveContributionEdit": build FileManager with adminClient (e.g. new FileManagerService(adminClient, FileManagerDependencies)) when constructing SaveContributionEditContext; do not use userClient for fileManager in this branch.
-        *   `[ ]`   Each requirement is its own nested item.
-    *   `[ ]`   provides/`[function].provides.ts`
-        *   `[ ]`   createDialecticHandler / handleRequest: saveContributionEdit branch exposes no new routes; only wiring of fileManager client changes.
-    *   `[ ]`   integration/`[function].integration.test.ts`
-        *   `[ ]`   If present: assert saveContributionEdit flow completes (upload + resource upsert) without RLS 403; may require local Supabase or mocked storage.
-    *   `[ ]`   `requirements.md`
-        *   `[ ]`   FileManager used by saveContributionEdit is created with adminClient so storage INSERT and dialectic_project_resources upsert succeed.
-        *   `[ ]`   No relaxation of payload or user validation; only the client used for the write is elevated.
-    *   `[ ]`   **Commit** `fix(be): use adminClient for FileManager in saveContributionEdit to satisfy storage RLS`
-        *   `[ ]`   Detail the change in index.ts saveContributionEdit context construction.
+*   `[ ]` [UI] apps/web/src/components/dialectic/`StageTabCard` **Use SSOT for stage completion status**
+    *   `[ ]` `deps.md`
+        *   `[ ]` selectUnifiedProjectProgress from `@paynless/store`
+        *   `[ ]` UnifiedProjectProgress type from `@paynless/types`
+    *   `[ ]` `StageTabCard.test.tsx`
+        *   `[ ]` Test: shows "Completed" label when stage is fully complete per SSOT
+        *   `[ ]` Test: shows progress percentage for current stage from SSOT
+        *   `[ ]` Test: shows "Not started" for future stages
+        *   `[ ]` Test: shows "Failed" indicator when stage has failed documents
+    *   `[ ]` `StageTabCard.tsx`
+        *   `[ ]` Replace selectStageProgressSummary usage with selectUnifiedProjectProgress
+        *   `[ ]` Derive stage completion from SSOT instead of separate calculation
+        *   `[ ]` Ensure visual indicators align with DynamicProgressBar and StageRunChecklist
+    *   `[ ]` **Commit** `refactor(ui): StageTabCard uses selectUnifiedProjectProgress SSOT`
 
-    - Stage progress data for future stages needs to tolerate missing inputs because they aren't generated yet, this is progress information, not an error  
+*   `[ ]` [UI] apps/web/src/components/dialectic/`SessionInfoCard` **Consolidate ALL competing progress indicators (title bar, badge, progress bar, generating indicator)**
+    *   `[ ]` `deps.md`
+        *   `[ ]` selectUnifiedProjectProgress from `@paynless/store`
+        *   `[ ]` DynamicProgressBar component
+        *   `[ ]` UnifiedProjectProgress type from `@paynless/types`
+    *   `[ ]` `SessionInfoCard.test.tsx`
+        *   `[ ]` Test: displays single unified progress indicator from SSOT
+        *   `[ ]` Test: title bar status text reflects SSOT projectStatus (not session.status)
+        *   `[ ]` Test: status badge reflects SSOT projectStatus (not session.status)
+        *   `[ ]` Test: title bar and badge show identical status
+        *   `[ ]` Test: removes duplicate "Generating contributions..." indicator when progress bar is active
+        *   `[ ]` Test: all status displays (title, badge, progress bar) agree with each other
+    *   `[ ]` `SessionInfoCard.tsx`
+        *   `[ ]` Replace `session.status` in title bar (line ~185) with SSOT-derived status
+        *   `[ ]` Replace `session.status` in Badge (lines ~187-203) with SSOT-derived status
+        *   `[ ]` Remove conditional that hides DynamicProgressBar when sessionProgress is missing
+        *   `[ ]` Remove duplicate "Generating contributions..." indicator (redundant with progress bar)
+        *   `[ ]` Ensure DynamicProgressBar is the single progress display
+        *   `[ ]` All status text derived from selectUnifiedProjectProgress.projectStatus
+    *   `[ ]` **Commit** `refactor(ui): SessionInfoCard consolidates ALL progress indicators (title/badge/bar) to SSOT`
+
+*   `[ ]` [UI] apps/web/src/pages/`DialecticSessionDetailsPage` **Extract embedded progress bar and consolidate with SSOT**
+    *   `[ ]` `deps.md`
+        *   `[ ]` selectUnifiedProjectProgress from `@paynless/store`
+        *   `[ ]` DynamicProgressBar component from `@/components/common/DynamicProgressBar`
+        *   `[ ]` UnifiedProjectProgress type from `@paynless/types`
+    *   `[ ]` `DialecticSessionDetailsPage.test.tsx`
+        *   `[ ]` Test: sidebar uses DynamicProgressBar component (not inline calculation)
+        *   `[ ]` Test: sidebar progress bar uses SSOT overallPercentage
+        *   `[ ]` Test: stage count display (X/Y) derived from SSOT totalStages/completedStages
+        *   `[ ]` Test: embedded progress bar removed in favor of DynamicProgressBar
+        *   `[ ]` Test: progress bar percentage matches SessionInfoCard progress bar
+    *   `[ ]` `DialecticSessionDetailsPage.tsx`
+        *   `[ ]` Remove embedded progress bar div (lines ~169-197 with inline `width: ${...}%` calculation)
+        *   `[ ]` Replace with DynamicProgressBar component
+        *   `[ ]` Remove `activeStageForProgressBar` variable (no longer needed)
+        *   `[ ]` Use selectUnifiedProjectProgress for stage count display
+        *   `[ ]` Ensure stage count and percentage align with SessionInfoCard
+    *   `[ ]` **Commit** `refactor(ui): DialecticSessionDetailsPage extracts embedded progress bar, uses DynamicProgressBar + SSOT`
+
+*   `[ ]` [TEST-INT] packages/store/src/`dialecticStore.progress.integration` **Integration test: Frontend progress tracking from notifications to display**
+    *   `[ ]` `deps.md`
+        *   `[ ]` dialecticStore with all handlers and selectors
+        *   `[ ]` Mock notification payloads for all lifecycle events
+        *   `[ ]` Mock recipe and process template data
+        *   `[ ]` selectUnifiedProjectProgress selector
+    *   `[ ]` `dialecticStore.progress.integration.test.ts`
+        *   `[ ]` Test: planner_started notification → store updates stepStatus to 'in_progress' → selector returns in_progress status
+        *   `[ ]` Test: document_started notification → store updates document status → selector returns correct step progress
+        *   `[ ]` Test: document_completed for 1 of 3 models → selector returns 33% step progress
+        *   `[ ]` Test: document_completed for all 3 models → selector returns 100% step progress
+        *   `[ ]` Test: all steps complete in stage → selector returns 100% stage progress
+        *   `[ ]` Test: planner_failed notification → store updates status → selector returns 'failed' status
+        *   `[ ]` Test: render_started → render_completed flow → selector reflects render step progress
+        *   `[ ]` Test: non-model step completion → selector counts as 1/1
+        *   `[ ]` Test: full stage lifecycle (started → documents → completed) → progress flows correctly 0% → 100%
+        *   `[ ]` Test: multi-stage project with 5 stages → completing stage 1 shows 20% overall, completing stage 2 shows 40%, etc.
+    *   `[ ]` **Commit** `test(store): integration tests for progress tracking from notifications to SSOT selector`
+
+*   `[ ]` [TEST-INT] supabase/integration_tests/`notifications.progress.integration` **Integration test: Backend provides complete notifications for frontend progress tracking**
+    *   `[ ]` `deps.md`
+        *   `[ ]` dialectic-worker with all job processors
+        *   `[ ]` NotificationService
+        *   `[ ]` Test database with sample jobs
+    *   `[ ]` `notifications.progress.integration.test.ts`
+        *   `[ ]` Test: PLAN job lifecycle emits planner_started, planner_completed (happy path)
+        *   `[ ]` Test: PLAN job error emits planner_error with error details
+        *   `[ ]` Test: PLAN job retry exhaustion emits planner_failed
+        *   `[ ]` Test: EXECUTE job lifecycle emits document_started, document_chunk_completed, document_completed
+        *   `[ ]` Test: EXECUTE job error emits document_error with error details
+        *   `[ ]` Test: EXECUTE job retry exhaustion emits document_failed
+        *   `[ ]` Test: RENDER job lifecycle emits render_started, render_completed
+        *   `[ ]` Test: RENDER job error emits render_error
+        *   `[ ]` Test: RENDER job retry exhaustion emits render_failed
+        *   `[ ]` Test: all notifications include required fields (sessionId, stageSlug, job_id, document_key, modelId, iterationNumber)
+        *   `[ ]` Test: full recipe execution emits notifications in correct order matching DAG structure
+        *   `[ ]` Test: notifications for multi-model stage include correct modelId per document
+        *   `[ ]` Test: error notifications include actionable error details
+    *   `[ ]` **Commit** `test(integration): backend emits complete job lifecycle notifications for progress tracking`
+
+*   `[ ]` [STORE] packages/store/src/`dialecticStore` **Remove deprecated sessionProgress state and handler**
+    *   `[ ]` `deps.md`
+        *   `[ ]` Confirm no consumers of sessionProgress remain (frontend migrated)
+        *   `[ ]` DialecticStateValues type from `@paynless/types`
+    *   `[ ]` `dialectic.types.ts`
+        *   `[ ]` Remove `sessionProgress: { [sessionId: string]: ProgressData }` from DialecticStateValues
+        *   `[ ]` Remove `ProgressData` interface (no longer used)
+    *   `[ ]` `dialecticStore.test.ts`
+        *   `[ ]` Remove tests for `_handleProgressUpdate` handler
+        *   `[ ]` Remove tests that reference `sessionProgress` state
+        *   `[ ]` Verify no regressions in other handlers
+    *   `[ ]` `dialecticStore.ts`
+        *   `[ ]` Remove `sessionProgress: {}` from initial state
+        *   `[ ]` Remove `_handleProgressUpdate` handler function
+        *   `[ ]` Remove `dialectic_progress_update` case from `_handleDialecticLifecycleEvent`
+    *   `[ ]` **Commit** `refactor(store): remove deprecated sessionProgress in favor of stageRunProgress SSOT`
+
+*   `[ ]` [BE] supabase/functions/_shared/utils/`notification.service` **Remove unused sendDialecticProgressUpdateEvent method**
+    *   `[ ]` `deps.md`
+        *   `[ ]` Confirm no callers of sendDialecticProgressUpdateEvent exist (was never called)
+        *   `[ ]` NotificationServiceType interface from `notification.service.types.ts`
+    *   `[ ]` `notification.service.types.ts`
+        *   `[ ]` Remove `DialecticProgressUpdatePayload` interface
+        *   `[ ]` Remove `sendDialecticProgressUpdateEvent` from `NotificationServiceType` interface
+        *   `[ ]` Remove `DialecticProgressUpdatePayload` from `DialecticLifecycleEvent` union type
+    *   `[ ]` `notification.service.test.ts`
+        *   `[ ]` Remove test for `sendDialecticProgressUpdateEvent`
+        *   `[ ]` Verify no regressions in other notification methods
+    *   `[ ]` `notification.service.ts`
+        *   `[ ]` Remove `sendDialecticProgressUpdateEvent` method implementation
+    *   `[ ]` `notification.service.mock.ts`
+        *   `[ ]` Remove `mockDialecticProgressUpdatePayload` mock
+        *   `[ ]` Remove mock implementation for `sendDialecticProgressUpdateEvent`
+    *   `[ ]` **Commit** `refactor(notification-service): remove unused sendDialecticProgressUpdateEvent method`
+
+---
+
+### Verification Checklist (Post-Implementation)
+
+*   `[ ]` Progress bar starts at 0% for new projects
+*   `[ ]` Progress increments correctly: models → steps → stages → project
+*   `[ ]` Non-model steps (assembly, render) count as 1/1 when complete
+*   `[ ]` All progress indicators (title bar, badge, progress bar, documents) show same value
+*   `[ ]` Embedded progress bar extracted from DialecticSessionDetailsPage
+*   `[ ]` SessionInfoCard title, badge, and progress bar all use SSOT
+*   `[ ]` StageRunChecklist shows documents for all stages (past, current, future)
+*   `[ ]` "Stage not ready" vs "Document not started" clearly distinguished
+*   `[ ]` Multi-model progress shows correctly (e.g., "2/3 models complete")
+*   `[ ]` Backend emits complete lifecycle for all job types: started, completed, error, failed
+*   `[ ]` PLAN jobs emit: planner_started, planner_completed, planner_error, planner_failed
+*   `[ ]` EXECUTE jobs emit: document_started, document_chunk_completed, document_completed, document_error, document_failed
+*   `[ ]` RENDER jobs emit: render_started, render_completed, render_error, render_failed
+*   `[ ]` All notifications include required fields for frontend tracking
+*   `[ ]` No references to deprecated `sessionProgress` or `dialectic_progress_update` remain
+*   `[ ]` Frontend integration tests pass (notifications → store → selector → display)
+*   `[ ]` Backend integration tests pass (all job types emit complete notifications)
+*   `[ ]` All lint checks pass
+*   `[ ]` All existing tests pass
+*   `[ ]` New tests cover all added functionality
+
+    - Each back end recipe step needs to emit granular notifications so that the store knows the exact progress through the DAG 
+    -- Dev reports that not all steps/jobs emit started/completed notices
+    -- Since job/step completed notices are patchy, they can't be relied on for tracking 
+    -- Ensure every step/job start/error/fail/completed emits a notification 
+    -- If every step/job emits a notification to the store, the store can track progress and inform the user   
+
+    - All stage progress needs to draw from a SSOT in the store informed by the step progress notifications 
+    -- User reports that dialectic page has multiple "progress" and "status" indicators that do not always agree 
+    -- Upper right badge says one thing, title bar says another, documents say a third, progress indicator a fourth
+    -- Proposed fix: Align and distill. SSOT for progress/status in store, all badges and notices draw from SSOT, remove duplicate progress/status indicators
+    -- Each PROJECT has a status, each STAGE of the project has a status, each DOCUMENT of the stage has a status. Progress flows from documents -> stages -> project 
+    -- This can all be consolidated in a single progress bar
+    -- The objective of the work is to get documents, so we currently show a document-specific badge on each document 
+    -- DEP: "each step needs to emit completed notice"  
+
+    - StageRunChecklist must always show the documents stages will produce regardless of user progress or status  
     -- User reports when viewing future stages, StageTabCard / StageRunChecklist complains inputs_required isn't satisfied. 
-    -- inputs_required isn't satisfied because the stage isn't ready yet, this isn't an error, this is progress information
-    -- StageTabCard / StageRunChecklist must still calculate what the stage needs, and will produce, even when those deps aren't met 
-    -- Communicate the unmet deps as status, indicate to the user how to produce those deps, instead of a useless error 
+    -- inputs_required isn't satisfied because the stage isn't ready yet, this isn't an error
+    -- StageTabCard / StageRunChecklist must always show what the stage will produce 
+
+    - Progress starts at 0% (project exists but nothing is done), and increment progress when steps are complete until reaching 100% (project finished)
+    -- User reports progress indicator is confusing, it starts the first stage at 20% when there's no work done
+    -- Going to the next stage increments to 40% even though the stage isn't done 
+    -- Progress bar needs to start at 0% and increment on step completed/stage completed notices for accurate, granular progress 
+    -- DEP: "each step needs to emit completed notice" & "progress SSOT" 
+
+    - Progress bar is embedded in page, hard to test, shows useless info
+    -- Progress bar needs to be extracted into its own component so it can be independent and testable 
+    -- Progress bar must show granular, informed values
+    --- Start at 0% for a new project
+    --- Know how many "stages" are in the DAG the user has chosen, total progress is 1/(stages)
+    --- Know how many "steps" are in each stage the user has chosen, stage progress is 1/(steps)
+    --- Know how many "models" the user has chosen, each step that uses a model call is 1/(model)
+    ---- Steps that do not have a model call are 1/1
+    -- The stages/steps/models info should all be available in the store for the SSOT 
+    -- The notifications are received by the store from the back end 
+    -- The store therefore knows the exact status of the progress the user has made 
+    -- Calculate the user's actual progress against the stages, steps, and models 
+    -- Consume step start/completed notifications to increment progress dynamically 
+    -- Each time the store updates its progress calculation, increment the progress bar accurately
+    -- DEP: started/completed notices, store SSOT, start progress at 0%
+
+    - Determine an index value for a full flow for 3 models and set that as the new user signup token deposit
+    -- User reports their new sign up allocation was only enough to get 3/4 docs in thesis 
+    -- Reasonable for a new user to want to complete an entire first project from their initial token allocation
+    -- Not a dev task per se, but we need to run a few e2e multi-model flows and index the cost then set the new user sign up deposit close to that value
+    -- This is not recurring, just a new user sign up 
+    -- Dep: Will need to finally set up email validation so that users can't just create new accounts for each project 
 
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
     -- User reports that a single document failed and they liked the other documents, but had to regenerate the entire stage
@@ -862,30 +1225,6 @@
     --- Is this a true branch/iteration, or do we highlight the downstream products so that those can be regenerated from the new input that was produced? 
     --- PROPOSED: Implement regeneration prior to stage advancement, disable regeneration for documents who have downstream documents, set up future sprint for branching/iteration to support hints to regenerate downstream documents if a user regenerates upstream documents
     --- BLOCKER: Some stages are fundamentally dependent on all prior outputs, like synthesis, and the entire stage needs to be rerun if thesis/antithesis documents are regenerated
-
-    - Each step needs to emit a completed notice so that the progress bar can track status 
-    -- Dev reports that steps are not all steps/jobs emit completion notices
-    -- Since job/step completed notices are patchy, they can't be relied on for progress bar 
-    -- Ensure every step/job emits a completed notice that lines up exactly to the progress bar expectations for the flow
-    -- This enables the progress bar to accurately communicate not only inter-stage progress but intra-stage progress for users 
-
-    - All stage progress needs to draw from a SSOT in the store informed by the step progress notifications 
-    -- User reports that dialectic page has multiple "progress" and "status" indicators that do not always agree 
-    -- Upper right badge says one thing, title bar says another, documents say a third, progress indicator a fourth
-    -- Proposed fix: Align and distill. SSOT for progress/status in store, all badges and notices draw from SSOT, remove duplicate progress/status indicators
-    -- DEP: "each step needs to emit completed notice"  
-
-    - Progress needs to start at zero, not 20%, the stage isn't finished, and increment progress when steps are complete
-    -- User reports progress indicator is confusing, it starts at 20% when there's no work done
-    -- Progress bar needs to start at 0% and increment on step completed/stage completed notices for accurate, granular progress 
-    -- DEP: "each step needs to emit completed notice" & "progress SSOT" 
-
-    - Determine an index value for a full flow for 3 models and set that as the new user signup token deposit
-    -- User reports their new sign up allocation was only enough to get 3/4 docs in thesis 
-    -- Reasonable for a new user to want to complete an entire first project from their initial token allocation
-    -- Not a dev task per se, but we need to run a few e2e multi-model flows and index the cost then set the new user sign up deposit close to that value
-    -- This is not recurring, just a new user sign up 
-    -- Dep: Will need to finally set up email validation so that users can't just create new accounts for each project 
 
     - Email validation disabled
     -- Need to actually set up email validation

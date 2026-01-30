@@ -1138,10 +1138,8 @@ export interface StageDocumentFeedback {
 
 /**
  * Payload for submitting stage document feedback.
- * NOTE: Naming mismatch with backend contract - this interface uses `feedback` while
- * the backend API expects `feedbackContent`. Additionally, the backend contract expects
- * a linkage field (`source_contribution_id`) to track which contribution the feedback
- * targets. Future refactors should standardize naming to align with backend.
+ * Aligned with backend contract (dialectic-service dialectic.interface.ts).
+ * Caller must provide identity and context (userId, projectId, feedbackContent, feedbackType).
  */
 export interface SubmitStageDocumentFeedbackPayload {
 	sessionId: string;
@@ -1149,7 +1147,11 @@ export interface SubmitStageDocumentFeedbackPayload {
 	iterationNumber: number;
 	modelId: string;
 	documentKey: string;
-	feedback: string;
+	feedbackContent: string;
+	userId: string;
+	projectId: string;
+	feedbackType: string;
+	feedbackId?: string;
 	sourceContributionId?: string | null;
 }
 
