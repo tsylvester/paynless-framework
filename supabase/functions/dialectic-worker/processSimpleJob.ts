@@ -20,6 +20,7 @@ import { DialecticRecipeStep } from '../dialectic-service/dialectic.interface.ts
 import { isDialecticRecipeTemplateStep, isDialecticStageRecipeStep } from '../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
 
 export async function processSimpleJob(
     dbClient: SupabaseClient<Database>,
@@ -39,8 +40,9 @@ export async function processSimpleJob(
     ctx.logger.info(`[dialectic-worker] [processSimpleJob] Starting attempt ${currentAttempt + 1}/${max_retries + 1} for job ID: ${jobId}`);
     let providerDetails: SelectedAiProvider | undefined;
 
-    // Track document key for notifications where possible
-    let notificationDocumentKey: string | undefined;
+    // Track document key and step for notifications where possible
+    let notificationDocumentKey: FileType | undefined;
+    let stepKeyForNotification: string | undefined;
 
     try {
         if (!stageSlug) throw new Error('stageSlug is required in the payload.');
@@ -202,19 +204,21 @@ export async function processSimpleJob(
             throw new Error('RECIPE_STEP_RESOLUTION_FAILED');
         }
 
-        // Track document key for notifications using the recipe step value exactly as provided
+        // Track document key and step for notifications using the recipe step value exactly as provided
         notificationDocumentKey = resolvedRecipeStep.output_type;
+        stepKeyForNotification = resolvedRecipeStep.step_slug;
 
-        // Emit document_started at EXECUTE job start
+        // Emit execute_started at EXECUTE job start
         if (currentAttempt === 0 && projectOwnerUserId) {
-            await ctx.notificationService.sendDocumentCentricNotification({
-                type: 'document_started',
+            await ctx.notificationService.sendJobNotificationEvent({
+                type: 'execute_started',
                 sessionId,
                 stageSlug,
                 job_id: jobId,
                 document_key: notificationDocumentKey,
                 modelId: providerDetails.id,
                 iterationNumber: sessionData.iteration_count,
+                step_key: resolvedRecipeStep.step_slug,
             }, projectOwnerUserId);
         }
 
@@ -301,6 +305,19 @@ export async function processSimpleJob(
             compressionStrategy: getSortedCompressionCandidates,
         });
 
+        if (projectOwnerUserId) {
+            await ctx.notificationService.sendJobNotificationEvent({
+                type: 'execute_completed',
+                sessionId,
+                stageSlug,
+                job_id: jobId,
+                step_key: resolvedRecipeStep.step_slug,
+                modelId: providerDetails.id,
+                iterationNumber: sessionData.iteration_count,
+                document_key: notificationDocumentKey,
+            }, projectOwnerUserId);
+        }
+
     } catch (e) {
         const error = e instanceof Error ? e : new Error(String(e));
         
@@ -338,11 +355,12 @@ export async function processSimpleJob(
 
                 // Document-centric failure event
                 if (notificationDocumentKey) {
-                    await ctx.notificationService.sendDocumentCentricNotification({
+                    await ctx.notificationService.sendJobNotificationEvent({
                         type: 'job_failed',
                         sessionId: String(sessionId),
                         stageSlug: String(stageSlug),
                         job_id: jobId,
+                        step_key: stepKeyForNotification ?? 'unknown',
                         document_key: notificationDocumentKey,
                         modelId: model_id,
                         iterationNumber: job.iteration_number,
@@ -385,11 +403,12 @@ export async function processSimpleJob(
 
                 // Document-centric failure event
                 if (notificationDocumentKey) {
-                    await ctx.notificationService.sendDocumentCentricNotification({
+                    await ctx.notificationService.sendJobNotificationEvent({
                         type: 'job_failed',
                         sessionId: String(sessionId),
                         stageSlug: String(stageSlug),
                         job_id: jobId,
+                        step_key: stepKeyForNotification ?? 'unknown',
                         document_key: notificationDocumentKey,
                         modelId: model_id,
                         iterationNumber: job.iteration_number,
@@ -543,11 +562,12 @@ export async function processSimpleJob(
 
             // Document-centric failure event on terminal failure
             if (notificationDocumentKey) {
-                await ctx.notificationService.sendDocumentCentricNotification({
+                await ctx.notificationService.sendJobNotificationEvent({
                     type: 'job_failed',
                     sessionId: String(sessionId),
                     stageSlug: String(stageSlug),
                     job_id: jobId,
+                    step_key: stepKeyForNotification ?? 'unknown',
                     document_key: notificationDocumentKey,
                     modelId: model_id,
                     iterationNumber: job.iteration_number,

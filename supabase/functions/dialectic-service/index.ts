@@ -505,7 +505,7 @@ export async function handleRequest(
             dbClient: userClient as SupabaseClient<Database>,
             user: userForJson,
             logger,
-            fileManager: new FileManagerService(userClient, FileManagerDependencies),
+            fileManager: fileManager,
             pathDeconstructor: deconstructStoragePath,
           };
           const { data, error, status } = await handlers.saveContributionEdit(payload, userForJson, context);

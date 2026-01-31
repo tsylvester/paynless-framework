@@ -472,7 +472,7 @@ Deno.test('processSimpleJob - Happy Path', async (t) => {
     clearAllStubs?.();
 });
 
-Deno.test('processSimpleJob - emits document_started at EXECUTE job start', async () => {
+Deno.test('processSimpleJob - emits execute_started at EXECUTE job start', async () => {
   resetMockNotificationService();
   const { client: dbClient, clearAllStubs } = setupMockClient();
   const { rootCtx } = getMockDeps();
@@ -487,12 +487,15 @@ Deno.test('processSimpleJob - emits document_started at EXECUTE job start', asyn
     'auth-token',
   );
 
-  assertEquals(mockNotificationService.sendDocumentCentricNotification.calls.length, 1, 'Expected document_started event to be emitted once');
-  const [payloadArg, targetUserId] = mockNotificationService.sendDocumentCentricNotification.calls[0].args;
-  assertEquals(payloadArg.type, 'document_started');
+  const calls = mockNotificationService.sendJobNotificationEvent.calls;
+  const startedCall = calls.find((c) => isRecord(c.args[0]) && c.args[0].type === 'execute_started');
+  assertExists(startedCall, 'execute_started event should be emitted');
+  const [payloadArg, targetUserId] = startedCall.args;
+  assertEquals(payloadArg.type, 'execute_started');
   assertEquals(payloadArg.sessionId, executeJob.session_id);
   assertEquals(payloadArg.stageSlug, executeJob.stage_slug);
   assertEquals(payloadArg.job_id, executeJob.id);
+  assertEquals(payloadArg.step_key, 'seed');
   assertEquals(payloadArg.document_key, 'business_case');
   assertEquals(payloadArg.modelId, 'model-def');
   assertEquals(payloadArg.iterationNumber, 1);
@@ -601,17 +604,60 @@ Deno.test('processSimpleJob - emits job_failed document-centric notification on 
   }
 
   // Expect a single document-centric job_failed event
-  assertEquals(mockNotificationService.sendDocumentCentricNotification.calls.length, 1, 'Expected job_failed notification to be emitted');
-  const [payloadArg, targetUserId] = mockNotificationService.sendDocumentCentricNotification.calls[0].args;
+  assertEquals(mockNotificationService.sendJobNotificationEvent.calls.length, 1, 'Expected job_failed notification to be emitted');
+  const [payloadArg, targetUserId] = mockNotificationService.sendJobNotificationEvent.calls[0].args;
   assert(isRecord(payloadArg));
   assertEquals(payloadArg.type, 'job_failed');
   assertEquals(payloadArg.sessionId, mockPayload.sessionId);
   assertEquals(payloadArg.stageSlug, mockPayload.stageSlug);
   assertEquals(payloadArg.job_id, jobWithNoRetries.id);
+  assertEquals(typeof payloadArg.step_key, 'string');
+  assertEquals(payloadArg.step_key, 'seed');
   assertEquals(typeof payloadArg.document_key, 'string');
   assertEquals(payloadArg.modelId, mockPayload.model_id);
   assertEquals(payloadArg.iterationNumber, mockPayload.iterationNumber);
   assertEquals(targetUserId, 'user-789');
+
+  executorStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test('processSimpleJob - emits execute_started and execute_completed when EXECUTE job finishes all chunks', async () => {
+  resetMockNotificationService();
+  const { client: dbClient, clearAllStubs } = setupMockClient();
+  const { rootCtx } = getMockDeps();
+
+  const executorStub = stub(rootCtx, 'executeModelCallAndSave', () => Promise.resolve());
+
+  const executeJob: typeof mockJob = { ...mockJob, job_type: 'EXECUTE' };
+
+  await processSimpleJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    { ...executeJob, payload: mockPayload },
+    'user-789',
+    rootCtx,
+    'auth-token',
+  );
+
+  const calls = mockNotificationService.sendJobNotificationEvent.calls;
+  assertEquals(calls.length, 2, 'Expected execute_started and execute_completed to be emitted');
+  const startedCall = calls.find((c) => isRecord(c.args[0]) && c.args[0].type === 'execute_started');
+  const completedCall = calls.find((c) => isRecord(c.args[0]) && c.args[0].type === 'execute_completed');
+  assertExists(startedCall, 'execute_started event should be emitted');
+  assertExists(completedCall, 'execute_completed event should be emitted');
+  const started = startedCall.args[0];
+  const completed = completedCall.args[0];
+  assert(isRecord(started));
+  assert(isRecord(completed));
+  assertEquals(started.type, 'execute_started');
+  assertEquals(started.sessionId, executeJob.session_id);
+  assertEquals(started.step_key, 'seed');
+  assertEquals(started.modelId, 'model-def');
+  assertEquals(completed.type, 'execute_completed');
+  assertEquals(completed.sessionId, executeJob.session_id);
+  assertEquals(completed.step_key, 'seed');
+  assertEquals(completed.modelId, 'model-def');
+  assertEquals(completedCall.args[1], 'user-789');
 
   executorStub.restore();
   clearAllStubs?.();

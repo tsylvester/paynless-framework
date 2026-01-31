@@ -10,7 +10,7 @@ export interface NotificationServiceType {
     sendContributionGenerationContinuedEvent(payload: ContributionGenerationContinuedPayload, targetUserId: string): Promise<void>;
     sendDialecticProgressUpdateEvent(payload: DialecticProgressUpdatePayload, targetUserId: string): Promise<void>;
     sendContributionGenerationFailedEvent(payload: ContributionGenerationFailedInternalPayload, targetUserId: string): Promise<void>;
-    sendDocumentCentricNotification(payload: DocumentCentricNotificationEvent, targetUserId: string): Promise<void>;
+    sendJobNotificationEvent(payload: JobNotificationEvent, targetUserId: string): Promise<void>;
 }
 
 export interface RpcNotification<T> {
@@ -135,47 +135,80 @@ export interface ContributionGenerationStartedPayload {
   | DialecticProgressUpdatePayload;
 
 // ------------------------------
-// Document-centric notification payloads (Step 1.a.i)
-// Ensure common fields + document-scoped fields per checklist
+// Job notification type hierarchy (PLAN / EXECUTE / RENDER lifecycle, unified job_failed)
+// Base and stage-specific payloads for progress tracking
 
-export interface DocumentPayload {
+export interface JobNotificationBase {
   sessionId: string;
   stageSlug: string;
-  job_id: string;
-  document_key: string;
-  modelId: string;
   iterationNumber: number;
+  job_id: string;
+  step_key: string;
 }
-export interface PlannerStartedPayload extends DocumentPayload {
+
+// PLAN: orchestration only — no modelId, no document_key
+export interface PlannerPayload extends JobNotificationBase {}
+
+export interface PlannerStartedPayload extends PlannerPayload {
   type: 'planner_started';
 }
 
-export interface DocumentStartedPayload extends DocumentPayload {
-  type: 'document_started';
+export interface PlannerCompletedPayload extends PlannerPayload {
+  type: 'planner_completed';
 }
 
-export interface DocumentChunkCompletedPayload extends DocumentPayload {
-  type: 'document_chunk_completed';
+// EXECUTE: modelId required, document_key optional
+export interface ExecutePayload extends JobNotificationBase {
+  modelId: string;
+  document_key?: string;
 }
 
-export interface DocumentCompletedPayload extends DocumentPayload {
-  type: 'document_completed';
+export interface ExecuteStartedPayload extends ExecutePayload {
+  type: 'execute_started';
 }
 
-export interface RenderCompletedPayload extends DocumentPayload {
+export interface ExecuteChunkCompletedPayload extends ExecutePayload {
+  type: 'execute_chunk_completed';
+}
+
+export interface ExecuteCompletedPayload extends ExecutePayload {
+  type: 'execute_completed';
+}
+
+// RENDER: modelId and document_key both required
+export interface RenderPayload extends JobNotificationBase {
+  modelId: string;
+  document_key: string;
+}
+
+export interface RenderStartedPayload extends RenderPayload {
+  type: 'render_started';
+}
+
+export interface RenderChunkCompletedPayload extends RenderPayload {
+  type: 'render_chunk_completed';
+}
+
+export interface RenderCompletedPayload extends RenderPayload {
   type: 'render_completed';
   latestRenderedResourceId: string;
 }
 
-export interface JobFailedPayload extends DocumentPayload {
+// Unified failure payload: optional modelId and document_key per stage
+export interface JobFailedPayload extends JobNotificationBase {
   type: 'job_failed';
   error: ApiError;
+  modelId?: string;
+  document_key?: string;
 }
 
-export type DocumentCentricNotificationEvent =
+export type JobNotificationEvent =
   | PlannerStartedPayload
-  | DocumentStartedPayload
-  | DocumentChunkCompletedPayload
-  | DocumentCompletedPayload
+  | PlannerCompletedPayload
+  | ExecuteStartedPayload
+  | ExecuteChunkCompletedPayload
+  | ExecuteCompletedPayload
+  | RenderStartedPayload
+  | RenderChunkCompletedPayload
   | RenderCompletedPayload
   | JobFailedPayload;

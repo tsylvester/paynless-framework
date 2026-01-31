@@ -863,127 +863,142 @@
 - Consolidate ALL progress indicators (title bar, badge, progress bar, documents) to SSOT
 - Show all stage documents with appropriate status indicators
 
----
+*   `[✅]` [BE] supabase/functions/_shared/types/`notification.service.types` **Define job notification type hierarchy (base → PLAN/EXECUTE/RENDER → lifecycle states, unified job_failed)**
+    *   `[✅]` `deps.md`
+        *   `[✅]` ApiError interface (existing)
+        *   `[✅]` This is the foundational types node - all job processors depend on these types
+    *   `[✅]` `notification.service.types.ts`
+        *   `[✅]` Add `JobNotificationBase` interface: sessionId, stageSlug, iterationNumber, job_id, step_key (all REQUIRED for progress tracking)
+        *   `[✅]` Add `PlannerPayload` extends JobNotificationBase (NO modelId, NO document_key - orchestration only)
+        *   `[✅]` Add `PlannerStartedPayload` extends PlannerPayload with type: 'planner_started'
+        *   `[✅]` Add `PlannerCompletedPayload` extends PlannerPayload with type: 'planner_completed'
+        *   `[✅]` Add `ExecutePayload` extends JobNotificationBase with modelId: string (REQUIRED), document_key?: string (OPTIONAL)
+        *   `[✅]` Add `ExecuteStartedPayload` extends ExecutePayload with type: 'execute_started'
+        *   `[✅]` Add `ExecuteChunkCompletedPayload` extends ExecutePayload with type: 'execute_chunk_completed'
+        *   `[✅]` Add `ExecuteCompletedPayload` extends ExecutePayload with type: 'execute_completed'
+        *   `[✅]` Add `RenderPayload` extends JobNotificationBase with modelId: string (REQUIRED), document_key: string (REQUIRED)
+        *   `[✅]` Add `RenderStartedPayload` extends RenderPayload with type: 'render_started'
+        *   `[✅]` Add `RenderChunkCompletedPayload` extends RenderPayload with type: 'render_chunk_completed' (intermediate - "more coming")
+        *   `[✅]` Add `RenderCompletedPayload` extends RenderPayload with type: 'render_completed' (final - "document finished"), latestRenderedResourceId: string
+        *   `[✅]` Refactor `JobFailedPayload` to extend JobNotificationBase with: error: ApiError, modelId?: string (OPTIONAL), document_key?: string (OPTIONAL)
+        *   `[✅]` Add `JobNotificationEvent` union type of all 10 lifecycle payload types (3 PLAN + 3 EXECUTE + 3 RENDER + 1 job_failed)
+        *   `[✅]` Refactor existing PlannerStartedPayload to use new hierarchy (breaking change from DocumentLifecyclePayload)
+    *   `[✅]` **Commit** `feat(types): define job notification type hierarchy with unified job_failed for complete progress tracking`
 
-*   `[ ]` [BE] supabase/functions/dialectic-worker/`processComplexJob` **Emit complete lifecycle notifications for PLAN jobs (started, completed, error, failed)**
-    *   `[ ]` `deps.md`
-        *   `[ ]` NotificationService from `_shared/utils/notification.service.ts`
-        *   `[ ]` DocumentCentricNotificationEvent types from `_shared/types/notification.service.types.ts`
-    *   `[ ]` `notification.service.types.ts`
-        *   `[ ]` Add `PlannerCompletedPayload` interface extending DocumentPayload with type: 'planner_completed'
-        *   `[ ]` Add `PlannerErrorPayload` interface with error details for recoverable errors
-        *   `[ ]` Add `PlannerFailedPayload` interface with error details for terminal failures
-    *   `[ ]` `processComplexJob.test.ts`
-        *   `[ ]` Test: emits `planner_started` event when PLAN job begins processing (verify existing)
-        *   `[ ]` Test: emits `planner_completed` event when PLAN job transitions to 'completed' status
-        *   `[ ]` Test: emits `planner_error` event when PLAN job encounters recoverable error
-        *   `[ ]` Test: emits `planner_failed` event when PLAN job exhausts retries
-        *   `[ ]` Test: all payloads include sessionId, stageSlug, job_id, document_key, modelId, iterationNumber
-        *   `[ ]` Test: notification is sent to projectOwnerUserId
-    *   `[ ]` `processComplexJob.ts`
-        *   `[ ]` Verify `planner_started` emission exists at job start (should already exist)
-        *   `[ ]` Add `planner_completed` emission in the job completion path after all child jobs complete
-        *   `[ ]` Add `planner_error` emission in catch blocks for recoverable errors
-        *   `[ ]` Add `planner_failed` emission when job status becomes 'failed' or 'retry_loop_failed'
-    *   `[ ]` **Commit** `feat(dialectic-worker): emit complete PLAN job lifecycle notifications (started/completed/error/failed)`
+*   `[✅]` [BE] supabase/functions/dialectic-worker/`processComplexJob` **Emit complete lifecycle notifications for PLAN jobs (started, completed, unified job_failed)**
+    *   `[✅]` `deps.md`
+        *   `[✅]` NotificationService from `_shared/utils/notification.service.ts`
+        *   `[✅]` PlannerStartedPayload, PlannerCompletedPayload, JobFailedPayload from types
+    *   `[✅]` `processComplexJob.test.ts`
+        *   `[✅]` Test: emits `planner_started` event when PLAN job begins processing
+        *   `[✅]` Test: emits `planner_completed` event when PLAN job transitions to 'completed' status
+        *   `[✅]` Test: emits `job_failed` event when PLAN job exhausts retries or encounters terminal error
+        *   `[✅]` Test: all PLAN payloads include sessionId, stageSlug, iterationNumber, job_id, step_key
+        *   `[✅]` Test: PLAN payloads do NOT include modelId or document_key (PLAN is orchestration)
+        *   `[✅]` Test: job_failed payload for PLAN omits modelId and document_key (both undefined)
+        *   `[✅]` Test: job_failed payload includes error code and message
+        *   `[✅]` Test: notification is sent to projectOwnerUserId
+    *   `[✅]` `processComplexJob.ts`
+        *   `[✅]` Refactor existing `planner_started` emission to use new PlannerStartedPayload (remove document_key lie)
+        *   `[✅]` Add `planner_completed` emission in the job completion path after all child jobs complete
+        *   `[✅]` Refactor existing `job_failed` emission to use new JobFailedPayload (omit modelId, document_key)
+    *   `[✅]` **Commit** `feat(dialectic-worker): emit complete PLAN job lifecycle notifications using correct type hierarchy`
 
-*   `[ ]` [BE] supabase/functions/dialectic-worker/`processRenderJob` **Emit complete lifecycle notifications for RENDER jobs (started, completed, error, failed)**
-    *   `[ ]` `deps.md`
-        *   `[ ]` NotificationService from `_shared/utils/notification.service.ts`
-        *   `[ ]` DocumentCentricNotificationEvent types from `_shared/types/notification.service.types.ts`
-    *   `[ ]` `notification.service.types.ts`
-        *   `[ ]` Add `RenderStartedPayload` interface extending DocumentPayload with type: 'render_started'
-        *   `[ ]` Add `RenderErrorPayload` interface with error details for recoverable errors
-        *   `[ ]` Add `RenderFailedPayload` interface with error details for terminal failures
-    *   `[ ]` `processRenderJob.test.ts`
-        *   `[ ]` Test: emits `render_started` event when RENDER job begins processing
-        *   `[ ]` Test: emits `render_completed` event when RENDER job finishes (verify existing)
-        *   `[ ]` Test: emits `render_error` event when RENDER job encounters recoverable error
-        *   `[ ]` Test: emits `render_failed` event when RENDER job exhausts retries
-        *   `[ ]` Test: all payloads include sessionId, stageSlug, job_id, document_key, modelId, iterationNumber
-        *   `[ ]` Test: notification is sent to projectOwnerUserId
-    *   `[ ]` `processRenderJob.ts`
-        *   `[ ]` Add `render_started` emission at the start of render job processing
-        *   `[ ]` Verify `render_completed` emission exists at job completion (should already exist)
-        *   `[ ]` Add `render_error` emission in catch blocks for recoverable errors
-        *   `[ ]` Add `render_failed` emission when job status becomes 'failed' or 'retry_loop_failed'
-    *   `[ ]` **Commit** `feat(dialectic-worker): emit complete RENDER job lifecycle notifications (started/completed/error/failed)`
+*   `[✅]` [BE] supabase/functions/dialectic-worker/`processSimpleJob` **Emit complete lifecycle notifications for EXECUTE jobs (started, chunk, completed, unified job_failed)**
+    *   `[✅]` `deps.md`
+        *   `[✅]` NotificationService from `_shared/utils/notification.service.ts`
+        *   `[✅]` ExecuteStartedPayload, ExecuteChunkCompletedPayload, ExecuteCompletedPayload, JobFailedPayload from types
+    *   `[✅]` `processSimpleJob.test.ts`
+        *   `[✅]` Test: emits `execute_started` event when EXECUTE job begins processing
+        *   `[✅]` Test: emits `execute_chunk_completed` event when EXECUTE job produces intermediate chunk
+        *   `[✅]` Test: emits `execute_completed` event when EXECUTE job finishes all chunks
+        *   `[✅]` Test: emits `job_failed` event when EXECUTE job exhausts retries or encounters terminal error
+        *   `[✅]` Test: all EXECUTE payloads include sessionId, stageSlug, iterationNumber, job_id, step_key, modelId
+        *   `[✅]` Test: document_key included when job relates to a document, omitted otherwise (OPTIONAL field)
+        *   `[✅]` Test: job_failed payload for EXECUTE includes modelId, document_key optional
+        *   `[✅]` Test: job_failed payload includes error code and message
+        *   `[✅]` Test: notification is sent to projectOwnerUserId
+    *   `[✅]` `processSimpleJob.ts`
+        *   `[✅]` Refactor existing `document_started` → `execute_started` using ExecuteStartedPayload
+        *   `[✅]` Refactor existing `document_chunk_completed` → `execute_chunk_completed` using ExecuteChunkCompletedPayload
+        *   `[✅]` Refactor existing `document_completed` → `execute_completed` using ExecuteCompletedPayload
+        *   `[✅]` Refactor existing `job_failed` emission to use new JobFailedPayload (include modelId, document_key if available)
+    *   `[✅]` **Commit** `feat(dialectic-worker): emit complete EXECUTE job lifecycle notifications using correct type hierarchy`
 
-*   `[ ]` [BE] supabase/functions/dialectic-worker/`processSimpleJob` **Emit complete lifecycle notifications for EXECUTE jobs (started, completed, error, failed)**
-    *   `[ ]` `deps.md`
-        *   `[ ]` NotificationService from `_shared/utils/notification.service.ts`
-        *   `[ ]` DocumentCentricNotificationEvent types from `_shared/types/notification.service.types.ts`
-    *   `[ ]` `notification.service.types.ts`
-        *   `[ ]` Add `DocumentErrorPayload` interface extending DocumentPayload with type: 'document_error', error details
-        *   `[ ]` Add `DocumentFailedPayload` interface extending DocumentPayload with type: 'document_failed', error details
-    *   `[ ]` `processSimpleJob.test.ts`
-        *   `[ ]` Test: emits `document_started` event when EXECUTE job begins processing (verify existing)
-        *   `[ ]` Test: emits `document_completed` event when EXECUTE job finishes (verify existing)
-        *   `[ ]` Test: emits `document_error` event when EXECUTE job encounters recoverable error
-        *   `[ ]` Test: emits `document_failed` event when EXECUTE job exhausts retries
-        *   `[ ]` Test: all payloads include sessionId, stageSlug, job_id, document_key, modelId, iterationNumber
-        *   `[ ]` Test: error/failed payloads include error code and message
-        *   `[ ]` Test: notification is sent to projectOwnerUserId
-    *   `[ ]` `processSimpleJob.ts`
-        *   `[ ]` Verify `document_started` emission exists at job start (should already exist)
-        *   `[ ]` Verify `document_completed` emission exists at job completion (should already exist)
-        *   `[ ]` Add `document_error` emission in catch blocks for recoverable errors
-        *   `[ ]` Add `document_failed` emission when job status becomes 'failed' or 'retry_loop_failed'
-    *   `[ ]` **Commit** `feat(dialectic-worker): emit complete EXECUTE job lifecycle notifications (started/completed/error/failed)`
+*   `[✅]` [BE] supabase/functions/dialectic-worker/`processRenderJob` **Emit complete lifecycle notifications for RENDER jobs (started, chunk, completed, unified job_failed)**
+    *   `[✅]` `deps.md`
+        *   `[✅]` NotificationService from `_shared/utils/notification.service.ts`
+        *   `[✅]` RenderStartedPayload, RenderChunkCompletedPayload, RenderCompletedPayload, JobFailedPayload from types
+    *   `[✅]` `processRenderJob.test.ts`
+        *   `[✅]` Test: emits `render_started` event when RENDER job begins processing
+        *   `[✅]` Test: emits `render_chunk_completed` event when RENDER job produces intermediate chunk (more coming)
+        *   `[✅]` Test: emits `render_completed` event when RENDER job finishes (document finished)
+        *   `[✅]` Test: emits `job_failed` event when RENDER job exhausts retries or encounters terminal error
+        *   `[✅]` Test: all RENDER payloads include sessionId, stageSlug, iterationNumber, job_id, step_key, modelId, document_key (both REQUIRED)
+        *   `[✅]` Test: render_completed includes latestRenderedResourceId
+        *   `[✅]` Test: job_failed payload for RENDER includes modelId AND document_key (both required for RENDER)
+        *   `[✅]` Test: job_failed payload includes error code and message
+        *   `[✅]` Test: notification is sent to projectOwnerUserId
+    *   `[✅]` `processRenderJob.ts`
+        *   `[✅]` Add `render_started` emission at the start of render job processing
+        *   `[✅]` Refactor existing `render_completed` to use RenderCompletedPayload with latestRenderedResourceId
+        *   `[✅]` Add `render_chunk_completed` emission when renderer produces intermediate output (more chunks expected)
+        *   `[✅]` Refactor existing `job_failed` emission to use new JobFailedPayload (include modelId and document_key)
+    *   `[✅]` **Commit** `feat(dialectic-worker): emit complete RENDER job lifecycle notifications using correct type hierarchy`
 
-*   `[ ]` [STORE] packages/store/src/`dialecticStore.selectors` **Add selectUnifiedProjectProgress selector for SSOT progress calculation**
-    *   `[ ]` `deps.md`
-        *   `[ ]` DialecticStateValues from `@paynless/types`
-        *   `[ ]` recipesByStageSlug state for step counts
-        *   `[ ]` stageRunProgress state for document completion status
-        *   `[ ]` selectedModelIds state for model count
-        *   `[ ]` currentProjectDetail.dialectic_process_templates for stage list
-        *   `[ ]` selectSessionById for current stage/iteration
-    *   `[ ]` `dialectic.types.ts`
-        *   `[ ]` Add `UnifiedProjectProgress` interface with totalStages, completedStages, currentStageSlug, overallPercentage, currentStage, projectStatus
-        *   `[ ]` Add `StepProgressDetail` interface with stepKey, stepName, totalModels, completedModels, stepPercentage, status
-        *   `[ ]` Add `StageProgressDetail` interface with stageSlug, totalSteps, completedSteps, stagePercentage, stepsDetail, stageStatus
-    *   `[ ]` `dialecticStore.selectors.test.ts`
-        *   `[ ]` Test: returns 0% progress for new project with no completed documents
-        *   `[ ]` Test: calculates step progress as completedModels/totalModels (e.g., 1/3 = 33%)
-        *   `[ ]` Test: calculates stage progress as sum of step progress / total steps
-        *   `[ ]` Test: calculates overall progress as (completed stages + current stage progress) / total stages
-        *   `[ ]` Test: returns 100% when all stages complete
-        *   `[ ]` Test: handles multi-model steps correctly (3 models = step complete only when all 3 finish)
-        *   `[ ]` Test: handles non-model steps as 1/1 (step without model call counts as complete when step completes)
-        *   `[ ]` Test: mixed recipe with model and non-model steps calculates correctly
-        *   `[ ]` Test: returns 'failed' status if any document has failed status
-        *   `[ ]` Test: returns 'in_progress' status when documents are generating
-        *   `[ ]` Test: returns 'not_started' status for stages with no progress data
-    *   `[ ]` `dialecticStore.selectors.ts`
-        *   `[ ]` Implement `selectUnifiedProjectProgress(state, sessionId)` selector
-        *   `[ ]` Get total stages from process template
-        *   `[ ]` Get model count from selectedModelIds.length
-        *   `[ ]` For each step, determine if it requires model calls (check job_type or outputs_required)
-        *   `[ ]` Model steps: progress = completedModels / totalModels
-        *   `[ ]` Non-model steps (e.g., assembly, render): progress = 1/1 when step status is completed
-        *   `[ ]` For each stage, calculate step progress from stageRunProgress documents filtered by modelId
-        *   `[ ]` Aggregate step → stage → project progress with proper weighting
-        *   `[ ]` Derive status from document statuses (not_started | in_progress | completed | failed)
-    *   `[ ]` **Commit** `feat(store): add selectUnifiedProjectProgress selector for SSOT progress tracking`
+*   `[✅]` [STORE] packages/store/src/`dialecticStore.selectors` **Add selectUnifiedProjectProgress selector for SSOT progress calculation**
+    *   `[✅]` `deps.md`
+        *   `[✅]` DialecticStateValues from `@paynless/types`
+        *   `[✅]` recipesByStageSlug state for step counts
+        *   `[✅]` stageRunProgress state for document completion status
+        *   `[✅]` selectedModelIds state for model count
+        *   `[✅]` currentProjectDetail.dialectic_process_templates for stage list
+        *   `[✅]` selectSessionById for current stage/iteration
+    *   `[✅]` `dialectic.types.ts`
+        *   `[✅]` Add `UnifiedProjectProgress` interface with totalStages, completedStages, currentStageSlug, overallPercentage, currentStage, projectStatus
+        *   `[✅]` Add `StepProgressDetail` interface with stepKey, stepName, totalModels, completedModels, stepPercentage, status
+        *   `[✅]` Add `StageProgressDetail` interface with stageSlug, totalSteps, completedSteps, stagePercentage, stepsDetail, stageStatus
+    *   `[✅]` `dialecticStore.selectors.test.ts`
+        *   `[✅]` Test: returns 0% progress for new project with no completed documents
+        *   `[✅]` Test: calculates step progress as completedModels/totalModels (e.g., 1/3 = 33%)
+        *   `[✅]` Test: calculates stage progress as sum of step progress / total steps
+        *   `[✅]` Test: calculates overall progress as (completed stages + current stage progress) / total stages
+        *   `[✅]` Test: returns 100% when all stages complete
+        *   `[✅]` Test: handles multi-model steps correctly (3 models = step complete only when all 3 finish)
+        *   `[✅]` Test: handles non-model steps as 1/1 (step without model call counts as complete when step completes)
+        *   `[✅]` Test: mixed recipe with model and non-model steps calculates correctly
+        *   `[✅]` Test: returns 'failed' status if any document has failed status
+        *   `[✅]` Test: returns 'in_progress' status when documents are generating
+        *   `[✅]` Test: returns 'not_started' status for stages with no progress data
+    *   `[✅]` `dialecticStore.selectors.ts`
+        *   `[✅]` Implement `selectUnifiedProjectProgress(state, sessionId)` selector
+        *   `[✅]` Get total stages from process template
+        *   `[✅]` Get model count from selectedModelIds.length
+        *   `[✅]` For each step, determine if it requires model calls (check job_type or outputs_required)
+        *   `[✅]` Model steps: progress = completedModels / totalModels
+        *   `[✅]` Non-model steps (e.g., assembly, render): progress = 1/1 when step status is completed
+        *   `[✅]` For each stage, calculate step progress from stageRunProgress documents filtered by modelId
+        *   `[✅]` Aggregate step → stage → project progress with proper weighting
+        *   `[✅]` Derive status from document statuses (not_started | in_progress | completed | failed)
+    *   `[✅]` **Commit** `feat(store): add selectUnifiedProjectProgress selector for SSOT progress tracking`
 
-*   `[ ]` [UI] apps/web/src/components/common/`DynamicProgressBar` **Refactor to use selectUnifiedProjectProgress**
-    *   `[ ]` `deps.md`
-        *   `[ ]` selectUnifiedProjectProgress from `@paynless/store`
-        *   `[ ]` UnifiedProjectProgress type from `@paynless/types`
-        *   `[ ]` Progress UI component from `../ui/progress`
-    *   `[ ]` `DynamicProgressBar.test.tsx`
-        *   `[ ]` Test: renders 0% progress bar for new project
-        *   `[ ]` Test: renders correct percentage from selectUnifiedProjectProgress.overallPercentage
-        *   `[ ]` Test: displays current stage name in message
-        *   `[ ]` Test: displays step detail (e.g., "Step 2/4: 2/3 models complete")
-        *   `[ ]` Test: renders null when no session selected
-    *   `[ ]` `DynamicProgressBar.tsx`
-        *   `[ ]` Replace `state.sessionProgress[sessionId]` with `selectUnifiedProjectProgress(state, sessionId)`
-        *   `[ ]` Update display to show overallPercentage from selector
-        *   `[ ]` Update message to show meaningful progress info (stage, step, model counts)
-        *   `[ ]` Remove dependency on legacy sessionProgress
-    *   `[ ]` **Commit** `refactor(ui): DynamicProgressBar uses selectUnifiedProjectProgress SSOT`
+*   `[✅]` [UI] apps/web/src/components/common/`DynamicProgressBar` **Refactor to use selectUnifiedProjectProgress**
+    *   `[✅]` `deps.md`
+        *   `[✅]` selectUnifiedProjectProgress from `@paynless/store`
+        *   `[✅]` UnifiedProjectProgress type from `@paynless/types`
+        *   `[✅]` Progress UI component from `../ui/progress`
+    *   `[✅]` `DynamicProgressBar.test.tsx`
+        *   `[✅]` Test: renders 0% progress bar for new project
+        *   `[✅]` Test: renders correct percentage from selectUnifiedProjectProgress.overallPercentage
+        *   `[✅]` Test: displays current stage name in message
+        *   `[✅]` Test: displays step detail (e.g., "Step 2/4: 2/3 models complete")
+        *   `[✅]` Test: renders null when no session selected
+    *   `[✅]` `DynamicProgressBar.tsx`
+        *   `[✅]` Replace `state.sessionProgress[sessionId]` with `selectUnifiedProjectProgress(state, sessionId)`
+        *   `[✅]` Update display to show overallPercentage from selector
+        *   `[✅]` Update message to show meaningful progress info (stage, step, model counts)
+        *   `[✅]` Remove dependency on legacy sessionProgress
+    *   `[✅]` **Commit** `refactor(ui): DynamicProgressBar uses selectUnifiedProjectProgress SSOT`
 
 *   `[ ]` [UI] apps/web/src/components/dialectic/`StageRunChecklist` **Show documents for all stages with appropriate status indicators**
     *   `[ ]` `deps.md`
@@ -1071,14 +1086,17 @@
         *   `[ ]` selectUnifiedProjectProgress selector
     *   `[ ]` `dialecticStore.progress.integration.test.ts`
         *   `[ ]` Test: planner_started notification → store updates stepStatus to 'in_progress' → selector returns in_progress status
-        *   `[ ]` Test: document_started notification → store updates document status → selector returns correct step progress
-        *   `[ ]` Test: document_completed for 1 of 3 models → selector returns 33% step progress
-        *   `[ ]` Test: document_completed for all 3 models → selector returns 100% step progress
+        *   `[ ]` Test: planner_completed notification → store updates step to completed → selector counts step as 1/1
+        *   `[ ]` Test: execute_started notification → store updates step status → selector returns correct step progress
+        *   `[ ]` Test: execute_chunk_completed for 1 of 3 models → selector returns 33% step progress
+        *   `[ ]` Test: execute_completed for all 3 models → selector returns 100% step progress
         *   `[ ]` Test: all steps complete in stage → selector returns 100% stage progress
-        *   `[ ]` Test: planner_failed notification → store updates status → selector returns 'failed' status
-        *   `[ ]` Test: render_started → render_completed flow → selector reflects render step progress
-        *   `[ ]` Test: non-model step completion → selector counts as 1/1
-        *   `[ ]` Test: full stage lifecycle (started → documents → completed) → progress flows correctly 0% → 100%
+        *   `[ ]` Test: job_failed notification for PLAN job → store updates status → selector returns 'failed' status
+        *   `[ ]` Test: job_failed notification for EXECUTE job → store updates status → selector returns 'failed' status
+        *   `[ ]` Test: render_started → render_chunk_completed → render_completed flow → selector reflects render step progress
+        *   `[ ]` Test: render_chunk_completed (intermediate) vs render_completed (final) handled correctly
+        *   `[ ]` Test: non-model step (PLAN) completion → selector counts as 1/1
+        *   `[ ]` Test: full stage lifecycle (planner → execute → render) → progress flows correctly 0% → 100%
         *   `[ ]` Test: multi-stage project with 5 stages → completing stage 1 shows 20% overall, completing stage 2 shows 40%, etc.
     *   `[ ]` **Commit** `test(store): integration tests for progress tracking from notifications to SSOT selector`
 
@@ -1089,18 +1107,19 @@
         *   `[ ]` Test database with sample jobs
     *   `[ ]` `notifications.progress.integration.test.ts`
         *   `[ ]` Test: PLAN job lifecycle emits planner_started, planner_completed (happy path)
-        *   `[ ]` Test: PLAN job error emits planner_error with error details
-        *   `[ ]` Test: PLAN job retry exhaustion emits planner_failed
-        *   `[ ]` Test: EXECUTE job lifecycle emits document_started, document_chunk_completed, document_completed
-        *   `[ ]` Test: EXECUTE job error emits document_error with error details
-        *   `[ ]` Test: EXECUTE job retry exhaustion emits document_failed
-        *   `[ ]` Test: RENDER job lifecycle emits render_started, render_completed
-        *   `[ ]` Test: RENDER job error emits render_error
-        *   `[ ]` Test: RENDER job retry exhaustion emits render_failed
-        *   `[ ]` Test: all notifications include required fields (sessionId, stageSlug, job_id, document_key, modelId, iterationNumber)
+        *   `[ ]` Test: PLAN job failure emits job_failed with step_key, omits modelId/document_key
+        *   `[ ]` Test: PLAN payloads include step_key but NOT modelId or document_key
+        *   `[ ]` Test: EXECUTE job lifecycle emits execute_started, execute_chunk_completed, execute_completed
+        *   `[ ]` Test: EXECUTE job failure emits job_failed with modelId, document_key optional
+        *   `[ ]` Test: EXECUTE payloads include modelId, document_key optional (included when relevant)
+        *   `[ ]` Test: RENDER job lifecycle emits render_started, render_chunk_completed (intermediate), render_completed (final)
+        *   `[ ]` Test: RENDER job failure emits job_failed with modelId AND document_key (both required)
+        *   `[ ]` Test: RENDER payloads include modelId AND document_key (both required)
+        *   `[ ]` Test: render_chunk_completed emitted for intermediate renders, render_completed only when document finished
+        *   `[ ]` Test: all notifications include base fields (sessionId, stageSlug, iterationNumber, job_id, step_key)
+        *   `[ ]` Test: job_failed includes error code and message for all job types
         *   `[ ]` Test: full recipe execution emits notifications in correct order matching DAG structure
-        *   `[ ]` Test: notifications for multi-model stage include correct modelId per document
-        *   `[ ]` Test: error notifications include actionable error details
+        *   `[ ]` Test: notifications for multi-model stage include correct modelId per model
     *   `[ ]` **Commit** `test(integration): backend emits complete job lifecycle notifications for progress tracking`
 
 *   `[ ]` [STORE] packages/store/src/`dialecticStore` **Remove deprecated sessionProgress state and handler**
@@ -1144,66 +1163,27 @@
 
 *   `[ ]` Progress bar starts at 0% for new projects
 *   `[ ]` Progress increments correctly: models → steps → stages → project
-*   `[ ]` Non-model steps (assembly, render) count as 1/1 when complete
+*   `[ ]` Non-model steps (PLAN, assembly) count as 1/1 when complete
 *   `[ ]` All progress indicators (title bar, badge, progress bar, documents) show same value
 *   `[ ]` Embedded progress bar extracted from DialecticSessionDetailsPage
 *   `[ ]` SessionInfoCard title, badge, and progress bar all use SSOT
 *   `[ ]` StageRunChecklist shows documents for all stages (past, current, future)
 *   `[ ]` "Stage not ready" vs "Document not started" clearly distinguished
 *   `[ ]` Multi-model progress shows correctly (e.g., "2/3 models complete")
-*   `[ ]` Backend emits complete lifecycle for all job types: started, completed, error, failed
-*   `[ ]` PLAN jobs emit: planner_started, planner_completed, planner_error, planner_failed
-*   `[ ]` EXECUTE jobs emit: document_started, document_chunk_completed, document_completed, document_error, document_failed
-*   `[ ]` RENDER jobs emit: render_started, render_completed, render_error, render_failed
-*   `[ ]` All notifications include required fields for frontend tracking
+*   `[ ]` Backend emits complete lifecycle for all job types: started, chunk_completed, completed, job_failed
+*   `[ ]` Job notification type hierarchy: JobNotificationBase → PLAN/EXECUTE/RENDER payloads + unified job_failed
+*   `[ ]` PLAN jobs emit: planner_started, planner_completed, job_failed (NO modelId, NO document_key)
+*   `[ ]` EXECUTE jobs emit: execute_started, execute_chunk_completed, execute_completed, job_failed (modelId required, document_key optional)
+*   `[ ]` RENDER jobs emit: render_started, render_chunk_completed (more coming), render_completed (finished), job_failed (modelId AND document_key required)
+*   `[ ]` Unified job_failed includes: error, modelId? (optional), document_key? (optional) - present based on job type
+*   `[ ]` All notifications include step_key for progress tracking
+*   `[ ]` All notifications include base fields: sessionId, stageSlug, iterationNumber, job_id
 *   `[ ]` No references to deprecated `sessionProgress` or `dialectic_progress_update` remain
 *   `[ ]` Frontend integration tests pass (notifications → store → selector → display)
 *   `[ ]` Backend integration tests pass (all job types emit complete notifications)
 *   `[ ]` All lint checks pass
 *   `[ ]` All existing tests pass
 *   `[ ]` New tests cover all added functionality
-
-    - Each back end recipe step needs to emit granular notifications so that the store knows the exact progress through the DAG 
-    -- Dev reports that not all steps/jobs emit started/completed notices
-    -- Since job/step completed notices are patchy, they can't be relied on for tracking 
-    -- Ensure every step/job start/error/fail/completed emits a notification 
-    -- If every step/job emits a notification to the store, the store can track progress and inform the user   
-
-    - All stage progress needs to draw from a SSOT in the store informed by the step progress notifications 
-    -- User reports that dialectic page has multiple "progress" and "status" indicators that do not always agree 
-    -- Upper right badge says one thing, title bar says another, documents say a third, progress indicator a fourth
-    -- Proposed fix: Align and distill. SSOT for progress/status in store, all badges and notices draw from SSOT, remove duplicate progress/status indicators
-    -- Each PROJECT has a status, each STAGE of the project has a status, each DOCUMENT of the stage has a status. Progress flows from documents -> stages -> project 
-    -- This can all be consolidated in a single progress bar
-    -- The objective of the work is to get documents, so we currently show a document-specific badge on each document 
-    -- DEP: "each step needs to emit completed notice"  
-
-    - StageRunChecklist must always show the documents stages will produce regardless of user progress or status  
-    -- User reports when viewing future stages, StageTabCard / StageRunChecklist complains inputs_required isn't satisfied. 
-    -- inputs_required isn't satisfied because the stage isn't ready yet, this isn't an error
-    -- StageTabCard / StageRunChecklist must always show what the stage will produce 
-
-    - Progress starts at 0% (project exists but nothing is done), and increment progress when steps are complete until reaching 100% (project finished)
-    -- User reports progress indicator is confusing, it starts the first stage at 20% when there's no work done
-    -- Going to the next stage increments to 40% even though the stage isn't done 
-    -- Progress bar needs to start at 0% and increment on step completed/stage completed notices for accurate, granular progress 
-    -- DEP: "each step needs to emit completed notice" & "progress SSOT" 
-
-    - Progress bar is embedded in page, hard to test, shows useless info
-    -- Progress bar needs to be extracted into its own component so it can be independent and testable 
-    -- Progress bar must show granular, informed values
-    --- Start at 0% for a new project
-    --- Know how many "stages" are in the DAG the user has chosen, total progress is 1/(stages)
-    --- Know how many "steps" are in each stage the user has chosen, stage progress is 1/(steps)
-    --- Know how many "models" the user has chosen, each step that uses a model call is 1/(model)
-    ---- Steps that do not have a model call are 1/1
-    -- The stages/steps/models info should all be available in the store for the SSOT 
-    -- The notifications are received by the store from the back end 
-    -- The store therefore knows the exact status of the progress the user has made 
-    -- Calculate the user's actual progress against the stages, steps, and models 
-    -- Consume step start/completed notifications to increment progress dynamically 
-    -- Each time the store updates its progress calculation, increment the progress bar accurately
-    -- DEP: started/completed notices, store SSOT, start progress at 0%
 
     - Determine an index value for a full flow for 3 models and set that as the new user signup token deposit
     -- User reports their new sign up allocation was only enough to get 3/4 docs in thesis 

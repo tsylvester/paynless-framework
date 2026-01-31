@@ -471,6 +471,22 @@ export async function processComplexJob(
             .every((s) => completedStepSlugs.has(s.step_slug));
         if (allDone) {
             await dbClient.from('dialectic_generation_jobs').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', parentJobId);
+            const completedStepsOrdered = validatedSteps.filter((s) => !isSkipped(s)).sort((a, b) => {
+                const ao = ('execution_order' in a && typeof a.execution_order === 'number') ? a.execution_order : ('step_number' in a && typeof a.step_number === 'number') ? a.step_number : 0;
+                const bo = ('execution_order' in b && typeof b.execution_order === 'number') ? b.execution_order : ('step_number' in b && typeof b.step_number === 'number') ? b.step_number : 0;
+                return ao - bo;
+            });
+            const lastStepSlug = completedStepsOrdered.length > 0 ? completedStepsOrdered[completedStepsOrdered.length - 1].step_slug : stageSlug;
+            try {
+                await ctx.notificationService.sendJobNotificationEvent({
+                    type: 'planner_completed',
+                    sessionId: job.session_id,
+                    stageSlug: stageSlug,
+                    iterationNumber: job.iteration_number,
+                    job_id: parentJobId,
+                    step_key: lastStepSlug,
+                }, projectOwnerUserId);
+            } catch { /* best-effort notification */ }
         }
         return;
     }
@@ -679,15 +695,14 @@ export async function processComplexJob(
         ctx.logger.info(`[processComplexJob] Steps filtered out due to missing intra-stage dependencies: [${filteredOutSteps.map(s => s.step_slug).join(', ')}]`);
     }
 
-	// Emit planner_started notification with required context
-	await ctx.notificationService.sendDocumentCentricNotification({
+	// Emit planner_started notification with required context (PLAN: no modelId, no document_key)
+	await ctx.notificationService.sendJobNotificationEvent({
 		type: 'planner_started',
 		sessionId: job.session_id,
 		stageSlug: stageSlug,
-		job_id: job.id,
-		document_key: String(firstReady.output_type),
-		modelId: job.payload.model_id,
 		iterationNumber: job.iteration_number,
+		job_id: job.id,
+		step_key: firstReady.step_slug,
 	}, projectOwnerUserId);
 
     try {
@@ -883,6 +898,16 @@ export async function processComplexJob(
                 completed_at: new Date().toISOString(),
                 results: { status_reason: 'Planner generated no child jobs for the current step.' },
             }).eq('id', parentJobId);
+            try {
+                await ctx.notificationService.sendJobNotificationEvent({
+                    type: 'planner_completed',
+                    sessionId: job.session_id,
+                    stageSlug: stageSlug,
+                    iterationNumber: job.iteration_number,
+                    job_id: parentJobId,
+                    step_key: firstReady.step_slug,
+                }, projectOwnerUserId);
+            } catch { /* best-effort notification */ }
             return;
         }
 
@@ -921,20 +946,16 @@ export async function processComplexJob(
             error_details: { message: failureReason }
         }).eq('id', parentJobId);
 
-        // Emit document-centric job_failed notification
+        // Emit job_failed notification (PLAN: omit modelId and document_key)
         try {
-            const documentKey = (firstReady && 'output_type' in firstReady)
-                ? String(firstReady.output_type)
-                : 'unknown';
             const errCode = e instanceof ContextWindowError ? 'CONTEXT_WINDOW_ERROR' : 'PLANNING_FAILED';
-            await ctx.notificationService.sendDocumentCentricNotification({
+            await ctx.notificationService.sendJobNotificationEvent({
                 type: 'job_failed',
                 sessionId: job.session_id,
                 stageSlug: stageSlug,
-                job_id: parentJobId,
-                document_key: documentKey,
-                modelId: job.payload.model_id,
                 iterationNumber: job.iteration_number,
+                job_id: parentJobId,
+                step_key: firstReady.step_slug,
                 error: { code: errCode, message: error.message },
             }, projectOwnerUserId);
         } catch { /* best-effort notification */ }

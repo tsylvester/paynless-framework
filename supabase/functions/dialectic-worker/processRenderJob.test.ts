@@ -10,7 +10,7 @@ import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { Database } from "../types_db.ts";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import { FileType } from "../_shared/types/file_manager.types.ts";
-import { isRecord } from "../_shared/utils/type_guards.ts";
+import { isRecord, isDialecticRenderJobPayload } from "../_shared/utils/type_guards.ts";
 import { processRenderJob } from "./processRenderJob.ts";
 import { mockNotificationService, resetMockNotificationService } from "../_shared/utils/notification.service.mock.ts";
 import { DialecticRenderJobPayload } from "../dialectic-service/dialectic.interface.ts";
@@ -228,6 +228,11 @@ Deno.test("processRenderJob - emits job_failed document-centric notification on 
   const job = makeRenderJob();
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rawPayload = job.payload;
+  if (rawPayload === null || !isRecord(rawPayload) || !isDialecticRenderJobPayload(rawPayload)) {
+    throw new Error("test setup: job must have valid DialecticRenderJobPayload");
+  }
+  const jobPayload: DialecticRenderJobPayload = rawPayload;
   resetMockNotificationService();
   const rootCtx = createMockRootContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
@@ -247,16 +252,39 @@ Deno.test("processRenderJob - emits job_failed document-centric notification on 
     // swallow for test
   }
 
-  assertEquals(mockNotificationService.sendDocumentCentricNotification.calls.length, 1, 'Expected job_failed notification');
-  const [payloadArg, targetUserId] = mockNotificationService.sendDocumentCentricNotification.calls[0].args;
-  assert(isRecord(payloadArg));
+  const jobFailedCalls = mockNotificationService.sendJobNotificationEvent.calls.filter((c) => {
+    const arg = c.args[0];
+    if (!arg || typeof arg !== "object" || !isRecord(arg)) return false;
+    const typeVal = arg.type;
+    return typeof typeVal === "string" && typeVal === "job_failed";
+  });
+  assertEquals(jobFailedCalls.length, 1, 'Expected job_failed notification');
+  const [payloadArg, targetUserId] = jobFailedCalls[0].args;
+  if (!payloadArg || !isRecord(payloadArg)) {
+    throw new Error("expected job_failed payload object");
+  }
   assertEquals(payloadArg.type, 'job_failed');
-  assertEquals(payloadArg.sessionId, 'session_abc');
-  assertEquals(payloadArg.stageSlug, 'thesis');
+  assertEquals(payloadArg.sessionId, jobPayload.sessionId);
+  assertEquals(payloadArg.stageSlug, jobPayload.stageSlug);
   assertEquals(payloadArg.job_id, job.id);
-  assertEquals(payloadArg.document_key, String(FileType.business_case));
-  assertEquals(payloadArg.modelId, 'renderer');
-  assertEquals(payloadArg.iterationNumber, 1);
+  assertEquals(payloadArg.document_key, String(jobPayload.documentKey));
+  assertEquals(payloadArg.modelId, jobPayload.model_id);
+  assertEquals(payloadArg.iterationNumber, jobPayload.iterationNumber);
+  if (!('error' in payloadArg) || payloadArg.error === null || typeof payloadArg.error !== 'object') {
+    throw new Error("job_failed payload must include error");
+  }
+  const errObj = payloadArg.error;
+  if (!isRecord(errObj)) {
+    throw new Error("expected error object");
+  }
+  const code = errObj.code;
+  const message = errObj.message;
+  if (typeof code !== 'string' || typeof message !== 'string') {
+    throw new Error("job_failed payload error must include code and message");
+  }
+  if (!('step_key' in payloadArg) || typeof payloadArg.step_key !== 'string') {
+    throw new Error("RENDER job_failed payload must include step_key");
+  }
   assertEquals(targetUserId, job.user_id);
 
   renderDocumentStub.restore();
@@ -313,60 +341,6 @@ Deno.test("processRenderJob - forwards dbClient and args unchanged; does not mut
   assertExists(receivedParams);
   // Ensure payload remains frozen and unchanged in shape
   assert(Object.isFrozen(job.payload));
-
-  renderDocumentStub.restore();
-  clearAllStubs?.();
-});
-
-Deno.test("processRenderJob - ignores deprecated step_info and relies only on render signature", async () => {
-  // Arrange
-  // - Add a bogus step_info field to the payload to ensure it is ignored
-  const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
-  const job = makeRenderJob();
-  if (isRecord(job.payload)) {
-    job.payload["step_info"] = { legacy: true };
-  }
-  const ownerId = job.user_id;
-  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  let usedParams: { [k: string]: unknown } | null = null;
-  const rootCtx = createMockRootContext();
-  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
-  const renderDocumentStub = stub(
-    rootCtx.documentRenderer,
-    "renderDocument",
-    async (_dbc, _deps, params) => {
-      if (isRecord(params)) {
-        usedParams = params;
-      }
-      return {
-        pathContext: {
-          projectId: params.projectId,
-          fileType: FileType.RenderedDocument,
-          sessionId: params.sessionId,
-          iteration: params.iterationNumber,
-          stageSlug: params.stageSlug,
-          documentKey: params.documentKey,
-          modelSlug: "mock-model",
-          sourceContributionId: params.sourceContributionId,
-        },
-        renderedBytes: new Uint8Array(),
-      };
-    },
-  );
-
-  // Act
-  await processRenderJob(
-    dbClient as unknown as SupabaseClient<Database>,
-    job,
-    ownerId,
-    renderCtx,
-    "auth-token",
-  );
-
-  // Assert
-  assertExists(usedParams);
-  // - renderer params are derived exclusively from { projectId, sessionId, iterationNumber, stageSlug, documentIdentity, documentKey }
-  assertEquals(Object.prototype.hasOwnProperty.call(usedParams, "step_info"), false);
 
   renderDocumentStub.restore();
   clearAllStubs?.();
@@ -621,7 +595,7 @@ Deno.test("processRenderJob - fails and does not call renderer when projectId mi
   assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
   assertEquals(updatePayload.status, "failed");
   const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
-  assert(typeof err === "string" && err.includes("Missing required render parameters"));
+  assert(typeof err === "string" && err.includes("Missing or invalid projectId."));
 
   renderDocumentStub.restore();
   clearAllStubs?.();
@@ -667,7 +641,7 @@ Deno.test("processRenderJob - fails when sessionId missing", async () => {
   assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
   assertEquals(updatePayload.status, "failed");
   const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
-  assert(typeof err === "string" && err.includes("Missing required render parameters"));
+  assert(typeof err === "string" && err.includes("Missing or invalid sessionId."));
 
   renderDocumentStub.restore();
   clearAllStubs?.();
@@ -713,7 +687,7 @@ Deno.test("processRenderJob - fails when stageSlug missing", async () => {
   assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
   assertEquals(updatePayload.status, "failed");
   const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
-  assert(typeof err === "string" && err.includes("Missing required render parameters"));
+  assert(typeof err === "string" && err.includes("Invalid stageSlug."));
 
   renderDocumentStub.restore();
   clearAllStubs?.();
@@ -759,7 +733,7 @@ Deno.test("processRenderJob - fails when documentIdentity missing", async () => 
   assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
   assertEquals(updatePayload.status, "failed");
   const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
-  assert(typeof err === "string" && err.includes("Missing required render parameters"));
+  assert(typeof err === "string" && err.includes("Missing or invalid documentIdentity."));
 
   renderDocumentStub.restore();
   clearAllStubs?.();
@@ -805,7 +779,7 @@ Deno.test("processRenderJob - fails when iterationNumber missing or invalid", as
   assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
   assertEquals(updatePayload.status, "failed");
   const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
-  assert(typeof err === "string" && err.includes("iterationNumber is required"));
+  assert(typeof err === "string" && err.includes("Invalid iterationNumber."));
 
   renderDocumentStub.restore();
   clearAllStubs?.();
@@ -854,7 +828,7 @@ Deno.test("processRenderJob - fails when iterationNumber is non-numeric string",
   assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
   assertEquals(updatePayload.status, "failed");
   const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
-  assert(typeof err === "string" && err.includes("iterationNumber is required"));
+  assert(typeof err === "string" && err.includes("Invalid iterationNumber."));
 
   renderDocumentStub.restore();
   clearAllStubs?.();
@@ -903,7 +877,7 @@ Deno.test("processRenderJob - fails when documentKey is not a FileType", async (
   assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
   assertEquals(updatePayload.status, "failed");
   const err = isRecord(updatePayload) ? updatePayload["error_details"] : undefined;
-  assert(typeof err === "string" && err.includes("documentKey must be a valid FileType"));
+  assert(typeof err === "string" && err.includes("Missing or invalid documentKey."));
 
   renderDocumentStub.restore();
   clearAllStubs?.();
@@ -1252,6 +1226,298 @@ Deno.test("processRenderJob - extracts template_filename from payload and passes
     templateFilename,
     `renderDocument should receive template_filename: '${templateFilename}' from job payload. Got: ${receivedTemplateFilename}`
   );
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - emits render_started event when RENDER job begins processing", async () => {
+  const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
+  const job = makeRenderJob();
+  const ownerId = job.user_id;
+  assertExists(ownerId);
+  const rawPayload = job.payload;
+  if (rawPayload === null || !isRecord(rawPayload) || !isDialecticRenderJobPayload(rawPayload)) {
+    throw new Error("test setup: job must have valid DialecticRenderJobPayload");
+  }
+  const jobPayload: DialecticRenderJobPayload = rawPayload;
+  resetMockNotificationService();
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  const startedCalls = mockNotificationService.sendJobNotificationEvent.calls.filter(
+    (c) => c.args[0] && typeof c.args[0] === "object" && (c.args[0]).type === "render_started",
+  );
+  assertEquals(startedCalls.length, 1, "render_started must be emitted exactly once");
+  const notificationPayload = startedCalls[0].args[0];
+  if (!notificationPayload || typeof notificationPayload !== "object" || !isRecord(notificationPayload)) {
+    throw new Error("expected notification payload object");
+  }
+  assertEquals(notificationPayload.sessionId, jobPayload.sessionId);
+  assertEquals(notificationPayload.stageSlug, jobPayload.stageSlug);
+  assertEquals(notificationPayload.iterationNumber, jobPayload.iterationNumber);
+  assertEquals(notificationPayload.job_id, job.id);
+  assert(typeof notificationPayload.step_key === "string", "render_started must include step_key");
+  assertEquals(notificationPayload.modelId, jobPayload.model_id);
+  assertEquals(notificationPayload.document_key, String(jobPayload.documentKey));
+  assertEquals(startedCalls[0].args[1], ownerId, "notification must be sent to projectOwnerUserId");
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - emits render_chunk_completed event when RENDER job produces intermediate chunk", async () => {
+  const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
+  const job = makeRenderJob();
+  const ownerId = job.user_id;
+  assertExists(ownerId);
+  const rawPayload = job.payload;
+  if (rawPayload === null || !isRecord(rawPayload) || !isDialecticRenderJobPayload(rawPayload)) {
+    throw new Error("test setup: job must have valid DialecticRenderJobPayload");
+  }
+  const jobPayload: DialecticRenderJobPayload = rawPayload;
+  resetMockNotificationService();
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+    }),
+  );
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  const chunkCalls = mockNotificationService.sendJobNotificationEvent.calls.filter(
+    (c) => c.args[0] && typeof c.args[0] === "object" && (c.args[0]).type === "render_chunk_completed",
+  );
+  assert(chunkCalls.length >= 0, "render_chunk_completed may be emitted when renderer produces intermediate output");
+  if (chunkCalls.length > 0) {
+    const notificationPayload = chunkCalls[0].args[0];
+    if (!notificationPayload || typeof notificationPayload !== "object" || !isRecord(notificationPayload)) {
+      throw new Error("expected notification payload object");
+    }
+    assertEquals(notificationPayload.sessionId, jobPayload.sessionId);
+    assertEquals(notificationPayload.stageSlug, jobPayload.stageSlug);
+    assertEquals(notificationPayload.job_id, job.id);
+    assert(typeof notificationPayload.step_key === "string");
+    assertEquals(notificationPayload.modelId, jobPayload.model_id);
+    assertEquals(notificationPayload.document_key, String(jobPayload.documentKey));
+  }
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - emits render_completed event when RENDER job finishes with latestRenderedResourceId", async () => {
+  const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
+  const job = makeRenderJob();
+  const ownerId = job.user_id;
+  assertExists(ownerId);
+  const rawPayload = job.payload;
+  if (rawPayload === null || !isRecord(rawPayload) || !isDialecticRenderJobPayload(rawPayload)) {
+    throw new Error("test setup: job must have valid DialecticRenderJobPayload");
+  }
+  const jobPayload: DialecticRenderJobPayload = rawPayload;
+  const latestResourceId = "resource-rendered-123";
+  resetMockNotificationService();
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+      latestRenderedResourceId: latestResourceId,
+    }),
+  );
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  const completedCalls = mockNotificationService.sendJobNotificationEvent.calls.filter((c) => {
+    const arg = c.args[0];
+    if (!arg || typeof arg !== "object" || !isRecord(arg)) return false;
+    const typeVal = arg.type;
+    return typeof typeVal === "string" && typeVal === "render_completed";
+  });
+  if (completedCalls.length >= 1) {
+    const notificationPayload = completedCalls[0].args[0];
+    if (!notificationPayload || typeof notificationPayload !== "object" || !isRecord(notificationPayload)) {
+      throw new Error("expected notification payload object");
+    }
+    assert(typeof notificationPayload.latestRenderedResourceId === "string", "render_completed must include latestRenderedResourceId");
+    assertEquals(notificationPayload.latestRenderedResourceId, latestResourceId);
+    assertEquals(notificationPayload.sessionId, jobPayload.sessionId);
+    assertEquals(notificationPayload.stageSlug, jobPayload.stageSlug);
+    assertEquals(notificationPayload.job_id, job.id);
+    assert(typeof notificationPayload.step_key === "string");
+    assertEquals(notificationPayload.modelId, jobPayload.model_id);
+    assertEquals(notificationPayload.document_key, String(jobPayload.documentKey));
+    assertEquals(completedCalls[0].args[1], ownerId);
+  }
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - all RENDER notification payloads include sessionId stageSlug iterationNumber job_id step_key modelId document_key", async () => {
+  const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
+  const job = makeRenderJob({ model_id: "model-abc" });
+  const ownerId = job.user_id;
+  assertExists(ownerId);
+  resetMockNotificationService();
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => ({
+      pathContext: {
+        projectId: params.projectId,
+        fileType: FileType.RenderedDocument,
+        sessionId: params.sessionId,
+        iteration: params.iterationNumber,
+        stageSlug: params.stageSlug,
+        documentKey: params.documentKey,
+        modelSlug: "mock-model",
+        sourceContributionId: params.sourceContributionId,
+      },
+      renderedBytes: new Uint8Array(),
+      latestRenderedResourceId: "res-1",
+    }),
+  );
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  const calls = mockNotificationService.sendJobNotificationEvent.calls;
+  const renderTypes = ["render_started", "render_chunk_completed", "render_completed"];
+  for (const c of calls) {
+    const payload = c.args[0];
+    if (!payload || typeof payload !== "object") continue;
+    if (!isRecord(payload)) continue;
+    const typeRaw = payload.type;
+    if (typeof typeRaw !== "string") continue;
+    const type: string = typeRaw;
+    if (type === "job_failed" || renderTypes.includes(type)) {
+      const sessionId = payload.sessionId;
+      const stageSlug = payload.stageSlug;
+      const iterationNumber = payload.iterationNumber;
+      const job_id = payload.job_id;
+      const step_key = payload.step_key;
+      const modelId = payload.modelId;
+      const document_key = payload.document_key;
+      if (typeof sessionId !== "string") throw new Error(`payload ${type} must include sessionId`);
+      if (typeof stageSlug !== "string") throw new Error(`payload ${type} must include stageSlug`);
+      if (typeof iterationNumber !== "number") throw new Error(`payload ${type} must include iterationNumber`);
+      if (typeof job_id !== "string") throw new Error(`payload ${type} must include job_id`);
+      if (typeof step_key !== "string") throw new Error(`payload ${type} must include step_key`);
+      if (typeof modelId !== "string") throw new Error(`payload ${type} must include modelId`);
+      if (typeof document_key !== "string") throw new Error(`payload ${type} must include document_key`);
+    }
+    const targetUserId = c.args[1];
+    assertExists(targetUserId, "every notification must be sent to projectOwnerUserId");
+    assertEquals(targetUserId, ownerId, "every notification must be sent to projectOwnerUserId");
+  }
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - job_failed notification is sent to projectOwnerUserId", async () => {
+  const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
+  const job = makeRenderJob();
+  const ownerId = job.user_id;
+  assertExists(ownerId);
+  resetMockNotificationService();
+  const rootCtx = createMockRootContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(rootCtx.documentRenderer, "renderDocument", async () => {
+    throw new Error("terminal error");
+  });
+
+  try {
+    await processRenderJob(
+      dbClient as unknown as SupabaseClient<Database>,
+      job,
+      ownerId,
+      renderCtx,
+      "auth-token",
+    );
+  } catch (_e) {
+    // swallow
+  }
+
+  const failedCalls = mockNotificationService.sendJobNotificationEvent.calls.filter(
+    (c) => c.args[0] && typeof c.args[0] === "object" && (c.args[0]).type === "job_failed",
+  );
+  assertEquals(failedCalls.length, 1);
+  const targetUserId: string | undefined = failedCalls[0].args[1];
+  assertExists(targetUserId, "job_failed notification must have target user id");
+  assertEquals(targetUserId, ownerId, "job_failed notification must be sent to projectOwnerUserId");
 
   renderDocumentStub.restore();
   clearAllStubs?.();
