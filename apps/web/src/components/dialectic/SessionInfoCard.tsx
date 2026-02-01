@@ -3,9 +3,9 @@ import {
 	useDialecticStore,
 	selectIsStageReadyForSessionIteration,
 	selectGenerateContributionsError,
-	selectGeneratingSessionsForSession,
 	selectActiveStageSlug,
 	selectSortedStages,
+	selectUnifiedProjectProgress,
 } from "@paynless/store";
 import {
 	DialecticProject,
@@ -13,6 +13,7 @@ import {
 	DialecticStage,
 	SubmitStageResponsesPayload,
 	ApiError,
+	UnifiedProjectStatus,
 } from "@paynless/types";
 import {
 	Card,
@@ -37,6 +38,13 @@ import { ContinueUntilCompleteToggle } from "../common/ContinueUntilCompleteTogg
 import { DynamicProgressBar } from "../common/DynamicProgressBar";
 import { cn } from "@/lib/utils";
 
+const PROJECT_STATUS_LABELS: Record<UnifiedProjectStatus, string> = {
+	not_started: "Not Started",
+	in_progress: "In Progress",
+	completed: "Completed",
+	failed: "Failed",
+};
+
 interface SessionInfoCardProps {
 	// REMOVED: session?: DialecticSession;
 }
@@ -53,20 +61,16 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
 	const activeStage: DialecticStage | null = useDialecticStore(
 		(state) => state.activeContextStage,
 	);
-	const sessionProgress = useDialecticStore((state) =>
-		session ? state.sessionProgress[session.id] : undefined,
+	const unifiedProgress = useDialecticStore((state) =>
+		state.activeSessionDetail
+			? selectUnifiedProjectProgress(state, state.activeSessionDetail.id)
+			: null,
 	);
 	const generateContributionsError = useDialecticStore(selectGenerateContributionsError);
 	const navigate = useNavigate();
 	const [isPromptOpen, setIsPromptOpen] = useState(false);
 	const activeSeedPrompt = useDialecticStore((state) => state.activeSeedPrompt);
 	const isLoading = useDialecticStore(state => state.isLoadingActiveSessionDetail);
-
-	// Use the new, more specific selector. This is the key to reactivity.
-	const generatingJobs = useDialecticStore((state) =>
-		session ? selectGeneratingSessionsForSession(state, session.id) : [],
-	);
-	const isGenerating = generatingJobs.length > 0 && !generateContributionsError;
 
 	// Submit functionality
 	const activeStageSlug = useDialecticStore(selectActiveStageSlug);
@@ -182,24 +186,27 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
 						>
 							{session.session_description || "Untitled Session"} - Iteration:{" "}
 							{session.iteration_count} -{" "}
-							{session.status?.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()) || "Active"}
+							{unifiedProgress
+								? PROJECT_STATUS_LABELS[unifiedProgress.projectStatus]
+								: "Active"}
 						</h1>
 						<Badge
 							variant="outline"
 							className={cn(
 								"font-normal border-0 px-3 py-1",
-								session.status?.includes("complete") &&
+								unifiedProgress?.projectStatus === "completed" &&
 									"bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300",
-								session.status?.includes("error") &&
+								unifiedProgress?.projectStatus === "failed" &&
 									"bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300",
-								!session.status?.includes("complete") &&
-									!session.status?.includes("error") &&
+								(!unifiedProgress ||
+									(unifiedProgress.projectStatus !== "completed" &&
+										unifiedProgress.projectStatus !== "failed")) &&
 									"bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300",
 							)}
 						>
-							{session.status
-								?.replace(/_/g, " ")
-								.replace(/\b\w/g, (l) => l.toUpperCase()) || "Active"}
+							{unifiedProgress
+								? PROJECT_STATUS_LABELS[unifiedProgress.projectStatus]
+								: "Active"}
 						</Badge>
 					</div>
 				</div>
@@ -287,21 +294,8 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
 			</div>
 
 			{/* Progress and Status Indicators */}
-			{sessionProgress &&
-				sessionProgress.current_step < sessionProgress.total_steps && (
-					<DynamicProgressBar sessionId={session.id} />
-				)}
-			{isGenerating && !sessionProgress && (
-				<div
-					className="flex items-center gap-2 bg-blue-50 dark:bg-blue-950/20 rounded-lg px-4 py-2 text-sm"
-					data-testid="generating-contributions-indicator"
-				>
-					<Loader2 className="h-4 w-4 animate-spin" />
-					<span>
-						Generating contributions, please wait... ({generatingJobs.length}{" "}
-						running)
-					</span>
-				</div>
+			{unifiedProgress && unifiedProgress.totalStages > 0 && (
+				<DynamicProgressBar sessionId={session.id} />
 			)}
 			{generateContributionsError && (
 				<Alert variant="destructive" data-testid="generate-contributions-error">

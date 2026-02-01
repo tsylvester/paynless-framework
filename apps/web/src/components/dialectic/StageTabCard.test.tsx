@@ -7,12 +7,14 @@ import {
   DialecticStage,
   DialecticStateValues,
   DialecticProcessTemplate,
+  OutputRequirement,
   StageRunChecklistProps,
   StageRunDocumentDescriptor,
   DialecticStageRecipe,
   DialecticStageRecipeStep,
 } from '@paynless/types';
 import {
+  initialDialecticStateValues,
   initializeMockDialecticState,
   getDialecticStoreState,
   setDialecticStateValues,
@@ -134,34 +136,31 @@ const createRecipeWithMarkdownDocuments = (
   stageSlug: string = mockStages[0].slug,
   instanceId: string = 'instance-test'
 ): DialecticStageRecipe => {
-  const steps: DialecticStageRecipeStep[] = documentKeys.map((documentKey, index) => ({
-    id: `step-${index + 1}`,
-    step_key: `generate_${documentKey}`,
-    step_slug: `generate-${documentKey}`,
-    step_name: `Generate ${documentKey}`,
-    execution_order: index + 1,
-    parallel_group: 1,
-    branch_key: 'document',
-    job_type: 'EXECUTE',
-    prompt_type: 'Turn',
-    inputs_required: [],
-    outputs_required: JSON.parse(
-      JSON.stringify([
-        {
-          documents: [
-            {
-              document_key: documentKey,
-              artifact_class: 'rendered_document',
-              file_type: 'markdown',
-              template_filename: `${documentKey}.md`,
-            },
-          ],
-        },
-      ])
-    ),
-    output_type: 'rendered_document',
-    granularity_strategy: 'all_to_one',
-  }));
+  const steps: DialecticStageRecipeStep[] = documentKeys.map((documentKey, index) => {
+    const outputs_required: OutputRequirement[] = [
+      {
+        document_key: documentKey,
+        artifact_class: 'rendered_document',
+        file_type: 'markdown',
+        template_filename: `${documentKey}.md`,
+      },
+    ];
+    return {
+      id: `step-${index + 1}`,
+      step_key: `generate_${documentKey}`,
+      step_slug: `generate-${documentKey}`,
+      step_name: `Generate ${documentKey}`,
+      execution_order: index + 1,
+      parallel_group: 1,
+      branch_key: 'document',
+      job_type: 'EXECUTE',
+      prompt_type: 'Turn',
+      inputs_required: [],
+      outputs_required,
+      output_type: 'rendered_document',
+      granularity_strategy: 'all_to_one',
+    };
+  });
 
   return {
     stageSlug,
@@ -199,11 +198,9 @@ vi.mock('./StageRunChecklist', () => ({
 }));
 
 vi.mock('@paynless/store', async () => {
-    const originalModule = await vi.importActual('@paynless/store');
     const mockDialecticStoreUtils = await import('../../mocks/dialecticStore.mock');
-    
     return {
-        ...originalModule,
+        ...mockDialecticStoreUtils,
         useDialecticStore: mockDialecticStoreUtils.useDialecticStore,
     };
 });
@@ -211,7 +208,7 @@ vi.mock('@paynless/store', async () => {
 describe('StageTabCard', () => {
     const setupStore = (overrides: Partial<DialecticStateValues> = {}) => {
         const initialState: DialecticStateValues = {
-            ...getDialecticStoreState(),
+            ...initialDialecticStateValues,
             currentProjectDetail: mockProject,
             activeContextSessionId: mockSession.id,
             activeStageSlug: mockStages[0].slug,
@@ -220,7 +217,7 @@ describe('StageTabCard', () => {
             selectedModelIds: mockSession.selected_model_ids ?? [],
             ...overrides,
         };
-        initializeMockDialecticState(initialState);
+        setDialecticStateValues(initialState);
         const storeActions = getDialecticStoreState();
         storeActions.setActiveStage = vi.fn();
         storeActions.setFocusedStageDocument = vi.fn();
@@ -231,6 +228,7 @@ describe('StageTabCard', () => {
     vi.clearAllMocks();
     stageRunChecklistRenderMock.mockClear();
     recordedStageRunChecklistProps.length = 0;
+    initializeMockDialecticState();
   });
 
   const renderComponent = () => {
@@ -274,7 +272,7 @@ describe('StageTabCard', () => {
     expect(storeActions.setActiveStage).toHaveBeenCalledWith('analysis');
   });
 
-  it('shows completed label when all documents are finished', () => {
+  it('shows Completed label when stage is fully complete per SSOT', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
@@ -291,9 +289,9 @@ describe('StageTabCard', () => {
 
     renderComponent();
 
-    const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
+    const hypothesisCard = screen.getByTestId('stage-card-hypothesis');
     expect(within(hypothesisCard).getByTestId('stage-progress-summary-hypothesis')).toBeInTheDocument();
-    expect(within(hypothesisCard).getByTestId('stage-progress-label-hypothesis').textContent).toBe('Completed');
+    expect(within(hypothesisCard).getByTestId('stage-progress-label-hypothesis')).toHaveTextContent('Completed');
     expect(within(hypothesisCard).queryByTestId('stage-progress-count-hypothesis')).toBeNull();
   });
 
@@ -339,49 +337,109 @@ describe('StageTabCard', () => {
 
     const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
     expect(within(hypothesisCard).getByTestId('stage-progress-summary-hypothesis')).toBeInTheDocument();
-    expect(within(hypothesisCard).queryByTestId('stage-progress-label-hypothesis')).toBeNull();
+    expect(within(hypothesisCard).getByTestId('stage-progress-label-hypothesis')).toHaveTextContent('Failed');
     expect(within(hypothesisCard).queryByTestId('stage-progress-count-hypothesis')).toBeNull();
   });
 
-  it('renders a StageRunChecklist for each selected model and forwards checklist selections', () => {
+  it('shows Failed indicator when stage has failed documents', () => {
+    const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
+    const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
+    setupStore({
+      recipesByStageSlug: {
+        [mockStages[0].slug]: recipe,
+      },
+      stageRunProgress: {
+        [progressKey]: createStageRunProgressEntry({
+          'document-one': 'completed',
+          'document-two': 'failed',
+        }),
+      },
+    });
+
+    renderComponent();
+
+    const hypothesisCard = screen.getByTestId('stage-card-hypothesis');
+    expect(within(hypothesisCard).getByTestId('stage-progress-summary-hypothesis')).toBeInTheDocument();
+    expect(within(hypothesisCard).getByTestId('stage-progress-label-hypothesis')).toHaveTextContent('Failed');
+  });
+
+  it('shows progress percentage for current stage from SSOT', () => {
+    const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
+    const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
+    setupStore({
+      recipesByStageSlug: {
+        [mockStages[0].slug]: recipe,
+      },
+      stageRunProgress: {
+        [progressKey]: createStageRunProgressEntry({
+          'document-one': 'completed',
+          'document-two': 'generating',
+        }),
+      },
+    });
+
+    renderComponent();
+
+    const hypothesisCard = screen.getByTestId('stage-card-hypothesis');
+    expect(within(hypothesisCard).getByTestId('stage-progress-summary-hypothesis')).toBeInTheDocument();
+    expect(within(hypothesisCard).getByTestId('stage-progress-pct-hypothesis')).toBeInTheDocument();
+  });
+
+  it('shows Not started for future stages', () => {
+    const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
+    const recipe = createRecipeWithMarkdownDocuments(['document-one'], mockStages[0].slug);
+    setupStore({
+      recipesByStageSlug: {
+        [mockStages[0].slug]: recipe,
+      },
+      stageRunProgress: {
+        [progressKey]: createStageRunProgressEntry({
+          'document-one': 'completed',
+        }),
+      },
+    });
+
+    renderComponent();
+
+    const analysisCard = screen.getByTestId('stage-card-analysis');
+    expect(within(analysisCard).getByText('Not started')).toBeInTheDocument();
+  });
+
+  it('renders one StageRunChecklist (not one per model) and forwards checklist selections', () => {
     const multiModelSession: DialecticSession = {
       ...mockSession,
       selected_model_ids: ['model-1', 'model-2'],
     };
 
     const focusKeyModel1 = `${multiModelSession.id}:${mockStages[0].slug}:model-1`;
-    const focusKeyModel2 = `${multiModelSession.id}:${mockStages[0].slug}:model-2`;
 
     const storeActions = setupStore({
       activeSessionDetail: multiModelSession,
       selectedModelIds: multiModelSession.selected_model_ids ?? [],
       focusedStageDocument: {
         [focusKeyModel1]: { modelId: 'model-1', documentKey: 'draft_document_outline' },
-        [focusKeyModel2]: { modelId: 'model-2', documentKey: 'draft_document_outline' },
       },
     });
 
     renderComponent();
 
-    expect(stageRunChecklistRenderMock).toHaveBeenCalledTimes(2);
-    expect(recordedStageRunChecklistProps.map((props) => props.modelId)).toEqual([
-      'model-1',
-      'model-2',
-    ]);
+    expect(stageRunChecklistRenderMock).toHaveBeenCalledTimes(1);
+    expect(recordedStageRunChecklistProps).toHaveLength(1);
+    expect(recordedStageRunChecklistProps[0].modelId).toBe('model-1');
 
     const stageCard = screen.getByTestId('stage-card-hypothesis');
     const checklistWrapper = within(stageCard).getByTestId('stage-checklist-wrapper-hypothesis');
 
     expect(within(checklistWrapper).getByTestId('mock-stage-run-checklist-model-1')).toBeInTheDocument();
-    expect(within(checklistWrapper).getByTestId('mock-stage-run-checklist-model-2')).toBeInTheDocument();
+    expect(within(checklistWrapper).queryByTestId('mock-stage-run-checklist-model-2')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('mock-stage-run-checklist-model-2'));
+    fireEvent.click(screen.getByTestId('mock-stage-run-checklist-model-1'));
 
     expect(storeActions.setFocusedStageDocument).toHaveBeenCalledWith({
       sessionId: multiModelSession.id,
       stageSlug: mockStages[0].slug,
       iterationNumber: multiModelSession.iteration_count,
-      modelId: 'model-2',
+      modelId: 'model-1',
       documentKey: 'draft_document_outline',
       stepKey: 'draft_document',
     });
@@ -415,11 +473,10 @@ describe('StageTabCard', () => {
     expect(checklistWrapper).toBeInTheDocument();
     expect(checklistWrapper.classList.contains('w-full')).toBe(true);
 
-    // 12.e.ii: Assert that the embedded StageRunChecklist panel resides directly within the wrapper
-    const checklistModel1 = within(checklistWrapper).getByTestId('mock-stage-run-checklist-model-1');
-    const checklistModel2 = within(checklistWrapper).getByTestId('mock-stage-run-checklist-model-2');
-    expect(checklistModel1).toBeInTheDocument();
-    expect(checklistModel2).toBeInTheDocument();
+    // 12.e.ii: Assert that one StageRunChecklist panel resides directly within the wrapper
+    const singleChecklist = within(checklistWrapper).getByTestId('mock-stage-run-checklist-model-1');
+    expect(singleChecklist).toBeInTheDocument();
+    expect(within(checklistWrapper).queryByTestId('mock-stage-run-checklist-model-2')).not.toBeInTheDocument();
 
     // Ensure no intermediate accordion is rendered by this component
     const accordions = checklistWrapper.querySelectorAll('[data-testid*="accordion"]');

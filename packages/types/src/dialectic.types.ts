@@ -449,9 +449,59 @@ export interface StageDocumentContentState {
   feedbackIsDirty: boolean;
 }
 
+/**
+ * Separator used in stageRunProgress.documents keys.
+ * Key format: `${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`.
+ * One document key can have N descriptors (one per model).
+ */
+export const STAGE_RUN_DOCUMENT_KEY_SEPARATOR = ':';
+
+/**
+ * Key for stageRunProgress.documents. Format: documentKey + STAGE_RUN_DOCUMENT_KEY_SEPARATOR + modelId.
+ * Enables multiple descriptors per document key (one per model).
+ */
+export type StageRunDocumentKey = string;
+
+/** Parsed parts of a StageRunDocumentKey (documentKey + separator + modelId). */
+export interface StageRunDocumentKeyParts {
+  documentKey: string;
+  modelId: string;
+}
+
 export interface StageRunProgressSnapshot {
   stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed'>;
-  documents: Record<string, StageRunDocumentDescriptor>;
+  /** Keyed by StageRunDocumentKey (documentKey:modelId). One document key can have N descriptors. */
+  documents: Record<StageRunDocumentKey, StageRunDocumentDescriptor>;
+}
+
+export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed';
+
+export interface StepProgressDetail {
+  stepKey: string;
+  stepName: string;
+  totalModels: number;
+  completedModels: number;
+  stepPercentage: number;
+  status: UnifiedProjectStatus;
+}
+
+export interface StageProgressDetail {
+  stageSlug: string;
+  totalSteps: number;
+  completedSteps: number;
+  stagePercentage: number;
+  stepsDetail: StepProgressDetail[];
+  stageStatus: UnifiedProjectStatus;
+}
+
+export interface UnifiedProjectProgress {
+  totalStages: number;
+  completedStages: number;
+  currentStageSlug: string | null;
+  overallPercentage: number;
+  currentStage: DialecticStage | null;
+  projectStatus: UnifiedProjectStatus;
+  stageDetails: StageProgressDetail[];
 }
 
 export interface InitialPromptCacheEntry {
@@ -602,9 +652,11 @@ export interface DialecticActions {
   _handleContributionGenerationContinued: (event: ContributionGenerationContinuedPayload) => void;
   _handleProgressUpdate: (event: DialecticProgressUpdatePayload) => void;
   _handlePlannerStarted: (event: PlannerStartedPayload) => void;
+  _handlePlannerCompleted: (event: PlannerCompletedPayload) => void;
   _handleDocumentStarted: (event: DocumentStartedPayload) => void;
   _handleDocumentChunkCompleted: (event: DocumentChunkCompletedPayload) => void;
   _handleDocumentCompleted: (event: DocumentCompletedPayload) => void;
+  _handleRenderStarted: (event: RenderStartedPayload) => void;
   _handleRenderCompleted: (event: RenderCompletedPayload) => void;
   _handleJobFailed: (event: JobFailedPayload) => void;
   
@@ -672,11 +724,17 @@ export type DialecticNotificationTypes =
   | 'dialectic_progress_update'
   | 'contribution_generation_continued'
   | 'planner_started'
+  | 'planner_completed'
   | 'document_started'
   | 'document_chunk_completed'
+  | 'document_completed'
+  | 'execute_started'
+  | 'execute_chunk_completed'
+  | 'execute_completed'
+  | 'render_started'
+  | 'render_chunk_completed'
   | 'render_completed'
-  | 'job_failed'
-  | 'document_completed';
+  | 'job_failed';
 
 export interface ContributionGenerationStartedPayload {
   // This is the overall contribution generation for the entire session stage. 
@@ -769,8 +827,21 @@ export interface DocumentLifecyclePayload {
   latestRenderedResourceId?: string | null;
 }
 
+/** Base fields required for progress tracking. PLAN events use this only (no modelId, no document_key). */
+export interface JobNotificationBase {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+  job_id: string;
+  step_key: string;
+}
+
 export interface PlannerStartedPayload extends DocumentLifecyclePayload {
   type: 'planner_started';
+}
+
+export interface PlannerCompletedPayload extends JobNotificationBase {
+  type: 'planner_completed';
 }
 
 export interface DocumentStartedPayload extends DocumentLifecyclePayload {
@@ -785,6 +856,41 @@ export interface DocumentChunkCompletedPayload extends DocumentLifecyclePayload 
 
 export interface DocumentCompletedPayload extends DocumentLifecyclePayload {
   type: 'document_completed';
+}
+
+/** EXECUTE job payload: modelId required, document_key optional. */
+export interface ExecutePayload extends JobNotificationBase {
+  modelId: string;
+  document_key?: string;
+}
+
+export interface ExecuteStartedPayload extends ExecutePayload {
+  type: 'execute_started';
+}
+
+export interface ExecuteChunkCompletedPayload extends ExecutePayload {
+  type: 'execute_chunk_completed';
+  isFinalChunk?: boolean;
+  continuationNumber?: number;
+}
+
+export interface ExecuteCompletedPayload extends ExecutePayload {
+  type: 'execute_completed';
+  latestRenderedResourceId?: string | null;
+}
+
+/** RENDER job payload: modelId and document_key required. */
+export interface RenderPayload extends JobNotificationBase {
+  modelId: string;
+  document_key: string;
+}
+
+export interface RenderStartedPayload extends RenderPayload {
+  type: 'render_started';
+}
+
+export interface RenderChunkCompletedPayload extends RenderPayload {
+  type: 'render_chunk_completed';
 }
 
 export interface RenderCompletedPayload extends DocumentLifecyclePayload {
@@ -807,9 +913,15 @@ ContributionGenerationStartedPayload
 | ContributionGenerationCompletePayload
 | DialecticProgressUpdatePayload
 | PlannerStartedPayload
+| PlannerCompletedPayload
 | DocumentStartedPayload
 | DocumentChunkCompletedPayload
 | DocumentCompletedPayload
+| ExecuteStartedPayload
+| ExecuteChunkCompletedPayload
+| ExecuteCompletedPayload
+| RenderStartedPayload
+| RenderChunkCompletedPayload
 | RenderCompletedPayload
 | JobFailedPayload;
 

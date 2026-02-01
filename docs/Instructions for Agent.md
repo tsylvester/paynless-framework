@@ -255,6 +255,9 @@
   *   `[ ]`   provides/`[function].provides.ts`
     *   `[ ]`   This is the bounded outer surface of the module, every I/O interaction beyond the module's boundary must flow through `[function].provides.ts` to be valid
     *   `[ ]`   Each exported symbol, semantic guarantee, stability expectation, route, endpoint, etc is its own nested item so that they can be cleanly compared, revised, iterated
+  *   `[ ]`   `[function].mock.ts`
+    *   `[ ]`   When called the mock can intercept all internal and external I/O and return proscribed values. All function and object mocks can be constructed against all contracts.  
+    *   `[ ]`   Each exported symbol, semantic guarantee, stability expectation, route, endpoint, etc is its own nested item so that they can be cleanly compared, revised, iterated
   *   `[ ]`   integration/`[function].integration.test.ts`
     *   `[ ]`   Tests for every defined and expected interaction with providers and consumers, generally proposed as provider->[function] or [function]->consumer or provider->[function]->consumer
     *   `[ ]`   Each test is its own nested item so that they can be cleanly compared, revised, iterated

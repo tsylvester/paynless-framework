@@ -32,7 +32,9 @@ import type {
   SaveContributionEditSuccessResponse,
   SaveContributionEditPayload,
   SubmitStageDocumentFeedbackPayload,
+  UnifiedProjectProgress,
 } from '@paynless/types';
+import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import {
   beginStageDocumentEditLogic,
   clearStageDocumentDraftLogic,
@@ -48,6 +50,7 @@ import {
   updateStageDocumentDraftLogic,
   upsertStageDocumentVersionLogic,
 } from '../../../../packages/store/src/dialecticStore.documents';
+import { selectUnifiedProjectProgress as realSelectUnifiedProjectProgress } from '../../../../packages/store/src/dialecticStore.selectors';
 
 // ---- START: Define ALL controllable selectors as top-level vi.fn() mocks ----
 // These are kept if tests rely on setting their return values directly at a global level.
@@ -181,20 +184,36 @@ export const selectStageDocumentChecklist = (
   }
 
   const checklist: StageDocumentChecklistEntry[] = [];
+  const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
 
-  for (const documentKey of Object.keys(progress.documents)) {
-    const descriptor = progress.documents[documentKey];
+  for (const compositeKey of Object.keys(progress.documents)) {
+    const descriptor = progress.documents[compositeKey];
     if (!descriptor || descriptor.modelId !== modelId) {
       continue;
     }
-    // Check if this is a rendered descriptor (has job_id property)
-    if ('job_id' in descriptor) {
+    const documentKey = compositeKey.includes(sep)
+      ? compositeKey.slice(0, compositeKey.indexOf(sep))
+      : compositeKey;
+
+    if (descriptor.descriptorType === 'planned') {
       checklist.push({
+        descriptorType: 'planned',
+        documentKey,
+        status: 'not_started',
+        jobId: null,
+        latestRenderedResourceId: null,
+        modelId: descriptor.modelId,
+        stepKey: descriptor.stepKey,
+      });
+    } else {
+      checklist.push({
+        descriptorType: 'rendered',
         documentKey,
         status: descriptor.status,
         jobId: descriptor.job_id,
         latestRenderedResourceId: descriptor.latestRenderedResourceId ?? null,
         modelId: descriptor.modelId,
+        stepKey: descriptor.stepKey,
       });
     }
   }
@@ -257,6 +276,12 @@ export const selectStageProgressSummary = (
     outstandingDocuments,
   };
 };
+
+export const selectUnifiedProjectProgress = (
+  state: DialecticStateValues,
+  sessionId: string
+): UnifiedProjectProgress => realSelectUnifiedProjectProgress(state, sessionId);
+
 // ---- END: Controllable selectors ----
 
 // Define and export the mock for the new thunk

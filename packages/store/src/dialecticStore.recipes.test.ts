@@ -6,7 +6,7 @@ import {
     StageDocumentCompositeKey,
     StageRenderedDocumentDescriptor,
 } from '@paynless/types';
-import { getStageDocumentKey } from './dialecticStore.documents';
+import { getStageDocumentKey, getStageRunDocumentKey } from './dialecticStore.documents';
 
 vi.mock('@paynless/api', async (importOriginal) => {
   const original = await importOriginal<typeof import('@paynless/api')>();
@@ -244,7 +244,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
       useDialecticStore.setState((state) => {
         state.stageRunProgress[progressKey] = {
           documents: {
-            [documentKey]: documentDescriptor,
+            [getStageRunDocumentKey(documentKey, modelId)]: documentDescriptor,
           },
           stepStatuses: {},
         };
@@ -283,7 +283,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
       useDialecticStore.setState((state) => {
         state.stageRunProgress[progressKey] = {
           documents: {
-            [documentKey]: documentDescriptor,
+            [getStageRunDocumentKey(documentKey, modelId)]: documentDescriptor,
           },
           stepStatuses: {},
         };
@@ -321,7 +321,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
       useDialecticStore.setState((state) => {
         state.stageRunProgress[progressKey] = {
           documents: {
-            [documentKey]: documentDescriptor,
+            [getStageRunDocumentKey(documentKey, modelId)]: documentDescriptor,
           },
           stepStatuses: {},
         };
@@ -340,6 +340,8 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
           pendingDiff: null,
           lastAppliedVersionHash: 'hash-cached',
           sourceContributionId: null,
+          feedbackDraftMarkdown: '',
+          feedbackIsDirty: false,
         };
       });
 
@@ -376,7 +378,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
       useDialecticStore.setState((state) => {
         state.stageRunProgress[progressKey] = {
           documents: {
-            [documentKey]: documentDescriptor,
+            [getStageRunDocumentKey(documentKey, modelId)]: documentDescriptor,
           },
           stepStatuses: {},
         };
@@ -395,6 +397,8 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
           pendingDiff: null,
           lastAppliedVersionHash: 'hash-old',
           sourceContributionId: null,
+          feedbackDraftMarkdown: '',
+          feedbackIsDirty: false,
         };
       });
 
@@ -428,7 +432,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
       useDialecticStore.setState((state) => {
         state.stageRunProgress[progressKey] = {
           documents: {
-            [documentKey]: documentDescriptor,
+            [getStageRunDocumentKey(documentKey, modelId)]: documentDescriptor,
           },
           stepStatuses: {},
         };

@@ -34,11 +34,13 @@ import {
   type DialecticProgressUpdatePayload,
   type ProgressData,
   type PlannerStartedPayload,
+  type PlannerCompletedPayload,
   type DocumentStartedPayload,
   type DocumentChunkCompletedPayload,
-	type DocumentCompletedPayload,
-	type RenderCompletedPayload,
-	type JobFailedPayload,
+  type DocumentCompletedPayload,
+  type RenderStartedPayload,
+  type RenderCompletedPayload,
+  type JobFailedPayload,
 	type SetFocusedStageDocumentPayload,
 	type ClearFocusedStageDocumentPayload,
   isContributionStatus,
@@ -69,16 +71,20 @@ import {
 	clearStageDocumentDraftLogic,
 	fetchStageDocumentContentLogic,
 	handlePlannerStartedLogic,
+	handlePlannerCompletedLogic,
 	handleDocumentStartedLogic,
 	handleDocumentChunkCompletedLogic,
 	handleDocumentCompletedLogic,
+	handleRenderStartedLogic,
 	handleRenderCompletedLogic,
 	handleJobFailedLogic,
+	setStepStatusLogic,
 	fetchStageDocumentFeedbackLogic,
 	submitStageDocumentFeedbackLogic,
 	selectStageDocumentFeedbackLogic,
 	hydrateStageProgressLogic,
 	createVersionInfo,
+	getStageRunDocumentKey,
 } from './dialecticStore.documents';
 
 type FocusedDocumentKeyParams = Pick<SetFocusedStageDocumentPayload, 'sessionId' | 'stageSlug' | 'modelId'>;
@@ -1447,14 +1453,71 @@ export const useDialecticStore = create<DialecticStore>()(
         case 'planner_started':
             handlers._handlePlannerStarted(payload);
             break;
+        case 'planner_completed':
+            handlers._handlePlannerCompleted(payload);
+            break;
         case 'document_started':
             handlers._handleDocumentStarted(payload);
+            break;
+        case 'execute_started':
+            if (payload.document_key !== undefined && payload.document_key !== '') {
+                handlers._handleDocumentStarted({
+                    type: 'document_started',
+                    sessionId: payload.sessionId,
+                    stageSlug: payload.stageSlug,
+                    iterationNumber: payload.iterationNumber,
+                    job_id: payload.job_id,
+                    step_key: payload.step_key,
+                    document_key: payload.document_key,
+                    modelId: payload.modelId,
+                });
+            } else {
+                setStepStatusLogic(get, set, `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`, payload.step_key, 'in_progress');
+            }
             break;
         case 'document_chunk_completed':
             handlers._handleDocumentChunkCompleted(payload);
             break;
+        case 'execute_chunk_completed':
+            if (payload.document_key !== undefined && payload.document_key !== '') {
+                handlers._handleDocumentChunkCompleted({
+                    type: 'document_chunk_completed',
+                    sessionId: payload.sessionId,
+                    stageSlug: payload.stageSlug,
+                    iterationNumber: payload.iterationNumber,
+                    job_id: payload.job_id,
+                    step_key: payload.step_key,
+                    document_key: payload.document_key,
+                    modelId: payload.modelId,
+                    isFinalChunk: payload.isFinalChunk,
+                    continuationNumber: payload.continuationNumber,
+                });
+            }
+            break;
         case 'document_completed':
             handlers._handleDocumentCompleted(payload);
+            break;
+        case 'execute_completed':
+            if (payload.document_key !== undefined && payload.document_key !== '') {
+                handlers._handleDocumentCompleted({
+                    type: 'document_completed',
+                    sessionId: payload.sessionId,
+                    stageSlug: payload.stageSlug,
+                    iterationNumber: payload.iterationNumber,
+                    job_id: payload.job_id,
+                    step_key: payload.step_key,
+                    document_key: payload.document_key,
+                    modelId: payload.modelId,
+                });
+            } else {
+                setStepStatusLogic(get, set, `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`, payload.step_key, 'completed');
+            }
+            break;
+        case 'render_started':
+            handlers._handleRenderStarted(payload);
+            break;
+        case 'render_chunk_completed':
+            setStepStatusLogic(get, set, `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`, payload.step_key, 'in_progress');
             break;
         case 'render_completed':
             handlers._handleRenderCompleted(payload);
@@ -1470,8 +1533,12 @@ export const useDialecticStore = create<DialecticStore>()(
   // --- Private Handlers for Lifecycle Events ---
   _handlePlannerStarted: (event: PlannerStartedPayload) => handlePlannerStartedLogic(get, set, event),
 
+  _handlePlannerCompleted: (event: PlannerCompletedPayload) => handlePlannerCompletedLogic(get, set, event),
+
   _handleDocumentStarted: (event: DocumentStartedPayload) =>
 		handleDocumentStartedLogic(get, set, event),
+
+  _handleRenderStarted: (event: RenderStartedPayload) => handleRenderStartedLogic(get, set, event),
 
 	_handleDocumentChunkCompleted: (event: DocumentChunkCompletedPayload) =>
 		handleDocumentChunkCompletedLogic(get, set, event),
@@ -2478,7 +2545,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			return;
 		}
 
-		const descriptor = progress.documents[documentKey];
+		const descriptor = progress.documents[getStageRunDocumentKey(documentKey, modelId)];
 		if (!descriptor || descriptor.descriptorType !== 'rendered') {
 			return;
 		}
@@ -2520,7 +2587,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			let iterationNumber: number | null = null;
 			for (const [progressKey, progress] of Object.entries(snapshot.stageRunProgress)) {
 				const [sessionKey, stageKey, iterationValue] = progressKey.split(':');
-				if (sessionKey === sessionId && stageKey === stageSlug && progress.documents[focusedEntry.documentKey]) {
+				if (sessionKey === sessionId && stageKey === stageSlug && progress.documents[getStageRunDocumentKey(focusedEntry.documentKey, focusedEntry.modelId)]) {
 					const parsed = Number(iterationValue);
 					if (!Number.isNaN(parsed)) {
 						iterationNumber = parsed;

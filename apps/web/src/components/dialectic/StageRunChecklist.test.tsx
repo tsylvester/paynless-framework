@@ -1,16 +1,21 @@
 import { describe, it, beforeEach, expect, vi } from 'vitest';
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { act, render, screen, within, fireEvent } from '@testing-library/react';
 
 import type {
     DialecticStageRecipe,
     DialecticStageRecipeStep,
     DialecticSession,
     DialecticStateValues,
+    DialecticStage,
+    DialecticProcessTemplate,
+    DialecticStageTransition,
 } from '@paynless/types';
+import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 
 import {
     initializeMockDialecticState,
     selectValidMarkdownDocumentKeys,
+    selectSelectedModelIds,
     setDialecticStateValues,
 } from '../../mocks/dialecticStore.mock';
 
@@ -29,6 +34,10 @@ type StageRunProgressEntry = NonNullable<DialecticStateValues['stageRunProgress'
 
 type StepStatuses = StageRunProgressEntry['stepStatuses'];
 type StageRunDocuments = StageRunProgressEntry['documents'];
+
+function makeStageRunDocumentKey(documentKey: string, modelId: string): string {
+  return `${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`;
+}
 
 type OutputsRequired = DialecticStageRecipeStep['outputs_required'];
 type InputsRequired = DialecticStageRecipeStep['inputs_required'];
@@ -225,6 +234,29 @@ const createProgressEntry = (
     documents: docs,
 });
 
+function buildProcessTemplateForStage(slug: string): DialecticProcessTemplate {
+    const stage: DialecticStage = {
+        id: `stage-${slug}`,
+        slug,
+        display_name: slug,
+        description: null,
+        created_at: new Date().toISOString(),
+        default_system_prompt_id: null,
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+    };
+    return {
+        id: `template-${slug}`,
+        name: 'Test Process',
+        description: null,
+        created_at: new Date().toISOString(),
+        starting_stage_id: stage.id,
+        stages: [stage],
+        transitions: [],
+    };
+}
+
 const setChecklistState = (
     recipe: DialecticStageRecipe,
     progressEntry: StageRunProgressEntry,
@@ -236,6 +268,7 @@ const setChecklistState = (
         activeContextSessionId: sessionId,
         activeStageSlug: recipe.stageSlug,
         activeSessionDetail: baseSession,
+        currentProcessTemplate: buildProcessTemplateForStage(recipe.stageSlug),
         recipesByStageSlug: {
             [recipe.stageSlug]: recipe,
         },
@@ -261,7 +294,7 @@ describe('StageRunChecklist', () => {
         };
 
         const documents: StageRunDocuments = {
-            synthesis_document_rendered: {
+            [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
                 status: 'failed',
                 job_id: 'job-render-failed',
                 latestRenderedResourceId: 'resource-render',
@@ -276,7 +309,9 @@ describe('StageRunChecklist', () => {
 
         setChecklistState(recipe, progressEntry);
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
 
         const failureIcon = screen.getByTestId('document-failed-icon');
         expect(failureIcon).toBeInTheDocument();
@@ -298,7 +333,7 @@ describe('StageRunChecklist', () => {
         };
 
         const documents: StageRunDocuments = {
-            synthesis_document_rendered: {
+            [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
                 status: 'completed',
                 job_id: 'job-render',
                 latestRenderedResourceId: 'resource-render',
@@ -307,7 +342,7 @@ describe('StageRunChecklist', () => {
                 lastRenderedResourceId: 'resource-render',
                 lastRenderAtIso: '2025-01-01T00:00:00.000Z',
             },
-            synthesis_document_secondary: {
+            [makeStageRunDocumentKey('synthesis_document_secondary', modelIdA)]: {
                 status: 'continuing',
                 job_id: 'job-secondary',
                 latestRenderedResourceId: 'resource-secondary',
@@ -316,7 +351,7 @@ describe('StageRunChecklist', () => {
                 lastRenderedResourceId: 'resource-secondary',
                 lastRenderAtIso: '2025-01-01T00:00:01.000Z',
             },
-            synthesis_document_outline: {
+            [makeStageRunDocumentKey('synthesis_document_outline', modelIdA)]: {
                 status: 'completed',
                 job_id: 'job-outline',
                 latestRenderedResourceId: 'resource-outline',
@@ -331,7 +366,9 @@ describe('StageRunChecklist', () => {
 
         setChecklistState(recipe, progressEntry);
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
 
         expect(screen.getByTestId('document-synthesis_document_rendered')).toBeInTheDocument();
         expect(screen.getByTestId('document-synthesis_document_secondary')).toBeInTheDocument();
@@ -351,7 +388,7 @@ describe('StageRunChecklist', () => {
         };
 
         const documents: StageRunDocuments = {
-            synthesis_plan_header: {
+            [makeStageRunDocumentKey('synthesis_plan_header', modelIdA)]: {
                 status: 'completed',
                 job_id: 'job-plan',
                 latestRenderedResourceId: 'resource-plan',
@@ -360,7 +397,7 @@ describe('StageRunChecklist', () => {
                 lastRenderedResourceId: 'resource-plan',
                 lastRenderAtIso: '2025-01-01T00:00:00.000Z',
             },
-            synthesis_document_rendered: {
+            [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
                 status: 'completed',
                 job_id: 'job-render',
                 latestRenderedResourceId: 'resource-render',
@@ -375,7 +412,9 @@ describe('StageRunChecklist', () => {
 
         setChecklistState(recipe, progressEntry);
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
 
         expect(screen.getByText('1 / 1 Documents')).toBeInTheDocument();
         expect(screen.queryByText(/Stage Run Checklist/i)).toBeNull();
@@ -394,7 +433,7 @@ describe('StageRunChecklist', () => {
         };
 
         const documents: StageRunDocuments = {
-            synthesis_document_rendered: {
+            [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
                 status: 'continuing',
                 job_id: 'job-render',
                 latestRenderedResourceId: 'resource-render',
@@ -410,7 +449,9 @@ describe('StageRunChecklist', () => {
 
         const onDocumentSelect = vi.fn();
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={onDocumentSelect} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={onDocumentSelect} />);
+        });
 
         const documentRow = screen.getByTestId('document-synthesis_document_rendered');
         expect(within(documentRow).getByText('synthesis_document_rendered')).toBeInTheDocument();
@@ -437,7 +478,7 @@ describe('StageRunChecklist', () => {
         };
 
         const documents: StageRunDocuments = {
-            synthesis_document_outline: {
+            [makeStageRunDocumentKey('synthesis_document_outline', modelIdA)]: {
                 status: 'completed',
                 job_id: 'job-outline',
                 latestRenderedResourceId: 'resource-outline',
@@ -452,7 +493,9 @@ describe('StageRunChecklist', () => {
 
         setChecklistState(recipe, progressEntry);
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
 
         expect(screen.getByText('0 / 0 Documents')).toBeInTheDocument();
         expect(screen.getAllByText('No documents generated yet.')).toHaveLength(1);
@@ -463,27 +506,35 @@ describe('StageRunChecklist', () => {
     it('renders guard state when prerequisites are missing', () => {
         selectValidMarkdownDocumentKeys.mockReturnValue(new Set<string>());
 
-        setDialecticStateValues({
-            activeContextSessionId: sessionId,
-            activeStageSlug: stageSlug,
-            activeSessionDetail: baseSession,
-            recipesByStageSlug: {},
-            stageRunProgress: {},
+        act(() => {
+            setDialecticStateValues({
+                activeContextSessionId: sessionId,
+                activeStageSlug: stageSlug,
+                activeSessionDetail: baseSession,
+                recipesByStageSlug: {},
+                stageRunProgress: {},
+            });
         });
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
 
         expect(screen.getByText('Stage progress data is unavailable.')).toBeInTheDocument();
 
-        setDialecticStateValues({
-            activeContextSessionId: sessionId,
-            activeStageSlug: stageSlug,
-            activeSessionDetail: null,
-            recipesByStageSlug: {},
-            stageRunProgress: {},
+        act(() => {
+            setDialecticStateValues({
+                activeContextSessionId: sessionId,
+                activeStageSlug: stageSlug,
+                activeSessionDetail: null,
+                recipesByStageSlug: {},
+                stageRunProgress: {},
+            });
         });
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
 
         expect(screen.getAllByText('Stage progress data is unavailable.')).toHaveLength(2);
     });
@@ -497,13 +548,16 @@ describe('StageRunChecklist', () => {
             activeContextSessionId: sessionId,
             activeStageSlug: recipe.stageSlug,
             activeSessionDetail: baseSession,
+            currentProcessTemplate: buildProcessTemplateForStage(recipe.stageSlug),
             recipesByStageSlug: {
                 [recipe.stageSlug]: recipe,
             },
             stageRunProgress: {},
         });
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
 
         expect(screen.queryByText('Stage progress data is unavailable.')).toBeNull();
         expect(screen.getByText('0 / 2 Documents')).toBeInTheDocument();
@@ -533,7 +587,7 @@ describe('StageRunChecklist', () => {
                 draft_document: 'completed',
             },
             {
-                synthesis_plan_header: {
+                [makeStageRunDocumentKey('synthesis_plan_header', modelIdA)]: {
                     status: 'completed',
                     job_id: 'job-plan',
                     latestRenderedResourceId: 'resource-plan',
@@ -547,14 +601,18 @@ describe('StageRunChecklist', () => {
 
         setChecklistState(recipe, progressEntry, { activeContextSessionId: null });
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
         expect(screen.getByText('Stage progress data is unavailable.')).toBeInTheDocument();
 
         initializeMockDialecticState();
 
-        setChecklistState(recipe, progressEntry, { activeStageSlug: null });
+        setChecklistState(recipe, progressEntry, { activeStageSlug: null, currentProcessTemplate: null });
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
         expect(screen.getAllByText('Stage progress data is unavailable.')).toHaveLength(2);
     });
 
@@ -579,7 +637,7 @@ describe('StageRunChecklist', () => {
                         draft_document: 'completed',
                     },
                     {
-                        synthesis_plan_header: {
+                        [makeStageRunDocumentKey('synthesis_plan_header', modelIdA)]: {
                             status: 'completed',
                             job_id: 'job-plan',
                             latestRenderedResourceId: 'resource-plan',
@@ -593,7 +651,9 @@ describe('StageRunChecklist', () => {
             },
         });
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
 
         expect(screen.getByText('Stage progress data is unavailable.')).toBeInTheDocument();
     });
@@ -620,7 +680,7 @@ describe('StageRunChecklist', () => {
                         planner_header: 'completed',
                     },
                     {
-                        synthesis_plan_header: {
+                        [makeStageRunDocumentKey('synthesis_plan_header', modelIdA)]: {
                             status: 'completed',
                             job_id: 'job-plan',
                             latestRenderedResourceId: 'resource-plan',
@@ -634,7 +694,9 @@ describe('StageRunChecklist', () => {
             },
         });
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
 
         expect(screen.getByText('Stage progress data is unavailable.')).toBeInTheDocument();
     });
@@ -656,7 +718,9 @@ describe('StageRunChecklist', () => {
 
         setChecklistState(recipe, progressEntry);
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
 
         expect(screen.getByText('0 / 2 Documents')).toBeInTheDocument();
 
@@ -686,7 +750,7 @@ describe('StageRunChecklist', () => {
         };
 
         const documents: StageRunDocuments = {
-            synthesis_document_rendered: {
+            [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
                 status: 'completed',
                 job_id: 'job-render',
                 latestRenderedResourceId: 'resource-render',
@@ -701,7 +765,9 @@ describe('StageRunChecklist', () => {
 
         setChecklistState(recipe, progressEntry);
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
 
         const documentList = screen.getByTestId('stage-run-checklist-documents');
         const checklistCard = documentList.closest('[data-testid="stage-run-checklist-card"]');
@@ -730,7 +796,7 @@ describe('StageRunChecklist', () => {
         };
 
         const documents: StageRunDocuments = {
-            synthesis_document_rendered: {
+            [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
                 status: 'completed',
                 job_id: 'job-render',
                 latestRenderedResourceId: 'resource-render',
@@ -745,15 +811,17 @@ describe('StageRunChecklist', () => {
 
         setChecklistState(recipe, progressEntry);
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
 
         const checklistCard = screen.getByTestId('stage-run-checklist-card');
         const accordion = screen.getByTestId('stage-run-checklist-accordion');
 
         expect(checklistCard).toContainElement(accordion);
 
-        const accordionTrigger = within(accordion).getByTestId('stage-run-checklist-accordion-trigger');
-        const accordionContent = within(accordion).getByTestId('stage-run-checklist-accordion-content');
+        const accordionTrigger = within(accordion).getByTestId('stage-run-checklist-accordion-trigger-synthesis');
+        const accordionContent = within(accordion).getByTestId('stage-run-checklist-accordion-content-synthesis');
 
         expect(accordion).toContainElement(accordionTrigger);
         expect(accordion).toContainElement(accordionContent);
@@ -770,7 +838,7 @@ describe('StageRunChecklist', () => {
         };
 
         const documents: StageRunDocuments = {
-            synthesis_document_rendered: {
+            [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
                 status: 'completed',
                 job_id: 'job-render',
                 latestRenderedResourceId: 'resource-render',
@@ -785,7 +853,9 @@ describe('StageRunChecklist', () => {
 
         setChecklistState(recipe, progressEntry);
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
 
         const checklistCard = screen.getByTestId('stage-run-checklist-card');
         const accordion = screen.getByTestId('stage-run-checklist-accordion');
@@ -808,7 +878,7 @@ describe('StageRunChecklist', () => {
         };
 
         const documents: StageRunDocuments = {
-            synthesis_document_rendered: {
+            [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
                 status: 'failed',
                 job_id: 'job-render',
                 latestRenderedResourceId: 'resource-render',
@@ -818,7 +888,7 @@ describe('StageRunChecklist', () => {
                 lastRenderAtIso: '2025-01-01T00:00:00.000Z',
                 stepKey: 'render_document_with_header',
             },
-            synthesis_plan_header: {
+            [makeStageRunDocumentKey('synthesis_plan_header', modelIdA)]: {
                 status: 'failed',
                 job_id: 'job-header',
                 latestRenderedResourceId: 'resource-header',
@@ -834,7 +904,9 @@ describe('StageRunChecklist', () => {
 
         setChecklistState(recipe, progressEntry);
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
 
         expect(screen.getByTestId('document-synthesis_document_rendered')).toBeInTheDocument();
         expect(screen.queryByTestId('document-synthesis_plan_header')).toBeNull();
@@ -859,7 +931,7 @@ describe('StageRunChecklist', () => {
         };
 
         const documents: StageRunDocuments = {
-            synthesis_document_outline: {
+            [makeStageRunDocumentKey('synthesis_document_outline', modelIdA)]: {
                 status: 'completed',
                 job_id: 'job-outline',
                 latestRenderedResourceId: 'resource-outline',
@@ -868,7 +940,7 @@ describe('StageRunChecklist', () => {
                 lastRenderedResourceId: 'resource-outline',
                 lastRenderAtIso: '2025-01-01T00:00:00.000Z',
             },
-            synthesis_document_rendered: {
+            [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
                 status: 'completed',
                 job_id: 'job-render',
                 latestRenderedResourceId: 'resource-render',
@@ -877,7 +949,7 @@ describe('StageRunChecklist', () => {
                 lastRenderedResourceId: 'resource-render',
                 lastRenderAtIso: '2025-01-01T00:00:01.000Z',
             },
-            synthesis_document_secondary: {
+            [makeStageRunDocumentKey('synthesis_document_secondary', modelIdA)]: {
                 status: 'completed',
                 job_id: 'job-secondary',
                 latestRenderedResourceId: 'resource-secondary',
@@ -891,7 +963,9 @@ describe('StageRunChecklist', () => {
         const progressEntry = createProgressEntry(stepStatuses, documents);
         setChecklistState(recipe, progressEntry);
 
-        render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
 
         // Assert selector was called with correct parameters
         expect(selectValidMarkdownDocumentKeys).toHaveBeenCalledWith(
@@ -937,7 +1011,7 @@ describe('StageRunChecklist', () => {
             };
 
             const documents: StageRunDocuments = {
-                synthesis_document_rendered: {
+                [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
                     status: 'completed',
                     job_id: 'job-render',
                     latestRenderedResourceId: 'resource-render',
@@ -980,7 +1054,7 @@ describe('StageRunChecklist', () => {
             };
 
             const documents: StageRunDocuments = {
-                synthesis_document_rendered: {
+                [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
                     status: 'completed',
                     job_id: 'job-render',
                     latestRenderedResourceId: 'resource-render',
@@ -1023,7 +1097,7 @@ describe('StageRunChecklist', () => {
             };
 
             const documents: StageRunDocuments = {
-                synthesis_document_rendered: {
+                [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
                     status: 'completed',
                     job_id: 'job-render',
                     latestRenderedResourceId: 'resource-render',
@@ -1058,7 +1132,7 @@ describe('StageRunChecklist', () => {
             };
 
             const documents: StageRunDocuments = {
-                synthesis_document_rendered: {
+                [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
                     status: 'completed',
                     job_id: 'job-render',
                     latestRenderedResourceId: 'resource-render',
@@ -1098,7 +1172,7 @@ describe('StageRunChecklist', () => {
             };
 
             const documents: StageRunDocuments = {
-                synthesis_document_rendered: {
+                [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
                     status: 'completed',
                     job_id: 'job-render',
                     latestRenderedResourceId: 'resource-render',
@@ -1140,7 +1214,7 @@ describe('StageRunChecklist', () => {
             };
 
             const documents: StageRunDocuments = {
-                synthesis_document_rendered: {
+                [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
                     status: 'completed',
                     job_id: 'job-render',
                     latestRenderedResourceId: 'resource-render',
@@ -1176,6 +1250,382 @@ describe('StageRunChecklist', () => {
             // Verify the component's highlighting behavior matches what isDocumentHighlighted would return
             // This test ensures consistency between component behavior and shared utility
             expect(isHighlighted).toBe(true);
+        });
+    });
+
+    describe('checklist: all stages, all documents, consolidated status, expand on focus', () => {
+        const thesisStage: DialecticStage = {
+            id: 'stage-thesis',
+            slug: 'thesis',
+            display_name: 'Thesis',
+            description: 'Thesis stage',
+            created_at: new Date().toISOString(),
+            default_system_prompt_id: 'sp-1',
+            expected_output_template_ids: [],
+            recipe_template_id: null,
+            active_recipe_instance_id: null,
+        };
+        const antithesisStage: DialecticStage = {
+            ...thesisStage,
+            id: 'stage-antithesis',
+            slug: 'antithesis',
+            display_name: 'Antithesis',
+        };
+        const synthesisStageForList: DialecticStage = {
+            ...thesisStage,
+            id: 'stage-synthesis',
+            slug: 'synthesis',
+            display_name: 'Synthesis',
+        };
+        const transitionThesisToAntithesis: DialecticStageTransition = {
+            id: 't1',
+            process_template_id: 'pt-1',
+            source_stage_id: thesisStage.id,
+            target_stage_id: antithesisStage.id,
+            created_at: new Date().toISOString(),
+            condition_description: null,
+        };
+        const transitionAntithesisToSynthesis: DialecticStageTransition = {
+            id: 't2',
+            process_template_id: 'pt-1',
+            source_stage_id: antithesisStage.id,
+            target_stage_id: synthesisStageForList.id,
+            created_at: new Date().toISOString(),
+            condition_description: null,
+        };
+        const processTemplateTransitions: DialecticStageTransition[] = [
+            transitionThesisToAntithesis,
+            transitionAntithesisToSynthesis,
+        ];
+        const processTemplateWithStages: DialecticProcessTemplate = {
+            id: 'pt-1',
+            name: 'Test Template',
+            description: 'Test',
+            created_at: new Date().toISOString(),
+            starting_stage_id: thesisStage.id,
+            stages: [thesisStage, antithesisStage, synthesisStageForList],
+            transitions: processTemplateTransitions,
+        };
+
+        it('displays all stages in order (past, current, future)', () => {
+            setDialecticStateValues({
+                activeContextSessionId: sessionId,
+                activeStageSlug: stageSlug,
+                activeSessionDetail: baseSession,
+                currentProcessTemplate: processTemplateWithStages,
+                recipesByStageSlug: {
+                    thesis: createRecipe([buildRenderStep()], 'thesis'),
+                    antithesis: createRecipe([buildRenderStep()], 'antithesis'),
+                    synthesis: createRecipe([buildRenderStep(), buildSecondaryRenderStep()], 'synthesis'),
+                },
+                stageRunProgress: {},
+            });
+            selectValidMarkdownDocumentKeys.mockImplementation((_state: DialecticStateValues, slug: string) => {
+                if (slug === 'synthesis') return new Set(['synthesis_document_rendered', 'synthesis_document_secondary']);
+                return new Set(['document_rendered']);
+            });
+
+            act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
+
+            expect(screen.getByText('Thesis')).toBeInTheDocument();
+            expect(screen.getByText('Antithesis')).toBeInTheDocument();
+            expect(screen.getByText('Synthesis')).toBeInTheDocument();
+            const stageLabels = screen.getAllByText(/^(Thesis|Antithesis|Synthesis)$/);
+            expect(stageLabels[0]).toHaveTextContent('Thesis');
+            expect(stageLabels[1]).toHaveTextContent('Antithesis');
+            expect(stageLabels[2]).toHaveTextContent('Synthesis');
+        });
+
+        it('when a stage is focused, the stage displays all documents the stage will produce (from recipe)', () => {
+            setChecklistState(createRecipe([buildRenderStep(), buildSecondaryRenderStep()], stageSlug), createProgressEntry({}, {}));
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered', 'synthesis_document_secondary']));
+
+            act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
+
+            expect(screen.getByTestId('document-synthesis_document_rendered')).toBeInTheDocument();
+            expect(screen.getByTestId('document-synthesis_document_secondary')).toBeInTheDocument();
+        });
+
+        it('document row shows consolidated status when a document is unfocused (e.g. "2/3 complete", "Completed", "Not started")', () => {
+            selectSelectedModelIds.mockReturnValue(['model-a', 'model-b', 'model-c']);
+            const recipe = createRecipe([buildRenderStep()]);
+            const stepStatuses: StepStatuses = { render_document: 'in_progress' };
+            const documents: StageRunDocuments = {
+                [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
+                    status: 'completed',
+                    job_id: 'job-1',
+                    latestRenderedResourceId: 'res-1',
+                    modelId: modelIdA,
+                    versionHash: 'h1',
+                    lastRenderedResourceId: 'res-1',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                },
+            };
+            setChecklistState(recipe, createProgressEntry(stepStatuses, documents));
+
+            act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
+
+            const row = screen.getByTestId('document-synthesis_document_rendered');
+            expect(within(row).getByText(/Completed|Not started|\d+\/\d+/i)).toBeInTheDocument();
+        });
+
+        it('one document key produced by 3 models with 2 completed shows "2/3 complete" and expand shows per-model status', () => {
+            const modelIdB = 'model-b';
+            const modelIdC = 'model-c';
+            selectSelectedModelIds.mockReturnValue([modelIdA, modelIdB, modelIdC]);
+            const recipe = createRecipe([buildRenderStep()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+            const documentKey = 'synthesis_document_rendered';
+            const documents: StageRunDocuments = {
+                [makeStageRunDocumentKey(documentKey, modelIdA)]: {
+                    status: 'completed',
+                    job_id: 'job-1',
+                    latestRenderedResourceId: 'res-1',
+                    modelId: modelIdA,
+                    versionHash: 'h1',
+                    lastRenderedResourceId: 'res-1',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                    stepKey: 'render_document',
+                },
+                [makeStageRunDocumentKey(documentKey, modelIdB)]: {
+                    status: 'completed',
+                    job_id: 'job-2',
+                    latestRenderedResourceId: 'res-2',
+                    modelId: modelIdB,
+                    versionHash: 'h2',
+                    lastRenderedResourceId: 'res-2',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                    stepKey: 'render_document',
+                },
+            };
+            setChecklistState(recipe, createProgressEntry({ render_document: 'in_progress' }, documents));
+
+            act(() => {
+                render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+            });
+
+            const row = screen.getByTestId('document-synthesis_document_rendered');
+            expect(within(row).getByText('2/3 complete')).toBeInTheDocument();
+
+            fireEvent.click(row);
+            const perModelSection = within(row).queryByTestId('stage-run-checklist-row-per-model-status');
+            expect(perModelSection).toBeInTheDocument();
+            if (perModelSection) {
+                expect(within(perModelSection).getAllByText(/Completed/i).length).toBe(2);
+                expect(within(perModelSection).getByText(/Not started/i)).toBeInTheDocument();
+            }
+        });
+
+        it('when user focuses a document row, row expands to show per-model status for that document', () => {
+            const modelIdB = 'model-b';
+            selectSelectedModelIds.mockReturnValue([modelIdA, modelIdB]);
+            const recipe = createRecipe([buildRenderStep()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+            const documentKey = 'synthesis_document_rendered';
+            const documents: StageRunDocuments = {
+                [makeStageRunDocumentKey(documentKey, modelIdA)]: {
+                    status: 'completed',
+                    job_id: 'job-1',
+                    latestRenderedResourceId: 'res-1',
+                    modelId: modelIdA,
+                    versionHash: 'h1',
+                    lastRenderedResourceId: 'res-1',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                    stepKey: 'render_document',
+                },
+                [makeStageRunDocumentKey(documentKey, modelIdB)]: {
+                    status: 'continuing',
+                    job_id: 'job-2',
+                    latestRenderedResourceId: 'res-2',
+                    modelId: modelIdB,
+                    versionHash: 'h2',
+                    lastRenderedResourceId: 'res-2',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                    stepKey: 'render_document',
+                },
+            };
+            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents));
+
+            act(() => {
+                render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+            });
+
+            const documentRow = screen.getByTestId('document-synthesis_document_rendered');
+            fireEvent.click(documentRow);
+
+            const perModelSection = within(documentRow).queryByTestId('stage-run-checklist-row-per-model-status');
+            expect(perModelSection).toBeInTheDocument();
+            if (!perModelSection) {
+                throw new Error('expected per-model section');
+            }
+            expect(within(perModelSection).getByText(/Completed/i)).toBeInTheDocument();
+            expect(within(perModelSection).getByText(/Continuing|Generating/i)).toBeInTheDocument();
+        });
+
+        it('clicking the document row arrow toggles per-model list without changing focus (onDocumentSelect not called)', () => {
+            const modelIdB = 'model-b';
+            selectSelectedModelIds.mockReturnValue([modelIdA, modelIdB]);
+            const recipe = createRecipe([buildRenderStep()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+            const documentKey = 'synthesis_document_rendered';
+            const documents: StageRunDocuments = {
+                [makeStageRunDocumentKey(documentKey, modelIdA)]: {
+                    status: 'completed',
+                    job_id: 'job-1',
+                    latestRenderedResourceId: 'res-1',
+                    modelId: modelIdA,
+                    versionHash: 'h1',
+                    lastRenderedResourceId: 'res-1',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                    stepKey: 'render_document',
+                },
+                [makeStageRunDocumentKey(documentKey, modelIdB)]: {
+                    status: 'continuing',
+                    job_id: 'job-2',
+                    latestRenderedResourceId: 'res-2',
+                    modelId: modelIdB,
+                    versionHash: 'h2',
+                    lastRenderedResourceId: 'res-2',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                    stepKey: 'render_document',
+                },
+            };
+            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents));
+
+            const onDocumentSelect = vi.fn();
+            act(() => {
+                render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={onDocumentSelect} />);
+            });
+
+            const documentRow = screen.getByTestId('document-synthesis_document_rendered');
+            const arrowButton = within(documentRow).queryByTestId('stage-run-checklist-row-toggle-per-model');
+            expect(arrowButton).toBeInTheDocument();
+            if (!arrowButton) {
+                throw new Error('expected document row toggle');
+            }
+            fireEvent.click(arrowButton);
+
+            const perModelSection = within(documentRow).queryByTestId('stage-run-checklist-row-per-model-status');
+            expect(perModelSection).toBeInTheDocument();
+            expect(onDocumentSelect).not.toHaveBeenCalled();
+        });
+
+        it('future stages show "Stage not ready" indicator; documents in ready stage show "Not started" when not begun', () => {
+            setDialecticStateValues({
+                activeContextSessionId: sessionId,
+                activeStageSlug: 'antithesis',
+                activeSessionDetail: baseSession,
+                currentProcessTemplate: processTemplateWithStages,
+                recipesByStageSlug: {
+                    thesis: createRecipe([buildRenderStep()], 'thesis'),
+                    antithesis: createRecipe([buildRenderStep()], 'antithesis'),
+                    synthesis: createRecipe([buildRenderStep()], 'synthesis'),
+                },
+                stageRunProgress: {},
+            });
+            selectValidMarkdownDocumentKeys.mockImplementation((_state: DialecticStateValues, slug: string) => {
+                return new Set([slug === 'thesis' ? 'thesis_doc' : 'doc_rendered']);
+            });
+
+            act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
+
+            expect(screen.getByText(/Stage not ready|Not started/i)).toBeInTheDocument();
+        });
+
+        it('distinguishes "Stage not ready" from "Document not started"', () => {
+            setDialecticStateValues({
+                activeContextSessionId: sessionId,
+                activeStageSlug: stageSlug,
+                activeSessionDetail: baseSession,
+                currentProcessTemplate: processTemplateWithStages,
+                recipesByStageSlug: { [stageSlug]: createRecipe([buildRenderStep()], stageSlug) },
+                stageRunProgress: {},
+            });
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
+            act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
+
+            const notStarted = screen.getAllByText('Not Started');
+            expect(notStarted.length).toBeGreaterThanOrEqual(0);
+        });
+
+        it('clicking a document focuses by documentKey so viewer can show all model versions; onDocumentSelect called once per modelId', () => {
+            selectSelectedModelIds.mockReturnValue([modelIdA, 'model-b', 'model-c']);
+            const recipe = createRecipe([buildRenderStep()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+            const documents: StageRunDocuments = {
+                [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
+                    status: 'completed',
+                    job_id: 'job-1',
+                    latestRenderedResourceId: 'res-1',
+                    modelId: modelIdA,
+                    versionHash: 'h1',
+                    lastRenderedResourceId: 'res-1',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                },
+            };
+            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents));
+
+            const onDocumentSelect = vi.fn();
+            act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={onDocumentSelect} />);
+        });
+
+            fireEvent.click(screen.getByTestId('document-synthesis_document_rendered'));
+
+            expect(onDocumentSelect).toHaveBeenCalledWith(expect.objectContaining({ documentKey: 'synthesis_document_rendered' }));
+            expect(onDocumentSelect).toHaveBeenCalledTimes(3);
+        });
+
+        it('does not filter out documents or stages by progress; all stages and all documents always listed', () => {
+            setDialecticStateValues({
+                activeContextSessionId: sessionId,
+                activeStageSlug: stageSlug,
+                activeSessionDetail: baseSession,
+                currentProcessTemplate: processTemplateWithStages,
+                recipesByStageSlug: {
+                    thesis: createRecipe([buildRenderStep()], 'thesis'),
+                    antithesis: createRecipe([buildRenderStep()], 'antithesis'),
+                    synthesis: createRecipe([buildRenderStep(), buildSecondaryRenderStep()], 'synthesis'),
+                },
+                stageRunProgress: {},
+            });
+            selectValidMarkdownDocumentKeys.mockImplementation((_state: DialecticStateValues, slug: string) => {
+                if (slug === 'synthesis') return new Set(['synthesis_document_rendered', 'synthesis_document_secondary']);
+                return new Set(['document_rendered']);
+            });
+
+            act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
+
+            expect(screen.getByText('Thesis')).toBeInTheDocument();
+            expect(screen.getByText('Antithesis')).toBeInTheDocument();
+            expect(screen.getByText('Synthesis')).toBeInTheDocument();
+        });
+
+        it('does filter display of any steps that do not produce a document that will be rendered for the user to view (headers, intermediate products)', () => {
+            const recipe = createRecipe([buildRenderStepWithHeaderContext()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
+            setChecklistState(recipe, createProgressEntry({ render_document_with_header: 'completed' }, {}));
+
+            act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
+
+            expect(screen.getByTestId('document-synthesis_document_rendered')).toBeInTheDocument();
+            expect(screen.queryByTestId('document-synthesis_plan_header')).toBeNull();
         });
     });
 });

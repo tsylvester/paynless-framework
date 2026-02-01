@@ -17,7 +17,13 @@ import type {
     StagePlannedDocumentDescriptor,
     StageDocumentContentState,
     EditedDocumentResource,
+    UnifiedProjectProgress,
+    StepProgressDetail,
+    StageProgressDetail,
+    UnifiedProjectStatus,
+    DialecticProcessTemplate,
 } from '@paynless/types';
+import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import { createSelector } from 'reselect';
 
 // Selectors for Domains
@@ -367,14 +373,25 @@ export const selectIsStageReadyForSessionIteration = createSelector(
                     const sourceStageSlug = deriveRequirementStageSlug(requirement.slug);
                     const sourceProgressKey = `${sessionId}:${sourceStageSlug}:${iterationNumber}`;
                     const sourceProgressEntry = stageRunProgressMap[sourceProgressKey];
-                    
+
                     if (sourceProgressEntry && sourceProgressEntry.documents && requirement.document_key) {
-                        const documentDescriptor = sourceProgressEntry.documents[requirement.document_key];
-                        if (documentDescriptor && documentDescriptor.status === 'completed') {
-                            continue;
+                        const docs = sourceProgressEntry.documents;
+                        const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+                        let hasCompletedDescriptor = false;
+                        for (const compositeKey of Object.keys(docs)) {
+                            const logicalKey = compositeKey.includes(sep)
+                                ? compositeKey.slice(0, compositeKey.indexOf(sep))
+                                : compositeKey;
+                            if (logicalKey !== requirement.document_key) continue;
+                            const descriptor = docs[compositeKey];
+                            if (descriptor && descriptor.status === 'completed') {
+                                hasCompletedDescriptor = true;
+                                break;
+                            }
                         }
+                        if (hasCompletedDescriptor) continue;
                     }
-                    
+
                     const contributions = Array.isArray(projectSession.dialectic_contributions)
                         ? projectSession.dialectic_contributions
                         : [];
@@ -567,6 +584,12 @@ const isRenderedDescriptor = (
 
 const emptyDocuments: StageRunDocuments = {};
 
+/** Extract logical document key from stageRunProgress.documents composite key (documentKey:modelId). */
+function extractLogicalDocumentKeyFromComposite(compositeKey: string): string {
+  const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+  return compositeKey.includes(sep) ? compositeKey.slice(0, compositeKey.indexOf(sep)) : compositeKey;
+}
+
 const selectRecipeSteps = (
     state: DialecticStateValues,
     stageSlug: string
@@ -632,6 +655,11 @@ export const selectDocumentsForStageRun = (
     return progress.documents;
 };
 
+/**
+ * Returns status for a document descriptor in stageRunProgress.documents.
+ * @param progressKey - Progress bucket key (sessionId:stageSlug:iterationNumber)
+ * @param documentKey - Full composite key (documentKey:modelId) for stageRunProgress.documents, not logical document key alone
+ */
 export const selectDocumentStatus = (
     state: DialecticStateValues,
     progressKey: string,
@@ -645,6 +673,11 @@ export const selectDocumentStatus = (
     return descriptor.status;
 };
 
+/**
+ * Returns latestRenderedResourceId for a document descriptor in stageRunProgress.documents.
+ * @param progressKey - Progress bucket key (sessionId:stageSlug:iterationNumber)
+ * @param documentKey - Full composite key (documentKey:modelId) for stageRunProgress.documents, not logical document key alone
+ */
 export const selectLatestRenderedRef = (
     state: DialecticStateValues,
     progressKey: string,
@@ -687,42 +720,45 @@ export const selectStageProgressSummary = (
     }
 
     const documentEntries = progress.documents;
+    const validMarkdownKeys = selectValidMarkdownDocumentKeys(state, stageSlug);
 
-    const allDocumentKeys = Object.keys(documentEntries).filter((key) => {
+    const compositeKeys = Object.keys(documentEntries).filter((compositeKey) => {
         if (!modelId) return true;
-        const documentDescriptor = documentEntries[key];
+        const documentDescriptor = documentEntries[compositeKey];
         return documentDescriptor?.modelId === modelId;
     });
 
-    const validMarkdownKeys = selectValidMarkdownDocumentKeys(state, stageSlug);
-    const documentKeys = allDocumentKeys.filter((key) => validMarkdownKeys.has(key));
+    const documentKeys = compositeKeys.filter((compositeKey) =>
+        validMarkdownKeys.has(extractLogicalDocumentKeyFromComposite(compositeKey))
+    );
 
     let completedDocuments = 0;
-    const outstandingDocuments: string[] = [];
-    const failedDocumentKeys: string[] = [];
+    const outstandingLogicalKeys = new Set<string>();
+    const failedLogicalKeys = new Set<string>();
 
-    for (const key of documentKeys) {
-        const documentDescriptor = documentEntries[key];
+    for (const compositeKey of documentKeys) {
+        const documentDescriptor = documentEntries[compositeKey];
         if (!documentDescriptor) {
             continue;
         }
+        const logicalKey = extractLogicalDocumentKeyFromComposite(compositeKey);
         if (documentDescriptor.status === 'completed') {
             completedDocuments += 1;
             continue;
         }
 
         if (documentDescriptor.status === 'failed') {
-            failedDocumentKeys.push(key);
+            failedLogicalKeys.add(logicalKey);
         } else {
-            outstandingDocuments.push(key);
+            outstandingLogicalKeys.add(logicalKey);
         }
     }
 
+    const outstandingDocuments: string[] = [...outstandingLogicalKeys].sort();
+    const failedDocumentKeys: string[] = [...failedLogicalKeys].sort();
+
     const totalDocuments = documentKeys.length;
     const isComplete = totalDocuments > 0 && completedDocuments === totalDocuments;
-
-    outstandingDocuments.sort();
-    failedDocumentKeys.sort();
 
     return {
         isComplete,
@@ -735,6 +771,188 @@ export const selectStageProgressSummary = (
     };
 };
 
+function getSortedStagesFromTemplate(template: DialecticProcessTemplate | null): DialecticStage[] {
+    if (!template?.stages?.length) return [];
+    const stages = template.stages;
+    if (!template.transitions?.length || !template.starting_stage_id) return stages;
+    const transitionMap = new Map(template.transitions.map((t) => [t.source_stage_id, t.target_stage_id]));
+    const sortedIds: string[] = [];
+    let currentId: string | undefined = template.starting_stage_id;
+    while (currentId) {
+        sortedIds.push(currentId);
+        currentId = transitionMap.get(currentId);
+    }
+    return [...stages].sort((a, b) => {
+        const iA = sortedIds.indexOf(a.id);
+        const iB = sortedIds.indexOf(b.id);
+        if (iA === -1) return 1;
+        if (iB === -1) return -1;
+        return iA - iB;
+    });
+}
+
+function isModelStep(step: DialecticStageRecipeStep): boolean {
+    if (step.job_type === 'RENDER') return false;
+    const outputs = step.outputs_required;
+    if (!outputs?.length) return false;
+    const hasDocumentOutput = outputs.some((o: { artifact_class: string; file_type?: string }) =>
+        (o.artifact_class === 'rendered_document' || o.artifact_class === 'assembled_document_json') && (o.file_type === 'markdown' || !o.file_type));
+    return hasDocumentOutput;
+}
+
+export const selectUnifiedProjectProgress = (
+    state: DialecticStateValues,
+    sessionId: string
+): UnifiedProjectProgress => {
+    const project = state.currentProjectDetail;
+    const template = project?.dialectic_process_templates ?? null;
+    const stages = template ? getSortedStagesFromTemplate(template) : [];
+    const totalStages = stages.length;
+    const session = selectSessionById(state, sessionId);
+    const iterationNumber = session?.iteration_count ?? 0;
+    const totalModels = state.selectedModelIds?.length ?? 0;
+
+    const currentStageId = session?.current_stage_id ?? null;
+    const currentStage: DialecticStage | null = currentStageId
+        ? (stages.find((s: DialecticStage) => s.id === currentStageId) ?? null)
+        : null;
+    const currentStageSlug: string | null = currentStage?.slug ?? null;
+
+    if (totalStages === 0) {
+        return {
+            totalStages: 0,
+            completedStages: 0,
+            currentStageSlug,
+            overallPercentage: 0,
+            currentStage,
+            projectStatus: 'not_started',
+            stageDetails: [],
+        };
+    }
+
+    const stageDetails: StageProgressDetail[] = [];
+    let projectStatus: UnifiedProjectStatus = 'not_started';
+    let completedStagesCount = 0;
+
+    for (const stage of stages) {
+        const stageSlug = stage.slug;
+        const recipe = state.recipesByStageSlug[stageSlug];
+        const progress = selectStageRunProgress(state, sessionId, stageSlug, iterationNumber);
+        const validMarkdownKeys = selectValidMarkdownDocumentKeys(state, stageSlug);
+        const steps = recipe?.steps ?? [];
+        const sortedSteps = [...steps].sort((a, b) => {
+            if (a.execution_order !== b.execution_order) return a.execution_order - b.execution_order;
+            return a.step_key.localeCompare(b.step_key);
+        });
+
+        const stepsDetail: StepProgressDetail[] = [];
+        let stageStatus: UnifiedProjectStatus = 'not_started';
+        let stepSum = 0;
+
+        for (const step of sortedSteps) {
+            const stepKey = step.step_key;
+            const stepStatusFromProgress = progress?.stepStatuses?.[stepKey];
+            const isModel = isModelStep(step);
+
+            let totalModelsForStep: number;
+            let completedModelsForStep: number;
+            let stepPercentage: number;
+            let stepStatus: UnifiedProjectStatus;
+
+            if (isModel) {
+                totalModelsForStep = totalModels;
+                const outputDocKeys = (step.outputs_required ?? [])
+                    .filter((o: { artifact_class: string; file_type?: string }) =>
+                        (o.artifact_class === 'rendered_document' || o.artifact_class === 'assembled_document_json') &&
+                        (o.file_type === 'markdown' || !o.file_type))
+                    .map((o: { document_key: string }) => o.document_key);
+                let completed = 0;
+                let hasFailed = false;
+                let hasInProgress = false;
+                const docs = progress?.documents ?? {};
+                const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+                for (const compositeKey of Object.keys(docs)) {
+                    const desc = docs[compositeKey];
+                    if (!desc) continue;
+                    const documentKey = compositeKey.includes(sep)
+                        ? compositeKey.slice(0, compositeKey.indexOf(sep))
+                        : compositeKey;
+                    if (!validMarkdownKeys.has(documentKey)) continue;
+                    const matchesOutput = outputDocKeys.length === 0 || outputDocKeys.some((k: string) => documentKey === k);
+                    if (!matchesOutput) continue;
+                    if (!desc.modelId) throw new Error(`document ${compositeKey} has no modelId`);
+                    if (state.selectedModelIds.indexOf(desc.modelId) === -1) continue;
+                    if (desc.status === 'completed') completed += 1;
+                    else if (desc.status === 'failed') hasFailed = true;
+                    else hasInProgress = true;
+                }
+                completedModelsForStep = completed;
+                stepPercentage = totalModelsForStep > 0 ? (completed / totalModelsForStep) * 100 : 0;
+                if (completed === 0 && hasInProgress && stepPercentage === 0) stepPercentage = 0.01;
+                stepStatus = hasFailed ? 'failed' : (hasInProgress || completed < totalModelsForStep ? 'in_progress' : 'completed');
+            } else {
+                totalModelsForStep = 1;
+                const done = stepStatusFromProgress === 'completed';
+                completedModelsForStep = done ? 1 : 0;
+                stepPercentage = done ? 100 : 0;
+                stepStatus = stepStatusFromProgress === 'failed' ? 'failed' : (done ? 'completed' : (stepStatusFromProgress === 'in_progress' ? 'in_progress' : 'not_started'));
+            }
+
+            stepSum += stepPercentage;
+            if (stepStatus === 'failed') stageStatus = 'failed';
+            else if (stepStatus === 'in_progress' && stageStatus !== 'failed') stageStatus = 'in_progress';
+            else if (stepStatus === 'completed' && stageStatus === 'not_started') stageStatus = 'completed';
+
+            stepsDetail.push({
+                stepKey,
+                stepName: step.step_name,
+                totalModels: totalModelsForStep,
+                completedModels: completedModelsForStep,
+                stepPercentage,
+                status: stepStatus,
+            });
+        }
+
+        const totalStepsForStage = sortedSteps.length;
+        const stagePercentage = totalStepsForStage > 0 ? stepSum / totalStepsForStage : 0;
+        const completedStepsForStage = stepsDetail.filter((s: StepProgressDetail) => s.status === 'completed').length;
+        if (totalStepsForStage > 0 && stageStatus === 'not_started' && completedStepsForStage === totalStepsForStage) stageStatus = 'completed';
+
+        stageDetails.push({
+            stageSlug,
+            totalSteps: totalStepsForStage,
+            completedSteps: completedStepsForStage,
+            stagePercentage,
+            stepsDetail,
+            stageStatus,
+        });
+
+        if (stageStatus === 'completed') completedStagesCount += 1;
+        if (stageStatus === 'failed') projectStatus = 'failed';
+        else if (stageStatus === 'in_progress' && projectStatus !== 'failed') projectStatus = 'in_progress';
+    }
+
+    if (projectStatus === 'not_started' && completedStagesCount === totalStages) projectStatus = 'completed';
+    else if (projectStatus === 'not_started' && completedStagesCount > 0 && completedStagesCount < totalStages) projectStatus = 'in_progress';
+
+    const currentStageDetail = stageDetails.find((s: StageProgressDetail) => s.stageSlug === currentStageSlug);
+    const currentIsComplete = currentStageDetail?.stageStatus === 'completed';
+    const currentStageContribution = currentIsComplete ? 0 : (currentStageDetail?.stagePercentage ?? 0);
+    const overallPercentage = totalStages > 0
+        ? (completedStagesCount * 100 + currentStageContribution) / totalStages
+        : 0;
+
+    return {
+        totalStages,
+        completedStages: completedStagesCount,
+        currentStageSlug,
+        overallPercentage: Math.min(100, Math.round(overallPercentage * 100) / 100),
+        currentStage,
+        projectStatus,
+        stageDetails,
+    };
+};
+
 export const selectStageDocumentChecklist = (
     state: DialecticStateValues,
     progressKey: string,
@@ -743,8 +961,8 @@ export const selectStageDocumentChecklist = (
     const documents = selectDocumentsForStageRun(state, progressKey);
     const checklist: StageDocumentChecklistEntry[] = [];
 
-    for (const documentKey of Object.keys(documents)) {
-        const descriptor = documents[documentKey];
+    for (const compositeKey of Object.keys(documents)) {
+        const descriptor = documents[compositeKey];
         if (!descriptor) {
             continue;
         }
@@ -752,6 +970,8 @@ export const selectStageDocumentChecklist = (
         if (descriptor.modelId !== modelId) {
             continue;
         }
+
+        const documentKey = extractLogicalDocumentKeyFromComposite(compositeKey);
 
         if (isPlannedDescriptor(descriptor)) {
             checklist.push({

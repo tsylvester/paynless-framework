@@ -36,6 +36,7 @@ vi.mock('@paynless/store', async () => {
     selectContributionGenerationStatus: actualOriginalStoreModule.selectContributionGenerationStatus,
     selectGenerateContributionsError: actualOriginalStoreModule.selectGenerateContributionsError,
     selectGeneratingSessionsForSession: actualOriginalStoreModule.selectGeneratingSessionsForSession,
+    selectUnifiedProjectProgress: dialecticMockModule.selectUnifiedProjectProgress,
     selectPersonalWallet: walletStoreMockModule.selectPersonalWallet,
     selectIsLoadingPersonalWallet: walletStoreMockModule.selectIsLoadingPersonalWallet,
     selectPersonalWalletError: walletStoreMockModule.selectPersonalWalletError,
@@ -66,6 +67,12 @@ vi.mock('./GenerateContributionButton', () => ({
 
 vi.mock('../common/ContinueUntilCompleteToggle', () => ({
   ContinueUntilCompleteToggle: vi.fn(() => <div data-testid="mock-continue-toggle"></div>),
+}));
+
+vi.mock('@/components/common/DynamicProgressBar', () => ({
+  DynamicProgressBar: vi.fn(({ sessionId }: { sessionId: string }) => (
+    <div data-testid="dynamic-progress-bar-mock" data-session-id={sessionId} />
+  )),
 }));
 
 const mockAssembledPrompt: AssembledPrompt = {
@@ -166,6 +173,15 @@ const mockProject: DialecticProject = {
   submitStageResponsesError: null,
   isSavingContributionEdit: false,
   saveContributionEditError: null,
+};
+
+const mockProjectWithStages: DialecticProject = {
+  ...mockProject,
+  dialectic_process_templates: {
+    ...mockProject.dialectic_process_templates!,
+    stages: [mockStage],
+    transitions: [],
+  },
 };
 
 const setupMockStore = (
@@ -282,7 +298,7 @@ describe('SessionInfoCard', () => {
     it('renders basic session information correctly when stage is ready', async () => {
       setupMockStore(
         {
-          currentProjectDetail: mockProject,
+          currentProjectDetail: mockProjectWithStages,
           activeContextStage: mockStage,
           contributionGenerationStatus: 'idle',
           generateContributionsError: null,
@@ -299,7 +315,7 @@ describe('SessionInfoCard', () => {
       expect(cardTitleElement).toBeInTheDocument();
       expect(cardTitleElement).toHaveTextContent(new RegExp(mockSession.session_description!));
       expect(cardTitleElement).toHaveTextContent(new RegExp(`Iteration: ${mockSession.iteration_count}`));
-      expect(cardTitleElement).toHaveTextContent(new RegExp(mockSession.status!, 'i'));
+      expect(cardTitleElement).toHaveTextContent(/Not Started/i);
 
       expect(screen.queryByText('Loading Session Information...')).toBeNull();
       expect(screen.getByTestId('mock-continue-toggle')).toBeInTheDocument();
@@ -321,19 +337,23 @@ describe('SessionInfoCard', () => {
       ).toBeInTheDocument();
     });
 
-    it('displays generating contributions indicator when status is "initiating"', () => {
-      setupMockStore({ generatingSessions: { [mockSessionId]: ['job-1'] } });
+    it('when generating, does not display duplicate Generating contributions... indicator', () => {
+      setupMockStore({
+        currentProjectDetail: mockProjectWithStages,
+        generatingSessions: { [mockSessionId]: ['job-1'] },
+      });
       renderComponent();
-      expect(screen.getByTestId('generating-contributions-indicator')).toBeInTheDocument();
-      expect(screen.getByText(/Generating contributions, please wait.../i)).toBeInTheDocument();
+      expect(screen.queryByTestId('generating-contributions-indicator')).toBeNull();
+      expect(screen.queryByText(/Generating contributions, please wait.../i)).toBeNull();
     });
 
-    it('displays generating contributions indicator when status is "generating"', () => {
-      setupMockStore({ generatingSessions: { [mockSessionId]: ['job-1', 'job-2'] } });
+    it('when generating, displays DynamicProgressBar as single progress display', () => {
+      setupMockStore({
+        currentProjectDetail: mockProjectWithStages,
+        generatingSessions: { [mockSessionId]: ['job-1', 'job-2'] },
+      });
       renderComponent();
-      expect(screen.getByTestId('generating-contributions-indicator')).toBeInTheDocument();
-      expect(screen.getByText(/Generating contributions, please wait.../i)).toBeInTheDocument();
-      expect(screen.getByText(/\(2 running\)/)).toBeInTheDocument();
+      expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
     });
     it('hides the spinner and displays generation error when a failure is recorded', () => {
       const error: ApiError = { message: 'Planner failure', code: 'MODEL_FAILURE' };
@@ -366,6 +386,70 @@ describe('SessionInfoCard', () => {
       renderComponent();
       expect(screen.queryByTestId('generating-contributions-indicator')).toBeNull();
       expect(screen.queryByTestId('generate-contributions-error')).toBeNull();
+    });
+  });
+
+  describe('SSOT progress indicators (SessionInfoCard)', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      resetAiStoreMock();
+      initializeMockWalletStore();
+    });
+
+    it('displays single unified progress indicator from SSOT', () => {
+      setupMockStore({ currentProjectDetail: mockProjectWithStages });
+      renderComponent();
+      expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
+      expect(screen.queryByTestId('generating-contributions-indicator')).toBeNull();
+    });
+
+    it('title bar status text reflects SSOT projectStatus', () => {
+      setupMockStore({ currentProjectDetail: mockProjectWithStages });
+      renderComponent();
+      const cardTitleElement = screen.getByTestId(`session-info-title-${mockSession.id}`);
+      expect(cardTitleElement).toHaveTextContent(/Not Started/i);
+    });
+
+    it('status badge reflects SSOT projectStatus', () => {
+      setupMockStore({ currentProjectDetail: mockProjectWithStages });
+      renderComponent();
+      const notStartedElements = screen.getAllByText(/Not Started/i);
+      expect(notStartedElements.length).toBeGreaterThanOrEqual(2);
+      const badgeElement = notStartedElements.find((el) =>
+        el.closest('[data-slot="badge"]')
+      );
+      expect(badgeElement).toBeDefined();
+      expect(badgeElement).toHaveTextContent(/Not Started/i);
+    });
+
+    it('title bar and badge show identical status', () => {
+      setupMockStore({ currentProjectDetail: mockProjectWithStages });
+      renderComponent();
+      const titleElement = screen.getByTestId(`session-info-title-${mockSession.id}`);
+      const statusTexts = screen.getAllByText(/Not Started/i);
+      expect(statusTexts.length).toBeGreaterThanOrEqual(2);
+      expect(titleElement).toHaveTextContent(/Not Started/i);
+    });
+
+    it('removes duplicate Generating contributions... indicator when progress bar is active', () => {
+      setupMockStore({
+        currentProjectDetail: mockProjectWithStages,
+        generatingSessions: { [mockSessionId]: ['job-1'] },
+      });
+      renderComponent();
+      expect(screen.queryByTestId('generating-contributions-indicator')).toBeNull();
+      expect(screen.queryByText(/Generating contributions, please wait.../i)).toBeNull();
+      expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
+    });
+
+    it('all status displays (title, badge, progress bar) agree with each other', () => {
+      setupMockStore({ currentProjectDetail: mockProjectWithStages });
+      renderComponent();
+      const titleElement = screen.getByTestId(`session-info-title-${mockSession.id}`);
+      expect(titleElement).toHaveTextContent(/Not Started/i);
+      expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
+      const allNotStarted = screen.getAllByText(/Not Started/i);
+      expect(allNotStarted.length).toBeGreaterThanOrEqual(1);
     });
   });
 

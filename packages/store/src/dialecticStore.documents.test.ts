@@ -20,6 +20,7 @@ import type {
 	StageRunDocumentDescriptor,
 	EditedDocumentResource,
 } from '@paynless/types';
+import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import {
 	handleRenderCompletedLogic,
 	getStageDocumentKey,
@@ -52,6 +53,10 @@ const isRenderedDescriptor = (
 	descriptor: StageRunDocumentDescriptor | undefined,
 ): descriptor is StageRenderedDocumentDescriptor =>
 	Boolean(descriptor && descriptor.descriptorType !== 'planned');
+
+/** Build composite key for stageRunProgress.documents (documentKey + separator + modelId). */
+const stageRunDocKey = (documentKey: string, modelId: string): string =>
+	`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`;
 
 describe('Stage Progress Hydration', () => {
 	const sessionId = 'session-1';
@@ -118,13 +123,13 @@ describe('Stage Progress Hydration', () => {
 		const progress = state.stageRunProgress[progressKey];
 		expect(progress).toBeDefined();
 		expect(Object.keys(progress.documents).length).toBe(2);
-		expect(progress.documents['doc_a']).toEqual(
+		expect(progress.documents[stageRunDocKey('doc_a', 'model-a')]).toEqual(
 			expect.objectContaining({
 				status: 'completed',
 				modelId: 'model-a',
 			}),
 		);
-		expect(progress.documents['doc_b']).toEqual(
+		expect(progress.documents[stageRunDocKey('doc_b', 'model-b')]).toEqual(
 			expect.objectContaining({
 				status: 'generating',
 				modelId: 'model-b',
@@ -213,9 +218,10 @@ describe('Dialectic store document refresh behaviour', () => {
 		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(renderEvent);
 
 		const state = useDialecticStore.getState();
-		const documentKey = compositeKey.documentKey;
 		expect(
-			state.stageRunProgress[progressKey].documents[documentKey].status,
+			state.stageRunProgress[progressKey].documents[
+				stageRunDocKey(compositeKey.documentKey, compositeKey.modelId)
+			].status,
 		).toBe('completed');
 		const versionInfo = state.stageDocumentVersions[serializedKey];
 		expect(versionInfo).toBeDefined();
@@ -251,7 +257,7 @@ describe('Dialectic store document refresh behaviour', () => {
 			stageRunProgress: {
 				[progressKey]: {
 					documents: {
-						[compositeKey.documentKey]: {
+						[stageRunDocKey(compositeKey.documentKey, compositeKey.modelId)]: {
 							descriptorType: 'planned',
 							status: 'not_started',
 							stepKey: 'render_step',
@@ -282,7 +288,7 @@ describe('Dialectic store document refresh behaviour', () => {
 
 		const documentDescriptor =
 			useDialecticStore.getState().stageRunProgress[progressKey].documents[
-				compositeKey.documentKey
+				stageRunDocKey(compositeKey.documentKey, compositeKey.modelId)
 			];
 
 		expect(documentDescriptor).toBeDefined();
@@ -701,7 +707,7 @@ describe('Dialectic store document clear focused stage document', () => {
 			stageRunProgress: {
 				's1:thesis:1': {
 					documents: {
-						doc_a: {
+						[stageRunDocKey('doc_a', 'model-1')]: {
 							status: 'completed',
 							job_id: 'job-a',
 							latestRenderedResourceId: 'res-a',
@@ -992,7 +998,7 @@ describe('handleJobFailedLogic', () => {
 			state.recipesByStageSlug[stageSlug] = plannerRecipe;
 			state.stageRunProgress[progressKey] = {
 				documents: {
-					HeaderContext: {
+					[stageRunDocKey('HeaderContext', modelId)]: {
 						descriptorType: 'rendered',
 						status: 'generating',
 						job_id: jobId,
@@ -1034,9 +1040,9 @@ describe('handleJobFailedLogic', () => {
 
 		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
 		expect(updatedProgress).toBeDefined();
-		expect(updatedProgress?.documents['HeaderContext']?.status).toBe('failed');
+		expect(updatedProgress?.documents[stageRunDocKey('HeaderContext', modelId)]?.status).toBe('failed');
 		expect(updatedProgress?.stepStatuses['planner_step']).toBe('failed');
-		const descriptor = updatedProgress?.documents['HeaderContext'];
+		const descriptor = updatedProgress?.documents[stageRunDocKey('HeaderContext', modelId)];
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
 		if (isRenderedDescriptor(descriptor)) {
 			expect(descriptor.latestRenderedResourceId).toBe(latestRenderedResourceId);
@@ -1087,7 +1093,7 @@ describe('handleJobFailedLogic', () => {
 			state.recipesByStageSlug[stageSlug] = plannerRecipe;
 			state.stageRunProgress[progressKey] = {
 				documents: {
-					HeaderContext: {
+					[stageRunDocKey('HeaderContext', modelId)]: {
 						descriptorType: 'rendered',
 						status: 'generating',
 						job_id: jobId,
@@ -1127,7 +1133,7 @@ describe('handleJobFailedLogic', () => {
 
 		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
 		expect(updatedProgress).toBeDefined();
-		const descriptor = updatedProgress?.documents['HeaderContext'];
+		const descriptor = updatedProgress?.documents[stageRunDocKey('HeaderContext', modelId)];
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
 		if (isRenderedDescriptor(descriptor)) {
 			expect(descriptor.status).toBe('failed');
@@ -1230,7 +1236,7 @@ describe('handleDocumentStartedLogic', () => {
 
 		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
 		expect(updatedProgress).toBeDefined();
-		const descriptor = updatedProgress?.documents['header_context'];
+		const descriptor = updatedProgress?.documents[stageRunDocKey('header_context', modelId)];
 		expect(descriptor).toBeDefined();
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
 		if (isRenderedDescriptor(descriptor)) {
@@ -1286,7 +1292,7 @@ describe('handleDocumentCompletedLogic', () => {
 			state.recipesByStageSlug[stageSlug] = mockRecipe;
 			state.stageRunProgress[progressKey] = {
 				documents: {
-					[documentKey]: {
+					[stageRunDocKey(documentKey, modelId)]: {
 						descriptorType: 'rendered',
 						status: 'generating',
 						job_id: jobId,
@@ -1321,7 +1327,7 @@ describe('handleDocumentCompletedLogic', () => {
 
 		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
 		expect(updatedProgress).toBeDefined();
-		const descriptor = updatedProgress?.documents[documentKey];
+		const descriptor = updatedProgress?.documents[stageRunDocKey(documentKey, modelId)];
 		expect(descriptor).toBeDefined();
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
 		if (isRenderedDescriptor(descriptor)) {
@@ -1371,7 +1377,7 @@ describe('handleDocumentCompletedLogic', () => {
 			state.recipesByStageSlug[stageSlug] = plannerRecipe;
 			state.stageRunProgress[progressKey] = {
 				documents: {
-					[documentKey]: {
+					[stageRunDocKey(documentKey, modelId)]: {
 						descriptorType: 'planned',
 						status: 'not_started',
 						stepKey: 'planner_step',
@@ -1401,7 +1407,7 @@ describe('handleDocumentCompletedLogic', () => {
 
 		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
 		expect(updatedProgress).toBeDefined();
-		const descriptor = updatedProgress?.documents[documentKey];
+		const descriptor = updatedProgress?.documents[stageRunDocKey(documentKey, modelId)];
 		expect(descriptor).toBeDefined();
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
 		if (isRenderedDescriptor(descriptor)) {
@@ -1467,7 +1473,7 @@ describe('handleDocumentCompletedLogic', () => {
 			state.recipesByStageSlug[stageSlug] = mockRecipe;
 			state.stageRunProgress[progressKey] = {
 				documents: {
-					[documentKey]: {
+					[stageRunDocKey(documentKey, modelId)]: {
 						descriptorType: 'rendered',
 						status: 'generating',
 						job_id: jobId,
@@ -1502,7 +1508,7 @@ describe('handleDocumentCompletedLogic', () => {
 
 		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
 		expect(updatedProgress).toBeDefined();
-		const descriptor = updatedProgress?.documents[documentKey];
+		const descriptor = updatedProgress?.documents[stageRunDocKey(documentKey, modelId)];
 		expect(descriptor).toBeDefined();
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
 		if (isRenderedDescriptor(descriptor)) {
@@ -1599,7 +1605,7 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 
 		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
 		expect(updatedProgress).toBeDefined();
-		const descriptor = updatedProgress?.documents[documentKey];
+		const descriptor = updatedProgress?.documents[stageRunDocKey(documentKey, modelId)];
 		expect(descriptor).toBeDefined();
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
 		if (isRenderedDescriptor(descriptor)) {
@@ -1719,7 +1725,7 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 
 		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
 		expect(updatedProgress).toBeDefined();
-		const descriptor = updatedProgress?.documents[documentKey];
+		const descriptor = updatedProgress?.documents[stageRunDocKey(documentKey, modelId)];
 		expect(descriptor).toBeDefined();
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
 		if (isRenderedDescriptor(descriptor)) {
@@ -1813,7 +1819,7 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 
 		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
 		expect(updatedProgress).toBeDefined();
-		const descriptor = updatedProgress?.documents[documentKey];
+		const descriptor = updatedProgress?.documents[stageRunDocKey(documentKey, modelId)];
 		expect(descriptor).toBeDefined();
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
 		if (isRenderedDescriptor(descriptor)) {
@@ -1893,7 +1899,7 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 
 		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
 		expect(updatedProgress).toBeDefined();
-		const descriptor = updatedProgress?.documents[documentKey];
+		const descriptor = updatedProgress?.documents[stageRunDocKey(documentKey, modelId)];
 		expect(descriptor).toBeDefined();
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
 		if (isRenderedDescriptor(descriptor)) {
@@ -1971,7 +1977,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 			state.recipesByStageSlug[stageSlug] = mockRecipeNoRenderStep;
 			state.stageRunProgress[progressKey] = {
 				documents: {
-					[documentKey]: {
+					[stageRunDocKey(documentKey, modelId)]: {
 						descriptorType: 'rendered',
 						status: 'generating',
 						job_id: 'job-execute',
@@ -2005,7 +2011,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(renderEvent);
 
 		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
-		const descriptor = updatedProgress?.documents[documentKey];
+		const descriptor = updatedProgress?.documents[stageRunDocKey(documentKey, modelId)];
 
 		expect(descriptor).toBeDefined();
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
@@ -2021,7 +2027,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 			state.recipesByStageSlug[stageSlug] = mockRecipeNoRenderStep;
 			state.stageRunProgress[progressKey] = {
 				documents: {
-					[documentKey]: {
+					[stageRunDocKey(documentKey, modelId)]: {
 						descriptorType: 'rendered',
 						status: 'generating',
 						job_id: 'job-execute',
@@ -2054,7 +2060,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(renderEvent);
 
 		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
-		const descriptor = updatedProgress?.documents[documentKey];
+		const descriptor = updatedProgress?.documents[stageRunDocKey(documentKey, modelId)];
 
 		expect(descriptor).toBeDefined();
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
@@ -2071,7 +2077,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 			state.recipesByStageSlug[stageSlug] = mockRecipeNoRenderStep;
 			state.stageRunProgress[progressKey] = {
 				documents: {
-					[documentKey]: {
+					[stageRunDocKey(documentKey, modelId)]: {
 						descriptorType: 'rendered',
 						status: 'generating',
 						job_id: 'job-execute',
@@ -2120,7 +2126,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 			state.recipesByStageSlug[stageSlug] = mockRecipeNoRenderStep;
 			state.stageRunProgress[progressKey] = {
 				documents: {
-					[documentKey]: {
+					[stageRunDocKey(documentKey, modelId)]: {
 						descriptorType: 'rendered',
 						status: 'generating',
 						job_id: 'job-execute',
@@ -2150,7 +2156,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 			latestRenderedResourceId: firstResourceId,
 		});
 
-		let descriptor = useDialecticStore.getState().stageRunProgress[progressKey]?.documents[documentKey];
+		let descriptor = useDialecticStore.getState().stageRunProgress[progressKey]?.documents[stageRunDocKey(documentKey, modelId)];
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
 		if (isRenderedDescriptor(descriptor)) {
 			expect(descriptor.latestRenderedResourceId).toBe(firstResourceId);
@@ -2168,7 +2174,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 			latestRenderedResourceId: secondResourceId,
 		});
 
-		descriptor = useDialecticStore.getState().stageRunProgress[progressKey]?.documents[documentKey];
+		descriptor = useDialecticStore.getState().stageRunProgress[progressKey]?.documents[stageRunDocKey(documentKey, modelId)];
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
 		if (isRenderedDescriptor(descriptor)) {
 			expect(descriptor.latestRenderedResourceId).toBe(secondResourceId);
@@ -2186,7 +2192,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 			latestRenderedResourceId: thirdResourceId,
 		});
 
-		descriptor = useDialecticStore.getState().stageRunProgress[progressKey]?.documents[documentKey];
+		descriptor = useDialecticStore.getState().stageRunProgress[progressKey]?.documents[stageRunDocKey(documentKey, modelId)];
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
 		if (isRenderedDescriptor(descriptor)) {
 			expect(descriptor.latestRenderedResourceId).toBe(thirdResourceId);
@@ -2234,7 +2240,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 			state.recipesByStageSlug[stageSlug] = mockRecipeWithRenderStep;
 			state.stageRunProgress[progressKey] = {
 				documents: {
-					[documentKey]: {
+					[stageRunDocKey(documentKey, modelId)]: {
 						descriptorType: 'rendered',
 						status: 'generating',
 						job_id: 'job-execute',
@@ -2268,7 +2274,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(renderEvent);
 
 		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
-		const descriptor = updatedProgress?.documents[documentKey];
+		const descriptor = updatedProgress?.documents[stageRunDocKey(documentKey, modelId)];
 
 		expect(descriptor).toBeDefined();
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
@@ -2289,7 +2295,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 			state.recipesByStageSlug[stageSlug] = mockRecipeNoRenderStep;
 			state.stageRunProgress[progressKey] = {
 				documents: {
-					[documentKey]: {
+					[stageRunDocKey(documentKey, modelId)]: {
 						descriptorType: 'rendered',
 						status: 'generating',
 						job_id: 'job-execute',
@@ -2322,7 +2328,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(renderEvent);
 
 		const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
-		const descriptor = updatedProgress?.documents[documentKey];
+		const descriptor = updatedProgress?.documents[stageRunDocKey(documentKey, modelId)];
 
 		expect(descriptor).toBeDefined();
 		expect(isRenderedDescriptor(descriptor)).toBe(true);
@@ -2506,5 +2512,268 @@ describe('Feedback draft logic (15.c)', () => {
 		expect(entry).toBeDefined();
 		expect(entry?.feedbackDraftMarkdown).toBe('');
 		expect(entry?.feedbackIsDirty).toBe(false);
+	});
+});
+
+describe('progress.documents composite key (documentKey:modelId)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		resetApiMock();
+		useDialecticStore.setState(initialDialecticStateValues);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('handleDocumentStartedLogic keys progress.documents by (document_key, modelId)', () => {
+		const sessionId = 'session-composite';
+		const stageSlug = 'thesis';
+		const iterationNumber = 1;
+		const document_key = 'business_case';
+		const modelId = 'model-a';
+		const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+		const mockRecipe: DialecticStageRecipe = {
+			stageSlug,
+			instanceId: 'instance-composite',
+			steps: [
+				{
+					id: 'step-1',
+					step_key: 'execute_step',
+					step_slug: 'execute',
+					step_name: 'Execute',
+					execution_order: 1,
+					job_type: 'EXECUTE',
+					prompt_type: 'Turn',
+					output_type: 'rendered_document',
+					granularity_strategy: 'per_source_document',
+					inputs_required: [],
+					outputs_required: [{ document_key, artifact_class: 'rendered_document', file_type: 'markdown' }],
+				},
+			],
+		};
+
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = mockRecipe;
+			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {} };
+		});
+
+		const event: DocumentStartedPayload = {
+			type: 'document_started',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: 'job-1',
+			document_key,
+			modelId,
+			step_key: 'execute_step',
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+
+		const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(progress?.documents[stageRunDocKey(document_key, modelId)]).toBeDefined();
+		expect(progress?.documents[document_key]).toBeUndefined();
+	});
+
+	it('handleDocumentCompletedLogic keys progress.documents by (document_key, modelId)', () => {
+		const sessionId = 'session-composite';
+		const stageSlug = 'thesis';
+		const iterationNumber = 1;
+		const document_key = 'business_case';
+		const modelId = 'model-b';
+		const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+		const mockRecipe: DialecticStageRecipe = {
+			stageSlug,
+			instanceId: 'instance-composite',
+			steps: [
+				{
+					id: 'step-1',
+					step_key: 'execute_step',
+					step_slug: 'execute',
+					step_name: 'Execute',
+					execution_order: 1,
+					job_type: 'EXECUTE',
+					prompt_type: 'Turn',
+					output_type: 'rendered_document',
+					granularity_strategy: 'per_source_document',
+					inputs_required: [],
+					outputs_required: [],
+				},
+			],
+		};
+
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = mockRecipe;
+			state.stageRunProgress[progressKey] = {
+				documents: {
+					[stageRunDocKey(document_key, modelId)]: {
+						descriptorType: 'rendered',
+						status: 'generating',
+						job_id: 'job-1',
+						latestRenderedResourceId: 'res-1',
+						modelId,
+						versionHash: 'h1',
+						lastRenderedResourceId: 'res-1',
+						lastRenderAtIso: new Date().toISOString(),
+					},
+				},
+				stepStatuses: { execute_step: 'in_progress' },
+			};
+		});
+
+		const event: DocumentCompletedPayload = {
+			type: 'document_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: 'job-1',
+			document_key,
+			modelId,
+			step_key: 'execute_step',
+			latestRenderedResourceId: 'res-completed',
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+
+		const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(progress?.documents[stageRunDocKey(document_key, modelId)]).toBeDefined();
+		expect(progress?.documents[document_key]).toBeUndefined();
+	});
+
+	it('handleRenderCompletedLogic keys progress.documents by (document_key, modelId)', () => {
+		const sessionId = 'session-composite';
+		const stageSlug = 'thesis';
+		const iterationNumber = 1;
+		const document_key = 'business_case';
+		const modelId = 'model-c';
+		const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+		const mockRecipe: DialecticStageRecipe = {
+			stageSlug,
+			instanceId: 'instance-composite',
+			steps: [
+				{
+					id: 'step-1',
+					step_key: 'execute_step',
+					step_slug: 'execute',
+					step_name: 'Execute',
+					execution_order: 1,
+					job_type: 'EXECUTE',
+					prompt_type: 'Turn',
+					output_type: 'rendered_document',
+					granularity_strategy: 'per_source_document',
+					inputs_required: [],
+					outputs_required: [],
+				},
+			],
+		};
+
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = mockRecipe;
+			state.stageRunProgress[progressKey] = {
+				documents: {
+					[stageRunDocKey(document_key, modelId)]: {
+						descriptorType: 'rendered',
+						status: 'generating',
+						job_id: 'job-1',
+						latestRenderedResourceId: '',
+						modelId,
+						versionHash: '',
+						lastRenderedResourceId: '',
+						lastRenderAtIso: new Date().toISOString(),
+						stepKey: 'execute_step',
+					},
+				},
+				stepStatuses: { execute_step: 'in_progress' },
+			};
+		});
+
+		const event: RenderCompletedPayload = {
+			type: 'render_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: 'job-render',
+			document_key,
+			modelId,
+			latestRenderedResourceId: 'resource-rendered',
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+
+		const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(progress?.documents[stageRunDocKey(document_key, modelId)]).toBeDefined();
+		expect(progress?.documents[document_key]).toBeUndefined();
+	});
+
+	it('handleJobFailedLogic keys progress.documents by (document_key, modelId)', () => {
+		const sessionId = 'session-composite';
+		const stageSlug = 'thesis';
+		const iterationNumber = 1;
+		const document_key = 'scope';
+		const modelId = 'model-d';
+		const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+		const mockRecipe: DialecticStageRecipe = {
+			stageSlug,
+			instanceId: 'instance-composite',
+			steps: [
+				{
+					id: 'step-1',
+					step_key: 'execute_step',
+					step_slug: 'execute',
+					step_name: 'Execute',
+					execution_order: 1,
+					job_type: 'EXECUTE',
+					prompt_type: 'Turn',
+					output_type: 'rendered_document',
+					granularity_strategy: 'per_source_document',
+					inputs_required: [],
+					outputs_required: [],
+				},
+			],
+		};
+
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = mockRecipe;
+			state.stageRunProgress[progressKey] = {
+				documents: {
+					[stageRunDocKey(document_key, modelId)]: {
+						descriptorType: 'rendered',
+						status: 'generating',
+						job_id: 'job-1',
+						latestRenderedResourceId: 'res-1',
+						modelId,
+						versionHash: 'h1',
+						lastRenderedResourceId: 'res-1',
+						lastRenderAtIso: new Date().toISOString(),
+						stepKey: 'execute_step',
+					},
+				},
+				stepStatuses: { execute_step: 'in_progress' },
+			};
+		});
+
+		const event: JobFailedPayload = {
+			type: 'job_failed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: 'job-1',
+			document_key,
+			modelId,
+			step_key: 'execute_step',
+			error: { code: 'EXECUTE_FAILED', message: 'Failed' },
+			latestRenderedResourceId: 'res-1',
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+
+		const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(progress?.documents[stageRunDocKey(document_key, modelId)]).toBeDefined();
+		expect(progress?.documents[document_key]).toBeUndefined();
 	});
 });

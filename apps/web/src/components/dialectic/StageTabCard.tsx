@@ -3,6 +3,7 @@ import type {
 	DialecticStage,
 	FocusedStageDocumentState,
 	SetFocusedStageDocumentPayload,
+	UnifiedProjectStatus,
 } from "@paynless/types";
 import { cn } from "@/lib/utils";
 import {
@@ -12,7 +13,7 @@ import {
 	selectCurrentProjectDetail,
 	selectSortedStages,
 	selectActiveStageSlug,
-  selectStageProgressSummary
+	selectUnifiedProjectProgress,
 } from "@paynless/store";
 import { StageRunChecklist } from "./StageRunChecklist";
 
@@ -20,6 +21,8 @@ interface StageProgressSnapshotSummary {
 	totalDocuments: number;
 	completedDocuments: number;
 	isComplete: boolean;
+	stageStatus: UnifiedProjectStatus;
+	stagePercentage: number;
 }
 
 interface StageCardProps {
@@ -80,6 +83,19 @@ const StageCard: React.FC<StageCardProps> = ({
 	const hasDocuments = progress.totalDocuments > 0;
 	const shouldRenderChecklist = Boolean(isActive && checklist);
 
+	const stageLabel =
+		progress.stageStatus === "completed"
+			? "Completed"
+			: progress.stageStatus === "failed"
+				? "Failed"
+				: progress.stageStatus === "not_started"
+					? "Not started"
+					: null;
+	const showPercentage =
+		progress.stageStatus === "in_progress" &&
+		progress.stagePercentage >= 0 &&
+		progress.stagePercentage < 100;
+
 	return (
 		<div className="space-y-1" data-testid={`stage-card-${stage.slug}`}>
 			<button
@@ -107,23 +123,36 @@ const StageCard: React.FC<StageCardProps> = ({
 								isActive
 									? "bg-white/20 text-white"
 									: "bg-muted text-muted-foreground group-hover:bg-muted-foreground/20",
-						)}
+							)}
 						>
 							{index + 1}
 						</div>
 						<span className="font-medium">{displayName}</span>
 					</div>
-					{hasDocuments && (
+					{(hasDocuments || stageLabel !== null) && (
 						<div
 							className="flex flex-col items-end gap-1 text-xs"
 							data-testid={`stage-progress-summary-${stage.slug}`}
 						>
-							{progress.isComplete && (
+							{stageLabel !== null && (
 								<span
 									data-testid={`stage-progress-label-${stage.slug}`}
-									className="font-medium text-emerald-400"
+									className={cn(
+										"font-medium",
+										progress.stageStatus === "completed" && "text-emerald-400",
+										progress.stageStatus === "failed" && "text-destructive",
+										progress.stageStatus === "not_started" && "text-muted-foreground",
+									)}
 								>
-									Completed
+									{stageLabel}
+								</span>
+							)}
+							{showPercentage && (
+								<span
+									data-testid={`stage-progress-pct-${stage.slug}`}
+									className="text-muted-foreground"
+								>
+									{Math.round(progress.stagePercentage)}%
 								</span>
 							)}
 						</div>
@@ -159,31 +188,24 @@ export const StageTabCard: React.FC = () => {
 		const activeStageSlugValue = selectActiveStageSlug(state);
 		const sessionId = selectActiveContextSessionId(state);
 		const activeSession = sessionId ? selectSessionById(state, sessionId) : null;
-		const iterationNumber = activeSession?.iteration_count;
-		const summaries: Record<string, StageProgressSnapshotSummary> = {};
+		const unified = sessionId ? selectUnifiedProjectProgress(state, sessionId) : null;
 		const focusedStageDocumentEntries: Record<string, FocusedStageDocumentState | null> =
 			state.focusedStageDocument ?? {};
 
+		const summaries: Record<string, StageProgressSnapshotSummary> = {};
 		for (const stage of sortedStages) {
-			if (sessionId && typeof iterationNumber === "number") {
-				const summary = selectStageProgressSummary(
-					state,
-					sessionId,
-					stage.slug,
-					iterationNumber,
-				);
-				summaries[stage.slug] = {
-					totalDocuments: summary?.totalDocuments ?? 0,
-					completedDocuments: summary?.completedDocuments ?? 0,
-					isComplete: summary?.isComplete ?? false,
-				};
-			} else {
-				summaries[stage.slug] = {
-					totalDocuments: 0,
-					completedDocuments: 0,
-					isComplete: false,
-				};
-			}
+			const detail = unified?.stageDetails?.find((d) => d.stageSlug === stage.slug) ?? null;
+			const totalDocuments = detail ? (detail.totalSteps > 0 ? detail.totalSteps : 1) : 0;
+			const completedDocuments = detail?.completedSteps ?? 0;
+			const stageStatus = detail?.stageStatus ?? "not_started";
+			const stagePercentage = detail?.stagePercentage ?? 0;
+			summaries[stage.slug] = {
+				totalDocuments,
+				completedDocuments,
+				isComplete: stageStatus === "completed",
+				stageStatus,
+				stagePercentage,
+			};
 		}
 
 		return {
@@ -245,19 +267,20 @@ export const StageTabCard: React.FC = () => {
 		setFocusedStageDocument(payload);
 	};
 
-	const renderChecklistForStage = (isStageActive: boolean) => {
+	const renderChecklistForStage = (isStageActive: boolean): React.ReactNode => {
 		if (!isStageActive || !canRenderChecklists) {
 			return undefined;
 		}
 
-		return selectedModelIds.map((modelId) => (
+		const firstModelId = selectedModelIds[0] ?? "";
+		return (
 			<StageRunChecklist
-				key={modelId}
-				modelId={modelId}
+				key="single"
+				modelId={firstModelId}
 				focusedStageDocumentMap={focusedStageDocumentMap}
 				onDocumentSelect={handleDocumentSelect}
 			/>
-		));
+		);
 	};
 
 	return (
@@ -279,6 +302,8 @@ export const StageTabCard: React.FC = () => {
 									totalDocuments: 0,
 									completedDocuments: 0,
 									isComplete: false,
+									stageStatus: "not_started" as UnifiedProjectStatus,
+									stagePercentage: 0,
 								}
 							}
 							checklist={renderChecklistForStage(isActiveStage)}

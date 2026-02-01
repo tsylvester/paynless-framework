@@ -33,7 +33,9 @@ import type {
   SaveContributionEditSuccessResponse,
   EditedDocumentResource,
   DialecticContribution,
+  StageDocumentCompositeKey,
 } from '@paynless/types';
+import { getStageRunDocumentKey, getStageDocumentKey } from './dialecticStore.documents';
 
 // Add the mock call here
 vi.mock('@paynless/api', async () => {
@@ -906,6 +908,100 @@ describe('useDialecticStore', () => {
             expect(finalContributions).toHaveLength(2);
             expect(finalContributions?.[0].status).toBe('failed');
             expect(finalContributions?.[1].status).toBe('failed');
+        });
+    });
+
+    describe('clearFocusedStageDocument', () => {
+        it('clears only the targeted document draft when focus is lost (progress.documents keyed by composite key)', () => {
+            const firstKey: StageDocumentCompositeKey = {
+                sessionId: 's1',
+                stageSlug: 'thesis',
+                iterationNumber: 1,
+                modelId: 'model-1',
+                documentKey: 'doc_a',
+            };
+            const secondKey: StageDocumentCompositeKey = {
+                sessionId: 's1',
+                stageSlug: 'thesis',
+                iterationNumber: 1,
+                modelId: 'model-2',
+                documentKey: 'doc_b',
+            };
+            const firstSerialized = getStageDocumentKey(firstKey);
+            const secondSerialized = getStageDocumentKey(secondKey);
+            const firstFocusKey = 's1:thesis:model-1';
+            const secondFocusKey = 's1:thesis:model-2';
+
+            useDialecticStore.setState({
+                stageDocumentContent: {
+                    [firstSerialized]: {
+                        baselineMarkdown: 'Doc A baseline',
+                        currentDraftMarkdown: 'Doc A baseline\nSome edits for A',
+                        isDirty: true,
+                        isLoading: false,
+                        error: null,
+                        lastBaselineVersion: {
+                            resourceId: 'res-a',
+                            versionHash: 'a1',
+                            updatedAt: new Date().toISOString(),
+                        },
+                        pendingDiff: 'Some edits for A',
+                        lastAppliedVersionHash: 'a1',
+                        sourceContributionId: null,
+                        feedbackDraftMarkdown: '',
+                        feedbackIsDirty: false,
+                    },
+                    [secondSerialized]: {
+                        baselineMarkdown: 'Doc B baseline',
+                        currentDraftMarkdown: 'Doc B baseline\nSome edits for B',
+                        isDirty: true,
+                        isLoading: false,
+                        error: null,
+                        lastBaselineVersion: {
+                            resourceId: 'res-b',
+                            versionHash: 'b1',
+                            updatedAt: new Date().toISOString(),
+                        },
+                        pendingDiff: 'Some edits for B',
+                        lastAppliedVersionHash: 'b1',
+                        sourceContributionId: null,
+                        feedbackDraftMarkdown: '',
+                        feedbackIsDirty: false,
+                    },
+                },
+                focusedStageDocument: {
+                    [firstFocusKey]: { modelId: 'model-1', documentKey: 'doc_a' },
+                    [secondFocusKey]: { modelId: 'model-2', documentKey: 'doc_b' },
+                },
+                stageRunProgress: {
+                    's1:thesis:1': {
+                        documents: {
+                            [getStageRunDocumentKey('doc_a', 'model-1')]: {
+                                status: 'completed',
+                                job_id: 'job-a',
+                                latestRenderedResourceId: 'res-a',
+                                modelId: 'model-1',
+                                versionHash: 'a1',
+                                lastRenderedResourceId: 'res-a',
+                                lastRenderAtIso: new Date().toISOString(),
+                            },
+                        },
+                        stepStatuses: {},
+                    },
+                },
+            });
+
+            useDialecticStore.getState().clearFocusedStageDocument({
+                sessionId: 's1',
+                stageSlug: 'thesis',
+                modelId: 'model-1',
+            });
+
+            const state = useDialecticStore.getState();
+            expect(state.focusedStageDocument[firstFocusKey]).toBeNull();
+            expect(state.stageDocumentContent[firstSerialized]).toBeUndefined();
+            expect(state.focusedStageDocument[secondFocusKey]).toBeDefined();
+            expect(state.stageDocumentContent[secondSerialized]).toBeDefined();
         });
     });
 

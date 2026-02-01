@@ -4,7 +4,6 @@ import {
 	useDialecticStore,
 	selectSortedStages,
 	selectActiveStageSlug,
-	selectCurrentProcessTemplate,
 } from "@paynless/store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -12,7 +11,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
 	DialecticSession,
 	DialecticProject,
-	DialecticStage,
 	ApiError,
 } from "@paynless/types";
 
@@ -20,6 +18,7 @@ import {
 import { SessionInfoCard } from "../components/dialectic/SessionInfoCard";
 import { StageTabCard } from "../components/dialectic/StageTabCard";
 import { SessionContributionsDisplayCard } from "../components/dialectic/SessionContributionsDisplayCard";
+import { DynamicProgressBar } from "../components/common/DynamicProgressBar";
 
 export const DialecticSessionDetailsPage: React.FC = () => {
 	const { projectId: urlProjectId, sessionId: urlSessionId } = useParams<{
@@ -46,9 +45,6 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 		(state) => state.currentProjectDetail,
 	) as DialecticProject | null;
 	const activeStageSlug = useDialecticStore(selectActiveStageSlug);
-	const currentProcessTemplate = useDialecticStore(selectCurrentProcessTemplate);
-	const activeStageForProgressBar: DialecticStage | null =
-		currentProcessTemplate?.stages?.find((s) => s.slug === activeStageSlug) ?? null;
 	const sortedStages = useDialecticStore(selectSortedStages);
 
 	// Loading and error states from store
@@ -167,51 +163,20 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 							</div>
 
 							{/* Enhanced Progress */}
-							{sortedStages.length > 0 && activeStageForProgressBar && (
-								<div className="bg-muted/30 rounded-xl p-4 space-y-3">
-									<div className="flex items-center justify-between text-sm">
-										<span className="text-muted-foreground">Progress</span>
-										<span className="font-medium">
-											{sortedStages.findIndex(
-												(s) => s.id === activeStageForProgressBar.id,
-											) + 1}
-											/{sortedStages.length}
-										</span>
-									</div>
-									<div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-										<div
-											className="bg-gradient-to-r from-blue-600 to-blue-700 h-2 rounded-full transition-all duration-500 ease-out"
-											style={{
-												width: `${((sortedStages.findIndex((s) => s.id === activeStageForProgressBar.id) + 1) / sortedStages.length) * 100}%`,
-											}}
-										/>
-									</div>
-									<p className="text-xs text-muted-foreground">
-										{Math.round(
-											((sortedStages.findIndex(
-												(s) => s.id === activeStageForProgressBar.id,
-											) +
-												1) /
-												sortedStages.length) *
-												100,
-										)}
-										% complete
-									</p>
-								</div>
-							)}
+							<DynamicProgressBar sessionId={activeSessionDetail.id} />
 						</div>
 					</div>
 
 					{/* Enhanced Content Area */}
 					<div className="lg:col-span-4">
 						<div className="bg-card rounded-2xl shadow-sm overflow-hidden">
-							{activeStageForProgressBar && activeSessionDetail ? (
+							{activeStageSlug && activeSessionDetail ? (
 								<div className="p-8">
 									<SessionContributionsDisplayCard />
 								</div>
 							) : (
 								<div className="py-24 text-center">
-									{!activeStageForProgressBar &&
+									{!activeStageSlug &&
 									sortedStages.length > 0 &&
 									!isLoading ? (
 										<div className="space-y-4">

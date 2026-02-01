@@ -859,6 +859,7 @@
 - Calculate progress dynamically from recipe × model count × actual completion
 - Steps with model calls: progress = completedModels / totalModels
 - Steps without model calls: progress = 1/1 (complete when step completes)
+- **Progress data model:** `stageRunProgress[progressKey].documents` must key descriptors by (documentKey, modelId) so that one document key can have N completions (one descriptor per model). Progress bar and selector must use this for correct completedModels/totalModels for any arrangement of stages, steps, documents, and models.
 - Extract embedded progress bar from page into reusable component
 - Consolidate ALL progress indicators (title bar, badge, progress bar, documents) to SSOT
 - Show all stage documents with appropriate status indicators
@@ -946,11 +947,52 @@
         *   `[✅]` Refactor existing `job_failed` emission to use new JobFailedPayload (include modelId and document_key)
     *   `[✅]` **Commit** `feat(dialectic-worker): emit complete RENDER job lifecycle notifications using correct type hierarchy`
 
+*   `[✅]` [STORE] packages/store/src/`dialecticStore.documents` **Key stageRunProgress.documents by (documentKey, modelId) so progress bar works for any stages, steps, documents, and models**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Key progress.documents by (documentKey, modelId) so one document key can have N descriptors (one per model)
+        *   `[✅]` Document lifecycle handlers write using composite key; selectUnifiedProjectProgress and consumers count completed descriptors per step correctly
+    *   `[✅]` `role.md`
+        *   `[✅]` Store layer — dialecticStore.documents.ts owns writes to stageRunProgress.documents
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to dialecticStore.documents.ts and the document lifecycle handlers (handleDocumentStartedLogic, handleDocumentCompletedLogic, handleRenderCompletedLogic, handleJobFailedLogic)
+    *   `[✅]` `deps.md`
+        *   `[✅]` stageRunProgress[progressKey].documents currently keyed by document_key only
+        *   `[✅]` DialecticStateValues, StageRunProgressSnapshot from @paynless/types
+        *   `[✅]` selectValidMarkdownDocumentKeys, other selectors that read progress.documents
+    *   `[✅]` packages/types/`dialectic.types.ts`
+        *   `[✅]` StageRunProgressSnapshot.documents: key by composite (e.g. documentKey:modelId) or nested Record so one document key can have N descriptors
+        *   `[✅]` Add or document helper type / key format for (documentKey, modelId) composite
+    *   `[✅]` interface/tests/`dialecticStore.documents.interface.test.ts`
+        *   `[✅]` Omit if no type guards change; otherwise detail contracts for StageRunProgressSnapshot.documents key shape
+    *   `[✅]` interface/guards/`dialecticStore.documents.interface.guards.ts`
+        *   `[✅]` Omit if no type guards change; otherwise each guard for documents key shape
+    *   `[✅]` unit/`dialecticStore.documents.test.ts`
+        *   `[✅]` Tests: handleDocumentStartedLogic keys progress.documents by (document_key, modelId)
+        *   `[✅]` Tests: handleDocumentCompletedLogic, handleRenderCompletedLogic, handleJobFailedLogic use composite key
+        *   `[✅]` Each test is its own nested item so that they can be cleanly compared, revised, iterated
+    *   `[✅]` `dialecticStore.documents.ts`
+        *   `[✅]` All writes to progress.documents use composite key (documentKey + modelId)
+        *   `[✅]` handleDocumentStartedLogic, handleDocumentCompletedLogic, handleRenderCompletedLogic, handleJobFailedLogic key by (event.document_key, event.modelId)
+        *   `[✅]` Preserve reads/updates in setFocusedStageDocument, fetchStageDocumentContent, and other consumers to use composite key when accessing progress.documents
+        *   `[✅]` Each requirement is its own nested item so that they can be cleanly compared, revised, iterated
+    *   `[✅]` provides/`dialecticStore.documents.provides.ts`
+        *   `[✅]` Omit if store has no separate provides file; otherwise bounded outer surface of the module
+    *   `[✅]` integration/`dialecticStore.documents.integration.test.ts`
+        *   `[✅]` Tests for document lifecycle handlers writing composite key and selector/consumer reading correctly where applicable
+        *   `[✅]` Each test is its own nested item so that they can be cleanly compared, revised, iterated
+    *   `[✅]` `requirements.md`
+        *   `[✅]` progress.documents keyed by (documentKey, modelId); one document key can have N descriptors
+        *   `[✅]` All document lifecycle handlers use composite key; no overwrite of same document_key by different models
+        *   `[✅]` Each obligation or criteria is its own nested item so that they can be cleanly compared, revised, iterated
+    *   `[✅]` **Commit** `fix(store): key stageRunProgress.documents by (documentKey, modelId) for correct progress`
+        *   `[✅]` Detail each change performed on the file in this work increment
+
 *   `[✅]` [STORE] packages/store/src/`dialecticStore.selectors` **Add selectUnifiedProjectProgress selector for SSOT progress calculation**
     *   `[✅]` `deps.md`
         *   `[✅]` DialecticStateValues from `@paynless/types`
         *   `[✅]` recipesByStageSlug state for step counts
         *   `[✅]` stageRunProgress state for document completion status
+        *   `[✅]` **stageRunProgress[progressKey].documents keyed by (documentKey, modelId)** so one document key can have N descriptors (one per model); selector counts completed descriptors per step
         *   `[✅]` selectedModelIds state for model count
         *   `[✅]` currentProjectDetail.dialectic_process_templates for stage list
         *   `[✅]` selectSessionById for current stage/iteration
@@ -958,9 +1000,11 @@
         *   `[✅]` Add `UnifiedProjectProgress` interface with totalStages, completedStages, currentStageSlug, overallPercentage, currentStage, projectStatus
         *   `[✅]` Add `StepProgressDetail` interface with stepKey, stepName, totalModels, completedModels, stepPercentage, status
         *   `[✅]` Add `StageProgressDetail` interface with stageSlug, totalSteps, completedSteps, stagePercentage, stepsDetail, stageStatus
+        *   `[✅]` **StageRunProgressSnapshot.documents** must allow multiple descriptors per document key (e.g. key = composite `documentKey:modelId` or nested Record<documentKey, Record<modelId, descriptor>>)
     *   `[✅]` `dialecticStore.selectors.test.ts`
         *   `[✅]` Test: returns 0% progress for new project with no completed documents
         *   `[✅]` Test: calculates step progress as completedModels/totalModels (e.g., 1/3 = 33%)
+        *   `[✅]` **Test: one document key produced by 3 models → 1 completed = 33% step progress, all 3 completed = 100% (no multiple document keys required)**
         *   `[✅]` Test: calculates stage progress as sum of step progress / total steps
         *   `[✅]` Test: calculates overall progress as (completed stages + current stage progress) / total stages
         *   `[✅]` Test: returns 100% when all stages complete
@@ -975,9 +1019,9 @@
         *   `[✅]` Get total stages from process template
         *   `[✅]` Get model count from selectedModelIds.length
         *   `[✅]` For each step, determine if it requires model calls (check job_type or outputs_required)
-        *   `[✅]` Model steps: progress = completedModels / totalModels
+        *   `[✅]` Model steps: progress = completedModels / totalModels; **completedModels = count of descriptors for that step (keyed by documentKey:modelId) where status === 'completed' and modelId in selectedModelIds**
         *   `[✅]` Non-model steps (e.g., assembly, render): progress = 1/1 when step status is completed
-        *   `[✅]` For each stage, calculate step progress from stageRunProgress documents filtered by modelId
+        *   `[✅]` **For each stage, iterate descriptors keyed by (documentKey, modelId); count completed per step for selector**
         *   `[✅]` Aggregate step → stage → project progress with proper weighting
         *   `[✅]` Derive status from document statuses (not_started | in_progress | completed | failed)
     *   `[✅]` **Commit** `feat(store): add selectUnifiedProjectProgress selector for SSOT progress tracking`
@@ -1000,83 +1044,96 @@
         *   `[✅]` Remove dependency on legacy sessionProgress
     *   `[✅]` **Commit** `refactor(ui): DynamicProgressBar uses selectUnifiedProjectProgress SSOT`
 
-*   `[ ]` [UI] apps/web/src/components/dialectic/`StageRunChecklist` **Show documents for all stages with appropriate status indicators**
-    *   `[ ]` `deps.md`
-        *   `[ ]` selectValidMarkdownDocumentKeys from `@paynless/store`
-        *   `[ ]` selectStageRunProgress from `@paynless/store`
-        *   `[ ]` selectStageRecipe from `@paynless/store`
-        *   `[ ]` Process template stages from currentProjectDetail
-    *   `[ ]` `StageRunChecklist.test.tsx`
-        *   `[ ]` Test: displays documents for current stage with real-time status
-        *   `[ ]` Test: displays documents for completed (past) stages with completed status
-        *   `[ ]` Test: displays documents for future stages with "stage not ready" indicator
-        *   `[ ]` Test: distinguishes "stage not ready" from "document not started" (stage ready but not run)
-        *   `[ ]` Test: shows model progress per document (e.g., "2/3 models complete")
-        *   `[ ]` Test: shows documents for all selected models, not just one
-        *   `[ ]` Test: does not filter out documents lacking modelId for future stages
-    *   `[ ]` `StageRunChecklist.tsx`
-        *   `[ ]` Remove filter that hides future stage documents
-        *   `[ ]` Add logic to determine stage readiness (is current stage or prior stage)
-        *   `[ ]` Add "Stage not ready" visual indicator for stages after current
-        *   `[ ]` Add "Not started" visual indicator for documents in ready stage that haven't begun
-        *   `[ ]` Show model progress count for in-progress documents
-        *   `[ ]` Always show what documents the stage will produce regardless of progress
-    *   `[ ]` **Commit** `feat(ui): StageRunChecklist shows all stage documents with status indicators`
+*   `[✅]` [UI] apps/web/src/components/dialectic/`StageRunChecklist` **One checklist: all stages, all documents; consolidated status per document; expand on focus for per-model status**
+    *   `[✅]` `deps.md`
+        *   `[✅]` selectValidMarkdownDocumentKeys from `@paynless/store` (per stage)
+        *   `[✅]` selectStageRunProgress from `@paynless/store` (per stage)
+        *   `[✅]` selectStageRecipe from `@paynless/store` (per stage)
+        *   `[✅]` Process template stages (selectSortedStages or currentProjectDetail.dialectic_process_templates) for stage order and readiness
+        *   `[✅]` selectedModelIds and per-model document status from stageRunProgress for consolidated and per-model status
+        *   `[ ]` **stageRunProgress supplies one descriptor per (documentKey, modelId)** so consolidated "2/3 complete" and per-model status can be derived correctly
+    *   `[✅]` `StageRunChecklist.test.tsx`
+        *   `[✅]` Test: displays all stages in order (past, current, future)
+        *   `[✅]` Test: when a stage is focused, the stage displays all documents the stage will produce (from recipe)
+        *   `[✅]` Test: document row shows consolidated status when a document is unfocused (e.g. "2/3 complete", "Completed", "Not started")
+        *   `[✅]` Test: when user focuses a document row, row expands to show per-model status for that document
+        *   `[✅]` Test: future stages show "Stage not ready" indicator; documents in ready stage show "Not started" when not begun
+        *   `[✅]` Test: distinguishes "Stage not ready" from "Document not started"
+        *   `[✅]` Test: clicking a document focuses by documentKey so viewer can show all model versions; no modelId required for focus
+        *   `[✅]` Test: does not filter out documents or stages by progress; all stages and all documents always listed
+        *   `[✅]` Test: does filter display of any steps that do not produce a document that will be rendered for the user to view (headers, intermediate products)
+    *   `[✅]` `StageRunChecklist.tsx`
+        *   `[✅]` Render one checklist: Layer 1 = list of all stages (from process template), Layer 2 = per-stage list of all documents (from selectValidMarkdownDocumentKeys per stage)
+        *   `[✅]` Automatically focuses on the stage the user is currently on
+        *   `[✅]` User can see and select any stage regardless of progress
+        *   `[✅]` Stage collapse document list when stage is not focused, unrolls document list when stage is focused
+        *   `[✅]` User can select or deselect arrow in upper right corner of each stage to unroll documents without changing focus to stage
+        *   `[✅]` Document row: show consolidated status (derived from per-model statuses for that document); compact when unfocused
+        *   `[✅]` On document focus: expand that document row to show explicit per-model status (e.g. Model A: Completed, Model B: Generating)
+        *   `[✅]` User can select or deselect arrow in upper right corner of each document row to unroll document status list without changing focus to that stage or document 
+        *   `[✅]` Add logic for stage readiness (current or prior stage = ready); future stages show "Stage not ready"
+        *   `[✅]` Documents in ready stage that have not begun show "Not started" (distinct from "Stage not ready")
+        *   `[✅]` Always list all stages and all documents; no filtering by progress; no document content in checklist (content in viewer on click)
+        *   `[✅]` Click document sets focus so viewer pane shows all model versions of that document
+    *   `[✅]` **Commit** `feat(ui): StageRunChecklist one checklist, all stages/documents, consolidated status, expand on focus for per-model`
 
-*   `[ ]` [UI] apps/web/src/components/dialectic/`StageTabCard` **Use SSOT for stage completion status**
-    *   `[ ]` `deps.md`
-        *   `[ ]` selectUnifiedProjectProgress from `@paynless/store`
-        *   `[ ]` UnifiedProjectProgress type from `@paynless/types`
-    *   `[ ]` `StageTabCard.test.tsx`
-        *   `[ ]` Test: shows "Completed" label when stage is fully complete per SSOT
-        *   `[ ]` Test: shows progress percentage for current stage from SSOT
-        *   `[ ]` Test: shows "Not started" for future stages
-        *   `[ ]` Test: shows "Failed" indicator when stage has failed documents
-    *   `[ ]` `StageTabCard.tsx`
-        *   `[ ]` Replace selectStageProgressSummary usage with selectUnifiedProjectProgress
-        *   `[ ]` Derive stage completion from SSOT instead of separate calculation
-        *   `[ ]` Ensure visual indicators align with DynamicProgressBar and StageRunChecklist
-    *   `[ ]` **Commit** `refactor(ui): StageTabCard uses selectUnifiedProjectProgress SSOT`
+*   `[✅]` [UI] apps/web/src/components/dialectic/`StageTabCard` **Use SSOT for stage completion status; render one StageRunChecklist**
+    *   `[✅]` `deps.md`
+        *   `[✅]` selectUnifiedProjectProgress from `@paynless/store`
+        *   `[✅]` UnifiedProjectProgress type from `@paynless/types`
+        *   `[✅]` StageRunChecklist (one instance; checklist shows all stages and documents)
+    *   `[✅]` `StageTabCard.test.tsx`
+        *   `[✅]` Test: shows "Completed" label when stage is fully complete per SSOT
+        *   `[✅]` Test: shows progress percentage for current stage from SSOT
+        *   `[✅]` Test: shows "Not started" for future stages
+        *   `[✅]` Test: shows "Failed" indicator when stage has failed documents
+        *   `[✅]` Test: renders one StageRunChecklist (not one per model)
+    *   `[✅]` `StageTabCard.tsx`
+        *   `[✅]` Replace selectStageProgressSummary usage with selectUnifiedProjectProgress
+        *   `[✅]` Derive stage completion from SSOT instead of separate calculation
+        *   `[✅]` Render one StageRunChecklist (remove map over selectedModelIds for checklist; checklist is single, shows all stages/documents with consolidated and per-model status on focus)
+        *   `[✅]` Ensure visual indicators align with DynamicProgressBar and StageRunChecklist
+    *   `[✅]` **Commit** `refactor(ui): StageTabCard uses selectUnifiedProjectProgress SSOT; one StageRunChecklist`
 
-*   `[ ]` [UI] apps/web/src/components/dialectic/`SessionInfoCard` **Consolidate ALL competing progress indicators (title bar, badge, progress bar, generating indicator)**
-    *   `[ ]` `deps.md`
-        *   `[ ]` selectUnifiedProjectProgress from `@paynless/store`
-        *   `[ ]` DynamicProgressBar component
-        *   `[ ]` UnifiedProjectProgress type from `@paynless/types`
-    *   `[ ]` `SessionInfoCard.test.tsx`
-        *   `[ ]` Test: displays single unified progress indicator from SSOT
-        *   `[ ]` Test: title bar status text reflects SSOT projectStatus (not session.status)
-        *   `[ ]` Test: status badge reflects SSOT projectStatus (not session.status)
-        *   `[ ]` Test: title bar and badge show identical status
-        *   `[ ]` Test: removes duplicate "Generating contributions..." indicator when progress bar is active
-        *   `[ ]` Test: all status displays (title, badge, progress bar) agree with each other
-    *   `[ ]` `SessionInfoCard.tsx`
-        *   `[ ]` Replace `session.status` in title bar (line ~185) with SSOT-derived status
-        *   `[ ]` Replace `session.status` in Badge (lines ~187-203) with SSOT-derived status
-        *   `[ ]` Remove conditional that hides DynamicProgressBar when sessionProgress is missing
-        *   `[ ]` Remove duplicate "Generating contributions..." indicator (redundant with progress bar)
-        *   `[ ]` Ensure DynamicProgressBar is the single progress display
-        *   `[ ]` All status text derived from selectUnifiedProjectProgress.projectStatus
-    *   `[ ]` **Commit** `refactor(ui): SessionInfoCard consolidates ALL progress indicators (title/badge/bar) to SSOT`
+*   `[✅]` [UI] apps/web/src/components/dialectic/`SessionInfoCard` **Consolidate ALL competing progress indicators (title bar, badge, progress bar, generating indicator)**
+    *   `[✅]` `deps.md`
+        *   `[✅]` selectUnifiedProjectProgress from `@paynless/store`
+        *   `[✅]` DynamicProgressBar component
+        *   `[✅]` UnifiedProjectProgress type from `@paynless/types`
+    *   `[✅]` `SessionInfoCard.test.tsx`
+        *   `[✅]` Test: displays single unified progress indicator from SSOT
+        *   `[✅]` Test: title bar status text reflects SSOT projectStatus (not session.status)
+        *   `[✅]` Test: status badge reflects SSOT projectStatus (not session.status)
+        *   `[✅]` Test: title bar and badge show identical status
+        *   `[✅]` Test: removes duplicate "Generating contributions..." indicator when progress bar is active
+        *   `[✅]` Test: all status displays (title, badge, progress bar) agree with each other
+    *   `[✅]` `SessionInfoCard.tsx`
+        *   `[✅]` Replace `session.status` in title bar (line ~185) with SSOT-derived status
+        *   `[✅]` Replace `session.status` in Badge (lines ~187-203) with SSOT-derived status
+        *   `[✅]` Remove conditional that hides DynamicProgressBar when sessionProgress is missing
+        *   `[✅]` Remove duplicate "Generating contributions..." indicator (redundant with progress bar)
+        *   `[✅]` Ensure DynamicProgressBar is the single progress display
+        *   `[✅]` All status text derived from selectUnifiedProjectProgress.projectStatus
+    *   `[✅]` **Commit** `refactor(ui): SessionInfoCard consolidates ALL progress indicators (title/badge/bar) to SSOT`
 
-*   `[ ]` [UI] apps/web/src/pages/`DialecticSessionDetailsPage` **Extract embedded progress bar and consolidate with SSOT**
-    *   `[ ]` `deps.md`
-        *   `[ ]` selectUnifiedProjectProgress from `@paynless/store`
-        *   `[ ]` DynamicProgressBar component from `@/components/common/DynamicProgressBar`
-        *   `[ ]` UnifiedProjectProgress type from `@paynless/types`
-    *   `[ ]` `DialecticSessionDetailsPage.test.tsx`
-        *   `[ ]` Test: sidebar uses DynamicProgressBar component (not inline calculation)
-        *   `[ ]` Test: sidebar progress bar uses SSOT overallPercentage
-        *   `[ ]` Test: stage count display (X/Y) derived from SSOT totalStages/completedStages
-        *   `[ ]` Test: embedded progress bar removed in favor of DynamicProgressBar
-        *   `[ ]` Test: progress bar percentage matches SessionInfoCard progress bar
-    *   `[ ]` `DialecticSessionDetailsPage.tsx`
-        *   `[ ]` Remove embedded progress bar div (lines ~169-197 with inline `width: ${...}%` calculation)
-        *   `[ ]` Replace with DynamicProgressBar component
-        *   `[ ]` Remove `activeStageForProgressBar` variable (no longer needed)
-        *   `[ ]` Use selectUnifiedProjectProgress for stage count display
-        *   `[ ]` Ensure stage count and percentage align with SessionInfoCard
-    *   `[ ]` **Commit** `refactor(ui): DialecticSessionDetailsPage extracts embedded progress bar, uses DynamicProgressBar + SSOT`
+*   `[✅]` [UI] apps/web/src/pages/`DialecticSessionDetailsPage` **Extract embedded progress bar and consolidate with SSOT**
+    *   `[✅]` `deps.md`
+        *   `[✅]` selectUnifiedProjectProgress from `@paynless/store`
+        *   `[✅]` DynamicProgressBar component from `@/components/common/DynamicProgressBar`
+        *   `[✅]` UnifiedProjectProgress type from `@paynless/types`
+    *   `[✅]` `DialecticSessionDetailsPage.test.tsx`
+        *   `[✅]` Test: sidebar uses DynamicProgressBar component (not inline calculation)
+        *   `[✅]` Test: sidebar progress bar uses SSOT overallPercentage
+        *   `[✅]` Test: stage count display (X/Y) derived from SSOT totalStages/completedStages
+        *   `[✅]` Test: embedded progress bar removed in favor of DynamicProgressBar
+        *   `[✅]` Test: progress bar percentage matches SessionInfoCard progress bar
+    *   `[✅]` `DialecticSessionDetailsPage.tsx`
+        *   `[✅]` Remove embedded progress bar div (lines ~169-197 with inline `width: ${...}%` calculation)
+        *   `[✅]` Replace with DynamicProgressBar component
+        *   `[✅]` Remove `activeStageForProgressBar` variable (no longer needed)
+        *   `[✅]` Use selectUnifiedProjectProgress for stage count display
+        *   `[✅]` Ensure stage count and percentage align with SessionInfoCard
+    *   `[✅]` **Commit** `refactor(ui): DialecticSessionDetailsPage extracts embedded progress bar, uses DynamicProgressBar + SSOT`
 
 *   `[ ]` [TEST-INT] packages/store/src/`dialecticStore.progress.integration` **Integration test: Frontend progress tracking from notifications to display**
     *   `[ ]` `deps.md`
@@ -1088,6 +1145,7 @@
         *   `[ ]` Test: planner_started notification → store updates stepStatus to 'in_progress' → selector returns in_progress status
         *   `[ ]` Test: planner_completed notification → store updates step to completed → selector counts step as 1/1
         *   `[ ]` Test: execute_started notification → store updates step status → selector returns correct step progress
+        *   `[ ]` **Test: one document key, 3 models — execute_completed for 1 of 3 → selector returns 33% step progress; for all 3 → 100% (no multiple document keys in recipe)**
         *   `[ ]` Test: execute_chunk_completed for 1 of 3 models → selector returns 33% step progress
         *   `[ ]` Test: execute_completed for all 3 models → selector returns 100% step progress
         *   `[ ]` Test: all steps complete in stage → selector returns 100% stage progress
@@ -1163,13 +1221,14 @@
 
 *   `[ ]` Progress bar starts at 0% for new projects
 *   `[ ]` Progress increments correctly: models → steps → stages → project
+*   `[ ]` **Progress data model: stageRunProgress.documents keyed by (documentKey, modelId); one document key can have N model completions; selector and progress bar use this for correct completedModels/totalModels for any stages, steps, documents, and models**
 *   `[ ]` Non-model steps (PLAN, assembly) count as 1/1 when complete
 *   `[ ]` All progress indicators (title bar, badge, progress bar, documents) show same value
 *   `[ ]` Embedded progress bar extracted from DialecticSessionDetailsPage
 *   `[ ]` SessionInfoCard title, badge, and progress bar all use SSOT
 *   `[ ]` StageRunChecklist shows documents for all stages (past, current, future)
 *   `[ ]` "Stage not ready" vs "Document not started" clearly distinguished
-*   `[ ]` Multi-model progress shows correctly (e.g., "2/3 models complete")
+*   `[ ]` Multi-model progress shows correctly (e.g., "2/3 models complete") **per document key** (one document, three models → 2/3 then 3/3)
 *   `[ ]` Backend emits complete lifecycle for all job types: started, chunk_completed, completed, job_failed
 *   `[ ]` Job notification type hierarchy: JobNotificationBase → PLAN/EXECUTE/RENDER payloads + unified job_failed
 *   `[ ]` PLAN jobs emit: planner_started, planner_completed, job_failed (NO modelId, NO document_key)
@@ -1201,8 +1260,9 @@
     --- User generates stage, all succeeds
     --- User advances stages, decides they want to fix an oversight in a prior stage
     --- User regenerates a prior document
-    --- Now all subsequent documents are invalid
+    --- Now subsequent documents derived from the original are invalid
     --- Is this a true branch/iteration, or do we highlight the downstream products so that those can be regenerated from the new input that was produced? 
+    --- If we "only" highlight downstream products, all downstream products are invalid, because the header_context used to generate them would be invalid 
     --- PROPOSED: Implement regeneration prior to stage advancement, disable regeneration for documents who have downstream documents, set up future sprint for branching/iteration to support hints to regenerate downstream documents if a user regenerates upstream documents
     --- BLOCKER: Some stages are fundamentally dependent on all prior outputs, like synthesis, and the entire stage needs to be rerun if thesis/antithesis documents are regenerated
 

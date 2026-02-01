@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { DialecticSessionDetailsPage } from './DialecticSessionDetailsPage';
 import { setDialecticStateValues, resetDialecticStoreMock, mockActivateProjectAndSessionContextForDeepLink } from '../mocks/dialecticStore.mock';
@@ -48,6 +48,11 @@ vi.mock('../components/dialectic/StageTabCard', () => ({
   StageTabCard: () => <div data-testid="mock-stage-tab-card" />,
 }));
 vi.mock('../components/dialectic/SessionContributionsDisplayCard', () => ({ SessionContributionsDisplayCard: () => <div data-testid="mock-session-contributions-display-card" /> }));
+vi.mock('../components/common/DynamicProgressBar', () => ({
+  DynamicProgressBar: ({ sessionId }: { sessionId: string }) => (
+    <div data-testid="dynamic-progress-bar-mock" data-session-id={sessionId} />
+  ),
+}));
 
 // Define Mocks
 const mockProjectId = 'project-123';
@@ -276,7 +281,7 @@ describe('DialecticSessionDetailsPage', () => {
     });
   });
 
-  it('progress bar reflects activeStageSlug not activeContextStage', async () => {
+  it('sidebar uses DynamicProgressBar component (not inline calculation)', async () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
     setDialecticStateValues({
       activeContextProjectId: mockProjectId,
@@ -284,8 +289,7 @@ describe('DialecticSessionDetailsPage', () => {
       activeSessionDetail: mockSession,
       currentProjectDetail: mockProject,
       currentProcessTemplate: mockProcessTemplate,
-      activeStageSlug: 'antithesis',
-      activeContextStage: mockStages[0],
+      activeStageSlug: mockStages[0].slug,
       isLoadingActiveSessionDetail: false,
       activeSessionDetailError: null,
     });
@@ -296,12 +300,10 @@ describe('DialecticSessionDetailsPage', () => {
       expect(screen.getByTestId('mock-stage-tab-card')).toBeInTheDocument();
     });
 
-    expect(screen.getByText('2/2')).toBeInTheDocument();
-    const progressSection = screen.getByText('Progress').closest('.space-y-3');
-    expect(progressSection).toHaveTextContent('100% complete');
+    expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
   });
 
-  it('progress bar does not update when activeContextStage changes but activeStageSlug is constant', async () => {
+  it('sidebar progress bar uses SSOT overallPercentage', async () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
     setDialecticStateValues({
       activeContextProjectId: mockProjectId,
@@ -309,8 +311,7 @@ describe('DialecticSessionDetailsPage', () => {
       activeSessionDetail: mockSession,
       currentProjectDetail: mockProject,
       currentProcessTemplate: mockProcessTemplate,
-      activeStageSlug: 'hypothesis',
-      activeContextStage: mockStages[0],
+      activeStageSlug: mockStages[0].slug,
       isLoadingActiveSessionDetail: false,
       activeSessionDetailError: null,
     });
@@ -318,15 +319,77 @@ describe('DialecticSessionDetailsPage', () => {
     renderWithRouter({});
 
     await waitFor(() => {
-      expect(screen.getByText('1/2')).toBeInTheDocument();
+      expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
     });
 
-    act(() => {
-      setDialecticStateValues({ activeContextStage: mockStages[1] });
+    const progressBar = screen.getByTestId('dynamic-progress-bar-mock');
+    expect(progressBar).toHaveAttribute('data-session-id', mockSessionId);
+  });
+
+  it('stage count display (X/Y) derived from SSOT totalStages/completedStages', async () => {
+    mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+    setDialecticStateValues({
+      activeContextProjectId: mockProjectId,
+      activeContextSessionId: mockSessionId,
+      activeSessionDetail: mockSession,
+      currentProjectDetail: mockProject,
+      currentProcessTemplate: mockProcessTemplate,
+      activeStageSlug: mockStages[0].slug,
+      isLoadingActiveSessionDetail: false,
+      activeSessionDetailError: null,
     });
 
-    expect(screen.getByText('1/2')).toBeInTheDocument();
-    const progressSection = screen.getByText('Progress').closest('.space-y-3');
-    expect(progressSection).toHaveTextContent('50% complete');
+    renderWithRouter({});
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId('dynamic-progress-bar-mock')).toHaveAttribute('data-session-id', mockSession.id);
+  });
+
+  it('embedded progress bar removed in favor of DynamicProgressBar', async () => {
+    mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+    setDialecticStateValues({
+      activeContextProjectId: mockProjectId,
+      activeContextSessionId: mockSessionId,
+      activeSessionDetail: mockSession,
+      currentProjectDetail: mockProject,
+      currentProcessTemplate: mockProcessTemplate,
+      activeStageSlug: mockStages[0].slug,
+      isLoadingActiveSessionDetail: false,
+      activeSessionDetailError: null,
+    });
+
+    renderWithRouter({});
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('% complete')).not.toBeInTheDocument();
+  });
+
+  it('progress bar percentage matches SessionInfoCard', async () => {
+    mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+    setDialecticStateValues({
+      activeContextProjectId: mockProjectId,
+      activeContextSessionId: mockSessionId,
+      activeSessionDetail: mockSession,
+      currentProjectDetail: mockProject,
+      currentProcessTemplate: mockProcessTemplate,
+      activeStageSlug: mockStages[0].slug,
+      isLoadingActiveSessionDetail: false,
+      activeSessionDetailError: null,
+    });
+
+    renderWithRouter({});
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
+    });
+
+    const progressBar = screen.getByTestId('dynamic-progress-bar-mock');
+    expect(progressBar).toHaveAttribute('data-session-id', mockSession.id);
   });
 }); 
