@@ -1031,7 +1031,7 @@ Deno.test('executeModelCallAndSave - includes rendered template as first user me
   clearAllStubs?.();
 });
 
-Deno.test('executeModelCallAndSave - emits document_completed when finish_reason is stop', async () => {
+Deno.test('executeModelCallAndSave - emits execute_chunk_completed when finish_reason is stop (final chunk; execute_completed is emitted by processSimpleJob)', async () => {
   resetMockNotificationService();
   
   const { client: dbClient, clearAllStubs } = setupMockClient({
@@ -1076,10 +1076,10 @@ Deno.test('executeModelCallAndSave - emits document_completed when finish_reason
   };
   await executeModelCallAndSave(params);
 
-  assertEquals(mockNotificationService.sendDocumentCentricNotification.calls.length, 1, 'Expected a document_completed event emission');
-  const [payloadArg, targetUserId] = mockNotificationService.sendDocumentCentricNotification.calls[0].args;
+  assertEquals(mockNotificationService.sendJobNotificationEvent.calls.length, 1, 'Expected an execute_chunk_completed event emission for final chunk');
+  const [payloadArg, targetUserId] = mockNotificationService.sendJobNotificationEvent.calls[0].args;
   assert(isRecord(payloadArg));
-  assertEquals(payloadArg.type, 'document_completed');
+  assertEquals(payloadArg.type, 'execute_chunk_completed');
   assertEquals(payloadArg.sessionId, documentPayload.sessionId);
   assertEquals(payloadArg.stageSlug, documentPayload.stageSlug);
   assertEquals(payloadArg.job_id, 'job-id-123');
@@ -1143,11 +1143,11 @@ Deno.test('executeModelCallAndSave - emits document_chunk_completed for continua
 
   await executeModelCallAndSave(params);
 
-  // One call expected: document_chunk_completed (no document_completed because finish_reason != stop)
-  assertEquals(mockNotificationService.sendDocumentCentricNotification.calls.length, 1, 'Expected a document_chunk_completed event emission');
-  const [payloadArg, targetUserId] = mockNotificationService.sendDocumentCentricNotification.calls[0].args;
+  // One call expected: execute_chunk_completed (execute_completed is emitted by processSimpleJob)
+  assertEquals(mockNotificationService.sendJobNotificationEvent.calls.length, 1, 'Expected an execute_chunk_completed event emission');
+  const [payloadArg, targetUserId] = mockNotificationService.sendJobNotificationEvent.calls[0].args;
   assert(isRecord(payloadArg));
-  assertEquals(payloadArg.type, 'document_chunk_completed');
+  assertEquals(payloadArg.type, 'execute_chunk_completed');
   assertEquals(payloadArg.sessionId, continuationPayload.sessionId);
   assertEquals(payloadArg.stageSlug, continuationPayload.stageSlug);
   assertEquals(payloadArg.job_id, 'job-id-123');

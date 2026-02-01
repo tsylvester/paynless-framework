@@ -131,9 +131,8 @@ const notificationService: NotificationServiceType = {
   sendContributionFailedNotification: () => Promise.resolve(),
   sendContributionGenerationCompleteEvent: () => Promise.resolve(),
   sendContributionGenerationContinuedEvent: () => Promise.resolve(),
-  sendDialecticProgressUpdateEvent: () => Promise.resolve(),
   sendContributionGenerationFailedEvent: () => Promise.resolve(),
-  sendDocumentCentricNotification: () => Promise.resolve(),
+  sendJobNotificationEvent: () => Promise.resolve(),
 };
 
 // Properly typed Logger

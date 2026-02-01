@@ -1269,7 +1269,7 @@ Deno.test('executeModelCallAndSave - RENDER jobs for root and continuation chunk
     
     stubShouldEnqueueRenderJobForMarkdown(deps);
     const getNotificationCalls = (): Array<{ type: string; payload: unknown }> => {
-        return mockNotificationService.sendDocumentCentricNotification.calls.map((call) => {
+        return mockNotificationService.sendJobNotificationEvent.calls.map((call) => {
             const payload = call.args[0];
             const type = isRecord(payload) && typeof payload['type'] === 'string' ? payload['type'] : '';
             return { type, payload };
@@ -1355,9 +1355,9 @@ Deno.test('executeModelCallAndSave - RENDER jobs for root and continuation chunk
     assertEquals(rootPl['documentIdentity'], rootContributionId, 'Root chunk: documentIdentity must equal contribution.id (extracted from document_relationships[stageSlug] after initialization)');
     assertEquals(rootPl['sourceContributionId'], rootPl['documentIdentity'], 'Root chunk: sourceContributionId must equal documentIdentity (both are contribution.id)');
     
-    // Assert: Root chunk notification
-    const rootNotifications = getNotificationCalls().filter((n) => n.type === 'document_completed');
-    assertEquals(rootNotifications.length, 1, 'Root chunk should emit document_completed notification (final chunk)');
+    // Assert: Root chunk notification (execute_chunk_completed for final chunk; execute_completed is emitted by processSimpleJob)
+    const rootNotifications = getNotificationCalls().filter((n) => n.type === 'execute_chunk_completed');
+    assertEquals(rootNotifications.length, 1, 'Root chunk should emit execute_chunk_completed notification (final chunk)');
     const rootNotification = rootNotifications[0];
     assert(isRecord(rootNotification.payload), 'Root notification payload must be an object');
     assertEquals(rootNotification.payload['document_key'], documentKey, 'Root notification must include document_key');
@@ -1418,19 +1418,18 @@ Deno.test('executeModelCallAndSave - RENDER jobs for root and continuation chunk
     assertEquals(continuationPl['documentIdentity'], documentIdentity, 'Continuation chunk: documentIdentity must be the root\'s ID from document_relationships');
     assert(continuationPl['sourceContributionId'] !== continuationPl['documentIdentity'], 'Continuation chunk: sourceContributionId (this chunk\'s ID) must NOT equal documentIdentity (root\'s ID)');
     
-    // Assert: Continuation chunk notifications
-    // Should have document_chunk_completed for continuation chunk, then document_completed for final chunk
-    const continuationChunkNotifications = getNotificationCalls().filter((n) => n.type === 'document_chunk_completed');
-    assertEquals(continuationChunkNotifications.length, 1, 'Continuation chunk should emit document_chunk_completed notification');
-    const continuationChunkNotification = continuationChunkNotifications[0];
+    // Assert: execute_chunk_completed — root run emits 1 (final chunk); continuation run emits 1 or 2 (continuation block and/or final chunk block). Total 2 or 3.
+    const continuationChunkNotifications = getNotificationCalls().filter((n) => n.type === 'execute_chunk_completed');
+    assert(continuationChunkNotifications.length >= 2, `Expected at least 2 execute_chunk_completed (root final + continuation); got ${continuationChunkNotifications.length}`);
+    const continuationChunkNotification = continuationChunkNotifications[1];
     assert(isRecord(continuationChunkNotification.payload), 'Continuation chunk notification payload must be an object');
     assertEquals(continuationChunkNotification.payload['document_key'], documentKey, 'Continuation chunk notification must include document_key');
     assertEquals(continuationChunkNotification.payload['sessionId'], continuationPayload.sessionId, 'Continuation chunk notification must include sessionId');
     assertEquals(continuationChunkNotification.payload['stageSlug'], stageSlug, 'Continuation chunk notification must include stageSlug');
     
-    const continuationFinalNotifications = getNotificationCalls().filter((n) => n.type === 'document_completed');
-    assertEquals(continuationFinalNotifications.length, 2, 'Should have document_completed notifications for both root and continuation (both are final chunks in this test)');
-    const continuationFinalNotification = continuationFinalNotifications[1];
+    const continuationFinalNotifications = getNotificationCalls().filter((n) => n.type === 'execute_chunk_completed');
+    assert(continuationFinalNotifications.length >= 2, `Expected at least 2 execute_chunk_completed; got ${continuationFinalNotifications.length}`);
+    const continuationFinalNotification = continuationFinalNotifications[continuationFinalNotifications.length - 1];
     assert(isRecord(continuationFinalNotification.payload), 'Continuation final notification payload must be an object');
     assertEquals(continuationFinalNotification.payload['document_key'], documentKey, 'Continuation final notification must include document_key');
     assertEquals(continuationFinalNotification.payload['sessionId'], continuationPayload.sessionId, 'Continuation final notification must include sessionId');

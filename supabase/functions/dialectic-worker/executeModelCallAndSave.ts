@@ -341,13 +341,80 @@ export async function executeModelCallAndSave(
                         }
                     }
                 }
-                // Handle intermediate artifacts (header_context, etc.) that are stored in contributions
-                if (rType === 'header_context' || (rType !== 'document' && rType !== 'feedback')) {
+                if (rType === 'seed_prompt') {
+                    deps.logger.info(`[gatherArtifacts] Querying dialectic_project_resources for seed_prompt input rule: stage='${rStage}', document_key='${rKey}'`);
+                    const { data, error } = await dbClient
+                        .from('dialectic_project_resources')
+                        .select('*')
+                        .eq('project_id', projectId)
+                        .eq('session_id', sessionId)
+                        .eq('iteration_number', iterationNumber)
+                        .eq('stage_slug', rStage)
+                        .eq('resource_type', 'seed_prompt');
+                    if (error) {
+                        deps.logger.error(`[gatherArtifacts] Error querying dialectic_project_resources for seed_prompt: stage='${rStage}', document_key='${rKey}'`, { error });
+                        if (rRequired === false) continue;
+                        throw new Error(`Required seed_prompt for input rule with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources.`);
+                    }
+                    if (!Array.isArray(data) || data.length === 0) {
+                        deps.logger.warn(`[gatherArtifacts] No seed_prompt resources found for stage='${rStage}', document_key='${rKey}'`);
+                        if (rRequired === false) continue;
+                        throw new Error(`Required seed_prompt for input rule with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources.`);
+                    }
+                    const latest = pickLatest(data);
+                    if (latest && isRecord(latest)) {
+                        const u: unknown = latest;
+                        const id = isRecord(u) && typeof u['id'] === 'string' ? u['id'] : undefined;
+                        const stageSlugEff = isRecord(u) && typeof u['stage_slug'] === 'string' ? u['stage_slug'] : rStage;
+                        const content = isRecord(u) && typeof u['content'] === 'string' ? u['content'] : '';
+                        if (id && stageSlugEff) {
+                            deps.logger.info(`[gatherArtifacts] Found seed_prompt in dialectic_project_resources: id='${id}', stage='${stageSlugEff}', document_key='${rKey}'`);
+                            gathered.push({ id, content, document_key: rKey, stage_slug: stageSlugEff, type: 'seed_prompt' });
+                        } else if (rRequired) {
+                            throw new Error(`Required seed_prompt for input rule with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources.`);
+                        }
+                    } else if (rRequired) {
+                        throw new Error(`Required seed_prompt for input rule with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources.`);
+                    }
+                }
+                if (rType === 'project_resource') {
+                    const isInitialUserPrompt = rKey === 'initial_user_prompt';
+                    const resourceTypeForQuery = isInitialUserPrompt ? 'initial_user_prompt' : 'project_resource';
+                    deps.logger.info(`[gatherArtifacts] Querying dialectic_project_resources for project_resource: document_key='${rKey}', resource_type='${resourceTypeForQuery}'`);
+                    const { data, error } = await dbClient
+                        .from('dialectic_project_resources')
+                        .select('*')
+                        .eq('project_id', projectId)
+                        .eq('resource_type', resourceTypeForQuery);
+                    if (error) {
+                        deps.logger.error(`[gatherArtifacts] Error querying dialectic_project_resources for project_resource: document_key='${rKey}'`, { error });
+                        if (rRequired === false) continue;
+                        throw new Error(`Required project_resource for document_key '${rKey}' was not found in dialectic_project_resources.`);
+                    }
+                    if (!Array.isArray(data) || data.length === 0) {
+                        deps.logger.warn(`[gatherArtifacts] No project_resource found for document_key='${rKey}'`);
+                        if (rRequired === false) continue;
+                        throw new Error(`Required project_resource for document_key '${rKey}' was not found in dialectic_project_resources.`);
+                    }
+                    const latest = pickLatest(data);
+                    if (latest && isRecord(latest)) {
+                        const u: unknown = latest;
+                        const id = isRecord(u) && typeof u['id'] === 'string' ? u['id'] : undefined;
+                        const content = isRecord(u) && typeof u['content'] === 'string' ? u['content'] : '';
+                        if (id) {
+                            deps.logger.info(`[gatherArtifacts] Found project_resource in dialectic_project_resources: id='${id}', document_key='${rKey}'`);
+                            gathered.push({ id, content, document_key: rKey, stage_slug: rStage, type: 'project_resource' });
+                        } else if (rRequired) {
+                            throw new Error(`Required project_resource for document_key '${rKey}' was not found in dialectic_project_resources.`);
+                        }
+                    } else if (rRequired) {
+                        throw new Error(`Required project_resource for document_key '${rKey}' was not found in dialectic_project_resources.`);
+                    }
+                } else if (rType === 'header_context' || (rType !== 'document' && rType !== 'feedback' && rType !== 'seed_prompt')) {
                     deps.logger.info(`[gatherArtifacts] Querying dialectic_contributions for intermediate artifact: type='${rType}', stage='${rStage}', document_key='${rKey}'`);
                     const { data, error } = await dbClient
                         .from('dialectic_contributions')
                         .select('*')
-                        .eq('project_id', projectId)
                         .eq('session_id', sessionId)
                         .eq('iteration_number', iterationNumber)
                         .eq('stage', rStage);
@@ -379,8 +446,8 @@ export async function executeModelCallAndSave(
                     }
                 }
             } catch (err) {
-                // For document-type inputs, errors indicate missing required rendered documents - re-throw to fail loud and hard
-                if (rType === 'document') {
+                // For document, seed_prompt, project_resource inputs, errors indicate missing required resources - re-throw to fail loud and hard
+                if (rType === 'document' || rType === 'seed_prompt' || rType === 'project_resource') {
                     throw err;
                 }
                 // For other types (feedback, header_context, etc.), errors are non-fatal - continue processing other rules
@@ -1778,19 +1845,21 @@ export async function executeModelCallAndSave(
         }
     }
 
-    // Emit chunk completion for continuation jobs immediately after save
+    // Emit chunk completion for continuation jobs immediately after save (EXECUTE lifecycle)
     if (projectOwnerUserId && isContinuationForStorage && isDocumentRelated(fileType)) {
         if (!job.payload.document_key || typeof job.payload.document_key !== 'string') {
-            throw new Error('document_key is required for document_chunk_completed notification but is missing or invalid');
+            throw new Error('document_key is required for execute_chunk_completed notification but is missing or invalid');
         }
-        await deps.notificationService.sendDocumentCentricNotification({
-            type: 'document_chunk_completed',
+        const stepKeyForChunk = job.payload.document_key ?? output_type;
+        await deps.notificationService.sendJobNotificationEvent({
+            type: 'execute_chunk_completed',
             sessionId: sessionId,
             stageSlug: stageSlug,
-            job_id: jobId,
-            document_key: job.payload.document_key,
-            modelId: model_id,
             iterationNumber: iterationNumber,
+            job_id: jobId,
+            step_key: stepKeyForChunk,
+            modelId: model_id,
+            document_key: job.payload.document_key,
         }, projectOwnerUserId);
     }
     
@@ -1836,19 +1905,21 @@ export async function executeModelCallAndSave(
     const isFinalChunk = resolvedFinish === 'stop';
 
     if (isFinalChunk) {
-        // Emit document_completed for final chunk
+        // Emit execute_chunk_completed for final chunk (EXECUTE lifecycle); execute_completed is emitted only by processSimpleJob when the EXECUTE job finishes.
         if (projectOwnerUserId && isDocumentRelated(fileType)) {
             if (!job.payload.document_key || typeof job.payload.document_key !== 'string') {
-                throw new Error('document_key is required for document_completed notification but is missing or invalid');
+                throw new Error('document_key is required for execute_chunk_completed notification but is missing or invalid');
             }
-            await deps.notificationService.sendDocumentCentricNotification({
-                type: 'document_completed',
+            const stepKeyForCompleted = job.payload.document_key ?? output_type;
+            await deps.notificationService.sendJobNotificationEvent({
+                type: 'execute_chunk_completed',
                 sessionId: sessionId,
                 stageSlug: stageSlug,
-                job_id: jobId,
-                document_key: job.payload.document_key,
-                modelId: model_id,
                 iterationNumber: iterationNumber,
+                job_id: jobId,
+                step_key: stepKeyForCompleted,
+                modelId: model_id,
+                document_key: job.payload.document_key,
             }, projectOwnerUserId);
         }
 

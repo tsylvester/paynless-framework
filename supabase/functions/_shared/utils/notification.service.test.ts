@@ -13,7 +13,6 @@ import {
   mockDialecticContributionReceivedPayload,
   mockContributionGenerationContinuedPayload,
   mockContributionGenerationCompletePayload,
-  mockDialecticProgressUpdatePayload,
   mockContributionGenerationFailedPayload,
   mockContributionGenerationFailedApiError,
   mockContributionGenerationFailedInternalPayload,
@@ -26,8 +25,8 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../../types_db.ts';
 import type { 
   PlannerStartedPayload,
-  DocumentStartedPayload,
-  DocumentChunkCompletedPayload,
+  ExecuteStartedPayload,
+  ExecuteChunkCompletedPayload,
   RenderCompletedPayload,
   JobFailedPayload,
 } from '../types/notification.service.types.ts';
@@ -227,36 +226,6 @@ Deno.test('NotificationService - should send a valid internal event for contribu
   );
 });
 
-Deno.test('NotificationService - should send a valid internal event for dialectic_progress_update', async () => {
-  // Arrange
-  const mockUserId = 'user-123';
-  const { client, spies } = createMockSupabaseClient(mockUserId, {
-    rpcResults: {
-      create_notification_for_user: { data: null, error: null },
-    },
-  });
-  const service = new NotificationService(
-    client as unknown as SupabaseClient<Database>,
-  );
-
-  // Act
-  await service.sendDialecticProgressUpdateEvent(
-    mockDialecticProgressUpdatePayload,
-    mockUserId,
-  );
-
-  // Assert
-  assertEquals(spies.rpcSpy.calls.length, 1);
-  const rpcArgs = spies.rpcSpy.calls[0].args;
-  const rpcParams = rpcArgs[1];
-  assertEquals(rpcParams.p_target_user_id, mockUserId);
-  assertEquals(rpcParams.p_notification_type, 'dialectic_progress_update');
-  assertEquals(
-    rpcParams.p_notification_data.current_step,
-    5,
-  );
-});
-
 Deno.test('NotificationService - should send a user-facing notification for contribution_generation_failed', async () => {
   // Arrange
   const mockUserId = 'user-123';
@@ -329,12 +298,11 @@ Deno.test('NotificationService - should send planner_started with document_key a
     sessionId: 'session-uuid-456',
     stageSlug: 'thesis',
     job_id: 'job-uuid-123',
-    document_key: 'business_case',
-    modelId: 'model-uuid-abc',
+    step_key: 'step-one',
     iterationNumber: 1,
   };
 
-  await service.sendDocumentCentricNotification(payload, mockUserId);
+  await service.sendJobNotificationEvent(payload, mockUserId);
 
   assertEquals(spies.rpcSpy.calls.length, 1);
   const rpcArgs = spies.rpcSpy.calls[0].args;
@@ -343,60 +311,61 @@ Deno.test('NotificationService - should send planner_started with document_key a
   assertEquals(rpcParams.p_target_user_id, mockUserId);
   assertEquals(rpcParams.p_notification_type, 'planner_started');
   assertEquals(rpcParams.p_is_internal_event, true);
-  assertEquals(rpcParams.p_notification_data.document_key, payload.document_key);
-  assertEquals(rpcParams.p_notification_data.modelId, payload.modelId);
+  assertEquals(rpcParams.p_notification_data.step_key, payload.step_key);
 });
 
-Deno.test('NotificationService - should send document_started with document_key and modelId', async () => {
+Deno.test('NotificationService - should send execute_started with document_key and modelId', async () => {
   const mockUserId = 'user-123';
   const { client, spies } = createMockSupabaseClient(mockUserId, {
     rpcResults: { create_notification_for_user: { data: null, error: null } },
   });
   const service = new NotificationService(client as unknown as SupabaseClient<Database>);
 
-  const payload: DocumentStartedPayload = {
-    type: 'document_started',
+  const payload: ExecuteStartedPayload = {
+    type: 'execute_started',
     sessionId: 'session-uuid-456',
     stageSlug: 'thesis',
     job_id: 'job-uuid-123',
+    step_key: 'step-one',
     document_key: 'business_case',
     modelId: 'model-uuid-abc',
     iterationNumber: 1,
   };
 
-  await service.sendDocumentCentricNotification(payload, mockUserId);
+  await service.sendJobNotificationEvent(payload, mockUserId);
 
   assertEquals(spies.rpcSpy.calls.length, 1);
   const rpcArgs = spies.rpcSpy.calls[0].args;
   const rpcParams = rpcArgs[1];
-  assertEquals(rpcParams.p_notification_type, 'document_started');
+  assertEquals(rpcParams.p_notification_type, 'execute_started');
   assertEquals(rpcParams.p_notification_data.document_key, payload.document_key);
   assertEquals(rpcParams.p_notification_data.modelId, payload.modelId);
 });
 
-Deno.test('NotificationService - should send document_chunk_completed with document_key and modelId', async () => {
+Deno.test('NotificationService - should send execute_chunk_completed with document_key and modelId', async () => {
   const mockUserId = 'user-123';
   const { client, spies } = createMockSupabaseClient(mockUserId, {
     rpcResults: { create_notification_for_user: { data: null, error: null } },
   });
   const service = new NotificationService(client as unknown as SupabaseClient<Database>);
 
-  const payload: DocumentChunkCompletedPayload = {
-    type: 'document_chunk_completed',
+  const payload: ExecuteChunkCompletedPayload = {
+    type: 'execute_chunk_completed',
     sessionId: 'session-uuid-456',
     stageSlug: 'thesis',
     job_id: 'job-uuid-123',
+    step_key: 'step-one',
     document_key: 'business_case',
     modelId: 'model-uuid-abc',
     iterationNumber: 1,
   };
 
-  await service.sendDocumentCentricNotification(payload, mockUserId);
+  await service.sendJobNotificationEvent(payload, mockUserId);
 
   assertEquals(spies.rpcSpy.calls.length, 1);
   const rpcArgs = spies.rpcSpy.calls[0].args;
   const rpcParams = rpcArgs[1];
-  assertEquals(rpcParams.p_notification_type, 'document_chunk_completed');
+  assertEquals(rpcParams.p_notification_type, 'execute_chunk_completed');
   assertEquals(rpcParams.p_notification_data.document_key, payload.document_key);
   assertEquals(rpcParams.p_notification_data.modelId, payload.modelId);
 });
@@ -413,12 +382,14 @@ Deno.test('NotificationService - should send render_completed with document_key 
     sessionId: 'session-uuid-456',
     stageSlug: 'thesis',
     job_id: 'job-uuid-123',
+    step_key: 'step-one',
     document_key: 'business_case',
     modelId: 'model-uuid-abc',
     iterationNumber: 1,
+    latestRenderedResourceId: 'resource-uuid-123',
   };
 
-  await service.sendDocumentCentricNotification(payload, mockUserId);
+  await service.sendJobNotificationEvent(payload, mockUserId);
 
   assertEquals(spies.rpcSpy.calls.length, 1);
   const rpcArgs = spies.rpcSpy.calls[0].args;
@@ -440,13 +411,14 @@ Deno.test('NotificationService - should send job_failed with error and document 
     sessionId: 'session-uuid-456',
     stageSlug: 'thesis',
     job_id: 'job-uuid-123',
+    step_key: 'step-one',
     document_key: 'business_case',
     modelId: 'model-uuid-abc',
     iterationNumber: 1,
     error: mockContributionGenerationFailedApiError,
   };
 
-  await service.sendDocumentCentricNotification(payload, mockUserId);
+  await service.sendJobNotificationEvent(payload, mockUserId);
 
   assertEquals(spies.rpcSpy.calls.length, 1);
   const rpcArgs = spies.rpcSpy.calls[0].args;

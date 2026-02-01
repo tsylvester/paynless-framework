@@ -8,7 +8,6 @@ export interface NotificationServiceType {
     sendContributionFailedNotification(payload: ContributionGenerationFailedPayload, targetUserId: string): Promise<void>;
     sendContributionGenerationCompleteEvent(payload: ContributionGenerationCompletePayload, targetUserId: string): Promise<void>;
     sendContributionGenerationContinuedEvent(payload: ContributionGenerationContinuedPayload, targetUserId: string): Promise<void>;
-    sendDialecticProgressUpdateEvent(payload: DialecticProgressUpdatePayload, targetUserId: string): Promise<void>;
     sendContributionGenerationFailedEvent(payload: ContributionGenerationFailedInternalPayload, targetUserId: string): Promise<void>;
     sendJobNotificationEvent(payload: JobNotificationEvent, targetUserId: string): Promise<void>;
 }
@@ -108,22 +107,6 @@ export interface ContributionGenerationStartedPayload {
     job_id: string;
   }
   
-  export interface DialecticProgressUpdatePayload {
-    type: 'dialectic_progress_update';
-    sessionId: string;
-    stageSlug: string;
-    current_step: number;
-    total_steps: number;
-    message: string;
-    job_id: string;
-  }
-  
-  export interface ProgressData {
-    current_step: number;
-    total_steps: number;
-    message: string;
-  }
-  
   export type DialecticLifecycleEvent = 
   ContributionGenerationStartedPayload 
   | DialecticContributionStartedPayload 
@@ -131,8 +114,7 @@ export interface ContributionGenerationStartedPayload {
   | DialecticContributionReceivedPayload 
   | ContributionGenerationFailedPayload 
   | ContributionGenerationContinuedPayload
-  | ContributionGenerationCompletePayload
-  | DialecticProgressUpdatePayload;
+  | ContributionGenerationCompletePayload;
 
 // ------------------------------
 // Job notification type hierarchy (PLAN / EXECUTE / RENDER lifecycle, unified job_failed)

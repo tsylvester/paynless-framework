@@ -657,6 +657,7 @@ export enum BranchKey {
   comparison_vector = 'comparison_vector',
 
   // Synthesis
+  header_context_pairwise = 'header_context_pairwise',
   synthesis_pairwise_business_case = 'synthesis_pairwise_business_case',
   synthesis_pairwise_feature_spec = 'synthesis_pairwise_feature_spec',
   synthesis_pairwise_technical_approach = 'synthesis_pairwise_technical_approach',
@@ -781,7 +782,7 @@ export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
         [key: string]: string | string[];
     };
     document_key?: string | null;
-    branch_key?: string | null;
+    branch_key?: BranchKey | null;
     parallel_group?: number | null;
     planner_metadata?: DialecticStepPlannerMetadata | null;
     document_relationships?: DocumentRelationships | null;
@@ -816,7 +817,7 @@ export interface RequiredArtifactIdentity {
     iterationNumber: number;
     model_id: string; 
     documentKey: string; // FileType as string
-    branchKey?: string | null; // Optional for lineage disambiguation
+    branchKey?: BranchKey | null; // Optional for lineage disambiguation
     parallelGroup?: number | null; // Optional for parallel branches
     sourceGroupFragment?: string | null; // Optional for source group disambiguation
 }

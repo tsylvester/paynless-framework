@@ -638,8 +638,8 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       logger: logger,
     }, params);
 
-    assert(mockNotificationService.sendDocumentCentricNotification.calls.length === 1);
-    const [payload, userId] = mockNotificationService.sendDocumentCentricNotification.calls[0].args;
+    assert(mockNotificationService.sendJobNotificationEvent.calls.length === 1);
+    const [payload, userId] = mockNotificationService.sendJobNotificationEvent.calls[0].args;
     assert(payload.type === 'render_completed');
     assert(payload.sessionId === sessionId);
     assert(payload.stageSlug === stageSlug);

@@ -843,27 +843,6 @@
     *   `[✅]`   **Commit** `fix(be): use adminClient for FileManager in saveContributionEdit to satisfy storage RLS`
         *   `[✅]`   Detail the change in index.ts saveContributionEdit context construction.
 
-## Progress Tracking SSOT Implementation
-
-### User Complaints Addressed
-- Progress bar starts at 20% instead of 0%
-- Multiple progress indicators disagree (badge, title bar, documents, progress bar)
-- StageRunChecklist hides documents for future stages
-- Not all backend steps emit started/completed notices
-- Progress bar shows useless/inaccurate information
-
-### Scope
-- Consolidate to single source of truth for progress tracking
-- Remove unused `sessionProgress` system in favor of `stageRunProgress`
-- Ensure ALL backend jobs emit start/error/fail/completed notifications for complete DAG visibility
-- Calculate progress dynamically from recipe × model count × actual completion
-- Steps with model calls: progress = completedModels / totalModels
-- Steps without model calls: progress = 1/1 (complete when step completes)
-- **Progress data model:** `stageRunProgress[progressKey].documents` must key descriptors by (documentKey, modelId) so that one document key can have N completions (one descriptor per model). Progress bar and selector must use this for correct completedModels/totalModels for any arrangement of stages, steps, documents, and models.
-- Extract embedded progress bar from page into reusable component
-- Consolidate ALL progress indicators (title bar, badge, progress bar, documents) to SSOT
-- Show all stage documents with appropriate status indicators
-
 *   `[✅]` [BE] supabase/functions/_shared/types/`notification.service.types` **Define job notification type hierarchy (base → PLAN/EXECUTE/RENDER → lifecycle states, unified job_failed)**
     *   `[✅]` `deps.md`
         *   `[✅]` ApiError interface (existing)
@@ -1051,7 +1030,7 @@
         *   `[✅]` selectStageRecipe from `@paynless/store` (per stage)
         *   `[✅]` Process template stages (selectSortedStages or currentProjectDetail.dialectic_process_templates) for stage order and readiness
         *   `[✅]` selectedModelIds and per-model document status from stageRunProgress for consolidated and per-model status
-        *   `[ ]` **stageRunProgress supplies one descriptor per (documentKey, modelId)** so consolidated "2/3 complete" and per-model status can be derived correctly
+        *   `[✅]` **stageRunProgress supplies one descriptor per (documentKey, modelId)** so consolidated "2/3 complete" and per-model status can be derived correctly
     *   `[✅]` `StageRunChecklist.test.tsx`
         *   `[✅]` Test: displays all stages in order (past, current, future)
         *   `[✅]` Test: when a stage is focused, the stage displays all documents the stage will produce (from recipe)
@@ -1135,122 +1114,87 @@
         *   `[✅]` Ensure stage count and percentage align with SessionInfoCard
     *   `[✅]` **Commit** `refactor(ui): DialecticSessionDetailsPage extracts embedded progress bar, uses DynamicProgressBar + SSOT`
 
-*   `[ ]` [TEST-INT] packages/store/src/`dialecticStore.progress.integration` **Integration test: Frontend progress tracking from notifications to display**
-    *   `[ ]` `deps.md`
-        *   `[ ]` dialecticStore with all handlers and selectors
-        *   `[ ]` Mock notification payloads for all lifecycle events
-        *   `[ ]` Mock recipe and process template data
-        *   `[ ]` selectUnifiedProjectProgress selector
-    *   `[ ]` `dialecticStore.progress.integration.test.ts`
-        *   `[ ]` Test: planner_started notification → store updates stepStatus to 'in_progress' → selector returns in_progress status
-        *   `[ ]` Test: planner_completed notification → store updates step to completed → selector counts step as 1/1
-        *   `[ ]` Test: execute_started notification → store updates step status → selector returns correct step progress
-        *   `[ ]` **Test: one document key, 3 models — execute_completed for 1 of 3 → selector returns 33% step progress; for all 3 → 100% (no multiple document keys in recipe)**
-        *   `[ ]` Test: execute_chunk_completed for 1 of 3 models → selector returns 33% step progress
-        *   `[ ]` Test: execute_completed for all 3 models → selector returns 100% step progress
-        *   `[ ]` Test: all steps complete in stage → selector returns 100% stage progress
-        *   `[ ]` Test: job_failed notification for PLAN job → store updates status → selector returns 'failed' status
-        *   `[ ]` Test: job_failed notification for EXECUTE job → store updates status → selector returns 'failed' status
-        *   `[ ]` Test: render_started → render_chunk_completed → render_completed flow → selector reflects render step progress
-        *   `[ ]` Test: render_chunk_completed (intermediate) vs render_completed (final) handled correctly
-        *   `[ ]` Test: non-model step (PLAN) completion → selector counts as 1/1
-        *   `[ ]` Test: full stage lifecycle (planner → execute → render) → progress flows correctly 0% → 100%
-        *   `[ ]` Test: multi-stage project with 5 stages → completing stage 1 shows 20% overall, completing stage 2 shows 40%, etc.
-    *   `[ ]` **Commit** `test(store): integration tests for progress tracking from notifications to SSOT selector`
+*   `[✅]` [TEST-INT] packages/store/src/`dialecticStore.progress.integration` **Integration test: Frontend progress tracking from notifications to display**
+    *   `[✅]` `deps.md`
+        *   `[✅]` dialecticStore with all handlers and selectors
+        *   `[✅]` Mock notification payloads for all lifecycle events
+        *   `[✅]` Mock recipe and process template data
+        *   `[✅]` selectUnifiedProjectProgress selector
+    *   `[✅]` `dialecticStore.progress.integration.test.ts`
+        *   `[✅]` Test: planner_started notification → store updates stepStatus to 'in_progress' → selector returns in_progress status
+        *   `[✅]` Test: planner_completed notification → store updates step to completed → selector counts step as 1/1
+        *   `[✅]` Test: execute_started notification → store updates step status → selector returns correct step progress
+        *   `[✅]` **Test: one document key, 3 models — execute_completed for 1 of 3 → selector returns 33% step progress; for all 3 → 100% (no multiple document keys in recipe)**
+        *   `[✅]` Test: execute_chunk_completed for 1 of 3 models → selector returns 33% step progress
+        *   `[✅]` Test: execute_completed for all 3 models → selector returns 100% step progress
+        *   `[✅]` Test: all steps complete in stage → selector returns 100% stage progress
+        *   `[✅]` Test: job_failed notification for PLAN job → store updates status → selector returns 'failed' status
+        *   `[✅]` Test: job_failed notification for EXECUTE job → store updates status → selector returns 'failed' status
+        *   `[✅]` Test: render_started → render_chunk_completed → render_completed flow → selector reflects render step progress
+        *   `[✅]` Test: render_chunk_completed (intermediate) vs render_completed (final) handled correctly
+        *   `[✅]` Test: non-model step (PLAN) completion → selector counts as 1/1
+        *   `[✅]` Test: full stage lifecycle (planner → execute → render) → progress flows correctly 0% → 100%
+        *   `[✅]` Test: multi-stage project with 5 stages → completing stage 1 shows 20% overall, completing stage 2 shows 40%, etc.
+    *   `[✅]` **Commit** `test(store): integration tests for progress tracking from notifications to SSOT selector`
 
-*   `[ ]` [TEST-INT] supabase/integration_tests/`notifications.progress.integration` **Integration test: Backend provides complete notifications for frontend progress tracking**
-    *   `[ ]` `deps.md`
-        *   `[ ]` dialectic-worker with all job processors
-        *   `[ ]` NotificationService
-        *   `[ ]` Test database with sample jobs
-    *   `[ ]` `notifications.progress.integration.test.ts`
-        *   `[ ]` Test: PLAN job lifecycle emits planner_started, planner_completed (happy path)
-        *   `[ ]` Test: PLAN job failure emits job_failed with step_key, omits modelId/document_key
-        *   `[ ]` Test: PLAN payloads include step_key but NOT modelId or document_key
-        *   `[ ]` Test: EXECUTE job lifecycle emits execute_started, execute_chunk_completed, execute_completed
-        *   `[ ]` Test: EXECUTE job failure emits job_failed with modelId, document_key optional
-        *   `[ ]` Test: EXECUTE payloads include modelId, document_key optional (included when relevant)
-        *   `[ ]` Test: RENDER job lifecycle emits render_started, render_chunk_completed (intermediate), render_completed (final)
-        *   `[ ]` Test: RENDER job failure emits job_failed with modelId AND document_key (both required)
-        *   `[ ]` Test: RENDER payloads include modelId AND document_key (both required)
-        *   `[ ]` Test: render_chunk_completed emitted for intermediate renders, render_completed only when document finished
-        *   `[ ]` Test: all notifications include base fields (sessionId, stageSlug, iterationNumber, job_id, step_key)
-        *   `[ ]` Test: job_failed includes error code and message for all job types
-        *   `[ ]` Test: full recipe execution emits notifications in correct order matching DAG structure
-        *   `[ ]` Test: notifications for multi-model stage include correct modelId per model
-    *   `[ ]` **Commit** `test(integration): backend emits complete job lifecycle notifications for progress tracking`
+*   `[✅]` [TEST-INT] supabase/integration_tests/`notifications.progress.integration` **Integration test: Backend provides complete notifications for frontend progress tracking**
+    *   `[✅]` `deps.md`
+        *   `[✅]` dialectic-worker with all job processors
+        *   `[✅]` NotificationService
+        *   `[✅]` Test database with sample jobs
+    *   `[✅]` `notifications.progress.integration.test.ts`
+        *   `[✅]` Test: PLAN job lifecycle emits planner_started, planner_completed (happy path)
+        *   `[✅]` Test: PLAN job failure emits job_failed with step_key, omits modelId/document_key
+        *   `[✅]` Test: PLAN payloads include step_key but NOT modelId or document_key
+        *   `[✅]` Test: EXECUTE job lifecycle emits execute_started, execute_chunk_completed, execute_completed
+        *   `[✅]` Test: EXECUTE job failure emits job_failed with modelId, document_key optional
+        *   `[✅]` Test: EXECUTE payloads include modelId, document_key optional (included when relevant)
+        *   `[✅]` Test: RENDER job lifecycle emits render_started, render_chunk_completed (intermediate), render_completed (final)
+        *   `[✅]` Test: RENDER job failure emits job_failed with modelId AND document_key (both required)
+        *   `[✅]` Test: RENDER payloads include modelId AND document_key (both required)
+        *   `[✅]` Test: render_chunk_completed emitted for intermediate renders, render_completed only when document finished
+        *   `[✅]` Test: all notifications include base fields (sessionId, stageSlug, iterationNumber, job_id, step_key)
+        *   `[✅]` Test: job_failed includes error code and message for all job types
+        *   `[✅]` Test: full recipe execution emits notifications in correct order matching DAG structure
+        *   `[✅]` Test: notifications for multi-model stage include correct modelId per model
+    *   `[✅]` **Commit** `test(integration): backend emits complete job lifecycle notifications for progress tracking`
 
-*   `[ ]` [STORE] packages/store/src/`dialecticStore` **Remove deprecated sessionProgress state and handler**
-    *   `[ ]` `deps.md`
-        *   `[ ]` Confirm no consumers of sessionProgress remain (frontend migrated)
-        *   `[ ]` DialecticStateValues type from `@paynless/types`
-    *   `[ ]` `dialectic.types.ts`
-        *   `[ ]` Remove `sessionProgress: { [sessionId: string]: ProgressData }` from DialecticStateValues
-        *   `[ ]` Remove `ProgressData` interface (no longer used)
-    *   `[ ]` `dialecticStore.test.ts`
-        *   `[ ]` Remove tests for `_handleProgressUpdate` handler
-        *   `[ ]` Remove tests that reference `sessionProgress` state
-        *   `[ ]` Verify no regressions in other handlers
-    *   `[ ]` `dialecticStore.ts`
-        *   `[ ]` Remove `sessionProgress: {}` from initial state
-        *   `[ ]` Remove `_handleProgressUpdate` handler function
-        *   `[ ]` Remove `dialectic_progress_update` case from `_handleDialecticLifecycleEvent`
-    *   `[ ]` **Commit** `refactor(store): remove deprecated sessionProgress in favor of stageRunProgress SSOT`
+*   `[✅]` [STORE] packages/store/src/`dialecticStore` **Remove deprecated sessionProgress state and handler**
+    *   `[✅]` `deps.md`
+        *   `[✅]` Confirm no consumers of sessionProgress remain (frontend migrated)
+        *   `[✅]` DialecticStateValues type from `@paynless/types`
+    *   `[✅]` `dialectic.types.ts`
+        *   `[✅]` Remove `sessionProgress: { [sessionId: string]: ProgressData }` from DialecticStateValues
+        *   `[✅]` Remove `ProgressData` interface (no longer used)
+    *   `[✅]` `dialecticStore.test.ts`
+        *   `[✅]` Remove tests for `_handleProgressUpdate` handler
+        *   `[✅]` Remove tests that reference `sessionProgress` state
+        *   `[✅]` Verify no regressions in other handlers
+    *   `[✅]` `dialecticStore.ts`
+        *   `[✅]` Remove `sessionProgress: {}` from initial state
+        *   `[✅]` Remove `_handleProgressUpdate` handler function
+        *   `[✅]` Remove `dialectic_progress_update` case from `_handleDialecticLifecycleEvent`
+    *   `[✅]` **Commit** `refactor(store): remove deprecated sessionProgress in favor of stageRunProgress SSOT`
 
-*   `[ ]` [BE] supabase/functions/_shared/utils/`notification.service` **Remove unused sendDialecticProgressUpdateEvent method**
-    *   `[ ]` `deps.md`
-        *   `[ ]` Confirm no callers of sendDialecticProgressUpdateEvent exist (was never called)
-        *   `[ ]` NotificationServiceType interface from `notification.service.types.ts`
-    *   `[ ]` `notification.service.types.ts`
-        *   `[ ]` Remove `DialecticProgressUpdatePayload` interface
-        *   `[ ]` Remove `sendDialecticProgressUpdateEvent` from `NotificationServiceType` interface
-        *   `[ ]` Remove `DialecticProgressUpdatePayload` from `DialecticLifecycleEvent` union type
-    *   `[ ]` `notification.service.test.ts`
-        *   `[ ]` Remove test for `sendDialecticProgressUpdateEvent`
-        *   `[ ]` Verify no regressions in other notification methods
-    *   `[ ]` `notification.service.ts`
-        *   `[ ]` Remove `sendDialecticProgressUpdateEvent` method implementation
-    *   `[ ]` `notification.service.mock.ts`
-        *   `[ ]` Remove `mockDialecticProgressUpdatePayload` mock
-        *   `[ ]` Remove mock implementation for `sendDialecticProgressUpdateEvent`
-    *   `[ ]` **Commit** `refactor(notification-service): remove unused sendDialecticProgressUpdateEvent method`
+*   `[✅]` [BE] supabase/functions/_shared/utils/`notification.service` **Remove unused sendDialecticProgressUpdateEvent method**
+    *   `[✅]` `deps.md`
+        *   `[✅]` Confirm no callers of sendDialecticProgressUpdateEvent exist (was never called)
+        *   `[✅]` NotificationServiceType interface from `notification.service.types.ts`
+    *   `[✅]` `notification.service.types.ts`
+        *   `[✅]` Remove `DialecticProgressUpdatePayload` interface
+        *   `[✅]` Remove `sendDialecticProgressUpdateEvent` from `NotificationServiceType` interface
+        *   `[✅]` Remove `DialecticProgressUpdatePayload` from `DialecticLifecycleEvent` union type
+    *   `[✅]` `notification.service.test.ts`
+        *   `[✅]` Remove test for `sendDialecticProgressUpdateEvent`
+        *   `[✅]` Verify no regressions in other notification methods
+    *   `[✅]` `notification.service.ts`
+        *   `[✅]` Remove `sendDialecticProgressUpdateEvent` method implementation
+    *   `[✅]` `notification.service.mock.ts`
+        *   `[✅]` Remove `mockDialecticProgressUpdatePayload` mock
+        *   `[✅]` Remove mock implementation for `sendDialecticProgressUpdateEvent`
+    *   `[✅]` **Commit** `refactor(notification-service): remove unused sendDialecticProgressUpdateEvent method`
 
----
-
-### Verification Checklist (Post-Implementation)
-
-*   `[ ]` Progress bar starts at 0% for new projects
-*   `[ ]` Progress increments correctly: models → steps → stages → project
-*   `[ ]` **Progress data model: stageRunProgress.documents keyed by (documentKey, modelId); one document key can have N model completions; selector and progress bar use this for correct completedModels/totalModels for any stages, steps, documents, and models**
-*   `[ ]` Non-model steps (PLAN, assembly) count as 1/1 when complete
-*   `[ ]` All progress indicators (title bar, badge, progress bar, documents) show same value
-*   `[ ]` Embedded progress bar extracted from DialecticSessionDetailsPage
-*   `[ ]` SessionInfoCard title, badge, and progress bar all use SSOT
-*   `[ ]` StageRunChecklist shows documents for all stages (past, current, future)
-*   `[ ]` "Stage not ready" vs "Document not started" clearly distinguished
-*   `[ ]` Multi-model progress shows correctly (e.g., "2/3 models complete") **per document key** (one document, three models → 2/3 then 3/3)
-*   `[ ]` Backend emits complete lifecycle for all job types: started, chunk_completed, completed, job_failed
-*   `[ ]` Job notification type hierarchy: JobNotificationBase → PLAN/EXECUTE/RENDER payloads + unified job_failed
-*   `[ ]` PLAN jobs emit: planner_started, planner_completed, job_failed (NO modelId, NO document_key)
-*   `[ ]` EXECUTE jobs emit: execute_started, execute_chunk_completed, execute_completed, job_failed (modelId required, document_key optional)
-*   `[ ]` RENDER jobs emit: render_started, render_chunk_completed (more coming), render_completed (finished), job_failed (modelId AND document_key required)
-*   `[ ]` Unified job_failed includes: error, modelId? (optional), document_key? (optional) - present based on job type
-*   `[ ]` All notifications include step_key for progress tracking
-*   `[ ]` All notifications include base fields: sessionId, stageSlug, iterationNumber, job_id
-*   `[ ]` No references to deprecated `sessionProgress` or `dialectic_progress_update` remain
-*   `[ ]` Frontend integration tests pass (notifications → store → selector → display)
-*   `[ ]` Backend integration tests pass (all job types emit complete notifications)
-*   `[ ]` All lint checks pass
-*   `[ ]` All existing tests pass
-*   `[ ]` New tests cover all added functionality
-
-    - Determine an index value for a full flow for 3 models and set that as the new user signup token deposit
-    -- User reports their new sign up allocation was only enough to get 3/4 docs in thesis 
-    -- Reasonable for a new user to want to complete an entire first project from their initial token allocation
-    -- Not a dev task per se, but we need to run a few e2e multi-model flows and index the cost then set the new user sign up deposit close to that value
-    -- This is not recurring, just a new user sign up 
-    -- Dep: Will need to finally set up email validation so that users can't just create new accounts for each project 
-
+# ToDo
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
     -- User reports that a single document failed and they liked the other documents, but had to regenerate the entire stage
     -- User requests option to only regenerate the exact document that failed
@@ -1274,3 +1218,10 @@
 
     - New user sign in banner doesn't display, throws console error  
     -- Chase, diagnose, fix 
+
+    - Determine an index value for a full flow for 3 models and set that as the new user signup token deposit
+    -- User reports their new sign up allocation was only enough to get 3/4 docs in thesis 
+    -- Reasonable for a new user to want to complete an entire first project from their initial token allocation
+    -- Not a dev task per se, but we need to run a few e2e multi-model flows and index the cost then set the new user sign up deposit close to that value
+    -- This is not recurring, just a new user sign up 
+    -- Dep: Will need to finally set up email validation so that users can't just create new accounts for each project 

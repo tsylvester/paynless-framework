@@ -342,8 +342,6 @@ export interface DialecticStateValues {
 
   activeDialecticWalletId: string | null;
 
-  sessionProgress: { [sessionId: string]: ProgressData };
-  
   // Recipe hydration and per-stage-run progress
   recipesByStageSlug: Record<string, DialecticStageRecipe>;
   stageRunProgress: Record<string, StageRunProgressSnapshot>;
@@ -650,7 +648,6 @@ export interface DialecticActions {
   _handleContributionGenerationFailed: (event: ContributionGenerationFailedPayload) => void;
   _handleContributionGenerationComplete: (event: ContributionGenerationCompletePayload) => void;
   _handleContributionGenerationContinued: (event: ContributionGenerationContinuedPayload) => void;
-  _handleProgressUpdate: (event: DialecticProgressUpdatePayload) => void;
   _handlePlannerStarted: (event: PlannerStartedPayload) => void;
   _handlePlannerCompleted: (event: PlannerCompletedPayload) => void;
   _handleDocumentStarted: (event: DocumentStartedPayload) => void;
@@ -721,7 +718,6 @@ export type DialecticNotificationTypes =
   | 'dialectic_contribution_received'
   | 'contribution_generation_failed'
   | 'contribution_generation_complete'
-  | 'dialectic_progress_update'
   | 'contribution_generation_continued'
   | 'planner_started'
   | 'planner_completed'
@@ -799,21 +795,6 @@ export interface ContributionGenerationCompletePayload {
   type: 'contribution_generation_complete';
   sessionId: string;
   projectId: string;
-}
-
-export interface DialecticProgressUpdatePayload {
-  type: 'dialectic_progress_update';
-  sessionId: string;
-  stageSlug: string;
-  current_step: number;
-  total_steps: number;
-  message: string;
-}
-
-export interface ProgressData {
-  current_step: number;
-  total_steps: number;
-  message: string;
 }
 
 export interface DocumentLifecyclePayload {
@@ -911,7 +892,6 @@ ContributionGenerationStartedPayload
 | ContributionGenerationFailedPayload 
 | ContributionGenerationContinuedPayload
 | ContributionGenerationCompletePayload
-| DialecticProgressUpdatePayload
 | PlannerStartedPayload
 | PlannerCompletedPayload
 | DocumentStartedPayload

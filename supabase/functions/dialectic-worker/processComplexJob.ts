@@ -7,6 +7,7 @@ import type {
     DialecticSkeletonJobPayload,
     RequiredArtifactIdentity,
 } from '../dialectic-service/dialectic.interface.ts';
+import { BranchKey } from '../dialectic-service/dialectic.interface.ts';
 import { resolveNextBlocker } from './resolveNextBlocker.ts';
 import type { IPlanJobContext } from './JobContext.interface.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
@@ -205,7 +206,14 @@ export async function processComplexJob(
             iterationNumber: typeof requiredArtifactIdentityUnknown.iterationNumber === 'number' ? requiredArtifactIdentityUnknown.iterationNumber : 0,
             model_id: typeof requiredArtifactIdentityUnknown.model_id === 'string' ? requiredArtifactIdentityUnknown.model_id : '',
             documentKey: typeof requiredArtifactIdentityUnknown.documentKey === 'string' ? requiredArtifactIdentityUnknown.documentKey : '',
-            branchKey: requiredArtifactIdentityUnknown.branchKey !== undefined && requiredArtifactIdentityUnknown.branchKey !== null ? String(requiredArtifactIdentityUnknown.branchKey) : null,
+            branchKey: (() => {
+                const raw = requiredArtifactIdentityUnknown.branchKey;
+                if (raw === undefined || raw === null || typeof raw !== 'string') return null;
+                for (const bk of Object.values(BranchKey)) {
+                    if (bk === raw) return bk;
+                }
+                return null;
+            })(),
             parallelGroup: requiredArtifactIdentityUnknown.parallelGroup !== undefined && requiredArtifactIdentityUnknown.parallelGroup !== null ? Number(requiredArtifactIdentityUnknown.parallelGroup) : null,
             sourceGroupFragment: requiredArtifactIdentityUnknown.sourceGroupFragment !== undefined && requiredArtifactIdentityUnknown.sourceGroupFragment !== null ? String(requiredArtifactIdentityUnknown.sourceGroupFragment) : null,
         };

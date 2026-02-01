@@ -804,28 +804,6 @@ describe('Dialectic Store Notification Handlers', () => {
     );
   });
 
-  it('should update session progress on progress update notification', () => {
-      const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
-      
-      const progressNotification: DialecticLifecycleEvent = {
-          type: 'dialectic_progress_update',
-          sessionId: 'session-1',
-          stageSlug: 'test-stage',
-          current_step: 5,
-          total_steps: 10,
-          message: 'Processing item 5 of 10...'
-      };
-
-      _handleDialecticLifecycleEvent?.(progressNotification);
-
-      const state = useDialecticStore.getState();
-      const progress = state.sessionProgress['session-1'];
-      expect(progress).toBeDefined();
-      expect(progress.current_step).toBe(5);
-      expect(progress.total_steps).toBe(10);
-      expect(progress.message).toBe('Processing item 5 of 10...');
-  });
-
   it('should clear generating status and refetch project on completion', async () => {
       const { generateContributions, _handleDialecticLifecycleEvent, fetchDialecticProjectDetails } = useDialecticStore.getState();
       

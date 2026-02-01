@@ -114,7 +114,7 @@ Deno.test('executeModelCallAndSave - pathContext validation - 41.b.i: ALL requir
     clearAllStubs?.();
 });
 
-Deno.test('executeModelCallAndSave - notification document_key - 41.b.ii: document_completed notification uses document_key from payload', async () => {
+Deno.test('executeModelCallAndSave - notification document_key - 41.b.ii: execute_chunk_completed notification uses document_key from payload', async () => {
     const { client: dbClient, clearAllStubs } = setupMockClient({
         'ai_providers': { select: { data: [mockFullProviderData], error: null } },
     });
@@ -178,10 +178,10 @@ Deno.test('executeModelCallAndSave - notification document_key - 41.b.ii: docume
 
     await executeModelCallAndSave(params);
 
-    assertEquals(mockNotificationService.sendDocumentCentricNotification.calls.length, 1, 'Expected a document_completed event emission');
-    const [payloadArg] = mockNotificationService.sendDocumentCentricNotification.calls[0].args;
+    assertEquals(mockNotificationService.sendJobNotificationEvent.calls.length, 1, 'Expected an execute_chunk_completed event emission');
+    const [payloadArg] = mockNotificationService.sendJobNotificationEvent.calls[0].args;
     assert(isRecord(payloadArg), 'notification payload should be a record');
-    assertEquals(payloadArg.type, 'document_completed', 'notification type should be document_completed');
+    assertEquals(payloadArg.type, 'execute_chunk_completed', 'notification type should be execute_chunk_completed');
     assertEquals(payloadArg.document_key, 'feature_spec', 'notification.document_key should be "feature_spec" (from payload), not String(output_type)');
 
     callUnifiedAISpy.restore();

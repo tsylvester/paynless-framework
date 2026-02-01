@@ -31,8 +31,6 @@ import {
   type ContributionGenerationFailedPayload,
   type ContributionGenerationCompletePayload,
   type ContributionGenerationContinuedPayload,
-  type DialecticProgressUpdatePayload,
-  type ProgressData,
   type PlannerStartedPayload,
   type PlannerCompletedPayload,
   type DocumentStartedPayload,
@@ -183,8 +181,6 @@ export const initialDialecticStateValues: DialecticStateValues = {
 
   activeDialecticWalletId: null,
 
-	sessionProgress: {},
-
 	// Recipe hydration and per-stage-run progress
 	recipesByStageSlug: {},
 	stageRunProgress: {},
@@ -255,18 +251,6 @@ export const useDialecticStore = create<DialecticStore>()(
 
     return {
       ...initialDialecticStateValues,
-
-      _handleProgressUpdate: (event: DialecticProgressUpdatePayload) => {
-        logger.info(`[DialecticStore] Handling progress update for session ${event.sessionId}`, { event });
-        set(state => {
-          const progress: ProgressData = {
-            current_step: event.current_step,
-            total_steps: event.total_steps,
-            message: event.message,
-          };
-          state.sessionProgress[event.sessionId] = progress;
-        });
-    },
 
     fetchDomains: async () => {
     set({ isLoadingDomains: true, domainsError: null });
@@ -1446,9 +1430,6 @@ export const useDialecticStore = create<DialecticStore>()(
             break;
         case 'contribution_generation_continued':
             handlers._handleContributionGenerationContinued(payload);
-            break;
-        case 'dialectic_progress_update':
-            handlers._handleProgressUpdate(payload);
             break;
         case 'planner_started':
             handlers._handlePlannerStarted(payload);
