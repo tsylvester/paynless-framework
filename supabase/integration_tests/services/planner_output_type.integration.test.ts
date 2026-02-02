@@ -10,6 +10,7 @@ import {
   assertExists,
   assertNotEquals,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import {
   coreCleanupTestResources,
   coreCreateAndSetupTestUser,
@@ -20,7 +21,7 @@ import {
   MOCK_MODEL_CONFIG,
 } from "../../functions/_shared/_integration.test.utils.ts";
 import { SupabaseClient, User } from "npm:@supabase/supabase-js@2";
-import { Database } from "../../functions/types_db.ts";
+import { Database, TablesInsert } from "../../functions/types_db.ts";
 import {
   DialecticJobRow,
   DialecticProject,
@@ -31,11 +32,13 @@ import {
   DialecticExecuteJobPayload,
   StageRecipeStepDto,
   HeaderContext,
+  HeaderContextArtifact,
   ContextForDocument,
   ContentToInclude,
   SourceDocument,
   DialecticContributionRow,
   RelevanceRule,
+  SystemMaterials,
 } from "../../functions/dialectic-service/dialectic.interface.ts";
 import { createProject } from "../../functions/dialectic-service/createProject.ts";
 import { startSession } from "../../functions/dialectic-service/startSession.ts";
@@ -43,17 +46,19 @@ import { getStageRecipe } from "../../functions/dialectic-service/getStageRecipe
 import { generateContributions } from "../../functions/dialectic-service/generateContribution.ts";
 import { handleJob } from "../../functions/dialectic-worker/index.ts";
 import { createDialecticWorkerDeps } from "../../functions/dialectic-worker/index.ts";
+import { createMockJobContextParams } from "../../functions/dialectic-worker/JobContext.mock.ts";
+import type { FinishReason } from "../../functions/_shared/types.ts";
 import { createSupabaseAdminClient } from "../../functions/_shared/auth.ts";
 import { FileManagerService } from "../../functions/_shared/services/file_manager.ts";
 import { constructStoragePath } from "../../functions/_shared/utils/path_constructor.ts";
-import { downloadFromStorage } from "../../functions/_shared/supabase_storage_utils.ts";
+import { downloadFromStorage, uploadToStorage } from "../../functions/_shared/supabase_storage_utils.ts";
 import { getGranularityPlanner } from "../../functions/dialectic-worker/strategies/granularity.strategies.ts";
 import { getSeedPromptForStage } from "../../functions/_shared/utils/dialectic_utils.ts";
 import { NotificationService } from "../../functions/_shared/utils/notification.service.ts";
-import { isModelContributionFileType } from "../../functions/_shared/utils/type-guards/type_guards.file_manager.ts";
+import { isModelContributionFileType, isOutputType } from "../../functions/_shared/utils/type-guards/type_guards.file_manager.ts";
 import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload } from "../../functions/_shared/utils/type_guards.ts";
 import { isDialecticStageRecipeStep, isOutputRule } from "../../functions/_shared/utils/type-guards/type_guards.dialectic.recipe.ts";
-import { isDocumentRelationships } from "../../functions/_shared/utils/type-guards/type_guards.dialectic.ts";
+import { isContextForDocument, isContentToInclude, isDocumentRelationships, isHeaderContext } from "../../functions/_shared/utils/type-guards/type_guards.dialectic.ts";
 import type { DocumentRelationships } from "../../functions/dialectic-service/dialectic.interface.ts";
 import { FileType, ModelContributionUploadContext, ResourceUploadContext, ContributionMetadata } from "../../functions/_shared/types/file_manager.types.ts";
 import { getExtensionFromMimeType } from "../../functions/_shared/path_utils.ts";
@@ -61,7 +66,7 @@ import { DeleteStorageResult } from "../../functions/_shared/supabase_storage_ut
 import { IDocumentRenderer } from "../../functions/_shared/services/document_renderer.interface.ts";
 import { ContributionType, DialecticStageRecipeStep, IContinueJobResult } from "../../functions/dialectic-service/dialectic.interface.ts";
 import { ModelContributionFileTypes } from "../../functions/_shared/types/file_manager.types.ts";
-import { isJson } from "../../functions/_shared/utils/type-guards/type_guards.common.ts";
+import { isJson, isRecord } from "../../functions/_shared/utils/type-guards/type_guards.common.ts";
 import { isFileType } from "../../functions/_shared/utils/type-guards/type_guards.file_manager.ts";
 import { gatherContext } from "../../functions/_shared/prompt-assembler/gatherContext.ts";
 import { render } from "../../functions/_shared/prompt-assembler/render.ts";
@@ -69,6 +74,7 @@ import { createCanonicalPathParams } from "../../functions/dialectic-worker/stra
 import { executeModelCallAndSave } from "../../functions/dialectic-worker/executeModelCallAndSave.ts";
 import { processComplexJob } from "../../functions/dialectic-worker/processComplexJob.ts";
 import type { ExecuteModelCallAndSaveParams } from "../../functions/dialectic-service/dialectic.interface.ts";
+import type { AiModelExtendedConfig } from "../../functions/_shared/types.ts";
 
 describe("Planner Output Type Integration Tests", () => {
   let adminClient: SupabaseClient<Database>;
@@ -94,7 +100,7 @@ describe("Planner Output Type Integration Tests", () => {
     assertExists(user, "Test user could not be created");
     testUser = user;
 
-    fileManager = new FileManagerService(adminClient, { constructStoragePath });
+    fileManager = new FileManagerService(adminClient, { constructStoragePath, logger: testLogger });
 
     // Create test project using FormData
     const formData = new FormData();
@@ -121,7 +127,21 @@ describe("Planner Output Type Integration Tests", () => {
     testProject = projectResult.data;
 
     // Fetch or create model ID for selectedModelIds (must be UUID, not api_identifier)
-    // First try to find existing model
+    // Executor requires output_token_cost_rate > 0; use valid config for create and for existing row.
+    const validMockModelConfig: AiModelExtendedConfig = {
+      api_identifier: MOCK_MODEL_CONFIG.api_identifier,
+      context_window_tokens: 128000,
+      input_token_cost_rate: 0,
+      output_token_cost_rate: 1,
+      tokenization_strategy: { type: "none" },
+      hard_cap_output_tokens: 16000,
+      provider_max_input_tokens: 128000,
+      provider_max_output_tokens: 16000,
+    };
+    if (!isJson(validMockModelConfig)) {
+      throw new Error('Mock model config must be valid JSON for ai_providers.config');
+    }
+
     const { data: existingModel, error: fetchError } = await adminClient
       .from("ai_providers")
       .select("id")
@@ -129,9 +149,9 @@ describe("Planner Output Type Integration Tests", () => {
       .eq("is_active", true)
       .eq("is_enabled", true)
       .maybeSingle();
-    
+
     let model = existingModel;
-    
+
     // If model doesn't exist, create it
     if (!model && !fetchError) {
       const { data: newModel, error: insertError } = await adminClient
@@ -143,20 +163,11 @@ describe("Planner Output Type Integration Tests", () => {
           is_active: true,
           is_enabled: true,
           provider: "dummy",
-          config: {
-            api_identifier: MOCK_MODEL_CONFIG.api_identifier,
-            context_window_tokens: 128000,
-            input_token_cost_rate: 0,
-            output_token_cost_rate: 0,
-            tokenization_strategy: { type: "none" },
-            hard_cap_output_tokens: 16000,
-            provider_max_input_tokens: 128000,
-            provider_max_output_tokens: 16000,
-          },
+          config: validMockModelConfig,
         })
         .select("id")
         .single();
-      
+
       if (insertError) {
         throw new Error(`Failed to create mock model: ${insertError.message}`);
       }
@@ -171,8 +182,16 @@ describe("Planner Output Type Integration Tests", () => {
       throw new Error(`Failed to fetch model: ${fetchError.message}`);
     } else if (!model) {
       throw new Error(`Model with api_identifier '${MOCK_MODEL_CONFIG.api_identifier}' not found or not active/enabled`);
+    } else {
+      const { error: updateError } = await adminClient
+        .from("ai_providers")
+        .update({ config: validMockModelConfig })
+        .eq("id", model.id);
+      if (updateError) {
+        throw new Error(`Failed to ensure mock model config has valid token cost rates: ${updateError.message}`);
+      }
     }
-    
+
     if (!model.id) {
       throw new Error("Model record is missing id");
     }
@@ -231,7 +250,7 @@ describe("Planner Output Type Integration Tests", () => {
     testDeps = {
       logger: testLogger,
       fileManager: fileManager,
-      downloadFromStorage: (bucket: string, path: string) =>
+      downloadFromStorage: (client: SupabaseClient<Database>, bucket: string, path: string) =>
         downloadFromStorage(adminClient, bucket, path),
       deleteFromStorage: async (): Promise<DeleteStorageResult> => ({ error: null }),
       getExtensionFromMimeType: getExtensionFromMimeType,
@@ -250,6 +269,92 @@ describe("Planner Output Type Integration Tests", () => {
   afterAll(async () => {
     await coreCleanupTestResources("all");
   });
+
+  /** Minimal valid HeaderContext per dialectic.interface: SystemMaterials (required fields only), HeaderContextArtifact, ContextForDocument[] (thesis four docs), no files_to_generate. */
+  const minimalSystemMaterials: SystemMaterials = {
+    stage_rationale: "",
+    executive_summary: "",
+    input_artifacts_summary: "",
+  };
+  const minimalHeaderContextArtifact: HeaderContextArtifact = {
+    type: "header_context",
+    document_key: "header_context",
+    artifact_class: "header_context",
+    file_type: "json",
+  };
+  /** content_to_include shapes must match thesis recipe outputs_required.documents[].content_to_include so assembleTurnPrompt validation passes. */
+  const contentToIncludeBusinessCase: ContentToInclude = {
+    threats: "",
+    strengths: "",
+    next_steps: "",
+    weaknesses: "",
+    opportunities: "",
+    executive_summary: "",
+    market_opportunity: "",
+    "risks_&_mitigation": "",
+    proposal_references: [],
+    competitive_analysis: "",
+    user_problem_validation: "",
+    "differentiation_&_value_proposition": "",
+  };
+  assert(isContentToInclude(contentToIncludeBusinessCase), "contentToIncludeBusinessCase must pass isContentToInclude");
+  const contentToIncludeFeatureSpec: ContentToInclude = {
+    features: [
+      {
+        dependencies: [],
+        feature_name: "",
+        user_stories: [],
+        success_metrics: [],
+        feature_objective: "",
+        acceptance_criteria: [],
+      },
+    ],
+  };
+  assert(isContentToInclude(contentToIncludeFeatureSpec), "contentToIncludeFeatureSpec must pass isContentToInclude");
+  const contentToIncludeTechnicalApproach: ContentToInclude = {
+    data: "",
+    components: "",
+    deployment: "",
+    sequencing: "",
+    architecture: "",
+    open_questions: "",
+    risk_mitigation: "",
+  };
+  assert(isContentToInclude(contentToIncludeTechnicalApproach), "contentToIncludeTechnicalApproach must pass isContentToInclude");
+  const contentToIncludeSuccessMetrics: ContentToInclude = {
+    ownership: "",
+    guardrails: "",
+    next_steps: "",
+    data_sources: [],
+    primary_kpis: "",
+    risk_signals: "",
+    escalation_plan: "",
+    measurement_plan: "",
+    north_star_metric: "",
+    outcome_alignment: "",
+    reporting_cadence: "",
+    lagging_indicators: "",
+    leading_indicators: "",
+  };
+  assert(isContentToInclude(contentToIncludeSuccessMetrics), "contentToIncludeSuccessMetrics must pass isContentToInclude");
+  const minimalContextForDocuments: ContextForDocument[] = [
+    { document_key: FileType.business_case, content_to_include: contentToIncludeBusinessCase },
+    { document_key: FileType.feature_spec, content_to_include: contentToIncludeFeatureSpec },
+    { document_key: FileType.technical_approach, content_to_include: contentToIncludeTechnicalApproach },
+    { document_key: FileType.success_metrics, content_to_include: contentToIncludeSuccessMetrics },
+  ];
+  for (const ctx of minimalContextForDocuments) {
+    assert(isContextForDocument(ctx), `minimalContextForDocuments entry document_key=${ctx.document_key} must pass isContextForDocument`);
+  }
+  const minimalHeaderContext: HeaderContext = {
+    system_materials: minimalSystemMaterials,
+    header_context_artifact: minimalHeaderContextArtifact,
+    context_for_documents: minimalContextForDocuments,
+  };
+  assert(isHeaderContext(minimalHeaderContext), "minimalHeaderContext must pass isHeaderContext");
+  const minimalHeaderContextJson: string = JSON.stringify(minimalHeaderContext);
+  const parsedHeaderContext: unknown = JSON.parse(minimalHeaderContextJson);
+  assert(isHeaderContext(parsedHeaderContext), "Serialized minimalHeaderContext must parse and pass isHeaderContext");
 
   /**
    * Creates a minimal project resource in the database for testing planners.
@@ -306,6 +411,64 @@ describe("Planner Output Type Integration Tests", () => {
   }
 
   /**
+   * Creates a minimal seed_prompt contribution in dialectic_contributions for the given stage.
+   * Required so EXECUTE jobs that need seed_prompt (e.g. thesis build-stage-header) find it in the correct table.
+   */
+  async function createMinimalSeedPromptContribution(stageSlug: string): Promise<string> {
+    const pathContext: Parameters<typeof constructStoragePath>[0] = {
+      projectId: testProject.id,
+      sessionId: testSession.id,
+      iteration: 1,
+      stageSlug: stageSlug,
+      fileType: FileType.SeedPrompt,
+    };
+    const { storagePath, fileName } = constructStoragePath(pathContext);
+    const fullStoragePath: string = `${storagePath}/${fileName}`;
+    const content: string = "Minimal seed prompt content for test";
+    const bucket: string | undefined = Deno.env.get("SB_CONTENT_STORAGE_BUCKET");
+    if (!bucket) {
+      throw new Error("SB_CONTENT_STORAGE_BUCKET environment variable is not set");
+    }
+    const { error: uploadError } = await uploadToStorage(
+      adminClient,
+      bucket,
+      fullStoragePath,
+      content,
+      { contentType: "text/markdown", upsert: true }
+    );
+    if (uploadError) {
+      throw new Error(`Failed to upload seed_prompt to storage: ${uploadError.message}`);
+    }
+    const insertPayload: TablesInsert<"dialectic_contributions"> = {
+      session_id: testSession.id,
+      stage: stageSlug,
+      storage_path: storagePath,
+      iteration_number: 1,
+      contribution_type: "seed_prompt",
+      storage_bucket: bucket,
+      file_name: fileName,
+      mime_type: "text/markdown",
+      size_bytes: content.length,
+      edit_version: 1,
+      is_latest_edit: true,
+      is_header: false,
+    };
+    const { data: insertData, error: insertError } = await adminClient
+      .from("dialectic_contributions")
+      .insert(insertPayload)
+      .select("id")
+      .single();
+    if (insertError) {
+      throw new Error(`Failed to insert seed_prompt contribution: ${insertError.message}`);
+    }
+    if (!insertData?.id) {
+      throw new Error("Insert seed_prompt contribution returned no id");
+    }
+    // gatherArtifacts finds this row by session_id, iteration_number, and stage (dialectic_contributions has no project_id column).
+    return insertData.id;
+  }
+
+  /**
    * Creates a minimal contribution in the database for testing planners.
    * This avoids needing real model calls to generate contributions.
    */
@@ -315,8 +478,13 @@ describe("Planner Output Type Integration Tests", () => {
     documentKey: string,
     sourceGroup?: string,
   ): Promise<string> {
-    const content = `Minimal test content for ${documentKey}`;
-    
+    const content: string =
+      documentKey === "header_context"
+        ? minimalHeaderContextJson
+        : `Minimal test content for ${documentKey}`;
+    const mimeType: string =
+      documentKey === "header_context" ? "application/json" : "text/markdown";
+
     // Use type guard to verify documentKey is a valid FileType
     if (!isFileType(documentKey)) {
       throw new Error(`Invalid documentKey '${documentKey}': is not a valid FileType`);
@@ -375,9 +543,10 @@ describe("Planner Output Type Integration Tests", () => {
         modelSlug: modelSlug,
         attemptCount: attemptCount,
         contributionType: contributionType,
+        documentKey: documentKey, // Added to fix documentKey missing for HeaderContext
       },
       fileContent: content,
-      mimeType: "text/markdown",
+      mimeType: mimeType,
       sizeBytes: content.length,
       userId: testUserId,
       description: `Test contribution for ${documentKey}`,
@@ -580,7 +749,12 @@ describe("Planner Output Type Integration Tests", () => {
     if (!recipeStep.inputs_required || !Array.isArray(recipeStep.inputs_required)) {
       throw new Error(`Recipe step '${stepSlug}' has invalid inputs_required`);
     }
-    
+
+    // When testing thesis, ensure seed_prompt exists in dialectic_contributions so the first EXECUTE step (build-stage-header) can resolve it.
+    if (actualStageSlug === "thesis") {
+      await createMinimalSeedPromptContribution("thesis");
+    }
+
     for (const spec of sourceDocumentSpecs) {
       // Find the corresponding input rule to determine the type
       const inputRule = recipeStep.inputs_required.find(
@@ -618,6 +792,8 @@ describe("Planner Output Type Integration Tests", () => {
     // 7. Call generateContributions (user entry point) to create PLAN jobs
     // This is how users actually trigger generation - we use the exact same function
     // Use the session's ACTUAL current stage - we process the ENTIRE recipe for this stage
+    // is_test_job: true ensures the DB trigger (invoke_worker_on_status_change) does not auto-invoke the worker;
+    // only the test's manual handleJob runs, avoiding "Job already processing" races.
     const generateResult = await generateContributions(
       adminClient,
       {
@@ -634,7 +810,7 @@ describe("Planner Output Type Integration Tests", () => {
       testUser,
       {
         callUnifiedAIModel: async () => ({ content: '', error: null }),
-        downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+        downloadFromStorage: (client: SupabaseClient<Database>, bucket: string, path: string) => downloadFromStorage(client, bucket, path),
         getExtensionFromMimeType: getExtensionFromMimeType,
         logger: testLogger,
         randomUUID: () => crypto.randomUUID(),
@@ -668,9 +844,36 @@ describe("Planner Output Type Integration Tests", () => {
 
     // 9. Create worker dependencies and manually invoke worker to process the PLAN job
     // This simulates what happens when the database trigger fires
-    // Use the same adminClient to avoid connection issues
-    const workerDeps = await createDialecticWorkerDeps(adminClient);
-    
+    // Use the same adminClient to avoid connection issues.
+    // Override callUnifiedAIModel with mock so integration test does not make outbound API calls.
+    // When the job produces header_context (PLAN step build-stage-header), return valid HeaderContext
+    // so EXECUTE jobs that reference it by header_context_id can parse it.
+    const realDeps = await createDialecticWorkerDeps(adminClient);
+    const mockParams = createMockJobContextParams();
+
+    function payloadProducesHeaderContext(payload: unknown): boolean {
+      if (!isRecord(payload)) return false;
+      const outputType = payload.output_type;
+      if (typeof outputType === "string" && outputType === "header_context") return true;
+      const documentKey = payload.document_key;
+      return typeof documentKey === "string" && documentKey === "header_context";
+    }
+
+    const getWorkerDeps = (currentJob: DialecticJobRow): typeof realDeps => {
+      const isHeaderContextJob = payloadProducesHeaderContext(currentJob.payload);
+      const callUnifiedAIModel = isHeaderContextJob
+        ? async () => ({
+            content: minimalHeaderContextJson,
+            contentType: "application/json",
+            inputTokens: 10,
+            outputTokens: 20,
+            processingTimeMs: 100,
+            rawProviderResponse: { mock: "response" },
+          })
+        : mockParams.callUnifiedAIModel;
+      return { ...realDeps, callUnifiedAIModel };
+    };
+
     // 9. Process the ENTIRE recipe flow to completion (following EXACT application flow)
     // The APPLICATION runs the recipe - we just process jobs as they become ready (simulating database triggers)
     // Recipe: 1) build-stage-header (PLAN) creates header_context, 2) 4 EXECUTE steps create documents
@@ -679,13 +882,21 @@ describe("Planner Output Type Integration Tests", () => {
     const processedJobIds = new Set<string>();
     
     while (currentPlanJob.status !== 'completed' && currentPlanJob.status !== 'failed') {
-      // 9.a. Process current PLAN job - APPLICATION determines which steps are ready
-      await handleJob(
-        adminClient,
-        currentPlanJob,
-        workerDeps,
-        testUserJwt
-      );
+      // 9.a. Process current PLAN job only when status warrants worker invocation (avoid "Job already processing").
+      // When status is processing or waiting_for_children, do not call handleJob on the parent again.
+      const parentStatusWarrantsInvocation: boolean =
+        currentPlanJob.status === 'pending' ||
+        currentPlanJob.status === 'pending_next_step' ||
+        currentPlanJob.status === 'pending_continuation' ||
+        currentPlanJob.status === 'retrying';
+      if (parentStatusWarrantsInvocation) {
+        await handleJob(
+          adminClient,
+          currentPlanJob,
+          getWorkerDeps(currentPlanJob),
+          testUserJwt
+        );
+      }
 
       // 9.b. Fetch all pending child jobs created by the APPLICATION
       const { data: allChildJobsData, error: allChildJobsError } = await adminClient
@@ -706,7 +917,7 @@ describe("Planner Output Type Integration Tests", () => {
         await handleJob(
           adminClient,
           childJob,
-          workerDeps,
+          getWorkerDeps(childJob),
           testUserJwt
         );
       }
@@ -974,6 +1185,57 @@ describe("Planner Output Type Integration Tests", () => {
 
   describe("planAllToOne", () => {
     it("should create EXECUTE jobs with correct output_type from synthesis render steps", async () => {
+      // Advance session to synthesis so testPlannerWithRecipeStep sees actualStageSlug === "synthesis"
+      const { data: synthesisStage, error: stageError } = await adminClient
+        .from("dialectic_stages")
+        .select("id")
+        .eq("slug", "synthesis")
+        .single();
+      assert(!stageError, `Failed to fetch synthesis stage: ${stageError?.message}`);
+      const synthesisStageId: string | undefined = synthesisStage?.id;
+      assertExists(synthesisStageId, "Synthesis stage must exist");
+      const { error: updateError } = await adminClient
+        .from("dialectic_sessions")
+        .update({ current_stage_id: synthesisStageId })
+        .eq("id", testSession.id);
+      assert(!updateError, `Failed to advance session to synthesis: ${updateError?.message}`);
+
+      // Populate required inputs into the database so the worker finds the data it needs.
+      // Synthesis recipe steps can depend on thesis-stage rendered documents; create them so
+      // gatherArtifacts finds them in dialectic_project_resources.
+      const thesisDocKeys: Array<{ contributionType: ContributionType; documentKey: string }> = [
+        { contributionType: "thesis", documentKey: "business_case" },
+        { contributionType: "thesis", documentKey: "feature_spec" },
+        { contributionType: "thesis", documentKey: "technical_approach" },
+        { contributionType: "thesis", documentKey: "success_metrics" },
+      ];
+      for (const spec of thesisDocKeys) {
+        const sourceContributionId = await createMinimalContribution(
+          spec.contributionType,
+          "thesis",
+          spec.documentKey
+        );
+        await createMinimalProjectResource("thesis", spec.documentKey, sourceContributionId);
+      }
+
+      // Antithesis-stage rendered documents required by synthesis recipe steps (e.g. pairwise steps).
+      const antithesisDocKeys: Array<{ contributionType: ContributionType; documentKey: string }> = [
+        { contributionType: "antithesis", documentKey: "business_case_critique" },
+        { contributionType: "antithesis", documentKey: "technical_feasibility_assessment" },
+        { contributionType: "antithesis", documentKey: "non_functional_requirements" },
+        { contributionType: "antithesis", documentKey: "risk_register" },
+        { contributionType: "antithesis", documentKey: "dependency_map" },
+        { contributionType: "antithesis", documentKey: "comparison_vector" },
+      ];
+      for (const spec of antithesisDocKeys) {
+        const sourceContributionId = await createMinimalContribution(
+          spec.contributionType,
+          "antithesis",
+          spec.documentKey
+        );
+        await createMinimalProjectResource("antithesis", spec.documentKey, sourceContributionId);
+      }
+
       // Test with product_requirements step (uses all_to_one)
       // This step requires header_context and synthesis_document_* types (not synthesis_pairwise_*)
       await testPlannerWithRecipeStep(
@@ -988,18 +1250,29 @@ describe("Planner Output Type Integration Tests", () => {
           { contributionType: "synthesis", documentKey: "synthesis_document_success_metrics" },
         ]
       );
+
+      // Isolate independent tests: reset session to thesis so later tests that expect thesis are not affected.
+      const { data: thesisStage, error: thesisStageError } = await adminClient
+        .from("dialectic_stages")
+        .select("id")
+        .eq("slug", "thesis")
+        .single();
+      assert(!thesisStageError, `Failed to fetch thesis stage: ${thesisStageError?.message}`);
+      const thesisStageId: string | undefined = thesisStage?.id;
+      assertExists(thesisStageId, "Thesis stage must exist");
+      const { error: resetError } = await adminClient
+        .from("dialectic_sessions")
+        .update({ current_stage_id: thesisStageId })
+        .eq("id", testSession.id);
+      assert(!resetError, `Failed to reset session to thesis: ${resetError?.message}`);
     });
   });
 
   describe("planPerModel", () => {
     it("should verify no per_model EXECUTE steps with renderable output types exist", async () => {
-      // Note: There are currently no EXECUTE steps with granularity_strategy='per_model' 
-      // that produce renderable output types in the current schema.
-      // All steps that use per_model produce backend-only types (like assembled_document_json)
-      // which are correctly filtered out by getStageRecipe.
-      // This test verifies the expected state: no per_model renderable steps exist.
+      // per_model EXECUTE steps may exist in the recipe (e.g. synthesis-document-* with assembled_document_json).
+      // This test verifies none of them have renderable output types (only backend-only types like assembled_document_json).
       
-      // Check synthesis stage (most likely to have per_model steps)
       const synthesisResult = await getStageRecipe({ stageSlug: "synthesis" }, adminClient);
       assert(!synthesisResult.error, `Failed to fetch synthesis recipe: ${synthesisResult.error?.message}`);
       assertExists(synthesisResult.data, "Synthesis recipe fetch returned no data");
@@ -1008,15 +1281,18 @@ describe("Planner Output Type Integration Tests", () => {
         throw new Error("Synthesis recipe fetch returned no data");
       }
       
-      const perModelSteps = synthesisResult.data.steps.filter(
-        (step) => step.granularity_strategy === "per_model" && step.job_type === "EXECUTE"
+      const perModelRenderableSteps = synthesisResult.data.steps.filter(
+        (step) =>
+          step.granularity_strategy === "per_model" &&
+          step.job_type === "EXECUTE" &&
+          isModelContributionFileType(step.output_type) &&
+          isOutputType(step.output_type)
       );
       
-      // Verify no per_model EXECUTE steps exist (or if they do, they should be filtered out)
       assertEquals(
-        perModelSteps.length,
+        perModelRenderableSteps.length,
         0,
-        `Expected no per_model EXECUTE steps in synthesis recipe (they should be filtered out if they produce backend-only types), but found: ${perModelSteps.map(s => `${s.step_slug} (${s.output_type})`).join(", ")}`
+        `Expected no per_model EXECUTE steps with renderable output types in synthesis recipe, but found: ${perModelRenderableSteps.map(s => `${s.step_slug} (${s.output_type})`).join(", ")}`
       );
       
       testLogger.info("Verified that no per_model EXECUTE steps with renderable output types exist in synthesis stage");
@@ -1042,11 +1318,9 @@ describe("Planner Output Type Integration Tests", () => {
   });
 
   describe("planPairwiseByOrigin", () => {
-    it("should verify pairwise steps are correctly filtered out by getStageRecipe", async () => {
-      // Pairwise synthesis steps produce 'assembled_document_json' which is a backend-only type.
-      // These steps are correctly filtered out by getStageRecipe (lines 99-106) because they are not
-      // renderable OutputTypes. This is the expected behavior - planners should not create EXECUTE
-      // jobs for backend-only intermediate types.
+    it("should verify no pairwise EXECUTE steps with renderable output types exist", async () => {
+      // Pairwise synthesis steps may appear in the recipe (e.g. pairwise-synthesis-* with assembled_document_json).
+      // This test verifies none of them have renderable output types (only backend-only types like assembled_document_json).
       
       const recipeResult = await getStageRecipe({ stageSlug: "synthesis" }, adminClient);
       assert(!recipeResult.error, `Failed to fetch recipe: ${recipeResult.error?.message}`);
@@ -1056,16 +1330,18 @@ describe("Planner Output Type Integration Tests", () => {
         throw new Error("Recipe fetch returned no data");
       }
       
-      // Verify that no pairwise steps with assembled_document_json appear in the recipe
-      const pairwiseSteps = recipeResult.data.steps.filter(
-        (step) => step.step_slug.includes("pairwise") && step.job_type === "EXECUTE"
+      const pairwiseRenderableSteps = recipeResult.data.steps.filter(
+        (step) =>
+          step.step_slug.includes("pairwise") &&
+          step.job_type === "EXECUTE" &&
+          isModelContributionFileType(step.output_type) &&
+          isOutputType(step.output_type)
       );
       
-      // All pairwise steps should be filtered out because they produce backend-only types
       assertEquals(
-        pairwiseSteps.length,
+        pairwiseRenderableSteps.length,
         0,
-        `Expected no pairwise EXECUTE steps in recipe (they should be filtered out), but found: ${pairwiseSteps.map(s => s.step_slug).join(", ")}`
+        `Expected no pairwise EXECUTE steps with renderable output types in recipe, but found: ${pairwiseRenderableSteps.map(s => `${s.step_slug} (${s.output_type})`).join(", ")}`
       );
       
       // Verify that renderable steps (like product_requirements) are present
@@ -1094,7 +1370,7 @@ describe("Planner Output Type Integration Tests", () => {
         );
       }
       
-      testLogger.info(`Verified that ${pairwiseSteps.length} pairwise steps were correctly filtered out, and ${renderableSteps.length} renderable steps are present`);
+      testLogger.info(`Verified that no pairwise EXECUTE steps with renderable output types exist (${pairwiseRenderableSteps.length}), and ${renderableSteps.length} renderable steps are present`);
     });
   });
 
@@ -1224,6 +1500,18 @@ describe("Planner Output Type Integration Tests", () => {
         "synthesis",
         "header_context"
       );
+
+      // Create minimal project resources for document-type inputs required by render-product_requirements
+      // (gatherInputsForStage queries dialectic_project_resources for these)
+      const synthesisDocumentKeys = [
+        "synthesis_document_business_case",
+        "synthesis_document_feature_spec",
+        "synthesis_document_technical_approach",
+        "synthesis_document_success_metrics",
+      ];
+      for (const docKey of synthesisDocumentKeys) {
+        await createMinimalProjectResource("synthesis", docKey);
+      }
 
       // Upload the header context content to storage
       const headerContextContentString = JSON.stringify(headerContextContent);
@@ -1449,7 +1737,9 @@ This is a test template for product requirements document generation.`;
         if (promptError) {
           throw new Error(`Failed to fetch system prompt: ${promptError.message}`);
         }
-        systemPrompt = promptData;
+        if (promptData !== null && typeof promptData.prompt_text === "string") {
+          systemPrompt = { prompt_text: promptData.prompt_text };
+        }
       }
 
       // Ensure system_prompts property exists if systemPrompt exists (no fallbacks)
@@ -1481,14 +1771,17 @@ This is a test template for product requirements document generation.`;
       const result = await assembleTurnPrompt({
         dbClient: adminClient,
         fileManager: fileManager,
-        job: executeJobRow,
-        project: projectRecord,
-        session: sessionRecord,
-        stage: stageContext,
         gatherContext: gatherContext,
         render: (renderPromptFn, stage, context, userProjectOverlayValues) => {
           return render(renderPromptFn, stage, context, userProjectOverlayValues);
         },
+        downloadFromStorage: (client: SupabaseClient<Database>, bucket: string, path: string) =>
+          downloadFromStorage(adminClient, bucket, path),
+      }, {
+        job: executeJobRow,
+        project: projectRecord,
+        session: sessionRecord,
+        stage: stageContext,
       });
 
       // 10. Verify assembleTurnPrompt succeeded and used correct sources (step 33.b.i, 33.b.ii)
@@ -1693,6 +1986,17 @@ This is a test template for product requirements document generation.`;
 
       if (uploadError || !headerContextBlob) {
         throw new Error(`Failed to upload header context content: ${uploadError?.message}`);
+      }
+
+      // Create minimal project resources for document-type inputs required by render-product_requirements
+      const synthesisDocumentKeys33biii = [
+        "synthesis_document_business_case",
+        "synthesis_document_feature_spec",
+        "synthesis_document_technical_approach",
+        "synthesis_document_success_metrics",
+      ];
+      for (const docKey of synthesisDocumentKeys33biii) {
+        await createMinimalProjectResource("synthesis", docKey);
       }
 
       // 4. Create EXECUTE jobs that consume the header_context
@@ -1921,14 +2225,17 @@ This is a test template for product requirements document generation.`;
       const result = await assembleTurnPrompt({
         dbClient: adminClient,
         fileManager: fileManager,
-        job: executeJobRow,
-        project: projectRecord,
-        session: sessionRecord,
-        stage: stageContext,
         gatherContext: gatherContext,
         render: (renderPromptFn, stage, context, userProjectOverlayValues) => {
           return render(renderPromptFn, stage, context, userProjectOverlayValues);
         },
+        downloadFromStorage: (client: SupabaseClient<Database>, bucket: string, path: string) =>
+          downloadFromStorage(adminClient, bucket, path),
+      }, {
+        job: executeJobRow,
+        project: projectRecord,
+        session: sessionRecord,
+        stage: stageContext,
       });
 
       // Verify assembleTurnPrompt succeeded and explicitly verify matching and alignment usage (step 33.b.iii)
@@ -2112,6 +2419,17 @@ This is a test template for product requirements document generation.`;
           headerContextBytes,
           { contentType: "application/json", upsert: true }
         );
+
+      // Create minimal project resources for document-type inputs required by synthesis EXECUTE step
+      const synthesisDocumentKeys33biv = [
+        "synthesis_document_business_case",
+        "synthesis_document_feature_spec",
+        "synthesis_document_technical_approach",
+        "synthesis_document_success_metrics",
+      ];
+      for (const docKey of synthesisDocumentKeys33biv) {
+        await createMinimalProjectResource("synthesis", docKey);
+      }
 
       // Upload template
       const templateBucket = Deno.env.get("SB_CONTENT_STORAGE_BUCKET");
@@ -2305,14 +2623,17 @@ This is a test template for product requirements document generation.`;
       const result = await assembleTurnPrompt({
         dbClient: adminClient,
         fileManager: fileManager,
-        job: executeJobRow,
-        project: projectRecord,
-        session: sessionRecord,
-        stage: stageContext,
         gatherContext: gatherContext,
         render: (renderPromptFn, stage, context, userProjectOverlayValues) => {
           return render(renderPromptFn, stage, context, userProjectOverlayValues);
         },
+        downloadFromStorage: (client: SupabaseClient<Database>, bucket: string, path: string) =>
+          downloadFromStorage(adminClient, bucket, path),
+      }, {
+        job: executeJobRow,
+        project: projectRecord,
+        session: sessionRecord,
+        stage: stageContext,
       });
 
       // Verify assembleTurnPrompt succeeded (proves structure matching validation passed)
@@ -2323,6 +2644,20 @@ This is a test template for product requirements document generation.`;
 
   describe("Complete end-to-end flow with correct file paths and step tracking (step 43)", () => {
     it("should verify EXECUTE jobs have document_key, file paths use documentKey, notifications use document_key, and completed steps are not re-planned (step 43.b)", async () => {
+      // Ensure session is in thesis so testPlannerWithRecipeStep passes stage assertion (previous tests may have advanced it).
+      const { data: thesisStage, error: thesisStageError } = await adminClient
+        .from("dialectic_stages")
+        .select("id")
+        .eq("slug", "thesis")
+        .single();
+      assert(!thesisStageError, `Failed to fetch thesis stage: ${thesisStageError?.message}`);
+      assertExists(thesisStage?.id, "Thesis stage must exist");
+      const { error: setStageError } = await adminClient
+        .from("dialectic_sessions")
+        .update({ current_stage_id: thesisStage.id })
+        .eq("id", testSession.id);
+      assert(!setStageError, `Failed to set session to thesis: ${setStageError?.message}`);
+
       // 43.b.i: Set up PLAN job and create EXECUTE jobs with document_key
       // Use testPlannerWithRecipeStep to get an EXECUTE job from the actual recipe
       const { recipeStep, childJobs } = await testPlannerWithRecipeStep(
@@ -2358,9 +2693,20 @@ This is a test template for product requirements document generation.`;
         `EXECUTE job payload document_key should be 'business_case', got '${executePayload.document_key}'`
       );
 
-      // Create worker deps for executeModelCallAndSave
-      const workerDeps = await createDialecticWorkerDeps(adminClient);
-      
+      // Create worker deps: real deps with callUnifiedAIModel from official mock (finish_reason added for final-chunk behavior)
+      const realDeps = await createDialecticWorkerDeps(adminClient);
+      const mockParams = createMockJobContextParams();
+      const workerDeps = {
+        ...realDeps,
+        callUnifiedAIModel: async (
+          ...args: Parameters<typeof mockParams.callUnifiedAIModel>
+        ) => {
+          const res = await mockParams.callUnifiedAIModel(...args);
+          const finishReason: FinishReason = "stop";
+          return { ...res, finish_reason: finishReason };
+        },
+      };
+
       // 43.b.ii: Execute one EXECUTE job and verify file path uses documentKey
       // Create a spy on workerDeps.fileManager.uploadAndRegisterFile to capture pathContext
       let capturedPathContext: ModelContributionUploadContext["pathContext"] | null = null;
@@ -2369,18 +2715,7 @@ This is a test template for product requirements document generation.`;
         capturedPathContext = context.pathContext;
         return originalUploadAndRegisterFile(context);
       };
-      
-      // Mock callUnifiedAIModel to return a simple response (integration test doesn't need real AI calls)
-      workerDeps.callUnifiedAIModel = async () => ({
-        content: '{"content": "Test business case content generated by mock AI model"}',
-        contentType: 'application/json',
-        inputTokens: 100,
-        outputTokens: 50,
-        processingTimeMs: 200,
-        rawProviderResponse: { mock: 'response' },
-        finish_reason: 'stop',
-      });
-      
+
       // Fetch provider details for the model
       const { data: providerData, error: providerError } = await adminClient
         .from("ai_providers")
@@ -2479,14 +2814,17 @@ This is a test template for product requirements document generation.`;
       const assembledPrompt = await assembleTurnPrompt({
         dbClient: adminClient,
         fileManager: fileManager,
-        job: executeJob,
-        project: projectRecord,
-        session: sessionRecord,
-        stage: stageContext,
         gatherContext: gatherContext,
         render: (renderPromptFn, stage, context, userProjectOverlayValues) => {
           return render(renderPromptFn, stage, context, userProjectOverlayValues);
         },
+        downloadFromStorage: (client: SupabaseClient<Database>, bucket: string, path: string) =>
+          downloadFromStorage(adminClient, bucket, path),
+      }, {
+        job: executeJob,
+        project: projectRecord,
+        session: sessionRecord,
+        stage: stageContext,
       });
 
       // Create executeModelCallAndSave params
@@ -2515,17 +2853,17 @@ This is a test template for product requirements document generation.`;
         inputsRequired: recipeStep.inputs_required || [],
       };
 
-      // 43.b.iii: Spy on notification service to capture document_completed notification
+      // 43.b.iii: Spy on notification service to capture execute_chunk_completed notification (EXECUTE job; execute_completed is emitted by processSimpleJob)
       let capturedNotification: { type: string; document_key?: string } | null = null;
-      const originalSendDocumentCentricNotification = workerDeps.notificationService.sendDocumentCentricNotification.bind(workerDeps.notificationService);
-      workerDeps.notificationService.sendDocumentCentricNotification = async (payload, userId) => {
-        if (payload.type === "document_completed") {
+      const originalsendJobNotificationEvent = workerDeps.notificationService.sendJobNotificationEvent.bind(workerDeps.notificationService);
+      workerDeps.notificationService.sendJobNotificationEvent = async (payload, userId) => {
+        if (payload.type === "execute_chunk_completed") {
           capturedNotification = {
             type: payload.type,
             document_key: payload.document_key,
           };
         }
-        return originalSendDocumentCentricNotification(payload, userId);
+        return originalsendJobNotificationEvent(payload, userId);
       };
 
       // Execute the EXECUTE job
@@ -2548,29 +2886,29 @@ This is a test template for product requirements document generation.`;
       );
 
       // Verify notification uses document_key from payload (43.b.iii)
-      assertExists(capturedNotification, "document_completed notification should have been sent");
+      assertExists(capturedNotification, "execute_chunk_completed notification should have been sent");
       if (!capturedNotification) {
-        throw new Error("capturedNotification is null - document_completed notification was not sent");
+        throw new Error("capturedNotification is null - execute_chunk_completed notification was not sent");
       }
       const notification: { type: string; document_key?: string } = capturedNotification;
       assertEquals(
         notification.type,
-        "document_completed",
-        "Notification type should be 'document_completed'"
+        "execute_chunk_completed",
+        "Notification type should be 'execute_chunk_completed'"
       );
       assertExists(
         notification.document_key,
-        "document_completed notification should have document_key"
+        "execute_chunk_completed notification should have document_key"
       );
       assertEquals(
         notification.document_key,
         "business_case",
-        `document_completed notification document_key should be 'business_case' (from payload), got '${notification.document_key}'`
+        `execute_chunk_completed notification document_key should be 'business_case' (from payload), got '${notification.document_key}'`
       );
       assertNotEquals(
         notification.document_key,
         String(executePayload.output_type),
-        "document_completed notification should use document_key from payload, not String(output_type)"
+        "execute_chunk_completed notification should use document_key from payload, not String(output_type)"
       );
 
       // 43.b.iv: Test pending_next_step scenario with a FRESH PLAN job
@@ -2591,7 +2929,7 @@ This is a test template for product requirements document generation.`;
         testUser,
         {
           callUnifiedAIModel: async () => ({ content: '', error: null }),
-          downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+          downloadFromStorage: (client: SupabaseClient<Database>, bucket: string, path: string) => downloadFromStorage(client, bucket, path),
           getExtensionFromMimeType: getExtensionFromMimeType,
           logger: testLogger,
           randomUUID: () => crypto.randomUUID(),

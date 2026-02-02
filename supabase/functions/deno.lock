@@ -17,6 +17,7 @@
     "jsr:@std/testing@0.225.1": "0.225.1",
     "jsr:@std/testing@0.225.3": "0.225.3",
     "jsr:@supabase/functions-js@*": "2.4.4",
+    "jsr:@supabase/supabase-js@2": "2.58.0",
     "jsr:@zip-js/zip-js@*": "2.7.62",
     "npm:@anthropic-ai/sdk@*": "0.71.2",
     "npm:@anthropic-ai/sdk@0.71.2": "0.71.2",
@@ -128,6 +129,17 @@
       "integrity": "38456509a6e22fb116b118464cbb36357256f9048d3580632b63af91f63769f7",
       "dependencies": [
         "npm:openai@^4.52.5"
+      ]
+    },
+    "@supabase/supabase-js@2.58.0": {
+      "integrity": "4d04e72e9f632b451ac7d1a84de0b85249c0097fdf06253f371c1f0a23e62c87",
+      "dependencies": [
+        "npm:@supabase/auth-js",
+        "npm:@supabase/functions-js@2.5.0",
+        "npm:@supabase/node-fetch",
+        "npm:@supabase/postgrest-js@1.21.4",
+        "npm:@supabase/realtime-js",
+        "npm:@supabase/storage-js@2.12.2"
       ]
     },
     "@zip-js/zip-js@2.7.62": {
@@ -1591,6 +1603,7 @@
     }
   },
   "redirects": {
+    "https://deno.land/std/testing/asserts.ts": "https://deno.land/std@0.224.0/testing/asserts.ts",
     "https://deno.land/x/deno/cli/types/v1.0.0/index.d.ts": "https://deno.land/x/deno@v2.4.5/cli/types/v1.0.0/index.d.ts",
     "https://esm.sh/@supabase/node-fetch@^2.6.13?target=denonext": "https://esm.sh/@supabase/node-fetch@2.6.15?target=denonext",
     "https://esm.sh/@supabase/node-fetch@^2.6.14?target=denonext": "https://esm.sh/@supabase/node-fetch@2.6.15?target=denonext",
